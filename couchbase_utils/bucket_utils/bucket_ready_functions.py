@@ -1914,7 +1914,8 @@ class BucketUtils(ScopeUtils):
                      Bucket.StorageBackend.magma: 0},
             compression_mode=Bucket.CompressionMode.ACTIVE,
             bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
-            ram_quota=None):
+            ram_quota=None,
+            bucket_name=None):
         success = True
         rest = RestConnection(server)
         info = rest.get_nodes_self()
@@ -1937,7 +1938,9 @@ class BucketUtils(ScopeUtils):
             for key in storage.keys():
                 count = 0
                 while count < storage[key]:
-                    name = "{0}-{1}".format(key, count)
+                    name = "{0}.{1}".format(key, count)
+                    if bucket_name is not None:
+                        name= "{0}{1}".format(bucket_name, count)
                     bucket = Bucket({
                         Bucket.name: name,
                         Bucket.ramQuotaMB: bucket_ram,

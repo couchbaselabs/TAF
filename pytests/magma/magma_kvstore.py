@@ -324,7 +324,8 @@ class KVStoreTests(MagmaBaseTest):
             storage={"couchstore": 0,
                      "magma": self.num_delete_buckets},
             eviction_policy=self.bucket_eviction_policy,
-            ram_quota=bucket_ram_quota)
+            ram_quota=bucket_ram_quota,
+            bucket_name=self.bucket_name)
             self.assertTrue(buckets_created, "Unable to create multiple buckets after bucket deletion")
             for bucket in self.bucket_util.buckets:
                 ready = self.bucket_util.wait_for_memcached(

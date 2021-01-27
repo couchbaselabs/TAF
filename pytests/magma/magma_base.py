@@ -56,6 +56,8 @@ class MagmaBaseTest(BaseTestCase):
         self.bucket_eviction_policy = self.input.param("bucket_eviction_policy",
                                                        Bucket.EvictionPolicy.FULL_EVICTION)
         self.bucket_util.add_rbac_user()
+        self.bucket_name = self.input.param("bucket_name",
+                                               None)
 
         self.magma_buckets = self.input.param("magma_buckets", 0)
         if self.standard_buckets > 10:
@@ -246,7 +248,8 @@ class MagmaBaseTest(BaseTestCase):
             bucket_type=self.bucket_type,
             storage={"couchstore": self.standard_buckets - self.magma_buckets,
                      "magma": self.magma_buckets},
-            eviction_policy=self.bucket_eviction_policy)
+            eviction_policy=self.bucket_eviction_policy,
+            bucket_name=self.bucket_name)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         for bucket in self.bucket_util.buckets:
