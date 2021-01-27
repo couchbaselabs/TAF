@@ -709,7 +709,6 @@ class BaseTestCase(unittest.TestCase):
         for idx, server in enumerate(servers):
             shell = RemoteMachineShellConnection(server)
             shell.extract_remote_info()
-            self.log.info(server.ip + ": Looking for crash / dump files")
             crash_dir = lib_cb + "crash/"
             if shell.info.type.lower() == "windows":
                 crash_dir = crash_dir_win
@@ -765,8 +764,6 @@ class BaseTestCase(unittest.TestCase):
 
                 for log_file in log_files:
                     log_file = log_file.strip("\n")
-                    self.log.info("Looking for CRITICAL|WARN messages in %s"
-                                  % log_file)
                     for grep_pattern in file_data['grep_for']:
                         grep_for_str = grep_pattern['string']
                         err_pattern = exclude_pattern = None
@@ -787,6 +784,8 @@ class BaseTestCase(unittest.TestCase):
                                 index = find_index_of(grep_output, pattern)
                                 grep_output = grep_output[:index]
                                 if grep_output:
+                                    self.log.info("unwanted messages in %s" %
+                                                  log_file)
                                     if check_if_new_messages(grep_output):
                                         self.log.critical(
                                             "%s: Found '%s' logs - %s"
@@ -797,6 +796,8 @@ class BaseTestCase(unittest.TestCase):
                         else:
                             if grep_output \
                                     and check_if_new_messages(grep_output):
+                                self.log.info("unwanted messages in %s" %
+                                              log_file)
                                 self.log.critical("%s: Found '%s' logs - %s"
                                                   % (server.ip, grep_for_str,
                                                      grep_output))
