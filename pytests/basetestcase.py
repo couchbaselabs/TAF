@@ -729,7 +729,7 @@ class BaseTestCase(unittest.TestCase):
                 self.log.critical("%s: Stack Trace of first crash - %s\n%s"
                                   % (server.ip, dmp_files[-1],
                                      get_gdb(shell, crash_dir, dmp_files[-1])))
-                self.get_full_thread_dump(shell)
+                get_full_thread_dump(shell)
                 if self.stop_server_on_crash:
                     shell.stop_couchbase()
                 result = True
