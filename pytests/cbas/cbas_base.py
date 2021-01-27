@@ -721,7 +721,7 @@ class CBASBaseTest(BaseTestCase):
             
             rest = RestConnection(server)
             info = rest.get_nodes_self()
-            memory_quota_available = int((info.memoryFree // 1024 ** 2) * 0.9)
+            memory_quota_available = info.mcdMemoryReserved
             
             if len(services) == 1:
                 service = services[0]
