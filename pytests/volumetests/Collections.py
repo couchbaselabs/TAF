@@ -186,7 +186,7 @@ class volume(CollectionBase):
                 result = self.run_cbq_query(select_query)
                 if result['status'] != "success":
                     self.log.warn("Query failed: {0}".format(select_query))
-                time.sleep(3)
+                #time.sleep(1)
         self.log.info("Stopping select queries")
 
     # Stopping and restarting the memcached process
