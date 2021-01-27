@@ -477,6 +477,8 @@ class ClusterUtils:
                     shell.cleanup_data_config(core_path)
 
                 self.start_server(node)
+                # TODO : this part of the code doesnt work anymore for IPv6
+                # basically node doesnt come up after restart
                 if '.com' in node.ip or ':' in node.ip:
                     shell.update_dist_type()
                 shell.disconnect()

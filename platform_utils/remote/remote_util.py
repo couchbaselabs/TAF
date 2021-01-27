@@ -4993,6 +4993,9 @@ class RemoteMachineShellConnection:
         return output, error
 
     def update_dist_type(self):
+        # TODO : [{external_listeners,[inet6_tcp_dist]},{local_listeners,[inet6_tcp_dist]},
+        #  {preferred_external_proto,inet6_tcp_dist},{preferred_local_proto,inet6_tcp_dist}].
+        # change this
         output, error = self.execute_command("echo '{{dist_type,inet6_tcp}}.' > {0}".format(LINUX_DIST_CONFIG))
         self.log_command_output(output, error)
 
