@@ -255,6 +255,7 @@ class N1qlBase(CollectionBase):
         match_or_not = ''
         inserted_docs = {}
         deleted_docs = list()
+        tmp_query = None
         if clause[4] == 'DELETE':
             tmp_query = "DELETE WHERE {0} LIMIT 200 RETURNING meta().id".format(clause[3])
             match_or_not = 'WHEN MATCHED'
@@ -270,6 +271,7 @@ class N1qlBase(CollectionBase):
         # build query
         query = 'MERGE INTO default:`{0}`.`{1}`.`{2}` target USING [{{"id":"21728", "month": 10, "year":2010, "day":25, "job":"Engineer"}},{{"id":"21730", "month": 7, "year":2008, "day":26, "job":"Support"}}] source ON {3} {4} THEN {5}'.format(
             name[0], name[1], name[2], clause[2], match_or_not, tmp_query)
+
         #execute query
         result = self.n1ql_helper.run_cbq_query(query,
                                                 query_params=query_params,
@@ -493,9 +495,10 @@ class N1qlBase(CollectionBase):
                                       collection_savepoint, savepoint):
         dict_to_verify = {}
         count = 0
-        error_msg = result["errors"][0]["cause"]["msg"]
+        error_msg = result["errors"][0]["cause"]["cause"]
+        if isinstance(error_msg, dict):
+            error_msg = error_msg["error_description"]
         self.log.info("cause is %s"%result["errors"][0]["cause"])
-        self.log.info("error message is %s"%error_msg)
         if N1qlException.CasMismatchException \
             in str(error_msg):
             return True
@@ -628,10 +631,12 @@ class N1qlBase(CollectionBase):
         self.results = []
         stmt = []
         for bucket_col in collections:
-            self.n1ql_helper.get_random_number_stmt(self.num_stmt_txn)
-            self.log.info("insert, delete and update %s %s %s"
+            self.num_insert, self.num_update, self.num_delete, self.num_merge = \
+                        self.n1ql_helper.get_random_number_stmt(self.num_stmt_txn)
+            self.log.info("insert, delete, update and merge %s %s %s %s"
                            % (self.num_insert, self.num_update,
-                              self.num_delete))
+                              self.num_delete, self.num_merge))
+            self.num_merge = 0
             stmt.extend(self.clause.get_where_clause(
                 doc_type_list[bucket_col], bucket_col,
                 self.num_insert, self.num_update, self.num_delete, self.num_merge))

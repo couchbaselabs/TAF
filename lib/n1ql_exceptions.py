@@ -1,6 +1,6 @@
 class N1qlException(object):
     CasMismatchException = "CAS mismatch"
-    DocumentExistsException = "document exists"
+    DocumentExistsException = "document already exists"
     DocumentNotFoundException = "document not found"
     DocumentAlreadyExistsException = "Duplicate Key"
     AtrNotFoundException = "atr not found"
