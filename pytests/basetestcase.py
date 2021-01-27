@@ -163,7 +163,6 @@ class BaseTestCase(unittest.TestCase):
         self.services_in = self.input.param("services_in", None)
         self.forceEject = self.input.param("forceEject", False)
         self.wait_timeout = self.input.param("wait_timeout", 120)
-        self.dgm_run = self.input.param("dgm_run", False)
         self.verify_unacked_bytes = \
             self.input.param("verify_unacked_bytes", False)
         self.disabled_consistent_view = \
@@ -677,6 +676,12 @@ class BaseTestCase(unittest.TestCase):
             gdb_out = " ".join(gdb_out)
             return gdb_out
 
+        def get_full_thread_dump(gdb_shell):
+            thread_dump = gdb_shell.execute_command('gdb -p `(pidof memcached)` -ex \
+            "thread apply all bt" -ex detach -ex quit')[0]
+            index = find_index_of(thread_dump, "Thread debugging using libthread_db enabled")
+            print " ".join(thread_dump[index:])
+
         def check_if_new_messages(grep_output_list):
             """
             Check the grep's last line for the latest timestamp.
@@ -725,6 +730,7 @@ class BaseTestCase(unittest.TestCase):
                 self.log.critical("%s: Stack Trace of first crash - %s\n%s"
                                   % (server.ip, dmp_files[-1],
                                      get_gdb(shell, crash_dir, dmp_files[-1])))
+                self.get_full_thread_dump(shell)
                 if self.stop_server_on_crash:
                     shell.stop_couchbase()
                 result = True
