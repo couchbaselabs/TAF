@@ -254,10 +254,22 @@ class volume(CollectionBase):
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
+    @staticmethod
+    def set_ignore_exceptions(doc_loading_spec):
+        """
+        Exceptions to be ignored.
+        Ignoring DocumentNotFoundExceptions because there could be race conditons
+        eg: reads or deletes before creates
+        """
+        ignore_exceptions = list()
+        ignore_exceptions.append(SDKException.DocumentNotFoundException)
+        doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
+
     def data_load_collection(self, async_load=True, skip_read_success_results=True):
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(self.data_load_spec)
         self.set_retry_exceptions(doc_loading_spec)
+        self.set_ignore_exceptions(doc_loading_spec)
         doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
         doc_loading_spec[MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = skip_read_success_results
         task = self.bucket_util.run_scenario_from_spec(self.task,
