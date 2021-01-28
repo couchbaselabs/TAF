@@ -1645,14 +1645,14 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         return handles
     
     def test_analytics_with_parallel_dataset_creation(self):
-        self.log.info("test_analytics_with_parallel_dataset_creation started")
+        self.log.info("\n************************************** test_analytics_with_parallel_dataset_creation started **************************************")
         tasks = []
         initial_items = self.input.param("initial_items", 1000)
         self.log.info("\n************************************** Start loading initial items ({0}) **************************************".format(initial_items))
         self.load_data(0, initial_items)
         final_items = self.input.param("final_items", 1000) + initial_items
         run_query = self.input.param("run_query", False)
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=5, thread_name_prefix='parallel_test_pool') as executor:
             self.log.info("\n************************************** Start Creating datasets **************************************")
             datasets_task = executor.submit(
                 self.cbas_util_v2.create_datasets_on_all_collections, bucket_util=self.bucket_util,
@@ -1663,6 +1663,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             data_load_task = executor.submit(self.load_data, start=initial_items, end=final_items)
             tasks.append(data_load_task)
             if run_query:
+                num_queries = int(self.input.param("num_queries", 1))
                 datasets_created = []
                 datasets_query = 'SELECT VALUE d.DataverseName || "." || d.DatasetName FROM Metadata.`Dataset` d WHERE d.DataverseName <> "Metadata"'
                 while not datasets_created:
@@ -1672,7 +1673,6 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                     if status.encode('utf-8') == 'success' and results:
                         datasets_created = list(map(lambda dv: dv.encode('utf-8'), results))
                 self.log.info("\n************************************** Datasets Available to query: {0} **************************************".format(str(datasets_created)))
-                num_queries = int(self.input.param("num_queries", 1))
                 self.log.info("\n************************************** Start parallel Queries ({0}) **************************************".format(num_queries))
                 query_task = executor.submit(
                     self.run_sleep_queries,
@@ -1685,11 +1685,19 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if not all(results[:2]):
             self.fail("Concurrent process failed to execute: " + str(results))
         datasets = self.cbas_util_v2.list_all_dataset_objs()
+        jobs = Queue()
         for dataset in datasets:
-            if not self.cbas_util_v2.wait_for_ingestion_complete(
-                    dataset_names=[dataset.full_name], num_items=dataset.kv_collection.num_items):
-                self.fail("Data ingestion into the datasets did not complete")
+            jobs.put(
+                (self.cbas_util_v2.wait_for_ingestion_complete,
+                 {"dataset_names": [dataset.full_name],
+                  "num_items": dataset.kv_collection.num_items}))
+        ingestion_results = []
+        def consumer_func(job):
+            return job[0](**job[1])
+        self.cbas_util_v2.run_jobs_in_parallel(consumer_func, jobs, ingestion_results, len(datasets) // 10)
+        if not all(ingestion_results):
+            self.fail("Data ingestion into the datasets did not complete")
         if run_query:
             handles = results[2]
             self.cbas_util_v2.log_concurrent_query_outcome(self.cluster.master, handles)
-        self.log.info("test_analytics_with_parallel_dataset_creation completed")
+        self.log.info("\n************************************** test_analytics_with_parallel_dataset_creation completed **************************************")

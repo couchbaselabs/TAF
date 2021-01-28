@@ -2744,7 +2744,7 @@ class CbasUtil(Index_Util):
         try:
             status, metrics, errors, results, handle = \
                 self.execute_statement_on_cbas_util(
-                    query, mode=mode, rest=rest, timeout=timeout,
+                    query, mode=mode, timeout=timeout,
                     client_context_id=client_context_id,
                     analytics_timeout=analytics_timeout)
             # Validate if the status of the request is success, and if the count matches num_items
