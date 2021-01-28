@@ -46,8 +46,9 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                         batch_size=1000,
                         process_concurrency=8,
                         scope=scope.name,
-                        collection=collection.name,
-                        sdk_client_pool=self.sdk_client_pool))
+                        collection=collection.name))
+                    # ToDO: Add sdk_client_pool=self.sdk_client_pool for OOM testing
+                    # ToDo: Currently removing the above param since it causes hang. Debug required 
                     if op == "create":
                         bucket.scopes[scope.name] \
                             .collections[collection.name] \
