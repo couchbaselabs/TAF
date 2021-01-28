@@ -1233,7 +1233,7 @@ class BucketUtils(ScopeUtils):
         rand_name = ""
         now = datetime.datetime.now()
         postfix = str(now.second) + "-" + str(int(round(now.microsecond, 6)))
-        name_len = random.randint(1, (max_length - len(postfix)))
+        name_len = random.randint(1, (max_length - len(postfix) - 1))
 
         while rand_name == "":
             rand_name = ''.join(random.choice(char_set)
