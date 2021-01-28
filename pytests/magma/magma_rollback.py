@@ -137,7 +137,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
-                    stat_name="vb_replica_queue_size")
+                    cbstat_cmd="all",
+                    stat_name="vb_replica_queue_size",
+                    timeout=300)
 
             # Kill memcached on NodeA to trigger rollback on other Nodes
             # replica vBuckets
@@ -281,6 +283,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
+                    cbstat_cmd="all",
                     stat_name="vb_replica_queue_size", timeout=300)
 
             # replica vBuckets
@@ -435,6 +438,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
+                    cbstat_cmd="all",
                     stat_name="vb_replica_queue_size", timeout=300)
 
             # replica vBuckets
@@ -616,7 +620,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
-                    stat_name="vb_replica_queue_size")
+                    cbstat_cmd="all",
+                    stat_name="vb_replica_queue_size",
+                    timeout=300)
 
             # replica vBuckets
             for bucket in self.bucket_util.buckets:
@@ -696,6 +702,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 for bucket in self.bucket_util.buckets:
                     self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
                     self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
+                                                    cbstat_cmd="all",
                                                     stat_name="vb_replica_queue_size")
 
                 if time.time() < time_start + 60:
@@ -731,6 +738,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.sleep(5)
             for bucket in self.bucket_util.buckets:
                 self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
+                                                cbstat_cmd="all",
                                                 stat_name="vb_replica_queue_size")
                 self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
 
@@ -859,6 +867,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
                                                     timeout=1200)
                     self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
+                                                    cbstat_cmd="all",
                                                     stat_name="vb_replica_queue_size",
                                                     timeout=1200)
                 # replica vBuckets
@@ -905,6 +914,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                                     ep_queue_size_map, timeout=300)
                     self.bucket_util._wait_for_stat(bucket,
                                                     vb_replica_queue_size_map,
+                                                    cbstat_cmd="all",
                                                     stat_name="vb_replica_queue_size", timeout=300)
 
                 shell.disconnect()
@@ -1047,6 +1057,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
                                                     timeout=1200)
                     self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
+                                                    cbstat_cmd="all",
                                                     stat_name="vb_replica_queue_size",
                                                     timeout=1200)
                 # replica vBuckets
@@ -1094,6 +1105,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                                     ep_queue_size_map, timeout=300)
                     self.bucket_util._wait_for_stat(bucket,
                                                     vb_replica_queue_size_map,
+                                                    cbstat_cmd="all",
                                                     stat_name="vb_replica_queue_size", timeout=300)
                 shell.disconnect()
             ###################################################################
@@ -1299,7 +1311,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                 for bucket in self.bucket_util.buckets:
                     self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
                     self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
-                                                    stat_name="vb_replica_queue_size")
+                                                    cbstat_cmd="all",
+                                                    stat_name="vb_replica_queue_size",
+                                                    timeout=300)
                 # replica vBuckets
                 for bucket in self.bucket_util.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
@@ -1348,7 +1362,9 @@ class MagmaRollbackTests(MagmaBaseTest):
                                                     ep_queue_size_map)
                     self.bucket_util._wait_for_stat(bucket,
                                                     vb_replica_queue_size_map,
-                                                    stat_name="vb_replica_queue_size")
+                                                    cbstat_cmd="all",
+                                                    stat_name="vb_replica_queue_size",
+                                                    timeout=300)
 
                 shell.disconnect()
         #######################################################################
