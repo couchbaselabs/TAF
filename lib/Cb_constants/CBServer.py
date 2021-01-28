@@ -24,7 +24,10 @@ class CbServer(object):
 
     total_vbuckets = 1024
 
-    max_name_len_scope_collection = 251 # max allowed number of bytes for scope/collection name
+    # Name length limits
+    max_bucket_name_len = 100
+    max_scope_name_len = 251
+    max_collection_name_len = 251
 
     # Count excluding the default scope/collection
     max_scopes = 1200

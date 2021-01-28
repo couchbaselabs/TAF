@@ -8,11 +8,13 @@ from Cb_constants import CbServer
 class CollectionsNegativeTc(CollectionBase):
     def setUp(self):
         super(CollectionsNegativeTc, self).setUp()
-        self.use_default_collection = self.input.param("use_default_collection", False)
+        self.use_default_collection = \
+            self.input.param("use_default_collection", False)
         self.bucket = self.bucket_util.buckets[0]
-        self.invalid = ["_a", "%%", "a~", "a`", "a!", "a@", "a#", "a$", "a^", "a&", "a*", "a(", "a)", "a=", "a+", "a{",
-                        "a}", "a|", "a:", "a;", "a'", "a,", "a<", "a.", "a>", "a?", "a/",
-                        "a"*(CbServer.max_name_len_scope_collection + 1)]
+        self.invalid = ["_a", "%%", "a~", "a`", "a!", "a@", "a#", "a$", "a^",
+                        "a&", "a*", "a(", "a)", "a=", "a+", "a{", "a}", "a|",
+                        "a:", "a;", "a'", "a,", "a<", "a.", "a>", "a?", "a/",
+                        "a" * (CbServer.max_collection_name_len+1)]
 
     def tearDown(self):
         super(CollectionsNegativeTc, self).tearDown()
