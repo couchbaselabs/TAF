@@ -746,3 +746,26 @@ class Cbstats(CbCmdBase):
             stats[stat] = val
 
         return stats
+
+    def warmup_stats(self, bucket_name):
+        """
+        Fetches warmup stats for the requested bucket.
+        :param bucket_name: Name of the bucket to fetch the stats
+        :return stats: Dict values of warmup stats
+        """
+        stats = dict()
+        output, error = self.get_stats(bucket_name, "warmup")
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+
+        for line in output:
+            line = line.strip()
+            list_all = line.rsplit(":", 1)
+            stat = list_all[0]
+            val = list_all[1].strip()
+            try:
+                val = int(val)
+            except ValueError:
+                pass
+            stats[stat] = val
+        return stats

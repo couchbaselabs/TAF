@@ -1265,6 +1265,129 @@ class basic_ops(BaseTestCase):
 
         self.validate_test_failure()
 
+    def test_MB_41942(self):
+        """
+        1. Load huge dataset into bucket with replica=1
+        2. Set doc_ttl for few docs on active node with persistence stopped
+        3. Kill memcached during loading
+        4. Set expiry pager to run during warmup
+        5. Kill memcached again such that kill happens before warmup completes
+        6. Validate high_seqno and uuid
+        """
+        bucket = self.bucket_util.buckets[0]
+        target_node = choice(self.cluster_util.get_kv_nodes())
+        self.log.info("Target node %s" % target_node.ip)
+        shell = RemoteMachineShellConnection(target_node)
+        cb_stat = Cbstats(shell)
+        cb_error = CouchbaseError(self.log, shell)
+
+        # Load initial data set into bucket
+        self.log.info("Loading %s docs into bucket" % self.num_items)
+        doc_gen = doc_generator(self.key, 0, self.num_items,
+                                doc_size=10000)
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen,
+            DocLoading.Bucket.DocOps.CREATE, 0,
+            batch_size=500, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            compression=self.sdk_compression,
+            timeout_secs=self.sdk_timeout,
+            sdk_client_pool=self.sdk_client_pool,
+            print_ops_rate=False)
+        self.task_manager.get_task_result(load_task)
+        self.bucket_util._wait_for_stats_all_buckets()
+
+        self.durability_level = Bucket.DurabilityLevel.MAJORITY
+        active_vbs = cb_stat.vbucket_list(bucket.name,
+                                          vbucket_type="active")
+        doc_gen = doc_generator(self.key, 0, 10000,
+                                doc_size=1,
+                                target_vbucket=active_vbs)
+
+        # Load with doc_ttl set
+        self.log.info("Setting doc_ttl=1 for %s docs" % 10000)
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen,
+            DocLoading.Bucket.DocOps.UPDATE, exp=1,
+            batch_size=2000, process_concurrency=5,
+            durability=self.durability_level,
+            timeout_secs=30,
+            sdk_client_pool=self.sdk_client_pool,
+            skip_read_on_error=True,
+            print_ops_rate=False)
+        self.task_manager.get_task_result(load_task)
+
+        # Read task to trigger expiry_purger
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen,
+            DocLoading.Bucket.DocOps.READ,
+            batch_size=500, process_concurrency=8,
+            timeout_secs=30,
+            sdk_client_pool=self.sdk_client_pool,
+            suppress_error_table=True,
+            start_task=False,
+            print_ops_rate=False)
+
+        retry = 0
+        before_stats = None
+        warmup_running = False
+        # Kill memcached during ttl load
+        cb_error.create(CouchbaseError.KILL_MEMCACHED)
+        while not warmup_running and retry < 10:
+            try:
+                warmup_stats = cb_stat.warmup_stats(bucket.name)
+                self.log.info("Current warmup state %s:%s"
+                              % (warmup_stats["ep_warmup_thread"],
+                                 warmup_stats["ep_warmup_state"]))
+                if warmup_stats["ep_warmup_thread"] != "complete":
+                    warmup_running = True
+                    while before_stats is None:
+                        before_stats = cb_stat.vbucket_details(bucket.name)
+                    self.log.info("Starting read task to trigger purger")
+                    self.task_manager.add_new_task(load_task)
+                    warmup_stats = cb_stat.warmup_stats(bucket.name)
+                    cb_error.create(CouchbaseError.KILL_MEMCACHED)
+                    self.log.info("Warmup state during mc_kill %s:%s"
+                                  % (warmup_stats["ep_warmup_thread"],
+                                     warmup_stats["ep_warmup_state"]))
+                    if warmup_stats["ep_warmup_thread"] == "complete":
+                        self.log_failure("Can't trust the outcome, "
+                                         "bucket warmed_up before mc_kill")
+                    self.task_manager.get_task_result(load_task)
+            except Exception:
+                pass
+            finally:
+                retry += 1
+                self.sleep(0.3)
+        while True:
+            try:
+                after_stats = cb_stat.vbucket_details(bucket.name)
+                break
+            except Exception:
+                pass
+
+        self.log.info("Validating high_seqno/uuid from vbucket-details")
+        for vb_num, stats in before_stats.items():
+            t_stat = "high_seqno"
+            pre_kill_stat = before_stats[vb_num]
+            post_kill_stat = after_stats[vb_num]
+            if int(pre_kill_stat[t_stat]) > int(post_kill_stat[t_stat]):
+                self.log_failure("%s::%s - %s > %s"
+                                 % (vb_num, t_stat,
+                                    pre_kill_stat[t_stat],
+                                    post_kill_stat[t_stat]))
+            t_stat = "uuid"
+            if vb_num in active_vbs \
+                    and pre_kill_stat[t_stat] == post_kill_stat[t_stat]:
+                self.log_failure("%s %s: %s == %s"
+                                 % (vb_num, t_stat,
+                                    pre_kill_stat[t_stat],
+                                    post_kill_stat[t_stat]))
+
+        shell.disconnect()
+        self.validate_test_failure()
+
     def verify_stat(self, items, value="active"):
         mc = MemcachedClient(self.cluster.master.ip,
                              constants.memcached_port)
