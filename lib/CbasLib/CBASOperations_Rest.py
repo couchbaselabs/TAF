@@ -408,6 +408,9 @@ class CBASHelper(RestConnection):
             password = self.password
         api = self.cbas_base_url + "/analytics/link"
         headers = self._create_headers(username, password)
+        if method.lower() == "get":
+            api += "?{0}".format(params)
+            params = ""
         try:
             status, content, header = self._http_request(
                 api, method, headers=headers, params=params, timeout=timeout)
@@ -429,7 +432,8 @@ class CBASHelper(RestConnection):
                         elif "error" in content:
                             errors.append({"msg": content["error"], "code": 0 })
                     else:
-                        errors.append({"msg": content, "code": 0 })
+                        content = content.split(":")
+                        errors.append({"msg": content[1], "code": content[0] })
             return status, header['status'], content, errors
         except Exception as err:
             self.log.error("Exception occured while calling rest APi through httplib2.")

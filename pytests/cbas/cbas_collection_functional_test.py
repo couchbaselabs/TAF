@@ -849,6 +849,9 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             ds_obj.name, ds_obj.full_kv_entity_name, dataverse_name=ds_obj.dataverse_name):
             self.fail("Error creating dataset {0}".format(ds_obj.name))
         
+        if not self.cbas_util_v2.wait_for_ingestion_complete([ds_obj.full_name], ds_obj.num_of_items):
+            self.fail("Data ingestion into dataset failed.")
+        
         if self.input.param('synonym_dataverse', "new") == "new":
             dv_name = CBASHelper.format_name(self.cbas_util_v2.generate_name(2))
             if not self.cbas_util_v2.create_dataverse(dv_name):
