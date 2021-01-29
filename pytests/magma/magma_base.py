@@ -105,7 +105,7 @@ class MagmaBaseTest(BaseTestCase):
 
         if self.dcp_services:
             self.initial_query = "CREATE INDEX initial_idx on default:`%s`.`%s`.`%s`(meta().id) with \
-            {\"defer_build\": true};" % (self.buckets[0].name,
+            {\"defer_build\": false};" % (self.buckets[0].name,
                                          self.scope_name,
                                          self.collections[0])
             self.query_client = RestConnection(self.dcp_servers[0])
@@ -276,7 +276,7 @@ class MagmaBaseTest(BaseTestCase):
             self.assertTrue(result["status"] == "success", "Index query failed!")
 
             final_index = "CREATE INDEX final_idx on default:`%s`.`%s`.`%s`(meta().id) with \
-            {\"defer_build\": true};" % (self.buckets[0].name,
+            {\"defer_build\": false};" % (self.buckets[0].name,
                                          self.scope_name,
                                          self.collections[0])
             result = self.query_client.query_tool(final_index)
