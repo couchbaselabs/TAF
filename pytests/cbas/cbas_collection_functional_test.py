@@ -246,7 +246,12 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             if "default_bucket" not in self.input.test_params:
                 self.input.test_params.update({"default_bucket": False})
         super(CBASDatasetsAndCollections, self).setUp()
-        
+        if self.nodes_init > 2:
+            init_nodes = list(filter(
+                lambda node: node.ip != self.cluster.master.ip and node.ip != self.cbas_node.ip,
+                self.cluster.servers))
+            self.cluster_util.add_all_nodes_then_rebalance(init_nodes[:self.nodes_init - 2])
+
         self.log.info("================================================================")
         self.log.info("SETUP has finished")
         self.log.info("================================================================")
@@ -1618,7 +1623,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if not key:
             key = self.key
         gen_load = doc_generator(
-            key, 0, end, key_size=self.key_size, doc_size=self.doc_size,
+            key, start, end, key_size=self.key_size, doc_size=self.doc_size,
             doc_type=self.doc_type, vbuckets=self.cluster_util.vbuckets)
         op_type = "create"
         for bucket in self.bucket_util.get_all_buckets():
@@ -1647,20 +1652,17 @@ class CBASDatasetsAndCollections(CBASBaseTest):
     def test_analytics_with_parallel_dataset_creation(self):
         self.log.info("\n************************************** test_analytics_with_parallel_dataset_creation started **************************************")
         tasks = []
-        initial_items = self.input.param("initial_items", 1000)
-        self.log.info("\n************************************** Start loading initial items ({0}) **************************************".format(initial_items))
-        self.load_data(0, initial_items)
-        final_items = self.input.param("final_items", 1000) + initial_items
+        parallel_load_items = self.input.param("parallel_load_items", 1000) + self.num_items
         run_query = self.input.param("run_query", False)
         with ThreadPoolExecutor(max_workers=5, thread_name_prefix='parallel_test_pool') as executor:
             self.log.info("\n************************************** Start Creating datasets **************************************")
             datasets_task = executor.submit(
                 self.cbas_util_v2.create_datasets_on_all_collections, bucket_util=self.bucket_util,
                 cbas_name_cardinality=self.input.param('cardinality', None),
-                kv_name_cardinality=self.input.param('bucket_cardinality', None), creation_methods=["cbas_collection"])
+                kv_name_cardinality=self.input.param('bucket_cardinality', None), creation_methods=["cbas_collection", "cbas_dataset"])
             tasks.append(datasets_task)
-            self.log.info("\n************************************** Start loading final items ({0}) **************************************".format(final_items))
-            data_load_task = executor.submit(self.load_data, start=initial_items, end=final_items)
+            self.log.info("\n************************************** Start loading parallel items ({0}) **************************************".format(parallel_load_items))
+            data_load_task = executor.submit(self.load_data, start=self.num_items, end=parallel_load_items)
             tasks.append(data_load_task)
             if run_query:
                 num_queries = int(self.input.param("num_queries", 1))
