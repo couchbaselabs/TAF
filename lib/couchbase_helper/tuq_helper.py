@@ -222,10 +222,10 @@ class N1QLHelper:
                 str(err) or \
                 N1qlException.DocumentAlreadyExistsException \
                 in str(err):
-                    self.log.info("txn failed with error %s"% result)
+                    self.log.info("txn failed with error %s"% json.JSONEncoder().encode(result))
                     return result
             else:
-                raise Exception("txn failed with unexpected errors %s"%result)
+                raise Exception("txn failed with unexpected errors %s"%json.JSONEncoder().encode(result))
                 result = None
         return result
 

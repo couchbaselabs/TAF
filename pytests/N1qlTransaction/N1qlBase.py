@@ -21,6 +21,7 @@ from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
 from Cb_constants import CbServer
+from couchbase_helper.documentgenerator import doc_generator
 
 
 class N1qlBase(CollectionBase):
@@ -67,6 +68,7 @@ class N1qlBase(CollectionBase):
         self.num_conflict = self.input.param("num_conflict", 0)
         self.write_conflict = self.input.param("write_conflict", False)
         self.Kvtimeout = self.input.param("Kvtimeout", None)
+        self.memory_quota = self.input.param("memory_quota", 1)
         self.n1ql_server = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
                                                                          get_all_nodes=True)
         self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
@@ -82,6 +84,7 @@ class N1qlBase(CollectionBase):
                                       load_spec=self.data_spec_name)
         self.num_insert,self.num_update,self.num_delete,self.num_merge = \
                         self.n1ql_helper.get_random_number_stmt(self.num_stmt_txn)
+
     def tearDown(self):
         self.n1ql_helper.drop_index()
         super(N1qlBase, self).tearDown()
@@ -137,9 +140,14 @@ class N1qlBase(CollectionBase):
                                                 server=server)
         for doc in result["results"]:
             t = doc.values()[0]
-            if t != docs[t["name"]]:
-                self.log.info("expected value %s and actual value %s"
-                              % (t, docs[t["name"]]))
+            if len(keys) > 1:
+                if t != docs[t["name"]]:
+                    self.log.info("expected value %s and actual value %s"
+                                  % (t, docs[t["name"]]))
+            else:
+                if t != docs.values()[0]:
+                    self.log.info("expected value %s and actual value %s"
+                                  % (t, docs.values()[0]))
         if result["metrics"]["resultCount"] != len(keys):
             self.fail("Mismatch in result count %s and num keys_inserted %s"
                       % (result["metrics"]["resultCount"], len(keys)))
@@ -202,25 +210,41 @@ class N1qlBase(CollectionBase):
     def run_insert_query(self, clause, query_params, server=None):
         docs = {}
         name = clause[0].split('.')
-        select_query = "SELECT DISTINCT t.name AS k1,t " \
-                       "FROM default:`%s`.`%s`.`%s` t WHERE %s LIMIT 10"\
-                       % (name[0], name[1], name[2], clause[2])
-        query = "INSERT INTO default:`%s`.`%s`.`%s` " \
-                "(KEY k1, value t) %s RETURNING *" \
-                % (name[0], name[1], name[2], select_query)
-        queries = self.get_prepare_stmt(query, query_params)
+        if "name" in clause[-1]:
+            queries = []
+            docin = {}
+            letters = string.ascii_lowercase
+            value = [ ''.join(random.choice(letters) for i in range(self.doc_size))][0]
+            docs["key1234"] = value
+            query_params["memory_quota"] = self.memory_quota
+            for key, value in docs.iteritems():
+                queries.append("INSERT INTO default:`%s`.`%s`.`%s` " \
+                        "(KEY, value) VALUES ( '%s', '%s') RETURNING *" \
+                        % (name[0], name[1], name[2], key, value))
+        else:
+            select_query = "SELECT DISTINCT t.name AS k1,t " \
+                           "FROM default:`%s`.`%s`.`%s` t WHERE %s LIMIT 10"\
+                           % (name[0], name[1], name[2], clause[2])
+            query = "INSERT INTO default:`%s`.`%s`.`%s` " \
+                    "(KEY k1, value t) %s RETURNING *" \
+                    % (name[0], name[1], name[2], select_query)
+            queries = self.get_prepare_stmt(query, query_params)
         result = self.n1ql_helper.run_cbq_query(queries[-1],
                                                 query_params=query_params,
                                                 server=server)
         if result["status"] == "success":
-            for val in result["results"]:
-                t = val.values()[0]
-                key = t["name"]
-                docs[key] = t
+            if "name" not in clause[-1]:
+                for val in result["results"]:
+                    t = val.values()[0]
+                    key = t["name"]
+                    docs[key] = t
             self.validate_insert_results(clause[0], docs, query_params,
                                          server)
         elif N1qlException.DocumentAlreadyExistsException \
                 in str(result["errors"][0]["msg"]):
+            docs = {}
+        elif N1qlException.MemoryQuotaError \
+                in str(result["errors"][0]["msg"]) and self.failure:
             docs = {}
         else:
             self.fail("insert query failed %s"%queries[-1])
@@ -269,38 +293,43 @@ class N1qlBase(CollectionBase):
             match_or_not = 'WHEN NOT MATCHED'
 
         # build query
-        query = 'MERGE INTO default:`{0}`.`{1}`.`{2}` target USING [{{"id":"21728", "month": 10, "year":2010, "day":25, "job":"Engineer"}},{{"id":"21730", "month": 7, "year":2008, "day":26, "job":"Support"}}] source ON {3} {4} THEN {5}'.format(
-            name[0], name[1], name[2], clause[2], match_or_not, tmp_query)
+        if tmp_query:
+            query = 'MERGE INTO default:`{0}`.`{1}`.`{2}` target USING [{{"id":"21728", "month": 10, "year":2010, "day":25, "job":"Engineer"}},{{"id":"21730", "month": 7, "year":2008, "day":26, "job":"Support"}}] source ON {3} {4} THEN {5}'.format(
+                name[0], name[1], name[2], clause[2], match_or_not, tmp_query)
 
-        #execute query
-        result = self.n1ql_helper.run_cbq_query(query,
-                                                query_params=query_params,
-                                                server=server)
-        # if success then validate and return results
-        if result["status"] == "success":
-            # in case of insert, send the list of inserted docs
-            if clause[4] == 'INSERT':
-                for val in result["results"]:
-                    t = val.values()[0]
-                    key = t["name"]
-                    inserted_docs[key] = t
-                self.validate_insert_results(clause[0], inserted_docs, query_params, server)
-                docs = inserted_docs
-            elif clause[4] == 'UPDATE':
-                updated_docs = copy.deepcopy([d.get('id').encode() for d in result["results"]])
-                updated_val = clause[3].split('.')[-1]
-                # in case of update , get update docs and updated value
-                self.validate_update_results(clause[0], updated_docs, updated_val, query_params, server)
-                docs = {updated_val: updated_docs}
-            elif clause[4] == 'DELETE':
-                deleted_docs = [d.get('id').encode() for d in result["results"]]
-                # in case of delete, get deelted docs in deleted_docs
-                self.validate_delete_results(clause[0], deleted_docs, query_params, server)
-                docs = deleted_docs
+            #execute query
+            if self.memory_quota:
+                query_params['memory_quota'] = 5
+            result = self.n1ql_helper.run_cbq_query(query,
+                                                    query_params=query_params,
+                                                    server=server)
+            # if success then validate and return results
+            if result["status"] == "success":
+                # in case of insert, send the list of inserted docs
+                if clause[4] == 'INSERT':
+                    for val in result["results"]:
+                        t = val.values()[0]
+                        key = t["name"]
+                        inserted_docs[key] = t
+                    self.validate_insert_results(clause[0], inserted_docs, query_params, server)
+                    docs = inserted_docs
+                elif clause[4] == 'UPDATE':
+                    updated_docs = copy.deepcopy([d.get('id').encode() for d in result["results"]])
+                    updated_val = clause[3].split('.')[-1]
+                    # in case of update , get update docs and updated value
+                    self.validate_update_results(clause[0], updated_docs, updated_val, query_params, server)
+                    docs = {updated_val: updated_docs}
+                elif clause[4] == 'DELETE':
+                    deleted_docs = [d.get('id').encode() for d in result["results"]]
+                    # in case of delete, get deelted docs in deleted_docs
+                    self.validate_delete_results(clause[0], deleted_docs, query_params, server)
+                    docs = deleted_docs
+            else:
+                self.fail("merge query failed %s" % query)
+                docs = list()
+            return docs, query
         else:
-            self.fail("merge query failed %s" % query)
-            docs = list()
-        return docs, query
+            return {},[]
 
     def run_savepoint_query(self, clause, query_params, server=None):
         query = "SAVEPOINT %s" % clause[1]
@@ -344,6 +373,9 @@ class N1qlBase(CollectionBase):
         queries[txid] = list()
         try:
             for stmt in stmts:
+                query = "SELECT * FROM system:transactions"
+                results = self.n1ql_helper.run_cbq_query(query)
+                self.log.info(json.JSONEncoder().encode(results))
                 clause = stmt.split(":")
                 if clause[0] == "SAVEPOINT":
                     query = self.run_savepoint_query(clause, query_params, server=server)
@@ -380,7 +412,7 @@ class N1qlBase(CollectionBase):
                             self.run_merge_query(clause, query_params, server)
                     if isinstance(result, list):
                         collection_map[clause[0]][clause[4]].extend(result)
-                    else:
+                    elif result:
                         collection_map[clause[0]][clause[4]].update(result)
                     queries[txid].append(query)
             if issleep:
@@ -421,7 +453,7 @@ class N1qlBase(CollectionBase):
                 collection_savepoint['last'] = copy.deepcopy(write_conflict_result)
                 savepoint.append("last")
         except Exception as e:
-            self.log.info(e)
+            self.log.info(json.JSONEncoder().encode(e))
             collection_savepoint = e
         return collection_savepoint, savepoint, queries, rerun_thread
 

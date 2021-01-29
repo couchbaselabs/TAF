@@ -5,3 +5,4 @@ class N1qlException(object):
     DocumentAlreadyExistsException = "Duplicate Key"
     AtrNotFoundException = "atr not found"
     SyncWriteInProgressException = "durable write in progress"
+    MemoryQuotaError = "Request has exceeded memory quota"

@@ -270,3 +270,16 @@ class BasicOps(N1qlBase):
         else:
             result = self.n1ql_helper.end_txn(query_params, self.commit)
             self.check_txid(txid, True)
+
+    def test_memory_quota(self):
+        # get gen load with given memory quota
+        self.failure = self.input.param("failure", False)
+        bucket_col = self.n1ql_helper.get_collections()
+        stmt = self.n1ql_helper.get_stmt(bucket_col)
+        for collection in bucket_col:
+            stmt.append("%s:INSERT:name"%collection)
+        random.shuffle(stmt)
+        if self.failure:
+            self.doc_size += 1000
+        self.execute_query_and_validate_results(stmt,
+                                     bucket_col)
