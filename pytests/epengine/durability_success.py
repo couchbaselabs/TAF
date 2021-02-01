@@ -350,6 +350,9 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 self.assertTrue(result, "Rebalance failed")
 
         self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+                                                     stat_name="ep_queue_size",
+                                                     timeout=60)
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         # Create a SDK client connection to retry operation
