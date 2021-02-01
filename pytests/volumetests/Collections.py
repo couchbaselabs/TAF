@@ -218,7 +218,6 @@ class volume(CollectionBase):
             services = list()
             services.append(self.services_for_rebalance_in.replace(":", ","))
             services = services * nodes_in
-            services = services * nodes_in
 
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, servs_out, check_vbucket_shuffling=self.vbucket_check,
