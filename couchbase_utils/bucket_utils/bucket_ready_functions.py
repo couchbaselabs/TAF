@@ -1230,6 +1230,9 @@ class BucketUtils(ScopeUtils):
         if invalid_name:
             char_set += invalid_chars
 
+        # TODO: Remove once MB-43994 is fixed
+        max_length = 30
+
         rand_name = ""
         now = datetime.datetime.now()
         postfix = str(now.second) + "-" + str(int(round(now.microsecond, 6)))
