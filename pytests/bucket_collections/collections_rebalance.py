@@ -142,7 +142,7 @@ class CollectionsRebalance(CollectionBase):
         self.assertTrue(status, "RAM quota wasn't changed")
 
     def set_retry_exceptions(self, doc_loading_spec):
-        retry_exceptions = []
+        retry_exceptions = list()
         if self.data_load_stage == "during" or (self.data_load_stage == "before" and self.data_load_type == "async"):
             retry_exceptions.append(SDKException.AmbiguousTimeoutException)
             retry_exceptions.append(SDKException.TimeoutException)
@@ -151,6 +151,18 @@ class CollectionsRebalance(CollectionBase):
                 retry_exceptions.append(SDKException.DurabilityAmbiguousException)
                 retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
+
+    @staticmethod
+    def set_ignore_exceptions(doc_loading_spec):
+        """
+        Exceptions to be ignored.
+        Ignoring DocumentNotFoundExceptions because there could be race conditons
+        eg: reads or deletes before creates
+        """
+        ignore_exceptions = list()
+        ignore_exceptions.append(SDKException.DocumentNotFoundException)
+        doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
+
 
     def get_active_resident_threshold(self, bucket_name):
         self.rest_client = BucketHelper(self.cluster.master)
@@ -640,6 +652,7 @@ class CollectionsRebalance(CollectionBase):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
         self.set_retry_exceptions(doc_loading_spec)
+        self.set_ignore_exceptions(doc_loading_spec)
         if self.dgm < 100:
             # No new items are created during dgm + rebalance/failover tests
             doc_loading_spec["doc_crud"][MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
