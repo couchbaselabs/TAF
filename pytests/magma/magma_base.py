@@ -104,13 +104,16 @@ class MagmaBaseTest(BaseTestCase):
         self.log.debug("Collections list == {}".format(self.collections))
 
         if self.dcp_services:
-            self.initial_query = "CREATE INDEX initial_idx on default:`%s`.`%s`.`%s`(meta().id) with \
-            {\"defer_build\": false};" % (self.buckets[0].name,
-                                         self.scope_name,
-                                         self.collections[0])
+            self.initial_idx = "initial_idx"
+            self.initial_idx_q = "CREATE INDEX %s on default:`%s`.`%s`.`%s`(meta().id) with \
+                {\"defer_build\": false};" % (self.initial_idx,
+                                              self.buckets[0].name,
+                                              self.scope_name,
+                                              self.collections[0])
             self.query_client = RestConnection(self.dcp_servers[0])
-            result = self.query_client.query_tool(self.initial_query)
+            result = self.query_client.query_tool(self.initial_idx_q)
             self.assertTrue(result["status"] == "success", "Index query failed!")
+
         # Update Magma/Storage Properties
         props = "magma"
         update_bucket_props = False
@@ -260,42 +263,55 @@ class MagmaBaseTest(BaseTestCase):
 
     def tearDown(self):
         if self.dcp_services:
-            count_query = "Select count(*) as items from default:`%s`.`%s`.`%s`;" % (
-                self.buckets[0].name, self.scope_name, self.collections[0])
-            self.sleep(10)
-            initial_result = 0
-            start = time.time()
-            while initial_result == 0 and start + 60 > time.time() and "expiry" not in self.doc_ops:
-                initial_result = self.query_client.query_tool(count_query)["results"][0]["items"]
-                self.sleep(5)
-            self.log.info("## Initial item count in %s:%s:%s == %s" % (
-                self.buckets[0].name, self.scope_name, self.collections[0], initial_result))
-
-            drop_index = "Drop index %s.initial_idx;" % self.buckets[0].name
-            result = self.query_client.query_tool(drop_index)
+            self.final_idx = "final_idx"
+            self.final_idx_q = "CREATE INDEX %s on default:`%s`.`%s`.`%s`(meta().id) with \
+                {\"defer_build\": false};" % (self.final_idx,
+                                              self.buckets[0].name,
+                                              self.scope_name,
+                                              self.collections[0])
+            result = self.query_client.query_tool(self.final_idx_q)
             self.assertTrue(result["status"] == "success", "Index query failed!")
+            self.final_count_q = "Select count(*) as items "\
+                "from default:`%s`.`%s`.`%s` USE INDEX (`%s`);" % (
+                    self.buckets[0].name, self.scope_name,
+                    self.collections[0], self.final_idx)
+            self.initial_count_q = "Select count(*) as items "\
+                "from default:`%s`.`%s`.`%s` USE INDEX (`%s`);" % (
+                    self.buckets[0].name, self.scope_name,
+                    self.collections[0], self.initial_idx)
 
-            final_index = "CREATE INDEX final_idx on default:`%s`.`%s`.`%s`(meta().id) with \
-            {\"defer_build\": false};" % (self.buckets[0].name,
-                                         self.scope_name,
-                                         self.collections[0])
-            result = self.query_client.query_tool(final_index)
-            self.assertTrue(result["status"] == "success", "Index query failed!")
-
-            final_result = self.query_client.query_tool(count_query)["results"][0]["items"]
-            self.log.info("## Final item count in %s:%s:%s == %s" % (
-                self.buckets[0].name, self.scope_name, self.collections[0], final_result))
-
+            initial_count, final_count = 0, 0
+            kv_items = self.bucket_util.get_bucket_current_item_count(
+                self.cluster, self.buckets[0])
             start = time.time()
-            while initial_result != final_result and time.time() < start + 300:
-                self.log.info("Final item count in %s:%s:%s == %s" % (
-                    self.buckets[0].name, self.scope_name, self.collections[0], final_result))
-                final_result = self.query_client.query_tool(count_query)["results"][0]["items"]
-                self.sleep(5)
-            if "expiry" not in self.doc_ops:
-                self.assertTrue(initial_result == final_result,
-                                "Indexer failed. Initial: %s, Final: %s".
-                                format(initial_result, final_result))
+            while start + 300 > time.time():
+                kv_items = self.bucket_util.get_bucket_current_item_count(
+                    self.cluster, self.buckets[0])
+
+                initial_count = self.query_client.query_tool(
+                    self.initial_count_q)["results"][0]["items"]
+
+                self.log.info("## Existing Index item count in %s:%s:%s == %s"
+                              % (self.buckets[0].name,
+                                 self.scope_name, self.collections[0],
+                                 initial_count))
+
+                final_count = self.query_client.query_tool(self.final_count_q)["results"][0]["items"]
+                self.log.info("## Final Index item count in %s:%s:%s == %s"
+                              % (self.buckets[0].name,
+                                 self.scope_name, self.collections[0],
+                                 final_count))
+
+                if initial_count != kv_items and final_count != kv_items:
+                    self.sleep(5)
+                    continue
+                break
+            self.assertTrue(initial_count == kv_items,
+                            "Indexer failed. KV:{}, Initial:{}".
+                            format(kv_items, initial_count))
+            self.assertTrue(final_count == kv_items,
+                            "Indexer failed. KV:{}, Final:{}".
+                            format(kv_items, final_count))
 
         self.cluster_util.print_cluster_stats()
         dgm = None
