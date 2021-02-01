@@ -1436,7 +1436,7 @@ class BucketUtils(ScopeUtils):
             retry_count = 120
             sleep_time = 5
             while retry_count > 0:
-                item_count = rest.get_buckets_itemCount()
+                item_count = self.get_buckets_itemCount()
                 if item_count[sample_bucket.name] == \
                         sample_bucket.stats.expected_item_count:
                     status = True
@@ -1858,15 +1858,6 @@ class BucketUtils(ScopeUtils):
         """
         return (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & (total_vbuckets - 1)
 
-    def is_lww_enabled(self, bucket='default'):
-        bucket_helper = BucketHelper(self.cluster.master)
-        bucket_info = bucket_helper.get_bucket_json(bucket=bucket)
-        try:
-            if bucket_info['conflictResolutionType'] == 'lww':
-                return True
-        except KeyError:
-            return False
-
     def change_max_buckets(self, total_buckets):
         command = "curl -X POST -u {0}:{1} -d maxBucketCount={2} http://{3}:{4}/internalSettings" \
             .format(self.cluster.master.rest_username,
@@ -1876,10 +1867,6 @@ class BucketUtils(ScopeUtils):
         output, error = shell.execute_command_raw(command)
         shell.log_command_output(output, error)
         shell.disconnect()
-
-    def _get_bucket_size(self, mem_quota, num_buckets):
-        # min size is 100MB now
-        return max(100, int(float(mem_quota) / float(num_buckets)))
 
     def _set_time_sync_on_buckets(self, buckets):
 
@@ -2269,11 +2256,6 @@ class BucketUtils(ScopeUtils):
                                 % (bucket.name,
                                    total_collection_as_per_bucket_obj,
                                    total_collection_as_per_stats))
-
-    # Bucket doc_ops support APIs
-    @staticmethod
-    def key_generator(size=6, chars=string.ascii_uppercase + string.digits):
-        return ''.join(random.choice(chars) for _ in range(size))
 
     def get_doc_op_info_dict(self, bucket, op_type, exp=0, replicate_to=0,
                              persist_to=0, durability="",
@@ -3285,23 +3267,18 @@ class BucketUtils(ScopeUtils):
             except Exception, ex:
                 self.log.error(ex)
 
-    def get_item_count(self, server, bucket):
+    def get_item_count_mc(self, server, bucket):
         client = MemcachedClientHelper.direct_client(server, bucket)
         return int(client.stats()["curr_items"])
 
-    def get_buckets_current_items_count(self, cluster):
-        rest = RestConnection(cluster.master)
-        bucket_map = rest.get_buckets_itemCount()
-        return bucket_map
-
     def get_bucket_current_item_count(self, cluster, bucket):
-        bucket_map = self.get_buckets_current_items_count(cluster)
+        bucket_map = self.get_buckets_itemCount(cluster)
         return bucket_map[bucket.name]
 
-    def get_buckets_itemCount(self):
-        server = self.cluster_util.get_nodes_from_services_map(
-            service_type="kv")
-        return BucketHelper(server).get_buckets_itemCount()
+    def get_buckets_itemCount(self, cluster=None):
+        if not cluster:
+            return BucketHelper(self.cluster.master).get_buckets_itemCount()
+        return BucketHelper(cluster.master).get_buckets_itemCount()
 
     def expire_pager(self, servers, val=10):
         for bucket in self.buckets:
@@ -3466,49 +3443,6 @@ class BucketUtils(ScopeUtils):
                     o, r = shell.execute_command("wc -l '{0}'".format(path))
                     shell.log_command_output(o, r)
                     shell.disconnect()
-
-    def load_some_data(self, serverInfo, fill_ram_percentage=10.0,
-                       bucket_name='default'):
-        if fill_ram_percentage <= 0.0:
-            fill_ram_percentage = 5.0
-        client = MemcachedClientHelper.direct_client(serverInfo, bucket_name)
-        # populate key
-        bucket_conn = BucketHelper(serverInfo)
-        bucket_conn.vbucket_map_ready(bucket_name, 60)
-        vbucket_count = len(bucket_conn.get_vbuckets(bucket_name))
-        testuuid = uuid.uuid4()
-        info = bucket_conn.get_bucket(bucket_name)
-        emptySpace = info.stats.ram - info.stats.memUsed
-        self.log.debug('emptySpace: {0} fill_ram_percentage: {1}'
-                       .format(emptySpace, fill_ram_percentage))
-        fill_space = (emptySpace * fill_ram_percentage) / 100.0
-        self.log.debug("fill_space {0}".format(fill_space))
-        # each packet can be 10 KB
-        packetSize = int(10 * 1024)
-        number_of_buckets = int(fill_space) / packetSize
-        self.log.debug('packetSize: {0}'.format(packetSize))
-        self.log.debug('memory usage before key insertion: {0}'
-                       .format(info.stats.memUsed))
-        self.log.debug('inserting {0} new keys to memcached @ {0}'
-                       .format(number_of_buckets, serverInfo.ip))
-        keys = ["key_%s_%d" % (testuuid, i) for i in range(number_of_buckets)]
-        inserted_keys = []
-        for key in keys:
-            vbucketId = crc32.crc32_hash(key) & (vbucket_count - 1)
-            client.vbucketId = vbucketId
-            try:
-                client.set(key, 0, 0, key)
-                inserted_keys.append(key)
-            except mc_bin_client.MemcachedError as error:
-                self.log.error(error)
-                client.close()
-                msg = "unable to push key: {0} to vbucket: {1}" \
-                    .format(key, client.vbucketId)
-                self.log.error(msg)
-                self.fail(msg)
-
-        client.close()
-        return inserted_keys
 
     def fetch_available_memory_for_kv_on_a_node(self):
         """
@@ -3765,34 +3699,6 @@ class BucketUtils(ScopeUtils):
                 node.id = nodeDictionary["otpNode"]
             bucket.nodes.append(node)
         return bucket
-
-    def _stats_befor_warmup(self, bucket_name):
-        self.pre_warmup_stats[bucket_name] = dict()
-        self.stats_monitor = self.input.param("stats_monitor", "")
-        self.warmup_stats_monitor = self.input.param("warmup_stats_monitor", "")
-        if self.stats_monitor is not '':
-            self.stats_monitor = self.stats_monitor.split(";")
-        if self.warmup_stats_monitor is not '':
-            self.warmup_stats_monitor = self.warmup_stats_monitor.split(";")
-        for server in self.servers:
-            mc_conn = MemcachedClientHelper.direct_client(server, bucket_name,
-                                                          self.timeout)
-            node_key = "%s:%s" % (server.ip, server.port)
-            self.pre_warmup_stats[bucket_name][node_key] = dict()
-            self.pre_warmup_stats[bucket_name][node_key]["uptime"] = \
-                mc_conn.stats("")["uptime"]
-            self.pre_warmup_stats[bucket_name][node_key]["curr_items_tot"] = \
-                mc_conn.stats("")["curr_items_tot"]
-            self.pre_warmup_stats[bucket_name][node_key]["curr_items"] = \
-                mc_conn.stats("")["curr_items"]
-            for stat_to_monitor in self.stats_monitor:
-                self.pre_warmup_stats[bucket_name][node_key][stat_to_monitor] = \
-                    mc_conn.stats('')[stat_to_monitor]
-            if self.without_access_log:
-                for stat_to_monitor in self.warmup_stats_monitor:
-                    self.pre_warmup_stats[bucket_name][node_key][stat_to_monitor] = \
-                        mc_conn.stats('warmup')[stat_to_monitor]
-            mc_conn.close()
 
     def wait_till_total_numbers_match(self, master, bucket,
                                       timeout_in_seconds=120):

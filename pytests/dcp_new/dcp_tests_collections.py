@@ -395,8 +395,7 @@ class DcpTestCase(DCPBase):
         proc2.join()
         proc1.join()
 
-        rest = RestConnection(self.cluster.master)
-        expected_item_count = sum(rest.get_buckets_itemCount().values())
+        expected_item_count = sum(self.bucket_util.get_buckets_itemCount().values())
         self.verify_operation(self.operation, expected_item_count)
         self.validate_test_failure()
 

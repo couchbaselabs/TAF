@@ -528,7 +528,7 @@ class CBASBucketOperations(CBASBaseTest):
                       "that in the CB bucket")
 
         # Count no. of items in CB & CBAS Buckets
-        items_in_cb_bucket = self.bucket_util.get_item_count(
+        items_in_cb_bucket = self.bucket_util.get_item_count_mc(
             self.cluster.master,
             self.cb_bucket_name)
         items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(
@@ -564,7 +564,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.sleep(120)
 
         # Count no. of items in CB & CBAS Buckets
-        items_in_cb_bucket = self.bucket_util.get_item_count(
+        items_in_cb_bucket = self.bucket_util.get_item_count_mc(
             self.cluster.master,
             self.cb_bucket_name)
         items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(

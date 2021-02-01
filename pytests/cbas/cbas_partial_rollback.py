@@ -107,7 +107,7 @@ class PartialRollback_CBAS(CBASBaseTest):
             items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
         else:
             for node in kv_nodes:
-                items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+                items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
         # Validate no. of items in CBAS dataset
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, items_in_cb_bucket, 0),
                         "No. of items in CBAS dataset do not match that in the CB bucket")
@@ -147,7 +147,7 @@ class PartialRollback_CBAS(CBASBaseTest):
                     pass
             else:
                 for node in kv_nodes:
-                    items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+                    items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
 
             self.log.info("Items in CB bucket after rollback: %s"%items_in_cb_bucket)
             items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
@@ -181,7 +181,7 @@ class PartialRollback_CBAS(CBASBaseTest):
             items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
         else:
             for node in kv_nodes:
-                items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+                items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
         # Validate no. of items in CBAS dataset
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, items_in_cb_bucket, 0),
                         "No. of items in CBAS dataset do not match that in the CB bucket")
@@ -239,7 +239,7 @@ class PartialRollback_CBAS(CBASBaseTest):
                     pass
             else:
                 for node in kv_nodes:
-                    items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+                    items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
 
             self.log.info("Items in CB bucket after rollback: %s"%items_in_cb_bucket)
             items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
@@ -271,7 +271,7 @@ class PartialRollback_CBAS(CBASBaseTest):
             items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
         else:
             for node in kv_nodes:
-                items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+                items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
         # Validate no. of items in CBAS dataset
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, items_in_cb_bucket, 0),
                         "No. of items in CBAS dataset do not match that in the CB bucket")
@@ -311,7 +311,7 @@ class PartialRollback_CBAS(CBASBaseTest):
                     pass
             else:
                 for node in kv_nodes:
-                    items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+                    items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
 
             self.log.info("Items in CB bucket after rollback: %s"%items_in_cb_bucket)
             items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
@@ -342,7 +342,7 @@ class PartialRollback_CBAS(CBASBaseTest):
         kv_nodes = self.get_kv_nodes(self.servers, self.cluster.master)
         items_in_cb_bucket = 0
         for node in kv_nodes:
-            items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+            items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
 
         items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
         items_before_rollback = items_in_cbas_bucket
@@ -393,7 +393,7 @@ class PartialRollback_CBAS(CBASBaseTest):
                     pass
             else:
                 for node in kv_nodes:
-                    items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+                    items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
 
             self.log.info("Items in CB bucket after rollback: %s"%items_in_cb_bucket)
             items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
@@ -430,7 +430,7 @@ class PartialRollback_CBAS(CBASBaseTest):
             items_in_cb_bucket = RestConnection(self.cluster.master).query_tool('select count(*) from %s where %s = "%s"'%(self.cb_bucket_name,self.where_field,self.where_value))['results'][0]['$1']
         else:
             for node in kv_nodes:
-                items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+                items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
         # Validate no. of items in CBAS dataset
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, items_in_cb_bucket, 0),
                         "No. of items in CBAS dataset do not match that in the CB bucket")
@@ -483,7 +483,7 @@ class PartialRollback_CBAS(CBASBaseTest):
                     pass
             else:
                 for node in kv_nodes:
-                    items_in_cb_bucket += self.get_item_count(node,self.cb_bucket_name)
+                    items_in_cb_bucket += self.get_item_count_mc(node,self.cb_bucket_name)
 
             self.log.info("Items in CB bucket after rollback: %s"%items_in_cb_bucket)
             try:

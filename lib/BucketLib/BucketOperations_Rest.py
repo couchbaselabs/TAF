@@ -746,3 +746,16 @@ class BucketHelper(RestConnection):
         if not status:
             raise Exception(content)
         return json.loads(content)
+
+    def get_buckets_itemCount(self):
+        # get all the buckets
+        bucket_map = {}
+        api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets?basic_stats=true')
+        status, content, _ = self._http_request(api)
+        json_parsed = json.loads(content)
+        if status:
+            for item in json_parsed:
+                bucket_name = item['name']
+                item_count = item['basicStats']['itemCount']
+                bucket_map[bucket_name] = item_count
+        return bucket_map
