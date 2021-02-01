@@ -1,3 +1,5 @@
+from Cb_constants import DocLoading
+from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection, RestHelper
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
@@ -21,11 +23,14 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         if self.spec_name is not None:
             self.num_items = 20000
             self.items = 20000
-            # We need to use "test_collections" key for update,
-            # since doc_loading was done from spec
-            self.gen_update = doc_generator("test_collections", 0,
-                                            (self.items / 2),
-                                            mutation_type="SET")
+            init_doc_load_spec = \
+                self.bucket_util.get_crud_template_from_package("initial_load")
+            # Using the same key as defined in the loading spec
+            self.gen_update = doc_generator(
+                init_doc_load_spec["doc_crud"][
+                    MetaCrudParams.DocCrud.COMMON_DOC_KEY],
+                0, (self.items / 2),
+                mutation_type="SET")
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
@@ -33,32 +38,28 @@ class RebalanceStartStopTests(RebalanceBaseTest):
     def tearDown(self):
         super(RebalanceStartStopTests, self).tearDown()
 
-    def load_all_buckets(self, doc_gen, op=None, num_items_to_create=None):
-        tasks = []
-        buckets = self.bucket_util.get_all_buckets()
-        for bucket in buckets:
-            for _, scope in bucket.scopes.items():
-                for _, collection in scope.collections.items():
-                    tasks.append(self.task.async_load_gen_docs(
-                        self.cluster, bucket, doc_gen, op, 0,
-                        durability=self.durability_level,
-                        timeout_secs=self.sdk_timeout,
-                        batch_size=1000,
-                        process_concurrency=8,
-                        scope=scope.name,
-                        collection=collection.name))
-                    # ToDO: Add sdk_client_pool=self.sdk_client_pool for OOM testing
-                    # ToDo: Currently removing the above param since it causes hang. Debug required 
-                    if op == "create":
-                        bucket.scopes[scope.name] \
-                            .collections[collection.name] \
-                            .num_items += num_items_to_create
-        return tasks
+    def load_all_buckets(self, op_type, doc_load_percent):
+        loading_spec = \
+            self.bucket_util.get_crud_template_from_package("initial_load")
+        loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+        if op_type == DocLoading.Bucket.DocOps.CREATE:
+            loading_spec["doc_crud"][
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] \
+                = doc_load_percent
+        elif op_type == DocLoading.Bucket.DocOps.UPDATE:
+            loading_spec["doc_crud"][
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] \
+                = doc_load_percent
+        return self.bucket_util.run_scenario_from_spec(
+            self.task, self.cluster, self.bucket_util.buckets, loading_spec,
+            mutation_num=0, async_load=True)
 
-    def tasks_result(self, tasks):
+    def tasks_result(self, mutation_task):
         self.log.info("Waiting for data load to finish")
-        for task in tasks:
-            self.task.jython_task_manager.get_task_result(task)
+        self.task.jython_task_manager.get_task_result(mutation_task)
+        if mutation_task.result is False:
+            self.log.critical("Seeing failures in mutatate_from_spec")
 
     def validate_docs(self):
         self.bucket_util._wait_for_stats_all_buckets()
@@ -97,8 +98,6 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     self.servs_init[:self.nodes_init] + self.servs_in,
                     add_in_once, self.servs_out + self.extra_servs_out)
                 add_in_once = []
-                _ = set(self.servs_init + self.servs_in + self.extra_servs_in) \
-                    - set(self.servs_out + self.extra_servs_out)
             self.sleep(20)
             expected_progress = 20 * i
             reached = RestHelper(rest).rebalance_reached(expected_progress)
@@ -143,12 +142,12 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
         add_in_once = self.extra_servs_in
-        _ = set(self.servs_init + self.servs_in) - set(self.servs_out)
         # the last iteration will be with i=5,for this case rebalance
         # should be completed, that also is verified and tracked
         for i in range(1, 6):
             if self.withMutationOps:
-                tasks = self.load_all_buckets(self.gen_update, "update", 0)
+                task = self.load_all_buckets(DocLoading.Bucket.DocOps.UPDATE,
+                                             50)
             if i == 1:
                 rebalance = self.task.async_rebalance(
                     self.servs_init[:self.nodes_init],
@@ -160,8 +159,6 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     add_in_once, self.servs_out + self.extra_servs_out,
                     sleep_before_rebalance=self.sleep_before_rebalance)
                 add_in_once = []
-                _ = set(self.servs_init + self.servs_in + self.extra_servs_in) \
-                    - set(self.servs_out + self.extra_servs_out)
             self.sleep(20)
             expected_progress = 20 * i
             reached = RestHelper(rest).rebalance_reached(expected_progress)
@@ -169,21 +166,22 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                             .format(expected_progress))
             if not RestHelper(rest).is_cluster_rebalanced():
                 self.log.info("Stop the rebalance")
-                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
+                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
                 # Trigger cb_collect with rebalance stopped and doc_ops running
                 self.cbcollect_info(trigger=True, validate=True)
                 if self.withMutationOps:
-                    self.tasks_result(tasks)
+                    self.tasks_result(task)
                 self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
             if RestHelper(rest).is_cluster_rebalanced():
                 self.validate_docs()
-                self.log.info("Rebalance was completed when tried to stop rebalance on {0}%"
-                              .format(str(expected_progress)))
+                self.log.info("Rebalance was completed when tried "
+                              "to stop rebalance on %s%%" % expected_progress)
                 break
             else:
-                self.log.info("Rebalance is still required. Verifying the data in the buckets")
+                self.log.info("Rebalance is still required. "
+                              "Verifying the data in the buckets")
                 self.bucket_util._wait_for_stats_all_buckets()
 
         self.bucket_util.verify_unacked_bytes_all_buckets()
@@ -212,7 +210,6 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
         add_in_once = self.extra_servs_in
-        result_nodes = set(self.servs_init + self.servs_in) - set(self.servs_out)
         self.gen_create = self.get_doc_generator(0, self.num_items)
         # The latest iteration will be with i=5. For this rebalance should be
         # completed. That also is verified & tracked
@@ -228,8 +225,6 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     add_in_once, self.servs_out + self.extra_servs_out,
                     sleep_before_rebalance=self.sleep_before_rebalance)
                 add_in_once = []
-                result_nodes = set(self.servs_init + self.servs_in + self.extra_servs_in) \
-                               - set(self.servs_out + self.extra_servs_out)
             self.sleep(20)
             expected_progress = 20 * i
             reached = RestHelper(rest).rebalance_reached(expected_progress)
@@ -237,20 +232,22 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                             .format(expected_progress))
             if not RestHelper(rest).is_cluster_rebalanced():
                 self.log.info("Stop the rebalance")
-                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
+                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
                 if self.withMutationOps:
-                    tasks = self.load_all_buckets(self.gen_update, "update")
-                    self.tasks_result(tasks)
+                    task = self.load_all_buckets(
+                        DocLoading.Bucket.DocOps.UPDATE, 50)
+                    self.tasks_result(task)
                 self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
             if RestHelper(rest).is_cluster_rebalanced():
                 self.validate_docs()
-                self.log.info("Rebalance was completed when tried to stop rebalance on {0}%"
-                              .format(str(expected_progress)))
+                self.log.info("Rebalance was completed when tried to "
+                              "stop rebalance on %s%%" % expected_progress)
                 break
             else:
-                self.log.info("Rebalance is still required. Verifying the data in the buckets.")
+                self.log.info("Rebalance is still required. "
+                              "Verifying the data in the buckets.")
                 self.bucket_util._wait_for_stats_all_buckets()
 
         self.bucket_util.verify_unacked_bytes_all_buckets()
@@ -270,8 +267,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             validate rebalance was completed successfully.
             """
         fail_over = self.input.param("fail_over", False)
-        tasks = self.load_all_buckets(self.gen_update, "update")
-        self.tasks_result(tasks)
+        task = self.load_all_buckets(DocLoading.Bucket.DocOps.UPDATE, 50)
+        self.tasks_result(task)
         self.validate_docs()
         self.sleep(20)
 
@@ -296,11 +293,10 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.rest.fail_over(chosen[0].id, graceful=fail_over)
 
         # Doc_mutation after failing over the nodes
-        self.gen_create_more = self.get_doc_generator(self.num_items,
-                                                      self.num_items * 2)
-        tasks = self.load_all_buckets(self.gen_create_more, "create",
-                                      num_items_to_create=self.num_items)
-        self.tasks_result(tasks)
+        create_percent = 100
+        task = self.load_all_buckets(DocLoading.Bucket.DocOps.CREATE,
+                                     create_percent)
+        self.tasks_result(task)
         self.task.async_rebalance(
             self.servers[:self.nodes_init], self.servs_in, self.servs_out)
         expected_progress = 50
