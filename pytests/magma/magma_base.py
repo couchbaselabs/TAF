@@ -263,6 +263,17 @@ class MagmaBaseTest(BaseTestCase):
 
     def tearDown(self):
         if self.dcp_services:
+            index_build_q = "SELECT state FROM system:indexes WHERE name='{}';"
+            start = time.time()
+            result = False
+            while start + 300 > time.time():
+                result = self.query_client.query_tool(
+                    index_build_q.format(self.initial_idx), timeout=60)
+                if result["results"][0]["state"] == "online":
+                    result = True
+                    break
+                self.sleep(5)
+            self.assertTrue(result, "Index warmup failed")
             self.final_idx = "final_idx"
             self.final_idx_q = "CREATE INDEX %s on default:`%s`.`%s`.`%s`(body) with \
                 {\"defer_build\": false};" % (self.final_idx,
@@ -271,14 +282,15 @@ class MagmaBaseTest(BaseTestCase):
                                               self.collections[0])
             result = self.query_client.query_tool(self.final_idx_q, timeout=3600)
             self.assertTrue(result["status"] == "success", "Index query failed!")
-
+            self.sleep(5)
             self.initial_count_q = "Select count(*) as items "\
                 "from default:`{}`.`{}`.`{}` where meta().id like '%%';".format(
                     self.buckets[0].name, self.scope_name, self.collections[0])
             self.final_count_q = "Select count(*) as items "\
                 "from default:`{}`.`{}`.`{}` where body like '%%';".format(
                     self.buckets[0].name, self.scope_name, self.collections[0])
-
+            self.log.info(self.initial_count_q)
+            self.log.info(self.final_count_q)
             initial_count, final_count = 0, 0
             kv_items = self.bucket_util.get_bucket_current_item_count(
                 self.cluster, self.buckets[0])
@@ -787,8 +799,8 @@ class MagmaBaseTest(BaseTestCase):
                 else:
                     while count > 0:
                         shell.kill_memcached()
-                        if "index" in node.services:
-                            shell.kill_indexer()
+#                         if "index" in node.services:
+#                             shell.kill_indexer()
                         self.sleep(3, "Sleep before killing memcached on same node again.")
                         count -= 1
                     count = kill_itr
