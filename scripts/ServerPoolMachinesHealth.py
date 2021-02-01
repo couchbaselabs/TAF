@@ -12,6 +12,7 @@ failed = []
 swapiness_cmd = "echo 0 > /proc/sys/vm/swappiness;echo \"net.ipv4.conf.all.arp_notify = 1\" > /etc/sysctl.conf;echo \"#Set swappiness to 0 to avoid swapping\" >> /etc/sysctl.conf;echo vm.swappiness = 0 >> /etc/sysctl.conf"
 thp_cmd = "echo never >  /sys/kernel/mm/transparent_hugepage/enabled"
 disable_firewall = "systemctl stop firewalld; systemctl disable firewalld; ls -l /data"
+ulimit_cmd = "ulimit -n 500000;echo \"* soft nofile 500000\" > /etc/security/limits.conf;echo \"* hard nofile 500000\" >> /etc/security/limits.conf;"
 
 def run(command, server):
     output = []
@@ -74,6 +75,8 @@ try:
         execute(disable_firewall)
     if "swapiness" in param.lower():
         execute(swapiness_cmd)
+    if "ulimit" in param.lower():
+        execute(ulimit_cmd)
 except:
     execute()
 
