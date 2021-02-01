@@ -9,8 +9,7 @@ from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.tuq_helper import N1QLHelper
 from pytests.N1qlTransaction.N1qlBase import N1qlBase
 
-from couchbase_utils.cb_tools.cbstats import Cbstats
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
 from sdk_exceptions import SDKException
@@ -239,8 +238,9 @@ class CollectionsRebalance(CollectionBase):
         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
         self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
         failover_count = 0
+        self.log.info("failing over nodes {0}".format(failover_nodes))
         for failover_node in failover_nodes:
-            failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+            _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                     graceful=False, wait_for_pending=wait_for_pending)
             failover_count = failover_count + 1
             self.wait_for_failover_or_assert(failover_count)
@@ -448,9 +448,10 @@ class CollectionsRebalance(CollectionBase):
                     self.set_ram_quota_cluster()
         elif rebalance_operation == "graceful_failover_rebalance_out":
             if step_count == -1:
+                self.log.info("failing over nodes {0}".format(failover_nodes))
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                             graceful=True, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
@@ -474,10 +475,11 @@ class CollectionsRebalance(CollectionBase):
                 # For each set of step_count number of failover nodes we failover and rebalance them out
                 iter_count = 0
                 for new_failover_nodes in failover_list:
+                    self.log.info("failing over nodes {0}".format(new_failover_nodes))
                     failover_count = 0
                     self.execute_N1qltxn(new_failover_nodes[0])
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                                 graceful=True, wait_for_pending=wait_for_pending)
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
@@ -493,9 +495,10 @@ class CollectionsRebalance(CollectionBase):
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "hard_failover_rebalance_out":
             if step_count == -1:
+                self.log.info("failing over nodes {0}".format(failover_nodes))
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                             graceful=False, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
@@ -519,9 +522,10 @@ class CollectionsRebalance(CollectionBase):
                 # For each set of step_count number of failover nodes we failover and rebalance them out
                 iter_count = 0
                 for new_failover_nodes in failover_list:
+                    self.log.info("failing over nodes {0}".format(new_failover_nodes))
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                                 graceful=False, wait_for_pending=wait_for_pending)
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
@@ -537,10 +541,11 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "graceful_failover_recovery":
-            if (step_count == -1):
+            if step_count == -1:
+                self.log.info("failing over nodes {0}".format(failover_nodes))
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                             graceful=True, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
@@ -568,9 +573,10 @@ class CollectionsRebalance(CollectionBase):
                 # For each set of step_count number of failover nodes we failover and recover
                 iter_count = 0
                 for new_failover_nodes in failover_list:
+                    self.log.info("failing over nodes {0}".format(new_failover_nodes))
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                                 graceful=True, wait_for_pending=wait_for_pending)
 
                         failover_count = failover_count + 1
@@ -590,10 +596,11 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "hard_failover_recovery":
-            if (step_count == -1):
+            if step_count == -1:
+                self.log.info("failing over nodes {0}".format(failover_nodes))
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                             graceful=False, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
@@ -621,9 +628,10 @@ class CollectionsRebalance(CollectionBase):
                 # For each set of step_count number of failover nodes we failover and recover
                 iter_count = 0
                 for new_failover_nodes in failover_list:
+                    self.log.info("failing over nodes {0}".format(new_failover_nodes))
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                                 graceful=False, wait_for_pending=wait_for_pending)
 
                         failover_count = failover_count + 1
