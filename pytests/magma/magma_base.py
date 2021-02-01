@@ -264,21 +264,20 @@ class MagmaBaseTest(BaseTestCase):
     def tearDown(self):
         if self.dcp_services:
             self.final_idx = "final_idx"
-            self.final_idx_q = "CREATE INDEX %s on default:`%s`.`%s`.`%s`(meta().id) with \
+            self.final_idx_q = "CREATE INDEX %s on default:`%s`.`%s`.`%s`(body) with \
                 {\"defer_build\": false};" % (self.final_idx,
                                               self.buckets[0].name,
                                               self.scope_name,
                                               self.collections[0])
-            result = self.query_client.query_tool(self.final_idx_q)
+            result = self.query_client.query_tool(self.final_idx_q, timeout=3600)
             self.assertTrue(result["status"] == "success", "Index query failed!")
-            self.final_count_q = "Select count(*) as items "\
-                "from default:`%s`.`%s`.`%s` USE INDEX (`%s`);" % (
-                    self.buckets[0].name, self.scope_name,
-                    self.collections[0], self.final_idx)
+
             self.initial_count_q = "Select count(*) as items "\
-                "from default:`%s`.`%s`.`%s` USE INDEX (`%s`);" % (
-                    self.buckets[0].name, self.scope_name,
-                    self.collections[0], self.initial_idx)
+                "from default:`{}`.`{}`.`{}` where meta().id like '%%';".format(
+                    self.buckets[0].name, self.scope_name, self.collections[0])
+            self.final_count_q = "Select count(*) as items "\
+                "from default:`{}`.`{}`.`{}` where body like '%%';".format(
+                    self.buckets[0].name, self.scope_name, self.collections[0])
 
             initial_count, final_count = 0, 0
             kv_items = self.bucket_util.get_bucket_current_item_count(
@@ -287,7 +286,7 @@ class MagmaBaseTest(BaseTestCase):
             while start + 300 > time.time():
                 kv_items = self.bucket_util.get_bucket_current_item_count(
                     self.cluster, self.buckets[0])
-
+                self.log.info("Items in KV: %s" % kv_items)
                 initial_count = self.query_client.query_tool(
                     self.initial_count_q)["results"][0]["items"]
 
