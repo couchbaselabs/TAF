@@ -179,23 +179,35 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.bucket_helper_obj = BucketHelper(self.orchestrator)
 
     def over_ride_bucket_template_params(self, bucket_spec):
-        for over_ride_param in self.over_ride_spec_params:
-            if over_ride_param == "replicas":
-                bucket_spec[Bucket.replicaNumber] = self.num_replicas
-            elif over_ride_param == "bucket_size":
-                bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
-            elif over_ride_param == "num_items":
-                bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
-                    self.num_items
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            # Blindly override the following params
+            bucket_spec[Bucket.evictionPolicy] = \
+                Bucket.EvictionPolicy.FULL_EVICTION
+        else:
+            for key, val in self.input.test_params.items():
+                if key == "replicas":
+                    bucket_spec[Bucket.replicaNumber] = self.num_replicas
+                elif key == "bucket_size":
+                    bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
+                elif key == "num_items":
+                    bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                        self.num_items
+                elif key == "remove_default_collection":
+                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
+                        self.input.param(key)
+                elif key == "bucket_storage":
+                    bucket_spec[Bucket.storageBackend] = self.bucket_storage
+                elif key == "compression_mode":
+                    bucket_spec[Bucket.compressionMode] = self.compression_mode
 
     def over_ride_doc_loading_template_params(self, target_spec):
-        for over_ride_param in self.over_ride_spec_params:
-            if over_ride_param == "durability":
+        for key, value in self.input.test_params.items():
+            if key == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                     self.durability_level
-            elif over_ride_param == "sdk_timeout":
+            elif key == "sdk_timeout":
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
-            elif over_ride_param == "doc_size":
+            elif key == "doc_size":
                 target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
 
     def bareSetUp(self):
