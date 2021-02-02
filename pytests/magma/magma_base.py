@@ -103,7 +103,7 @@ class MagmaBaseTest(BaseTestCase):
         self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
         self.log.debug("Collections list == {}".format(self.collections))
 
-        if self.dcp_services:
+        if self.dcp_services and self.num_collections == 1:
             self.initial_idx = "initial_idx"
             self.initial_idx_q = "CREATE INDEX %s on default:`%s`.`%s`.`%s`(meta().id) with \
                 {\"defer_build\": false};" % (self.initial_idx,
@@ -262,7 +262,7 @@ class MagmaBaseTest(BaseTestCase):
             self.assertTrue(ready, msg="Wait_for_memcached failed")
 
     def tearDown(self):
-        if self.dcp_services:
+        if self.dcp_services and self.num_collections == 1:
             index_build_q = "SELECT state FROM system:indexes WHERE name='{}';"
             start = time.time()
             result = False
