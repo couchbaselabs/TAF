@@ -5,13 +5,12 @@ Created on Dec 12, 2019
 '''
 
 import copy
-import time
 import random
-import threading
+import time
 
-from cb_tools.cbstats import Cbstats
-from cb_tools.cbepctl import Cbepctl
 from Cb_constants.CBServer import CbServer
+from cb_tools.cbepctl import Cbepctl
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
@@ -1419,9 +1418,9 @@ class MagmaRollbackTests(MagmaBaseTest):
         Commenting below code, since we have
         added collection creation in magma_base
         '''
-        #collection_prefix = "FunctionCollection"
+        # collection_prefix = "FunctionCollection"
 
-        #for i in range(self.num_collections):
+        # for i in range(self.num_collections):
         #    collection_name = collection_prefix + str(i)
         #    self.log.info("Creating scope::collection {} {}\
         #    ".format(scope_name, collection_name))
@@ -1457,7 +1456,8 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         shell_conn = list()
         for node in self.cluster.nodes_in_cluster:
-            shell_conn.append(RemoteMachineShellConnection(node))
+            if "kv" in node.services.lower():
+                shell_conn.append(RemoteMachineShellConnection(node))
 
         target_vbs_active = list()
         target_vbs_replica = list()
@@ -1523,10 +1523,11 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_expiry = None
                 self.generate_docs(doc_ops=self.doc_ops,
                                    target_vbucket=target_vbs_active)
-                tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
-                                  scope=scope_name,
-                                  collection=collection,
-                                  _sync=False)
+                tem_tasks_info = self.loadgen_docs(
+                    retry_exceptions=retry_exceptions,
+                    scope=scope_name,
+                    collection=collection,
+                    _sync=False)
                 tasks_in.update(tem_tasks_info.items())
 
             for task in tasks_in:
@@ -1536,7 +1537,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             if time.time() < time_start + 60:
                 self.sleep(time_start + 60 - time.time(),
-                                   "Sleep to ensure creation of state files for roll back")
+                           "Sleep to ensure creation of state files for roll back")
             self.log.info("Rollback Iteration== {},\
             state file after stopping persistence and after doc-ops == {}".
             format(i, self.get_state_files(self.buckets[0])))
@@ -1635,12 +1636,12 @@ class MagmaRollbackTests(MagmaBaseTest):
             time_start = time.time()
             for collection in collections:
                 tem_tasks_info = self.loadgen_docs(
-                self.retry_exceptions,
-                self.ignore_exceptions,
-                scope=scope_name,
-                collection=collection,
-                _sync=False,
-                doc_ops="create")
+                    self.retry_exceptions,
+                    self.ignore_exceptions,
+                    scope=scope_name,
+                    collection=collection,
+                    _sync=False,
+                    doc_ops="create")
                 tasks_info.update(tem_tasks_info.items())
 
             for task in tasks_info:
@@ -1971,6 +1972,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             for shell in shell_conn:
                 shell.disconnect()
+
 
 class MagmaSpaceAmplification(MagmaBaseTest):
 
