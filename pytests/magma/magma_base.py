@@ -317,7 +317,7 @@ class MagmaBaseTest(BaseTestCase):
                                  self.scope_name, self.collections[0],
                                  final_count))
 
-                if initial_count != kv_items and final_count != kv_items:
+                if initial_count != kv_items or final_count != kv_items:
                     self.sleep(5)
                     continue
                 break
