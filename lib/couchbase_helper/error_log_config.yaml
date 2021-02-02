@@ -6,6 +6,7 @@ file_name_patterns:
           - 'Fatal error encountered during exception handling'
         exclude_patterns:
           - 'Rollback point not found'
+          - 'No space left on device'
       - string: ' ERROR '
         exclude_patterns:
           - 'XERROR'
