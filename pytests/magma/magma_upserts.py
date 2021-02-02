@@ -48,7 +48,7 @@ class BasicUpsertTests(BasicCrudTests):
                                       self.ignore_exceptions,
                                       _sync=True)
                 self.log.info("Waiting for ep-queues to get drained")
-                self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+                self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
 
             #######################################################################
             '''
@@ -144,7 +144,7 @@ class BasicUpsertTests(BasicCrudTests):
                                       _sync=True)
 
                 self.log.info("Waiting for ep-queues to get drained")
-                self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+                self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
 
                 ###################################################################
                 '''
@@ -203,7 +203,7 @@ class BasicUpsertTests(BasicCrudTests):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             ###################################################################
@@ -249,7 +249,7 @@ class BasicUpsertTests(BasicCrudTests):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             ###################################################################
@@ -363,7 +363,7 @@ class BasicUpsertTests(BasicCrudTests):
                     mutated += 1
 
                 self.log.info("Waiting for ep-queues to get drained")
-                self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+                self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
                 ###################################################################
                 '''
                 STEP - 2
@@ -412,7 +412,7 @@ class BasicUpsertTests(BasicCrudTests):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             ###################################################################
@@ -455,7 +455,7 @@ class BasicUpsertTests(BasicCrudTests):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             ###################################################################
@@ -546,7 +546,7 @@ class BasicUpsertTests(BasicCrudTests):
         for th in threads:
             th.join()
 
-        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+        self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
 
         # Space amplification check
         msg_stats = "Fragmentation value for {} stats exceeds\
@@ -650,7 +650,7 @@ class BasicUpsertTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
 
             if upsert_size > 32:
                 seqTree_update = (self.get_disk_usage(
@@ -677,7 +677,7 @@ class BasicUpsertTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
 
             #######################################################################
             '''
@@ -754,7 +754,7 @@ class BasicUpsertTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.num_items)
             if count == self.test_itr - 1:
                 self.validate_data("update", self.gen_update)
