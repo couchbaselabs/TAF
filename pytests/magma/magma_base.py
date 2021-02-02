@@ -799,17 +799,17 @@ class MagmaBaseTest(BaseTestCase):
                        format(loop_itr, sleep))
 
             for node, shell in connections.items():
-                if graceful:
-                    shell.restart_couchbase()
-                else:
-                    while count > 0:
-                        if "kv" in node.services:
+                if "kv" in node.services:
+                    if graceful:
+                        shell.restart_couchbase()
+                    else:
+                        while count > 0:
                             shell.kill_memcached()
-#                         if "index" in node.services:
-#                             shell.kill_indexer()
-                        self.sleep(3, "Sleep before killing memcached on same node again.")
+    #                         if "index" in node.services:
+    #                             shell.kill_indexer()
+                            self.sleep(3, "Sleep before killing memcached on same node again.")
                         count -= 1
-                    count = kill_itr
+                        count = kill_itr
 
             result = self.check_coredump_exist(self.cluster.nodes_in_cluster,
                                                force_collect=force_collect)
