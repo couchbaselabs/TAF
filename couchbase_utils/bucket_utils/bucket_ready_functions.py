@@ -1091,7 +1091,8 @@ class ScopeUtils(CollectionUtils):
         scope_name = scope_spec.get("name")
         ScopeUtils.log.debug("Creating Scope %s:%s"
                              % (bucket, scope_name))
-        status, content = BucketHelper(node).create_scope(bucket, scope_name, session=session)
+        status, content = BucketHelper(node).create_scope(bucket, scope_name,
+                                                          session=session)
         if status is False:
             ScopeUtils.log.error("Scope '%s:%s' creation failed: %s"
                                  % (bucket, scope_name, content))

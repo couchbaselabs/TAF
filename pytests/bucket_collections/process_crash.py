@@ -1,7 +1,7 @@
 from random import randint, sample
 
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_tools.cbstats import Cbstats
@@ -10,7 +10,6 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from crash_test.constants import signum
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_client3 import SDKClient
 from couchbase_helper.tuq_helper import N1QLHelper
 
 from sdk_exceptions import SDKException
@@ -35,10 +34,6 @@ class CrashTest(CollectionBase):
         if self.doc_ops is not None:
             self.doc_ops = self.doc_ops.split(";")
 
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         if not self.atomicity:
             self.durability_helper = DurabilityHelper(
                 self.log, self.nodes_init,
@@ -72,7 +67,7 @@ class CrashTest(CollectionBase):
         if self.atomicity:
             transaction_task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.bucket_util.buckets,
-                transaction_gen_create, "create",
+                transaction_gen_create, DocLoading.Bucket.DocOps.CREATE,
                 exp=0,
                 batch_size=10,
                 process_concurrency=self.process_concurrency,
@@ -87,13 +82,17 @@ class CrashTest(CollectionBase):
             self.task.jython_task_manager.get_task_result(transaction_task)
         for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
-                self.cluster, bucket, gen_create, "create", self.maxttl,
+                self.cluster, bucket, gen_create,
+                DocLoading.Bucket.DocOps.CREATE, self.maxttl,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 batch_size=10, process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
 
+            self.bucket_util.buckets[0].scopes[
+                CbServer.default_scope].collections[
+                CbServer.default_collection].num_items += self.num_items
             self.bucket_util._wait_for_stats_all_buckets()
             # Verify cbstats vbucket-details
             stats_failed = \
@@ -102,26 +101,26 @@ class CrashTest(CollectionBase):
                     vbuckets=self.cluster_util.vbuckets,
                     expected_val=verification_dict)
 
-            if stats_failed:
-                self.fail("Cbstats verification failed")
-
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            if self.atomicity is False:
+                if stats_failed:
+                    self.fail("Cbstats verification failed")
+                self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.bucket = self.bucket_util.buckets[0]
         if self.N1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
                                 service_type="n1ql",
                                 get_all_nodes=True)
             self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
-                                              use_rest=True,
-                                              buckets = self.bucket_util.buckets,
-                                              log=self.log,
-                                              scan_consistency='REQUEST_PLUS',
-                                              num_collection=3,
-                                              num_buckets=1,
-                                              num_savepoints=1,
-                                              override_savepoint=False,
-                                              num_stmt=10,
-                                              load_spec=self.data_spec_name)
+                                          use_rest=True,
+                                          buckets=self.bucket_util.buckets,
+                                          log=self.log,
+                                          scan_consistency='REQUEST_PLUS',
+                                          num_collection=3,
+                                          num_buckets=1,
+                                          num_savepoints=1,
+                                          override_savepoint=False,
+                                          num_stmt=10,
+                                          load_spec=self.data_spec_name)
             self.bucket_col = self.n1ql_helper.get_collections()
             self.stmts = self.n1ql_helper.get_stmt(self.bucket_col)
             self.stmts = self.n1ql_helper.create_full_stmts(self.stmts)
@@ -157,7 +156,7 @@ class CrashTest(CollectionBase):
             self.transaction_load_task = \
                 self.task.async_load_gen_docs_atomicity(
                     self.cluster, self.bucket_util.buckets,
-                    transaction_gen_load, "create",
+                    transaction_gen_load, DocLoading.Bucket.DocOps.CREATE,
                     exp=0,
                     batch_size=10,
                     process_concurrency=self.process_concurrency,
@@ -171,12 +170,14 @@ class CrashTest(CollectionBase):
                     sync=self.sync)
             collection_obj.num_items += self.new_docs_to_add
         elif self.N1qltxn:
-            self.N1ql_load_task = self.task.async_n1qlTxn_query( self.stmts,
-                 n1ql_helper=self.n1ql_helper,
-                 commit=True,
-                 scan_consistency="REQUEST_PLUS")
+            self.N1ql_load_task = self.task.async_n1qlTxn_query(
+                self.stmts,
+                n1ql_helper=self.n1ql_helper,
+                commit=True,
+                scan_consistency="REQUEST_PLUS")
         self.doc_loading_task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_load, "create",
+            self.cluster, self.bucket, gen_load,
+            DocLoading.Bucket.DocOps.CREATE,
             exp=0,
             batch_size=10,
             process_concurrency=8,
@@ -203,6 +204,8 @@ class CrashTest(CollectionBase):
         def create_scope(client_type, bucket_obj, scope):
             if client_type == "sdk":
                 client.create_scope(scope)
+                self.bucket_util.create_scope_object(bucket_obj,
+                                                     {"name": scope})
             elif client_type == "rest":
                 self.bucket_util.create_scope(self.cluster.master, bucket_obj,
                                               {"name": scope})
@@ -212,6 +215,7 @@ class CrashTest(CollectionBase):
         def remove_scope(client_type, bucket_obj, scope):
             if client_type == "sdk":
                 client.drop_scope(scope)
+                self.bucket_util.mark_scope_as_dropped(bucket_obj, scope)
             elif client_type == "rest":
                 self.bucket_util.drop_scope(self.cluster.master,
                                             bucket_obj,
@@ -224,6 +228,7 @@ class CrashTest(CollectionBase):
             self.fail("Need atleast two KV nodes to run this test")
 
         client = None
+        task = None
         action = self.input.param("action", "create")
         crash_during = self.input.param("crash_during", "pre_action")
         data_load_option = self.input.param("data_load_option", None)
@@ -232,18 +237,16 @@ class CrashTest(CollectionBase):
 
         # Always use a random scope name to create/remove
         # since CREATE/DROP not supported for default scope
-        self.scope_name = BucketUtils.get_random_name()
+        self.scope_name = \
+            BucketUtils.get_random_name(max_length=CbServer.max_scope_name_len)
 
         # Select a KV node other than master node from the cluster
         node_to_crash = kv_nodes[sample(range(1, len(kv_nodes)), 1)[0]]
 
-        # Create a required client object
-        if self.client_type == "sdk":
-            client = SDKClient([self.cluster.master], self.bucket)
-
+        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        use_client = sample(["sdk", "rest"], 1)[0]
         if action == "remove":
             # Create a scope to be removed
-            use_client = sample(["sdk", "rest"], 1)[0]
             create_scope(use_client, self.bucket, self.scope_name)
 
         # Create a error scenario
@@ -260,6 +263,17 @@ class CrashTest(CollectionBase):
         if crash_during == "pre_action":
             cb_error.create(crash_type)
 
+        if data_load_option == "mutate_default_collection":
+            task = self.task.async_load_gen_docs(
+                self.cluster, self.bucket, doc_gen,
+                DocLoading.Bucket.DocOps.UPDATE,
+                exp=self.maxttl,
+                batch_size=200, process_concurrency=4,
+                compression=self.sdk_compression,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                sdk_client_pool=self.sdk_client_pool)
+
         if action == "create":
             create_scope(self.client_type, self.bucket, self.scope_name)
         elif action == "remove":
@@ -268,25 +282,16 @@ class CrashTest(CollectionBase):
         if crash_during == "post_action":
             cb_error.create(crash_type)
 
-        if data_load_option == "mutate_default_collection":
-            task = self.task.async_load_gen_docs(
-                self.cluster, self.bucket, doc_gen, "update",
-                exp=self.maxttl,
-                batch_size=200, process_concurrency=8,
-                compression=self.sdk_compression,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
-            self.task_manager.get_task_result(task)
-
         self.sleep(60, "Wait before reverting the error scenario")
         cb_error.revert(crash_type)
 
+        if data_load_option == "mutate_default_collection":
+            self.task_manager.get_task_result(task)
+
         # Close SSH and SDK connections
         shell.disconnect()
-        if self.client_type == "sdk":
-            client.close()
-
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        if self.atomicity is False:
+            self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
 
     def test_create_remove_collection_with_node_crash(self):
@@ -299,15 +304,21 @@ class CrashTest(CollectionBase):
         def create_collection(client_type, bucket_obj, scope, collection):
             if client_type == "sdk":
                 client.create_collection(collection, scope)
+                self.bucket_util.create_collection_object(bucket_obj, scope,
+                                                          {"name": collection})
             elif client_type == "rest":
-                self.bucket_util.create_scope(self.cluster.master, bucket_obj,
-                                              {"name": scope})
+                self.bucket_util.create_collection(self.cluster.master,
+                                                   bucket_obj,
+                                                   scope,
+                                                   {"name": collection})
             else:
                 self.log_failure("Invalid client_type provided")
 
         def remove_collection(client_type, bucket_obj, scope, collection):
             if client_type == "sdk":
                 client.drop_collection(scope, collection)
+                self.bucket_util.mark_collection_as_dropped(bucket_obj, scope,
+                                                            collection)
             elif client_type == "rest":
                 self.bucket_util.drop_scope(self.cluster.master,
                                             bucket_obj,
@@ -320,6 +331,7 @@ class CrashTest(CollectionBase):
             self.fail("Need atleast two KV nodes to run this test")
 
         client = None
+        task = None
         action = self.input.param("action", "create")
         crash_during = self.input.param("crash_during", "pre_action")
         data_load_option = self.input.param("data_load_option", None)
@@ -327,23 +339,23 @@ class CrashTest(CollectionBase):
                                       CouchbaseError.KILL_MEMCACHED)
 
         if self.scope_name != CbServer.default_scope:
-            self.scope_name = BucketUtils.get_random_name()
+            self.scope_name = \
+                BucketUtils.get_random_name(CbServer.max_scope_name_len)
             self.bucket_util.create_scope(self.cluster.master, self.bucket,
                                           {"name", self.scope_name})
         if self.collection_name != CbServer.default_collection:
-            self.collection_name = BucketUtils.get_random_name()
+            self.collection_name = \
+                BucketUtils.get_random_name(CbServer.max_collection_name_len)
 
         # Select a KV node other than master node from the cluster
         node_to_crash = kv_nodes[sample(range(1, len(kv_nodes)), 1)[0]]
 
-        # Create a required client object
-        if self.client_type == "sdk":
-            client = SDKClient([self.cluster.master], self.bucket)
+        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        use_client = sample(["sdk", "rest"], 1)[0]
 
         if action == "remove" \
                 and self.collection_name != CbServer.default_collection:
             # Create a collection to be removed
-            use_client = sample(["sdk", "rest"], 1)[0]
             create_collection(use_client, self.bucket,
                               self.scope_name, self.collection_name)
 
@@ -362,6 +374,16 @@ class CrashTest(CollectionBase):
         if crash_during == "pre_action":
             cb_error.create(crash_type)
 
+        if data_load_option == "mutate_default_collection":
+            task = self.task.async_load_gen_docs(
+                self.cluster, self.bucket, doc_gen,
+                DocLoading.Bucket.DocOps.UPDATE,
+                exp=self.maxttl,
+                batch_size=200, process_concurrency=8,
+                compression=self.sdk_compression,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout)
+
         if action == "create":
             create_collection(self.client_type, self.bucket,
                               self.scope_name, self.collection_name)
@@ -373,13 +395,6 @@ class CrashTest(CollectionBase):
             cb_error.create(crash_type)
 
         if data_load_option == "mutate_default_collection":
-            task = self.task.async_load_gen_docs(
-                self.cluster, self.bucket, doc_gen, "update",
-                exp=self.maxttl,
-                batch_size=200, process_concurrency=8,
-                compression=self.sdk_compression,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
             self.task_manager.get_task_result(task)
 
         self.sleep(60, "Wait before reverting the error scenario")
@@ -387,10 +402,8 @@ class CrashTest(CollectionBase):
 
         # Close SSH and SDK connections
         shell.disconnect()
-        if self.client_type == "sdk":
-            client.close()
-
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        if self.atomicity is False:
+            self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
 
     def test_stop_process(self):
@@ -460,10 +473,10 @@ class CrashTest(CollectionBase):
         if not validate_passed:
             self.log_failure("Unwanted exception seen during validation")
 
-        # Create SDK connection for CRUD retries
-        sdk_client = SDKClient([self.cluster.master], self.bucket)
+        # Get SDK client for CRUD retries
+        sdk_client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
         for doc_key, crud_result in self.doc_loading_task.fail.items():
-            result = sdk_client.crud("create",
+            result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
                                      doc_key,
                                      crud_result["value"],
                                      replicate_to=self.replicate_to,
@@ -480,7 +493,7 @@ class CrashTest(CollectionBase):
 
         # Update self.num_items and validate docs per collection
         collection.num_items += self.new_docs_to_add
-        if not self.N1qltxn:
+        if not self.N1qltxn and self.atomicity is False:
             self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_crash_process(self):
@@ -533,7 +546,7 @@ class CrashTest(CollectionBase):
         task_info = dict()
         task_info[self.doc_loading_task] = \
             self.bucket_util.get_doc_op_info_dict(
-                def_bucket, "create", 0,
+                def_bucket, DocLoading.Bucket.DocOps.CREATE, 0,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout=self.sdk_timeout, time_unit="seconds",
@@ -584,5 +597,5 @@ class CrashTest(CollectionBase):
                 self.fail("Cbstats verification failed")
 
         # Doc count validation per collection
-        if not self.N1qltxn:
+        if not self.N1qltxn and self.atomicity is False:
             self.bucket_util.validate_docs_per_collections_all_buckets()
