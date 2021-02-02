@@ -865,8 +865,8 @@ class RestConnection(object):
         return status
 
     def set_service_memoryQuota(self, service, username='Administrator',
-                                 password='password',
-                                 memoryQuota=256):
+                                password='password',
+                                memoryQuota=256):
         ''' cbasMemoryQuota for cbas service.
             ftsMemoryQuota for fts service.
             indexMemoryQuota for index service.'''
