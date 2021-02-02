@@ -4572,34 +4572,19 @@ class BucketUtils(ScopeUtils):
             input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 1),
             exclude_from=exclude_from)
 
-        # Start threads to drop collections
-        c_flush_thread = threading.Thread(
-            target=perform_collection_operation,
-            args=["flush", cols_to_flush])
-        c_drop_thread = threading.Thread(
-            target=perform_collection_operation,
-            args=["drop", cols_to_drop])
+        # Drop or flush collections
+        perform_collection_operation("flush", cols_to_flush)
+        perform_collection_operation("drop", cols_to_drop)
 
-        c_flush_thread.start()
-        c_drop_thread.start()
-
-        c_flush_thread.join()
-        c_drop_thread.join()
-
-        # Fetch scopes to be dropped
+        # Fetch scopes to be dropped, and drop them
         scopes_to_drop = BucketUtils.get_random_scopes(
             buckets,
             input_spec.get(MetaCrudParams.SCOPES_TO_DROP, 0),
             input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, 1),
             avoid_default=True)
-        scope_drop_thread = threading.Thread(
-            target=perform_scope_operation,
-            args=["drop", scopes_to_drop])
+        perform_scope_operation("drop", scopes_to_drop)
 
-        scope_drop_thread.start()
-        scope_drop_thread.join()
-
-        # Fetch buckets under which scopes will be created
+        # Fetch buckets under which scopes will be created, and create them
         create_scope_spec = dict()
         create_scope_spec["buckets"] = BucketUtils.get_random_buckets(
             buckets,
@@ -4608,53 +4593,33 @@ class BucketUtils(ScopeUtils):
             input_spec.get(MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET, 0)
         create_scope_spec["collection_count_under_each_scope"] = \
             input_spec.get(MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES, 0)
-        scope_create_thread = threading.Thread(
-            target=perform_scope_operation,
-            args=["create", create_scope_spec])
+        perform_scope_operation("create", create_scope_spec)
 
-        scope_create_thread.start()
-        scope_create_thread.join()
-
-        # Fetch random Scopes under which to create collections
+        # Fetch random Scopes under which to create collections, and create them
         scopes_to_create_collections = BucketUtils.get_random_scopes(
             buckets,
             input_spec.get(MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS, "all"),
             input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, "all"))
         scopes_to_create_collections["req_collections"] = \
             input_spec.get(MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET, 0)
-        collections_create_thread = threading.Thread(
-            target=perform_collection_operation,
-            args=["create", scopes_to_create_collections])
+        perform_collection_operation("create", scopes_to_create_collections)
 
-        collections_create_thread.start()
-        collections_create_thread.join()
-
-        # Fetch random scopes to recreate
+        # Fetch random scopes to recreate, and recreate them
         scopes_to_recreate = BucketUtils.get_random_scopes(
             buckets,
             input_spec.get(MetaCrudParams.SCOPES_TO_RECREATE, 0),
             input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, "all"),
             consider_only_dropped=True)
-        scope_recreate_thread = threading.Thread(
-            target=perform_scope_operation,
-            args=["recreate", scopes_to_recreate])
+        perform_scope_operation("recreate", scopes_to_recreate)
 
-        scope_recreate_thread.start()
-        scope_recreate_thread.join()
-
-        # Fetch random collections to recreate
+        # Fetch random collections to recreate, and recreate them
         collections_to_recreate = BucketUtils.get_random_collections(
             buckets,
             input_spec.get(MetaCrudParams.COLLECTIONS_TO_RECREATE, 0),
             input_spec.get(MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS, "all"),
             input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, "all"),
             consider_only_dropped=True)
-        collection_recreate_thread = threading.Thread(
-            target=perform_collection_operation,
-            args=["recreate", collections_to_recreate])
-
-        collection_recreate_thread.start()
-        collection_recreate_thread.join()
+        perform_collection_operation("recreate", collections_to_recreate)
         DocLoaderUtils.log.info("Done Performing scope/collection specific "
                                 "operations")
         return ops_details
