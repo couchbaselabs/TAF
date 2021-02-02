@@ -802,7 +802,8 @@ class MagmaBaseTest(BaseTestCase):
                     shell.restart_couchbase()
                 else:
                     while count > 0:
-                        shell.kill_memcached()
+                        if "kv" in node.services:
+                            shell.kill_memcached()
 #                         if "index" in node.services:
 #                             shell.kill_indexer()
                         self.sleep(3, "Sleep before killing memcached on same node again.")
