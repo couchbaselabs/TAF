@@ -137,6 +137,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.stop_crash = True
         th.join()
+        self.validate_seq_itr()
 
     def test_crash_before_upserts(self):
         self.log.info("test_update_multi starts")
@@ -176,6 +177,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.validate_data("update", self.gen_update)
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
+        self.validate_seq_itr()
         self.log.info("====test_update_multi ends====")
 
     def test_crash_before_multi_update_deletes(self):
@@ -243,6 +245,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.validate_data("create", self.gen_create)
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
+        self.validate_seq_itr()
         self.log.info("===test_crash_before_multi_update_deletes ends===")
 
     def test_crash_during_get_ops(self):
@@ -309,6 +312,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
+        self.validate_seq_itr()
         self.log.info("test_crash_during_get_ops ends")
 
     def test_crash_during_upserts_using_multithreads(self):
@@ -348,6 +352,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
+        self.validate_seq_itr()
         self.log.info("test_crash_during_upserts_using_multithreads ends")
 
     def test_crash_during_multi_updates_of_single_doc(self):
@@ -407,6 +412,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
+        self.validate_seq_itr()
         self.log.info("==test_crash_during_multi_updates_of_single_doc ends==")
 
     def test_crash_during_val_movement_across_trees(self):
@@ -470,5 +476,5 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
-
+        self.validate_seq_itr()
         self.log.info("==test_crash_during_val_movement_across_trees ends==")

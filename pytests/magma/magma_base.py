@@ -266,6 +266,24 @@ class MagmaBaseTest(BaseTestCase):
             self.assertTrue(ready, msg="Wait_for_memcached failed")
 
     def tearDown(self):
+        self.cluster_util.print_cluster_stats()
+        dgm = None
+        timeout = 65
+        while dgm is None and timeout > 0:
+            try:
+                stats = BucketHelper(self.cluster.master).fetch_bucket_stats(
+                    self.buckets[0].name)
+                dgm = stats["op"]["samples"]["vb_active_resident_items_ratio"][
+                    -1]
+            except:
+                self.log.debug("Fetching vb_active_resident_items_ratio(dgm) failed...retying")
+                timeout -= 1
+                time.sleep(1)
+        self.log.info("## Active Resident Threshold of {0} is {1} ##".format(
+            self.buckets[0].name, dgm))
+        super(MagmaBaseTest, self).tearDown()
+
+    def validate_seq_itr(self):
         if self.dcp_services and self.num_collections == 1:
             index_build_q = "SELECT state FROM system:indexes WHERE name='{}';"
             start = time.time()
@@ -327,23 +345,6 @@ class MagmaBaseTest(BaseTestCase):
             self.assertTrue(final_count == kv_items,
                             "Indexer failed. KV:{}, Final:{}".
                             format(kv_items, final_count))
-
-        self.cluster_util.print_cluster_stats()
-        dgm = None
-        timeout = 65
-        while dgm is None and timeout > 0:
-            try:
-                stats = BucketHelper(self.cluster.master).fetch_bucket_stats(
-                    self.buckets[0].name)
-                dgm = stats["op"]["samples"]["vb_active_resident_items_ratio"][
-                    -1]
-            except:
-                self.log.debug("Fetching vb_active_resident_items_ratio(dgm) failed...retying")
-                timeout -= 1
-                time.sleep(1)
-        self.log.info("## Active Resident Threshold of {0} is {1} ##".format(
-            self.buckets[0].name, dgm))
-        super(MagmaBaseTest, self).tearDown()
 
     def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0):
         return doc_generator(self.key, start, end,

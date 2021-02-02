@@ -1662,6 +1662,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         for shell in shell_conn:
             shell.disconnect()
+        self.validate_seq_itr()
 
     def test_rebalance_during_rollback(self):
         '''
