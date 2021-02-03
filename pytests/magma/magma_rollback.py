@@ -1563,9 +1563,10 @@ class MagmaRollbackTests(MagmaBaseTest):
                     for shell in shell_conn[target_active_nodes:]:
                         shell.kill_memcached()
                     for server in self.cluster.nodes_in_cluster[target_active_nodes:]:
-                        self.assertTrue(self.bucket_util._wait_warmup_completed(
-                            [server], self.bucket_util.buckets[0],
-                            wait_time=self.wait_timeout * 5))
+                        if "kv" in node.services.lower():
+                            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                                [server], self.bucket_util.buckets[0],
+                                wait_time=self.wait_timeout * 5))
                     self.sleep(30, "30s sleep after crash")
                     num_crashes -= 1
                     crash_count += 1
