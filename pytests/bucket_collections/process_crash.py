@@ -320,9 +320,8 @@ class CrashTest(CollectionBase):
                 self.bucket_util.mark_collection_as_dropped(bucket_obj, scope,
                                                             collection)
             elif client_type == "rest":
-                self.bucket_util.drop_scope(self.cluster.master,
-                                            bucket_obj,
-                                            scope)
+                self.bucket_util.drop_collection(self.cluster.master,
+                                                 bucket_obj, scope, collection)
             else:
                 self.log_failure("Invalid client_type provided")
 
@@ -340,12 +339,14 @@ class CrashTest(CollectionBase):
 
         if self.scope_name != CbServer.default_scope:
             self.scope_name = \
-                BucketUtils.get_random_name(CbServer.max_scope_name_len)
+                BucketUtils.get_random_name(
+                    max_length=CbServer.max_scope_name_len)
             self.bucket_util.create_scope(self.cluster.master, self.bucket,
                                           {"name", self.scope_name})
         if self.collection_name != CbServer.default_collection:
             self.collection_name = \
-                BucketUtils.get_random_name(CbServer.max_collection_name_len)
+                BucketUtils.get_random_name(
+                    max_length=CbServer.max_collection_name_len)
 
         # Select a KV node other than master node from the cluster
         node_to_crash = kv_nodes[sample(range(1, len(kv_nodes)), 1)[0]]
