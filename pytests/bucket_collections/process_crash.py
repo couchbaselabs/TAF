@@ -342,7 +342,7 @@ class CrashTest(CollectionBase):
                 BucketUtils.get_random_name(
                     max_length=CbServer.max_scope_name_len)
             self.bucket_util.create_scope(self.cluster.master, self.bucket,
-                                          {"name", self.scope_name})
+                                          {"name": self.scope_name})
         if self.collection_name != CbServer.default_collection:
             self.collection_name = \
                 BucketUtils.get_random_name(
