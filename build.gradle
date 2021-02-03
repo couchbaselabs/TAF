@@ -55,24 +55,6 @@ task copyDeps(type: Copy) {
   into 'jars'
 }
 
-task iptables(type:Exec) {
-    if (project.hasProperty("args") && project.hasProperty("jython")) {
-        def jythonpath = sourceSets.main.runtimeClasspath.asPath
-
-        def jythonLocation = project.property("jython")
-        def testRunnerArgs = project.property("args").split()
-        // Add the build output containing the built Java source.  Should get this from a gradle variable really but it's
-        // very unlikely to ever change.
-        def cmd = [jythonLocation, '-J-cp', jythonpath, 'scripts/ssh.py']
-
-        testRunnerArgs.each { cmd.add(it) }
-
-        println("Running: " + cmd.join(" "))
-
-        commandLine cmd
-    }
-}
-
 task install(type:Exec) {
 
     if (project.hasProperty("args") && project.hasProperty("jython")) {
