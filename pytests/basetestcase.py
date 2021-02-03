@@ -310,7 +310,7 @@ class BaseTestCase(unittest.TestCase):
                 for cluster in self.__cb_clusters:
                     self.log.info("Initializing cluster")
                     cluster_util = ClusterUtils(cluster, self.task_manager)
-                    self.cluster_util.reset_cluster()
+                    cluster_util.reset_cluster()
                     master_services = cluster_util.get_services(
                         cluster.servers[:1], self.services_init, start_node=0)
                     if master_services is not None:
