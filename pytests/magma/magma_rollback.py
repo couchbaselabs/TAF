@@ -1552,9 +1552,10 @@ class MagmaRollbackTests(MagmaBaseTest):
             for shell in shell_conn:
                 shell.kill_memcached()
             for server in self.cluster.nodes_in_cluster:
-                self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [server], self.bucket_util.buckets[0],
-                    wait_time=self.wait_timeout * 30))
+                if "kv" in node.services.lower():
+                    self.assertTrue(self.bucket_util._wait_warmup_completed(
+                        [server], self.bucket_util.buckets[0],
+                        wait_time=self.wait_timeout * 30))
             if not load_during_rollback:
                 crash_count = 1
                 while num_crashes > 0:
