@@ -295,7 +295,7 @@ class MagmaBaseTest(BaseTestCase):
                     result = True
                     break
                 self.sleep(5)
-            self.assertTrue(result, "Index warmup failed")
+            self.assertTrue(result, "initial_idx Index warmup failed")
             self.final_idx = "final_idx"
             self.final_idx_q = "CREATE INDEX %s on default:`%s`.`%s`.`%s`(body) with \
                 {\"defer_build\": false};" % (self.final_idx,
@@ -303,7 +303,18 @@ class MagmaBaseTest(BaseTestCase):
                                               self.scope_name,
                                               self.collections[0])
             result = self.query_client.query_tool(self.final_idx_q, timeout=3600)
-            self.assertTrue(result["status"] == "success", "Index query failed!")
+            start = time.time()
+            if result["status"] != "success":
+                while start + 300 > time.time():
+                    result = self.query_client.query_tool(
+                        index_build_q.format(self.final_idx), timeout=60)
+                    if result["results"][0]["state"] == "online":
+                        result = True
+                        break
+                    self.sleep(5)
+                self.assertTrue(result, "final_idx Index warmup failed")
+            else:
+                self.assertTrue(result["status"] == "success", "Index query failed!")
             self.sleep(5)
             self.initial_count_q = "Select count(*) as items "\
                 "from default:`{}`.`{}`.`{}` where meta().id like '%%';".format(
@@ -324,7 +335,7 @@ class MagmaBaseTest(BaseTestCase):
                 initial_count = self.query_client.query_tool(
                     self.initial_count_q)["results"][0]["items"]
 
-                self.log.info("## Existing Index item count in %s:%s:%s == %s"
+                self.log.info("## Initial Index item count in %s:%s:%s == %s"
                               % (self.buckets[0].name,
                                  self.scope_name, self.collections[0],
                                  initial_count))
