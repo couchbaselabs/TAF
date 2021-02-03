@@ -169,18 +169,17 @@ class RebalanceTask(Task):
 
         cluster_stats = self.rest.get_cluster_stats()
         self.table = TableView(self.test_log.info)
-        self.table.set_headers(["Nodes", "Services", "Status"])
+        self.table.set_headers(["Nodes", "Services", "Version",
+                                "CPU", "Status"])
         node_ips_to_remove = [node.ip for node in to_remove]
         for node, stat in cluster_stats.items():
             node_ip = node.split(':')[0]
+            node_status = "Cluster node"
             if node_ip in node_ips_to_remove:
-                self.table.add_row([node_ip,
-                                    cluster_stats[node]["services"],
-                                    "--- OUT --->"])
-            else:
-                self.table.add_row([node_ip,
-                                    ", ".join(stat["services"]),
-                                    "Cluster node"])
+                node_status = "--- OUT --->"
+            self.table.add_row([node_ip, ", ".join(stat["services"]),
+                                stat["version"], stat["cpu_utilization"],
+                                node_status])
 
     def __str__(self):
         if self.exception:
@@ -249,7 +248,8 @@ class RebalanceTask(Task):
             if self.services is not None:
                 services_for_node = [self.services[node_index]]
                 node_index += 1
-            self.table.add_row([node.ip, services_for_node, "<--- IN ---"])
+            self.table.add_row([node.ip, services_for_node, "", "",
+                                "<--- IN ---"])
             if self.use_hostnames:
                 self.rest.add_node(master.rest_username, master.rest_password,
                                    node.hostname, node.port,

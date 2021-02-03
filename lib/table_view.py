@@ -21,7 +21,7 @@ class TableView:
         self.headers = headers
 
     def add_row(self, row_data):
-        self.rows.append(row_data)
+        self.rows.append([str(data) for data in row_data])
 
     def get_line(self, max_widths):
         row_buffer = ""
