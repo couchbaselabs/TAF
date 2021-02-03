@@ -563,6 +563,8 @@ class BaseTestCase(unittest.TestCase):
         init_tasks = []
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user
+            if not server.index_path:
+                server.index_path = server.data_path
             for path in set([_f for _f in [server.data_path, server.index_path]
                              if _f]):
                 shell = RemoteMachineShellConnection(server)
