@@ -110,6 +110,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.stop_crash = True
         th.join()
+        self.validate_seq_itr()
 
     def test_crash_during_recovery(self):
         self.compute_docs_ranges()
