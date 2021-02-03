@@ -33,7 +33,7 @@ class BasicDeleteTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             ######################################################################
@@ -82,7 +82,7 @@ class BasicDeleteTests(BasicCrudTests):
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
                                       _sync=True)
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
                 self.bucket_util.verify_stats_all_buckets(self.num_items)
             count += 1
 
@@ -124,7 +124,7 @@ class BasicDeleteTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.num_items)
 
             self.delete_start = (count+1) * init_items

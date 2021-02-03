@@ -225,7 +225,7 @@ class MagmaBaseTest(BaseTestCase):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
             if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
                 for bucket in self.bucket_util.get_all_buckets():
                     disk_usage = self.get_disk_usage(
