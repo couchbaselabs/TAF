@@ -21,6 +21,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.set_rebalance_moves_per_node(rebalanceMovesPerNode=self.rebalance_moves_per_node)
         self.data_load_flag = False  # When to start/stop drop/recreate
         self.data_loading_thread = None
+        self.data_load_exception = None # Object variable to assign data load thread's exception
 
     def tearDown(self):
         self.set_rebalance_moves_per_node(rebalanceMovesPerNode=4)
@@ -123,16 +124,17 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         table.display("Data load details")
 
     def data_load(self):
-        # Cycles calculation is wrong here as we still continue with the test even when ops fail due to the bug
-        # MB-40654. So cycles is incremented even when the cycle has not completed (and has failed midway). This will
-        # be rectified after CMD comes. So for time being, cycles is not actually the "fully completed cycles"
         cycles = 0
         start_time = time.time()
         while self.data_load_flag:
             doc_loading_spec = self.spec_for_drop_recreate()
-            op_details = BucketUtils.perform_tasks_from_spec(self.cluster,
+            try:
+                _ = BucketUtils.perform_tasks_from_spec(self.cluster,
                                                              self.bucket_util.buckets,
                                                              doc_loading_spec)
+            except Exception as e:
+                self.data_load_exception = e
+                raise
             cycles = cycles + 1
         end_time = time.time()
         elapsed_time = end_time - start_time
@@ -166,6 +168,9 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.data_load_flag = False
         self.data_loading_thread.join()
         self.data_loading_thread = None
+        if self.data_load_exception:
+            self.log.error("Caught exception from data load thread")
+            self.fail(self.data_load_exception)
 
     def load_collections_with_failover(self, rebalance_operation):
         self.pick_nodes_for_failover(rebalance_operation)
@@ -176,8 +181,9 @@ class CollectionsDropRecreateRebalance(CollectionBase):
 
         graceful = True if "graceful" in rebalance_operation else False
         failover_count = 0
+        self.log.info("failing over nodes {0}".format(self.failover_nodes))
         for failover_node in self.failover_nodes:
-            failover_operation = self.task.failover(self.known_nodes, failover_nodes=[failover_node],
+            _ = self.task.failover(self.known_nodes, failover_nodes=[failover_node],
                                                     graceful=graceful, wait_for_pending=120)
             failover_count = failover_count + 1
             self.wait_for_failover_or_assert(failover_count)
@@ -195,6 +201,9 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.data_load_flag = False
         self.data_loading_thread.join()
         self.data_loading_thread = None
+        if self.data_load_exception:
+            self.log.error("Caught exception from data load thread")
+            self.fail(self.data_load_exception)
 
     def test_data_load_collections_with_rebalance_in(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in")
