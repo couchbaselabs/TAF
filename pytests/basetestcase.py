@@ -276,23 +276,6 @@ class BaseTestCase(unittest.TestCase):
             if self.skip_setup_cleanup:
                 self.bucket_util.buckets = self.bucket_util.get_all_buckets()
                 return
-            if not self.skip_init_check_cbserver:
-                for cluster in self.__cb_clusters:
-                    self.cb_version = None
-                    rest = RestConnection(cluster.master)
-                    if RestHelper(rest).is_ns_server_running():
-                        """
-                        Since every new couchbase version, there will be new
-                        features that test code won't work on previous release.
-                        So we need to get couchbase version to filter out
-                        those tests.
-                        """
-                        self.cb_version = rest.get_nodes_version()
-                    else:
-                        self.log.debug("couchbase server does not run yet")
-                    # Stopped supporting TAP protocol since 3.x
-                    # and 3.x support also has stopped
-                    self.protocol = "dcp"
             self.services_map = None
 
             self.log_setup_status("BaseTestCase", "started")
@@ -327,7 +310,7 @@ class BaseTestCase(unittest.TestCase):
                 for cluster in self.__cb_clusters:
                     self.log.info("Initializing cluster")
                     cluster_util = ClusterUtils(cluster, self.task_manager)
-                    # self.cluster_util.reset_cluster()
+                    self.cluster_util.reset_cluster()
                     master_services = cluster_util.get_services(
                         cluster.servers[:1], self.services_init, start_node=0)
                     if master_services is not None:
@@ -510,8 +493,6 @@ class BaseTestCase(unittest.TestCase):
                 # Increase case_number to retry tearDown in setup for next test
                 self.case_number += 1000
             finally:
-                if not self.input.param("skip_cleanup", False):
-                    cluster_util.reset_cluster(self.crash_warning)
                 # stop all existing task manager threads
                 if self.cleanup:
                     self.cleanup = False
