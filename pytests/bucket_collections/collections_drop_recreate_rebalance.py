@@ -6,6 +6,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils
+from couchbase_helper.tuq_helper import N1QLHelper
 
 from table_view import TableView
 
@@ -22,6 +23,25 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.data_load_flag = False  # When to start/stop drop/recreate
         self.data_loading_thread = None
         self.data_load_exception = None # Object variable to assign data load thread's exception
+        self.N1qltxn = self.input.param("N1ql_txn", False)
+        if self.N1qltxn:
+            self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
+                                service_type="n1ql",
+                                 get_all_nodes=True)
+            self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
+                                              use_rest=True,
+                                              buckets = self.bucket_util.buckets,
+                                              log=self.log,
+                                              scan_consistency='REQUEST_PLUS',
+                                              num_collection=3,
+                                              num_buckets=1,
+                                              num_savepoints=1,
+                                              override_savepoint=False,
+                                              num_stmt=10,
+                                              load_spec=self.data_spec_name)
+            self.bucket_col = self.n1ql_helper.get_collections()
+            self.stmts = self.n1ql_helper.get_stmt(self.bucket_col)
+            self.stmts = self.n1ql_helper.create_full_stmts(self.stmts)
 
     def tearDown(self):
         self.set_rebalance_moves_per_node(rebalanceMovesPerNode=4)
@@ -30,7 +50,10 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             self.data_load_flag = False
             self.data_loading_thread.join()
             self.data_loading_thread = None
-        super(CollectionsDropRecreateRebalance, self).tearDown()
+        if self.N1qltxn:
+            super(CollectionBase, self).tearDown()
+        else:
+            super(CollectionsDropRecreateRebalance, self).tearDown()
 
     def set_rebalance_moves_per_node(self, rebalanceMovesPerNode=4):
         body = dict()
@@ -143,9 +166,15 @@ class CollectionsDropRecreateRebalance(CollectionBase):
     def load_collections_with_rebalance(self, rebalance_operation):
         self.pick_nodes_for_rebalance()
 
-        self.data_load_flag = True
-        self.data_loading_thread = threading.Thread(target=self.data_load)
-        self.data_loading_thread.start()
+        if self.N1qltxn:
+            self.N1ql_load_task = self.task.async_n1qlTxn_query( self.stmts,
+                 n1ql_helper=self.n1ql_helper,
+                 commit=True,
+                 scan_consistency="REQUEST_PLUS")
+        else:
+            self.data_load_flag = True
+            self.data_loading_thread = threading.Thread(target=self.data_load)
+            self.data_loading_thread.start()
 
         if rebalance_operation == "rebalance_in":
             operation = self.task.async_rebalance(self.known_nodes, self.add_nodes, [], retry_get_process_num=100)
@@ -166,7 +195,8 @@ class CollectionsDropRecreateRebalance(CollectionBase):
 
         self.wait_for_rebalance_to_complete(operation)
         self.data_load_flag = False
-        self.data_loading_thread.join()
+        if not self.N1qltxn:
+            self.data_loading_thread.join()
         self.data_loading_thread = None
         if self.data_load_exception:
             self.log.error("Caught exception from data load thread")
@@ -174,10 +204,15 @@ class CollectionsDropRecreateRebalance(CollectionBase):
 
     def load_collections_with_failover(self, rebalance_operation):
         self.pick_nodes_for_failover(rebalance_operation)
-
-        self.data_load_flag = True
-        self.data_loading_thread = threading.Thread(target=self.data_load)
-        self.data_loading_thread.start()
+        if self.N1qltxn:
+            self.N1ql_load_task = self.task.async_n1qlTxn_query( self.stmts,
+                 n1ql_helper=self.n1ql_helper,
+                 commit=True,
+                 scan_consistency="REQUEST_PLUS")
+        else:
+            self.data_load_flag = True
+            self.data_loading_thread = threading.Thread(target=self.data_load)
+            self.data_loading_thread.start()
 
         graceful = True if "graceful" in rebalance_operation else False
         failover_count = 0
@@ -199,7 +234,8 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.wait_for_rebalance_to_complete(operation)
         self.sleep(60, "Wait after rebalance completes before stopping data load")
         self.data_load_flag = False
-        self.data_loading_thread.join()
+        if not self.N1qltxn:
+            self.data_loading_thread.join()
         self.data_loading_thread = None
         if self.data_load_exception:
             self.log.error("Caught exception from data load thread")
