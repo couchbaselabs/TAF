@@ -1605,9 +1605,11 @@ class MagmaRollbackTests(MagmaBaseTest):
                 #self.bucket_util.log_doc_ops_task_failures(tasks_in)
             self.log.debug("Iteration == {},State files after killing memCached ".
                            format(i, self.get_state_files(self.buckets[0])))
-
-            for bucket in self.bucket_util.buckets:
-                self.log.debug(cbstats.failover_stats(bucket.name))
+            '''
+            Commenting failover-stats until MB-44103 gets fixed
+            '''
+            #for bucket in self.bucket_util.buckets:
+            #    self.log.debug(cbstats.failover_stats(bucket.name))
 
             ###############################################################
             '''
