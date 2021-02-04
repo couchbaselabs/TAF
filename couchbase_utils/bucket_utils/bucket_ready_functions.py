@@ -2510,7 +2510,7 @@ class BucketUtils(ScopeUtils):
         # Doc count validation
         self._wait_for_stats_all_buckets()
         self.validate_docs_per_collections_all_buckets()
-    
+
     def _async_load_all_buckets(self, cluster, kv_gen, op_type,
                                 exp, random_exp=False,
                                 flag=0, persist_to=0, replicate_to=0,

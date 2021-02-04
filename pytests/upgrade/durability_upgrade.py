@@ -2,11 +2,14 @@ from random import choice
 from threading import Thread
 
 from BucketLib.bucket import Bucket
+from Cb_constants import DocLoading, CbServer
+from bucket_utils.bucket_ready_functions import DocLoaderUtils
+from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper, \
     BucketDurability
 from membase.api.rest_client import RestConnection
-from sdk_client3 import SDKClient
+from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from StatsLib.StatsOperations import StatsHelper
 from upgrade.upgrade_base import UpgradeBase
@@ -29,8 +32,7 @@ class UpgradeTests(UpgradeBase):
         self.log.info("Triggering cb_collect_info")
         rest = RestConnection(self.cluster.master)
         nodes = rest.get_nodes()
-        status = self.cluster_util.trigger_cb_collect_on_cluster(rest,
-                                                                 nodes)
+        status = self.cluster_util.trigger_cb_collect_on_cluster(rest, nodes)
 
         if status is True:
             self.cluster_util.wait_for_cb_collect_to_complete(rest)
@@ -41,6 +43,89 @@ class UpgradeTests(UpgradeBase):
         else:
             self.log_failure("API perform_cb_collect returned False")
         return status
+
+    def __play_with_collection(self):
+        # Client based scope/collection crud tests
+        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        scope_name = self.bucket_util.get_random_name(
+            max_length=CbServer.max_scope_name_len)
+        collection_name = self.bucket_util.get_random_name(
+            max_length=CbServer.max_collection_name_len)
+
+        # Create scope using SDK client
+        client.create_scope(scope_name)
+        # Create collection under default scope and custom scope
+        client.create_collection(collection_name, CbServer.default_scope)
+        client.create_collection(collection_name, scope_name)
+        # Drop created collections
+        client.drop_collection(CbServer.default_scope, collection_name)
+        client.drop_collection(scope_name, collection_name)
+        # Drop created scope using SDK client
+        client.drop_scope(scope_name)
+
+        # MB-44092 - Collection load not working with pre-existing connections
+        DocLoaderUtils.sdk_client_pool = SDKClientPool()
+        self.log.info("Creating required SDK clients for client_pool")
+        for bucket in self.bucket_util.buckets:
+            DocLoaderUtils.sdk_client_pool.create_clients(
+                bucket, [self.cluster.master], 1,
+                compression_settings=self.sdk_compression)
+
+        # Create scopes/collections phase
+        collection_load_spec = \
+            self.bucket_util.get_crud_template_from_package("initial_load")
+        collection_load_spec["doc_crud"][
+            MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+        collection_load_spec["doc_crud"][
+            MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = 5000
+        collection_load_spec[
+            MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET] = 5
+        collection_load_spec[
+            MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 10
+        collection_load_spec[
+            MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 50
+        collection_task = \
+            self.bucket_util.run_scenario_from_spec(self.task,
+                                                    self.cluster,
+                                                    self.bucket_util.buckets,
+                                                    collection_load_spec,
+                                                    mutation_num=1,
+                                                    batch_size=500)
+        if collection_task.result is False:
+            self.log_failure("Collection task failed")
+            return
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+                                                     stat_name="ep_queue_size",
+                                                     timeout=60)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+
+        # Drop and recreate scope/collections
+        collection_load_spec = \
+            self.bucket_util.get_crud_template_from_package("initial_load")
+        collection_load_spec["doc_crud"][
+            MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+        collection_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 10
+        collection_load_spec[MetaCrudParams.SCOPES_TO_DROP] = 2
+        collection_task = \
+            self.bucket_util.run_scenario_from_spec(self.task,
+                                                    self.cluster,
+                                                    self.bucket_util.buckets,
+                                                    collection_load_spec,
+                                                    mutation_num=1,
+                                                    batch_size=500)
+        if collection_task.result is False:
+            self.log_failure("Drop scope/collection failed")
+            return
+
+        # MB-44092 - Close client_pool after collection ops
+        DocLoaderUtils.sdk_client_pool.shutdown()
+
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+                                                     stat_name="ep_queue_size",
+                                                     timeout=60)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_upgrade(self):
         create_batch_size = 10000
@@ -54,7 +139,7 @@ class UpgradeTests(UpgradeBase):
             self.log.info("Starting async doc updates")
             update_task = self.task.async_continuous_doc_ops(
                 self.cluster, self.bucket, self.gen_load,
-                op_type="update",
+                op_type=DocLoading.Bucket.DocOps.UPDATE,
                 process_concurrency=1,
                 persist_to=1,
                 replicate_to=1,
@@ -81,15 +166,17 @@ class UpgradeTests(UpgradeBase):
                     self.num_items+create_batch_size)
                 sync_write_task = self.task.async_load_gen_docs_atomicity(
                     self.cluster, self.bucket_util.buckets,
-                    create_gen, "create",
+                    create_gen, DocLoading.Bucket.DocOps.CREATE,
                     process_concurrency=1,
                     transaction_timeout=self.transaction_timeout,
                     record_fail=True)
             else:
                 sync_write_task = self.task.async_load_gen_docs(
-                    self.cluster, self.bucket, create_gen, "create",
+                    self.cluster, self.bucket, create_gen,
+                    DocLoading.Bucket.DocOps.CREATE,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout,
+                    sdk_client_pool=self.sdk_client_pool,
                     process_concurrency=4,
                     skip_read_on_error=True,
                     suppress_error_table=True)
@@ -113,6 +200,12 @@ class UpgradeTests(UpgradeBase):
                 if node_to_upgrade is None:
                     if sync_write_task.fail.keys():
                         self.log_failure("Failures after cluster upgrade")
+                    else:
+                        self.num_items += create_batch_size
+                        self.bucket.scopes[
+                            CbServer.default_scope].collections[
+                            CbServer.default_collection] \
+                            .num_items += create_batch_size
                 elif self.cluster_supports_sync_write:
                     if sync_write_task.fail:
                         self.log.error("SyncWrite failed: %s"
@@ -120,6 +213,10 @@ class UpgradeTests(UpgradeBase):
                         self.log_failure("SyncWrite failed during upgrade")
                     else:
                         self.num_items += create_batch_size
+                        self.bucket.scopes[
+                            CbServer.default_scope].collections[
+                            CbServer.default_collection] \
+                            .num_items += create_batch_size
                         create_gen = doc_generator(
                             self.key,
                             self.num_items,
@@ -137,6 +234,16 @@ class UpgradeTests(UpgradeBase):
             # Halt further upgrade if test has failed during current upgrade
             if self.test_failure is not None:
                 break
+
+        # Validate default collection stats before collection ops
+        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+                                                     stat_name="ep_queue_size",
+                                                     timeout=60)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+
+        # Play with collection if upgrade was successful
+        if not self.test_failure:
+            self.__play_with_collection()
 
         if self.upgrade_with_data_load:
             # Wait for update_task to complete
@@ -165,7 +272,7 @@ class UpgradeTests(UpgradeBase):
             self.log.info("Starting async doc updates")
             update_task = self.task.async_continuous_doc_ops(
                 self.cluster, self.bucket, self.gen_load,
-                op_type="update",
+                op_type=DocLoading.Bucket.DocOps.UPDATE,
                 process_concurrency=1,
                 persist_to=1,
                 replicate_to=1,
@@ -191,15 +298,17 @@ class UpgradeTests(UpgradeBase):
             if self.atomicity:
                 sync_write_task = self.task.async_load_gen_docs_atomicity(
                     self.cluster, self.bucket_util.buckets,
-                    create_gen, "create",
+                    create_gen, DocLoading.Bucket.DocOps.CREATE,
                     process_concurrency=1,
                     transaction_timeout=self.transaction_timeout,
                     record_fail=True)
             else:
                 sync_write_task = self.task.async_load_gen_docs(
-                    self.cluster, self.bucket, create_gen, "create",
+                    self.cluster, self.bucket, create_gen,
+                    DocLoading.Bucket.DocOps.CREATE,
                     timeout_secs=self.sdk_timeout,
                     process_concurrency=4,
+                    sdk_client_pool=self.sdk_client_pool,
                     skip_read_on_error=True,
                     suppress_error_table=True)
             self.task_manager.get_task_result(sync_write_task)
@@ -276,13 +385,13 @@ class UpgradeTests(UpgradeBase):
             self.sleep(10, "MB-39678: Bucket_d_level change to take effect")
 
             if index == 0:
-                op_type = "create"
+                op_type = DocLoading.Bucket.DocOps.CREATE
                 self.verification_dict["ops_create"] += 1
             elif index == len_possible_d_levels:
-                op_type = "delete"
+                op_type = DocLoading.Bucket.DocOps.DELETE
                 self.verification_dict["ops_delete"] += 1
             else:
-                op_type = "update"
+                op_type = DocLoading.Bucket.DocOps.UPDATE
                 if "ops_update" in self.verification_dict:
                     self.verification_dict["ops_update"] += 1
 
@@ -311,8 +420,9 @@ class UpgradeTests(UpgradeBase):
             while not stop_thread:
                 commit_trans = choice([True, False])
                 trans_update_task = self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets,
-                    self.gen_load, "update", exp=self.maxttl,
+                    self.cluster, self.bucket_util.buckets, self.gen_load,
+                    DocLoading.Bucket.DocOps.UPDATE,
+                    exp=self.maxttl,
                     batch_size=50,
                     process_concurrency=3,
                     timeout_secs=self.sdk_timeout,
@@ -377,7 +487,7 @@ class UpgradeTests(UpgradeBase):
         # Start transaction load after node upgrade
         trans_task = self.task.async_load_gen_docs_atomicity(
             self.cluster, self.bucket_util.buckets,
-            create_gen, "create", exp=self.maxttl,
+            create_gen, DocLoading.Bucket.DocOps.CREATE, exp=self.maxttl,
             batch_size=50,
             process_concurrency=8,
             timeout_secs=self.sdk_timeout,
@@ -397,7 +507,7 @@ class UpgradeTests(UpgradeBase):
         update_tasks = list()
         update_tasks.append(self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_load,
-            op_type="update",
+            op_type=DocLoading.Bucket.DocOps.UPDATE,
             persist_to=1,
             replicate_to=1,
             process_concurrency=1,
@@ -405,14 +515,14 @@ class UpgradeTests(UpgradeBase):
             timeout_secs=30))
         update_tasks.append(self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_load,
-            op_type="update",
+            op_type=DocLoading.Bucket.DocOps.UPDATE,
             replicate_to=1,
             process_concurrency=1,
             batch_size=10,
             timeout_secs=30))
         update_tasks.append(self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_load,
-            op_type="update",
+            op_type=DocLoading.Bucket.DocOps.UPDATE,
             persist_to=1,
             process_concurrency=1,
             batch_size=10,
@@ -475,7 +585,8 @@ class UpgradeTests(UpgradeBase):
         content = None
         try:
             for server in self.cluster_util.get_kv_nodes():
-                content = StatsHelper(server).get_prometheus_metrics_high(parse=parse)
+                content = StatsHelper(server).get_prometheus_metrics_high(
+                    parse=parse)
                 if not parse:
                     StatsHelper(server)._validate_metrics(content)
             for line in content:
@@ -484,8 +595,10 @@ class UpgradeTests(UpgradeBase):
             pass
 
     def get_range_api_metrics(self, metric_name):
-        label_values = {"bucket": self.bucket_util.buckets[0].name, "nodes": self.cluster.master.ip}
-        content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
+        label_values = {"bucket": self.bucket_util.buckets[0].name,
+                        "nodes": self.cluster.master.ip}
+        content = StatsHelper(self.cluster.master).get_range_api_metrics(
+            metric_name, label_values=label_values)
         self.log.info(content)
 
     def get_instant_api(self, metric_name):

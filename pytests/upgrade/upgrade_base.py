@@ -1,5 +1,6 @@
 import re
 
+from Cb_constants import CbServer, DocLoading
 from basetestcase import BaseTestCase
 from builds.build_query import BuildQuery
 from cb_tools.cbstats import Cbstats
@@ -113,25 +114,41 @@ class UpgradeBase(BaseTestCase):
         self.bucket_util.add_rbac_user()
         self.bucket = self.bucket_util.buckets[0]
 
+        # Init sdk_client_pool if not initialized before
+        if self.sdk_client_pool is None:
+            self.init_sdk_pool_object()
+
+        # Create clients in SDK client pool
+        self.log.info("Creating required SDK clients for client_pool")
+        for bucket in self.bucket_util.buckets:
+            self.sdk_client_pool.create_clients(
+                bucket, [self.cluster.master], 1,
+                compression_settings=self.sdk_compression)
+
         # Load initial async_write docs into the cluster
         self.gen_load = doc_generator(self.key, 0, self.num_items,
-                                      doc_size=self.doc_size)
+                                      randomize_doc_size=True,
+                                      randomize_value=True,
+                                      randomize=True)
         async_load_task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, self.gen_load, "create",
+            self.cluster, self.bucket, self.gen_load,
+            DocLoading.Bucket.DocOps.CREATE,
             active_resident_threshold=self.active_resident_threshold,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            process_concurrency=8,
+            batch_size=500,
+            sdk_client_pool=self.sdk_client_pool)
         self.task_manager.get_task_result(async_load_task)
 
         # Update num_items in case of DGM run
         if self.active_resident_threshold != 100:
             self.num_items = async_load_task.doc_index
 
+        self.bucket.scopes[CbServer.default_scope].collections[
+            CbServer.default_collection].num_items = self.num_items
+
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_for_bucket(
-            self.bucket,
-            self.num_items,
-            timeout=60)
         self.bucket_util.print_bucket_stats()
         self.spare_node = self.cluster.servers[self.nodes_init]
 
@@ -386,7 +403,7 @@ class UpgradeBase(BaseTestCase):
                                             + node_to_upgrade.port)]
 
         # Record vbuckets in swap_node
-        if "kv" in services_on_target_node:
+        if CbServer.Services.KV in services_on_target_node:
             shell = RemoteMachineShellConnection(node_to_upgrade)
             cbstats = Cbstats(shell)
             for vb_type in vb_types:
@@ -398,24 +415,18 @@ class UpgradeBase(BaseTestCase):
             # Install target version on spare node
             self.install_version_on_node([self.spare_node], version)
 
-        # Fetch node not going to be involved in upgrade
-        rest.add_node(self.creds.rest_username,
-                      self.creds.rest_password,
-                      self.spare_node.ip,
-                      self.spare_node.port,
-                      services=services_on_target_node)
-        eject_otp_node = self.__get_otp_node(rest, node_to_upgrade)
-        rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
-                       ejectedNodes=[eject_otp_node.id])
-        self.sleep(5, "Wait for rebalance to start")
-        rebalance_passed = rest.monitorRebalance()
+        # Perform swap rebalance for node_to_upgrade <-> spare_node
+        rebalance_passed = self.task.rebalance(
+            self.cluster_util.get_nodes(self.cluster.master),
+            to_add=[self.spare_node],
+            to_remove=[node_to_upgrade],
+            check_vbucket_shuffling=False)
         if not rebalance_passed:
             self.log_failure("Swap rebalance failed during upgrade of {0}"
                              .format(node_to_upgrade))
-            return
 
         # VBuckets shuffling verification
-        if "kv" in services_on_target_node:
+        if CbServer.Services.KV in services_on_target_node:
             # Fetch vbucket stats after swap rebalance for verification
             shell = RemoteMachineShellConnection(self.spare_node)
             cbstats = Cbstats(shell)
