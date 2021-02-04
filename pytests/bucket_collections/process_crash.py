@@ -42,12 +42,16 @@ class CrashTest(CollectionBase):
                 persist_to=self.persist_to)
 
         verification_dict = dict()
-        verification_dict["ops_create"] = self.num_items
+        verification_dict["ops_create"] = \
+            self.bucket_util.buckets[0].scopes[
+                CbServer.default_scope].collections[
+                CbServer.default_collection].num_items
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["rollback_item_count"] = 0
         verification_dict["pending_writes"] = 0
         if self.durability_level:
-            verification_dict["sync_write_committed_count"] = self.num_items
+            verification_dict["sync_write_committed_count"] = \
+                verification_dict["ops_create"]
 
         # Load initial documents into the buckets
         transaction_gen_create = doc_generator(
@@ -89,22 +93,28 @@ class CrashTest(CollectionBase):
                 durability=self.durability_level,
                 batch_size=10, process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
+            self.bucket_util._wait_for_stats_all_buckets()
 
             self.bucket_util.buckets[0].scopes[
                 CbServer.default_scope].collections[
                 CbServer.default_collection].num_items += self.num_items
-            self.bucket_util._wait_for_stats_all_buckets()
+            verification_dict["ops_create"] += self.num_items
+            if self.durability_level:
+                verification_dict["sync_write_committed_count"] += \
+                    self.num_items
             # Verify cbstats vbucket-details
-            stats_failed = \
-                self.durability_helper.verify_vbucket_details_stats(
-                    bucket, self.cluster_util.get_kv_nodes(),
-                    vbuckets=self.cluster_util.vbuckets,
-                    expected_val=verification_dict)
+            stats_failed = self.durability_helper.verify_vbucket_details_stats(
+                bucket, self.cluster_util.get_kv_nodes(),
+                vbuckets=self.cluster_util.vbuckets,
+                expected_val=verification_dict)
 
             if self.atomicity is False:
                 if stats_failed:
                     self.fail("Cbstats verification failed")
-                self.bucket_util.verify_stats_all_buckets(self.num_items)
+                self.bucket_util.verify_stats_all_buckets(
+                    self.bucket_util.buckets[0].scopes[
+                        CbServer.default_scope].collections[
+                        CbServer.default_collection].num_items)
         self.bucket = self.bucket_util.buckets[0]
         if self.N1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
@@ -435,8 +445,7 @@ class CrashTest(CollectionBase):
             "scopes"][scope_name]["collections"].keys()[0]
         scope = BucketUtils.get_scope_obj(
             bucket, scope_name)
-        collection = BucketUtils.get_collection_obj(
-            scope, collection_name)
+        collection = BucketUtils.get_collection_obj(scope, collection_name)
 
         if len(target_vbuckets) == 0:
             self.log.error("No target vbucket list generated to load data")
@@ -488,12 +497,12 @@ class CrashTest(CollectionBase):
                 self.log_failure("Retry of doc_key %s failed: %s"
                                  % (doc_key, result["error"]))
         # Close the SDK connection
-        sdk_client.close()
+        self.sdk_client_pool.release_client(sdk_client)
 
         self.validate_test_failure()
 
+        self.bucket_util._wait_for_stats_all_buckets()
         # Update self.num_items and validate docs per collection
-        collection.num_items += self.new_docs_to_add
         if not self.N1qltxn and self.atomicity is False:
             self.bucket_util.validate_docs_per_collections_all_buckets()
 
