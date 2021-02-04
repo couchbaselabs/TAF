@@ -2594,11 +2594,14 @@ class BucketUtils(ScopeUtils):
         """
         # Start doc_loading in all buckets in async manner
         tasks_info = self._async_load_all_buckets(
-            cluster, kv_gen, op_type, exp, flag,
-            persist_to, replicate_to,
-            only_store_hash, batch_size, pause_secs, timeout_secs,
-            sdk_compression, process_concurrency, retries, durability,
-            ignore_exceptions, retry_exceptions, ryow=ryow,
+            cluster, kv_gen, op_type, exp=exp,
+            sdk_compression=sdk_compression,
+            persist_to=persist_to, replicate_to=replicate_to,
+            durability=durability,
+            batch_size=batch_size, timeout_secs=timeout_secs,
+            process_concurrency=process_concurrency,
+            ignore_exceptions=ignore_exceptions,
+            retry_exceptions=retry_exceptions, ryow=ryow,
             active_resident_threshold=active_resident_threshold,
             check_persistence=check_persistence,
             skip_read_on_error=skip_read_on_error,
