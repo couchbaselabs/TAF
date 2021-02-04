@@ -246,6 +246,7 @@ class CBASBaseTest(BaseTestCase):
                     cluster.cbas_util = CbasUtil(cluster.master,
                                                  cluster.cbas_node,
                                                  self.task)
+                    cluster.cbas_util_v2 = CbasUtilV2(cluster.master, cluster.cbas_node)
                     if "cbas" in cluster.master.services:
                         self.cleanup_cbas(cluster.cbas_util)
                     if add_default_cbas_node:
