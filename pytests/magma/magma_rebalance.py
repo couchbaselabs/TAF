@@ -158,7 +158,8 @@ class MagmaRebalance(MagmaBaseTest):
                                                     graceful=False, wait_for_pending=wait_for_pending)
             failover_count = failover_count + 1
             self.wait_for_failover_or_assert(failover_count)
-        operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+        operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
+                                              retry_get_process_num=120)
         self.data_load_after_failover()
         return operation
 
@@ -171,7 +172,8 @@ class MagmaRebalance(MagmaBaseTest):
                 if self.warmup:
                     node = known_nodes[-1]
                     self.warmup_node(node)
-                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
+                                                          retry_get_process_num=120)
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -180,7 +182,8 @@ class MagmaRebalance(MagmaBaseTest):
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                        operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
+                                                              retry_get_process_num=120)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
                 else:
@@ -189,7 +192,8 @@ class MagmaRebalance(MagmaBaseTest):
                         self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats()
                     # all at once
-                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
+                                                          retry_get_process_num=120)
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -206,7 +210,8 @@ class MagmaRebalance(MagmaBaseTest):
                 # start each intermediate rebalance and wait for it to finish before
                 # starting new one
                 for new_remove_nodes in remove_list:
-                    operation = self.task.async_rebalance(known_nodes, [], new_remove_nodes)
+                    operation = self.task.async_rebalance(known_nodes, [], new_remove_nodes,
+                                                          retry_get_process_num=120)
                     known_nodes = [node for node in known_nodes if node not in new_remove_nodes]
                     iter_count = iter_count + 1
                     # if this is last intermediate rebalance, don't wait
@@ -218,7 +223,8 @@ class MagmaRebalance(MagmaBaseTest):
                 if self.warmup:
                     node = known_nodes[-1]
                     self.warmup_node(node)
-                    operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+                    operation = self.task.async_rebalance(known_nodes, add_nodes, [],
+                                                          retry_get_process_num=120)
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -227,7 +233,8 @@ class MagmaRebalance(MagmaBaseTest):
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(known_nodes + add_nodes, [], [])
+                        operation = self.task.async_rebalance(known_nodes + add_nodes, [], [],
+                                                              retry_get_process_num=120)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
                 else:
@@ -236,7 +243,8 @@ class MagmaRebalance(MagmaBaseTest):
                         self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats()
                     # all at once
-                    operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+                    operation = self.task.async_rebalance(known_nodes, add_nodes, [],
+                                                          retry_get_process_num=120)
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -253,7 +261,8 @@ class MagmaRebalance(MagmaBaseTest):
                 # start each intermediate rebalance and wait for it to finish before
                 # starting new one
                 for new_add_nodes in add_list:
-                    operation = self.task.async_rebalance(known_nodes, new_add_nodes, [])
+                    operation = self.task.async_rebalance(known_nodes, new_add_nodes, [],
+                                                          retry_get_process_num=120)
                     known_nodes.append(new_add_nodes)
                     iter_count = iter_count + 1
                     # if this is last intermediate rebalance, don't wait
@@ -269,7 +278,8 @@ class MagmaRebalance(MagmaBaseTest):
                     node = known_nodes[-1]
                     self.warmup_node(node)
                     operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
-                                                          check_vbucket_shuffling=False)
+                                                          check_vbucket_shuffling=False,
+                                                          retry_get_process_num=120)
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -278,7 +288,8 @@ class MagmaRebalance(MagmaBaseTest):
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                        operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                                                              retry_get_process_num=120)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
                 else:
@@ -290,7 +301,8 @@ class MagmaRebalance(MagmaBaseTest):
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                            node.ip, self.cluster.servers[self.nodes_init].port)
                     operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
-                                                          check_vbucket_shuffling=False)
+                                                          check_vbucket_shuffling=False,
+                                                          retry_get_process_num=120)
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -311,7 +323,8 @@ class MagmaRebalance(MagmaBaseTest):
                 # starting new one
                 for new_add_nodes, new_remove_nodes in zip(add_list, remove_list):
                     operation = self.task.async_rebalance(known_nodes, new_add_nodes, new_remove_nodes,
-                                                          check_vbucket_shuffling=False)
+                                                          check_vbucket_shuffling=False,
+                                                          retry_get_process_num=120)
                     known_nodes = [node for node in known_nodes if node not in new_remove_nodes]
                     known_nodes.extend(new_add_nodes)
                     iter_count = iter_count + 1
@@ -326,7 +339,8 @@ class MagmaRebalance(MagmaBaseTest):
                                        node.ip, self.cluster.servers[self.nodes_init].port)
                 node = known_nodes[-1]
                 self.warmup_node(node)
-                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                                                      retry_get_process_num=120)
                 self.task.jython_task_manager.get_task_result(operation)
                 if not operation.result:
                     self.log.info("rebalance was failed as expected")
@@ -335,7 +349,8 @@ class MagmaRebalance(MagmaBaseTest):
                             [node], bucket))
                     self.log.info("second attempt to rebalance")
                     self.sleep(60, "wait before starting rebalance after warmup")
-                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                                                          retry_get_process_num=120)
                     self.wait_for_rebalance_to_complete(operation)
                 self.sleep(60)
             else:
@@ -346,7 +361,8 @@ class MagmaRebalance(MagmaBaseTest):
                 for node in add_nodes:
                     self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                        node.ip, self.cluster.servers[self.nodes_init].port)
-                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes)
+                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                                                      retry_get_process_num=120)
                 if self.compaction:
                     self.compact_all_buckets()
                 if self.change_ram_quota_cluster:
@@ -364,7 +380,8 @@ class MagmaRebalance(MagmaBaseTest):
                 if self.compaction:
                     self.compact_all_buckets()
                 self.data_load_after_failover()
-                operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+                operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
+                                                      retry_get_process_num=120)
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
             else:
@@ -388,7 +405,8 @@ class MagmaRebalance(MagmaBaseTest):
                         self.wait_for_async_data_load_to_complete(tasks)
                         tasks = None
                     self.data_load_after_failover()
-                    operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes)
+                    operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes,
+                                                          retry_get_process_num=120)
                     iter_count = iter_count + 1
                     known_nodes = [node for node in known_nodes if node not in new_failover_nodes]
                     if iter_count == len(failover_list):
@@ -407,7 +425,8 @@ class MagmaRebalance(MagmaBaseTest):
                 if self.compaction:
                     self.compact_all_buckets()
                 self.data_load_after_failover()
-                operation = self.task.async_rebalance(known_nodes, [], failover_nodes)
+                operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
+                                                      retry_get_process_num=120)
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
             else:
@@ -431,7 +450,8 @@ class MagmaRebalance(MagmaBaseTest):
                         self.wait_for_async_data_load_to_complete(tasks)
                         tasks = None
                     self.data_load_after_failover()
-                    operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes)
+                    operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes,
+                                                          retry_get_process_num=120)
                     iter_count = iter_count + 1
                     known_nodes = [node for node in known_nodes if node not in new_failover_nodes]
                     if iter_count == len(failover_list):
@@ -454,7 +474,8 @@ class MagmaRebalance(MagmaBaseTest):
                 if self.compaction:
                     self.compact_all_buckets()
                 # Rebalance all the nodes
-                operation = self.task.async_rebalance(known_nodes, [], [])
+                operation = self.task.async_rebalance(known_nodes, [], [],
+                                                      retry_get_process_num=120)
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
             else:
@@ -483,7 +504,8 @@ class MagmaRebalance(MagmaBaseTest):
                     for failover_node in new_failover_nodes:
                         self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
                                                     recoveryType=self.recovery_type)
-                    operation = self.task.async_rebalance(known_nodes, [], [])
+                    operation = self.task.async_rebalance(known_nodes, [], [],
+                                                          retry_get_process_num=120)
                     iter_count = iter_count + 1
                     if iter_count == len(failover_list):
                         continue
@@ -505,7 +527,8 @@ class MagmaRebalance(MagmaBaseTest):
                 if self.compaction:
                     self.compact_all_buckets()
                 # Rebalance all the nodes
-                operation = self.task.async_rebalance(known_nodes, [], [])
+                operation = self.task.async_rebalance(known_nodes, [], [],
+                                                      retry_get_process_num=120)
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
             else:
@@ -534,7 +557,8 @@ class MagmaRebalance(MagmaBaseTest):
                     for failover_node in new_failover_nodes:
                         self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
                                                     recoveryType=self.recovery_type)
-                    operation = self.task.async_rebalance(known_nodes, [], [])
+                    operation = self.task.async_rebalance(known_nodes, [], [],
+                                                          retry_get_process_num=120)
                     iter_count = iter_count + 1
                     if iter_count == len(failover_list):
                         continue
