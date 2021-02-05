@@ -2472,6 +2472,45 @@ class BucketUtils(ScopeUtils):
             track_failures=track_failures,
             sdk_client_pool=sdk_client_pool)
 
+    def load_docs_to_all_collections(self, start, end, cluster,
+                                     key="test_docs",
+                                     op_type=DocLoading.Bucket.DocOps.CREATE,
+                                     mutate=0, process_concurrency=8,
+                                     persist_to=0, replicate_to=0,
+                                     batch_size=10, pause_secs=5,
+                                     timeout_secs=10):
+        """
+        Loads documents to all the collections available in bucket_util sequentially
+        :param start int, starting of document serial
+        :param end int, ending of document serial
+        :param: key string, prefix for the document name
+        :param: cluster CBCluster object, cluster on which loading has to be done
+        :param: op_type DocLoading.Bucket.DocOps type, type of operation
+        correctness of num_items update in bucket object
+        if loading asynchronously then it is suggested to wait for the results of
+        all the tasks and validate doc_count explicitly
+        """
+        generator = doc_generator(key, start, end, mutate=mutate)
+        for bucket in self.get_all_buckets():
+            for _, scope in bucket.scopes.items():
+                for _, collection in scope.collections.items():
+                    task = self.task.async_load_gen_docs(
+                        cluster, bucket,
+                        generator, op_type,
+                        batch_size=batch_size,
+                        pause_secs=pause_secs,
+                        scope=scope.name,
+                        collection=collection.name,
+                        sdk_client_pool=DocLoaderUtils.sdk_client_pool,
+                        process_concurrency=process_concurrency,
+                        persist_to=persist_to, replicate_to=replicate_to,
+                        timeout_secs=timeout_secs)
+                    self.task_manager.get_task_result(task)
+                    bucket.scopes[scope.name].collections[collection.name].num_items += (end - start)
+        # Doc count validation
+        self._wait_for_stats_all_buckets()
+        self.validate_docs_per_collections_all_buckets()
+    
     def _async_load_all_buckets(self, cluster, kv_gen, op_type,
                                 exp, random_exp=False,
                                 flag=0, persist_to=0, replicate_to=0,

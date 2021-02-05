@@ -677,11 +677,6 @@ class CBASBaseTest(BaseTestCase):
         for over_ride_param in self.over_ride_spec_params:
             if over_ride_param == "replicas":
                 bucket_spec[Bucket.replicaNumber] = self.num_replicas
-            elif over_ride_param == "bucket_size":
-                bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
-            elif over_ride_param == "num_items":
-                bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
-                    self.num_items
             elif over_ride_param == "remove_default_collection":
                 bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
                     self.remove_default_collection
@@ -690,9 +685,24 @@ class CBASBaseTest(BaseTestCase):
                     bucket_spec[Bucket.flushEnabled] = Bucket.FlushBucket.ENABLED
                 else:
                     bucket_spec[Bucket.flushEnabled] = Bucket.FlushBucket.DISABLED
+            elif over_ride_param == "num_buckets":
+                bucket_spec[MetaConstants.NUM_BUCKETS] = int(
+                    self.input.param("num_buckets", 1))
+            elif over_ride_param == "bucket_size":
+                if self.bucket_size == "auto":
+                    cluster_info = self.rest.get_nodes_self()
+                    kv_quota = cluster_info.__getattribute__("memoryQuota")
+                    self.bucket_size = kv_quota // bucket_spec[MetaConstants.NUM_BUCKETS]
+                bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
+            elif over_ride_param == "num_scopes":
+                bucket_spec[MetaConstants.NUM_SCOPES_PER_BUCKET] = int(
+                    self.input.param("num_scopes", 1))
             elif over_ride_param == "num_collections":
                 bucket_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE] = int(
                     self.input.param("num_collections", 1))
+            elif over_ride_param == "num_items":
+                bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                    self.num_items
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:
