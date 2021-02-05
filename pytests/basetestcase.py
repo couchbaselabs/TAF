@@ -529,10 +529,10 @@ class BaseTestCase(unittest.TestCase):
         except Exception as e:
             self.log.warning("Exception during REST log_client_error: %s" % e)
 
-    def log_setup_status(self, class_name, status):
+    def log_setup_status(self, class_name, status, stage="setup"):
         self.log.info(
-            "========= %s setup %s for test #%d %s ========="
-            % (class_name, status, self.case_number, self._testMethodName))
+            "========= %s %s %s for test #%d %s ========="
+            % (class_name, stage, status, self.case_number, self._testMethodName))
 
     def _initialize_nodes(self, task, cluster, disabled_consistent_view=None,
                           rebalance_index_waiting_disabled=None,

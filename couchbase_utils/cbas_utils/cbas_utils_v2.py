@@ -23,6 +23,9 @@ from CbasLib.cbas_entity import Dataverse,CBAS_Scope,Link,Dataset,CBAS_Collectio
 from remote.remote_util import RemoteMachineShellConnection
 from common_lib import sleep
 from Queue import Queue
+from BucketLib.BucketOperations import BucketHelper
+from sdk_exceptions import SDKException
+from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 
 
 class BaseUtil(object):
@@ -3489,3 +3492,321 @@ class CbasUtil(Index_Util):
             else:
                 return False
         return True
+
+
+class CBASRebalanceUtil(object):
+    
+    available_servers = list()
+    exclude_nodes = list()
+    query_interval = 3
+    no_of_parallel_queries = 1
+    
+    def __init__(self, cluster, cluster_util, bucket_util, task, rest, vbucket_check=True, cbas_util=None):
+        '''
+        :param master cluster's master node object
+        :param cbas_node CBAS node object
+        :param server_task task object
+        '''
+        self.log = logger.get("test")
+        self.cluster = cluster
+        self.cluster_util = cluster_util
+        self.bucket_util = bucket_util
+        self.task = task
+        self.rest = rest
+        self.vbucket_check = vbucket_check
+        self.cbas_util = cbas_util
+        
+        self.bucket_helper_obj = BucketHelper(self.cluster.master)
+        self.run_parallel_cbas_query = False
+        self.run_parallel_kv_query = False
+        self.query_threads = list()
+        self.durability_level = ""
+    
+    def wait_for_rebalance_task_to_complete(self, task):
+        self.task.jython_task_manager.get_task_result(task)
+        return task.result
+    
+    def rebalance(self, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0, cbas_nodes_out=0):
+        
+        if kv_nodes_out > 0:
+            cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
+                service_type="kv", get_all_nodes=True, servers=self.cluster.nodes_in_cluster, master=self.cluster.master)
+        else:
+            cluster_kv_nodes = []
+        
+        if cbas_nodes_out > 0:
+            cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
+                service_type="cbas", get_all_nodes=True, servers=self.cluster.nodes_in_cluster, master=self.cluster.master)
+        else:
+            cluster_cbas_nodes = []
+        
+        for node in CBASRebalanceUtil.exclude_nodes:
+            try:
+                cluster_kv_nodes.remove(node)
+            except:
+                pass
+            try:
+                cluster_cbas_nodes.remove(node)
+            except:
+                pass
+            
+        servs_in = random.sample(CBASRebalanceUtil.available_servers, kv_nodes_in+cbas_nodes_in)
+        servs_out = random.sample(cluster_kv_nodes, kv_nodes_out) + random.sample(cluster_cbas_nodes, cbas_nodes_out)
+            
+
+        if kv_nodes_in == kv_nodes_out:
+            self.vbucket_check = False
+
+        services = list()
+        if kv_nodes_in > 0:
+            services += ["kv"] * kv_nodes_in
+        if cbas_nodes_in > 0:
+            services += ["cbas"] * cbas_nodes_in
+
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.nodes_in_cluster, servs_in, servs_out, check_vbucket_shuffling=self.vbucket_check,
+            retry_get_process_num=200, services=services)
+
+        CBASRebalanceUtil.available_servers = [servs for servs in CBASRebalanceUtil.available_servers if servs not in servs_in]
+        CBASRebalanceUtil.available_servers += servs_out
+
+        self.cluster.nodes_in_cluster.extend(servs_in)
+        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
+        return rebalance_task
+    
+    def run_cbas_queries_in_loop(self):
+        self.log.info("Starting CBAS queries")
+        datasets = self.cbas_util.list_all_dataset_objs()
+        while self.run_parallel_cbas_query:
+            total_items, mutated_items = self.cbas_util.get_num_items_in_cbas_dataset(
+                (random.choice(datasets)).full_name, timeout=300, analytics_timeout=300)
+            if total_items < 0 or mutated_items < 0:
+                self.log.warn("CBAS Query failed")
+            time.sleep(CBASRebalanceUtil.query_interval)
+        self.log.info("Stopping CBAS queries")
+    
+    def run_n1ql_query_in_loop(self):
+        """
+        Runs select queries in a loop in a separate thread until the thread is asked for to join
+        """
+        self.log.info("Starting N1QL queries")
+        collection_list = list()
+        for bucket in self.bucket_util.buckets:
+            status, content = self.bucket_helper_obj.list_collections(bucket.name)
+            if status:
+                content = json.loads(content)
+                for scope in content["scopes"]:
+                    for collection in scope["collections"]:
+                        collection_list.append(CBASHelper.format_name(bucket.name, scope["name"], collection["name"]))
+        while self.run_parallel_kv_query:
+            for collection in collection_list:
+                query = "select count(*) from {0}".format(collection)
+                result = self.rest.query_tool(query, timeout=600)
+                if result['status'] != "success":
+                    self.log.warn("Query failed: {0}".format(query))
+                time.sleep(CBASRebalanceUtil.query_interval)
+    
+    def start_parallel_queries(self):
+        for i in range(1, CBASRebalanceUtil.no_of_parallel_queries +1):
+            if self.run_parallel_cbas_query:
+                self.query_threads.append(threading.Thread(
+                    target=self.run_cbas_queries_in_loop, name="cbas_query_{0}".format(i)))
+                self.query_threads[-1].start()
+            
+            if self.run_parallel_kv_query:
+                self.query_threads.append(
+                    threading.Thread(target=self.run_n1ql_query_in_loop, name="N1QL_query_{0}".format(i)))
+                self.query_threads[-1].start()
+    
+    def stop_parallel_queries(self):
+        self.log.info("Stopping CBAS queries")
+        self.run_parallel_cbas_query = False
+        
+        self.log.info("Stopping N1QL queries")
+        self.run_parallel_kv_query = False
+        
+        if self.query_threads:
+            for qthread in self.query_threads:
+                qthread.join()
+    
+    def set_retry_exceptions(self, doc_loading_spec):
+        """
+        Exceptions for which mutations need to be retried during
+        topology changes
+        """
+        retry_exceptions = list()
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        if self.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
+    
+    def wait_for_data_load_to_complete(self, task, skip_validations):
+        self.task.jython_task_manager.get_task_result(task)
+        if not skip_validations:
+            self.bucket_util.validate_doc_loading_results(task)
+        return task.result
+    
+    def data_load_collection(
+            self, doc_spec_name, skip_validations, async_load=True, skip_read_success_results=True):
+        
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(doc_spec_name)
+        self.set_retry_exceptions(doc_loading_spec)
+        doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
+        doc_loading_spec[MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = skip_read_success_results
+        task = self.bucket_util.run_scenario_from_spec(
+            self.task, self.cluster, self.bucket_util.buckets, 
+            doc_loading_spec, mutation_num=0, async_load=async_load)
+        if not async_load:
+            return self.wait_for_data_load_to_complete(task, skip_validations)
+        return task
+    
+    def data_validation_collection(self, skip_validations=True, doc_and_collection_ttl=False): 
+        retry_count = 0
+        while retry_count < 10:
+            try:
+                self.bucket_util._wait_for_stats_all_buckets()
+            except:
+                retry_count = retry_count + 1
+                self.log.info("ep-queue hasn't drained yet. Retry count: {0}".format(retry_count))
+            else:
+                break
+        if retry_count == 10:
+            self.log.info("Attempting last retry for ep-queue to drain")
+            self.bucket_util._wait_for_stats_all_buckets()
+        if doc_and_collection_ttl:
+            self.bucket_util._expiry_pager(val=5)
+            self.log.info("wait for doc/collection maxttl to finish")
+            time.sleep(400)
+            items = 0
+            self.bucket_util._wait_for_stats_all_buckets()
+            for bucket in self.bucket_util.buckets:
+                items = items + self.bucket_helper_obj.get_active_key_count(bucket)
+            if items != 0:
+                raise Exception("doc count!=0, TTL + rebalance failed")
+        else:
+            if not skip_validations:
+                self.bucket_util.validate_docs_per_collections_all_buckets()
+    
+    def get_failover_count(self):
+        cluster_status = self.rest.cluster_status()
+        failover_count = 0
+        # check for inactiveFailed
+        for node in cluster_status['nodes']:
+            if node['clusterMembership'] == "inactiveFailed":
+                failover_count += 1
+        return failover_count
+    
+    def wait_for_failover_or_assert(self, expected_failover_count, timeout=7200):
+        # Timeout is kept large for graceful failover
+        time_start = time.time()
+        time_max_end = time_start + timeout
+        actual_failover_count = 0
+        while time.time() < time_max_end:
+            actual_failover_count = self.get_failover_count()
+            if actual_failover_count == expected_failover_count:
+                break
+            time.sleep(20)
+        time_end = time.time()
+        if actual_failover_count != expected_failover_count:
+            self.log.info(self.rest.print_UI_logs())
+        
+        if actual_failover_count == expected_failover_count:
+            self.log.info("{0} nodes failed over as expected in {1} seconds"
+                      .format(actual_failover_count, time_end - time_start))
+        else:
+            raise Exception(
+                "{0} nodes failed over, expected : {1}".format(
+                    actual_failover_count, expected_failover_count))
+        
+    def failover(self, failover_type="Hard", action="RebalanceOut", service_type="cbas", timeout=7200):
+        self.log.info("{0} Failover a node and {1} that node".format(
+            failover_type, action))
+        
+        if "kv" in service_type:
+            cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
+                service_type="kv", get_all_nodes=True, servers=self.cluster.nodes_in_cluster, master=self.cluster.master)
+        else:
+            cluster_kv_nodes = []
+        
+        if "cbas" in service_type:
+            cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
+                service_type="cbas", get_all_nodes=True, servers=self.cluster.nodes_in_cluster, master=self.cluster.master)
+        else:
+            cluster_cbas_nodes = []
+        
+        for node in CBASRebalanceUtil.exclude_nodes:
+            try:
+                cluster_kv_nodes.remove(node)
+            except:
+                pass
+            try:
+                cluster_cbas_nodes.remove(node)
+            except:
+                pass
+        
+        failover_count = 0
+        kv_failover_nodes = []
+        cbas_failover_nodes = []
+        self.success_kv_failed_over = False
+        self.success_cbas_failed_over = False
+        
+        # Mark Node for failover
+        if failover_type == "Graceful":
+            chosen = self.cluster_util.pick_nodes(
+                self.cluster.master, howmany=1, target_node= cluster_kv_nodes[0], 
+                exclude_nodes=CBASRebalanceUtil.exclude_nodes)
+            self.success_kv_failed_over = self.rest.fail_over(chosen[0].id, graceful=True)
+            failover_count += 1
+            kv_failover_nodes.extend(chosen)
+        else:
+            if "kv" in service_type:
+                chosen = self.cluster_util.pick_nodes(
+                    self.cluster.master, howmany=1, target_node= cluster_kv_nodes[0], 
+                    exclude_nodes=CBASRebalanceUtil.exclude_nodes)
+                self.success_kv_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
+                failover_count += 1
+                kv_failover_nodes.extend(chosen)
+            if "cbas" in service_type and cluster_cbas_nodes:
+                chosen = self.cluster_util.pick_nodes(
+                    self.cluster.master, howmany=1, target_node= cluster_cbas_nodes[0], 
+                    exclude_nodes=CBASRebalanceUtil.exclude_nodes)
+                self.success_cbas_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
+                failover_count += 1
+                cbas_failover_nodes.extend(chosen)
+        time.sleep(300)
+        self.wait_for_failover_or_assert(failover_count, timeout)
+
+        # Perform the action
+        if action == "RebalanceOut":
+            nodes = self.rest.node_statuses()
+            self.rest.rebalance(
+                otpNodes=[node.id for node in nodes], 
+                ejectedNodes=[node.id for node in (kv_failover_nodes + cbas_failover_nodes)]
+                )
+            # self.sleep(600)
+            if not self.rest.monitorRebalance(stop_if_loop=False):
+                raise Exception("Rebalance failed")
+            servs_out = [node for node in self.cluster.nodes_in_cluster for fail_node in (
+                kv_failover_nodes + cbas_failover_nodes) if node.ip == fail_node.ip]
+            self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
+            CBASRebalanceUtil.available_servers += servs_out
+            time.sleep(10)
+        else:
+            if action == "FullRecovery":
+                if self.success_kv_failed_over:
+                    self.rest.set_recovery_type(otpNode=kv_failover_nodes[0].id, recoveryType="full")
+                if self.success_cbas_failed_over:
+                    self.rest.set_recovery_type(otpNode=cbas_failover_nodes[0].id, recoveryType="full")
+            elif action == "DeltaRecovery":
+                if self.success_kv_failed_over:
+                    self.rest.set_recovery_type(otpNode=kv_failover_nodes[0].id, recoveryType="delta")
+
+            rebalance_task = self.task.async_rebalance(
+                self.cluster.nodes_in_cluster, [], [], retry_get_process_num=200)
+            if not self.wait_for_rebalance_task_to_complete(rebalance_task):
+                raise Exception("Rebalance failed while doing recovery after failover")
+            time.sleep(10)
+        
