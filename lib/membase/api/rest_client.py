@@ -1381,6 +1381,15 @@ class RestConnection(object):
         status, content = self.diag_eval(code)
         return status, content
 
+    def set_ephemeral_purge_age_and_interval(self, bucket='default',
+                                             ephemeral_metadata_purge_age=0,
+                                             ephemeral_metadata_purge_interval=1):
+        code = "ns_bucket:update_bucket_props(\"" + bucket + "\", [{extra_config_string, \"ephemeral_metadata_purge_age=" + \
+                str(ephemeral_metadata_purge_age) + ";ephemeral_metadata_purge_interval=" + \
+                str(ephemeral_metadata_purge_interval) + "\"}])"
+        status, content = self.diag_eval(code)
+        return status, content
+
     def diag_master_events(self):
         api = '{0}{1}'.format(self.baseUrl, 'diag/masterEvents?o=1')
         status, content, header = self._http_request(api, "GET")

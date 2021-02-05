@@ -41,6 +41,10 @@ class CollectionsRebalance(CollectionBase):
         self.forced_hard_failover = self.input.param("forced_hard_failover", False)  # for forced hard failover tests
         self.change_ram_quota_cluster = self.input.param("change_ram_quota_cluster",
                                                          False)  # To change during rebalance
+        self.change_ephemeral_purge_age_and_interval = self.input.param("change_ephemeral_purge_age_and_interval",
+                                                                        True)
+        if self.change_ephemeral_purge_age_and_interval:
+            self.set_ephemeral_purge_age_and_interval()
         self.skip_validations = self.input.param("skip_validations", True)
         self.compaction_tasks = list()
         self.dgm_ttl_test = self.input.param("dgm_ttl_test", False)  # if dgm with ttl
@@ -123,6 +127,23 @@ class CollectionsRebalance(CollectionBase):
         for bucket in self.bucket_util.buckets:
             self.compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
+
+    def set_ephemeral_purge_age_and_interval(self, ephemeral_metadata_purge_age=0,
+                                             ephemeral_metadata_purge_interval=1):
+        """
+        Enables diag eval on master node and updates the above two parameters
+        for all ephemeral buckets on the cluster
+        """
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+        ephemeral_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "ephemeral"]
+        for ephemeral_bucket in ephemeral_buckets:
+            status, content = self.rest.set_ephemeral_purge_age_and_interval(bucket=ephemeral_bucket.name,
+                                                                             ephemeral_metadata_purge_age=ephemeral_metadata_purge_age,
+                                                                             ephemeral_metadata_purge_interval=ephemeral_metadata_purge_interval)
+            if not status:
+                raise Exception(content)
 
     def warmup_node(self, node):
         self.log.info("Warmuping up node...")
