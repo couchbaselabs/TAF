@@ -479,7 +479,7 @@ public class SimpleTransaction {
 	}
 
 	public List<LogDefer> RunTransaction(Cluster cluster, Transactions transaction, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
-										 List<String> Deletekeys, Boolean commit, boolean sync, int updatecount) {
+										 List<String> Deletekeys, Boolean commit, Boolean sync, int updatecount) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
   		// synchronous API - transactions
 		if (sync) {
