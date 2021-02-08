@@ -121,7 +121,7 @@ class N1QLHelper:
             password = 'password'
         cred_params['creds'].append({'user': username, 'pass': password})
         for bucket in self.buckets:
-            if bucket.saslPassword:
+            if hasattr(bucket,"saslPassword") and bucket.saslPassword:
                 cred_params['creds'].append({'user': 'local:%s' % bucket.name,
                                              'pass': bucket.saslPassword})
         query_params.update(cred_params)
@@ -735,14 +735,14 @@ class N1QLHelper:
     def configure_gomaxprocs(self):
         max_proc = self.input.param("gomaxprocs", None)
         cmd = "export GOMAXPROCS=%s" % max_proc
-        for _ in self.servers:
-            shell_connection = RemoteMachineShellConnection(self.master)
+        for server in self.servers:
+            shell_connection = RemoteMachineShellConnection(server)
             shell_connection.execute_command(cmd)
             shell_connection.disconnect()
 
     def drop_primary_index(self, using_gsi = True, server = None):
         if server is None:
-            server = self.master
+            server = self.server
         self.log.info("CHECK FOR PRIMARY INDEXES")
         for bucket in self.buckets:
             self.query = "DROP PRIMARY INDEX ON {0}".format(bucket.name)
@@ -754,13 +754,13 @@ class N1QLHelper:
             try:
                 check = self._is_index_in_list(bucket.name, "#primary", server = server)
                 if check:
-                    self.run_cbq_query(server=server)
+                    self.run_cbq_query(query=self.query, server=server)
             except Exception, ex:
                 self.log.error('ERROR during index creation %s' % str(ex))
 
     def create_primary_index(self, using_gsi=True, server=None):
         if server is None:
-            server = self.master
+            server = self.server
         for bucket in self.buckets:
             self.query = "CREATE PRIMARY INDEX ON %s " % bucket.name
             if using_gsi:
@@ -771,7 +771,7 @@ class N1QLHelper:
                 try:
                     check = self._is_index_in_list(bucket.name, "#primary", server = server)
                     if not check:
-                        self.run_cbq_query(server = server,query_params={'timeout' : '900s'})
+                        self.run_cbq_query(query=self.query,server = server,query_params={'timeout' : '900s'})
                         check = self.is_index_online_and_in_list(bucket.name, "#primary", server = server)
                         if not check:
                             raise Exception(" Timed-out Exception while building primary index for bucket {0} !!!".format(bucket.name))
@@ -783,7 +783,7 @@ class N1QLHelper:
 
     def create_partitioned_primary_index(self, using_gsi=True, server=None):
         if server is None:
-            server = self.master
+            server = self.server
         for bucket in self.buckets:
             self.query = "CREATE PRIMARY INDEX ON %s " % bucket.name
             if using_gsi:
@@ -848,7 +848,7 @@ class N1QLHelper:
         query = "select distinct(name) from system:indexes where `using`='gsi'"
         index_names = []
         if server is None:
-            server = self.master
+            server = self.server
         res = self.run_cbq_query(query=query, server=server)
         for item in res['results']:
             index_names.append(item['name'])
@@ -871,7 +871,7 @@ class N1QLHelper:
                                    timeout=600.0):
         query = "SELECT * FROM system:indexes where name = \'%s\'" % index_name
         if server is None:
-            server = self.master
+            server = self.server
         init_time = time.time()
         check = False
         while not check:
@@ -913,7 +913,7 @@ class N1QLHelper:
     def _is_index_in_list(self, bucket, index_name, server=None, index_state=["pending", "building", "deferred"]):
         query = "SELECT * FROM system:indexes where name = \'{0}\'".format(index_name)
         if server is None:
-            server = self.master
+            server = self.server
         res = self.run_cbq_query(query=query, server=server)
         for item in res['results']:
             if 'keyspace_id' not in item['indexes']:
@@ -925,7 +925,7 @@ class N1QLHelper:
     def _is_index_in_list_bulk(self, bucket, index_names=[], server=None, index_state=["pending","building"]):
         query = "SELECT * FROM system:indexes"
         if server is None:
-            server = self.master
+            server = self.server
         res = self.run_cbq_query(query=query, server=server)
         found_index_list = []
         for item in res['results']:
@@ -941,7 +941,7 @@ class N1QLHelper:
     def gen_index_map(self, server=None):
         query = "SELECT * FROM system:indexes"
         if server is None:
-            server = self.master
+            server = self.server
         res = self.run_cbq_query(query=query, server=server)
         index_map = {}
         for item in res['results']:
@@ -957,7 +957,7 @@ class N1QLHelper:
         query = "SELECT COUNT(*) FROM {0}"
         result_map = dict()
         if server is None:
-            server = self.master
+            server = self.server
         for bucket in buckets:
             res = self.run_cbq_query(query=query.format(bucket.name), server=server)
             result_map[bucket.name] = int(res["results"][0]["$1"])
@@ -966,7 +966,7 @@ class N1QLHelper:
     def get_index_count_using_index(self, bucket, index_name, server=None):
         query = 'SELECT COUNT(*) FROM {0} USE INDEX ({1})'.format(bucket.name, index_name)
         if not server:
-            server = self.master
+            server = self.server
         res = self.run_cbq_query(query=query, server=server)
         return int(res['results'][0]['$1'])
 

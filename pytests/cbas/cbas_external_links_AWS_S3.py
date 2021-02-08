@@ -183,7 +183,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.shell = RemoteMachineShellConnection(self.cluster.master)
         self.n1ql_helper = N1QLHelper(shell=self.shell, buckets=self.bucket_util.buckets,
                                       item_flag=0, n1ql_port=8093, log=self.log,
-                                      input=self.input, master=self.cluster.master, 
+                                      input=self.input, server=self.cluster.master, 
                                       use_rest=True)
         
         self.s3_data_helper = S3DataHelper(
