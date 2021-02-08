@@ -3573,8 +3573,8 @@ class CreateDatasetsOnAllCollectionsTask(Task):
         else:
             enabled_from_KV = False
             if self.cbas_name_cardinality > 1:
-                dataverse = Dataverse(self.cbas_util.generate_name(self.cbas_name_cardinality-1))
-                self.cbas_util.dataverses[dataverse.name] = dataverse
+                dataverse = Dataverse(self.cbas_util.generate_name(
+                    self.cbas_name_cardinality-1))
             else:
                 dataverse = self.cbas_util.get_dataverse_obj("Default")
                                 
@@ -3593,8 +3593,12 @@ class CreateDatasetsOnAllCollectionsTask(Task):
                 bucket=bucket, scope=scope, collection=collection, 
                 enabled_from_KV=enabled_from_KV, num_of_items=num_of_items,
                 link_name=link_name)
-        self.create_dataset(dataset_obj)
+        if not self.create_dataset(dataset_obj):
+            raise N1QLQueryException(
+                "Could not create dataset " + dataset_obj.name + " on " + 
+                dataset_obj.dataverse_name)
         dataverse.datasets[dataset_obj.full_name] = dataset_obj
+        self.cbas_util.dataverses[dataverse.name] = dataverse
     
     def create_dataset(self, dataset):
         dataverse_name = dataset.dataverse_name
@@ -3603,10 +3607,12 @@ class CreateDatasetsOnAllCollectionsTask(Task):
         if dataset.enabled_from_KV:
             if self.kv_name_cardinality > 1:
                 return self.cbas_util.enable_analytics_from_KV(
-                    dataset.full_kv_entity_name, False, False, None, None, None, 120, 120)
+                    dataset.full_kv_entity_name, False, False, None, None,
+                    None, 120, 120)
             else:
                 return self.cbas_util.enable_analytics_from_KV(
-                    dataset.get_fully_qualified_kv_entity_name(1), False, False, None, None, None, 120, 120)
+                    dataset.get_fully_qualified_kv_entity_name(1), False,
+                    False, None, None, None, 120, 120)
         else:
             if isinstance(dataset, CBAS_Collection):
                 analytics_collection = True
@@ -3615,23 +3621,25 @@ class CreateDatasetsOnAllCollectionsTask(Task):
             if self.kv_name_cardinality > 1 and self.cbas_name_cardinality > 1:
                 return self.cbas_util.create_dataset(
                     dataset.name, dataset.full_kv_entity_name, dataverse_name, 
-                    False, False, None, dataset.link_name, None, False, None, None, 
-                    None, 120, 120, analytics_collection)
-            elif self.kv_name_cardinality > 1 and self.cbas_name_cardinality == 1:
+                    False, False, None, dataset.link_name, None, False, None,
+                    None, None, 120, 120, analytics_collection)
+            elif self.kv_name_cardinality > 1 and \
+            self.cbas_name_cardinality == 1:
                 return self.cbas_util.create_dataset(
-                    dataset.name, dataset.full_kv_entity_name, None, 
-                    False, False, None, dataset.link_name, None, False, None, None, 
+                    dataset.name, dataset.full_kv_entity_name, None, False,
+                    False, None, dataset.link_name, None, False, None, None, 
                     None, 120, 120, analytics_collection)
-            elif self.kv_name_cardinality == 1 and self.cbas_name_cardinality > 1:
+            elif self.kv_name_cardinality == 1 and \
+            self.cbas_name_cardinality > 1:
                 return self.cbas_util.create_dataset(
-                    dataset.name, dataset.get_fully_qualified_kv_entity_name(1), dataverse_name, 
-                    False, False, None, dataset.link_name, None, False, None, None, 
-                    None, 120, 120, analytics_collection)
+                    dataset.name, dataset.get_fully_qualified_kv_entity_name(1),
+                    dataverse_name, False, False, None, dataset.link_name, None,
+                    False, None, None, None, 120, 120, analytics_collection)
             else:
                 return self.cbas_util.create_dataset(
-                    dataset.name, dataset.get_fully_qualified_kv_entity_name(1), None, 
-                    False, False, None, dataset.link_name, None, False, None, None, 
-                    None, 120, 120, analytics_collection)
+                    dataset.name, dataset.get_fully_qualified_kv_entity_name(1),
+                    None, False, False, None, dataset.link_name, None, False,
+                    None, None, None, 120, 120, analytics_collection)
 
 
 class RunSleepQueryOnDatasetsTask(Task):

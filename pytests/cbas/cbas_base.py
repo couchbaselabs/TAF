@@ -25,7 +25,6 @@ from java.lang import Exception as Java_base_exception
 class CBASBaseTest(BaseTestCase):
     def setUp(self, add_default_cbas_node=True):
         super(CBASBaseTest, self).setUp()
-
         if self._testMethodDoc:
             self.log.info("Starting Test: %s - %s"
                           % (self._testMethodName, self._testMethodDoc))
@@ -161,6 +160,11 @@ class CBASBaseTest(BaseTestCase):
                         it is automatically cleaned-up.'''
                     self.cleanup_cbas()
                     self.cluster.cbas_nodes.remove(self.cbas_node)
+            if self.nodes_init > 2:
+                init_nodes = list(filter(
+                    lambda node: node.ip != self.cluster.master.ip and node.ip != self.cbas_node.ip,
+                    self.cluster.servers))
+                self.cluster_util.add_all_nodes_then_rebalance(init_nodes[:self.nodes_init - 2])
             if self.bucket_spec is not None:
                 try:
                     self.collectionSetUp(self.cluster, self.bucket_util,
