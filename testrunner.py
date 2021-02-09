@@ -707,7 +707,7 @@ def main():
         TestInputSingleton.input.test_params["case_number"] = case_number
         TestInputSingleton.input.test_params["logs_folder"] = logs_folder
         if "rerun" not in TestInputSingleton.input.test_params:
-            TestInputSingleton.input.test_params["rerun"] = True
+            TestInputSingleton.input.test_params["rerun"] = False
         print("Test Input params:\n%s"
               % TestInputSingleton.input.test_params)
         if "get-coredumps" in TestInputSingleton.input.test_params:
