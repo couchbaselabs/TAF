@@ -207,8 +207,6 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  delete_from + items/2)
         tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                        task_verification=True)
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster,
