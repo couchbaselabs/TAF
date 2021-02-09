@@ -89,7 +89,7 @@ class basic_ops(BaseTestCase):
             self.log.info("Creating SDK client pool")
             self.sdk_client_pool.create_clients(
                 self.bucket_util.buckets[0],
-                self.cluster.nodes_in_cluster,
+                [self.cluster.master],
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
 
@@ -498,7 +498,7 @@ class basic_ops(BaseTestCase):
         num_items = self.num_items
         half_of_num_items = self.num_items / 2
         supported_d_levels = self.bucket_util.get_supported_durability_levels()
-        exp_values_to_test = [0, 900, 4000, 12999]
+        exp_values_to_test = [0, 300, 10000, 12999]
 
         # Initial doc_loading
         initial_load = doc_generator(self.key, 0, self.num_items,
@@ -527,26 +527,30 @@ class basic_ops(BaseTestCase):
 
             d_level = ""
             replicate_to = persist_to = 0
-            if self.num_replicas > 0:
-                replicate_to = randint(1, self.num_replicas)
-                persist_to = randint(0, self.num_replicas + 1)
-            if not self.observe_test and choice([True, False]):
+            if self.observe_test:
+                if self.num_replicas > 0:
+                    replicate_to = randint(1, self.num_replicas)
+                    persist_to = randint(0, self.num_replicas + 1)
+            else:
                 d_level = choice(supported_d_levels)
 
-            self.log.info("Doc_op %s, range (%d, %d), "
+            doc_ttl = choice(exp_values_to_test)
+            self.log.info("Doc_op %s, range (%d, %d), ttl=%s, "
                           "replicate_to=%s, persist_to=%s, d_level=%s"
-                          % (doc_op, gen_start, gen_end,
+                          % (doc_op, gen_start, gen_end, doc_ttl,
                              replicate_to, persist_to, d_level))
 
-            data_op_dict[doc_op] = dict()
-            data_op_dict[doc_op]["doc_gen"] = doc_generator(
+            # Required to handle similar doc_ops like create,create case
+            dict_key = "%s_%s" % (doc_op, op_index)
+            data_op_dict[dict_key] = dict()
+            data_op_dict[dict_key]["doc_gen"] = doc_generator(
                 self.key, gen_start, gen_end,
                 doc_size=self.doc_size,
                 mutation_type=doc_op)
-            data_op_dict[doc_op]["task"] = self.task.async_load_gen_docs(
+            data_op_dict[dict_key]["task"] = self.task.async_load_gen_docs(
                 self.cluster, self.bucket_util.buckets[0],
-                data_op_dict[doc_op]["doc_gen"], doc_op,
-                exp=choice(exp_values_to_test),
+                data_op_dict[dict_key]["doc_gen"], doc_op,
+                exp=doc_ttl,
                 compression=self.sdk_compression,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=d_level, timeout_secs=self.sdk_timeout,
@@ -556,19 +560,25 @@ class basic_ops(BaseTestCase):
                 task_identifier="%s_%d" % (doc_op, op_index))
 
         # Start all tasks
-        for doc_op in self.doc_ops:
-            self.task_manager.add_new_task(data_op_dict[doc_op]["task"])
+        for op_index, doc_op in enumerate(self.doc_ops):
+            dict_key = "%s_%s" % (doc_op, op_index)
+            self.task_manager.add_new_task(data_op_dict[dict_key]["task"])
         # Wait for doc_ops to complete and validate final doc value result
-        for doc_op in self.doc_ops:
-            self.task_manager.get_task_result(data_op_dict[doc_op]["task"])
+        for op_index, doc_op in enumerate(self.doc_ops):
+            dict_key = "%s_%s" % (doc_op, op_index)
+            self.task_manager.get_task_result(data_op_dict[dict_key]["task"])
             self.log.info("%s task completed" % doc_op)
-            if data_op_dict[doc_op]["task"].fail:
+            if data_op_dict[dict_key]["task"].fail:
                 self.log_failure("Doc_loading failed for %s: %s"
-                                 % (doc_op, data_op_dict[doc_op]["task"].fail))
+                                 % (doc_op,
+                                    data_op_dict[dict_key]["task"].fail))
             elif doc_op in [DocLoading.Bucket.DocOps.CREATE,
                             DocLoading.Bucket.DocOps.UPDATE,
                             DocLoading.Bucket.DocOps.REPLACE,
                             DocLoading.Bucket.DocOps.DELETE]:
+                # Docs could have expired during CRUD, will get KEY_ENOENT
+                if data_op_dict[dict_key]["task"].exp == exp_values_to_test[1]:
+                    continue
                 suppress_err_tbl = False
                 if doc_op == DocLoading.Bucket.DocOps.DELETE:
                     suppress_err_tbl = True
@@ -576,7 +586,7 @@ class basic_ops(BaseTestCase):
                 # Read all the values to validate doc_operation values
                 task = self.task.async_validate_docs(
                     self.cluster, self.bucket_util.buckets[0],
-                    data_op_dict[doc_op]["doc_gen"], doc_op, 0,
+                    data_op_dict[dict_key]["doc_gen"], doc_op, 0,
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     sdk_client_pool=self.sdk_client_pool,
