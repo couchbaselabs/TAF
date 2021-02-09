@@ -117,53 +117,25 @@ class ServiceRebalanceTests(RebalanceBaseTest):
 
     def load_gsi_fts_indexes(self):
         def create_gsi_index(b_name, t_index):
-            query = gsi_create_template % (b_name, t_index,
+            query = gsi_create_template % (b_name.replace(".", ""), t_index,
                                            b_name, self.index_replica)
             self.log.debug("Executing query: %s" % query)
             try:
                 n1ql_helper.run_cbq_query(query)
             except Exception as e:
                 self.log.critical(e)
-            # try:
-            #     result = client.cluster.query(query)
-            #     if result.metaData().status().toString() != "SUCCESS":
-            #         self.fail("Create index failed: %s" % result)
-            # except InternalServerFailureException as e:
-            #     if "Index build will be retried in background" not in str(e):
-            #         self.log.critical(e)
-            #         return
-            #
-            # if not wait_for_ready:
-            #     return
-            #
-            # start_time = time.time()
-            # stop_time = start_time + 120
-            # query = "SELECT state FROM system:indexes WHERE name='%s'" \
-            #         % (gsi_index_name_pattern % (b_name, t_index))
-            # while time.time() < stop_time:
-            #     state = client.cluster.query(query).rowsAsObject()[0]\
-            #         .get("state")
-            #     if state == "online":
-            #         break
-            # else:
-            #     self.fail("Index availability timeout")
 
         def drop_gsi_index(b_name, t_index):
-            query = gsi_drop_template % (b_name, b_name, t_index)
+            query = gsi_drop_template % (b_name, b_name.replace(".", ""),
+                                         t_index)
             self.log.debug("Executing query: %s" % query)
             try:
                 n1ql_helper.run_cbq_query(query)
             except Exception as e:
                 self.log.critical(e)
-            # try:
-            #     result = client.cluster.query(query)
-            #     if result.metaData().status().toString() != "SUCCESS":
-            #         self.fail("Drop index failed: %s" % result)
-            # except InternalServerFailureException:
-            #     pass
 
         def create_fts_index(b_name, t_index):
-            fts_index_name = "%s_fts_%d" % (b_name, t_index)
+            fts_index_name = "%s_fts_%d" % (b_name.replace(".", ""), t_index)
             status, content = fts_helper.create_fts_index_from_json(
                 fts_index_name,
                 fts_param_template % (fts_index_name, b_name,
@@ -173,7 +145,7 @@ class ServiceRebalanceTests(RebalanceBaseTest):
                           % (fts_index_name, content))
 
         def drop_fts_index(b_name, t_index):
-            fts_index_name = "%s_fts_%d" % (b_name, t_index)
+            fts_index_name = "%s_fts_%d" % (b_name.replace(".", ""), t_index)
             status, content = fts_helper.delete_fts_index(fts_index_name)
             if status is False:
                 self.fail("Failed to drop fts index %s: %s"
