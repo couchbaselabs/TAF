@@ -109,8 +109,14 @@ class ClusterUtils:
 
     def set_metadata_purge_interval(self, interval=0.04):
         # set it to 0.04 i.e. 1 hour if not given
-        rest = RestConnection(self.cluster.master)
-        return rest.set_metadata_purge_interval(interval)
+        return self.rest.set_metadata_purge_interval(interval)
+
+    def set_rebalance_moves_per_nodes(self, rebalanceMovesPerNode=4):
+        body = dict()
+        body["rebalanceMovesPerNode"] = rebalanceMovesPerNode
+        self.rest.set_rebalance_settings(body)
+        result = self.rest.get_rebalance_settings()
+        self.log.info("Changed Rebalance settings: {0}".format(json.loads(result)))
 
     def cluster_cleanup(self, bucket_util):
         rest = RestConnection(self.cluster.master)

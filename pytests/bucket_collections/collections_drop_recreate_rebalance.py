@@ -19,7 +19,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.nodes_swap = self.input.param("nodes_swap", 0)
         self.recovery_type = self.input.param("recovery_type", "delta")
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 2)
-        self.set_rebalance_moves_per_node(rebalanceMovesPerNode=self.rebalance_moves_per_node)
+        self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
         self.data_load_flag = False  # When to start/stop drop/recreate
         self.data_loading_thread = None
         self.data_load_exception = None # Object variable to assign data load thread's exception
@@ -44,7 +44,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             self.stmts = self.n1ql_helper.create_full_stmts(self.stmts)
 
     def tearDown(self):
-        self.set_rebalance_moves_per_node(rebalanceMovesPerNode=4)
+        self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=4)
         if self.data_loading_thread:
             # stop data loading before tearDown if its still running
             self.data_load_flag = False
@@ -54,14 +54,6 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             super(CollectionBase, self).tearDown()
         else:
             super(CollectionsDropRecreateRebalance, self).tearDown()
-
-    def set_rebalance_moves_per_node(self, rebalanceMovesPerNode=4):
-        body = dict()
-        body["rebalanceMovesPerNode"] = rebalanceMovesPerNode
-        rest = RestConnection(self.cluster.master)
-        rest.set_rebalance_settings(body)
-        result = rest.get_rebalance_settings()
-        self.log.info("Changed Rebalance settings: {0}".format(json.loads(result)))
 
     def pick_nodes_for_rebalance(self):
         if self.nodes_swap:

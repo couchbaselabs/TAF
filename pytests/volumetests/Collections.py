@@ -33,6 +33,8 @@ class volume(CollectionBase):
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_for_volume_test")
         self.contains_ephemeral = self.input.param("contains_ephemeral", True)
+        self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 4)
+        self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
 
         self.doc_and_collection_ttl = self.input.param("doc_and_collection_ttl", False)  # For using doc_ttl + coll_ttl
         self.skip_validations = self.input.param("skip_validations", True)
