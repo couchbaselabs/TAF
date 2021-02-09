@@ -29,7 +29,7 @@ class ServerTasks(object):
         self.log.debug("Initiating ServerTasks")
 
     def async_failover(self, servers=[], failover_nodes=[], graceful=False,
-                       use_hostnames=False, wait_for_pending=0):
+                       use_hostnames=False, wait_for_pending=0, allow_unsafe=False):
         """
         Asynchronously failover a set of nodes
 
@@ -45,7 +45,8 @@ class ServerTasks(object):
                                           to_failover=failover_nodes,
                                           graceful=graceful,
                                           use_hostnames=use_hostnames,
-                                          wait_for_pending=wait_for_pending)
+                                          wait_for_pending=wait_for_pending,
+                                          allow_unsafe=allow_unsafe)
         self.jython_task_manager.schedule(_task)
         return _task
 
@@ -882,7 +883,7 @@ class ServerTasks(object):
         return self.jython_task_manager.get_task_result(_task)
 
     def failover(self, servers=[], failover_nodes=[], graceful=False,
-                 use_hostnames=False, wait_for_pending=0):
+                 use_hostnames=False, wait_for_pending=0, allow_unsafe=False):
         """Synchronously flushes a bucket
 
         Parameters:
@@ -893,7 +894,7 @@ class ServerTasks(object):
         Returns:
             boolean - Whether or not the bucket was flushed."""
         _task = self.async_failover(servers, failover_nodes, graceful,
-                                    use_hostnames, wait_for_pending)
+                                    use_hostnames, wait_for_pending, allow_unsafe)
         self.jython_task_manager.get_task_result(_task)
         return _task.result
 
