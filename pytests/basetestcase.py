@@ -736,8 +736,8 @@ class BaseTestCase(unittest.TestCase):
                     "ls " + os.path.join(logs_dir, file_data['file']))[0]
 
                 if len(log_files) == 0:
-                    self.log.warning("%s: No '%s' files found"
-                                     % (server.ip, file_data['file']))
+                    self.log.debug("%s: No '%s' files found"
+                                   % (server.ip, file_data['file']))
                     continue
 
                 if 'target_file_index' in file_data:

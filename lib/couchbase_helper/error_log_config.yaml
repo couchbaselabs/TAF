@@ -10,6 +10,7 @@ file_name_patterns:
       - string: ' ERROR '
         exclude_patterns:
           - 'XERROR'
+          - 'compaction failed for vb'
       #- string: 'WARN'
       #  exclude_patterns:
       #    - 'Slow'

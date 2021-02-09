@@ -1422,7 +1422,7 @@ class RestConnection(object):
                     same_progress_count = 0
                 else:
                     same_progress_count += 1
-                if same_progress_count > 50:
+                if same_progress_count > 500:
                     self.test_log.error("Rebalance progress code in "
                                         "infinite loop: %s" % progress)
                     return False
