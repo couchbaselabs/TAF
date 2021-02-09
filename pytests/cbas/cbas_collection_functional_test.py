@@ -249,14 +249,11 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.log_setup_status("CBASDatasetsAndCollections", "Finished", stage="setup")
 
     def tearDown(self):
-        
         self.log_setup_status("CBASDatasetsAndCollections", "Started", stage="Teardown")
-        
-#         super(CBASDatasetsAndCollections, self).tearDown()
-        
+        super(CBASDatasetsAndCollections, self).tearDown()
         self.log_setup_status("CBASDatasetsAndCollections", "Finished", stage="Teardown")
-    
-    def setup_for_test(self,update_spec={}, sub_spec_name=None):
+
+    def setup_for_test(self, update_spec={}, sub_spec_name=None):
         wait_for_ingestion = (not self.parallel_load)
         if self.cbas_spec_name:
             self.cbas_spec = self.cbas_util_v2.get_cbas_spec(self.cbas_spec_name)
