@@ -191,17 +191,17 @@ class volume(CollectionBase):
                 #time.sleep(1)
         self.log.info("Stopping select queries")
 
-    # Stopping and restarting the memcached process
-    def stop_process(self):
-        target_node = self.servers[2]
+    # Inducing and reverting failures wrt memcached/prometheus process
+    def induce_and_revert_failure(self, action):
+        target_node = self.servers[-1] # select last node
         remote = RemoteMachineShellConnection(target_node)
         error_sim = CouchbaseError(self.log, remote)
-        error_to_simulate = "stop_memcached"
-        # Induce the error condition
-        error_sim.create(error_to_simulate)
+        error_sim.create(action)
         self.sleep(20, "Wait before reverting the error condition")
-        # Revert the simulated error condition and close the ssh session
-        error_sim.revert(error_to_simulate)
+        if action in [CouchbaseError.STOP_MEMCACHED, CouchbaseError.STOP_PROMETHEUS]:
+            # Revert the simulated error condition explicitly. In kill memcached, prometheus
+            # babysitter will bring back the process automatically
+            error_sim.revert(action)
         remote.disconnect()
 
     def rebalance(self, nodes_in=0, nodes_out=0):
@@ -430,19 +430,28 @@ class volume(CollectionBase):
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
-            if self.contains_ephemeral:
-                self.log.info("No Memcached kill for ephemeral bucket")
-            else:
-                self.log.info("Step 10: Stopping and restarting memcached process")
-                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=200)
+            self.log.info("Enabling autoreprovison before inducing failure to prevent data loss "
+                          "for if there are ephemeral buckets")
+            status = self.rest.update_autoreprovision_settings(True, maxNodes=1)
+            if not status:
+                self.fail("Failed to enable autoreprovison")
+            step_count = 9
+            for action in [CouchbaseError.STOP_MEMCACHED, CouchbaseError.STOP_PROMETHEUS]:
+                step_count = step_count + 1
+                self.log.info("Step {0}: {1}".format(step_count, action))
+                self.log.info("Forcing durability level: MAJORITY")
+                self.durability_level = "MAJORITY"
                 task = self.data_load_collection()
+                self.induce_and_revert_failure(action)
+                # Rebalance is required after error is reverted
+                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=200)
                 self.wait_for_rebalance_to_complete(rebalance_task)
-                self.stop_process()
                 self.wait_for_async_data_load_to_complete(task)
                 self.data_validation_collection()
                 self.bucket_util.print_bucket_stats()
+            self.durability_level = ""
             ########################################################################################################################
-            step_count = 10
+            step_count = 12
             for failover in ["Graceful", "Hard"]:
                 for action in ["RebalanceOut", "FullRecovery", "DeltaRecovery"]:
                     step_count = step_count + 1
