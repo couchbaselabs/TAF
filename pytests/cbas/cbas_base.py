@@ -30,7 +30,6 @@ class CBASBaseTest(BaseTestCase):
                           % (self._testMethodName, self._testMethodDoc))
         else:
             self.log.info("Starting Test: %s" % self._testMethodName)
-
         invalid_ip = '10.111.151.109'
         self.cb_bucket_name = self.input.param('cb_bucket_name',
                                                'travel-sample')
@@ -39,7 +38,7 @@ class CBASBaseTest(BaseTestCase):
         self.cb_server_ip = self.input.param("cb_server_ip", None)
         self.cb_server_ip = \
             self.cb_server_ip.replace('INVALID_IP', invalid_ip) \
-            if self.cb_server_ip is not None else None
+                if self.cb_server_ip is not None else None
         self.cbas_dataset_name = self.input.param("cbas_dataset_name",
                                                   'travel_ds')
         self.cbas_bucket_name_invalid = \
@@ -89,11 +88,33 @@ class CBASBaseTest(BaseTestCase):
         self.bucket_spec = self.input.param("bucket_spec", None)
         self.doc_spec_name = self.input.param("doc_spec_name", "initial_load")
         self.set_cbas_memory_from_available_free_memory = self.input.param(
-                'set_cbas_memory_from_available_free_memory', False)
-
+            'set_cbas_memory_from_available_free_memory', False)
+        self.parallel_load_percent = int(self.input.param(
+            "parallel_load_percent", 0))
+        self.cbas_node = None
+        services = None
+        nodes_init = None
         # Single cluster support
         if hasattr(self, "cluster"):
-            for server in self.servers:
+            self.cluster.nodes_in_cluster.extend([self.cluster.master])
+            if self.services_init and self.nodes_init >= 3:
+                services = list()
+                for service in self.services_init.split("-")[1:self.nodes_init]:
+                    services.append(service.replace(":", ","))
+                # Initialize cluster using given nodes
+                nodes_init = list(filter(
+                    lambda
+                        node: node.ip != self.cluster.master.ip,
+                    self.cluster.servers[1:self.nodes_init]))
+                for node, services_init in map(None, nodes_init, services):
+                    if services_init is None:
+                        services.append("kv")
+                    if not self.cbas_node and "cbas" in services_init:
+                        self.cbas_node = node
+                        self.cbas_node.services = services_init
+                    idx = self.cluster.servers.index(node)
+                    self.cluster.servers[idx].services = services_init
+            for server in self.cluster.servers:
                 if "cbas" in server.services:
                     self.cluster.cbas_nodes.append(server)
                 if "kv" in server.services:
@@ -111,7 +132,7 @@ class CBASBaseTest(BaseTestCase):
             self.otpNodes = []
             self.cbas_path = server.cbas_path
             self.rest = RestConnection(self.cluster.master)
-            if not self.set_cbas_memory_from_available_free_memory: 
+            if not self.set_cbas_memory_from_available_free_memory:
                 self.log.info(
                     "Setting the min possible memory quota so that adding "
                     "more nodes to the cluster wouldn't be a problem.")
@@ -124,7 +145,7 @@ class CBASBaseTest(BaseTestCase):
                 self.set_cbas_memory_from_available_free_memory = \
                     self.input.param(
                         'set_cbas_memory_from_available_free_memory', False)
-    
+
                 self.log.info("Setting %d memory quota for CBAS"
                               % CBAS_QUOTA)
                 self.cbas_memory_quota = CBAS_QUOTA
@@ -137,22 +158,32 @@ class CBASBaseTest(BaseTestCase):
                 self.expected_error = \
                     self.expected_error.replace("PORT",
                                                 self.cluster.master.port)
-
             self.cbas_util = None
             if self.cluster.cbas_nodes:
-                self.cbas_node = self.cluster.cbas_nodes[0]
+                if not self.cbas_node:
+                    available_cbas_nodes = list(
+                        filter(lambda node: node.ip != self.cluster.master.ip,
+                               self.cluster.cbas_nodes))
+                    self.cbas_node = available_cbas_nodes[0]
                 if self.set_cbas_memory_from_available_free_memory:
                     self.set_memory_for_services(
-                        self.rest, self.cluster_util, self.cbas_node, self.cbas_node.services)
+                        self.rest, self.cluster_util, self.cbas_node,
+                        self.cbas_node.services)
                 self.cbas_util = CbasUtil(self.cluster.master, self.cbas_node)
-                self.cbas_util_v2 = CbasUtilV2(self.cluster.master, self.cbas_node)
+                self.cbas_util_v2 = CbasUtilV2(self.cluster.master,
+                                               self.cbas_node)
                 if "cbas" in self.cluster.master.services:
                     self.cleanup_cbas()
                 if add_default_cbas_node:
                     if self.cluster.master.ip != self.cbas_node.ip:
                         self.otpNodes.append(
                             ClusterUtils(self.cluster, self.task_manager)
-                            .add_node(self.cbas_node))
+                                .add_node(self.cbas_node))
+                        self.cluster.nodes_in_cluster.append(self.cbas_node)
+                        if nodes_init:
+                            idx = nodes_init.index(self.cbas_node)
+                            services.pop(idx)
+                            nodes_init.remove(self.cbas_node)
                     else:
                         self.otpNodes = self.rest.node_statuses()
                     ''' This cbas cleanup is actually not needed.
@@ -160,11 +191,10 @@ class CBASBaseTest(BaseTestCase):
                         it is automatically cleaned-up.'''
                     self.cleanup_cbas()
                     self.cluster.cbas_nodes.remove(self.cbas_node)
-            if self.nodes_init > 2:
-                init_nodes = list(filter(
-                    lambda node: node.ip != self.cluster.master.ip and node.ip != self.cbas_node.ip,
-                    self.cluster.servers))
-                self.cluster_util.add_all_nodes_then_rebalance(init_nodes[:self.nodes_init - 2])
+            if nodes_init:
+                self.task.rebalance([self.cluster.master], nodes_init, [],
+                                    services=services)
+                self.cluster.nodes_in_cluster.extend(nodes_init)
             if self.bucket_spec is not None:
                 try:
                     self.collectionSetUp(self.cluster, self.bucket_util,
@@ -218,8 +248,8 @@ class CBASBaseTest(BaseTestCase):
                 cluster.cbas_path = server.cbas_path
 
                 cluster.rest = RestConnection(cluster.master)
-                
-                if not self.set_cbas_memory_from_available_free_memory: 
+
+                if not self.set_cbas_memory_from_available_free_memory:
                     self.log.info(
                         "Setting the min possible memory quota so that adding "
                         "more nodes to the cluster wouldn't be a problem.")
@@ -232,11 +262,11 @@ class CBASBaseTest(BaseTestCase):
                     cluster.set_cbas_memory_from_available_free_memory = \
                         self.input.param(
                             'set_cbas_memory_from_available_free_memory', False)
-        
+
                     self.log.info("Setting %d memory quota for CBAS"
                                   % CBAS_QUOTA)
                     cluster.cbas_memory_quota = CBAS_QUOTA
-    
+
                     cluster.rest.set_service_memoryQuota(
                         service='cbasMemoryQuota', memoryQuota=CBAS_QUOTA)
 
@@ -245,19 +275,22 @@ class CBASBaseTest(BaseTestCase):
                 if cluster.cbas_nodes:
                     cluster.cbas_node = cluster.cbas_nodes[0]
                     if self.set_cbas_memory_from_available_free_memory:
-                        self.set_memory_for_services(cluster.rest, cluster.cluster_util, 
-                                                     cluster.cbas_node, cluster.cbas_node.services)
+                        self.set_memory_for_services(cluster.rest,
+                                                     cluster.cluster_util,
+                                                     cluster.cbas_node,
+                                                     cluster.cbas_node.services)
                     cluster.cbas_util = CbasUtil(cluster.master,
                                                  cluster.cbas_node,
                                                  self.task)
-                    cluster.cbas_util_v2 = CbasUtilV2(cluster.master, cluster.cbas_node)
+                    cluster.cbas_util_v2 = CbasUtilV2(cluster.master,
+                                                      cluster.cbas_node)
                     if "cbas" in cluster.master.services:
                         self.cleanup_cbas(cluster.cbas_util)
                     if add_default_cbas_node:
                         if cluster.master.ip != cluster.cbas_node.ip:
                             cluster.otpNodes.append(
                                 cluster.cluster_util
-                                .add_node(cluster.cbas_node))
+                                    .add_node(cluster.cbas_node))
                         else:
                             cluster.otpNodes = cluster.rest.node_statuses()
                         """
@@ -287,7 +320,8 @@ class CBASBaseTest(BaseTestCase):
                             eviction_policy=self.bucket_eviction_policy,
                             flush_enabled=self.flush_enabled)
                     elif self.cb_bucket_name in self.sample_bucket_dict.keys():
-                        self.sample_bucket = self.sample_bucket_dict[self.cb_bucket_name]
+                        self.sample_bucket = self.sample_bucket_dict[
+                            self.cb_bucket_name]
 
                 cluster.bucket_util.add_rbac_user()
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
@@ -302,6 +336,12 @@ class CBASBaseTest(BaseTestCase):
                     cluster.cbas_util.closeConn()
         super(CBASBaseTest, self).tearDown()
 
+    def cbas_logger(self, msg, type="INFO"):
+        if type == "INFO":
+            self.log.info("*" * 10 + msg + "*" * 10)
+        if type == "DEBUG":
+            self.log.debug("*" * 10 + msg + "*" * 10)
+
     def cleanup_cbas(self, cbas_util=None):
         """
         Drops all connections, datasets and buckets from CBAS
@@ -312,43 +352,51 @@ class CBASBaseTest(BaseTestCase):
         try:
             # Disconnect from all connected buckets
             cmd_get_buckets = "select Name from Metadata.`Bucket`;"
-            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_buckets)
+            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(
+                cmd_get_buckets)
             if (results is not None) & (len(results) > 0):
                 for row in results:
-                    cbas_util.disconnect_from_bucket(row['Name'], disconnect_if_connected=True)
-                    self.log.info("******* Disconnected all buckets *******")
+                    cbas_util.disconnect_from_bucket(row['Name'],
+                                                     disconnect_if_connected=True)
+                    self.cbas_logger("Disconnected all buckets")
             else:
-                self.log.info("******* No buckets to disconnect *******")
+                self.cbas_logger("No buckets to disconnect")
 
             # Drop all datasets
             cmd_get_datasets = "select DatasetName from Metadata.`Dataset` where DataverseName != \"Metadata\";"
-            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_datasets)
+            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(
+                cmd_get_datasets)
             if (results is not None) & (len(results) > 0):
                 for row in results:
                     cbas_util.drop_dataset("`" + row['DatasetName'] + "`")
-                    self.log.info("********* Dropped all datasets *********")
+                    self.cbas_logger("Dropped all datasets")
             else:
-                self.log.info("********* No datasets to drop *********")
+                self.cbas_logger("No datasets to drop")
 
             # Drop all buckets
-            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_buckets)
+            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(
+                cmd_get_buckets)
             if (results is not None) & (len(results) > 0):
                 for row in results:
                     cbas_util.drop_cbas_bucket("`" + row['Name'] + "`")
-                    self.log.info("********* Dropped all buckets *********")
+                    self.cbas_logger("Dropped all buckets")
             else:
-                self.log.info("********* No buckets to drop *********")
+                self.cbas_logger("No buckets to drop")
 
             self.log.info("Drop Dataverse other than Default and Metadata")
             cmd_get_dataverse = 'select DataverseName from Metadata.`Dataverse` where DataverseName != "Metadata" and DataverseName != "Default";'
-            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(cmd_get_dataverse)
+            status, metrics, errors, results, _ = cbas_util.execute_statement_on_cbas_util(
+                cmd_get_dataverse)
             if (results is not None) & (len(results) > 0):
                 for row in results:
-                    cbas_util.disconnect_link("`" + row['DataverseName'] + "`" + ".Local")
-                    cbas_util.drop_dataverse_on_cbas(dataverse_name="`" + row['DataverseName'] + "`")
-                self.log.info("********* Dropped all dataverse except Default and Metadata *********")
+                    cbas_util.disconnect_link(
+                        "`" + row['DataverseName'] + "`" + ".Local")
+                    cbas_util.drop_dataverse_on_cbas(
+                        dataverse_name="`" + row['DataverseName'] + "`")
+                self.cbas_logger(
+                    "Dropped all dataverse except Default and Metadata")
             else:
-                self.log.info("********* No dataverse to drop *********")
+                self.cbas_logger("No dataverse to drop")
         except Exception as e:
             self.log.info(e.message)
 
@@ -493,12 +541,14 @@ class CBASBaseTest(BaseTestCase):
         dataverse_map = dict()
         dataverse_map["Default"] = dict()
         link_created = 0
-        for i in range(1, dataverse+1):
+        for i in range(1, dataverse + 1):
             dataverse_name = "dataverse_{0}".format(str(i))
-            if cbas_util.create_dataverse_on_cbas(dataverse_name=dataverse_name):
+            if cbas_util.create_dataverse_on_cbas(
+                    dataverse_name=dataverse_name):
                 dataverse_map[dataverse_name] = dict()
                 if link and (link_created < link):
-                    for j in range(1, random.randint(0, link-link_created)+1):
+                    for j in range(1,
+                                   random.randint(0, link - link_created) + 1):
                         link_name = "link_{0}".format(str(j))
                         dataverse_map[dataverse_name][link_name] = dict()
                         link_created += 1
@@ -511,7 +561,8 @@ class CBASBaseTest(BaseTestCase):
                     del dataverse_map[key]
                 raise Exception("Dataverse creation failed")
         while link_created < link:
-            dataverse_map["Default"]["link_{0}".format(str(link_created))] = dict()
+            dataverse_map["Default"][
+                "link_{0}".format(str(link_created))] = dict()
             link_created += 1
         return dataverse_map
 
@@ -524,7 +575,7 @@ class CBASBaseTest(BaseTestCase):
             for user in rbac_users_created:
                 try:
                     rbac_util._drop_user(user)
-                    del(rbac_users_created[user])
+                    del (rbac_users_created[user])
                 except:
                     pass
         else:
@@ -543,18 +594,19 @@ class CBASBaseTest(BaseTestCase):
                 test_params = {
                     "description": description.format(user),
                     "validate_error_msg": False
-                    }
-            elif user in ["security_admin_local", "security_admin_external", "query_external_access",
+                }
+            elif user in ["security_admin_local", "security_admin_external",
+                          "query_external_access",
                           "query_system_catalog", "replication_admin",
                           "ro_admin", "bucket_full_access",
                           "replication_target", "mobile_sync_gateway",
                           "data_reader", "data_writer",
                           "data_dcp_reader", "data_monitoring",
-                          "views_admin",  "views_reader",
+                          "views_admin", "views_reader",
                           "query_delete", "query_insert",
-                          "query_manage_index",  "query_select",
+                          "query_manage_index", "query_select",
                           "query_update", "fts_admin", "fts_searcher",
-                          "cluster_admin","bucket_admin"]:
+                          "cluster_admin", "bucket_admin"]:
                 test_params = {
                     "description": description.format(user),
                     "validate_error_msg": True,
@@ -599,7 +651,9 @@ class CBASBaseTest(BaseTestCase):
         traceback.print_exc()
         raise exception_obj
 
-    def collectionSetUp(self, cluster, bucket_util, cluster_util, load_data=True, buckets_spec=None, doc_loading_spec=None):
+    def collectionSetUp(self, cluster, bucket_util, cluster_util,
+                        load_data=True, buckets_spec=None,
+                        doc_loading_spec=None):
         """
         Setup the buckets, scopes and collecitons based on the spec passed.
         """
@@ -613,7 +667,7 @@ class CBASBaseTest(BaseTestCase):
         if not buckets_spec:
             buckets_spec = bucket_util.get_bucket_template_from_package(
                 self.bucket_spec)
-        
+
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
 
@@ -641,37 +695,33 @@ class CBASBaseTest(BaseTestCase):
                     compression_settings=self.sdk_compression)
 
         # TODO: remove this once the bug is fixed
-        #self.sleep(120, "MB-38497")
+        # self.sleep(120, "MB-38497")
         self.sleep(10, "MB-38497")
         cluster_util.print_cluster_stats()
-
         if load_data:
             self.load_data_into_buckets(cluster, bucket_util, doc_loading_spec)
-    
-    def load_data_into_buckets(self,cluster, bucket_util, doc_loading_spec=None):
+
+    def load_data_into_buckets(self, cluster, bucket_util,
+                               doc_loading_spec=None):
         """
         Loads data into buckets using the data spec
         """
         if not doc_loading_spec:
-            doc_loading_spec = bucket_util.get_crud_template_from_package(self.doc_spec_name)
-        
+            doc_loading_spec = bucket_util.get_crud_template_from_package(
+                self.doc_spec_name)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
-
         # MB-38438, adding CollectionNotFoundException in retry exception
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
             SDKException.CollectionNotFoundException)
-        
         doc_loading_task = bucket_util.run_scenario_from_spec(
-            self.task, cluster, bucket_util.buckets, doc_loading_spec, mutation_num=0, batch_size=self.batch_size)
-        
+            self.task, cluster, bucket_util.buckets, doc_loading_spec,
+            mutation_num=0, batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Initial reloading failed")
-        
         ttl_buckets = [
             "multi_bucket.buckets_for_rebalance_tests_with_ttl",
             "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
             "volume_templates.buckets_for_volume_tests_with_ttl"]
-
         # Verify initial doc load count
         bucket_util._wait_for_stats_all_buckets()
         if self.bucket_spec not in ttl_buckets:
@@ -686,9 +736,11 @@ class CBASBaseTest(BaseTestCase):
                     self.remove_default_collection
             elif over_ride_param == "enable_flush":
                 if self.input.param("enable_flush", False):
-                    bucket_spec[Bucket.flushEnabled] = Bucket.FlushBucket.ENABLED
+                    bucket_spec[
+                        Bucket.flushEnabled] = Bucket.FlushBucket.ENABLED
                 else:
-                    bucket_spec[Bucket.flushEnabled] = Bucket.FlushBucket.DISABLED
+                    bucket_spec[
+                        Bucket.flushEnabled] = Bucket.FlushBucket.DISABLED
             elif over_ride_param == "num_buckets":
                 bucket_spec[MetaConstants.NUM_BUCKETS] = int(
                     self.input.param("num_buckets", 1))
@@ -696,7 +748,8 @@ class CBASBaseTest(BaseTestCase):
                 if self.bucket_size == "auto":
                     cluster_info = self.rest.get_nodes_self()
                     kv_quota = cluster_info.__getattribute__("memoryQuota")
-                    self.bucket_size = kv_quota // bucket_spec[MetaConstants.NUM_BUCKETS]
+                    self.bucket_size = kv_quota // bucket_spec[
+                        MetaConstants.NUM_BUCKETS]
                 bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
             elif over_ride_param == "num_scopes":
                 bucket_spec[MetaConstants.NUM_SCOPES_PER_BUCKET] = int(
@@ -717,74 +770,98 @@ class CBASBaseTest(BaseTestCase):
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
             elif over_ride_param == "doc_size":
                 target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
-    
-    def set_memory_for_services(self, master_rest, cluster_util, server, services):
+
+    def set_memory_for_services(self, master_rest, cluster_util, server,
+                                services):
         services = services.split(",")
         if len(services) > 0:
             service_mem_dict = {
-                "kv": ["memoryQuota",MIN_KV_QUOTA],
-                "fts": ["ftsMemoryQuota",FTS_QUOTA],
-                "index": ["indexMemoryQuota",INDEX_QUOTA],
-                "cbas": ["cbasMemoryQuota",CBAS_QUOTA]}
-            
+                "kv": ["memoryQuota", MIN_KV_QUOTA],
+                "fts": ["ftsMemoryQuota", FTS_QUOTA],
+                "index": ["indexMemoryQuota", INDEX_QUOTA],
+                "cbas": ["cbasMemoryQuota", CBAS_QUOTA]}
             if "n1ql" in services:
                 services.remove("n1ql")
-            
             # Get all services that are already running in cluster
             cluster_services = cluster_util.get_services_map()
             cluster_info = master_rest.get_nodes_self()
-            
             rest = RestConnection(server)
             info = rest.get_nodes_self()
             memory_quota_available = info.mcdMemoryReserved
-            
             if len(services) == 1:
                 service = services[0]
                 if service in cluster_services:
                     if service is not "kv":
-                        self.log.info("Setting {0} memory quota for {1}".format(memory_quota_available, service))
+                        self.log.info("Setting {0} memory quota for {1}".format(
+                            memory_quota_available, service))
                         property_name = service_mem_dict[service][0]
-                        service_mem_in_cluster = cluster_info.__getattribute__(property_name)
+                        service_mem_in_cluster = cluster_info.__getattribute__(
+                            property_name)
                         # if service is already in cluster we cannot increase the RAM allocation, but we can reduce the RAM allocation if needed.
                         if memory_quota_available < service_mem_in_cluster:
-                            if memory_quota_available > service_mem_dict[service][1]:
-                                master_rest.set_service_memoryQuota(service=property_name, memoryQuota=memory_quota_available)
+                            if memory_quota_available > \
+                                    service_mem_dict[service][1]:
+                                master_rest.set_service_memoryQuota(
+                                    service=property_name,
+                                    memoryQuota=memory_quota_available)
                             else:
-                                self.fail("Error while setting service memory quota {0} for {1}".format(service_mem_dict[service][1], service))                                    
+                                self.fail(
+                                    "Error while setting service memory quota {0} for {1}".format(
+                                        service_mem_dict[service][1], service))
                 else:
-                    self.log.info("Setting {0} memory quota for {1}".format(memory_quota_available, service))
+                    self.log.info("Setting {0} memory quota for {1}".format(
+                        memory_quota_available, service))
                     if memory_quota_available > service_mem_dict[service][1]:
-                        master_rest.set_service_memoryQuota(service=service_mem_dict[service][0], memoryQuota=memory_quota_available)
+                        master_rest.set_service_memoryQuota(
+                            service=service_mem_dict[service][0],
+                            memoryQuota=memory_quota_available)
                     else:
-                        self.fail("Error while setting service memory quota {0} for {1}".format(service_mem_dict[service][1], service))
+                        self.fail(
+                            "Error while setting service memory quota {0} for {1}".format(
+                                service_mem_dict[service][1], service))
             else:
                 # if KV is present, then don't change the KV memory quota
                 # It is assumed that KV node will always be present in the master node of cluster.
                 if "kv" in services:
                     services.remove("kv")
-                    memory_quota_available -= cluster_info.__getattribute__("memoryQuota")
-                
+                    memory_quota_available -= cluster_info.__getattribute__(
+                        "memoryQuota")
                 set_cbas_mem = False
                 if "cbas" in services:
                     services.remove("cbas")
                     set_cbas_mem = True
-                
                 for service in services:
                     # setting minimum possible memory for other services.
-                    self.log.info("Setting {0} memory quota for {1}".format(service_mem_dict[service][1], service))
+                    self.log.info("Setting {0} memory quota for {1}".format(
+                        service_mem_dict[service][1], service))
                     if memory_quota_available >= service_mem_dict[service][1]:
-                        master_rest.set_service_memoryQuota(service=service_mem_dict[service][0], memoryQuota=service_mem_dict[service][1])
+                        master_rest.set_service_memoryQuota(
+                            service=service_mem_dict[service][0],
+                            memoryQuota=service_mem_dict[service][1])
                         memory_quota_available -= service_mem_dict[service][1]
                     else:
-                        self.fail("Error while setting service memory quota {0} for {1}".format(service_mem_dict[service][1], service))
-                
-                if set_cbas_mem and memory_quota_available >= service_mem_dict["cbas"][1]:
+                        self.fail(
+                            "Error while setting service memory quota {0} for {1}".format(
+                                service_mem_dict[service][1], service))
+                if set_cbas_mem and memory_quota_available >= \
+                        service_mem_dict["cbas"][1]:
                     if "cbas" in cluster_services:
-                        if cluster_info.__getattribute__("cbasMemoryQuota") >= memory_quota_available:
-                            self.log.info("Setting {0} memory quota for CBAS".format(memory_quota_available))
-                            master_rest.set_service_memoryQuota(service="cbasMemoryQuota", memoryQuota=memory_quota_available) 
-                    else: 
-                        self.log.info("Setting {0} memory quota for CBAS".format(memory_quota_available))
-                        master_rest.set_service_memoryQuota(service="cbasMemoryQuota", memoryQuota=memory_quota_available)
+                        if cluster_info.__getattribute__(
+                                "cbasMemoryQuota") >= memory_quota_available:
+                            self.log.info(
+                                "Setting {0} memory quota for CBAS".format(
+                                    memory_quota_available))
+                            master_rest.set_service_memoryQuota(
+                                service="cbasMemoryQuota",
+                                memoryQuota=memory_quota_available)
+                    else:
+                        self.log.info(
+                            "Setting {0} memory quota for CBAS".format(
+                                memory_quota_available))
+                        master_rest.set_service_memoryQuota(
+                            service="cbasMemoryQuota",
+                            memoryQuota=memory_quota_available)
                 else:
-                    self.fail("Error while setting service memory quota {0} for CBAS".format(memory_quota_available))
+                    self.fail(
+                        "Error while setting service memory quota {0} for CBAS".format(
+                            memory_quota_available))

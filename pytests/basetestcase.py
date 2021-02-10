@@ -237,7 +237,7 @@ class BaseTestCase(unittest.TestCase):
                         ClusterRun.memcached_port \
                         + (2 * (int(server.port) - ClusterRun.port))
 
-        self.log_setup_status("BaseTestCase", "started")
+        self.log_setup_status(self.__class__.__name__, "started")
         if len(self.input.clusters) > 1:
             # Multi cluster setup
             counter = 1

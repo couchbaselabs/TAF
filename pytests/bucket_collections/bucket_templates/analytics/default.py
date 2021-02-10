@@ -11,7 +11,7 @@ spec = {
 
     Bucket.bucketType: Bucket.Type.MEMBASE,
     Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
-    # Bucket.ramQuotaMB: 256,
+    Bucket.ramQuotaMB: 256,
     Bucket.replicaIndex: 1,
     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
     Bucket.priority: Bucket.Priority.LOW,
@@ -19,5 +19,5 @@ spec = {
     Bucket.maxTTL: 0,
     Bucket.storageBackend: Bucket.StorageBackend.couchstore,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.VALUE_ONLY,
-    Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
+    Bucket.compressionMode: Bucket.CompressionMode.PASSIVE
 }

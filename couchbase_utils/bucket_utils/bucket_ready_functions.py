@@ -1936,7 +1936,7 @@ class BucketUtils(ScopeUtils):
                 while count < storage[key]:
                     name = "{0}.{1}".format(key, count)
                     if bucket_name is not None:
-                        name= "{0}{1}".format(bucket_name, count)
+                        name = "{0}{1}".format(bucket_name, count)
                     bucket = Bucket({
                         Bucket.name: name,
                         Bucket.ramQuotaMB: bucket_ram,
