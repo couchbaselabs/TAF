@@ -116,7 +116,8 @@ class StatsHelper(RestConnection):
         # ToDo - Think of a way to a parse time series, instead of returning the entire content
         return json.loads(content)
 
-    def post_range_api_metrics(self, params):
+    def post_range_api_metrics(self, bucket_name):
+        params = self._get_ui_params(bucket_name)
         authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         api = self.base_url + '/pools/default/stats/range/'
         headers = {'Content-Type': 'text/plain', 'Authorization': 'Basic %s' % authorization}
@@ -377,3 +378,88 @@ class StatsHelper(RestConnection):
 
         if len(content) == 0:
             log.error("No metrics are present to validate")
+
+    @staticmethod
+    def _get_ui_params(bucket_name):
+        """
+        Method that returns important ui params, given a bucket_name
+        """
+        ui_params = [[{"step": 1, "start": -60, "metric": {"name": "kv_ops", "bucket": bucket_name},
+                       "aggregationFunction": "sum", "applyFunctions": ["irate", "sum"]},
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests"}, "aggregationFunction": "sum",
+                       "applyFunctions": ["irate"]}, {"step": 1, "start": -60, "metric": {"name": "fts_total_queries",
+                                                                                          "bucket":
+                                                                                              bucket_name},
+                                                      "aggregationFunction": "sum", "applyFunctions": ["irate"]},
+                      {"step": 1, "start": -60,
+                       "metric": {"name": "kv_ep_tmp_oom_errors", "bucket": bucket_name},
+                       "aggregationFunction": "sum", "applyFunctions": ["irate"]}, {"step": 1, "start": -60, "metric": {
+                "name": "kv_ep_cache_miss_ratio", "bucket": bucket_name},
+                                                                                    "aggregationFunction": "sum"},
+                      {"step": 1, "start": -60,
+                       "metric": {"name": "kv_ops", "op": "get", "bucket": bucket_name},
+                       "aggregationFunction": "sum", "applyFunctions": ["irate", "sum"]}, {"step": 1, "start": -60,
+                                                                                           "metric": {"name": "kv_ops",
+                                                                                                      "op": "set",
+                                                                                                      "bucket":
+                                                                                                          bucket_name},
+                                                                                           "aggregationFunction": "sum",
+                                                                                           "applyFunctions": ["irate",
+                                                                                                              "sum"]},
+                      {"step": 1, "start": -60, "metric": {"name": "kv_ops", "op": "delete", "result": "hit",
+                                                           "bucket": bucket_name},
+                       "aggregationFunction": "sum", "applyFunctions": ["irate"]},
+                      {"step": 1, "start": -60, "metric": {"name": "accesses", "bucket": bucket_name},
+                       "aggregationFunction": "sum"}, {"step": 1, "start": -60, "metric": {"name": "kv_mem_used_bytes",
+                                                                                           "bucket": bucket_name},
+                                                       "aggregationFunction": "sum"},
+                      {"step": 1, "start": -60, "metric": {
+                          "name": "kv_ep_mem_low_wat", "bucket": bucket_name}, "aggregationFunction": "sum"},
+                      {"step": 1, "start": -60,
+                       "metric": {"name": "kv_ep_mem_high_wat", "bucket": bucket_name},
+                       "aggregationFunction": "sum"}, {"step": 1, "start": -60, "metric": {"name": "kv_curr_items",
+                                                                                           "bucket": bucket_name},
+                                                       "aggregationFunction": "sum"},
+                      {"step": 1, "start": -60, "metric": {
+                          "name": "kv_vb_replica_curr_items", "bucket": bucket_name},
+                       "aggregationFunction": "sum"},
+                      {"step": 1, "start": -60,
+                       "metric": {"name": "kv_vb_active_resident_items_ratio", "bucket": bucket_name},
+                       "aggregationFunction": "sum"}, {"step": 1, "start": -60,
+                                                       "metric": {"name": "kv_vb_replica_resident_items_ratio",
+                                                                  "bucket": bucket_name},
+                                                       "aggregationFunction": "sum"},
+                      {"step": 1, "start": -60, "metric": {
+                          "name": "kv_disk_write_queue", "bucket": bucket_name}}, {"step": 1, "start": -60,
+                                                                              "metric": {
+                                                                                  "name": "kv_ep_data_read_failed",
+                                                                                  "bucket":
+                                                                                      bucket_name},
+                                                                              "aggregationFunction": "sum"},
+                      {"step": 1, "start": -60,
+                       "metric": {"name": "kv_ep_data_write_failed", "bucket": bucket_name},
+                       "aggregationFunction": "sum"},
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_errors"}, "aggregationFunction": "sum",
+                       "applyFunctions": ["irate"]},
+                      {"step": 1, "start": -60, "metric": {"name": "eventing_failed_count"},
+                       "aggregationFunction": "sum"},
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_250ms"}, "aggregationFunction": "sum",
+                       "applyFunctions": ["irate"]},
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_500ms"}, "aggregationFunction": "sum",
+                       "applyFunctions": ["irate"]},
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_1000ms"},
+                       "aggregationFunction": "sum",
+                       "applyFunctions": ["irate"]},
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_5000ms"},
+                       "aggregationFunction": "sum",
+                       "applyFunctions": ["irate"]}, {"step": 1, "start": -60,
+                                                      "metric": {"name": "replication_changes_left",
+                                                                 "bucket": bucket_name}},
+                      {"step": 1, "start": -60,
+                       "metric": {"name": "index_num_docs_pending+queued", "bucket": bucket_name,
+                                  "index": "gsi-0"}}, {"step": 1, "start": -60,
+                                                       "metric": {"name": "fts_num_mutations_to_index",
+                                                                  "bucket": bucket_name}},
+                      {"step": 1, "start": -60, "metric": {"name": "eventing_dcp_backlog"}, "applyFunctions": ["sum"]}]]
+
+        return json.dumps(ui_params)

@@ -27,5 +27,3 @@ stats_default_config = {
     "prometheus_metrics_scrape_interval": 60,
     "listen_addr_type": "loopback"
 }
-
-

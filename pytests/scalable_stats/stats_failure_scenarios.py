@@ -102,83 +102,9 @@ class StatsFailureScenarios(CollectionBase):
             self.get_high_cardinality_metrics(component, parse)
         self.get_range_api_metrics(metrics)
         self.get_instant_api(metrics)
-        self.get_ui_stats_from_all_nodes()
+        self.get_ui_stats('travel-sample')
 
-    def _get_ui_stats(self, bucket):
-        params = [{"step": 1, "start": -60, "metric": {"name": "kv_ops", "bucket": bucket},
-                   "aggregationFunction": "sum", "applyFunctions": ["irate", "sum"]},
-                  {"step": 1, "start": -60, "metric": {"name": "n1ql_requests"}, "aggregationFunction": "sum",
-                   "applyFunctions": ["irate"]}, {"step": 1, "start": -60, "metric": {"name": "fts_total_queries",
-                                                                                      "bucket":
-                                                                                          bucket},
-                                                  "aggregationFunction": "sum", "applyFunctions": ["irate"]},
-                  {"step": 1, "start": -60,
-                   "metric": {"name": "kv_ep_tmp_oom_errors", "bucket": bucket},
-                   "aggregationFunction": "sum", "applyFunctions": ["irate"]}, {"step": 1, "start": -60, "metric": {
-                "name": "kv_ep_cache_miss_ratio", "bucket": bucket},
-                                                                                "aggregationFunction": "sum"},
-                  {"step": 1, "start": -60,
-                   "metric": {"name": "kv_ops", "op": "get", "bucket": bucket},
-                   "aggregationFunction": "sum", "applyFunctions": ["irate", "sum"]}, {"step": 1, "start": -60,
-                                                                                       "metric": {"name": "kv_ops",
-                                                                                                  "op": "set", "bucket":
-                                                                                                      bucket},
-                                                                                       "aggregationFunction": "sum",
-                                                                                       "applyFunctions": ["irate",
-                                                                                                          "sum"]},
-                  {"step": 1, "start": -60, "metric": {"name": "kv_ops", "op": "delete", "result": "hit",
-                                                       "bucket": bucket},
-                   "aggregationFunction": "sum", "applyFunctions": ["irate"]},
-                  {"step": 1, "start": -60, "metric": {"name": "accesses", "bucket": bucket},
-                   "aggregationFunction": "sum"}, {"step": 1, "start": -60, "metric": {"name": "kv_mem_used_bytes",
-                                                                                       "bucket": bucket},
-                                                   "aggregationFunction": "sum"}, {"step": 1, "start": -60, "metric": {
-                "name": "kv_ep_mem_low_wat", "bucket": bucket}, "aggregationFunction": "sum"},
-                  {"step": 1, "start": -60,
-                   "metric": {"name": "kv_ep_mem_high_wat", "bucket": bucket},
-                   "aggregationFunction": "sum"}, {"step": 1, "start": -60, "metric": {"name": "kv_curr_items",
-                                                                                       "bucket": bucket},
-                                                   "aggregationFunction": "sum"}, {"step": 1, "start": -60, "metric": {
-                "name": "kv_vb_replica_curr_items", "bucket": bucket},
-                                                                                   "aggregationFunction": "sum"},
-                  {"step": 1, "start": -60,
-                   "metric": {"name": "kv_vb_active_resident_items_ratio", "bucket": bucket},
-                   "aggregationFunction": "sum"}, {"step": 1, "start": -60,
-                                                   "metric": {"name": "kv_vb_replica_resident_items_ratio",
-                                                              "bucket": bucket},
-                                                   "aggregationFunction": "sum"}, {"step": 1, "start": -60, "metric": {
-                "name": "kv_disk_write_queue", "bucket": bucket}}, {"step": 1, "start": -60,
-                                                                    "metric": {
-                                                                        "name": "kv_ep_data_read_failed",
-                                                                        "bucket":
-                                                                            bucket},
-                                                                    "aggregationFunction": "sum"},
-                  {"step": 1, "start": -60,
-                   "metric": {"name": "kv_ep_data_write_failed", "bucket": bucket},
-                   "aggregationFunction": "sum"},
-                  {"step": 1, "start": -60, "metric": {"name": "n1ql_errors"}, "aggregationFunction": "sum",
-                   "applyFunctions": ["irate"]},
-                  {"step": 1, "start": -60, "metric": {"name": "eventing_failed_count"}, "aggregationFunction": "sum"},
-                  {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_250ms"}, "aggregationFunction": "sum",
-                   "applyFunctions": ["irate"]},
-                  {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_500ms"}, "aggregationFunction": "sum",
-                   "applyFunctions": ["irate"]},
-                  {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_1000ms"}, "aggregationFunction": "sum",
-                   "applyFunctions": ["irate"]},
-                  {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_5000ms"}, "aggregationFunction": "sum",
-                   "applyFunctions": ["irate"]}, {"step": 1, "start": -60,
-                                                  "metric": {"name": "replication_changes_left",
-                                                             "bucket": bucket}},
-                  {"step": 1, "start": -60,
-                   "metric": {"name": "index_num_docs_pending+queued", "bucket": bucket,
-                              "index": "gsi-0"}}, {"step": 1, "start": -60,
-                                                   "metric": {"name": "fts_num_mutations_to_index",
-                                                              "bucket": bucket}},
-                  {"step": 1, "start": -60, "metric": {"name": "eventing_dcp_backlog"}, "applyFunctions": ["sum"]}]
-        content = StatsHelper(self.cluster.master).post_range_api_metrics(params=json.dumps(params))
+    def _get_ui_stats(self, bucket_name):
+        content = StatsHelper(self.cluster.master).post_range_api_metrics(bucket_name)
         self.log.info(content)
         return content
-
-    def get_ui_stats_from_all_nodes(self):
-        for server in self.cluster.servers[:self.nodes_init]:
-            self._get_ui_stats('travel-sample')
