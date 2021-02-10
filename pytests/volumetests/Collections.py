@@ -1,21 +1,20 @@
 import threading
 import time
 import urllib
+import random
 
 from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
-
 from collections_helper.collections_spec_constants import MetaCrudParams
 from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
-import random
 from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
 from bucket_collections.collections_base import CollectionBase
-
 from sdk_exceptions import SDKException
+from StatsLib.StatsOperations import StatsHelper
 
 
 class volume(CollectionBase):
@@ -66,13 +65,20 @@ class volume(CollectionBase):
             self.build_deferred_indexes(indexes_to_build)
         self.query_thread_flag = False
         self.query_thread = None
+        self.ui_stats_thread_flag = False
+        self.ui_stats_thread = None
 
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
         if self.query_thread:
+            # Join query thread
             self.query_thread_flag = False
             self.query_thread.join()
             self.query_thread = None
+            # Join ui_stats thread
+            self.ui_stats_thread_flag = False
+            self.ui_stats_thread.join()
+            self.ui_stats_thread = None
         self.log.info("Printing bucket stats before teardown")
         self.bucket_util.print_bucket_stats()
         if self.collect_pcaps:
@@ -190,6 +196,16 @@ class volume(CollectionBase):
                     self.log.warn("Query failed: {0}".format(select_query))
                 #time.sleep(1)
         self.log.info("Stopping select queries")
+
+    def run_ui_stats_queries(self):
+        """
+        Runs UI stats queries in a loop in a seperate thread unitl the thread is asked for to join
+        """
+        self.log.info("Starting to poll UI stats queries")
+        while self.ui_stats_thread_flag:
+            for bucket in self.bucket_util.buckets:
+            _ = StatsHelper(self.cluster.master).post_range_api_metrics(bucket.name)
+                self.sleep(10)
 
     # Inducing and reverting failures wrt memcached/prometheus process
     def induce_and_revert_failure(self, action):
@@ -376,9 +392,14 @@ class volume(CollectionBase):
         self.loop = 0
         # self.cluster_utils.set_metadata_purge_interval()
         if self.number_of_indexes > 0:
+            # start running select queries thread
             self.query_thread = threading.Thread(target=self.run_select_query)
             self.query_thread_flag = True
             self.query_thread.start()
+            # Start running ui stats queries thread
+            self.ui_stats_thread = threading.Thread(target=self.run_ui_stats_queries)
+            self.ui_stats_thread_flag = True
+            self.ui_stats_thread.start()
         self.log.info("Finished steps 1-4 successfully in setup")
         while self.loop < self.iterations:
             if self.loop > 0 or self.flush_buckets_before_indexes_creation:
@@ -579,8 +600,13 @@ class volume(CollectionBase):
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
             else:
                 if self.number_of_indexes > 0:
+                    # Join query thread
                     self.query_thread_flag = False
                     self.query_thread.join()
                     self.query_thread = None
+                    # Join ui_stats thread
+                    self.ui_stats_thread_flag = False
+                    self.ui_stats_thread.join()
+                    self.ui_stats_thread = None
                 self.log.info("Volume Test Run Complete")
         ############################################################################################################################
