@@ -76,8 +76,8 @@ class MagmaExpiryTests(MagmaBaseTest):
     def tearDown(self):
         super(MagmaExpiryTests, self).tearDown()
 
-    def run_compaction(self):
-        for _ in range(5):
+    def run_compaction(self, compaction_iterations=5):
+        for _ in range(compaction_iterations):
             compaction_tasks = list()
             for bucket in self.bucket_util.buckets:
                 compaction_tasks.append(self.task.async_compact_bucket(
@@ -191,12 +191,26 @@ class MagmaExpiryTests(MagmaBaseTest):
             #                 Expected: {}, Found: {}".format("<=1", ts))
 
     def test_create_expire_same_items(self):
+        '''
+        Test Focus: Create and expire n items
+
+        Steps:
+
+           --- Create items == num_items
+                    (init_loading will be set to False)
+           --- Check Disk Usage after creates
+           --- Expire all the items
+           --- Check for tombstones count
+           --- Check Disk Usage
+           --- Repeat above steps n times
+        '''
+        self.log.info("test_create_expire_same_items starts")
         self.create_start = 0
         self.create_end = self.num_items
         self.expiry_start = 0
         self.expiry_end = self.num_items
-        self.create_perc = 100
-        self.expiry_perc = 100
+        #self.create_perc = 100
+        #self.expiry_perc = 100
         for _iter in range(self.iterations):
             self.maxttl = random.randint(5, 20)
             self.log.info("Test Iteration: {}".format(_iter))
@@ -204,17 +218,25 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.generate_docs(doc_ops="create",
                                create_start=self.create_start,
                                create_end=self.create_end)
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True,
+                                  doc_ops="create")
+            self.bucket_util._wait_for_stats_all_buckets()
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
-            self.log.debug("Disk usage after creates {}".format(disk_usage))
+
+            self.log.info("Disk usage after creates {}".format(disk_usage))
             size_before = disk_usage[0]
 
             self.generate_docs(doc_ops="expiry",
                                expiry_start=self.expiry_start,
                                expiry_end=self.expiry_end)
+
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True)
+                                  _sync=True,
+                                  doc_ops="expiry")
             self.bucket_util._wait_for_stats_all_buckets()
 
             self.sleep(self.maxttl, "Wait for docs to expire")
@@ -244,12 +266,21 @@ class MagmaExpiryTests(MagmaBaseTest):
 
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
-            self.log.debug("Disk usage after expiry {}".format(disk_usage))
+            self.log.info("Disk usage after expiry {}".format(disk_usage))
             size_after = disk_usage[0]
 
             self.assertTrue(size_after < size_before * 0.6,
                             "Data Size before(%s) and after expiry(%s)"
                             .format(size_before, size_after))
+            self.run_compaction(compaction_iterations=1)
+            self.sleep(60, "wait after compaction")
+            disk_usage = self.get_disk_usage(self.buckets[0],
+                                             self.cluster.nodes_in_cluster)
+            disk_usage_after_compaction = disk_usage[0]
+            self.log.info("Iteration--{}, disk usage after compaction--{}".
+                           format(_iter, disk_usage[0]))
+            self.assertTrue(disk_usage_after_compaction < 500,
+                            "Disk size after compaction exceeds 500MB")
 
     def test_expiry_no_wait_update(self):
         self.update_start = 0

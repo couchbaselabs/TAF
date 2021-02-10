@@ -179,6 +179,7 @@ class MagmaBaseTest(BaseTestCase):
         self.expiry_end = None
         self.mutate = 0
         self.init_items_per_collection = self.num_items
+        self.maxttl = self.input.param("maxttl", 10)
 
         # Common test params
         self.test_itr = self.input.param("test_itr", 4)
@@ -460,7 +461,6 @@ class MagmaBaseTest(BaseTestCase):
                 self.expiry_end = self.start+self.num_items *\
                                   (self.delete_perc + self.expiry_perc)/100
 
-            self.maxttl = self.input.param("maxttl", 10)
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
                                                       self.expiry_end,
                                                       target_vbucket=target_vbucket,
@@ -725,7 +725,7 @@ class MagmaBaseTest(BaseTestCase):
 
     def check_fragmentation_using_bucket_stats(self, bucket, servers=None):
         # Disabling the check for time being
-        return True
+        #return True
         result = dict()
         if servers is None:
             servers = self.cluster.nodes_in_cluster
