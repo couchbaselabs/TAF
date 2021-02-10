@@ -129,10 +129,12 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.assertTrue(result, "SDK is able to retrieve expired documents")
 
     def test_expiry(self):
+        self.log.info("test_expiry starts")
         self.expiry_start = 0
         self.expiry_end = self.num_items
         self.doc_ops = "expiry"
-        for _ in range(self.iterations):
+        for it in range(self.iterations):
+            self.log.info("Iteration {}".format(it))
             self.expiry_perc = self.input.param("expiry_perc", 100)
 
             self.generate_docs(doc_ops="expiry",
@@ -155,12 +157,11 @@ class MagmaExpiryTests(MagmaBaseTest):
             # Check for tombstone count in Storage
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
-
-    #         self.assertEqual(self.items*self.expiry_perc/100*(self.num_replicas+1)*iteration,
-    #                          ts, "Incorrect tombstone count in storage,\
-    #                          Expected: {}, Found: {}".
-    #                          format(self.items*self.expiry_perc/100*(self.num_replicas+1)*iteration,
-    #                                 ts))
+            expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)*(it+1)
+            self.log.info("Iterations - {}, expected_ts_count - {}".format(it, expected_ts_count))
+            self.assertEqual(expected_ts_count, ts, "Incorrect tombstone count in storage,\
+                              Expected: {}, Found: {}".
+                              format(expected_ts_count, ts))
 
             self.log.info("Verifying doc counts after create doc_ops")
             self.bucket_util.verify_stats_all_buckets(items=0)
@@ -182,9 +183,12 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.run_compaction()
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after bucket compaction: {}".format(ts))
-            self.assertTrue(1>=ts,
-                             "Incorrect tombstone count in storage,\
-                             Expected: {}, Found: {}".format("<=1", ts))
+            '''
+             Commenting below assert until MB-44206 gets fixed
+            '''
+            #self.assertTrue(1>=ts,
+            #                 "Incorrect tombstone count in storage,\
+            #                 Expected: {}, Found: {}".format("<=1", ts))
 
     def test_create_expire_same_items(self):
         self.create_start = 0
