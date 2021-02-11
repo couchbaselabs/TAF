@@ -283,23 +283,26 @@ class MagmaExpiryTests(MagmaBaseTest):
                             "Disk size after compaction exceeds 500MB")
 
     def test_expiry_no_wait_update(self):
+        self.log.info(" test_expiry_no_wait_update starts")
         self.update_start = 0
         self.update_end = self.num_items
         self.expiry_start = 0
         self.expiry_end = self.num_items
         self.update_perc = 100
         self.expiry_perc = 100
-        for _ in range(self.iterations):
+        for _iter in range(self.iterations):
+            self.log.info("Iteration--{}".format(_iter))
             self.generate_docs(doc_ops="update",
                                update_start=self.update_start,
                                update_end=self.update_end)
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True)
+                                  _sync=True,
+                                  doc_ops="update")
             self.bucket_util._wait_for_stats_all_buckets()
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
-            self.log.debug("Disk usage after creates {}".format(disk_usage))
+            self.log.debug("Disk usage after updates {}".format(disk_usage))
             size_before = disk_usage[0]
 
             self.generate_docs(doc_ops="expiry",
@@ -307,7 +310,8 @@ class MagmaExpiryTests(MagmaBaseTest):
                                expiry_end=self.expiry_end)
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True)
+                                  _sync=True,
+                                  doc_ops="expiry")
             self.bucket_util._wait_for_stats_all_buckets()
 
             self.sleep(self.maxttl, "Wait for docs to expire")
@@ -322,9 +326,22 @@ class MagmaExpiryTests(MagmaBaseTest):
             # Check for tombstone count in Storage
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
+            expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)*(_iter+1)
+            self.log.info("Expected ts count is {}".format(expected_ts_count))
+            self.assertEqual(expected_ts_count, ts, "Incorrect tombstone count in storage,\
+                              Expected: {}, Found: {}".
+                              format(expected_ts_count, ts))
 
             self.log.info("Verifying doc counts after create doc_ops")
             self.bucket_util.verify_stats_all_buckets(items=0)
+            disk_usage = self.get_disk_usage(self.buckets[0],
+                                             self.cluster.nodes_in_cluster)
+            self.log.info("Disk usage after expiry {}".format(disk_usage))
+            size_after = disk_usage[0]
+
+            self.assertTrue(size_after < self.disk_usage[self.disk_usage.keys()[0]] * 0.6,
+                            "Data Size before(%s) and after expiry(%s)"
+                            .format(self.disk_usage[self.disk_usage.keys()[0]], size_after))
 
             # Metadata Purge Interval
             self.meta_purge_interval = 60
@@ -337,18 +354,19 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
             # Check for tombs-tones removed
-            self.run_compaction()
+            self.run_compaction(compaction_iterations=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after bucket compaction: {}".format(ts))
 
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
-            self.log.debug("Disk usage after expiry {}".format(disk_usage))
-            size_after = disk_usage[0]
-
-            self.assertTrue(size_after < size_before * 0.6,
-                            "Data Size before(%s) and after expiry(%s)"
-                            .format(size_before, size_after))
+            self.log.info("Disk usage after compaction {}".format(disk_usage))
+            size_after_compaction = disk_usage[0]
+            self.log.info("disk usage after compaction {}".format(size_after_compaction))
+            self.sleep(300, "sleeping after test")
+            # below assert is only applicable if we expire all the items
+            self.assertTrue(size_after_compaction < 500,
+                           "size after compaction shouldn't be more than 500")
 
     def test_docs_expired_wait_for_magma_purge(self):
         pass
