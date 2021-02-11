@@ -81,17 +81,18 @@ class CollectionsRebalance(CollectionBase):
             else:
                 self.server=None
             self.retry_n1qltxn = False
-            self.sleep(20, "wait for rebalance to start")
+            self.sleep(5, "wait for rebalance to start")
             self.n1ql_fun = N1qlBase()
             try:
-                query_params = self.n1ql_helper.create_txn(server=self.server, txtimeout=1)
+                query_params = self.n1ql_helper.create_txn(server=self.server, txtimeout=2)
                 self.collection_savepoint, self.savepoints, self.queries, rerun = \
                     self.n1ql_fun.full_execute_query(self.stmts, True, query_params,
                                         N1qlhelper=self.n1ql_helper, server=self.server)
                 if not isinstance(self.collection_savepoint, dict):
                     self.log.info("N1ql txn failed will be retried")
                     self.retry_n1qltxn = True
-            except:
+            except Exception as error:
+                self.log.info("error is %s"%error)
                 self.retry_n1qltxn = True
 
     def validate_N1qltxn_data(self):

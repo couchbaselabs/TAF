@@ -282,4 +282,5 @@ class BasicOps(N1qlBase):
         if self.failure:
             self.doc_size += 1000
         self.execute_query_and_validate_results(stmt,
-                                     bucket_col)
+                                     bucket_col,
+                                     memory_quota=self.memory_quota)

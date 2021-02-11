@@ -347,7 +347,8 @@ class N1qlBase(CollectionBase):
 
     def full_execute_query(self, stmts, commit, query_params={},
                            rollback_to_savepoint=False, write_conflict=False,
-                           issleep=0, N1qlhelper=None, prepare=False, server=None):
+                           issleep=0, N1qlhelper=None, prepare=False, server=None,
+                           memory_quota=0):
         """
         1. collection_map will store the values changed for a collection after savepoint
         it will be re-intialized after each savepoint and the values will be copied
@@ -366,6 +367,7 @@ class N1qlBase(CollectionBase):
         savepoint = list()
         collection_map = dict()
         txid = query_params.values()[0]
+        self.memory_quota = memory_quota
         rerun_thread = False
         if N1qlhelper:
             self.n1ql_helper = N1qlhelper
@@ -735,7 +737,8 @@ class N1qlBase(CollectionBase):
                                      CbServer.default_collection))
         return atrcollection
 
-    def execute_query_and_validate_results(self, stmt, bucket_col, doc_gen_list=None):
+    def execute_query_and_validate_results(self, stmt, bucket_col, doc_gen_list=None,
+                                           memory_quota=0):
         atrcollection = ""
         if self.atrcollection:
             atrcollection = self.get_collection_for_atrcollection()
@@ -743,7 +746,7 @@ class N1qlBase(CollectionBase):
                                                    atrcollection, Kvtimeout=self.Kvtimeout)
         collection_savepoint, savepoints, queries, rerun = \
             self.full_execute_query(stmt, self.commit, query_params,
-                                    self.rollback_to_savepoint)
+                                    self.rollback_to_savepoint,memory_quota=memory_quota)
         self.log.info("queries ran are %s" % queries)
         if not doc_gen_list:
             doc_gen_list = self.n1ql_helper.get_doc_gen_list(bucket_col)
