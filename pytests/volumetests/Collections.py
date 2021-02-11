@@ -204,7 +204,7 @@ class volume(CollectionBase):
         self.log.info("Starting to poll UI stats queries")
         while self.ui_stats_thread_flag:
             for bucket in self.bucket_util.buckets:
-            _ = StatsHelper(self.cluster.master).post_range_api_metrics(bucket.name)
+                _ = StatsHelper(self.cluster.master).post_range_api_metrics(bucket.name)
                 self.sleep(10)
 
     # Inducing and reverting failures wrt memcached/prometheus process
