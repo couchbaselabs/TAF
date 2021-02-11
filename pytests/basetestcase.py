@@ -389,7 +389,7 @@ class BaseTestCase(unittest.TestCase):
             o, e = shell.execute_command("yum install -y screen")
             shell.log_command_output(o, e)
             # Execute the tcpdump command
-            tcp_cmd = "screen -dmS test bash -c \"tcpdump -C 500 " \
+            tcp_cmd = "screen -dmS test bash -c \"tcpdump -C 500 -W 10 " \
                       "-w pcaps/pack-dump-file.pcap  -i eth0 -s 0 tcp\""
             o, e = shell.execute_command(tcp_cmd)
             shell.log_command_output(o, e)
