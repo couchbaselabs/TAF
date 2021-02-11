@@ -1,4 +1,3 @@
-from BucketLib.bucket import Bucket
 from bucket_collections.collections_base import CollectionBase
 
 
@@ -14,8 +13,6 @@ class BucketParams(CollectionBase):
             self.bucket_util.get_crud_template_from_package(load_spec)
         self.replica_count = self.input.param("replica_count", 4)
         self.buckets = self.bucket_util.buckets
-        self.d_min_level_replica_err_msg = \
-            "Durability minimum level cannot be specified with 3 replicas"
 
     def test_update_replica(self):
         """ load documents, update replica, verify docs"""
@@ -25,31 +22,16 @@ class BucketParams(CollectionBase):
 
         for new_replica in range(1, min(self.replica_count, self.nodes_init)):
             # Change replica and perform doc loading
-            self.log.info("Updating replica=%s" % new_replica)
-            try:
-                self.bucket_util.update_all_bucket_replicas(new_replica)
-            except Exception as e:
-                if new_replica == Bucket.ReplicaNum.THREE:
-                    if self.d_min_level_replica_err_msg in str(e):
-                        continue
-                    else:
-                        self.fail("Able to update replica=3 with d_min_levels")
-
+            self.log.info("new replica is %s" % new_replica)
+            self.bucket_util.update_all_bucket_replicas(new_replica)
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec)
             self.validate_docs(self.buckets)
 
         for new_replica in range(min(self.replica_count,
                                      self.nodes_init) - 1, -1, -1):
-            self.log.info("Updating replica=%s" % new_replica)
-            try:
-                self.bucket_util.update_all_bucket_replicas(new_replica)
-            except Exception as e:
-                if new_replica == Bucket.ReplicaNum.THREE:
-                    if self.d_min_level_replica_err_msg in str(e):
-                        continue
-                    else:
-                        self.fail("Able to update replica=3 with d_min_levels")
+            self.log.info("new replica is %s" % new_replica)
+            self.bucket_util.update_all_bucket_replicas(new_replica)
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec)
             self.validate_docs(self.buckets)
@@ -61,15 +43,7 @@ class BucketParams(CollectionBase):
         for new_replica in range(1, self.replica_count):
             # Change replica and perform doc loading
             self.log.info("Setting replica = %s" % new_replica)
-            try:
-                self.bucket_util.update_all_bucket_replicas(new_replica)
-            except Exception as e:
-                if new_replica == Bucket.ReplicaNum.THREE:
-                    if self.d_min_level_replica_err_msg in str(e):
-                        continue
-                    else:
-                        self.fail("Able to update replica=3 with d_min_levels")
-
+            self.bucket_util.update_all_bucket_replicas(new_replica)
             servs_in = [self.cluster.servers[count + self.nodes_init]]
             rebalance_task = self.task.async_rebalance(
                 known_nodes, servs_in, [])
@@ -85,14 +59,7 @@ class BucketParams(CollectionBase):
 
         for new_replica in range(self.replica_count - 1, 0, -1):
             self.log.info("Setting replica = %s" % new_replica)
-            try:
-                self.bucket_util.update_all_bucket_replicas(new_replica)
-            except Exception as e:
-                if new_replica == Bucket.ReplicaNum.THREE:
-                    if self.d_min_level_replica_err_msg in str(e):
-                        continue
-                    else:
-                        self.fail("Able to update replica=3 with d_min_levels")
+            self.bucket_util.update_all_bucket_replicas(new_replica)
             servs_out = [known_nodes[-1]]
             rebalance_task = self.task.async_rebalance(
                 known_nodes, [], servs_out)
