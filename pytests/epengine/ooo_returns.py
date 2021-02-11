@@ -246,7 +246,7 @@ class OutOfOrderReturns(BaseTestCase):
 
     def trans_doc_gen(self, start, end, op_type):
         docs = list()
-        value = {'value': 'value1'}
+        value = {'mutated': 0}
         content = self.client.translate_to_json_object(value)
         for i in range(start, end):
             key = "%s-%s" % (self.key, i)
@@ -266,11 +266,13 @@ class OutOfOrderReturns(BaseTestCase):
         elif op_type == DocLoading.Bucket.DocOps.UPDATE:
             exception = trans_obj.RunTransaction(
                 self.client.cluster, self.transaction,
-                [self.client.collection], [], docs, [], True, True, 1)
+                [self.client.collection], [],
+                [doc.getT1() for doc in docs], [], True, True, 1)
         elif op_type == DocLoading.Bucket.DocOps.DELETE:
             exception = trans_obj.RunTransaction(
                 self.client.cluster, self.transaction,
-                [self.client.collection], [], [], docs, True, True, 1)
+                [self.client.collection], [], [],
+                [doc.getT1() for doc in docs], True, True, 1)
         if exception:
             self.log_failure("'%s' transx failed: %s" % (op_type, exception))
 
@@ -305,9 +307,9 @@ class OutOfOrderReturns(BaseTestCase):
                 sdk_client_pool=self.sdk_client_pool)
             self.task_manager.get_task_result(task)
         if transx_op != DocLoading.Bucket.DocOps.CREATE:
-            docs = self.trans_doc_gen(0, half_of_num_items,
-                                      DocLoading.Bucket.DocOps.CREATE)
-            self.__transaction_runner(trans_obj, docs,
+            t_doc_gen = self.trans_doc_gen(half_of_num_items, self.num_items,
+                                           DocLoading.Bucket.DocOps.CREATE)
+            self.__transaction_runner(trans_obj, t_doc_gen,
                                       DocLoading.Bucket.DocOps.CREATE)
 
         replicate_to = choice(range(0, self.num_replicas))
