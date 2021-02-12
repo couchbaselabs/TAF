@@ -59,7 +59,7 @@ class volume(BaseTestCase):
         process_concurrency = int(math.ceil(self.max_tasks_per_collection /
                                             float(len(self.doc_ops))))
         process_concurrency = self.input.param("pc", process_concurrency)
-        main_tasks = (self.num_scopes*self.num_collections+1) * len(self.doc_ops)
+        main_tasks = (self.num_buckets*self.num_scopes*self.num_collections+1) * len(self.doc_ops)
         sub_tasks = main_tasks * process_concurrency
         self.thread_to_use = main_tasks + sub_tasks + 40
         self.input.test_params.update({"threads_to_use":
