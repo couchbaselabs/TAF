@@ -102,7 +102,7 @@ class StatsFailureScenarios(CollectionBase):
             self.get_high_cardinality_metrics(component, parse)
         self.get_range_api_metrics(metrics)
         self.get_instant_api(metrics)
-        self.get_ui_stats('travel-sample')
+        self._get_ui_stats('travel-sample')
 
     def _get_ui_stats(self, bucket_name):
         content = StatsHelper(self.cluster.master).post_range_api_metrics(bucket_name)
