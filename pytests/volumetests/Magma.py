@@ -52,6 +52,7 @@ class volume(BaseTestCase):
         self.init_doc_params()
         self.num_collections = self.input.param("num_collections", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
+        self.num_buckets = self.input.param("num_buckets", 1)
         self.doc_ops = self.input.param("doc_ops", "create")
         if self.doc_ops:
             self.doc_ops = self.doc_ops.split(':')
