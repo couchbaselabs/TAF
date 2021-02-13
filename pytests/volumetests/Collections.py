@@ -472,7 +472,7 @@ class volume(CollectionBase):
                 self.bucket_util.print_bucket_stats()
             self.durability_level = ""
             ########################################################################################################################
-            step_count = 12
+            step_count = 11
             for failover in ["Graceful", "Hard"]:
                 for action in ["RebalanceOut", "FullRecovery", "DeltaRecovery"]:
                     step_count = step_count + 1
@@ -569,7 +569,7 @@ class volume(CollectionBase):
                         self.wait_for_rebalance_to_complete(rebalance_task)
                     self.bucket_util.print_bucket_stats()
             ########################################################################################################################
-            self.log.info("Step 17: Updating the bucket replica to 1")
+            self.log.info("Step 18: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
@@ -582,7 +582,7 @@ class volume(CollectionBase):
             self.tasks = []
             self.bucket_util.print_bucket_stats()
             ########################################################################################################################
-            self.log.info("Step 18: Flush bucket(s) and start the entire process again")
+            self.log.info("Step 19: Flush bucket(s) and start the entire process again")
             self.loop += 1
             if self.loop < self.iterations:
                 # Flush buckets(s)
