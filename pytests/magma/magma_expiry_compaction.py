@@ -9,6 +9,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
 import time
 import os
+import copy
 
 '''
 Post-Expiration Purging: Storage will have nothing to do once the expiration
@@ -497,6 +498,7 @@ class MagmaExpiryTests(MagmaBaseTest):
     def test_expire_read_validate_meta(self):
         self.expiry_perc = self.input.param("expiry_perc", 100)
         self.doc_ops = "expiry"
+        self.bucket_util._expiry_pager(216000)
         self.generate_docs(doc_ops="expiry")
         _ = self.loadgen_docs(self.retry_exceptions,
                               self.ignore_exceptions,
@@ -504,22 +506,32 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util._wait_for_stats_all_buckets()
 
         self.sleep(self.maxttl, "Wait for docs to expire")
+        self.sigkill_memcached()
         # Read all the docs to ensure they get converted to tombstones
         self.generate_docs(doc_ops="read",
                            read_start=self.expiry_start,
                            read_end=self.expiry_end)
-        data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
-                self.gen_read, "delete", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
-        self.task.jython_task_manager.get_task_result(data_validation)
+        self.gen_delete = copy.deepcopy(self.gen_read)
+        _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True,
+                                  doc_ops="delete")
+        #data_validation = self.task.async_validate_docs(
+        #        self.cluster, self.bucket_util.buckets[0],
+        #        self.gen_read, "delete", 0,
+        #        batch_size=self.batch_size,
+        #        process_concurrency=self.process_concurrency,
+        #        pause_secs=5, timeout_secs=self.sdk_timeout)
+        #self.task.jython_task_manager.get_task_result(data_validation)
 
         # All docs converted to tomb-stone
         # Check for tombstone count in Storage
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
+        expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
+        self.log.info("Expected ts count is {}".format(expected_ts_count))
+        self.assertEqual(expected_ts_count, ts, "Incorrect tombstone count in storage,\
+                        Expected: {}, Found: {}".format(expected_ts_count, ts))
 
     def test_wait_for_expiry_read_repeat(self):
         for _iter in range(self.iterations):
