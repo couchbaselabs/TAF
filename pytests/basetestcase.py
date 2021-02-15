@@ -2,6 +2,7 @@ import os
 import re
 import traceback
 import unittest
+from collections import OrderedDict
 
 from datetime import datetime
 from ruamel.yaml import YAML
@@ -46,7 +47,7 @@ class BaseTestCase(unittest.TestCase):
         self.port = self.input.param("port", None)
         self.port_info = self.input.param("port_info", None)
         self.servers = self.input.servers
-        self.__cb_clusters = []
+        self.cb_clusters = OrderedDict()
         self.num_servers = self.input.param("servers", len(self.servers))
         self.primary_index_created = False
         self.index_quota_percent = self.input.param("index_quota_percent",
@@ -238,26 +239,32 @@ class BaseTestCase(unittest.TestCase):
                         + (2 * (int(server.port) - ClusterRun.port))
 
         self.log_setup_status(self.__class__.__name__, "started")
+        cluster_name_format = "C%s"
+        default_cluster_index = counter_index = 1
         if len(self.input.clusters) > 1:
             # Multi cluster setup
-            counter = 1
             for _, nodes in self.input.clusters.iteritems():
-                self.__cb_clusters.append(CBCluster(name="C%s" % counter,
-                                                    servers=nodes))
-                counter += 1
+                cluster_name = cluster_name_format % counter_index
+                tem_cluster = CBCluster(name=cluster_name, servers=nodes)
+                self.cb_clusters[cluster_name] = tem_cluster
+                counter_index += 1
         else:
             # Single cluster
-            self.cluster = CBCluster(servers=self.servers)
-            self.__cb_clusters.append(self.cluster)
-            self.cluster_util = ClusterUtils(self.cluster, self.task_manager)
+            cluster_name = cluster_name_format % counter_index
+            self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
+                                                       servers=self.servers)
 
-            self.bucket_util = BucketUtils(self.cluster, self.cluster_util,
-                                           self.task)
+        # Initialize self.cluster with first available cluster as default
+        self.cluster = self.cb_clusters[cluster_name_format
+                                        % default_cluster_index]
+        self.cluster_util = ClusterUtils(self.cluster, self.task_manager)
+        self.bucket_util = BucketUtils(self.cluster, self.cluster_util,
+                                       self.task)
 
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.standard_buckets)
 
-        for cluster in self.__cb_clusters:
+        for cluster_name, cluster in self.cb_clusters.items():
             shell = RemoteMachineShellConnection(cluster.master)
             self.os_info = shell.extract_remote_info().type.lower()
             if self.os_info != 'windows':
@@ -279,7 +286,7 @@ class BaseTestCase(unittest.TestCase):
             self.services_map = None
 
             self.log_setup_status("BaseTestCase", "started")
-            for cluster in self.__cb_clusters:
+            for cluster_name, cluster in self.cb_clusters.items():
                 if not self.skip_buckets_handle \
                         and not self.skip_init_check_cbserver:
                     self.log.debug("Cleaning up cluster")
@@ -307,7 +314,7 @@ class BaseTestCase(unittest.TestCase):
                     self.tearDownEverything()
                     self.tear_down_while_setup = False
             if not self.skip_init_check_cbserver:
-                for cluster in self.__cb_clusters:
+                for cluster_name, cluster in self.cb_clusters.items():
                     self.log.info("Initializing cluster")
                     cluster_util = ClusterUtils(cluster, self.task_manager)
                     cluster_util.reset_cluster()
@@ -342,7 +349,7 @@ class BaseTestCase(unittest.TestCase):
                     cb_cli.enable_dp()
                     shell_conn.disconnect()
 
-            for cluster in self.__cb_clusters:
+            for cluster_name, cluster in self.cb_clusters.items():
                 cluster_util = ClusterUtils(cluster, self.task_manager)
                 if self.log_info:
                     cluster_util.change_log_info()
@@ -444,7 +451,7 @@ class BaseTestCase(unittest.TestCase):
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
             return
-        for cluster in self.__cb_clusters:
+        for c_name, cluster in self.cb_clusters.items():
             cluster_util = ClusterUtils(cluster, self.task_manager)
             bucket_util = BucketUtils(cluster, cluster_util,
                                       self.task)
@@ -593,7 +600,7 @@ class BaseTestCase(unittest.TestCase):
     def fetch_cb_collect_logs(self):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
         is_single_node_server = len(self.servers) == 1
-        for cluster in self.__cb_clusters:
+        for c_name, cluster in self.cb_clusters.items():
             rest = RestConnection(cluster.master)
             nodes = rest.get_nodes()
             # Creating cluster_util object to handle multi_cluster scenario
@@ -620,7 +627,7 @@ class BaseTestCase(unittest.TestCase):
             self.fail(self.test_failure)
 
     def get_clusters(self):
-        return self.__cb_clusters
+        return [self.cb_clusters[name] for name in self.cb_clusters.keys()]
 
     def get_task(self):
         return self.task
