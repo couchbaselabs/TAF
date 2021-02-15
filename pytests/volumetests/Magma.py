@@ -373,7 +373,7 @@ class volume(BaseTestCase):
             self.cluster, self.task.jython_task_manager, loader_spec,
             self.sdk_client_pool,
             batch_size=1000,
-            process_concurrency=1,
+            process_concurrency=self.process_concurrency,
             print_ops_rate=True,
             start_task=True,
             track_failures=self.track_failures)
