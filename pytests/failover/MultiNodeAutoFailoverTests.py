@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from membase.api.exception import RebalanceFailedException, \

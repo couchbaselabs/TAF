@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from failoverbasetest import FailoverBaseTest

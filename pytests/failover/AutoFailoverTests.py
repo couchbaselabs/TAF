@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
