@@ -485,8 +485,8 @@ class ClusterUtils:
                 self.start_server(node)
                 # TODO : this part of the code doesnt work anymore for IPv6
                 # basically node doesnt come up after restart
-                if '.com' in node.ip or ':' in node.ip:
-                    shell.update_dist_type()
+                # if '.com' in node.ip or ':' in node.ip:
+                #     shell.update_dist_type()
                 shell.disconnect()
             # Wait after reset of cluster nodes
             sleep(10)
