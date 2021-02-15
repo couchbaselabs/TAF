@@ -26,6 +26,7 @@ from membase.api.exception import RebalanceFailedException
 import math
 import subprocess
 from math import ceil
+from Jython_tasks.task_manager import TaskManager
 
 
 class volume(BaseTestCase):
@@ -48,8 +49,9 @@ class volume(BaseTestCase):
         self.expire_start = 0
 
     def setUp(self):
-        self.input = TestInputSingleton.input
+        BaseTestCase.setUp(self)
         self.init_doc_params()
+
         self.num_collections = self.input.param("num_collections", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
         self.num_buckets = self.input.param("num_buckets", 1)
@@ -60,15 +62,13 @@ class volume(BaseTestCase):
         process_concurrency = int(math.ceil(self.max_tasks_per_collection /
                                             float(len(self.doc_ops))))
         process_concurrency = self.input.param("pc", process_concurrency)
-        main_tasks = 20
-        sub_tasks = (self.num_buckets*self.num_scopes*self.num_collections+1) * len(self.doc_ops) * process_concurrency
-        self.thread_to_use = main_tasks + sub_tasks
+        doc_tasks = (self.num_buckets*self.num_scopes*self.num_collections) * len(self.doc_ops) * process_concurrency + 1
+        self.thread_to_use = min(64, doc_tasks)
         self.input.test_params.update({"threads_to_use":
                                        self.thread_to_use})
-        print "Total workers = {}".format(self.thread_to_use)
-        print "Total Main Task = {}".format(main_tasks)
-        print "Total Sub-Tasks = {}".format(sub_tasks)
-        BaseTestCase.setUp(self)
+        print "Total Doc-Tasks workers = {}".format(self.thread_to_use)
+        print "Total Doc-Tasks = {}".format(doc_tasks)
+        self.doc_loading_tm = TaskManager(number_of_threads=self.thread_to_use)
         self.process_concurrency = self.input.param("pc", process_concurrency)
 
         self.rest = RestConnection(self.servers[0])
@@ -179,9 +179,9 @@ class volume(BaseTestCase):
                         "AutoFailover disabling failed")
 
         if self.sdk_client_pool:
-            max_clients = max(self.num_collections/10,
-                              min(self.task_manager.number_of_threads,
-                                  self.num_buckets*self.num_scopes))
+            max_clients = min(self.task_manager.number_of_threads,
+                              self.num_buckets*self.num_scopes*self.num_collections,
+                              20)
             clients_per_bucket = int(ceil(max_clients / self.num_buckets))
             for bucket in self.bucket_util.buckets:
                 self.sdk_client_pool.create_clients(
@@ -370,7 +370,7 @@ class volume(BaseTestCase):
             SDKException.ServerOutOfMemoryException
         ]
         task = self.task.async_load_gen_docs_from_spec(
-            self.cluster, self.task.jython_task_manager, loader_spec,
+            self.cluster, self.doc_loading_tm, loader_spec,
             self.sdk_client_pool,
             batch_size=1000,
             process_concurrency=self.process_concurrency,
@@ -440,7 +440,7 @@ class volume(BaseTestCase):
 
     def wait_for_doc_load_completion(self, task, wait_for_stats=True):
 #         for task in tasks_info:
-        self.task_manager.get_task_result(task)
+        self.doc_loading_tm.get_task_result(task)
         self.bucket_util.validate_doc_loading_results(task)
 #         self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
 #                                                        self.cluster)
@@ -743,6 +743,7 @@ class volume(BaseTestCase):
             self.crash_count += 1
             if self.crash_count > self.crashes:
                 self.stop_crash = True
+        self.sleep(300)
 
     def kill_memcached(self, servers=None, num_kills=1,
                        graceful=False, wait=True):
@@ -789,19 +790,20 @@ class volume(BaseTestCase):
             count += 1
 
     def check_warmup_complete(self, server):
-        start_time = time.time()
-        result = self.bucket_util._wait_warmup_completed(
-                            [server],
-                            self.bucket_util.buckets[0],
-                            wait_time=self.wait_timeout * 20)
-        if not result:
-            self.stop_crash = True
-            self.task.jython_task_manager.abort_all_tasks()
-            self.assertTrue(result, "Warm-up failed in %s seconds"
-                            % (self.wait_timeout * 20))
-        else:
-            self.log.info("Bucket warm-up completed in %s." %
-                          str(time.time() - start_time))
+        for bucket in self.bucket_util.buckets:
+            start_time = time.time()
+            result = self.bucket_util._wait_warmup_completed(
+                                [server],
+                                self.bucket_util.buckets[0],
+                                wait_time=self.wait_timeout * 20)
+            if not result:
+                self.stop_crash = True
+                self.task.jython_task_manager.abort_all_tasks()
+                self.assertTrue(result, "Warm-up failed in %s seconds"
+                                % (self.wait_timeout * 20))
+            else:
+                self.log.info("Bucket:%s warm-up completed in %s." %
+                              (bucket.name, str(time.time() - start_time)))
 
     def perform_rollback(self, start=None, mem_only_items=100000,
                          doc_type="create", kill_rollback=1):
@@ -902,7 +904,7 @@ class volume(BaseTestCase):
         return rebalance_task
 
     def abort_rebalance(self, rebalance, error_type="kill_memcached"):
-        self.sleep(10, "Let the rebalance begin!")
+        self.sleep(30, "Let the rebalance begin!")
         rest = RestConnection(self.cluster.master)
         i = 1
         expected_progress = 20
@@ -1796,7 +1798,7 @@ class volume(BaseTestCase):
         self.stop_rebalance = self.input.param("pause_rebalance", False)
         self.crashes = self.input.param("crashes", 20)
 
-        self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
+        self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
         self.expiry_perc = 100
         self.create_perc = 100
         self.update_perc = 100
@@ -2149,7 +2151,7 @@ class volume(BaseTestCase):
 
             self.PrintStep("Step 7.{}: Rebalance IN/OUT with Loading of docs".
                            format(self.loop))
-            rebalance_task = self.rebalance(nodes_in=1, nodes_out=2,
+            rebalance_task = self.rebalance(nodes_in=2, nodes_out=1,
                                             retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -2158,7 +2160,7 @@ class volume(BaseTestCase):
 
             self.PrintStep("Step 8.{}: Rebalance OUT/IN with Loading of docs".
                            format(self.loop))
-            rebalance_task = self.rebalance(nodes_in=2, nodes_out=1,
+            rebalance_task = self.rebalance(nodes_in=1, nodes_out=2,
                                             retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")

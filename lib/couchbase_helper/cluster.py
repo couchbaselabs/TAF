@@ -98,15 +98,16 @@ class ServerTasks(object):
                                       start_task=True,
                                       track_failures=True):
         self.log.debug("Initializing mutation task for given spec")
+        task_manager = task_manager or self.jython_task_manager
         task = MutateDocsFromSpecTask(
-            cluster, self.jython_task_manager, loader_spec,
+            cluster, task_manager, loader_spec,
             sdk_client_pool,
             batch_size=batch_size,
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate,
             track_failures=track_failures)
         if start_task:
-            self.jython_task_manager.add_new_task(task)
+            task_manager.add_new_task(task)
         return task
 
     def async_load_gen_docs(self, cluster, bucket, generator, op_type,

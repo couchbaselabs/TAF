@@ -3836,8 +3836,10 @@ class MutateDocsFromSpecTask(Task):
                     self.batch_size)
                 generators.append(batch_gen)
             for doc_gen in generators:
-                task_id = "%s_%s_%s_%s" % (self.thread_name, bucket.name,
-                                           scope_name, col_name)
+                task_id = "%s_%s_%s_%s_ttl=%s" % (self.thread_name,
+                                                  bucket.name,
+                                                  scope_name, col_name,
+                                                  op_data["doc_ttl"])
                 if op_type in DocLoading.Bucket.DOC_OPS:
                     doc_load_task = LoadDocumentsTask(
                         self.cluster, bucket, None, doc_gen,
