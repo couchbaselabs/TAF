@@ -25,7 +25,8 @@ class MagmaBaseTest(BaseTestCase):
                                  SDKException.RequestCanceledException,
                                  SDKException.UnambiguousTimeoutException]
         self.ignore_exceptions = []
-
+        # Sets autocompaction at bucket level
+        self.autoCompactionDefined = str(self.input.param("autoCompactionDefined", "false")).lower()
         # Create Cluster
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
@@ -246,7 +247,8 @@ class MagmaBaseTest(BaseTestCase):
             ram_quota=self.bucket_ram_quota,
             replica=self.num_replicas,
             storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
+            eviction_policy=self.bucket_eviction_policy,
+            autoCompactionDefined=self.autoCompactionDefined)
 
     def _create_multiple_buckets(self):
         buckets_created = self.bucket_util.create_multiple_buckets(

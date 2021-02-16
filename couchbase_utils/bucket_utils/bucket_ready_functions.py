@@ -1586,7 +1586,8 @@ class BucketUtils(ScopeUtils):
             eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
             flush_enabled=Bucket.FlushBucket.DISABLED,
             bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
-            purge_interval=1):
+            purge_interval=1,
+            autoCompactionDefined="false"):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -1596,6 +1597,8 @@ class BucketUtils(ScopeUtils):
         else:
             # By default set 100Mb if unable to fetch proper value
             ram_quota_mb = 100
+        if autoCompactionDefined == "true":
+            compression_mode= "passive"
 
         default_bucket = Bucket({Bucket.bucketType: bucket_type,
                                  Bucket.ramQuotaMB: ram_quota_mb,
@@ -1609,7 +1612,9 @@ class BucketUtils(ScopeUtils):
                                  Bucket.evictionPolicy: eviction_policy,
                                  Bucket.flushEnabled: flush_enabled,
                                  Bucket.durabilityMinLevel: bucket_durability,
-                                 Bucket.purge_interval: purge_interval})
+                                 Bucket.purge_interval: purge_interval,
+                                 Bucket.autoCompactionDefined: autoCompactionDefined
+                                 })
         self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets([default_bucket.name])

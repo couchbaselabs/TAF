@@ -303,7 +303,8 @@ class BucketHelper(RestConnection):
             Bucket.conflictResolutionType:
                 bucket_params.get('conflictResolutionType'),
             Bucket.threadsNumber: Bucket.Priority.LOW,
-            Bucket.durabilityMinLevel:  bucket_params.get('durability_level')}
+            Bucket.durabilityMinLevel:  bucket_params.get('durability_level'),
+            Bucket.autoCompactionDefined: bucket_params.get('autoCompactionDefined')}
 
         server_info = dict({"ip": self.ip, "port": self.port,
                             "username": self.username,
@@ -313,6 +314,12 @@ class BucketHelper(RestConnection):
             init_params[Bucket.replicaIndex] = bucket_params.get('replicaIndex')
             init_params[Bucket.compressionMode] = bucket_params.get('compressionMode')
             init_params[Bucket.maxTTL] = bucket_params.get('maxTTL')
+        if init_params[Bucket.autoCompactionDefined] == "true":
+            init_params["parallelDBAndViewCompaction"] = "false"
+            init_params["databaseFragmentationThreshold%5Bpercentage%5D"] = 50
+            init_params["viewFragmentationThreshold%5Bpercentage%5D"] = 50
+            init_params["indexCompactionMode"] = "circular"
+            init_params["purgeInterval"] = 3
 
         if init_params[Bucket.priority] == "high":
             init_params[Bucket.threadsNumber] = Bucket.Priority.HIGH
