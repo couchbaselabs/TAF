@@ -533,7 +533,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
     def test_drop_non_existent_analytics_collection(self):
         """Only dataset_creation_method and dataset_drop_method parameter will change for these testcase"""
-        self.test_drop_dataset()
+        self.test_drop_non_existent_dataset()
 
     def test_enabling_disabling_analytics_collection_on_all_KV_collections(
             self):
