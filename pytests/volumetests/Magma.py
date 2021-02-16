@@ -109,6 +109,7 @@ class volume(BaseTestCase):
                 [self.cluster.master] + nodes_init)
         else:
             self.cluster.nodes_in_cluster.extend([self.cluster.master])
+        self.cluster_util.set_metadata_purge_interval()
         #######################################################################
         self.PrintStep("Step 2: Create required buckets and collections.")
         self.create_required_buckets()
