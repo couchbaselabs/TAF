@@ -79,8 +79,13 @@ class SDKExceptionTests(CollectionBase):
                 self.log_failure("vBucket_details validation failed")
             self.bucket_util.validate_docs_per_collections_all_buckets()
 
+        num_cols_in_bucket = 0
+        for _, scope in self.bucket.scopes.items():
+            for _, _ in scope.collections.items():
+                num_cols_in_bucket += 1
+
         verification_dict = dict()
-        verification_dict["ops_create"] = 0
+        verification_dict["ops_create"] = num_cols_in_bucket * self.num_items
         verification_dict["ops_update"] = 0
         verification_dict["ops_delete"] = 0
         verification_dict["rollback_item_count"] = 0
