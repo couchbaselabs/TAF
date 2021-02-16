@@ -507,6 +507,7 @@ class MagmaExpiryTests(MagmaBaseTest):
 
         self.sleep(self.maxttl, "Wait for docs to expire")
         self.sigkill_memcached()
+        self.bucket_util._expiry_pager(216000)
         # Read all the docs to ensure they get converted to tombstones
         self.generate_docs(doc_ops="read",
                            read_start=self.expiry_start,
@@ -516,6 +517,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=True,
                                   doc_ops="delete")
+        self.sleep(180, "wait after get ops")
         #data_validation = self.task.async_validate_docs(
         #        self.cluster, self.bucket_util.buckets[0],
         #        self.gen_read, "delete", 0,
