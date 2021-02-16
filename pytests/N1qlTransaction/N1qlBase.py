@@ -398,6 +398,8 @@ class N1qlBase(CollectionBase):
                     result, query = \
                         self.run_update_query(clause, query_params, server)
                     queries[txid].extend(query)
+                    if clause[3] in collection_map[clause[0]]["UPDATE"].keys():
+                        result.extend(collection_map[clause[0]]["UPDATE"][clause[3]])
                     collection_map[clause[0]]["UPDATE"][clause[3]] = result
                 if clause[1] == "INSERT":
                     result, query = self.run_insert_query(
@@ -415,7 +417,12 @@ class N1qlBase(CollectionBase):
                     if isinstance(result, list):
                         collection_map[clause[0]][clause[4]].extend(result)
                     elif result:
-                        collection_map[clause[0]][clause[4]].update(result)
+                        if clause[4] == "UPDATE":
+                            for key,value in result.items():
+                                value.extend(collection_map[clause[0]][clause[4]][key])
+                                collection_map[clause[0]][clause[4]][key] = value
+                        else:
+                            collection_map[clause[0]][clause[4]].update(result)
                     queries[txid].append(query)
             if issleep:
                 self.sleep(issleep)
