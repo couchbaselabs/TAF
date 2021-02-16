@@ -395,7 +395,7 @@ class volume(BaseTestCase):
                          "skip_read_success_results": False,
                          "target_items": 5000,
                          "skip_read_on_error": self.skip_read_on_error,
-                         "track_failures": True,
+                         "track_failures": self.track_failures,
                          "ignore_exceptions": [],
                          "sdk_timeout_unit": "seconds",
                          "sdk_timeout": 60,
@@ -521,7 +521,7 @@ class volume(BaseTestCase):
             self.check_warmup_complete(node)
 
     def rebalance(self, nodes_in=0, nodes_out=0,
-                  retry_get_process_num=150):
+                  retry_get_process_num=3000):
         self.servs_in = random.sample(self.available_servers, nodes_in)
 
         self.nodes_cluster = self.cluster.nodes_in_cluster[:]
@@ -893,7 +893,7 @@ class volume(BaseTestCase):
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
                 rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
                                                            [], [],
-                                                           retry_get_process_num=100)
+                                                           retry_get_process_num=3000)
                 self.sleep(10, "Rebalance % ={}. Let the rebalance begin!".
                            format(expected_progress))
             i += 1
@@ -943,7 +943,7 @@ class volume(BaseTestCase):
                                   format(expected_progress))
                     rebalance_task = self.task.async_rebalance(
                         self.cluster.nodes_in_cluster, [], self.servs_out,
-                        retry_get_process_num=500)
+                        retry_get_process_num=3000)
                     self.sleep(120, "Let the rebalance begin after abort")
                     self.log.info("Rebalance % = {}".
                                   format(self.rest._rebalance_progress()))
@@ -1274,7 +1274,7 @@ class volume(BaseTestCase):
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [],
-                retry_get_process_num=100)
+                retry_get_process_num=3000)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -1346,7 +1346,7 @@ class volume(BaseTestCase):
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [],
-                retry_get_process_num=100)
+                retry_get_process_num=3000)
             self.set_num_writer_and_reader_threads(
                 num_writer_threads="disk_io_optimized",
                 num_reader_threads="disk_io_optimized")
@@ -1425,7 +1425,7 @@ class volume(BaseTestCase):
                 num_reader_threads=self.new_num_reader_threads)
             rebalance_task = self.task.async_rebalance(self.cluster.servers,
                                                        [], [],
-                                                       retry_get_process_num=100)
+                                                       retry_get_process_num=3000)
             tasks_info = self.data_load()
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1450,7 +1450,7 @@ class volume(BaseTestCase):
                             - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
                         self.cluster.servers[:self.nodes_init], [], servs_out,
-                        retry_get_process_num=100)
+                        retry_get_process_num=3000)
 
                     self.task.jython_task_manager.get_task_result(
                         rebalance_task)
@@ -1967,7 +1967,7 @@ class volume(BaseTestCase):
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [],
-                retry_get_process_num=100)
+                retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
@@ -2000,7 +2000,7 @@ class volume(BaseTestCase):
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster.servers[:self.nodes_init], [], [],
-                retry_get_process_num=100)
+                retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
@@ -2047,7 +2047,7 @@ class volume(BaseTestCase):
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster.nodes_in_cluster, [], [],
-                retry_get_process_num=100)
+                retry_get_process_num=3000)
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
 
@@ -2077,7 +2077,7 @@ class volume(BaseTestCase):
                             - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
                         self.cluster.servers[:self.nodes_init], [], servs_out,
-                        retry_get_process_num=100)
+                        retry_get_process_num=3000)
 
                     self.task.jython_task_manager.get_task_result(
                         rebalance_task)
@@ -2127,7 +2127,7 @@ class volume(BaseTestCase):
             self.PrintStep("Step 4.{}: Rebalance IN with Loading of docs".
                            format(self.loop))
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0,
-                                            retry_get_process_num=300)
+                                            retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()

@@ -227,7 +227,8 @@ class MagmaBaseTest(BaseTestCase):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
+            self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True,
+                                                         timeout=3600)
             if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
                 for bucket in self.bucket_util.get_all_buckets():
                     disk_usage = self.get_disk_usage(
@@ -280,12 +281,12 @@ class MagmaBaseTest(BaseTestCase):
                     self.buckets[0].name)
                 dgm = stats["op"]["samples"]["vb_active_resident_items_ratio"][
                     -1]
+                self.log.info("## Active Resident Threshold of {0} is {1} ##".format(
+                    self.buckets[0].name, dgm))
             except:
                 self.log.debug("Fetching vb_active_resident_items_ratio(dgm) failed...retying")
                 timeout -= 1
                 time.sleep(1)
-        self.log.info("## Active Resident Threshold of {0} is {1} ##".format(
-            self.buckets[0].name, dgm))
         super(MagmaBaseTest, self).tearDown()
 
     def run_compaction(self, compaction_iterations=5):
@@ -907,6 +908,57 @@ class MagmaBaseTest(BaseTestCase):
         shell.disconnect()
 
         return output
+
+    def get_random_keyIndex(self):
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        data_path = RestConnection(self.cluster.master).get_data_path()
+        keyIndex, _ = shell.execute_command("find {} -name keyIndex".format(data_path))
+        shell.disconnect()
+        return random.choice(keyIndex)
+
+    def get_random_seqIndex(self):
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        data_path = RestConnection(self.cluster.master).get_data_path()
+        seqIndex, _ = shell.execute_command("find {} -name seqIndex".format(data_path))
+        shell.disconnect()
+        return random.choice(seqIndex)
+
+    def get_random_wal(self):
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        data_path = RestConnection(self.cluster.master).get_data_path()
+        keyIndex, _ = shell.execute_command("find {} -name wal".format(data_path))
+        shell.disconnect()
+        return random.choice(keyIndex)
+
+    def get_random_kvstore(self):
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        data_path = RestConnection(self.cluster.master).get_data_path()
+        keyIndex, _ = shell.execute_command("find {} -name kvstore-*".format(data_path))
+        shell.disconnect()
+        return random.choice(keyIndex)
+
+    def chmod(self, server, path, mod="000"):
+        '''
+            # (Base-10)    Binary    Sum (in binary)    Sum (in decimal)    rwx    Permission
+            7    111    = 100 + 10 + 1    = 4(r) + 2(w) + 1(x)    rwx    read, write and execute
+            6    110    = 100 + 10    = 4(r) + 2(w)    rw-    read and write
+            5    101    = 100      + 1    = 4(r)        + 1(x)    r-x    read and execute
+            4    100    = 100    = 4(r)    r--    read only
+            3    011    =       10 + 1    =        2(w) + 1(x)    -wx    write and execute
+            2    010    =       10    =        2(w)    -w-    write only
+            1    001    =            1    =               1(x)    --x    execute only
+            0    000    = 0    = 0    ---    none
+        '''
+        self.stop_chmod = False
+        while self.stop_chmod is False:
+            shell = RemoteMachineShellConnection(server)
+            self.log.debug("{}: changing mod to {} for {}".format(server.ip, mod, path))
+            shell.execute_command("chmod {} {}".format(mod, path))
+            self.sleep(5)
+            self.log.debug("{}: changing mod to {} for {}".format(server.ip, "777", path))
+            shell.execute_command("chmod {} {}".format("777", path))
+            self.sleep(5)
+            shell.disconnect()
 
     def get_tombstone_count_key(self, servers=[]):
         result = 0

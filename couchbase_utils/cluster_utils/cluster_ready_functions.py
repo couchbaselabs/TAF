@@ -485,14 +485,12 @@ class ClusterUtils:
 
                     # Stop node
                     self.stop_server(node)
-                    sleep(10)
                     # Delete Path
                     shell.cleanup_data_config(data_path)
                     if not crash_warning:
                         shell.cleanup_data_config(core_path)
 
                     self.start_server(node)
-                    sleep(10)
                     if not RestHelper(RestConnection(node)).is_ns_server_running():
                         self.log.error("ns_server {0} is not running.".format(node.ip))
                 shell.disconnect()
