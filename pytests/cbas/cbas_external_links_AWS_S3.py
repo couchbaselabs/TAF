@@ -80,7 +80,6 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.create_or_delete_users(self.rbac_util, rbac_users_created, delete=True)
 
-        self.cluster_util.reset_cluster()
         super(CBASExternalLinks, self).tearDown()
         self.log.info("================================================================")
         self.log.info("Teardown has finished")
