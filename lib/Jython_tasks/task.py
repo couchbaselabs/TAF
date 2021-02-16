@@ -3083,7 +3083,7 @@ class RunQueriesTask(Task):
         self.query_tasks = []
         self.result = []
         self.is_prepared = is_prepared
-        self.debug_msg = self.query_type + "-ActualResult: "
+        self.debug_msg = self.query_type + "-DEBUG-"
 
     def call(self):
         start = 0
@@ -3112,10 +3112,11 @@ class RunQueriesTask(Task):
                         self.query_tasks.append(query_task)
                 for query_task in self.query_tasks:
                     self.task_manager.get_task_result(query_task)
-                    self.log.info(self.debug_msg + str(query_task.actual_result))
+                    self.log.info(self.debug_msg + "ActualResult: " + str(
+                        query_task.actual_result))
                     if not self.run_infinitely:
                         self.result.append(query_task.actual_result)
-                    self.query_tasks.remove(query_task)
+                self.query_tasks = []
                 start = end
                 end += self.parallelism
                 if start >= len(self.queries):
@@ -3126,7 +3127,7 @@ class RunQueriesTask(Task):
                         break
         except Exception as e:
             self.test_log.error(e)
-            self.set_exception(Exception(e.message))
+            self.set_exception(e)
             return
         self.complete_task()
 
@@ -5468,6 +5469,7 @@ class CBASQueryExecuteTask(Task):
                 self.test_log.error("Error during CBAS query: %s" % errors)
                 self.set_result(False)
         except Exception as e:
+            self.log.error("CBASQueryExecuteTask EXCEPTION: " + e)
             self.set_result(False)
             self.set_exception(e)
 

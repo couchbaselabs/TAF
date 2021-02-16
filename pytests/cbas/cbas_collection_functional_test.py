@@ -301,7 +301,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                                                     async_load=async_load)
 
     def start_query_task(self, sleep_time=5000):
-        query = "SELECT SLEEP(COUNT(*)," + str(sleep_time) + " ) FROM {0} " \
+        query = "SELECT SLEEP(COUNT(*), " + str(sleep_time) + ") FROM {0} " \
                                                              "WHERE " \
                                                              "MUTATED >= 0"
         self.query_task = RunQueriesTask(self.cluster.master, [query],
