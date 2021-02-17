@@ -523,21 +523,9 @@ class volume(BaseTestCase):
             bucket.name, dgm))
         return dgm
 
-    # Stopping and restarting the memcached process
-    def stop_process(self):
-        target_node = self.servers[2]
-        remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log, remote)
-        error_to_simulate = "stop_memcached"
-        # Induce the error condition
-        error_sim.create(error_to_simulate)
-        self.sleep(20, "Wait before reverting the error condition")
-        # Revert the simulated error condition and close the ssh session
-        error_sim.revert(error_to_simulate)
-        remote.disconnect()
-
-    def _induce_error(self, error_condition):
-        for node in self.cluster.nodes_in_cluster:
+    def _induce_error(self, error_condition, nodes=[]):
+        nodes = nodes or [self.cluster.master]
+        for node in nodes:
             if error_condition == "stop_server":
                 self.cluster_util.stop_server(node)
             elif error_condition == "enable_firewall":
