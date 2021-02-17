@@ -1977,10 +1977,20 @@ class RestConnection(object):
         return status
 
     def set_metadata_purge_interval(self, interval=0.04):
-        params = dict()
+        params = {"databaseFragmentationThreshold[percentage]": 30,
+                  "viewFragmentationThreshold[percentage]": 30,
+                  "parallelDBAndViewCompaction": "false",
+                  "purgeInterval": 3.0,
+                  "indexCompactionMode": "circular",
+                  "indexCircularCompaction[daysOfWeek]":
+                  "Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday",
+                  "indexCircularCompaction[interval][fromHour]": 0,
+                  "indexCircularCompaction[interval][fromMinute]": 0,
+                  "indexCircularCompaction[interval][toHour]": 0,
+                  "indexCircularCompaction[interval][toMinute]": 0,
+                  "indexCircularCompaction[interval][abortOutside]": "false"}
         api = self.baseUrl + "controller/setAutoCompaction"
         params["purgeInterval"] = interval
-        params["parallelDBAndViewCompaction"] = "false"
         status, content, _ = self._http_request(api, "POST", urllib.urlencode(params))
         if status:
             self.test_log.info("Successfully set Metadata Purge Interval to {}".
