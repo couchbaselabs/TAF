@@ -419,7 +419,8 @@ class N1qlBase(CollectionBase):
                     elif result:
                         if clause[4] == "UPDATE":
                             for key,value in result.items():
-                                value.extend(collection_map[clause[0]][clause[4]][key])
+                                if key in collection_map[clause[0]][clause[4]].keys():
+                                    value.extend(collection_map[clause[0]][clause[4]][key])
                                 collection_map[clause[0]][clause[4]][key] = value
                         else:
                             collection_map[clause[0]][clause[4]].update(result)
