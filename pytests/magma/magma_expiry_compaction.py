@@ -168,7 +168,12 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(items=0)
 
             # Metadata Purge Interval
-            self.meta_purge_interval = 60
+            self.meta_purge_interval = 180
+            self.meta_purge_interval_in_days = 180 / 86400.0
+
+            self.set_metadata_purge_interval(
+                value=self.meta_purge_interval_in_days, buckets=self.buckets)
+            self.sleep(180, "sleeping after setting metadata purge interval using diag/eval")
             self.bucket_util.cbepctl_set_metadata_purge_interval(
                 value=self.meta_purge_interval, buckets=self.buckets)
     #         self.bucket_util.set_metadata_purge_interval(str(self.meta_purge_interval),
@@ -180,7 +185,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
-            # Check for tombs-tones removed
+            #Check for tombs-tones removed
             self.run_compaction()
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after bucket compaction: {}".format(ts))

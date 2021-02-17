@@ -914,3 +914,38 @@ class MagmaBaseTest(BaseTestCase):
         shell = RemoteMachineShellConnection(server)
         result = shell.execute_command(cmd)[0]
         return result
+
+    def set_metadata_purge_interval(self, value,
+                                    buckets=[], node=None):
+        self.log.info("Changing the bucket properties by changing {0} to {1}".
+                      format("purge_interval", value))
+        if not buckets:
+            buckets = self.buckets
+        if node is None:
+            node = self.cluster.master
+        rest = RestConnection(node)
+
+        shell = RemoteMachineShellConnection(node)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
+        for bucket in buckets:
+            cmd = '{ok, BC} = ns_bucket:get_bucket(' \
+                  '"%s"), BC2 = lists:keyreplace(purge_interval, ' \
+                  '1, BC, {purge_interval, %f})' \
+                  ', ns_bucket:set_bucket_config("%s", BC2).' \
+                  % (bucket.name, value, bucket.name)
+            rest.diag_eval(cmd)
+
+        # Restart Memcached in all cluster nodes to reflect the settings
+        for server in self.cluster_util.get_kv_nodes(master=node):
+            shell = RemoteMachineShellConnection(server)
+            shell.restart_couchbase()
+            shell.disconnect()
+
+        # Check bucket-warm_up after Couchbase restart
+        retry_count = 10
+        buckets_warmed_up = self.bucket_util.is_warmup_complete(buckets, retry_count)
+        if not buckets_warmed_up:
+            self.log.critical("Few bucket(s) not warmed up "
+                              "within expected time")
