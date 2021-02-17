@@ -704,10 +704,10 @@ class BucketHelper(RestConnection):
                                                            session=session)
         return status, content
 
-    def wait_for_collections_warmup(self, bucket, collection_id, session=None):
+    def wait_for_collections_warmup(self, bucket, uid, session=None):
         api = self.baseUrl \
               + "pools/default/buckets/%s/scopes/@ensureManifest/%s" \
-              % (bucket.name, collection_id)
+              % (bucket.name, uid)
         headers = self._create_headers()
         if session is None:
             status, content, _ = self._http_request(api,
