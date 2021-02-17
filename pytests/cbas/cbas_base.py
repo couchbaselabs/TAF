@@ -79,8 +79,6 @@ class CBASBaseTest(BaseTestCase):
         self.cbas_spec_name = self.input.param("cbas_spec", None)
 
         self._cb_cluster = self.get_clusters()
-        self._cb_cluster = self._cb_cluster[0] \
-            if len(self._cb_cluster) == 1 else self._cb_cluster
 
         self.expected_error = self.input.param("error", None)
 
@@ -94,9 +92,16 @@ class CBASBaseTest(BaseTestCase):
         services = None
         nodes_init = None
         # Single cluster support
-        if hasattr(self, "cluster"):
+        if len(self._cb_cluster) == 1:
+            self._cb_cluster = self._cb_cluster[0]
             self.cluster.nodes_in_cluster.extend([self.cluster.master])
             if self.services_init and self.nodes_init >= 3:
+                if len(self.cluster.servers) < self.nodes_init or \
+                        len(self.services_init.split("-")) != self.nodes_init:
+                    self.fail("Configuration error. Re-check nodes_init, "
+                              "services_init in .conf file and servers "
+                              "available in .ini "
+                              "file")
                 services = list()
                 for service in self.services_init.split("-")[1:self.nodes_init]:
                     services.append(service.replace(":", ","))
@@ -217,7 +222,7 @@ class CBASBaseTest(BaseTestCase):
                     self.sample_bucket = \
                         self.sample_bucket_dict[self.cb_bucket_name]
 
-        else:
+        elif len(self._cb_cluster) > 1:
             # Multi Cluster Support
             for cluster in self._cb_cluster:
 
@@ -324,6 +329,9 @@ class CBASBaseTest(BaseTestCase):
                             self.cb_bucket_name]
 
                 cluster.bucket_util.add_rbac_user()
+
+        else:
+            self.fail("No cluster is available")
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 

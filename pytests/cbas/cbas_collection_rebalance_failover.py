@@ -87,17 +87,14 @@ class CBASRebalance(CBASBaseTest):
             if not self.rebalance_util.wait_for_data_load_to_complete(
                     data_load_task, self.skip_validations):
                 self.fail("Doc loading failed")
-        self.rebalance_util.data_validation_collection(
-            skip_validations=self.skip_validations,
-            doc_and_collection_ttl=False)
         if self.data_load_stage == "after":
             if not self.rebalance_util.data_load_collection(
                     self.doc_spec_name, self.skip_validations,
                     async_load=False):
                 self.fail("Doc loading failed")
-            self.rebalance_util.data_validation_collection(
-                skip_validations=self.skip_validations,
-                doc_and_collection_ttl=False)
+        self.rebalance_util.data_validation_collection(
+            skip_validations=self.skip_validations,
+            doc_and_collection_ttl=False)
         self.bucket_util.print_bucket_stats()
         if not self.cbas_util_v2.validate_docs_in_all_datasets(
                 self.bucket_util):
