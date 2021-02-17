@@ -29,7 +29,7 @@ class DcpTestCase(DCPBase):
 
         if event == "drop_collection":
             event_count = \
-                len(list(filter(lambda x: "CollectionDROPPED" in x, output_string)))
+                len(set(list(filter(lambda x: "CollectionDROPPED" in x, output_string))))
             if event_count == (len(self.vbuckets) * count):
                 self.log.info("number of collection drop event matches %s" % event_count)
             else:
@@ -46,7 +46,7 @@ class DcpTestCase(DCPBase):
                                  "expected:%s but actual %s" % (len(self.vbuckets), event_count))
 
         if event == "drop_scope":
-            event_count = len(list(filter(lambda x: "ScopeDROPPED" in x, output_string)))
+            event_count = len(set(list(filter(lambda x: "ScopeDROPPED" in x, output_string))))
             if event_count == len(self.vbuckets):
                 self.log.info("number of Scope drop event matches %s" % event_count)
             else:
@@ -178,7 +178,7 @@ class DcpTestCase(DCPBase):
                 self.remote_shell.execute_command('killall -9 memcached')
             self.sleep(10)
 
-    def verify_operation(self, operation, mutation_count):
+    def verify_operation(self, operation, mutation_count, verify=True):
         self.dcp_client = self.initialise_cluster_connections()
         output_string = self.get_dcp_event()
         actual_item_count = len(list(filter(
@@ -207,9 +207,10 @@ class DcpTestCase(DCPBase):
         if operation == "load_data":
             if mutation_count == actual_item_count:
                 self.log_failure("mutation count not changed")
-        else:
+        elif verify:
             if mutation_count != actual_item_count:
-                self.log_failure("mutation count same as expected")
+                self.log_failure("mutation count is %s and actual_item_count is %s"
+                                 %(mutation_count, actual_item_count))
 
     def test_stream_entire_bucket(self):
         # get all the scopes
