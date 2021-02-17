@@ -694,36 +694,42 @@ class MagmaBaseTest(BaseTestCase):
 
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()
-        stats = list()
+        time_end = time.time() + 60 * 5
         if servers is None:
             servers = self.cluster.nodes_in_cluster
         if type(servers) is not list:
             servers = [servers]
-        for server in servers:
-            fragmentation_values = list()
-            shell = RemoteMachineShellConnection(server)
-            output = shell.execute_command(
+        while time.time() < time_end:
+            stats = list()
+            for server in servers:
+                fragmentation_values = list()
+                shell = RemoteMachineShellConnection(server)
+                output = shell.execute_command(
                     "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
                     )[0][0].split('\n')[0]
-            self.log.debug("machine: {} - core(s): {}\
-            ".format(server.ip, output))
-            for i in range(int(output)):
-                grep_field = "rw_{}:magma".format(i)
-                _res = self.get_magma_stats(
-                    bucket, [server],
-                    field_to_grep=grep_field)
-                fragmentation_values.append(
-                    float(_res[server.ip][grep_field][
-                        "Fragmentation"]))
-                stats.append(_res)
-            result.update({server.ip: fragmentation_values})
+                self.log.debug("machine: {} - core(s): {}\
+                ".format(server.ip, output))
+                for i in range(int(output)):
+                    grep_field = "rw_{}:magma".format(i)
+                    _res = self.get_magma_stats(
+                        bucket, [server],
+                        field_to_grep=grep_field)
+                    fragmentation_values.append(
+                        float(_res[server.ip][grep_field][
+                            "Fragmentation"]))
+                    stats.append(_res)
+                    result.update({server.ip: fragmentation_values})
+            for value in result.values():
+                if max(value) < self.fragmentation/100:
+                    self.log.info("magma stats fragmentation result {} \
+                    ".format(result))
+                    return True
         self.log.info("magma stats fragmentation result {} \
         ".format(result))
         for value in result.values():
             if max(value) > self.fragmentation/100:
                 self.log.info(stats)
                 return False
-        return True
 
     def check_fragmentation_using_bucket_stats(self, bucket, servers=None):
         # Disabling the check for time being
