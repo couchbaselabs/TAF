@@ -1206,11 +1206,6 @@ class volume(BaseTestCase):
                 servers=nodes, buckets=self.bucket_util.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
-#             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
-#             self.task.jython_task_manager.get_task_result(rebalance_task)
-#             self.bucket_util.print_bucket_stats()
-#             self.print_crud_stats()
-#             self.get_bucket_dgm(self.bucket)
 
             ###################################################################
             '''
@@ -1446,10 +1441,8 @@ class volume(BaseTestCase):
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(
                         set(self.cluster.nodes_in_cluster) - set(servs_out))
-                    self.get_bucket_dgm(self.bucket)
             else:
                 self.log.info("Volume Test Run Complete")
-                self.get_bucket_dgm(self.bucket)
 
     def SteadyStateVolume(self):
         check_dump_th = threading.Thread(target=self.check_dump)
@@ -2073,7 +2066,6 @@ class volume(BaseTestCase):
 
             self.print_stats()
 
-        self.get_bucket_dgm(self.bucket)
         self.log.info("Volume Test Run Complete")
         self.task_manager.abort_all_tasks()
 
