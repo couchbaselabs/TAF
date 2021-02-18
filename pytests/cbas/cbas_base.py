@@ -336,9 +336,9 @@ class CBASBaseTest(BaseTestCase):
                       .format(self.case_number, self._testMethodName))
 
     def tearDown(self):
-        if hasattr(self, "cluster"):
+        if len(self.get_clusters()) == 1:
             self.cbas_util.closeConn()
-        else:
+        elif len(self.get_clusters()) > 1:
             for cluster in self._cb_cluster:
                 if cluster.cbas_util:
                     cluster.cbas_util.closeConn()
