@@ -449,20 +449,33 @@ def transform_and_write_to_file(tests_list, filename):
 
 
 def filter_fields(testname):
-    testwords = testname.split(",")
-    line = ""
-    for fw in testwords:
-        if not fw.startswith("logs_folder") and not fw.startswith(
-                "conf_file") \
-                and not fw.startswith("cluster_name:") \
-                and not fw.startswith("ini:") \
-                and not fw.startswith("case_number:") \
-                and not fw.startswith("num_nodes:") \
-                and not fw.startswith("spec:"):
-            line = line + fw.replace(":", "=", 1)
-            if fw != testwords[-1]:
-                line = line + ","
-    return line
+    if "logs_folder:" in testname:
+        testwords = testname.split(",")
+        line = ""
+        for fw in testwords:
+            if not fw.startswith("logs_folder") and not fw.startswith(
+                    "conf_file") \
+                    and not fw.startswith("cluster_name:") \
+                    and not fw.startswith("ini:") \
+                    and not fw.startswith("case_number:") \
+                    and not fw.startswith("num_nodes:") \
+                    and not fw.startswith("spec:"):
+                line = line + fw.replace(":", "=", 1)
+                if fw != testwords[-1]:
+                    line = line + ","
+        return line
+    else:
+        testwords = testname.split(",")
+        line = []
+        for fw in testwords:
+            if not fw.startswith("logs_folder=") and not fw.startswith("conf_file=") \
+                    and not fw.startswith("cluster_name=") \
+                    and not fw.startswith("ini=") \
+                    and not fw.startswith("case_number=") \
+                    and not fw.startswith("num_nodes=") \
+                    and not fw.startswith("spec="):
+                line.append(fw)
+        return ",".join(line)
 
 
 def check_if_exists(test_list, test_line):
@@ -781,7 +794,7 @@ def main():
         if TestInputSingleton.input.test_params:
             for key, value in TestInputSingleton.input.test_params.items():
                 if key and value:
-                    params += "," + str(key) + ":" + str(value)
+                    params += "," + str(key) + "=" + str(value)
 
         if result.failures or result.errors:
             errors = []
