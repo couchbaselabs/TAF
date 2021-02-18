@@ -2070,7 +2070,6 @@ class volume(BaseTestCase):
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(
                         set(self.cluster.nodes_in_cluster) - set(servs_out))
-                    self.get_bucket_dgm(self.bucket)
 
             self.print_stats()
 
