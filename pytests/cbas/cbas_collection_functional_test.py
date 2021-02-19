@@ -284,9 +284,11 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
     def start_data_load_task(self, doc_load_spec="initial_load",
                              async_load=True, percentage_per_collection=0,
-                             batch_size=10, mutation_num=1):
+                             batch_size=10, mutation_num=1, doc_ttl=0):
         collection_load_spec = \
             self.bucket_util.get_crud_template_from_package(doc_load_spec)
+        if doc_ttl:
+            collection_load_spec["doc_ttl"] = doc_ttl
         if percentage_per_collection > 0:
             collection_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = \
@@ -1376,69 +1378,89 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             doc_loading_spec["doc_ttl"] = docTTL
         self.collectionSetUp(self.cluster, self.bucket_util, self.cluster_util,
                              True, buckets_spec, doc_loading_spec)
+        #inserting docs parallel
+        if self.parallel_load_percent:
+            self.start_data_load_task(
+                percentage_per_collection=self.parallel_load_percent,
+                doc_ttl=docTTL)
+        if self.run_concurrent_query:
+            self.start_query_task()
         if not self.cbas_util_v2.create_datasets_on_all_collections(
                 self.bucket_util, cbas_name_cardinality=3,
                 kv_name_cardinality=3,
                 creation_methods=["cbas_collection", "cbas_dataset"]):
             self.fail("Dataset creation failed")
+        self.stop_query_task()
+        self.wait_for_data_load_task()
         if not self.cbas_util_v2.wait_for_ingestion_all_datasets(
                 self.bucket_util):
             self.fail("Ingestion failed")
         self.bucket_util._expiry_pager()
-        self.sleep(200, "waiting for maxTTL to complete")
+        sleep_time = max(docTTL, collectionTTL, bucketTTL) + 30
+        self.sleep(sleep_time, "waiting for maxTTL to complete")
         self.log.info("Validating item count")
         datasets = self.cbas_util_v2.list_all_dataset_objs()
         for dataset in datasets:
+            mutated_items = dataset.kv_collection.num_items - (
+                    100 * dataset.kv_collection.num_items) / (
+                    100 + self.parallel_load_percent)
             if docTTL:
                 if not self.cbas_util_v2.validate_cbas_dataset_items_count(
                         dataset.full_name, 0):
                     self.fail(
-                        "Docs are still present in the dataset even after DocTTl reached")
+                        "Docs are still present in the dataset even after "
+                        "DocTTl reached")
             elif bucketTTL:
                 if dataset.kv_bucket.name == selected_bucket:
                     if not self.cbas_util_v2.validate_cbas_dataset_items_count(
                             dataset.full_name, 0):
                         self.fail(
-                            "Docs are still present in the dataset even after bucketTTl reached")
+                            "Docs are still present in the dataset even "
+                            "after bucketTTl reached")
                 else:
                     if not self.cbas_util_v2.validate_cbas_dataset_items_count(
-                            dataset.full_name, dataset.num_of_items):
+                            dataset.full_name, dataset.num_of_items,
+                            mutated_items):
                         self.fail(
-                            "Docs are deleted from datasets when it should not have been deleted")
+                            "Docs are deleted from datasets when it should "
+                            "not have been deleted")
             else:
                 if dataset.full_kv_entity_name == selected_collection:
                     if not self.cbas_util_v2.validate_cbas_dataset_items_count(
                             dataset.full_name, 0):
                         self.fail(
-                            "Docs are still present in the dataset even after CollectionTTl reached")
+                            "Docs are still present in the dataset even "
+                            "after CollectionTTl reached")
                 else:
                     if not self.cbas_util_v2.validate_cbas_dataset_items_count(
-                            dataset.full_name, dataset.num_of_items):
+                            dataset.full_name, dataset.num_of_items,
+                            mutated_items):
                         self.fail(
-                            "Docs are deleted from datasets when it should not have been deleted")
+                            "Docs are deleted from datasets when it should "
+                            "not have been deleted")
         self.log.info("Test finished")
 
     def test_create_query_drop_on_multipart_name_secondary_index(self):
         """
-        This testcase verifies secondary index creation, querying using index and
-        dropping of index.
+        This testcase verifies secondary index creation, querying using
+        index and dropping of index.
         Supported Test params -
         :testparam analytics_index boolean, whether to use create/drop index or
         create/drop analytics index statements to create index
         """
         self.log.info("Test started")
         statement = 'SELECT VALUE v FROM {0} v WHERE age > 2'
+        if self.parallel_load_percent:
+            self.start_data_load_task(
+                percentage_per_collection=self.parallel_load_percent)
+        if self.run_concurrent_query:
+            self.start_query_task()
         if not self.cbas_util_v2.create_datasets_on_all_collections(
                 self.bucket_util, cbas_name_cardinality=3,
                 kv_name_cardinality=1):
             self.fail("Dataset creation failed")
         dataset_objs = self.cbas_util_v2.list_all_dataset_objs()
         count = 0
-        if self.parallel_load_percent:
-            self.start_data_load_task(
-                percentage_per_collection=self.parallel_load_percent)
-        if self.run_concurrent_query:
-            self.start_query_task()
         for dataset in dataset_objs:
             count += 1
             index = CBAS_Index(
@@ -1455,6 +1477,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                                                           index.indexed_fields):
                 self.fail("Index {0} on dataset {1} was not created.".format(
                     index.name, index.dataset_name))
+            query = ""
             if self.input.param('verify_index_on_synonym', False):
                 self.log.info("Creating synonym")
                 synonym = Synonym(
@@ -1464,10 +1487,10 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                         synonym.full_name, synonym.cbas_entity_full_name,
                         if_not_exists=True):
                     self.fail("Error while creating synonym")
-                statement = statement.format(synonym.full_name)
+                query = statement.format(synonym.full_name)
             else:
-                statement = statement.format(dataset.full_name)
-            if not self.cbas_util_v2.verify_index_used(statement, True,
+                query = statement.format(dataset.full_name)
+            if not self.cbas_util_v2.verify_index_used(query, True,
                                                        index.name):
                 self.fail("Index was not used while querying the dataset")
             if not self.cbas_util_v2.drop_cbas_index(
@@ -1499,7 +1522,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         index = CBAS_Index(
             self.index_name, synonym.name, synonym.dataverse_name,
             indexed_fields=self.input.param('index_fields', None))
-        expected_error = "Cannot find dataset with name {0} in dataverse {1}".format(
+        expected_error = "Cannot find dataset with name {0} in dataverse {" \
+                         "1}".format(
             CBASHelper.unformat_name(synonym.name), synonym.dataverse_name)
         if not self.cbas_util_v2.create_cbas_index(
                 index.name, index.indexed_fields, index.full_dataset_name,
