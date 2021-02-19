@@ -726,10 +726,8 @@ class MagmaBaseTest(BaseTestCase):
                     return True
         self.log.info("magma stats fragmentation result {} \
         ".format(result))
-        for value in result.values():
-            if max(value) > self.fragmentation/100:
-                self.log.info(stats)
-                return False
+        self.log.info(stats)
+        return False
 
     def check_fragmentation_using_bucket_stats(self, bucket, servers=None):
         # Disabling the check for time being
