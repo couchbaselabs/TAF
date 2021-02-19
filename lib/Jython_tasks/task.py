@@ -2474,6 +2474,9 @@ class StatsWaitTask(Task):
                 if self.statCmd in ["all", "dcp"]:
                     self._get_all_stats_and_compare()
                 elif self.statCmd == "checkpoint":
+                    if self.bucket.bucketType != Bucket.Type.MEMBASE:
+                        self.stop = True
+                        break
                     self._get_checkpoint_stats_and_compare()
                 else:
                     raise Exception("Not supported. Implement the stat call")
