@@ -720,7 +720,7 @@ class MagmaBaseTest(BaseTestCase):
                     stats.append(_res)
                     result.update({server.ip: fragmentation_values})
             for value in result.values():
-                if max(value) < self.fragmentation/100:
+                if max(value) < float(self.fragmentation)/100:
                     self.log.info("magma stats fragmentation result {} \
                     ".format(result))
                     return True
