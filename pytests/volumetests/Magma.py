@@ -373,7 +373,7 @@ class volume(BaseTestCase):
         task = self.task.async_load_gen_docs_from_spec(
             self.cluster, self.doc_loading_tm, loader_spec,
             self.sdk_client_pool,
-            batch_size=1000,
+            batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             print_ops_rate=True,
             start_task=True,
