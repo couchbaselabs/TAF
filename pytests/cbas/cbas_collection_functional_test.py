@@ -68,6 +68,7 @@ class CBASDataverseAndScopes(CBASBaseTest):
 
         results = []
         if not self.cbas_util_v2.delete_cbas_infra_created_from_spec(
+                self.cbas_spec,
                 expected_dataverse_drop_fail=False,
                 delete_dataverse_object=False):
             self.fail(
@@ -420,6 +421,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.fail("Item count validation for Datasets failed")
         self.log.info("Drop datasets")
         if not self.cbas_util_v2.delete_cbas_infra_created_from_spec(
+                self.cbas_spec,
                 expected_dataset_drop_fail=False,
                 delete_dataverse_object=False):
             self.fail(
