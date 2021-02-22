@@ -911,9 +911,19 @@ class volume(BaseTestCase):
             if not RestHelper(rest).is_cluster_rebalanced():
                 self.log.info("Abort rebalance")
                 self._induce_error(error_type)
+                result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+                if result:
+                    self.task.jython_task_manager.abort_all_tasks()
+                    self.assertFalse(
+                        result,
+                        "CRASH | CRITICAL | WARN messages found in cb_logs")
                 self.sleep(60, "Sleep after error introduction")
                 self._recover_from_error(error_type)
-
+                if result:
+                    self.task.jython_task_manager.abort_all_tasks()
+                    self.assertFalse(
+                        result,
+                        "CRASH | CRITICAL | WARN messages found in cb_logs")
                 try:
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                 except RebalanceFailedException:
