@@ -5613,7 +5613,8 @@ class NodeInitializeTask(Task):
 
 class FailoverTask(Task):
     def __init__(self, servers, to_failover=[], wait_for_pending=0,
-                 graceful=False, use_hostnames=False, allow_unsafe=False):
+                 graceful=False, use_hostnames=False, allow_unsafe=False,
+                 all_at_once=False):
         Task.__init__(self, "failover_task")
         self.servers = servers
         self.to_failover = to_failover
@@ -5621,6 +5622,7 @@ class FailoverTask(Task):
         self.wait_for_pending = wait_for_pending
         self.use_hostnames = use_hostnames
         self.allow_unsafe = allow_unsafe
+        self.all_at_once = all_at_once
 
     def call(self):
         try:
@@ -5639,19 +5641,37 @@ class FailoverTask(Task):
 
     def _failover_nodes(self):
         rest = RestConnection(self.servers[0])
-        # call REST fail_over for the nodes to be failed over
-        for server in self.to_failover:
-            for node in rest.node_statuses():
-                if (
-                        server.hostname if self.use_hostnames else server.ip) == node.ip and int(
-                    server.port) == int(node.port):
-                    self.test_log.debug(
-                        "Failing over {0}:{1} with graceful={2}"
-                            .format(node.ip, node.port, self.graceful))
-                    result = rest.fail_over(node.id, self.graceful,
-                                            self.allow_unsafe)
-                    if not result:
-                        self.set_exception("Node failover failed!!")
+
+        # call REST fail_over for the nodes to be failed over all at once
+        if self.all_at_once:
+            otp_nodes = list()
+            for server in self.to_failover:
+                for node in rest.node_statuses():
+                    if (
+                            server.hostname if self.use_hostnames else server.ip) == node.ip and int(
+                        server.port) == int(node.port):
+                        otp_nodes.append(node.id)
+            self.test_log.debug(
+                "Failing over {0} with graceful={1}"
+                    .format(otp_nodes, self.graceful))
+            result = rest.fail_over(otp_nodes, self.graceful,
+                                    self.allow_unsafe, self.all_at_once)
+            if not result:
+                self.set_exception("Node failover failed!!")
+        else:
+            # call REST fail_over for the nodes to be failed over one by one
+            for server in self.to_failover:
+                for node in rest.node_statuses():
+                    if (
+                            server.hostname if self.use_hostnames else server.ip) == node.ip and int(
+                        server.port) == int(node.port):
+                        self.test_log.debug(
+                            "Failing over {0}:{1} with graceful={2}"
+                                .format(node.ip, node.port, self.graceful))
+                        result = rest.fail_over(node.id, self.graceful,
+                                                self.allow_unsafe)
+                        if not result:
+                            self.set_exception("Node failover failed!!")
         rest.monitorRebalance()
 
 
