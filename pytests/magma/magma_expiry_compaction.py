@@ -600,14 +600,14 @@ class MagmaExpiryTests(MagmaBaseTest):
                         Expected: {}, Found: {}".format(self.vbuckets * (self.num_replicas+1), ts))
 
     def test_drop_collection_expired_items(self):
-        self.load_bucket()
-
+        self.log.info("test_drop_collection_expired_items starts")
         tasks = dict()
         for collection in self.collections[::2]:
             self.generate_docs(doc_ops="expiry")
             task = self.loadgen_docs(scope=self.scope_name,
                                      collection=collection,
-                                     _sync=False)
+                                     _sync=False,
+                                     doc_ops="expiry")
             tasks.update(task.items())
         for task in tasks:
             self.task_manager.get_task_result(task)
@@ -615,18 +615,20 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.sleep(self.maxttl, "Wait for docs to expire")
 
         # Convert to tomb-stones
-        tasks = dict()
+        tasks_info = dict()
+        self.gen_delete = copy.deepcopy(self.gen_expiry)
         for collection in self.collections[::2]:
-            task = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
-                self.gen_read, "delete", 0,
+            temp_tasks_info = self.bucket_util._async_validate_docs(
+                self.cluster, self.gen_delete, "delete", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 pause_secs=5, timeout_secs=self.sdk_timeout,
-                scope_name=self.scope_name,
-                collection_name=self.collections[0])
-            tasks.update(task.items())
-        for task in tasks:
+                scope=self.scope_name,
+                collection=collection,
+                retry_exceptions=self.retry_exceptions,
+                ignore_exceptions=self.ignore_exceptions)
+            tasks_info.update(temp_tasks_info.items())
+        for task in tasks_info:
             self.task_manager.get_task_result(task)
 
         for collection in self.collections[::2]:
@@ -636,8 +638,9 @@ class MagmaExpiryTests(MagmaBaseTest):
                                              collection_name=collection)
             self.buckets[0].scopes[self.scope_name].collections.pop(collection)
             self.collections.remove(collection)
-
+        self.sleep(180, "sleep after dropping collections")
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+        self.log.info("tombstone count is {}".format(ts))
         self.assertEqual(ts, 0, "Tombstones found after collections(expired items) drop.")
 
     def test_drop_collection_during_tombstone_creation(self):
