@@ -17,6 +17,7 @@ import time
 class MagmaBaseTest(BaseTestCase):
     def setUp(self):
         super(MagmaBaseTest, self).setUp()
+        self.vbuckets = self.input.param("vbuckets", self.cluster_util.vbuckets)
         self.rest = RestConnection(self.cluster.master)
         self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.check_temporary_failure_exception = False
