@@ -1267,6 +1267,10 @@ class RestConnection(object):
         if otpNode is None:
             self.test_log.error('Required otpNode parameter')
             return False
+        if allowUnsafe:
+            allowUnsafe = "true"
+        else:
+            allowUnsafe = "false"
         if graceful:
             api = self.baseUrl + 'controller/startGracefulFailover'
         else:

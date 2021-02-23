@@ -2,12 +2,13 @@ import threading
 import time
 
 from collections_helper.collections_spec_constants import MetaCrudParams
-from pytests.failover.AutoFailoverBaseTest import AutoFailoverBaseTest
+from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
 
-class CollectionsQuorumLoss(AutoFailoverBaseTest):
+class CollectionsQuorumLoss(CollectionBase):
     def setUp(self):
         super(CollectionsQuorumLoss, self).setUp()
         self.failover_action = self.input.param("failover_action", None)
@@ -57,7 +58,7 @@ class CollectionsQuorumLoss(AutoFailoverBaseTest):
         spec = {
             # Scope/Collection ops params
             MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
-            MetaCrudParams.COLLECTIONS_TO_DROP: 100,
+            MetaCrudParams.COLLECTIONS_TO_DROP: 25,
 
             MetaCrudParams.SCOPES_TO_DROP: 0,
             MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 0,
@@ -70,7 +71,7 @@ class CollectionsQuorumLoss(AutoFailoverBaseTest):
             # In both the collection creation case, previous maxTTL value of
             # individual collection is considered
             MetaCrudParams.SCOPES_TO_RECREATE: 0,
-            MetaCrudParams.COLLECTIONS_TO_RECREATE: 100,
+            MetaCrudParams.COLLECTIONS_TO_RECREATE: 25,
 
             # Applies only for the above listed scope/collection operations
             MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS: "all",
@@ -91,16 +92,6 @@ class CollectionsQuorumLoss(AutoFailoverBaseTest):
             },
         }
         return spec
-
-    def wait_for_async_data_load_to_complete(self, task):
-        self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.validate_doc_loading_results(task)
-        if task.result is False:
-            self.fail("Doc_loading failed")
-
-    def data_validation_collection(self):
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def set_retry_exceptions(self, doc_loading_spec):
         retry_exceptions = list()
@@ -164,23 +155,21 @@ class CollectionsQuorumLoss(AutoFailoverBaseTest):
         self.rest = RestConnection(self.cluster.master)
         return servers_to_fail
 
-    def custom_induce_failure_and_wait_for_autofailover(self):
+    def custom_induce_failure(self):
         """
-        Induce failure and wait for auto-failover
+        Induce failure on nodes
         """
-        count = 0
         for node in self.server_to_fail:
             if self.failover_action == "stop_server":
                 self.cluster_util.stop_server(node)
-                count = count + 1
             elif self.failover_action == "firewall":
                 self.cluster_util.start_firewall_on_node(node)
-                count = count + 1
             elif self.failover_action == "stop_memcached":
                 self.cluster_util.stop_memcached_on_node(node)
-                count = count + 1
-            self.sleep(60, "waiting for node {0} to get autofailovered".format(node.ip))
-            self.wait_for_failover_or_assert(count)
+            elif self.failover_action == "kill_erlang":
+                remote = RemoteMachineShellConnection(node)
+                remote.kill_erlang()
+                remote.disconnect()
 
     def custom_remove_failure(self):
         """
@@ -193,12 +182,15 @@ class CollectionsQuorumLoss(AutoFailoverBaseTest):
                 self.cluster_util.stop_firewall_on_node(node)
             elif self.failover_action == "stop_memcached":
                 self.cluster_util.start_memcached_on_node(node)
+            elif self.failover_action == "kill_erlang":
+                self.cluster_util.stop_server(node)
+                self.cluster_util.start_memcached_on_node(node)
 
     def test_quorum_loss_failover(self):
         """
         With constant parallel data load(on docs and collections) do:
         0. Pick majority nodes for failover
-        1. Induce failure on step0 nodes and autofailover(sequentially)
+        1. Induce failure on step0 nodes and fail over them at once
             OR
             manually failover without inducing failure
         2. Rebalance-out
@@ -212,21 +204,17 @@ class CollectionsQuorumLoss(AutoFailoverBaseTest):
         self.data_loading_thread.start()
 
         if self.failover_action:
-            # Induce failure and wait for AF
-            self.enable_autofailover_and_validate()
-            self.sleep(5)
             self.log.info("Inducing failure {0} on nodes: {1}".
                           format(self.failover_action, self.server_to_fail))
-            self.custom_induce_failure_and_wait_for_autofailover()
+            self.custom_induce_failure()
+            self.sleep(60, "Wait before failing over")
 
-        else:
-            self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
-            failover_count = 0
-            for failover_node in self.server_to_fail:
-                _ = self.task.failover(self.nodes_in_cluster, failover_nodes=[failover_node],
-                                       graceful=False, wait_for_pending=120)
-                failover_count = failover_count + 1
-                self.wait_for_failover_or_assert(failover_count)
+        self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
+        _ = self.task.failover(self.nodes_in_cluster, failover_nodes=self.server_to_fail,
+                               graceful=False, wait_for_pending=120,
+                               allow_unsafe=True,
+                               all_at_once=True)
+        self.wait_for_failover_or_assert(len(self.server_to_fail))
 
         self.log.info("Rebalancing out nodes {0}".format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
