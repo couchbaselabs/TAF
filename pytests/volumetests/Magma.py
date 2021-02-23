@@ -1633,7 +1633,7 @@ class volume(BaseTestCase):
                                       str(self.num_items*self.update_perc/100),
                                       str(self.step_iterations)))
             _iter = 0
-            while _iter < self.step_iterations:
+            while _iter < self.step_iterations and self.crashes:
                 self.PrintStep("Step 10.%s: Update %s percent(%s) items %s times \
                 and crash during recovery" % (str(_iter), str(self.update_perc),
                                               str(self.num_items *
@@ -1665,19 +1665,20 @@ class volume(BaseTestCase):
                 exit(12)
             #######################################################################
             self.PrintStep("Step 13: Drop a collection")
-            count = 0
             total_collections = self.num_collections
             total_scopes = self.num_scopes
-
-            for scope in self.bucket.scopes.keys():
-                for collection in self.bucket.scopes[scope].collections.keys()[1:total_collections:2]:
-                    self.bucket_util.drop_collection(self.cluster.master,
-                                                     self.bucket,
-                                                     scope,
-                                                     collection)
-                    self.bucket.scopes[scope].collections.pop(
-                        collection)
-            self.num_collections = len(self.bucket.scopes[scope].collections.keys())
+            drop = 0
+            for bucket in self.bucket_util.buckets:
+                for scope in bucket.scopes.keys():
+                    drop = 0
+                    for collection in bucket.scopes[scope].collections.keys()[1:total_collections:2]:
+                        self.bucket_util.drop_collection(self.cluster.master,
+                                                         bucket,
+                                                         scope,
+                                                         collection)
+                        bucket.scopes[scope].collections.pop(collection)
+                        drop += 1
+            self.num_collections = self.num_collections - drop
             self.bucket_util._wait_for_stats_all_buckets()
             self.final_items = self.final_items * (self.num_collections)/total_collections
             self.log.info("Expected items after dropping collections: {}".
