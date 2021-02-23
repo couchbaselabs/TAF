@@ -30,6 +30,16 @@ class CollectionsQuorumLoss(CollectionBase):
             self.data_loading_thread = None
         super(CollectionsQuorumLoss, self).tearDown()
 
+    def get_failover_count(self):
+        rest = RestConnection(self.cluster.master)
+        cluster_status = rest.cluster_status()
+        failover_count = 0
+        # check for inactiveFailed
+        for node in cluster_status['nodes']:
+            if node['clusterMembership'] == "inactiveFailed":
+                failover_count += 1
+        return failover_count
+
     def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
         time_start = time.time()
         time_max_end = time_start + timeout
@@ -184,7 +194,7 @@ class CollectionsQuorumLoss(CollectionBase):
                 self.cluster_util.start_memcached_on_node(node)
             elif self.failover_action == "kill_erlang":
                 self.cluster_util.stop_server(node)
-                self.cluster_util.start_memcached_on_node(node)
+                self.cluster_util.start_server(node)
 
     def test_quorum_loss_failover(self):
         """
