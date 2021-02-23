@@ -648,7 +648,7 @@ class volume(BaseTestCase):
             shell.disconnect()
             self.log.debug("machine: {} - core(s): {}".format(server.ip,
                                                               output))
-            for i in range(int(output)):
+            for i in range(min(int(output), 64)):
                 grep_field = "rw_{}:magma".format(i)
                 _res = self.get_magma_stats(bucket, [server],
                                             field_to_grep=grep_field)
@@ -1508,7 +1508,7 @@ class volume(BaseTestCase):
             update: 0 - 1M * 10
             Final Docs = 20M (0-20M)
             '''
-            self.update_perc = 10
+            self.update_perc = 100
             self.PrintStep("Step 5: Update the first set of %s percent (%s) items \
             %s times" % (str(self.update_perc),
                          str(self.num_items*self.update_perc/100),
@@ -1533,7 +1533,7 @@ class volume(BaseTestCase):
             Final Docs = 20M (0-20M)
             '''
             _iter = 0
-            self.update_perc = 10
+            self.update_perc = 100
             self.PrintStep("Step 6: Reverse Update last set of %s percent (%s-%s) \
             items %s times" % (str(self.update_perc), str(self.num_items-1),
                                str(self.num_items+1 -

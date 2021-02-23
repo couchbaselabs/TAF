@@ -710,7 +710,7 @@ class MagmaBaseTest(BaseTestCase):
                     )[0][0].split('\n')[0]
                 self.log.debug("machine: {} - core(s): {}\
                 ".format(server.ip, output))
-                for i in range(int(output)):
+                for i in range(min(int(output), 64)):
                     grep_field = "rw_{}:magma".format(i)
                     _res = self.get_magma_stats(
                         bucket, [server],
@@ -888,7 +888,7 @@ class MagmaBaseTest(BaseTestCase):
                         "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
                         )[0][0].split('\n')[0]
             self.log.debug("machine: {} - core(s): {}".format(server.ip, shards))
-            for shard in range(int(shards)):
+            for shard in range(min(int(shards), 64)):
                 magma = magma_path.format(shard)
                 kvstores, _ = shell.execute_command("ls {} | grep kvstore".format(magma))
                 cmd = '/opt/couchbase/bin/magma_dump {}'.format(magma)
