@@ -85,12 +85,6 @@ class MagmaExpiryTests(MagmaBaseTest):
                     self.cluster.master, bucket))
             for task in compaction_tasks:
                 self.task_manager.get_task_result(task)
-            monitor_tasks = list()
-            for bucket in self.bucket_util.buckets:
-                monitor_tasks.append(self.task.async_monitor_compaction(self.cluster,
-                                                             bucket))
-            for task in monitor_tasks:
-                self.task_manager.get_task_result(task)
 
     def test_read_expired_replica(self):
         result = True

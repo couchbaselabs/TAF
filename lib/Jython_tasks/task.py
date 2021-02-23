@@ -5333,10 +5333,12 @@ class ViewCompactionTask(Task):
 
 
 class CompactBucketTask(Task):
-    def __init__(self, server, bucket):
+    def __init__(self, server, bucket, timeout=300):
         Task.__init__(self, "CompactionTask_%s" % bucket.name)
         self.server = server
         self.bucket = bucket
+        self.progress = 0
+        self.timeout = timeout
         self.rest = RestConnection(server)
         self.retries = 20
         self.statuses = dict()
@@ -5352,39 +5354,56 @@ class CompactBucketTask(Task):
 
         status = BucketHelper(self.server).compact_bucket(self.bucket.name)
         if status is False:
-            self.set_result(False)
-            self.test_log.error("Compact bucket rest call failed")
-        else:
             while self.retries != 0:
-                self.check()
-                if self.result is True:
+                sleep(60, "Wait before next compaction call", log_type="infra")
+                status = BucketHelper(self.server).compact_bucket(self.bucket.name)
+                if status is True:
+                    self.set_result(True)
                     break
+                self.set_result(False)
                 self.retries -= 1
-                sleep(30, "Wait for compaction to complete", log_type="infra")
-
-            if self.result is False:
-                self.test_log.error("Compaction failed to complete within "
-                                    "%s retries" % self.retries)
-
-        self.complete_task()
-
-    def check(self):
-        # check bucket compaction status across all nodes
-        nodes = self.rest.get_nodes()
-        current_compaction_count = dict()
-
-        for node in nodes:
-            current_compaction_count[node.ip] = 0
-            shell = RemoteMachineShellConnection(self.server)
-            res = Cbstats(shell).get_kvtimings()
-            shell.disconnect()
-            for i in res[0]:
-                if 'compact' in i:
-                    current_compaction_count[node.ip] += int(i.split(':')[2])
-
-        if cmp(current_compaction_count, self.compaction_count) == 1:
+        else:
             self.set_result(True)
 
+        if self.result is True:
+            stop_time = time.time() + self.timeout
+            while time.time() < stop_time:
+                if self.timeout > 0 and  time.time() > stop_time:
+                    self.set_exception("API to check compaction status timed out in"
+                                       "%s seconds" % self.timeout)
+                    break
+                status, self.progress = \
+                    self.rest.check_compaction_status(self.bucket.name)
+                if self.progress > 0:
+                    self.test_log.debug("Compaction started for %s"
+                                       % self.bucket.name)
+                    break
+                sleep(2, "Wait before next check compaction call", log_type="infra")
+
+            stop_time = time.time() + self.timeout
+            while time.time() < stop_time:
+                if self.timeout > 0 and  time.time() > stop_time:
+                    self.set_exception("Compaction timed out to complete with "
+                                       "%s seconds" % self.timeout)
+                status, self.progress = \
+                    self.rest.check_compaction_status(self.bucket.name)
+
+                if status is True:
+                    self.test_log.debug("%s compaction done: %s%%"
+                                        % (self.bucket.name, self.progress))
+                if status is False:
+                    self.progress = 100
+                    self.test_log.debug("Compaction completed for %s"
+                                       % self.bucket.name)
+                    self.test_log.info("%s compaction done: %s%%"
+                                        % (self.bucket.name, self.progress))
+                    break
+                sleep(5, "Wait before next check compaction call", log_type="infra")
+        else:
+            self.test_log.error("Compaction failed to complete within "
+                                "%s retries" % self.retries)
+
+        self.complete_task()
 
 class MonitorBucketCompaction(Task):
     """
