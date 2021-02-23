@@ -142,6 +142,28 @@ class Task(Callable):
         return value
 
 
+class FunctionCallTask(Task):
+    """ A task that calls a given function `f` with arguments `args` and key-word arguments `kwds` """
+
+    def __init__(self, f, args=(), kwds={}):
+        """ The constructor.
+
+        Args:
+            f (function): The function to call.
+            args (tuple): A tuple of arguments for the function `f`.
+            kwds (dict): A dictionary of keyword arguments for the function `f`.
+        """
+        super(FunctionCallTask, self).__init__("FunctionCallTask: function:{} Args:{} Kwds:{}".format(f, args, kwds))
+        self.f, self.args, self.kwds = f, args, kwds
+
+    def call(self):
+        """ Calls the function f """
+        self.start_task()
+        result = self.f(*self.args, **self.kwds)
+        self.complete_task()
+        return result
+
+
 class RebalanceTask(Task):
 
     def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,
