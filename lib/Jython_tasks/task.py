@@ -2283,6 +2283,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
                                            % (wrong_values.__len__(),
                                               wrong_values))
                 self.wrong_values.extend(wrong_values)
+        if self.exception:
+            raise(self.exception)
 
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
@@ -2387,21 +2389,34 @@ class DocumentsValidatorTask(Task):
                 self.bucket = self.buckets[iterator]
             tasks.extend(self.get_tasks(generator))
             iterator += 1
-        for task in tasks:
-            self.task_manager.add_new_task(task)
-        for task in tasks:
-            self.task_manager.get_task_result(task)
-            if task.exception is not None:
-                exception = task.exception
+        try:
+            for task in tasks:
+                self.task_manager.add_new_task(task)
+            for task in tasks:
+                self.task_manager.get_task_result(task)
 
-            if not self.suppress_error_table:
-                task.failed_item_table.display(
-                    "DocValidator failure for %s:%s:%s"
-                    % (self.bucket.name, self.scope, self.collection))
-        if self.sdk_client_pool is None:
+                if not self.suppress_error_table:
+                    task.failed_item_table.display(
+                        "DocValidator failure for %s:%s:%s"
+                        % (self.bucket.name, self.scope, self.collection))
+        except Exception as e:
+            self.result = False
+            self.log.debug("========= Tasks in loadgen pool=======")
+            self.task_manager.print_tasks_in_pool()
+            self.log.debug("======================================")
+            for task in tasks:
+                self.task_manager.stop_task(task)
+                self.log.debug("Task '%s' complete." % (task.thread_name))
+            self.test_log.error(e)
+            if not self.sdk_client_pool:
+                for client in self.clients:
+                    client.close()
+            self.set_exception(e)
+
+        self.complete_task()
+        if not self.sdk_client_pool:
             for client in self.clients:
                 client.close()
-
         self.complete_task()
         if exception:
             self.set_exception(exception)
@@ -3887,6 +3902,128 @@ class MutateDocsFromSpecTask(Task):
             load_gen_for_bucket_create_threads.append(bucket_thread)
 
         for bucket_thread in load_gen_for_bucket_create_threads:
+            bucket_thread.join(timeout=180)
+        return tasks
+
+
+class ValidateDocsFromSpecTask(Task):
+    def __init__(self, cluster, task_manager, loader_spec,
+                 sdk_client_pool, check_replica=False,
+                 batch_size=500,
+                 process_concurrency=1,
+                 pause_secs=1):
+        super(ValidateDocsFromSpecTask, self).__init__(
+            "ValidateDocsFromSpecTask_%s" % time.time())
+        self.cluster = cluster
+        self.task_manager = task_manager
+        self.loader_spec = loader_spec
+        self.process_concurrency = process_concurrency
+        self.batch_size = batch_size
+        self.check_replica = check_replica
+        self.pause_secs = pause_secs
+
+        self.result = True
+        self.validate_data_tasks = list()
+        self.validate_data_tasks_lock = Lock()
+        self.sdk_client_pool = sdk_client_pool
+
+    def call(self):
+        self.start_task()
+        self.get_tasks()
+        try:
+            for task in self.validate_data_tasks:
+                self.task_manager.add_new_task(task)
+            for task in self.validate_data_tasks:
+                self.task_manager.get_task_result(task)
+        except Exception as e:
+            self.result = False
+            self.log.debug("========= Tasks in loadgen pool=======")
+            self.task_manager.print_tasks_in_pool()
+            self.log.debug("======================================")
+            for task in self.validate_data_tasks:
+                self.task_manager.stop_task(task)
+                self.log.debug("Task '%s' complete. Loaded %s items"
+                               % (task.thread_name, task.docs_loaded))
+            self.test_log.error(e)
+            self.set_exception(e)
+
+        self.complete_task()
+        return self.result
+
+    def create_tasks_for_bucket(self, bucket, scope_dict):
+        load_gen_for_scopes_create_threads = list()
+        for scope_name, collection_dict in scope_dict.items():
+            scope_thread = threading.Thread(
+                target=self.create_tasks_for_scope,
+                args=[bucket, scope_name, collection_dict["collections"]])
+            scope_thread.start()
+            load_gen_for_scopes_create_threads.append(scope_thread)
+        for scope_thread in load_gen_for_scopes_create_threads:
+            scope_thread.join(120)
+
+    def create_tasks_for_scope(self, bucket, scope_name, collection_dict):
+        load_gen_for_collection_create_threads = list()
+        for c_name, c_data in collection_dict.items():
+            collection_thread = threading.Thread(
+                target=self.create_tasks_for_collections,
+                args=[bucket, scope_name, c_name, c_data])
+            collection_thread.start()
+            load_gen_for_collection_create_threads.append(collection_thread)
+
+        for collection_thread in load_gen_for_collection_create_threads:
+            collection_thread.join(60)
+
+    def create_tasks_for_collections(self, bucket, scope_name,
+                                     col_name, col_meta):
+        for op_type, op_data in col_meta.items():
+            # Create success, fail dict per load_gen task
+            op_data["success"] = dict()
+            op_data["fail"] = dict()
+
+            generators = list()
+            generator = op_data["doc_gen"]
+            gen_start = int(generator.start)
+            gen_end = int(generator.end)
+            gen_range = max(int((generator.end - generator.start)
+                                / self.process_concurrency),
+                            1)
+            for pos in range(gen_start, gen_end, gen_range):
+                partition_gen = copy.deepcopy(generator)
+                partition_gen.start = pos
+                partition_gen.itr = pos
+                partition_gen.end = pos + gen_range
+                if partition_gen.end > generator.end:
+                    partition_gen.end = generator.end
+                batch_gen = BatchedDocumentGenerator(
+                    partition_gen,
+                    self.batch_size)
+                generators.append(batch_gen)
+            for doc_gen in generators:
+                if op_type in DocLoading.Bucket.DOC_OPS:
+                    task = ValidateDocumentsTask(
+                        self.cluster, bucket, None, doc_gen,
+                        op_type, op_data["doc_ttl"],
+                        None, batch_size=self.batch_size,
+                        pause_secs=self.pause_secs, timeout_secs=op_data["sdk_timeout"],
+                        compression=None, check_replica=self.check_replica,
+                        scope=scope_name, collection=col_name,
+                        sdk_client_pool=self.sdk_client_pool,
+                        is_sub_doc=False,
+                        suppress_error_table=op_data["suppress_error_table"])
+                    self.validate_data_tasks.append(task)
+
+    def get_tasks(self):
+        tasks = list()
+        bucket_validation_threads = list()
+
+        for bucket, scope_dict in self.loader_spec.items():
+            bucket_thread = threading.Thread(
+                target=self.create_tasks_for_bucket,
+                args=[bucket, scope_dict["scopes"]])
+            bucket_thread.start()
+            bucket_validation_threads.append(bucket_thread)
+
+        for bucket_thread in bucket_validation_threads:
             bucket_thread.join(timeout=180)
         return tasks
 
@@ -5404,6 +5541,7 @@ class CompactBucketTask(Task):
                                 "%s retries" % self.retries)
 
         self.complete_task()
+
 
 class MonitorBucketCompaction(Task):
     """

@@ -388,6 +388,23 @@ class ServerTasks(object):
                                                          cluster.master)
         return num_items
 
+    def async_validate_docs_using_spec(self, cluster, task_manager, loader_spec,
+                                       check_replica,
+                                       sdk_client_pool,
+                                       batch_size=200,
+                                       process_concurrency=1,
+                                       pause_secs=1):
+        task_manager = task_manager or self.jython_task_manager
+        _task = jython_tasks.ValidateDocsFromSpecTask(
+            cluster, task_manager, loader_spec,
+            sdk_client_pool=sdk_client_pool,
+            check_replica=check_replica,
+            batch_size=batch_size,
+            process_concurrency=process_concurrency,
+            pause_secs=pause_secs)
+        task_manager.add_new_task(_task)
+        return _task
+
     def async_validate_docs(self, cluster, bucket, generator, opt_type, exp=0,
                             flag=0, only_store_hash=True, batch_size=1,
                             pause_secs=1, timeout_secs=5, compression=None,
