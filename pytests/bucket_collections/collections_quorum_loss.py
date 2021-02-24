@@ -13,8 +13,9 @@ class CollectionsQuorumLoss(CollectionBase):
         super(CollectionsQuorumLoss, self).setUp()
         self.failover_action = self.input.param("failover_action", None)
         self.num_node_failures = self.input.param("num_node_failures", 3)
-        self.failover_orchestrator = self.input.param("failover_orchestrator",False)
+        self.failover_orchestrator = self.input.param("failover_orchestrator", False)
         self.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
+        self.create_zones = self.input.param("create_zones", False)
 
         self.data_loading_thread = None
         self.data_load_flag = False
@@ -196,6 +197,33 @@ class CollectionsQuorumLoss(CollectionBase):
                 self.cluster_util.stop_server(node)
                 self.cluster_util.start_server(node)
 
+    def shuffle_nodes_between_two_zones(self):
+        """
+        Creates 'Group 2' zone and shuffles nodes between
+        Group 1 and Group 2 in an alternate manner ie;
+        1st node in Group 1, 2nd node in Group 2, 3rd node in Group 1 and so on
+        and finally rebalances the resulting cluster
+        :return nodes of 2nd zone
+        """
+        serverinfo = self.cluster.master
+        rest = RestConnection(serverinfo)
+        zones = ["Group 1", "Group 2"]
+        rest.add_zone("Group 2")
+        nodes_in_zone = {"Group 1": [serverinfo.ip], "Group 2": []}
+        second_zone_servers = list()  # Keep track of second zone's nodes
+        # Divide the nodes between zones.
+        for i in range(1, len(self.nodes_in_cluster)):
+            server_group = i % 2
+            nodes_in_zone[zones[server_group]].append(self.nodes_in_cluster[i].ip)
+            if zones[server_group] == "Group 2":
+                second_zone_servers.append(self.nodes_in_cluster[i])
+        # Shuffle the nodes
+        node_in_zone = list(set(nodes_in_zone[zones[1]]) -
+                            set([node for node in rest.get_nodes_in_zone(zones[1])]))
+        rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[1])
+        self.task.rebalance(self.nodes_in_cluster, [], [])
+        return second_zone_servers
+
     def test_quorum_loss_failover(self):
         """
         With constant parallel data load(on docs and collections) do:
@@ -207,7 +235,10 @@ class CollectionsQuorumLoss(CollectionBase):
         3. Remove failures if you had added them
         4. Add rebalanced out nodes back again
         """
-        self.server_to_fail = self.servers_to_fail()
+        if self.create_zones:
+            self.server_to_fail = self.shuffle_nodes_between_two_zones()
+        else:
+            self.server_to_fail = self.servers_to_fail()
 
         self.data_load_flag = True
         self.data_loading_thread = threading.Thread(target=self.data_load)
