@@ -31,9 +31,21 @@ class volume(CollectionBase):
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_for_volume_test")
-        self.contains_ephemeral = self.input.param("contains_ephemeral", True)
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 4)
         self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
+        self.scrape_interval = self.input.param("scrape_interval", None)
+        if self.scrape_interval:
+            self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
+            # Change global scrape_interval
+            StatsHelper(self.cluster.master).\
+                configure_stats_settings_from_diag_eval("scrape_interval",self.scrape_interval)
+            # Change gloabl scrape_timeout to equal global scrape_interval
+            StatsHelper(self.cluster.master).\
+                configure_stats_settings_from_diag_eval("scrape_timeout",self.scrape_interval)
+            # Change high cardinality services' scrape_interval
+            value = "[{S, [{high_cardinality_enabled, true}, {high_cardinality_scrape_interval, %s}]} " \
+                    "|| S <- [index, fts, kv, cbas, eventing]]" % self.scrape_interval
+            StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("services", value)
 
         self.doc_and_collection_ttl = self.input.param("doc_and_collection_ttl", False)  # For using doc_ttl + coll_ttl
         self.skip_validations = self.input.param("skip_validations", True)
@@ -70,6 +82,9 @@ class volume(CollectionBase):
 
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
+        if self.scrape_interval:
+            self.log.info("Reverting prometheus settings back to default")
+            StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
         if self.query_thread:
             # Join query thread
             self.query_thread_flag = False
