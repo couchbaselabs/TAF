@@ -151,6 +151,10 @@ class MagmaBaseTest(BaseTestCase):
         self.monitor_stats = ["doc_ops", "ep_queue_size"]
         if not self.ep_queue_stats:
             self.monitor_stats = ["doc_ops"]
+        #Disk usage before data load
+        self.disk_usage_before_loading = self.get_disk_usage(self.buckets[0],
+                                                 self.cluster.nodes_in_cluster)[0]
+        self.log.info("disk usage before loading {}".format(self.disk_usage_before_loading))
 
         # Doc controlling params
         self.key = 'test_docs'
@@ -286,6 +290,15 @@ class MagmaBaseTest(BaseTestCase):
         self.log.info("## Active Resident Threshold of {0} is {1} ##".format(
             self.buckets[0].name, dgm))
         super(MagmaBaseTest, self).tearDown()
+
+    def run_compaction(self, compaction_iterations=5):
+        for _ in range(compaction_iterations):
+            compaction_tasks = list()
+            for bucket in self.bucket_util.buckets:
+                compaction_tasks.append(self.task.async_compact_bucket(
+                    self.cluster.master, bucket))
+            for task in compaction_tasks:
+                self.task_manager.get_task_result(task)
 
     def validate_seq_itr(self):
         if self.dcp_services and self.num_collections == 1:

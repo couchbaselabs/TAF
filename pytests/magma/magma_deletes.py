@@ -61,15 +61,31 @@ class BasicDeleteTests(BasicCrudTests):
                 _res = disk_usage[0]
                 self.log.info("DeleteIteration-{}, Disk Usage at time {} is {}MB \
                 ".format(count+1, time_end - time.time(), _res))
-                if _res < 0.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
                     break
 
             msg = "Disk Usage={}MB > {} * init_Usage={}MB"
-            self.assertIs(_res > 0.5 * self.disk_usage[
+            self.assertIs(_res > 1 * self.disk_usage[
                 self.disk_usage.keys()[0]], False,
-                msg.format(disk_usage[0], 0.5,
+                msg.format(disk_usage[0], 1,
                            self.disk_usage[self.disk_usage.keys()[0]]))
+            self.run_compaction(compaction_iterations=1)
+            ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+            self.log.info("Tombstones count : {}".format(ts))
+            expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+            self.log.info("Iterations - {}, expected_ts_count - {}".format(count+1, expected_ts_count))
+            self.sleep(60, "sleep after triggering full compaction")
 
+            # 64 byte is size of meta data
+            expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
+            self.log.info("expected tombstone size {}".format(expected_tombstone_size))
+            disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
+                                             self.cluster.nodes_in_cluster)[0]
+            self.log.info("Iteration--{}, disk usage after compaction--{}".
+                           format(count+1, disk_usage_after_compaction))
+            self.assertTrue(disk_usage_after_compaction <= expected_tombstone_size + self.disk_usage_before_loading ,
+                            "Disk size after compaction exceeds {}".
+                            format(expected_tombstone_size + self.disk_usage_before_loading))
             ######################################################################
             '''
             STEP - 3
@@ -154,7 +170,7 @@ class BasicDeleteTests(BasicCrudTests):
                 _res = disk_usage[0]
                 self.log.info("Iteration-{}, Disk Usage at time {} is {}MB \
                 ".format(count+1, time_end - time.time(), _res))
-                if _res < 1.7 * self.disk_usage[self.disk_usage.keys()[0]]:
+                if _res < 2 * self.disk_usage[self.disk_usage.keys()[0]]:
                     break
 
             msg = "Disk Usage={}MB > {} * init_Usage={}MB"
@@ -162,15 +178,21 @@ class BasicDeleteTests(BasicCrudTests):
                 self.disk_usage.keys()[0]], False,
                 msg.format(disk_usage[0], 2,
                            self.disk_usage[self.disk_usage.keys()[0]]))
+            ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+            self.log.info("Tombstones count : {}".format(ts))
+            expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+            self.log.info("Iterations - {}, expected_ts_count - {}".format(count+1, expected_ts_count))
 
-            disk_usage = self.get_disk_usage(
-                self.buckets[0],
-                self.cluster.nodes_in_cluster)
-            msg = "Iteration={}, Disk Usage={}MB > {} * init_Usage={}MB"
-            self.assertIs(disk_usage[0] > 2 * self.disk_usage[
-                self.disk_usage.keys()[0]],
-                False, msg.format(count+1, disk_usage[0], 2,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
+            self.run_compaction(compaction_iterations=1)
+            self.sleep(60, "sleep after triggering full compaction")
+            disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
+                                             self.cluster.nodes_in_cluster)[0]
+            self.log.info("Iteration--{}, disk usage after compaction--{}".
+                           format(count+1, disk_usage_after_compaction))
+            expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
+            self.assertTrue(disk_usage_after_compaction <=  +  expected_tombstone_size +
+                            self.disk_usage[self.disk_usage.keys()[0]],
+                            "Disk size after compaction exceeds 500MB")
             #Space Amplifacation check Ends
             count += 1
         self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)

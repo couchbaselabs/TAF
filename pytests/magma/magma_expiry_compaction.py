@@ -77,15 +77,6 @@ class MagmaExpiryTests(MagmaBaseTest):
     def tearDown(self):
         super(MagmaExpiryTests, self).tearDown()
 
-    def run_compaction(self, compaction_iterations=5):
-        for _ in range(compaction_iterations):
-            compaction_tasks = list()
-            for bucket in self.bucket_util.buckets:
-                compaction_tasks.append(self.task.async_compact_bucket(
-                    self.cluster.master, bucket))
-            for task in compaction_tasks:
-                self.task_manager.get_task_result(task)
-
     def test_read_expired_replica(self):
         result = True
         self.gen_create = doc_generator(

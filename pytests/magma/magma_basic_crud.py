@@ -8,6 +8,7 @@ class BasicCrudTests(MagmaBaseTest):
         super(BasicCrudTests, self).setUp()
         self.change_swap_space(self.cluster.nodes_in_cluster)
         self.generate_docs(doc_ops="update:read:delete")
+        self.items = self.num_items
 
     def tearDown(self):
         super(BasicCrudTests, self).tearDown()
