@@ -11,6 +11,7 @@ from pytests.N1qlTransaction.N1qlBase import N1qlBase
 
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from StatsLib.StatsOperations import StatsHelper
 
 from sdk_exceptions import SDKException
 
@@ -50,6 +51,15 @@ class CollectionsRebalance(CollectionBase):
         self.dgm_ttl_test = self.input.param("dgm_ttl_test", False)  # if dgm with ttl
         self.dgm = self.input.param("dgm", "100")  # Initial dgm threshold, for dgm test; 100 means no dgm
         self.N1ql_txn = self.input.param("N1ql_txn", False)
+        self.scrape_interval = self.input.param("scrape_interval", None)
+        if self.scrape_interval:
+            self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
+            StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_interval",
+                                                                                     self.scrape_interval)
+            # scrape_timeout cannot be greater than scrape_interval, so for now we are setting scrape_timeout same as
+            # scrape_interval
+            StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_timeout",
+                                                                                     self.scrape_interval)
         if self.N1ql_txn:
             self.num_stmt_txn = self.input.param("num_stmt_txn", 5)
             self.num_collection = self.input.param("num_collection", 1)
@@ -58,6 +68,9 @@ class CollectionsRebalance(CollectionBase):
             self.num_buckets = self.input.param("num_buckets", 1)
 
     def tearDown(self):
+        if self.scrape_interval:
+            self.log.info("Reverting prometheus settings back to default")
+            StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
         super(CollectionsRebalance, self).tearDown()
 
     def setup_N1ql_txn(self):
