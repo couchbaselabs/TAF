@@ -185,7 +185,7 @@ class MagmaBaseTest(BaseTestCase):
 
         # Common test params
         self.test_itr = self.input.param("test_itr", 4)
-        self.update_itr = self.input.param("update_itr", 10)
+        self.update_itr = self.input.param("update_itr", 2)
         self.next_half = self.input.param("next_half", False)
         self.deep_copy = self.input.param("deep_copy", False)
         if self.active_resident_threshold < 100:
