@@ -20,6 +20,7 @@ class MagmaBaseTest(BaseTestCase):
         self.vbuckets = self.input.param("vbuckets", self.cluster_util.vbuckets)
         self.rest = RestConnection(self.cluster.master)
         self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
+        self.fragmentation = int(self.input.param("fragmentation", 50))
         self.check_temporary_failure_exception = False
         self.retry_exceptions = [SDKException.TimeoutException,
                                  SDKException.AmbiguousTimeoutException,
@@ -136,11 +137,6 @@ class MagmaBaseTest(BaseTestCase):
             self.log.debug("props== {}".format(props))
             update_bucket_props = True
 
-        self.fragmentation = int(self.input.param("fragmentation", 50))
-        if self.fragmentation != 50 and self.bucket_storage == Bucket.StorageBackend.magma:
-            props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
-            update_bucket_props = True
-
         if update_bucket_props:
             self.bucket_util.update_bucket_props(
                     "backend", props,
@@ -253,7 +249,8 @@ class MagmaBaseTest(BaseTestCase):
             replica=self.num_replicas,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
-            autoCompactionDefined=self.autoCompactionDefined)
+            autoCompactionDefined=self.autoCompactionDefined,
+            fragmentation_percentage=self.fragmentation)
 
     def _create_multiple_buckets(self):
         buckets_created = self.bucket_util.create_multiple_buckets(
@@ -264,7 +261,8 @@ class MagmaBaseTest(BaseTestCase):
             storage={"couchstore": self.standard_buckets - self.magma_buckets,
                      "magma": self.magma_buckets},
             eviction_policy=self.bucket_eviction_policy,
-            bucket_name=self.bucket_name)
+            bucket_name=self.bucket_name,
+            fragmentation_percentage=self.fragmentation)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         for bucket in self.bucket_util.buckets:

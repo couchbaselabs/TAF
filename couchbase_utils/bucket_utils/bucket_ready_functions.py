@@ -1591,7 +1591,8 @@ class BucketUtils(ScopeUtils):
             flush_enabled=Bucket.FlushBucket.DISABLED,
             bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
             purge_interval=1,
-            autoCompactionDefined="false"):
+            autoCompactionDefined="false",
+            fragmentation_percentage=50):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -1617,7 +1618,8 @@ class BucketUtils(ScopeUtils):
                                  Bucket.flushEnabled: flush_enabled,
                                  Bucket.durabilityMinLevel: bucket_durability,
                                  Bucket.purge_interval: purge_interval,
-                                 Bucket.autoCompactionDefined: autoCompactionDefined
+                                 Bucket.autoCompactionDefined: autoCompactionDefined,
+                                 Bucket.fragmentationPercentage: fragmentation_percentage
                                  })
         self.create_bucket(default_bucket, wait_for_warmup)
         if self.enable_time_sync:
@@ -1920,7 +1922,10 @@ class BucketUtils(ScopeUtils):
             compression_mode=Bucket.CompressionMode.ACTIVE,
             bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
             ram_quota=None,
-            bucket_name=None):
+            bucket_name=None,
+            purge_interval=1,
+            autoCompactionDefined=False,
+            fragmentationPercentage=50):
         success = True
         rest = RestConnection(server)
         info = rest.get_nodes_self()
@@ -1955,7 +1960,10 @@ class BucketUtils(ScopeUtils):
                         Bucket.maxTTL: maxttl,
                         Bucket.storageBackend: key,
                         Bucket.compressionMode: compression_mode,
-                        Bucket.durabilityMinLevel: bucket_durability})
+                        Bucket.durabilityMinLevel: bucket_durability,
+                        Bucket.purge_interval: purge_interval,
+                        Bucket.autoCompactionDefined: autoCompactionDefined,
+                        Bucket.fragmentationPercentage: fragmentationPercentage})
                     tasks[bucket] = self.async_create_bucket(bucket)
                     count += 1
 

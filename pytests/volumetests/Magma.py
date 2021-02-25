@@ -92,6 +92,7 @@ class volume(BaseTestCase):
         self.skip_read_on_error = False
         self.suppress_error_table = False
         self.track_failures = True
+        self.loader_dict = None
 
         self.disable_magma_commit_points = self.input.param(
             "disable_magma_commit_points", False)
@@ -118,10 +119,6 @@ class volume(BaseTestCase):
 
         if self.disable_magma_commit_points:
             props += ";magma_max_commit_points=0"
-            update_bucket_props = True
-
-        if self.fragmentation != 50:
-            props += ";magma_delete_frag_ratio=%s" % str(self.fragmentation/100.0)
             update_bucket_props = True
 
         if self.cursor_dropping_checkpoint:
@@ -166,7 +163,7 @@ class volume(BaseTestCase):
                 if self.num_collections > 1:
                     self.collection_prefix = self.input.param("collection_prefix",
                                                               "VolumeCollection")
-    
+
                     for i in range(self.num_collections):
                         collection_name = self.collection_prefix + str(i)
                         self.bucket_util.create_collection(self.cluster.master,
@@ -228,7 +225,8 @@ class volume(BaseTestCase):
                  Bucket.evictionPolicy: self.bucket_eviction_policy,
                  Bucket.bucketType: self.bucket_type[i],
                  Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
-                 Bucket.compressionMode: self.compression_mode[i]})
+                 Bucket.compressionMode: self.compression_mode[i],
+                 Bucket.fragmentationPercentage: self.fragmentation})
             self.bucket_util.create_bucket(bucket)
 
         # rebalance the new buckets across all nodes.
@@ -365,11 +363,6 @@ class volume(BaseTestCase):
             self.final_items += (abs(self.create_end - self.create_start)) * self.num_collections * self.num_scopes
 
     def doc_loader(self, loader_spec):
-        retry_exceptions = [
-            SDKException.AmbiguousTimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.ServerOutOfMemoryException
-        ]
         task = self.task.async_load_gen_docs_from_spec(
             self.cluster, self.doc_loading_tm, loader_spec,
             self.sdk_client_pool,
@@ -379,19 +372,6 @@ class volume(BaseTestCase):
             start_task=True,
             track_failures=self.track_failures)
 
-#         tasks_info = self.bucket_util._async_load_all_buckets(
-#             self.cluster, kv_gen, op_type, exp,
-#             batch_size=self.batch_size,
-#             process_concurrency=self.process_concurrency,
-#             persist_to=self.persist_to, replicate_to=self.replicate_to,
-#             durability=self.durability_level, pause_secs=5,
-#             timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-#             retry_exceptions=retry_exceptions,
-#             skip_read_on_error=self.skip_read_on_error,
-#             suppress_error_table=self.suppress_error_table,
-#             scope=scope, collection=collection,
-#             track_failures=self.track_failures,
-#             sdk_client_pool=self.sdk_client_pool)
         return task
 
     def data_load(self):
@@ -437,16 +417,12 @@ class volume(BaseTestCase):
                         common_params.update({"doc_gen":self.gen_expiry,
                                               "doc_ttl":self.maxttl})
                     loader_dict[bucket]["scopes"][scope]["collections"][collection].update({op_type:common_params})
+        self.loader_dict = loader_dict
         return self.doc_loader(loader_dict)
 
     def wait_for_doc_load_completion(self, task, wait_for_stats=True):
-#         for task in tasks_info:
         self.doc_loading_tm.get_task_result(task)
         self.bucket_util.validate_doc_loading_results(task)
-#         self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-#                                                        self.cluster)
-#         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-#         for task, task_info in tasks_info.items():
         self.assertTrue(task.result,
                         "Doc ops failed for task: {}".format(task.thread_name))
 
@@ -466,54 +442,15 @@ class volume(BaseTestCase):
             gdb_shell.disconnect()
 
     def data_validation(self):
-        return
         self.log.info("Validating Active/Replica Docs")
-        self.check_replica = False
-        for bucket in self.bucket_util.buckets:
-            tasks = list()
-            for collection in collections:
-                if self.gen_update is not None:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_update, "update", 0,
-                        batch_size=self.batch_size,
-                        process_concurrency=self.process_concurrency,
-                        pause_secs=5, timeout_secs=self.sdk_timeout,
-                        check_replica=self.check_replica,
-                        scope=scope, collection=collection,
-                        sdk_client_pool=self.sdk_client_pool))
-                if self.gen_create is not None:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_create, "create", 0,
-                        batch_size=self.batch_size,
-                        process_concurrency=self.process_concurrency,
-                        pause_secs=5, timeout_secs=self.sdk_timeout,
-                        check_replica=self.check_replica,
-                        scope=scope, collection=collection,
-                        sdk_client_pool=self.sdk_client_pool))
-                if self.gen_delete is not None:
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_delete, "delete", 0,
-                        batch_size=self.batch_size,
-                        process_concurrency=self.process_concurrency,
-                        pause_secs=5, timeout_secs=self.sdk_timeout,
-                        check_replica=self.check_replica,
-                        suppress_error_table=True,
-                        scope=scope, collection=collection,
-                        sdk_client_pool=self.sdk_client_pool))
-                if self.gen_expiry is not None:
-                    self.sleep(self.maxttl,
-                               "Wait for docs expiry time.")
-                    tasks.append(self.task.async_validate_docs(
-                        self.cluster, bucket, self.gen_expiry, "delete", 0,
-                        batch_size=self.batch_size,
-                        process_concurrency=self.process_concurrency,
-                        pause_secs=5, timeout_secs=self.sdk_timeout,
-                        check_replica=self.check_replica,
-                        suppress_error_table=True,
-                        scope=scope, collection=collection,
-                        sdk_client_pool=self.sdk_client_pool))
-            for task in tasks:
-                self.task.jython_task_manager.get_task_result(task)
+        task = self.task.async_validate_docs_using_spec(
+            self.cluster, self.doc_loading_tm, self.loader_dict,
+            check_replica=False,
+            sdk_client_pool=self.sdk_client_pool,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency)
+
+        self.doc_loading_tm.get_task_result(task)
 
     def get_bucket_dgm(self, bucket):
         self.rest_client = BucketHelper(self.cluster.master)
@@ -1480,7 +1417,9 @@ class volume(BaseTestCase):
             self.generate_docs(doc_ops="delete",
                                delete_start=self.start,
                                delete_end=self.end)
+            self.suppress_error_table = True
             self.perform_load(validate_data=True)
+            self.suppress_error_table = False
             if self.end_step == 3:
                 exit(3)
             '''
@@ -1612,7 +1551,9 @@ class volume(BaseTestCase):
             self.PrintStep("Step 9: Delete/Re-Create all %s random items" %
                            str(self.num_items*self.delete_perc/100))
             self.generate_docs(doc_ops="delete")
+            self.suppress_error_table = True
             self.perform_load(crash=False, validate_data=True)
+            self.suppress_error_table = False
             '''
             fragmentation: 50, total data: 3X, stale: 1.5X
             '''

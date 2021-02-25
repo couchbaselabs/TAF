@@ -136,7 +136,8 @@ class Bucket(object):
     uuid = "uuid"
     durabilityMinLevel = "durabilityMinLevel"
     purge_interval = "purge_interval"
-    autoCompactionDefined ="autoCompactionDefined"
+    autoCompactionDefined = "autoCompactionDefined"
+    fragmentationPercentage = "fragmentationPercentage"
 
     class Type(object):
         EPHEMERAL = "ephemeral"
@@ -217,7 +218,10 @@ class Bucket(object):
             Bucket.durabilityMinLevel,
             Bucket.DurabilityLevel.NONE.lower())
         self.purge_interval = new_params.get(Bucket.purge_interval, 1)
-        self.autoCompactionDefined = new_params.get(Bucket.autoCompactionDefined, "false")
+        self.autoCompactionDefined = new_params.get(
+            Bucket.autoCompactionDefined, "false")
+        self.fragmentationPercentage = new_params.get(
+            Bucket.fragmentationPercentage, False)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
