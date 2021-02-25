@@ -179,20 +179,23 @@ class BasicDeleteTests(BasicCrudTests):
                 msg.format(disk_usage[0], 2,
                            self.disk_usage[self.disk_usage.keys()[0]]))
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-            self.log.info("Tombstones count : {}".format(ts))
             expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
-            self.log.info("Iterations - {}, expected_ts_count - {}".format(count+1, expected_ts_count))
+            self.log.info("Iterations - {}, Actual tomb stone count == {} expected_ts_count == {}"
+                          .format(count+1, ts, expected_ts_count))
 
             self.run_compaction(compaction_iterations=1)
             self.sleep(60, "sleep after triggering full compaction")
             disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)[0]
-            self.log.info("Iteration--{}, disk usage after compaction--{}".
-                           format(count+1, disk_usage_after_compaction))
             expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
-            self.assertTrue(disk_usage_after_compaction <=  +  expected_tombstone_size +
-                            self.disk_usage[self.disk_usage.keys()[0]],
-                            "Disk size after compaction exceeds 500MB")
+            expected_size = self.disk_usage[self.disk_usage.keys()[0]] + expected_tombstone_size
+            self.log.info("Iteration--{}, disk usage after compaction--{}\
+            expected size == {},expected_tombstone_size =={} ".
+            format(count+1, disk_usage_after_compaction,
+                   expected_size, expected_tombstone_size))
+            self.assertTrue(disk_usage_after_compaction <=  expected_size,
+                            "Disk size after compaction == {} exceeds  expected size == {}".
+                            format(disk_usage_after_compaction, expected_size))
             #Space Amplifacation check Ends
             count += 1
         self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)
