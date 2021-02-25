@@ -114,16 +114,15 @@ class UpgradeBase(BaseTestCase):
         self.bucket_util.add_rbac_user()
         self.bucket = self.bucket_util.buckets[0]
 
-        # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
-
         # Create clients in SDK client pool
-        self.log.info("Creating required SDK clients for client_pool")
-        for bucket in self.bucket_util.buckets:
-            self.sdk_client_pool.create_clients(
-                bucket, [self.cluster.master], 1,
-                compression_settings=self.sdk_compression)
+        if self.sdk_client_pool is not None:
+            clients_per_bucket = \
+                int(self.thread_to_use / len(self.bucket_util.buckets))
+            self.log.info("Creating %s SDK clients / bucket for client_pool")
+            for bucket in self.bucket_util.buckets:
+                self.sdk_client_pool.create_clients(
+                    bucket, [self.cluster.master], clients_per_bucket,
+                    compression_settings=self.sdk_compression)
 
         # Load initial async_write docs into the cluster
         self.gen_load = doc_generator(self.key, 0, self.num_items,
@@ -149,6 +148,12 @@ class UpgradeBase(BaseTestCase):
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
+        self.sleep(30, "Wait for num_items to get reflected")
+        current_items = self.bucket_util.get_bucket_current_item_count(
+            self.cluster, self.bucket)
+        self.assertTrue(current_items == self.num_items,
+                        "Mismatch in doc_count. Actual: %s, Expected: %s"
+                        % (current_items, self.num_items))
         self.bucket_util.print_bucket_stats()
         self.spare_node = self.cluster.servers[self.nodes_init]
 

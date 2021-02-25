@@ -31,7 +31,7 @@ class UpgradeTests(UpgradeBase):
     def __wait_for_persistence_and_validate(self):
         self.bucket_util._wait_for_stats_all_buckets(
             cbstat_cmd="checkpoint", stat_name="num_items_for_persistence",
-            timeout=60)
+            timeout=300)
         self.bucket_util._wait_for_stats_all_buckets(
             cbstat_cmd="all", stat_name="ep_queue_size",
             timeout=60)
@@ -54,8 +54,19 @@ class UpgradeTests(UpgradeBase):
         return status
 
     def __play_with_collection(self):
+        # MB-44092 - Collection load not working with pre-existing connections
+        DocLoaderUtils.sdk_client_pool = SDKClientPool()
+        self.log.info("Creating required SDK clients for client_pool")
+        clients_per_bucket = \
+            int(self.thread_to_use / len(self.bucket_util.buckets))
+        for bucket in self.bucket_util.buckets:
+            DocLoaderUtils.sdk_client_pool.create_clients(
+                bucket, [self.cluster.master], clients_per_bucket,
+                compression_settings=self.sdk_compression)
+
         # Client based scope/collection crud tests
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client = \
+            DocLoaderUtils.sdk_client_pool.get_client_for_bucket(self.bucket)
         scope_name = self.bucket_util.get_random_name(
             max_length=CbServer.max_scope_name_len)
         collection_name = self.bucket_util.get_random_name(
@@ -71,14 +82,8 @@ class UpgradeTests(UpgradeBase):
         client.drop_collection(scope_name, collection_name)
         # Drop created scope using SDK client
         client.drop_scope(scope_name)
-
-        # MB-44092 - Collection load not working with pre-existing connections
-        DocLoaderUtils.sdk_client_pool = SDKClientPool()
-        self.log.info("Creating required SDK clients for client_pool")
-        for bucket in self.bucket_util.buckets:
-            DocLoaderUtils.sdk_client_pool.create_clients(
-                bucket, [self.cluster.master], 1,
-                compression_settings=self.sdk_compression)
+        # Release the acquired client
+        DocLoaderUtils.sdk_client_pool.release_client(client)
 
         # Create scopes/collections phase
         collection_load_spec = \
@@ -241,8 +246,8 @@ class UpgradeTests(UpgradeBase):
             if self.test_failure is not None:
                 break
 
-        # Validate default collection stats before collection ops
-        self.__wait_for_persistence_and_validate()
+        # Validate default num_items before collection tests
+        self.bucket_util.validate_docs_per_collections_all_buckets()
 
         # Play with collection if upgrade was successful
         if not self.test_failure:
