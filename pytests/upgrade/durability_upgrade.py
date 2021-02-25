@@ -28,6 +28,15 @@ class UpgradeTests(UpgradeBase):
     def tearDown(self):
         super(UpgradeTests, self).tearDown()
 
+    def __wait_for_persistence_and_validate(self):
+        self.bucket_util._wait_for_stats_all_buckets(
+            cbstat_cmd="checkpoint", stat_name="num_items_for_persistence",
+            timeout=60)
+        self.bucket_util._wait_for_stats_all_buckets(
+            cbstat_cmd="all", stat_name="ep_queue_size",
+            timeout=60)
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+
     def __trigger_cbcollect(self, log_path):
         self.log.info("Triggering cb_collect_info")
         rest = RestConnection(self.cluster.master)
@@ -94,11 +103,10 @@ class UpgradeTests(UpgradeBase):
         if collection_task.result is False:
             self.log_failure("Collection task failed")
             return
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
-                                                     stat_name="ep_queue_size",
-                                                     timeout=60)
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+
+        # Perform collection/doc_count validation
+        if not self.upgrade_with_data_load:
+            self.__wait_for_persistence_and_validate()
 
         # Drop and recreate scope/collections
         collection_load_spec = \
@@ -118,14 +126,12 @@ class UpgradeTests(UpgradeBase):
             self.log_failure("Drop scope/collection failed")
             return
 
+        # Perform collection/doc_count validation
+        if not self.upgrade_with_data_load:
+            self.__wait_for_persistence_and_validate()
+
         # MB-44092 - Close client_pool after collection ops
         DocLoaderUtils.sdk_client_pool.shutdown()
-
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
-                                                     stat_name="ep_queue_size",
-                                                     timeout=60)
-        self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def test_upgrade(self):
         create_batch_size = 10000
@@ -236,10 +242,7 @@ class UpgradeTests(UpgradeBase):
                 break
 
         # Validate default collection stats before collection ops
-        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
-                                                     stat_name="ep_queue_size",
-                                                     timeout=60)
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.__wait_for_persistence_and_validate()
 
         # Play with collection if upgrade was successful
         if not self.test_failure:
@@ -250,6 +253,8 @@ class UpgradeTests(UpgradeBase):
             update_task.end_task()
             self.task_manager.get_task_result(update_task)
 
+        # Perform final collection/doc_count validation
+        self.__wait_for_persistence_and_validate()
         self.validate_test_failure()
 
     def test_bucket_durability_upgrade(self):
