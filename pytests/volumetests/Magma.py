@@ -178,7 +178,6 @@ class volume(BaseTestCase):
 
         if self.sdk_client_pool:
             max_clients = min(self.task_manager.number_of_threads,
-                              self.num_buckets*self.num_scopes*self.num_collections,
                               20)
             clients_per_bucket = int(ceil(max_clients / self.num_buckets))
             for bucket in self.bucket_util.buckets:
