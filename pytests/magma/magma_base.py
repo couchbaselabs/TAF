@@ -630,6 +630,14 @@ class MagmaBaseTest(BaseTestCase):
 
         return tasks_info
 
+    def get_bucket_dgm(self, bucket):
+        self.rest_client = BucketHelper(self.cluster.master)
+        dgm = self.rest_client.fetch_bucket_stats(
+            bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+        self.log.info("Active Resident Threshold of {0} is {1}".format(
+            bucket.name, dgm))
+        return dgm
+
     def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
         magma_stats_for_all_servers = dict()
         servers = servers or self.cluster.nodes_in_cluster
@@ -672,6 +680,7 @@ class MagmaBaseTest(BaseTestCase):
             shell.disconnect()
         self.log.info("Disk usage stats for bucekt {} is below".format(bucket.name))
         self.log.info("Total Disk usage for kvstore is {}MB".format(kvstore))
+        self.get_bucket_dgm(bucket)
         self.log.debug("Total Disk usage for wal is {}MB".format(wal))
         self.log.debug("Total Disk usage for keyTree is {}MB".format(keyTree))
         self.log.debug("Total Disk usage for seqTree is {}MB".format(seqTree))
