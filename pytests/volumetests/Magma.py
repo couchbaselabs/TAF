@@ -645,8 +645,8 @@ class volume(BaseTestCase):
             data_files = shell.execute_command(cmd)[0]
             for files in data_files:
                 if "kvstore" in files and int(files.split(",")[0]) >= 300:
-                    self.log.warn("Number of files in {} is {}".format(
-                        files.split(",")[1].rstrip(), files.split(",")[0]))
+                    self.log.warn("Number of files in {}--{} is {}".format(
+                        server.ip, files.split(",")[1].rstrip(), files.split(",")[0]))
             shell.disconnect()
         self.log.debug("Total Disk usage for kvstore is {}MB".format(kvstore))
         self.log.debug("Total Disk usage for wal is {}MB".format(wal))
