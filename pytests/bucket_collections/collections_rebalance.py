@@ -60,6 +60,10 @@ class CollectionsRebalance(CollectionBase):
             # scrape_interval
             StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_timeout",
                                                                                      self.scrape_interval)
+
+        self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", None)
+        if self.rebalance_moves_per_node:
+            self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
         if self.N1ql_txn:
             self.num_stmt_txn = self.input.param("num_stmt_txn", 5)
             self.num_collection = self.input.param("num_collection", 1)
@@ -71,6 +75,8 @@ class CollectionsRebalance(CollectionBase):
         if self.scrape_interval:
             self.log.info("Reverting prometheus settings back to default")
             StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
+        if self.rebalance_moves_per_node:
+            self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=4)
         super(CollectionsRebalance, self).tearDown()
 
     def setup_N1ql_txn(self):
