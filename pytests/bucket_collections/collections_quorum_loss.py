@@ -276,3 +276,113 @@ class CollectionsQuorumLoss(CollectionBase):
         if self.data_load_exception:
             self.log.error("Caught exception from data load thread")
             self.fail(self.data_load_exception)
+
+    def test_quorum_loss_failover_in_steps(self):
+        """
+        With constant parallel data load(on docs and collections) do:
+        0. Pick majority nodes for failover
+        1. Induce failure on step0 nodes and fail over them in two steps
+        2. Rebalance
+        3. Remove failures if you had added them
+        4. Add rebalanced out nodes back again
+        """
+
+        if self.create_zones:
+            self.server_to_fail = self.shuffle_nodes_between_two_zones()
+        else:
+            self.server_to_fail = self.servers_to_fail()
+
+        self.data_load_flag = True
+        self.data_loading_thread = threading.Thread(target=self.data_load)
+        self.data_loading_thread.start()
+
+        if self.failover_action:
+            self.log.info("Inducing failure {0} on nodes: {1}".
+                          format(self.failover_action, self.server_to_fail))
+            self.custom_induce_failure()
+            self.sleep(60, "Wait before failing over")
+
+        failover_step_nodes = [self.server_to_fail[:-1], self.server_to_fail[-1]] # 2 steps
+        for failover_nodes in failover_step_nodes:
+            self.log.info("Failing over nodes explicitly {0}".format(failover_nodes))
+            _ = self.task.failover(self.nodes_in_cluster, failover_nodes=failover_nodes,
+                                   graceful=False, wait_for_pending=120,
+                                   allow_unsafe=True,
+                                   all_at_once=True)
+            self.wait_for_failover_or_assert(len(failover_nodes))
+
+        self.log.info("Rebalancing out nodes {0}".format(self.server_to_fail))
+        rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
+                                                   retry_get_process_num=100)
+        self.wait_for_rebalance_to_complete(rebalance_task)
+        if self.failover_action:
+            self.custom_remove_failure()
+            self.sleep(60, "wait after removing failure")
+
+        self.log.info("Adding back nodes which were failed and rebalanced out".
+                      format(self.server_to_fail))
+        rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
+                                                   retry_get_process_num=100)
+        self.wait_for_rebalance_to_complete(rebalance_task)
+
+        self.data_load_flag = False
+        self.data_loading_thread.join()
+        if self.data_load_exception:
+            self.log.error("Caught exception from data load thread")
+            self.fail(self.data_load_exception)
+
+    def test_quorum_loss_failover_more_than_failed_nodes(self):
+        """
+        With constant parallel data load(on docs and collections) do:
+        0. Pick majority nodes for failover
+        1. Induce failure on step0 nodes
+        2. Failover failed nodes + a healthy node (more nodes than failed nodes)
+        2. Rebalance
+        3. Remove failures if you had added them
+        4. Add rebalanced out nodes back again
+        """
+        if self.create_zones:
+            self.server_to_fail = self.shuffle_nodes_between_two_zones()
+        else:
+            self.server_to_fail = self.servers_to_fail()
+
+        self.data_load_flag = True
+        self.data_loading_thread = threading.Thread(target=self.data_load)
+        self.data_loading_thread.start()
+
+        if self.failover_action:
+            self.log.info("Inducing failure {0} on nodes: {1}".
+                          format(self.failover_action, self.server_to_fail))
+            self.custom_induce_failure()
+            self.sleep(60, "Wait before failing over")
+
+        failover_nodes =  [node for node in self.server_to_fail]
+        failover_nodes.append(self.nodes_in_cluster[-1]) # healthy node
+        _ = self.task.failover(self.nodes_in_cluster, failover_nodes=failover_nodes,
+                               graceful=False, wait_for_pending=120,
+                               allow_unsafe=True,
+                               all_at_once=True)
+        self.wait_for_failover_or_assert(len(failover_nodes))
+
+        self.log.info("Rebalancing out nodes {0}".format(self.server_to_fail))
+        rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
+                                                   retry_get_process_num=100)
+        self.wait_for_rebalance_to_complete(rebalance_task)
+        if self.failover_action:
+            self.custom_remove_failure()
+            self.sleep(60, "wait after removing failure")
+
+        self.log.info("Adding back nodes which were failed and rebalanced out".
+                      format(self.server_to_fail))
+        rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
+                                                   retry_get_process_num=100)
+        self.wait_for_rebalance_to_complete(rebalance_task)
+
+        self.data_load_flag = False
+        self.data_loading_thread.join()
+        if self.data_load_exception:
+            self.log.error("Caught exception from data load thread")
+            self.fail(self.data_load_exception)
+
+
+
