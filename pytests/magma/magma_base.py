@@ -632,10 +632,18 @@ class MagmaBaseTest(BaseTestCase):
 
     def get_bucket_dgm(self, bucket):
         self.rest_client = BucketHelper(self.cluster.master)
-        dgm = self.rest_client.fetch_bucket_stats(
-            bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
-        self.log.info("Active Resident Threshold of {0} is {1}".format(
-            bucket.name, dgm))
+        count = 0
+        dgm = 100
+        while count < 5:
+            try:
+                dgm = self.rest_client.fetch_bucket_stats(
+                    bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+                self.log.info("Active Resident Threshold of {0} is {1}".format(
+                    bucket.name, dgm))
+                return dgm
+            except Exception as e:
+                self.sleep(5, e)
+            count += 1
         return dgm
 
     def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
