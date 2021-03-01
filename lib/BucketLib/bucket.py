@@ -267,7 +267,7 @@ class TravelSample(Bucket):
         bucket_param = dict()
         bucket_param["name"] = "travel-sample"
         super(TravelSample, self).__init__(bucket_param)
-        self.stats.expected_item_count = 63182
+        self.stats.expected_item_count = 63288
 
         # Update scope-collections with num_items
         self.scopes[CbServer.default_scope].collections[
