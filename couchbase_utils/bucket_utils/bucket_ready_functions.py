@@ -1921,7 +1921,7 @@ class BucketUtils(ScopeUtils):
             ram_quota=None,
             bucket_name=None,
             purge_interval=1,
-            autoCompactionDefined=False,
+            autoCompactionDefined="false",
             fragmentationPercentage=50):
         success = True
         rest = RestConnection(server)
