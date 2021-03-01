@@ -747,7 +747,7 @@ class MagmaBaseTest(BaseTestCase):
                         float(_res[server.ip][grep_field][
                             "Fragmentation"]))
                     stats.append(_res)
-                    result.update({server.ip: fragmentation_values})
+                result.update({server.ip: fragmentation_values})
             res = list()
             for value in result.values():
                 res.append(max(value))
