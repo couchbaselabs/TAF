@@ -567,6 +567,21 @@ class volume(BaseTestCase):
             if bucket.storageBackend == Bucket.StorageBackend.magma:
                 self.get_magma_disk_usage(bucket)
                 self.check_fragmentation_using_magma_stats(bucket)
+                self.check_fragmentation_using_kv_stats(bucket)
+
+    def check_fragmentation_using_kv_stats(self, bucket, servers=None):
+        result = dict()
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+        if type(servers) is not list:
+            servers = [servers]
+        for server in servers:
+            frag_val = self.bucket_util.get_fragmentation_kv(
+                bucket, server)
+            self.log.debug("Current Fragmentation for node {} is {} \
+            ".format(server.ip, frag_val))
+            result.update({server.ip: frag_val})
+        self.log.info("KV stats fragmentation values {}".format(result))
 
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()
