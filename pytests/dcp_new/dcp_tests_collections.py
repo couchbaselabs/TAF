@@ -20,7 +20,7 @@ class DcpTestCase(DCPBase):
     def check_dcp_event(self, collection_name, output_string, event="create_collection", count=1):
         if event == "create_collection":
             cmd = "CollectionCREATED, name:" + collection_name
-            event_count = len(list(filter(lambda x: cmd in x, output_string)))
+            event_count = len(set(list(filter(lambda x: cmd in x, output_string))))
             if event_count == (len(self.vbuckets) * count):
                 self.log.info("number of collection creation event matches %s" % event_count)
             else:
@@ -38,7 +38,7 @@ class DcpTestCase(DCPBase):
 
         if event == "create_scope":
             cmd = "ScopeCREATED, name:" + collection_name
-            event_count = len(list(filter(lambda x: cmd in x, output_string)))
+            event_count = len(set(list(filter(lambda x: cmd in x, output_string))))
             if event_count == len(self.vbuckets):
                 self.log.info("number of scope creation event matches %s" % event_count)
             else:
@@ -397,7 +397,7 @@ class DcpTestCase(DCPBase):
         proc1.join()
 
         expected_item_count = sum(self.bucket_util.get_buckets_itemCount().values())
-        self.verify_operation(self.operation, expected_item_count)
+        self.verify_operation(self.operation, expected_item_count, verify=False)
         self.validate_test_failure()
 
     def test_stream_expired_doc(self):
