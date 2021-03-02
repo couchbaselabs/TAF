@@ -607,7 +607,7 @@ class BatchedDocumentGenerator(object):
     def has_next(self):
         return self._doc_gen.has_next()
 
-    def next_batch(self, op_type=None):
+    def next_batch(self, skip_value=False):
         self.count = 0
         key_val = []
         # Value is not required for
@@ -615,7 +615,9 @@ class BatchedDocumentGenerator(object):
         # string is used
         val = ""
         while self.count < self._batch_size and self.has_next():
-            if op_type == "touch" or op_type == "delete":
+#             import pydevd
+#             pydevd.settrace(trace_only_current_thread=False)
+            if skip_value:
                 key = self._doc_gen.next_key()
             else:
                 key, val = self._doc_gen.next()

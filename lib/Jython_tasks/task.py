@@ -774,7 +774,12 @@ class LoadDocumentsTask(GenericLoadingTask):
                               generator._doc_gen.end,
                               time.time())
         self.generator = generator
+        self.skip_doc_gen_value = False
         self.op_type = op_type
+        if self.op_type in [DocLoading.Bucket.DocOps.DELETE,
+                            DocLoading.Bucket.DocOps.TOUCH,
+                            DocLoading.Bucket.DocOps.READ]:
+            self.skip_doc_gen_value = True
         self.exp = exp
         self.abs_exp = self.exp
         self.random_exp = random_exp
@@ -801,7 +806,7 @@ class LoadDocumentsTask(GenericLoadingTask):
 
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
-        key_value = doc_gen.next_batch(self.op_type)
+        key_value = doc_gen.next_batch(self.skip_doc_gen_value)
         if self.random_exp:
             self.exp = random.randint(self.abs_exp / 2, self.abs_exp)
             print "EXPIRY SET TO %s" % self.exp
@@ -905,7 +910,12 @@ class LoadSubDocumentsTask(GenericLoadingTask):
             op_type,
             durability)
         self.generator = generator
+        self.skip_doc_gen_value = False
         self.op_type = op_type
+        if self.op_type in [DocLoading.Bucket.DocOps.DELETE,
+                            DocLoading.Bucket.DocOps.TOUCH,
+                            DocLoading.Bucket.DocOps.READ]:
+            self.skip_doc_gen_value = True
         self.exp = exp
         self.create_path = create_paths
         self.xattr = xattr
@@ -924,7 +934,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
 
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
-        key_value = doc_gen.next_batch(self.op_type)
+        key_value = doc_gen.next_batch(self.skip_doc_gen_value)
         if self.sdk_client_pool is not None:
             self.client = \
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
@@ -2126,7 +2136,10 @@ class ValidateDocumentsTask(GenericLoadingTask):
             op_type, time.time())
 
         self.generator = generator
+        self.skip_doc_gen_value = False
         self.op_type = op_type
+        if self.op_type in [DocLoading.Bucket.DocOps.DELETE]:
+            self.skip_doc_gen_value = True
         self.exp = exp
         self.flag = flag
         self.suppress_error_table = suppress_error_table
@@ -2154,7 +2167,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
                                                            self.scope,
                                                            self.collection)
-        key_value = dict(doc_gen.next_batch(self.op_type))
+        key_value = dict(doc_gen.next_batch(self.skip_doc_gen_value))
         self.test_log.info(key_value)
         result_map, self.failed_reads = self.batch_read(key_value.keys())
         self.test_log.info(result_map)
@@ -2219,7 +2232,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
                                                            self.scope,
                                                            self.collection)
-        key_value = dict(doc_gen.next_batch(self.op_type))
+        key_value = dict(doc_gen.next_batch(self.skip_doc_gen_value))
         if self.check_replica:
             # change to getFromReplica
             result_map = dict()
@@ -3861,6 +3874,7 @@ class MutateDocsFromSpecTask(Task):
                                                   scope_name, col_name,
                                                   op_data["doc_ttl"])
                 if op_type in DocLoading.Bucket.DOC_OPS:
+                    track_failures = op_data.get("track_failures", self.track_failures)
                     doc_load_task = LoadDocumentsTask(
                         self.cluster, bucket, None, doc_gen,
                         op_type, op_data["doc_ttl"],
@@ -3873,7 +3887,7 @@ class MutateDocsFromSpecTask(Task):
                         time_unit=op_data["sdk_timeout_unit"],
                         skip_read_on_error=op_data["skip_read_on_error"],
                         suppress_error_table=op_data["suppress_error_table"],
-                        track_failures=self.track_failures,
+                        track_failures=track_failures,
                         skip_read_success_results=op_data[
                             "skip_read_success_results"])
                 else:
