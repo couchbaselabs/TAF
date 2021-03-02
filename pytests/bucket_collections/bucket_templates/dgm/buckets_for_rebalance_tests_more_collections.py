@@ -17,12 +17,11 @@ spec = {
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
     Bucket.maxTTL: 0,
     Bucket.storageBackend: Bucket.StorageBackend.couchstore,
-    Bucket.evictionPolicy: Bucket.EvictionPolicy.VALUE_ONLY,
+    Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
 
     "buckets": {
         "default": {
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 2500,
             Bucket.bucketType: Bucket.Type.MEMBASE,
             "privileges": [
                 "Perm1"
