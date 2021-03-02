@@ -16,7 +16,10 @@ from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cbas.cbas_base import CBASBaseTest
 from collections_helper.collections_spec_constants import MetaCrudParams
 from security.rbac_base import RbacBase
-from Jython_tasks.task import RunQueriesTask, CreateDatasetsTask
+from Jython_tasks.task import RunQueriesTask, CreateDatasetsTask, \
+    DropDatasetsTask
+from couchbase_utils.cbas_utils.cbas_utils_v2 import \
+    DisconnectConnectLinksTask, KillProcessesInLoopTask
 
 from TestInput import TestInputSingleton
 
@@ -24,6 +27,8 @@ from TestInput import TestInputSingleton
 class CBASDataverseAndScopes(CBASBaseTest):
     def setUp(self):
         self.input = TestInputSingleton.input
+        self.num_dataverses = int(self.input.param("no_of_dv", 1))
+        self.ds_per_dv = int(self.input.param("ds_per_dv", 1))
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket": False})
         super(CBASDataverseAndScopes, self).setUp()
@@ -32,8 +37,8 @@ class CBASDataverseAndScopes(CBASBaseTest):
                 self.cbas_spec_name)
             self.cbas_util_v2.update_cbas_spec(
                 self.cbas_spec,
-                {"no_of_dataverses": self.input.param('no_of_dv', 1),
-                 "max_thread_count": self.input.param('no_of_threads', 1)},
+                {"no_of_dataverses": self.num_dataverses,
+                 "max_thread_count": self.ds_per_dv},
                 "dataverse")
             if not self.cbas_util_v2.create_dataverse_from_spec(
                     self.cbas_spec):
@@ -247,6 +252,10 @@ dropping dataverses")
 class CBASDatasetsAndCollections(CBASBaseTest):
     def setUp(self):
         self.input = TestInputSingleton.input
+        self.num_dataverses = int(self.input.param("no_of_dv", 1))
+        self.ds_per_dv = int(self.input.param("ds_per_dv", 1))
+        self.iterations = int(self.input.param("iterations", 1))
+        self.wait_for_ingestion = self.input.param("wait_for_ingestion", True)
         if self.input.param('setup_infra', True):
             if "bucket_spec" not in self.input.test_params:
                 self.input.test_params.update(
@@ -1791,3 +1800,91 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 self.bucket_util):
             self.fail("Ingestion failed")
         self.log.info("test_analytics_with_parallel_dataset_creation completed")
+
+    def test_analytics_with_killing_cbas_memcached(self):
+        # Create Datasets on all collections in parallel
+        self.cbas_logger("test_analytics_with_killing_cbas_memcached "
+                         "started", "DEBUG")
+        create_datasets_task = CreateDatasetsTask(
+            bucket_util=self.bucket_util,
+            cbas_name_cardinality=self.input.param('cardinality', None),
+            cbas_util=self.cbas_util_v2,
+            kv_name_cardinality=self.input.param('bucket_cardinality', None),
+            creation_methods=["cbas_collection", "cbas_dataset"])
+        self.task_manager.add_new_task(create_datasets_task)
+        if self.parallel_load_percent <= 0:
+            self.parallel_load_percent = 100
+        self.start_data_load_task(
+            percentage_per_collection=self.parallel_load_percent)
+        if not self.cbas_kill_count:
+            self.start_query_task()
+        # Wait for create dataset task to finish
+        dataset_creation_result = self.task_manager.get_task_result(
+            create_datasets_task)
+        if not dataset_creation_result:
+            self.fail("Datasets creation failed")
+        self.wait_for_data_load_task()
+        kill_process_task = self.cbas_util_v2.start_kill_processes_task(
+            self.cluster_util, self.cbas_kill_count, self.memcached_kill_count)
+        self.stop_query_task()
+        if kill_process_task:
+            self.task_manager.get_task_result(kill_process_task)
+            self.cluster.cbas_nodes = [node for node in self.cluster.servers
+                                       if "cbas" in node.services]
+            self.cbas_util_v2.wait_for_processes(self.cluster.cbas_nodes,
+                                                 ["cbas"])
+            self.cbas_util_v2.wait_for_processes(self.cluster.kv_nodes,
+                                                 ["memcached"])
+
+        # Validate ingestion
+        if not self.cbas_util_v2.wait_for_ingestion_all_datasets(
+                self.bucket_util):
+            self.fail("Ingestion failed")
+        self.cbas_logger("test_analytics_with_killing_cbas_memcached "
+                         "completed", "DEBUG")
+
+    def test_analytics_with_tampering_links(self):
+        self.cbas_logger("test_analytics_with_tampering_links started", "DEBUG")
+        links = [dataverse + ".Local" for dataverse in
+        self.cbas_util_v2.dataverses.keys()] * self.tamper_links_count
+        connect_disconnect_task = self.cbas_util_v2\
+            .start_connect_disconnect_links_task(links=links)
+
+        if connect_disconnect_task:
+            if connect_disconnect_task.exception:
+                self.task_manager.get_task_result(connect_disconnect_task)
+            self.task_manager.stop_task(connect_disconnect_task)
+        self.cbas_logger("test_analytics_with_tampering_links completed",
+                         "DEBUG")
+
+    def test_create_drop_datasets(self):
+        self.cbas_logger("test_create_drop_datasets started", "DEBUG")
+        for _ in range(self.iterations):
+            create_task = CreateDatasetsTask(self.bucket_util, self.cbas_util_v2,
+                                             3, 3)
+            self.task_manager.add_new_task(create_task)
+            self.task_manager.get_task_result(create_task)
+
+            self.cbas_util_v2.wait_for_ingestion_all_datasets(self.bucket_util)
+
+            drop_task = DropDatasetsTask(self.cbas_util_v2)
+            self.task_manager.add_new_task(drop_task)
+            self.task_manager.get_task_result(drop_task)
+            self.cbas_logger("test_create_drop_datasets completed", "DEBUG")
+
+    def test_multiple_datasets_on_collection(self):
+        self.cbas_logger("TEST_MULTIPLE_DATASETS STARTED", "DEBUG")
+        ds_per_collection = int(self.input.param("ds_per_collection", 5))
+        if self.parallel_load_percent <= 0:
+            self.parallel_load_percent = 100
+        create_task = CreateDatasetsTask(
+            self.bucket_util, self.cbas_util_v2, 3, 3,
+            ds_per_collection=ds_per_collection, ds_per_dv=self.ds_per_dv)
+        self.start_data_load_task(
+            percentage_per_collection=self.parallel_load_percent)
+        self.task_manager.add_new_task(create_task)
+        self.task_manager.get_task_result(create_task)
+        self.wait_for_data_load_task()
+        self.cbas_util_v2.wait_for_ingestion_all_datasets(self.bucket_util)
+        self.cbas_logger("TEST_MULTIPLE_DATASETS COMPLETED", "DEBUG")
+

@@ -88,6 +88,9 @@ class CBASBaseTest(BaseTestCase):
             'set_cbas_memory_from_available_free_memory', False)
         self.parallel_load_percent = int(self.input.param(
             "parallel_load_percent", 0))
+        self.cbas_kill_count = self.input.param("cbas_kill_count", 0)
+        self.memcached_kill_count = self.input.param("memcached_kill_count", 0)
+        self.tamper_links_count = self.input.param("tamper_links_count", 0)
         self.cbas_node = None
         services = None
         nodes_init = None
@@ -175,7 +178,7 @@ class CBASBaseTest(BaseTestCase):
                         self.cbas_node.services)
                 self.cbas_util = CbasUtil(self.cluster.master, self.cbas_node)
                 self.cbas_util_v2 = CbasUtilV2(self.cluster.master,
-                                               self.cbas_node)
+                                               self.cbas_node, self.task)
                 if "cbas" in self.cluster.master.services:
                     self.cleanup_cbas()
                 if add_default_cbas_node:
@@ -345,10 +348,12 @@ class CBASBaseTest(BaseTestCase):
         super(CBASBaseTest, self).tearDown()
 
     def cbas_logger(self, msg, type="INFO"):
-        if type == "INFO":
+        if type.upper() == "INFO":
             self.log.info("*" * 10 + msg + "*" * 10)
-        if type == "DEBUG":
+        if type.upper() == "DEBUG":
             self.log.debug("*" * 10 + msg + "*" * 10)
+        if type.upper() == "ERROR":
+            self.log.error("*" * 10 + msg + "*" * 10)
 
     def cleanup_cbas(self, cbas_util=None):
         """

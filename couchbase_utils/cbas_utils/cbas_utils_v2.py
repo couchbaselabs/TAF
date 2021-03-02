@@ -22,7 +22,7 @@ from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import Dataverse, CBAS_Scope, Link, Dataset, \
     CBAS_Collection, Synonym, CBAS_Index
-from remote.remote_util import RemoteMachineShellConnection
+from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
 from common_lib import sleep
 from Queue import Queue
 from BucketLib.BucketOperations import BucketHelper
@@ -30,7 +30,6 @@ from sdk_exceptions import SDKException
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
 from Jython_tasks.task import Task, RunQueriesTask
-from membase.api.exception import N1QLQueryException
 
 
 class BaseUtil(object):
@@ -586,6 +585,23 @@ class Dataverse_Util(BaseUtil):
 
             return all(results)
         return True
+
+    def get_dataverses(self, retries=10):
+        dataverses_created = []
+        dataverse_query = 'SELECT VALUE d.DataverseName FROM ' \
+                         'Metadata.`Dataset` d WHERE ' \
+                         'd.DataverseName <> "Metadata"'
+        while not datasets_created and retries:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                dataverse_query, mode="immediate", timeout=300,
+                analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                dataverses_created = list(
+                    map(lambda dv: dv.encode('utf-8'), results))
+                break
+            sleep(12, "Wait for atleast one dataset to be created")
+            retries -= 1
+        return dataverses_created
 
 
 class Link_Util(Dataverse_Util):
@@ -1574,7 +1590,8 @@ class Dataset_Util(Link_Util):
 
         return False
 
-    def wait_for_ingestion_all_datasets(self, bucket_util):
+    def wait_for_ingestion_all_datasets(self, bucket_util, timeout=600):
+
         def caller(job):
             return job[0](**job[1])
 
@@ -1587,7 +1604,8 @@ class Dataset_Util(Link_Util):
             for dataset in datasets:
                 jobs.put((self.wait_for_ingestion_complete,
                           {"dataset_names": [dataset.full_name],
-                           "num_items": dataset.num_of_items}))
+                           "num_items": dataset.num_of_items,
+                           "timeout": timeout}))
         self.run_jobs_in_parallel(caller, jobs, results, 15,
                                   async_run=False,
                                   consume_from_queue_func=None)
@@ -3851,6 +3869,114 @@ class CbasUtil(Index_Util):
                 return False
         return True
 
+    def kill_cbas_process(self, cbas_nodes=[]):
+        results = {}
+        if not cbas_nodes:
+            cbas_nodes = [self.cbas_node]
+        for cbas_node in cbas_nodes:
+            cbas_shell = RemoteMachineShellConnection(cbas_node)
+            output, error = cbas_shell.kill_cbas()
+            results[cbas_node.ip] = (output, error)
+            cbas_shell.disconnect()
+        return results
+
+    def start_kill_processes_task(self, cluster_util, cbas_kill_count=0,
+                                  memcached_kill_count=0, interval=5):
+        if not cbas_kill_count and not memcached_kill_count:
+            return None
+        process_kill_task = KillProcessesInLoopTask(self, cluster_util,
+                                                    cbas_kill_count,
+                                                    memcached_kill_count,
+                                                    interval)
+        self.task.jython_task_manager.add_new_task(process_kill_task)
+        return process_kill_task
+
+    def wait_for_processes(self, servers, processes=[], timeout=600):
+        results = {}
+        for server in servers:
+            shell_helper = RemoteMachineHelper(RemoteMachineShellConnection(
+                server))
+            results[server.ip] = []
+            for process in processes:
+                process_running = shell_helper.is_process_running(process)
+                process_timeout = time.time() + timeout
+                while not process_running and \
+                        time.time() <= process_timeout:
+                    time.sleep(1)
+                    process_running = shell_helper.is_process_running(process)
+                results[server.ip].append(process_running)
+        return results
+
+    def start_connect_disconnect_links_task(self, links, run_infinitely=False,
+                                            interval=5):
+        if not links:
+            return None
+        links_task = DisconnectConnectLinksTask(self, links, run_infinitely,
+                                                interval)
+        self.task.jython_task_manager.add_new_task(links_task)
+        return links_task
+
+
+class DisconnectConnectLinksTask(Task):
+    def __init__(self, cbas_util, links, run_infinitely=False, interval=5):
+        super(DisconnectConnectLinksTask, self).__init__(
+            "DisconnectConnectLinksTask")
+        self.cbas_util = cbas_util
+        self.links = links
+        self.run_infinitely = run_infinitely
+        self.results = []
+        self.interval = interval
+
+    def call(self):
+        self.start_task()
+        try:
+            while True:
+                for link in self.links:
+                    disconnect_result = self.cbas_util.disconnect_link(link)
+                    self.sleep(self.interval)
+                    connect_result = self.cbas_util.connect_link(
+                        link, with_force=True)
+                    self.sleep(self.interval)
+                    self.results.append(connect_result and disconnect_result)
+                if not self.run_infinitely:
+                    break
+        except Exception as e:
+            self.set_exception(e)
+            return
+        self.result = all(self.results)
+        self.complete_task()
+
+
+class KillProcessesInLoopTask(Task):
+    def __init__(self, cbas_util, cluster_util, cbas_kill_count=0,
+                 memcached_kill_count=0, interval=5, timeout=600):
+        super(KillProcessesInLoopTask, self).__init__(
+            "KillProcessesInLoopTask")
+        self.cbas_util = cbas_util
+        self.cluster_util = cluster_util
+        self.cbas_kill_count = cbas_kill_count
+        self.memcached_kill_count = memcached_kill_count
+        self.interval = interval
+        self.timeout = timeout
+
+    def call(self):
+        self.start_task()
+        try:
+            for _ in range(self.cbas_kill_count + self.memcached_kill_count):
+                if self.cbas_kill_count > 0:
+                    output = self.cbas_util.kill_cbas_process(
+                        self.cluster_util.cluster.servers)
+                    self.cbas_kill_count -= 1
+                    self.log.info(str(output))
+                if self.memcached_kill_count > 0:
+                    self.cluster_util.kill_memcached()
+                    self.memcached_kill_count -= 1
+                self.sleep(self.interval)
+        except Exception as e:
+            self.set_exception(e)
+            return
+        self.complete_task()
+
 
 class CBASRebalanceUtil(object):
     available_servers = list()
@@ -4196,7 +4322,6 @@ class CBASRebalanceUtil(object):
                 if self.success_kv_failed_over:
                     self.rest.set_recovery_type(otpNode=kv_failover_nodes[0].id,
                                                 recoveryType="delta")
-
             rebalance_task = self.task.async_rebalance(
                 self.cluster.nodes_in_cluster, [], [],
                 retry_get_process_num=200)

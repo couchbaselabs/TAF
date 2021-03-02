@@ -59,6 +59,7 @@ class Task(Callable):
         self.log = logger.get("infra")
         self.test_log = logger.get("test")
         self.result = False
+        self.sleep = time.sleep
 
     def __str__(self):
         if self.exception:
@@ -5867,19 +5868,27 @@ class BucketFlushTask(Task):
 class CreateDatasetsTask(Task):
     def __init__(self, bucket_util, cbas_util, cbas_name_cardinality=1,
                  kv_name_cardinality=1, remote_datasets=False,
-                 creation_methods=None):
+                 creation_methods=None, ds_per_collection=1,
+                 ds_per_dv=None):
         super(CreateDatasetsTask, self).__init__(
             "CreateDatasetsOnAllCollectionsTask")
         self.bucket_util = bucket_util
         self.cbas_name_cardinality = cbas_name_cardinality
         self.kv_name_cardinality = kv_name_cardinality
         self.remote_datasets = remote_datasets
+        self.ds_per_collection = ds_per_collection if ds_per_collection >= 1 \
+            else 1
         if not creation_methods:
             self.creation_methods = ["cbas_collection", "cbas_dataset",
                                      "enable_cbas_from_kv"]
         else:
             self.creation_methods = creation_methods
+        if self.ds_per_collection > 1:
+            self.creation_methods = list(filter(lambda method: method !=
+                                                 'enable_cbas_from_kv',
+                        self.creation_methods))
         self.cbas_util = cbas_util
+        self.ds_per_dv = ds_per_dv
         if remote_datasets:
             self.remote_link_objs = self.cbas_util.list_all_link_objs(
                 "couchbase")
@@ -5894,13 +5903,15 @@ class CreateDatasetsTask(Task):
                         for collection in \
                                 self.bucket_util.get_active_collections(
                                 bucket, scope.name):
-                            self.init_dataset_creation(bucket, scope,
-                                                       collection)
+                            for _ in range(self.ds_per_collection):
+                                self.init_dataset_creation(bucket, scope,
+                                                           collection)
                 else:
                     scope = self.bucket_util.get_scope_obj(bucket, "_default")
-                    self.init_dataset_creation(bucket, scope,
-                                               self.bucket_util.get_collection_obj(
-                                                   scope, "_default"))
+                    for _ in range(self.ds_per_collection):
+                        self.init_dataset_creation(
+                            bucket, scope, self.bucket_util.get_collection_obj(
+                                scope, "_default"))
             self.set_result(True)
             self.complete_task()
         except Exception as e:
@@ -5910,7 +5921,12 @@ class CreateDatasetsTask(Task):
 
     def init_dataset_creation(self, bucket, scope, collection):
         creation_method = random.choice(self.creation_methods)
-
+        dataverses = list(filter(lambda dv: (self.ds_per_dv is None) or (len(
+            dv.datasets.keys()) < self.ds_per_dv)),
+                         self.cbas_util.dataverses.values())
+        dataverse = None
+        if dataverses:
+            dataverse = random.choice(dataverses)
         if self.remote_datasets:
             link_name = random.choice(self.remote_link_objs).full_name
         else:
@@ -5920,10 +5936,11 @@ class CreateDatasetsTask(Task):
 
         if creation_method == "enable_cbas_from_kv":
             enabled_from_KV = True
-            dataverse = Dataverse(bucket.name + "." + scope.name)
-            self.cbas_util.dataverses[dataverse.name] = dataverse
+            if not dataverse:
+                dataverse = Dataverse(bucket.name + "." + scope.name)
+                self.cbas_util.dataverses[dataverse.name] = dataverse
             name = CBASHelper.format_name(collection.name)
-        else:
+        elif not dataverse:
             enabled_from_KV = False
             if self.cbas_name_cardinality > 1:
                 dataverse = Dataverse(self.cbas_util.generate_name(
@@ -5954,7 +5971,7 @@ class CreateDatasetsTask(Task):
         self.cbas_util.dataverses[dataverse.name] = dataverse
 
     def create_dataset(self, dataset):
-        dataverse_name = dataset.dataverse_name
+        dataverse_name = str(dataset.dataverse_name)
         if dataverse_name == "Default":
             dataverse_name = None
         if dataset.enabled_from_KV:
@@ -5993,3 +6010,31 @@ class CreateDatasetsTask(Task):
                     dataset.name, dataset.get_fully_qualified_kv_entity_name(1),
                     None, False, False, None, dataset.link_name, None, False,
                     None, None, None, 120, 120, analytics_collection)
+
+
+class DropDatasetsTask(Task):
+    def __init__(self, cbas_util, drop_dataverses=True):
+        super(DropDatasetsTask, self).__init__(
+            "DropDatasetsTask")
+        self.cbas_util = cbas_util
+        self.drop_dataverses = drop_dataverses
+
+    def call(self):
+        self.start_task()
+        try:
+            for dv_name, dataverse in self.cbas_util.dataverses.items():
+                for ds_name, dataset in dataverse.datasets.items():
+                    self.cbas_util.drop_dataset(dataset.full_name)
+                    dataverse.datasets.pop(dataset.full_name)
+                for dataset in self.cbas_util.get_datasets():
+                    if dv_name.startswith(CBASHelper.format_name(
+                            dataset.split(".")[0])):
+                        self.cbas_util.drop_dataset(CBASHelper.format_name(
+                            *(dataset.split("."))))
+                if self.drop_dataverses and dv_name != "Default":
+                    self.cbas_util.drop_dataverse(dv_name)
+        except Exception as e:
+            self.set_exception(e)
+            return
+        self.complete_task()
+
