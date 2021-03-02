@@ -768,17 +768,19 @@ class MagmaBaseTest(BaseTestCase):
             servers = self.cluster.nodes_in_cluster
         if type(servers) is not list:
             servers = [servers]
-        for server in servers:
-            frag_val = self.bucket_util.get_fragmentation_kv(
-                bucket, server)
-            self.log.debug("Current Fragmentation for node {} is {} \
-            ".format(server.ip, frag_val))
-            result.update({server.ip: frag_val})
+        time_end = time.time() + 60 * 5
+        while time.time() < time_end:
+            for server in servers:
+                frag_val = self.bucket_util.get_fragmentation_kv(
+                    bucket, server)
+                self.log.debug("Current Fragmentation for node {} is {} \
+                ".format(server.ip, frag_val))
+                result.update({server.ip: frag_val})
+            if max(result.values()) < self.fragmentation:
+                self.log.info("KV stats fragmentation values {}".format(result))
+                return True
         self.log.info("KV stats fragmentation values {}".format(result))
-        for value in result.values():
-            if value > self.fragmentation:
-                return False
-        return True
+        return False
 
     def get_fragmentation_upsert_docs_list(self):
         """
