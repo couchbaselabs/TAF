@@ -27,6 +27,7 @@ import math
 import subprocess
 from math import ceil
 from Jython_tasks.task_manager import TaskManager
+import copy
 
 
 class volume(BaseTestCase):
@@ -93,6 +94,8 @@ class volume(BaseTestCase):
         self.suppress_error_table = False
         self.track_failures = True
         self.loader_dict = None
+        self.parallel_reads = self.input.param("parallel_reads", False)
+        self._data_validation = self.input.param("data_validation", True)
 
         self.disable_magma_commit_points = self.input.param(
             "disable_magma_commit_points", False)
@@ -253,6 +256,7 @@ class volume(BaseTestCase):
         self.gen_create = None
         self.gen_update = None
         self.gen_expiry = None
+        self.gen_read = None
         self.create_end = 0
         self.create_start = 0
         self.update_end = 0
@@ -263,8 +267,7 @@ class volume(BaseTestCase):
         self.expire_start = 0
         self.initial_items = self.final_items
 
-        if doc_ops is None:
-            doc_ops = self.doc_ops
+        doc_ops = doc_ops or self.doc_ops
 
         if "update" in doc_ops:
             if update_start is not None:
@@ -286,6 +289,8 @@ class volume(BaseTestCase):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
                 mix_key_size=self.mix_key_size, mutate=self.mutate)
+            if self.parallel_reads:
+                self.gen_read = copy.deepcopy(self.gen_update)
 
         if "delete" in doc_ops:
             if delete_start is not None:
@@ -308,6 +313,8 @@ class volume(BaseTestCase):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
                 mix_key_size=self.mix_key_size)
+#             if self.parallel_reads:
+#                 self.gen_read = self.gen_delete
             self.final_items -= (self.delete_end - self.delete_start) * self.num_collections * self.num_scopes
 
         if "expiry" in doc_ops:
@@ -334,6 +341,8 @@ class volume(BaseTestCase):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
                 mix_key_size=self.mix_key_size)
+            if self.parallel_reads:
+                self.gen_read = copy.deepcopy(self.gen_expiry)
             self.final_items -= (self.expire_end - self.expire_start) * self.num_collections * self.num_scopes
 
         if "create" in doc_ops:
@@ -386,12 +395,12 @@ class volume(BaseTestCase):
                          "skip_read_success_results": False,
                          "target_items": 5000,
                          "skip_read_on_error": self.skip_read_on_error,
+                         "track_failures": True,
                          "ignore_exceptions": [],
                          "sdk_timeout_unit": "seconds",
                          "sdk_timeout": 60,
                          "doc_ttl": 0,
                          "doc_gen_type": "default"}
-        tasks_info = dict()
         for bucket in self.bucket_util.buckets:
             loader_dict.update({bucket: dict()})
             loader_dict[bucket].update({"scopes": dict()})
@@ -404,18 +413,28 @@ class volume(BaseTestCase):
                     loader_dict[bucket]["scopes"][scope]["collections"].update({collection:dict()})
                     if self.gen_update is not None:
                         op_type = "update"
-                        common_params.update({"doc_gen":self.gen_update})
+                        common_params.update({"doc_gen": self.gen_update})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
                     if self.gen_create is not None:
                         op_type = "create"
-                        common_params.update({"doc_gen":self.gen_create})
+                        common_params.update({"doc_gen": self.gen_create})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
                     if self.gen_delete is not None:
                         op_type = "delete"
-                        common_params.update({"doc_gen":self.gen_delete})
+                        common_params.update({"doc_gen": self.gen_delete})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
                     if self.gen_expiry is not None and self.maxttl:
                         op_type = "update"
-                        common_params.update({"doc_gen":self.gen_expiry,
-                                              "doc_ttl":self.maxttl})
-                    loader_dict[bucket]["scopes"][scope]["collections"][collection].update({op_type:common_params})
+                        common_params.update({"doc_gen": self.gen_expiry,
+                                              "doc_ttl": self.maxttl})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
+                    if self.gen_read is not None:
+                        op_type = "read"
+                        common_params.update({"doc_gen": self.gen_read,
+                                              "skip_read_success_results": True,
+                                              "track_failures": False,
+                                              "suppress_error_table": True})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
         self.loader_dict = loader_dict
         return self.doc_loader(loader_dict)
 
@@ -441,15 +460,16 @@ class volume(BaseTestCase):
             gdb_shell.disconnect()
 
     def data_validation(self):
-        self.log.info("Validating Active/Replica Docs")
-        task = self.task.async_validate_docs_using_spec(
-            self.cluster, self.doc_loading_tm, self.loader_dict,
-            check_replica=False,
-            sdk_client_pool=self.sdk_client_pool,
-            batch_size=self.batch_size,
-            process_concurrency=self.process_concurrency)
+        if self._data_validation:
+            self.log.info("Validating Active/Replica Docs")
+            task = self.task.async_validate_docs_using_spec(
+                self.cluster, self.doc_loading_tm, self.loader_dict,
+                check_replica=False,
+                sdk_client_pool=self.sdk_client_pool,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency)
 
-        self.doc_loading_tm.get_task_result(task)
+            self.doc_loading_tm.get_task_result(task)
 
     def get_bucket_dgm(self, bucket):
         self.rest_client = BucketHelper(self.cluster.master)
@@ -607,13 +627,17 @@ class volume(BaseTestCase):
                                                   ["Fragmentation"]))
                 stats.append(_res)
             result.update({server.ip: fragmentation_values})
+        res = list()
+        for value in result.values():
+            res.append(max(value))
+        if max(res) < float(self.fragmentation)/100:
+            self.log.info("magma stats fragmentation result {} \
+            ".format(result))
+            return True
         self.log.info("magma stats fragmentation result {} \
         ".format(result))
-        for value in result.values():
-            if max(value) > self.fragmentation:
-                self.log.info(stats)
-                return False
-        return True
+        self.log.info(stats)
+        return False
 
     def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
         magma_stats_for_all_servers = dict()
