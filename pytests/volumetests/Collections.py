@@ -3,6 +3,7 @@ import time
 import urllib
 import random
 
+from backup_service import BackupServiceTest
 from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
@@ -22,6 +23,9 @@ class volume(CollectionBase):
     def setUp(self):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket": False})
+        self.backup_service_test = self.input.param("backup_service_test", False)
+        if self.backup_service_test:
+            self.backup_service = BackupServiceTest(self.input.servers)
         super(volume, self).setUp()
         self.bucket_util._expiry_pager(val=5)
         self.rest = RestConnection(self.servers[0])
@@ -80,6 +84,9 @@ class volume(CollectionBase):
         self.query_thread = None
         self.ui_stats_thread_flag = False
         self.ui_stats_thread = None
+        # Setup the backup service
+        if self.backup_service_test:
+            self.backup_service.setup()
 
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
@@ -95,6 +102,9 @@ class volume(CollectionBase):
             self.ui_stats_thread_flag = False
             self.ui_stats_thread.join()
             self.ui_stats_thread = None
+        # Cleanup the backup service
+        if self.backup_service_test:
+            self.backup_service.clean()
         self.log.info("Printing bucket stats before teardown")
         self.bucket_util.print_bucket_stats()
         if self.collect_pcaps:
