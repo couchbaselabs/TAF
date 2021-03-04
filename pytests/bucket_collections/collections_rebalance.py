@@ -882,3 +882,28 @@ class CollectionsRebalance(CollectionBase):
 
     def test_data_load_collections_with_forced_hard_failover_rebalance_out(self):
         self.load_collections_with_rebalance(rebalance_operation="forced_hard_failover_rebalance_out")
+
+    def test_rebalance_cycles(self):
+        """
+        Do rebalance in and out in loop for a couple of cycles
+        """
+        self.cycles = self.input.param("cycles", 4)
+        for cycle in range(self.cycles):
+            self.log.info("Cycle {0}".format(cycle))
+
+            known_nodes = self.cluster.servers[:self.nodes_init]
+            add_nodes = self.cluster.servers[
+                        self.nodes_init:self.nodes_init + self.nodes_in]
+            operation = self.task.async_rebalance(known_nodes, add_nodes, [])
+            tasks = self.async_data_load()
+            self.wait_for_rebalance_to_complete(operation)
+            self.wait_for_async_data_load_to_complete(tasks)
+            self.data_validation_collection()
+
+            known_nodes = self.cluster.servers[:self.nodes_init + self.nodes_in]
+            remove_nodes = known_nodes[-self.nodes_in:]
+            operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
+            tasks = self.async_data_load()
+            self.wait_for_rebalance_to_complete(operation)
+            self.wait_for_async_data_load_to_complete(tasks)
+            self.data_validation_collection()
