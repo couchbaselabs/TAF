@@ -1,5 +1,6 @@
 import json
 import time
+from global_vars import logger
 from abc import ABCMeta, abstractmethod
 from backup_service_client.models.task_template import TaskTemplate
 from backup_service_client.models.task_template_schedule import TaskTemplateSchedule
@@ -17,6 +18,39 @@ from backup_service_client.models.create_active_repository_request import Create
 from nfs import NfsConnection
 from membase.api.rest_client import RestHelper, RestConnection
 from threading import Timer
+
+log = logger.get("test")
+
+
+class BackupTasks:
+
+    def __init__(self, backup_service):
+        self.backup_service = backup_service
+
+    def create_predefined_plans(self):
+        """ Loads all predefined plans defined in `PrefinedPlans` """
+        for plan in PredefinedPlans.plans.values():
+            self.backup_service.api.create_plan(plan)
+
+        plans = set(plan.name for plan in self.backup_service.api.get_plans())
+
+        log.info("Created {}".format(plans))
+
+        for plan in PredefinedPlans.plans.values():
+            assert plan.name in plans
+
+    def create_predefined_repos(self):
+        """ Creates a repository for each of the predefined plans """
+        for plan in PredefinedPlans.plans.values():
+            self.backup_service.api.create_repository("repo-{}".format(plan.name), plan.name,
+                                                      "{}/archive-{}".format(self.backup_service.directory_to_mount, plan.name))
+
+        repos = set(repo.id for repo in self.backup_service.api.get_repositories('active'))
+
+        log.info("Created {}".format(repos))
+
+        for plan in PredefinedPlans.plans.values():
+            assert "repo-{}".format(plan.name) in repos
 
 
 class BackupService:
@@ -212,3 +246,43 @@ class HttpConfigurationFactory(AbstractConfigurationFactory):
         configuration.host = "http://{}:8091/_p/backup/api/v1".format(self.server.ip)
 
         return configuration
+
+
+class Recipe:
+    """ A class for creating backup service objects given a description """
+
+    @staticmethod
+    def make_plan(plan_name, schedule, merge_map=None):
+        """ Creates a plan with a schedule and attaches it to the repository
+
+        Attr:
+            plan_name (str): The name of the plan.
+            schedule (list): A list of tuples of the format [(frequency, period, at_time), ..]
+            merge_map (dict): A dict of the format {index: (start_offset, end_offset), } where the tuple can be None.
+            Specifies the element at that particular index is a merge task with offsets (start_offset, end_offset).
+        """
+        if not merge_map:
+            merge_map = {}
+
+        def get_task_type(i):
+            return "MERGE" if i in merge_map else "BACKUP"
+
+        def get_merge_options(i):
+            merge_options = merge_map.get(i, None)
+
+            if merge_options:
+                return TaskTemplateMergeOptions(offset_start=merge_options[0], offset_end=merge_options[1])
+
+            return merge_options
+
+        return Plan(name=plan_name, tasks=[TaskTemplate(name="task{}".format(i), task_type=get_task_type(i), schedule=TaskTemplateSchedule(job_type=get_task_type(i),
+                                                                                                                                           frequency=freq, period=period, time=at_time), merge_options=get_merge_options(i)) for i, (freq, period, at_time) in enumerate(schedule)])
+
+
+class PredefinedPlans:
+    """ Predefined backup service plans that will be created in the backup service """
+
+    plans = \
+        {
+            "simple_plan": Recipe.make_plan("simple_plan", [(10, 'MINUTES', None), (35, 'MINUTES', None)], {1: (0, 1)})
+        }
