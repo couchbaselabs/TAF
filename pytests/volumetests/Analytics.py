@@ -67,7 +67,6 @@ class volume(BaseTestCase):
     :testparams run_parallel_cbas_query: (boolean) start running cbas queries on a seperate thread in parallel
     :testparams run_parallel_kv_query: (boolean) start running KV queries on a seperate thread in parallel
     :testparams num_parallel_queries: (int) number of queries to run in parallel
-    :testparams query_interval: (int) interval between two subsequent queries.
     
     Test Scaling parameters
     :testparams override_spec_params: (str) ';' seperated bucket_spec and data_load_spec properties to be updated.
@@ -121,8 +120,6 @@ class volume(BaseTestCase):
         self.remote_cluster = None
         CBASRebalanceUtil.available_servers = self.servers[:]
         CBASRebalanceUtil.exclude_nodes = list()
-        CBASRebalanceUtil.no_of_parallel_queries = self.input.param("num_parallel_queries", 1)
-        CBASRebalanceUtil.query_interval = self.input.param("query_interval", 3)
         
         # Adding nodes in clusters, creating indexes, loading data in collections and creating cbas infra
         for cluster in self.get_clusters():
@@ -248,11 +245,14 @@ class volume(BaseTestCase):
         # start parallel query execution on KV and CBAS
         for cluster in self.get_clusters():
             if cluster.rebalance_util.cbas_util:
-                cluster.rebalance_util.run_parallel_cbas_query = self.input.param(
+                run_parallel_cbas_query = self.input.param(
                     "run_parallel_cbas_query", False)
-            cluster.rebalance_util.run_parallel_kv_query = self.input.param(
-                    "run_parallel_kv_query", False)
-            cluster.rebalance_util.start_parallel_queries()
+            else:
+                run_parallel_cbas_query = False
+            cluster.rebalance_util.start_parallel_queries(
+                run_kv_queries=self.input.param("run_parallel_kv_query", False), 
+                run_cbas_queries=run_parallel_cbas_query,
+                parallelism=self.input.param("num_parallel_queries", 1))
 
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
