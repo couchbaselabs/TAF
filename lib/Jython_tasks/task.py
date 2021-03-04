@@ -5907,6 +5907,7 @@ class CreateDatasetsTask(Task):
             self.remote_link_objs = self.cbas_util.list_all_link_objs(
                 "couchbase")
             self.creation_methods.remove("enable_cbas_from_kv")
+        self.created_datasets = []
 
     def call(self):
         self.start_task()
@@ -5933,14 +5934,19 @@ class CreateDatasetsTask(Task):
             self.set_exception(e)
         return self.result
 
+    def dataset_present(self, dataset_name, dataverse_name):
+        names_present = list(filter(
+            lambda ds: ds.name == dataset_name and
+            ds.dataverse_name == dataverse_name,
+            self.created_datasets))
+        if names_present:
+            return True
+        return False
+
     def init_dataset_creation(self, bucket, scope, collection):
         creation_method = random.choice(self.creation_methods)
-        dataverses = list(filter(lambda dv: (self.ds_per_dv is None) or (len(
-            dv.datasets.keys()) < self.ds_per_dv)),
-                         self.cbas_util.dataverses.values())
+
         dataverse = None
-        if dataverses:
-            dataverse = random.choice(dataverses)
         if self.remote_datasets:
             link_name = random.choice(self.remote_link_objs).full_name
         else:
@@ -5950,18 +5956,29 @@ class CreateDatasetsTask(Task):
 
         if creation_method == "enable_cbas_from_kv":
             enabled_from_KV = True
-            if not dataverse:
+            if bucket.name + "." + scope.name in \
+                    self.cbas_util.dataverses.keys():
+                dataverse = self.cbas_util.dataverses[
+                    bucket.name + "." + scope.name]
+            else:
                 dataverse = Dataverse(bucket.name + "." + scope.name)
-                self.cbas_util.dataverses[dataverse.name] = dataverse
             name = CBASHelper.format_name(collection.name)
-        elif not dataverse:
+        else:
             enabled_from_KV = False
-            if self.cbas_name_cardinality > 1:
+            dataverses = list(
+                filter(lambda dv: (self.ds_per_dv is None) or (len(
+                    dv.datasets.keys()) < self.ds_per_dv),
+                       self.cbas_util.dataverses.values()))
+            if dataverses:
+                dataverse = random.choice(dataverses)
+            if self.cbas_name_cardinality > 1 and not dataverse:
                 dataverse = Dataverse(self.cbas_util.generate_name(
                     self.cbas_name_cardinality - 1))
-            else:
+            elif not dataverse:
                 dataverse = self.cbas_util.get_dataverse_obj("Default")
 
+        while self.dataset_present(name, dataverse.name):
+            name = self.cbas_util.generate_name(name_cardinality=1)
         num_of_items = collection.num_items
 
         if creation_method == "cbas_collection":
@@ -5981,8 +5998,11 @@ class CreateDatasetsTask(Task):
             raise N1QLQueryException(
                 "Could not create dataset " + dataset_obj.name + " on " +
                 dataset_obj.dataverse_name)
-        dataverse.datasets[dataset_obj.full_name] = dataset_obj
-        self.cbas_util.dataverses[dataverse.name] = dataverse
+        self.created_datasets.append(dataset_obj)
+        if dataverse.name not in self.cbas_util.dataverses.keys():
+            self.cbas_util.dataverses[dataverse.name] = dataverse
+        self.cbas_util.dataverses[dataverse.name].datasets[
+            self.created_datasets[-1].full_name] = self.created_datasets[-1]
 
     def create_dataset(self, dataset):
         dataverse_name = str(dataset.dataverse_name)
@@ -6027,24 +6047,28 @@ class CreateDatasetsTask(Task):
 
 
 class DropDatasetsTask(Task):
-    def __init__(self, cbas_util, drop_dataverses=True):
+    def __init__(self, cbas_util, drop_dataverses=True, kv_name_cardinality=1):
         super(DropDatasetsTask, self).__init__(
             "DropDatasetsTask")
         self.cbas_util = cbas_util
         self.drop_dataverses = drop_dataverses
+        self.kv_name_cardinality = kv_name_cardinality
 
     def call(self):
         self.start_task()
         try:
             for dv_name, dataverse in self.cbas_util.dataverses.items():
                 for ds_name, dataset in dataverse.datasets.items():
-                    self.cbas_util.drop_dataset(dataset.full_name)
+                    if dataset.enabled_from_KV:
+                        if self.kv_name_cardinality > 1:
+                            self.cbas_util.disable_analytics_from_KV(
+                                dataset.full_kv_entity_name)
+                        else:
+                            self.cbas_util.enable_analytics_from_KV(
+                                dataset.get_fully_qualified_kv_entity_name(1))
+                    else:
+                        self.cbas_util.drop_dataset(dataset.full_name)
                     dataverse.datasets.pop(dataset.full_name)
-                for dataset in self.cbas_util.get_datasets():
-                    if dv_name.startswith(CBASHelper.format_name(
-                            dataset.split(".")[0])):
-                        self.cbas_util.drop_dataset(CBASHelper.format_name(
-                            *(dataset.split("."))))
                 if self.drop_dataverses and dv_name != "Default":
                     self.cbas_util.drop_dataverse(dv_name)
         except Exception as e:

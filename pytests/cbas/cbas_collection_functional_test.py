@@ -50,7 +50,7 @@ class CBASDataverseAndScopes(CBASBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
         super(CBASDataverseAndScopes, self).tearDown()
-        self.log_setup_status("CBASRebalance", "Finished", stage="Teardown")
+        self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def test_create_drop_dataverse(self):
         """
@@ -1857,17 +1857,20 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.cbas_logger("test_analytics_with_tampering_links completed",
                          "DEBUG")
 
-    def test_create_drop_datasets(self):
+    def test_create_drop_datasets_in_loop(self):
         self.cbas_logger("test_create_drop_datasets started", "DEBUG")
         for _ in range(self.iterations):
+            self.cbas_logger("ITERATION: " + str(_), "DEBUG")
             create_task = CreateDatasetsTask(self.bucket_util, self.cbas_util_v2,
-                                             3, 3)
+                                             cbas_name_cardinality=3,
+                                             kv_name_cardinality=3)
             self.task_manager.add_new_task(create_task)
             self.task_manager.get_task_result(create_task)
 
             self.cbas_util_v2.wait_for_ingestion_all_datasets(self.bucket_util)
 
-            drop_task = DropDatasetsTask(self.cbas_util_v2)
+            drop_task = DropDatasetsTask(
+                self.cbas_util_v2, kv_name_cardinality=3)
             self.task_manager.add_new_task(drop_task)
             self.task_manager.get_task_result(drop_task)
             self.cbas_logger("test_create_drop_datasets completed", "DEBUG")

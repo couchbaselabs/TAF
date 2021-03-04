@@ -3900,11 +3900,12 @@ class CbasUtil(Index_Util):
             for process in processes:
                 process_running = shell_helper.is_process_running(process)
                 process_timeout = time.time() + timeout
-                while not process_running and \
+                while process_running is None and \
                         time.time() <= process_timeout:
                     time.sleep(1)
                     process_running = shell_helper.is_process_running(process)
                 results[server.ip].append(process_running)
+            time.sleep(20)
         return results
 
     def start_connect_disconnect_links_task(self, links, run_infinitely=False,
