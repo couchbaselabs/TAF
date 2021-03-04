@@ -751,7 +751,7 @@ class MagmaBaseTest(BaseTestCase):
             res = list()
             for value in result.values():
                 res.append(max(value))
-            if max(res) < float(self.fragmentation)/100:
+            if max(res) <= float(self.fragmentation)/100:
                 self.log.info("magma stats fragmentation result {} \
                 ".format(result))
                 return True
@@ -776,7 +776,7 @@ class MagmaBaseTest(BaseTestCase):
                 self.log.debug("Current Fragmentation for node {} is {} \
                 ".format(server.ip, frag_val))
                 result.update({server.ip: frag_val})
-            if max(result.values()) < self.fragmentation:
+            if max(result.values()) <= self.fragmentation:
                 self.log.info("KV stats fragmentation values {}".format(result))
                 return True
         self.log.info("KV stats fragmentation values {}".format(result))
