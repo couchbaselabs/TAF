@@ -55,7 +55,7 @@ class CBASHelper(RestConnection):
         elif str(header['status']) == '503':
             self.log.info("Request Rejected")
             raise Exception("Request Rejected")
-        elif str(header['status']) in ['500','400','401','403']:
+        elif str(header['status']) in ['500', '400', '401', '403']:
             json_content = json.loads(content)
             msg = json_content['errors'][0]['msg']
             if "Job requirement" in  msg and "exceeds capacity" in msg:
@@ -71,18 +71,21 @@ class CBASHelper(RestConnection):
                                             timeout=70, client_context_id=None,
                                             username=None, password=None,
                                             analytics_timeout=120,
-                                            parameters=[]):
+                                            parameters={}):
         if not username:
             username = self.username
         if not password:
             password = self.password
         api = self.cbas_base_url + "/analytics/service"
         headers = self._create_capi_headers(username, password)
-        params = {'statement': statement, 'mode': mode, 'pretty': pretty,
+
+        params = {'statement': statement, 'pretty': pretty,
                   'client_context_id': client_context_id,
                   'timeout': str(analytics_timeout) + "s"}
-        for i in range(len(parameters)):
-            params.update(parameters[i])
+        if mode is not None:
+            params['mode'] = mode
+        params.update(parameters)
+
         params = json.dumps(params)
         status, content, header = self._http_request(
             api, 'POST', headers=headers, params=params, timeout=timeout)
@@ -91,7 +94,7 @@ class CBASHelper(RestConnection):
         elif str(header['status']) == '503':
             self.log.info("Request Rejected")
             raise Exception("Request Rejected")
-        elif str(header['status']) in ['500', '400']:
+        elif str(header['status']) in ['500', '400', '401', '403']:
             json_content = json.loads(content)
             msg = json_content['errors'][0]['msg']
             if "Job requirement" in msg and "exceeds capacity" in msg:
