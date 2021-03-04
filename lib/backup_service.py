@@ -22,6 +22,92 @@ from threading import Timer
 log = logger.get("test")
 
 
+class BackupServiceTest:
+
+    def __init__(self, servers):
+        self.backup_service = BackupService(servers)
+        self.backup_monitor = BackupMonitor(self.backup_service)
+        self.backup_tasks = BackupTasks(self.backup_service)
+
+    def setup(self):
+        self.backup_service.clean()
+        self.backup_service.setup()
+        self.backup_tasks.create_predefined_plans()
+        self.backup_tasks.create_predefined_repos()
+        self.backup_monitor.start()
+
+    def clean(self):
+        self.backup_monitor.stop()
+        self.backup_service.clean()
+        self.backup_service.close()
+
+
+class BackupMonitor:
+    """ A class to monitor backup service tasks history for failed tasks """
+
+    def __init__(self, backup_service, interval=20):
+        self.backup_service, self.interval = backup_service, interval
+
+        # A record of tasks
+        self.seen_tasks, self.failed_tasks = set(), []
+
+        # Errors that are ignored
+        self.allowed_errors = \
+            [
+                'already holds the lock',
+                'owned by another active process',
+                'task is orphaned',
+                'task is already running'
+            ]
+
+    def get_history(self):
+        """ Fetches the task history for each repo """
+        history, api = [], self.backup_service.api
+
+        for repo in api.get_repositories('active'):
+            for task in api.get_task_history('active', repo.id):
+                history.append((repo, task))
+
+        return history
+
+    def monitor(self):
+        """ Monitor tasks """
+        for repo, task in self.get_history():
+            # The repository, task_name and task start time should uniquely identify a task
+            task_info = repo.id, task.task_name, task.start
+
+            if task_info not in self.seen_tasks:
+                self.seen_tasks.add(task_info)
+
+                # A task fails if errors and the error is not in the list of expected errors
+                task_failed = task.status != 'done' and not any(
+                    allowed_error in task.error for allowed_error in self.allowed_errors)
+
+                log.info("The backup service task {} has completed with status: {}. ({})".format(
+                    task.task_name, task.status, "Disallowed" if task_failed else "Allowed"))
+
+                # Log and remember failed task
+                if task_failed:
+                    self.failed_tasks.append(task)
+                    log.info("Logged disallowed task:\n{}".format(task))
+
+        self.start()
+
+    def start(self):
+        """ Start the timer
+
+        Calling this function calls the `self.monitor` function to be called
+        perpetually every `self.interval` seconds.
+        """
+        self.timer = Timer(self.interval, self.monitor, ())
+        self.timer.start()
+
+    def stop(self):
+        """ Stop the timer """
+        if self.timer:
+            self.timer.cancel()
+
+
 class BackupTasks:
 
     def __init__(self, backup_service):
