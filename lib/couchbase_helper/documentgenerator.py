@@ -615,12 +615,11 @@ class BatchedDocumentGenerator(object):
         # string is used
         val = ""
         while self.count < self._batch_size and self.has_next():
-#             import pydevd
-#             pydevd.settrace(trace_only_current_thread=False)
-            if skip_value:
-                key = self._doc_gen.next_key()
-            else:
+            if not skip_value or self._doc_gen.deep_copy:
                 key, val = self._doc_gen.next()
+                skip_value = True
+            else:
+                key = self._doc_gen.next_key()
             key_val.append(Tuples.of(key, val))
             self.count += 1
         return key_val
