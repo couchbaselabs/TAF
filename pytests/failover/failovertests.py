@@ -17,6 +17,7 @@ class FailoverTests(FailoverBaseTest):
         self.run_time_create_load_gen = self.gen_create = \
             self.get_doc_generator(self.num_items, self.num_items * 2)
         self.server_map = self.get_server_map()
+        self.allowUnsafe = self.input.param("allowUnsafe", False)
 
     def tearDown(self):
         super(FailoverTests, self).tearDown()
@@ -564,7 +565,7 @@ class FailoverTests(FailoverBaseTest):
                     node, graceful_count, self.num_replicas, unreachable)
             # define precondition check for failover
             success_failed_over = self.rest.fail_over(
-                node.id, graceful=(self.graceful and graceful_failover))
+                node.id, graceful=(self.graceful and graceful_failover), allowUnsafe=self.allowUnsafe)
             if self.graceful and graceful_failover:
                 if self.stopGracefulFailover or self.killNodes \
                         or self.stopNodes or self.firewallOnNodes:
