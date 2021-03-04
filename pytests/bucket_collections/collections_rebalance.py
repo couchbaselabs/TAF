@@ -54,11 +54,11 @@ class CollectionsRebalance(CollectionBase):
         self.scrape_interval = self.input.param("scrape_interval", None)
         if self.scrape_interval:
             self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
-            StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_interval",
-                                                                                     self.scrape_interval)
             # scrape_timeout cannot be greater than scrape_interval, so for now we are setting scrape_timeout same as
             # scrape_interval
             StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_timeout",
+                                                                                     self.scrape_interval)
+            StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_interval",
                                                                                      self.scrape_interval)
 
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", None)

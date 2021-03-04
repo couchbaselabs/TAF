@@ -36,12 +36,12 @@ class volume(CollectionBase):
         self.scrape_interval = self.input.param("scrape_interval", None)
         if self.scrape_interval:
             self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
+            # Change gloabl scrape_timeout to equal global scrape_interval
+            StatsHelper(self.cluster.master). \
+                configure_stats_settings_from_diag_eval("scrape_timeout", self.scrape_interval)
             # Change global scrape_interval
             StatsHelper(self.cluster.master).\
                 configure_stats_settings_from_diag_eval("scrape_interval",self.scrape_interval)
-            # Change gloabl scrape_timeout to equal global scrape_interval
-            StatsHelper(self.cluster.master).\
-                configure_stats_settings_from_diag_eval("scrape_timeout",self.scrape_interval)
             # Change high cardinality services' scrape_interval
             value = "[{S, [{high_cardinality_enabled, true}, {high_cardinality_scrape_interval, %s}]} " \
                     "|| S <- [index, fts, kv, cbas, eventing]]" % self.scrape_interval
