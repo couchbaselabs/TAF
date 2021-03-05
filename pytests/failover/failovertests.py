@@ -18,6 +18,7 @@ class FailoverTests(FailoverBaseTest):
             self.get_doc_generator(self.num_items, self.num_items * 2)
         self.server_map = self.get_server_map()
         self.allowUnsafe = self.input.param("allowUnsafe", False)
+        self.all_at_once = self.input.param("all_at_once", False)
 
     def tearDown(self):
         super(FailoverTests, self).tearDown()
@@ -135,6 +136,8 @@ class FailoverTests(FailoverBaseTest):
         # Perform Operations related to failover
         if self.withMutationOps or self.withViewsOps or self.compact:
             self.run_failover_operations_with_ops(self.chosen, failover_reason)
+        elif self.all_at_once:
+            self.run_failover_in_parallel_with_operations(self.chosen, failover_reason)
         else:
             self.run_failover_operations(self.chosen, failover_reason)
 
@@ -510,6 +513,68 @@ class FailoverTests(FailoverBaseTest):
         self.log.info("num_failed_nodes : {0}".format(self.num_failed_nodes))
         self.log.info('picking server : {0} as the master'.format(self.master))
 
+    def run_failover_in_parallel_with_operations(self, chosen, failover_reason):
+        """
+                Method to run fail over operations in parallel used in the test scenario based on
+                failover reason
+                """
+        # Perform Operations related to failover
+        node_ids = list()
+        for node in chosen:
+            node_ids.append(node.id)
+            if failover_reason == 'stop_server':
+                self.cluster_util.stop_server(node)
+                self.log.info("10 secs delay for membase-server to shutdown")
+                # wait for 5 minutes until node is down
+                self.assertTrue(RestHelper(self.rest).wait_for_node_status(
+                    node, "unhealthy", self.wait_timeout * 10),
+                    msg="node status is healthy even after waiting for 5 mins")
+            elif failover_reason == "firewall":
+                self.filter_list.append(node.ip)
+                server = [srv for srv in self.servers if node.ip == srv.ip][0]
+                RemoteUtilHelper.enable_firewall(
+                    server, bidirectional=self.bidirectional)
+                status = RestHelper(self.rest).wait_for_node_status(
+                    node, "unhealthy", self.wait_timeout * 10)
+                if status:
+                    self.log.info("node {0}:{1} is 'unhealthy' as expected"
+                                  .format(node.ip, node.port))
+                else:
+                    # verify iptables on the node if something wrong
+                    for server in self.servers:
+                        if server.ip == node.ip:
+                            shell = RemoteMachineShellConnection(server)
+                            info = shell.extract_remote_info()
+                            if info.type.lower() == "windows":
+                                o, r = shell.execute_command("netsh advfirewall show allprofiles")
+                                shell.log_command_output(o, r)
+                            else:
+                                o, r = shell.execute_command("/sbin/iptables --list")
+                                shell.log_command_output(o, r)
+                            shell.disconnect()
+                    self.rest.print_UI_logs()
+                    api = self.rest.baseUrl + 'nodeStatuses'
+                    status, content, header = self.rest._http_request(api)
+                    json_parsed = json.loads(content)
+                    self.log.info("nodeStatuses: {0}".format(json_parsed))
+                    self.fail("node status is not unhealthy even after waiting for 5 minutes")
+
+        success_failed_over = self.rest.fail_over(
+            node_ids, graceful=False, allowUnsafe=self.allowUnsafe,
+            all_at_once=self.all_at_once)
+
+        # Check if failover happened as expected or re-try one more time
+        if not success_failed_over:
+            self.log.info("unable to failover the node the first time. try again in 60 seconds..")
+            # try again in 75 seconds
+            self.sleep(75)
+            success_failed_over = self.rest.fail_over(
+                node_ids, graceful=False, allowUnsafe=self.allowUnsafe,
+                all_at_once=self.all_at_once)
+
+        reached = RestHelper(self.rest).rebalance_reached()
+        self.assertTrue(reached, "failover completed")
+
     def run_failover_operations(self, chosen, failover_reason):
         """
         Method to run fail over operations used in the test scenario based on
@@ -608,7 +673,8 @@ class FailoverTests(FailoverBaseTest):
                 # try again in 75 seconds
                 self.sleep(75)
                 failed_over = self.rest.fail_over(node.id,
-                                                  graceful=(self.graceful and graceful_failover))
+                                                  graceful=(self.graceful and graceful_failover)
+                                                  , allowUnsafe=self.allowUnsafe)
             if self.graceful and (failover_reason not in ['stop_server',
                                                           'firewall']):
                 reached = RestHelper(self.rest).rebalance_reached()
