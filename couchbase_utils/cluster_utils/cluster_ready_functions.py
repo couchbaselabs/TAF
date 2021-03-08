@@ -468,25 +468,33 @@ class ClusterUtils:
         try:
             for node in self.cluster.servers:
                 shell = RemoteMachineShellConnection(node)
-                # Start node
-                rest = RestConnection(node)
-                data_path = rest.get_data_path()
-                core_path = str(rest.get_data_path()).split("data")[0] + "crash/"
-                if not os.path.isdir(core_path):
-                    core_path = "/opt/couchbase/var/lib/couchbase/crash/"
+                if '.com' in node.ip or ':' in node.ip:
+                    status = rest.update_autofailover_settings(False, 120, False)
+                    cli = CouchbaseCLI(node, node.rest_username, node.rest_password)
+                    output, err, result = cli.set_address_family_to_ipv6()
+                    if not result:
+                        raise Exception("address family was not changed to ipv6")
+                    status = rest.update_autofailover_settings(True, 120)
+                else:
+                    # Start node
+                    rest = RestConnection(node)
+                    data_path = rest.get_data_path()
+                    core_path = str(rest.get_data_path()).split("data")[0] + "crash/"
+                    if not os.path.isdir(core_path):
+                        core_path = "/opt/couchbase/var/lib/couchbase/crash/"
 
-                # Stop node
-                self.stop_server(node)
-                # Delete Path
-                shell.cleanup_data_config(data_path)
-                if not crash_warning:
-                    shell.cleanup_data_config(core_path)
+                    # Stop node
+                    self.stop_server(node)
+                    sleep(10)
+                    # Delete Path
+                    shell.cleanup_data_config(data_path)
+                    if not crash_warning:
+                        shell.cleanup_data_config(core_path)
 
-                self.start_server(node)
-                # TODO : this part of the code doesnt work anymore for IPv6
-                # basically node doesnt come up after restart
-                # if '.com' in node.ip or ':' in node.ip:
-                #     shell.update_dist_type()
+                    self.start_server(node)
+                    sleep(10)
+                    if not RestHelper(RestConnection(node)).is_ns_server_running():
+                        self.log.error("ns_server {0} is not running.".format(node.ip))
                 shell.disconnect()
             # Wait after reset of cluster nodes
             sleep(10)
