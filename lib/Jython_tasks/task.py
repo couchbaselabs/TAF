@@ -912,10 +912,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         self.generator = generator
         self.skip_doc_gen_value = False
         self.op_type = op_type
-        if self.op_type in [DocLoading.Bucket.DocOps.DELETE,
-                            DocLoading.Bucket.DocOps.TOUCH,
-                            DocLoading.Bucket.DocOps.READ]:
-            self.skip_doc_gen_value = True
         self.exp = exp
         self.create_path = create_paths
         self.xattr = xattr
