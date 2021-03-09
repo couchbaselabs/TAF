@@ -197,15 +197,8 @@ class ServerTasks(object):
                 clients.append(client)
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, clients,
-                key=generator.name, exp=0,
-                doc_key_size=generator.key_size,
-                doc_size=generator.doc_size,
-                doc_index=generator.start,
-                randomize_doc_size=generator.randomize_doc_size,
-                randomize_value=generator.randomize_value,
-                randomize=generator.randomize,
-                mix_key_size=generator.mix_key_size,
-                deep_copy=generator.deep_copy,
+                doc_gen=generator,
+                exp=exp,
                 batch_size=batch_size,
                 persist_to=persist_to,
                 replicate_to=replicate_to,

@@ -12,6 +12,7 @@ import os
 import random
 import socket
 import time
+from copy import deepcopy
 from httplib import IncompleteRead
 
 from _threading import Lock
@@ -25,7 +26,7 @@ from Cb_constants import constants, CbServer, DocLoading
 from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
-    doc_generator, SubdocDocumentGenerator
+    SubdocDocumentGenerator
 from global_vars import logger
 from membase.api.exception import \
     N1QLQueryException, DropIndexException, CreateIndexException, \
@@ -1958,8 +1959,8 @@ class ContinuousDocOpsTask(Task):
 
 
 class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
-    def __init__(self, cluster, task_manager, bucket, clients, key, exp,
-                 doc_index=0, batch_size=50,
+    def __init__(self, cluster, task_manager, bucket, clients, doc_gen, exp,
+                 batch_size=50,
                  persist_to=0, replicate_to=0,
                  durability="",
                  timeout_secs=5,
@@ -1969,13 +1970,6 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  task_identifier="",
-                 doc_key_size=8,
-                 doc_size=256,
-                 randomize_doc_size=False,
-                 randomize_value=False,
-                 randomize=False,
-                 mix_key_size=False,
-                 deep_copy=False,
                  sdk_client_pool=None):
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
@@ -1985,6 +1979,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
 
         self.cluster = cluster
         self.exp = exp
+        self.doc_gen = doc_gen
         self.persist_to = persist_to
         self.replicate_to = replicate_to
         self.durability = durability
@@ -1998,18 +1993,10 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.print_ops_rate = print_ops_rate
         self.active_resident_threshold = active_resident_threshold
         self.dgm_batch = dgm_batch
-        self.key = key
-        self.key_size = doc_key_size
-        self.doc_size = doc_size
-        self.randomize_doc_size = randomize_doc_size
-        self.randomize_value = randomize_value
-        self.randomize = randomize
-        self.mix_key_size = mix_key_size
-        self.deep_copy = deep_copy
         self.task_identifier = task_identifier
         self.op_type = "create"
         self.rest_client = BucketHelper(self.cluster.master)
-        self.doc_index = doc_index
+        self.doc_index = self.doc_gen.start
         self.docs_loaded_per_bucket = dict()
         if isinstance(bucket, list):
             self.buckets = bucket
@@ -2024,30 +2011,27 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         Returns a tuple of (active_rr, replica_rr)
         """
         active_resident_items_ratio = self.rest_client.fetch_bucket_stats(
-            bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+            bucket.name)["op"]["samples"][
+            "vb_active_resident_items_ratio"][-1]
         replica_resident_items_ratio = self.rest_client.fetch_bucket_stats(
-            bucket.name)["op"]["samples"]["vb_replica_resident_items_ratio"][-1]
+            bucket.name)["op"]["samples"][
+            "vb_replica_resident_items_ratio"][-1]
         return active_resident_items_ratio, replica_resident_items_ratio
 
     def _load_next_batch_of_docs(self, bucket):
-        doc_gens = list()
+        doc_gens = [deepcopy(self.doc_gen)
+                    for _ in range(self.process_concurrency)]
         doc_tasks = list()
         self.test_log.debug("Doc load from index %d" % self.doc_index)
-        for _ in self.clients:
-            doc_gens.append(doc_generator(
-                self.key, self.doc_index, self.doc_index + self.dgm_batch,
-                key_size=self.key_size, doc_size=self.doc_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                randomize=self.randomize,
-                mix_key_size=self.mix_key_size,
-                deep_copy=self.deep_copy))
+        for index in range(self.process_concurrency):
+            doc_gens[index].start = self.doc_index
+            doc_gens[index].end = self.doc_index + self.dgm_batch
             self.doc_index += self.dgm_batch
             self.docs_loaded_per_bucket[bucket] += self.dgm_batch
 
         # Start doc_loading tasks
-        for index, generator in enumerate(doc_gens):
-            batch_gen = BatchedDocumentGenerator(generator, self.batch_size)
+        for index, doc_gen in enumerate(doc_gens):
+            batch_gen = BatchedDocumentGenerator(doc_gen, self.batch_size)
             task = LoadDocumentsTask(
                 self.cluster, bucket, self.clients[index], batch_gen,
                 "create", self.exp,
