@@ -423,6 +423,7 @@ class RestConnection(object):
                 for t_content in json_parsed:
                     if t_content["type"] == task_type:
                         json_parsed = t_content
+                        break
         except ValueError:
             pass
         return json_parsed

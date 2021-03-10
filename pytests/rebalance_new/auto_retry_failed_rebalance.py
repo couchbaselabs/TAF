@@ -450,7 +450,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 self.cluster_util.get_nodes_in_cluster(self.cluster.master),
                 [], self.cluster.servers[1:])
             self.__update_cbcollect_expected_node_failures(
-                [self.cluster.servers[1:]], "out_node")
+                self.cluster.servers[1:], "out_node")
         elif rebalance_operation == "rebalance_in":
             operation = self.task.async_rebalance(
                 self.cluster_util.get_nodes_in_cluster(self.cluster.master),
