@@ -1922,7 +1922,7 @@ class BucketUtils(ScopeUtils):
             bucket_name=None,
             purge_interval=1,
             autoCompactionDefined="false",
-            fragmentationPercentage=50):
+            fragmentation_percentage=50):
         success = True
         rest = RestConnection(server)
         info = rest.get_nodes_self()
@@ -1960,7 +1960,7 @@ class BucketUtils(ScopeUtils):
                         Bucket.durabilityMinLevel: bucket_durability,
                         Bucket.purge_interval: purge_interval,
                         Bucket.autoCompactionDefined: autoCompactionDefined,
-                        Bucket.fragmentationPercentage: fragmentationPercentage})
+                        Bucket.fragmentationPercentage: fragmentation_percentage})
                     tasks[bucket] = self.async_create_bucket(bucket)
                     count += 1
 
