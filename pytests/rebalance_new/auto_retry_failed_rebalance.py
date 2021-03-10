@@ -41,7 +41,6 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
 
     def tearDown(self):
         self.reset_retry_rebalance_settings()
-        self.skip_cb_collect_for_nodes = dict()
         self.cbcollect_info()
         # Reset to default value
         super(AutoRetryFailedRebalance, self).tearDown()
@@ -478,28 +477,30 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         return operation
 
     def _induce_error(self, error_condition):
+        cb_collect_err_str = None
         if error_condition == "stop_server":
-            self.__update_cbcollect_expected_node_failures(
-                [self.servers[1]], "failed")
+            cb_collect_err_str = "failed"
             self.cluster_util.stop_server(self.servers[1])
         elif error_condition == "enable_firewall":
-            self.__update_cbcollect_expected_node_failures(
-                [self.servers[1]], "failed")
+            cb_collect_err_str = "failed"
             self.cluster_util.start_firewall_on_node(self.servers[1])
         elif error_condition == "kill_memcached":
             self.cluster_util.kill_server_memcached(self.servers[1])
         elif error_condition == "reboot_server":
-            self.skip_cb_collect_for_nodes.append(self.servers[1])
+            # cb_collect_err_str = "failed"
             shell = RemoteMachineShellConnection(self.servers[1])
             shell.reboot_node()
         elif error_condition == "kill_erlang":
-            # self.__update_cbcollect_expected_node_failures(
-            #     [self.servers[1]], "failed")
+            # cb_collect_err_str = "failed"
             shell = RemoteMachineShellConnection(self.servers[1])
             shell.kill_erlang()
             self.sleep(self.sleep_time * 3)
         else:
             self.fail("Invalid error induce option")
+
+        if cb_collect_err_str:
+            self.__update_cbcollect_expected_node_failures(
+                [self.servers[1]], cb_collect_err_str)
 
     def _recover_from_error(self, error_condition):
         if error_condition == "stop_server" \
