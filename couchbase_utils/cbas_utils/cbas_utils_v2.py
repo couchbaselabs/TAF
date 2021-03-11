@@ -599,7 +599,7 @@ class Dataverse_Util(BaseUtil):
     def get_dataverses(self, retries=10):
         dataverses_created = []
         dataverse_query = 'SELECT VALUE d.DataverseName FROM ' \
-                         'Metadata.`Dataset` d WHERE ' \
+                         'Metadata.`Dataverse` d WHERE ' \
                          'd.DataverseName <> "Metadata"'
         while not dataverses_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
@@ -609,7 +609,7 @@ class Dataverse_Util(BaseUtil):
                 dataverses_created = list(
                     map(lambda dv: dv.encode('utf-8'), results))
                 break
-            sleep(12, "Wait for atleast one dataset to be created")
+            sleep(12, "Wait for atleast one dataverse to be created")
             retries -= 1
         return dataverses_created
 
@@ -1411,7 +1411,7 @@ class Dataset_Util(Link_Util):
                      if_exists=False, analytics_collection=False,
                      timeout=120, analytics_timeout=120):
         """
-        Drops the dataverse.
+        Drops the dataset.
         :param dataset_name: str, dataset to be droppped
         :param username: str
         :param password: str
@@ -2359,18 +2359,29 @@ class Dataset_Util(Link_Util):
                                                         "_default"),
                         "_default").num_items
 
-    def get_datasets(self, retries=10):
+    def get_datasets(self, retries=10, fields=[]):
         datasets_created = []
         datasets_query = 'SELECT VALUE d.DataverseName || "." || ' \
                          'd.DatasetName FROM Metadata.`Dataset` d WHERE ' \
                          'd.DataverseName <> "Metadata"'
+        if fields:
+            datasets_query = 'SELECT * ' \
+                             'FROM Metadata.`Dataset` d ' \
+                             'WHERE d.DataverseName <> "Metadata"'
         while not datasets_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 datasets_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
             if status.encode('utf-8') == 'success' and results:
-                datasets_created = list(
-                    map(lambda dv: dv.encode('utf-8'), results))
+                if fields:
+                    results = self.cbas_helper.get_json(json_data=results)
+                    for result in results:
+                        ds = result['d']
+                        datasets_created.append(
+                            {field: ds[field] for field in fields})
+                else:
+                    datasets_created = list(
+                        map(lambda dv: dv.encode('utf-8'), results))
                 break
             sleep(12, "Wait for atleast one dataset to be created")
             retries -= 1
@@ -2668,6 +2679,24 @@ class Synonym_Util(Dataset_Util):
                     results.append(True)
             return all(results)
         return True
+
+    def get_synonyms(self, retries=10):
+        synonyms_created = []
+        synonyms_query = 'SELECT VALUE d.DataverseName || "." || ' \
+                         'd.SynonymName FROM Metadata.`Synonym` d WHERE ' \
+                         'd.DataverseName <> "Metadata"'
+        while not synonyms_created and retries:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                synonyms_query, mode="immediate", timeout=300,
+                analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                synonyms_created = list(
+                    map(lambda syn: syn.encode('utf-8'), results))
+                break
+            sleep(12, "Wait for atleast one synonym to be created")
+            retries -= 1
+        return synonyms_created
+
 
 
 class Index_Util(Synonym_Util):
@@ -2971,6 +3000,24 @@ class Index_Util(Synonym_Util):
 
             return all(results)
         return True
+
+    def get_indexes(self, retries=10):
+        indexes_created = []
+        indexes_query = 'SELECT VALUE d.DataverseName || "." || ' \
+                        'd.DatasetName || "." || d.IndexName FROM ' \
+                        'Metadata.`Index` d WHERE ' \
+                        'd.DataverseName <> "Metadata"'
+        while not indexes_created and retries:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                indexes_query, mode="immediate", timeout=300,
+                analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                indexes_created = list(
+                    map(lambda idx: idx.encode('utf-8'), results))
+                break
+            sleep(12, "Wait for atleast one index to be created")
+            retries -= 1
+        return indexes_created
 
 
 class UDFUtil(Index_Util):
@@ -3968,10 +4015,13 @@ class CbasUtil(UDFUtil):
 
     # Backup Analytics metadata
     def backup_cbas_metadata(self, bucket_name='default',
-                             username=None, password=None):
+                             username=None, password=None, include="",
+                             exclude=""):
         response = self.cbas_helper.backup_cbas_metadata(bucket_name,
                                                          username=username,
-                                                         password=password)
+                                                         password=password,
+                                                         include=include,
+                                                         exclude=exclude)
         return response.json()
 
     # Restore Analytics metadata
@@ -4658,3 +4708,86 @@ class CBASRebalanceUtil(object):
                 raise Exception(
                     "Rebalance failed while doing recovery after failover")
             time.sleep(10)
+
+
+class BackupUtils(object):
+    def __init__(self, master, cbas_node):
+        self.master = master
+        self.cbas_node = cbas_node
+        self.shell = RemoteMachineShellConnection(cbas_node)
+        self.cbas_helper = CBASHelper(self.master, self.cbas_node)
+
+    def _configure_backup(self, archive, repo, disable_analytics,
+                          exclude, include):
+        self.shell.log.info('Delete previous backups')
+        command = 'rm -rf %s' % archive
+        o, r = self.shell.execute_command(command)
+        self.shell.log_command_output(o, r)
+
+        self.shell.log.info('Configure backup')
+        configure_bkup_cmd = '{0}cbbackupmgr config -a {1} -r {2}'.format(
+            self.shell.return_bin_path_based_on_os(self.shell.return_os_type()),
+            archive, repo)
+        configure_bkup_cmd = self._build_backup_cmd_with_optional_parameters(
+            disable_analytics, exclude, include, [], configure_bkup_cmd)
+        o, r = self.shell.execute_command(configure_bkup_cmd)
+        self.shell.log_command_output(o, r)
+
+    def cbbackupmgr_backup_cbas(self, server, archive='/tmp/backups', repo='example',
+                      disable_analytics=False, exclude=[],
+                      include=[], username="Administrator",
+                      password="password", skip_configure_bkup=False):
+        if not skip_configure_bkup:
+            self._configure_backup(archive, repo, disable_analytics,
+                                   exclude, include)
+
+        bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5}'.format(
+            self.shell.return_bin_path_based_on_os(self.shell.return_os_type()),
+            archive, repo, server.ip, username, password)
+        o, r = self.shell.execute_command(bkup_cmd)
+        self.shell.log_command_output(o, r)
+        return o
+
+    def cbbackupmgr_restore_cbas(self, server, archive='/tmp/backups', repo='example',
+                       disable_analytics=False, exclude=[],
+                       include=[], mappings=[], username="Administrator",
+                       password="password"):
+
+        self.shell.log.info('Restore backup using cbbackupmgr')
+        restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5} --force-updates'.format(
+            self.shell.return_bin_path_based_on_os(self.shell.return_os_type()),
+            archive, repo, server.ip, username, password)
+        restore_cmd = self._build_backup_cmd_with_optional_parameters(
+            disable_analytics, exclude, include, mappings, restore_cmd)
+        o, r = self.shell.execute_command(restore_cmd)
+        self.shell.log_command_output(o, r)
+        return o
+
+    def _build_backup_cmd_with_optional_parameters(self, disable_analytics,
+                                                   exclude, include, mappings,
+                                                   command):
+        if disable_analytics:
+            command = command + ' --disable-analytics'
+        if exclude:
+            command = command + ' --exclude-data ' + ",".join(exclude)
+        if include:
+            command = command + ' --include-data ' + ",".join(include)
+        if mappings:
+            command = command + ' --map-data ' + ",".join(mappings)
+        return command
+
+    def rest_backup_cbas(self, username=None, password=None, bucket="", include="",
+                    exclude="", level="cluster"):
+        status, content, response = self.cbas_helper.backup_cbas(
+            username=username, password=password, bucket=bucket,
+            include=include, exclude=exclude, level=level)
+        return status, self.cbas_helper.get_json(content), response
+
+    def rest_restore_cbas(self, username=None, password=None, bucket="", include=[],
+                     exclude=[], remap="",
+                     level="cluster", backup={}):
+        status, content, response = self.cbas_helper.restore_cbas(
+            username=username, password=password, bucket=bucket,
+            include=include, exclude=exclude, remap=remap,
+            level=level, backup=backup)
+        return status, self.cbas_helper.get_json(content), response

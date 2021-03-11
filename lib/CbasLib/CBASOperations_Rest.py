@@ -7,6 +7,7 @@ Created on Sep 25, 2017
 import json
 import urllib
 import requests
+import numbers
 
 from connections.Rest_Connection import RestConnection
 from membase.api import httplib2
@@ -66,6 +67,31 @@ class CBASHelper(RestConnection):
             self.log.error("/analytics/service status:{0}, content:{1}"
                            .format(status, content))
             raise Exception("Analytics Service API failed")
+
+    def get_json(self, content="", json_data=None):
+        if not json_data:
+            json_data = json.loads(content)
+
+        def _convert_json(parsed_json):
+            new_json = None
+            if isinstance(parsed_json, list):
+                new_json = []
+                for item in parsed_json:
+                    new_json.append(_convert_json(item))
+            elif isinstance(parsed_json, dict):
+                new_json = {}
+                for key, value in parsed_json.items():
+                    key = str(key)
+                    new_json[key] = _convert_json(value)
+            elif isinstance(parsed_json, unicode):
+                new_json = str(parsed_json)
+            elif isinstance(parsed_json,
+                            (int, float, long, numbers.Real, numbers.Integral,
+                             str)):
+                new_json = parsed_json
+            return new_json
+
+        return _convert_json(json_data)
 
     def execute_parameter_statement_on_cbas(self, statement, mode, pretty=True,
                                             timeout=70, client_context_id=None,
@@ -389,6 +415,83 @@ class CBASHelper(RestConnection):
         url = self.cbas_base_url + "/analytics/backup?bucket={0}".format(bucket_name)
         response = requests.post(url, data=json.dumps(metadata), auth=(username, password))
         return response
+
+    def backup_cbas(self, username=None, password=None, bucket="", include="",
+                    exclude="", level="cluster"):
+        """
+        Cluster level: GET/POST: /api/v1/backup
+        Bucket level: GET/POST: /api/v1/bucket/[BUCKET]/backup
+        params:
+            include: str path[,path]
+                path format is bucket.scope.collection for cluster level and \
+                scope.collection for bucket level
+            exclude: str path[,path]
+                path format is bucket.scope.collection for cluster level and \
+                scope.collection for bucket level
+        """
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        api = self.cbas_base_url
+        if level.lower() == "cluster":
+            api += "/api/v1/backup"
+        elif level.lower() == "bucket":
+            if not bucket:
+                raise Exception(
+                    "Bucket name is not specified for bucket level backup api")
+            api += "/api/v1/bucket/{0}/backup".format(bucket)
+        else:
+            raise Exception("Un-known backup level")
+        if include or exclude:
+            api += "?"
+        if include:
+            api += "include={0}".format(include)
+        if exclude:
+            if include:
+                api += "&"
+            api += "exclude={0}".format(exclude)
+        self.log.info("Backup: " + api)
+        return self._http_request(api)
+
+    def restore_cbas(self, username=None, password=None, bucket="", include="",
+                     exclude="", remap="",
+                     level="cluster", backup={}):
+        """
+        Cluster level: GET/POST: /api/v1/backup
+        Bucket level: GET/POST: /api/v1/bucket/[BUCKET]/backup
+        params:
+            bucket: str : name of bucket
+            level: str : cluster, bucket
+            remap: str : path:path[, path:path]
+                path format is bucket.scope.collection for cluster level and \
+                scope.collection for bucket level
+            backup: dict : response from backup api
+        """
+        api = self.cbas_base_url
+        if level.lower() == "cluster":
+            api += "/api/v1/backup"
+        elif level.lower() == "bucket":
+            if not bucket:
+                raise Exception(
+                    "Bucket name is not specified for bucket level backup api")
+            api += "/api/v1/bucket/{0}/backup".format(bucket)
+        else:
+            raise Exception("Un-known backup level")
+        if include or exclude or remap:
+            api += "?"
+        if include:
+            api += "include={0}".format(include)
+        if exclude:
+            if not api.endswith("&"):
+                api += "&"
+            api += "exclude={0}".format(exclude)
+        if remap:
+            if not api.endswith("&"):
+                api += "&"
+            api += "remap={0}".format(remap)
+        self.log.info("Restore: " + api + " Body: " + str(backup))
+        return self._http_request(api, method="POST", params=json.dumps(backup))
 
     # Set Analytics config parameter
     def set_global_compression_type(self, compression_type="snappy", username=None, password=None):

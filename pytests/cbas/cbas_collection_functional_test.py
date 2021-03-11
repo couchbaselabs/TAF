@@ -18,8 +18,6 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from security.rbac_base import RbacBase
 from Jython_tasks.task import RunQueriesTask, CreateDatasetsTask, \
     DropDatasetsTask
-from couchbase_utils.cbas_utils.cbas_utils_v2 import \
-    DisconnectConnectLinksTask, KillProcessesInLoopTask
 
 from TestInput import TestInputSingleton
 
@@ -1861,6 +1859,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.cbas_logger("test_create_drop_datasets started", "DEBUG")
         for _ in range(self.iterations):
             self.cbas_logger("ITERATION: " + str(_), "DEBUG")
+
             create_task = CreateDatasetsTask(self.bucket_util, self.cbas_util_v2,
                                              cbas_name_cardinality=3,
                                              kv_name_cardinality=3)
@@ -1873,6 +1872,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 self.cbas_util_v2, kv_name_cardinality=3)
             self.task_manager.add_new_task(drop_task)
             self.task_manager.get_task_result(drop_task)
+
             self.cbas_logger("test_create_drop_datasets completed", "DEBUG")
 
     def test_multiple_datasets_on_collection(self):

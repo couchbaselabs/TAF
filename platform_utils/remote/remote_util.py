@@ -4171,6 +4171,21 @@ class RemoteMachineShellConnection:
             errors.extend(error)
         return outputs, errors
 
+    def return_os_type(self):
+        self.extract_remote_info()
+        return self.info.type.lower()
+
+    def return_bin_path_based_on_os(self, os):
+        if os == "linux":
+            path = LINUX_COUCHBASE_BIN_PATH
+        elif os == 'windows':
+            path = WIN_COUCHBASE_BIN_PATH
+        elif os == 'mac':
+            path = MAC_COUCHBASE_BIN_PATH
+        else:
+            raise ValueError('Unknown bin path for os type {0}'.format(os))
+        return path
+
     def delete_files(self, file_location):
         command = "%s%s" % ("rm -rf ", file_location)
         output, error = self.execute_command(command)
