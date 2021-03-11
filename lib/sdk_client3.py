@@ -6,7 +6,10 @@ Created on Mar 14, 2019
 """
 
 import json as pyJson
+import subprocess
+import os
 from _threading import Lock
+from common_lib import sleep
 
 from com.couchbase.client.core.env import \
     CompressionConfig, \
@@ -291,9 +294,19 @@ class SDKClient(object):
                     self.log.error("Exception during cluster connection: %s"
                                    % e)
                     i += 1
-
-            self.bucketObj = self.cluster.bucket(self.bucket.name)
-            self.bucketObj.waitUntilReady(self.get_duration(120, "seconds"))
+            count = 0
+            while count < 5:
+                try:
+                    self.bucketObj = self.cluster.bucket(self.bucket.name)
+                    self.bucketObj.waitUntilReady(self.get_duration(120, "seconds"))
+                    break
+                except Exception as e:
+                    self.log.info("WaitUntilReady timeout exception count {}".format(count+1))
+                    self.log.error("Exception during waitUntilReady: %s"
+                                       % e)
+                    self.get_memory_footprint()
+                    sleep(120, "sleep before next retry for bucket connection")
+                count += 1
             self.select_collection(self.scope_name, self.collection_name)
         except Exception as e:
             raise Exception("SDK Connection error: " + str(e))
@@ -301,6 +314,13 @@ class SDKClient(object):
     def get_diagnostics_report(self):
         diagnostics_results = self.cluster.diagnostics()
         return diagnostics_results.toString()
+
+    def get_memory_footprint(self):
+        out = subprocess.Popen(['ps', 'v', '-p', str(os.getpid())],stdout=subprocess.PIPE).communicate()[0].split(b'\n')
+        vsz_index = out[0].split().index(b'RSS')
+        mem = float(out[1].split()[vsz_index]) / 1024
+        self.log.info("RAM FootPrint: {}".format(str(mem)))
+        return mem
 
     def close(self):
         self.log.debug("Closing SDK for bucket '%s'" % self.bucket.name)
