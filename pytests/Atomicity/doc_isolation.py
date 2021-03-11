@@ -570,7 +570,7 @@ class IsolationDocTest(BaseTestCase):
             commit=True,
             durability=self.durability_level,
             sync=self.sync, defer=self.defer,
-            retries=0)
+            retries=1)
         # Rollback transaction
         trans_task_2 = self.task.async_load_gen_docs_atomicity(
             self.cluster, self.bucket_util.buckets,
