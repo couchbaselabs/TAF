@@ -539,7 +539,11 @@ public class SimpleTransaction {
 				if (commit && !result.unstagingComplete()) {
 					this.waitForTransactionCleanupEvent(cluster, result.attempts(), attempt_ids);
 				}
-//				result.log().logs().forEach(System.err::println);
+
+				if (result.log().logs().toString().contains(
+				        "com.couchbase.client.core.error.DurabilityImpossibleException")) {
+				    throw new TransactionFailed(result);
+				}
 			}
 			catch (TransactionFailed err) {
 				res = err.result().log().logs();
