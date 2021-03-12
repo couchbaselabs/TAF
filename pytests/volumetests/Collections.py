@@ -28,6 +28,7 @@ class volume(CollectionBase):
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.exclude_nodes = [self.cluster.master]
+        self.skip_check_logs = False
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_for_volume_test")
@@ -98,8 +99,13 @@ class volume(CollectionBase):
         self.bucket_util.print_bucket_stats()
         if self.collect_pcaps:
             self.start_fetch_pcaps()
+        if not self.skip_check_logs:
+            self.check_logs()
+
+    def check_logs(self):
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if not self.crash_warning:
+            self.skip_check_logs = True # Setting this, as we don't have to check logs again in tearDown
             self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
             self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
@@ -428,6 +434,7 @@ class volume(CollectionBase):
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
+            self.check_logs()
             #########################################################################################################################
             self.log.info("Step 6: Rebalance Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
@@ -436,6 +443,7 @@ class volume(CollectionBase):
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
+            self.check_logs()
             #######################################################################################################################
             self.log.info("Step 7: Rebalance In_Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
@@ -444,6 +452,7 @@ class volume(CollectionBase):
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
+            self.check_logs()
             ########################################################################################################################
             self.log.info("Step 8: Swap with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
@@ -453,6 +462,7 @@ class volume(CollectionBase):
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
+            self.check_logs()
             ########################################################################################################################
             self.log.info("Step 9: Updating the bucket replica to 2")
             bucket_helper = BucketHelper(self.cluster.master)
@@ -465,6 +475,7 @@ class volume(CollectionBase):
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.bucket_util.print_bucket_stats()
+            self.check_logs()
             ########################################################################################################################
             self.log.info("Enabling autoreprovison before inducing failure to prevent data loss "
                           "for if there are ephemeral buckets")
@@ -485,6 +496,7 @@ class volume(CollectionBase):
                 self.wait_for_async_data_load_to_complete(task)
                 self.data_validation_collection()
                 self.bucket_util.print_bucket_stats()
+                self.check_logs()
             self.durability_level = ""
             ########################################################################################################################
             step_count = 11
@@ -583,6 +595,7 @@ class volume(CollectionBase):
                         # self.sleep(600)
                         self.wait_for_rebalance_to_complete(rebalance_task)
                     self.bucket_util.print_bucket_stats()
+                    self.check_logs()
             ########################################################################################################################
             self.log.info("Step 18: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
@@ -596,6 +609,7 @@ class volume(CollectionBase):
             self.data_validation_collection()
             self.tasks = []
             self.bucket_util.print_bucket_stats()
+            self.check_logs()
             ########################################################################################################################
             self.log.info("Step 19: Flush bucket(s) and start the entire process again")
             self.loop += 1

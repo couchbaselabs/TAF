@@ -21,6 +21,7 @@ class volume(AutoFailoverBaseTest):
         self.rest = RestConnection(self.servers[0])
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
+        self.skip_check_logs = False
         self.iterations = self.input.param("iterations", 1)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_with_CRUD_on_collections")
@@ -36,6 +37,14 @@ class volume(AutoFailoverBaseTest):
             self.start_fetch_pcaps()
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if not self.crash_warning:
+            self.assertFalse(result, msg="Cb_log file validation failed")
+        if not self.skip_check_logs:
+            self.check_logs()
+
+    def check_logs(self):
+        result = self.check_coredump_exist(self.servers, force_collect=True)
+        if not self.crash_warning:
+            self.skip_check_logs = True # Setting this, as we don't have to check logs again in tearDown
             self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
             self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
@@ -226,6 +235,7 @@ class volume(AutoFailoverBaseTest):
             self.server_to_fail = self.servers_to_fail()
             self.rebalance_after_autofailover()
             self.bucket_util.print_bucket_stats()
+            self.check_logs()
         #########################################################################################################################
         step_count = step_count + 1
         self.log.info("Step {0}: Deleting all buckets".format(step_count))
@@ -290,4 +300,5 @@ class volume(AutoFailoverBaseTest):
             self.server_to_fail = self.servers_to_fail()
             self.rebalance_after_autofailover()
             self.bucket_util.print_bucket_stats()
+            self.check_logs()
         self.log.info("Volume test run complete!")
