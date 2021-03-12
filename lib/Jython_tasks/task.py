@@ -2026,6 +2026,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.test_log.debug("Doc load from index %d" % self.doc_index)
         for index in range(self.process_concurrency):
             doc_gens[index].start = self.doc_index
+            doc_gens[index].itr = self.doc_index
             doc_gens[index].end = self.doc_index + self.dgm_batch
             self.doc_index += self.dgm_batch
             self.docs_loaded_per_bucket[bucket] += self.dgm_batch
