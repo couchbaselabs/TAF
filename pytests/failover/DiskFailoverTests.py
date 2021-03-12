@@ -216,13 +216,13 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         task = None
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
+        self.failover_actions[self.failover_action]()
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
-        self.failover_actions[self.failover_action]()
         count = 0
         while self.get_failover_count() != self.num_node_failures \
                 and count < 5:
@@ -266,13 +266,13 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             return
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
+        self.failover_actions[self.failover_action]()
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
-        self.failover_actions[self.failover_action]()
         self.bring_back_failed_nodes_up()
         self.sleep(30)
         self.log.info(self.server_to_fail[0])
@@ -310,13 +310,13 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             return
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
+        self.failover_actions[self.failover_action]()
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
-        self.failover_actions[self.failover_action]()
         self.nodes = self.rest.node_statuses()
         self.remove_after_failover = True
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
