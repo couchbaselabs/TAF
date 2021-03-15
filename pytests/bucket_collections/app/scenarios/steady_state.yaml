@@ -1,0 +1,25 @@
+activities:
+  - type: "user"
+    op_count: 10
+    tenants: 1
+  - type: "guest"
+    op_count: 30
+    tenants: 1
+  - type: "hotel"
+    op_count: 5
+    tenants: 1
+  - type: "airline"
+    op_count: 5
+    tenant: 1
+  - type: "user"
+    op_count: 50
+    tenants: 1
+  - type: "guest"
+    op_count: 50
+    tenants: 1
+  - type: "guest"
+    op_count: 25
+    tenants: "all"
+  - type: "user"
+    op_count: 50
+    tenants: 1

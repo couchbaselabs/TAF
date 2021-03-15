@@ -13,9 +13,10 @@ class Airline(Thread):
     scenarios = dict()
     log = logger.get("test")
 
-    def __init__(self, bucket, op_type, **kwargs):
+    def __init__(self, bucket, tenant_scope, op_type, **kwargs):
         super(Airline, self).__init__()
         self.bucket = bucket
+        self.tenant_scope = tenant_scope
         self.op_type = op_type
         self.op_count = 1
         self.result = None
@@ -35,15 +36,16 @@ class Airline(Thread):
         return str(result)
 
     def scenario_get_middle_aged_user_profiles(self):
-        query = "SELECT * FROM `users`.`user_avg_age`"
+        query = "SELECT * FROM `%s`.`user_middle_age`" % self.tenant_scope
         return self.generic_query_run(query)
 
     def scenario_get_aged_user_profiles(self):
-        query = "SELECT * FROM `users`.`user_senior`"
+        query = "SELECT * FROM `%s`.`user_senior`" % self.tenant_scope
         return self.generic_query_run(query)
 
     def scenario_get_all_user_bookings(self):
-        query = "SELECT * FROM `airlines`.`user_bookings`"
+        query = "SELECT * FROM `airlines`.`%s_user_bookings`" \
+                % self.tenant_scope
         return self.generic_query_run(query)
 
     def run(self):
@@ -54,7 +56,7 @@ class Airline(Thread):
                     self.result = Airline.scenarios[rand_scenario](self)
                 else:
                     self.result = Airline.scenarios[self.op_type](self)
-                Airline.log.info(self.result)
+                Airline.log.info("%s %s" % (self.tenant_scope, self.result))
             except Exception as e:
                 self.exception = e
                 traceback.print_exc()

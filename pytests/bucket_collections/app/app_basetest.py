@@ -1,24 +1,20 @@
-import json
 import time
 from copy import deepcopy
 from ruamel.yaml import YAML
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
-from Cb_constants import CbServer, DocLoading
+from Cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
 from backup_lib.backup import BackupHelper
 from basetestcase import BaseTestCase
 from bucket_collections.app.constants import global_vars
-from bucket_collections.app.constants.query import CREATE_INDEX_QUERIES
-from bucket_collections.app.scenarios.user import User
 from cb_tools.cbstats import Cbstats
 from cbas_utils.cbas_utils import CbasUtil
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
-from com.couchbase.client.java.json import JsonObject
 from com.couchbase.client.core.error import IndexFailureException, \
     InternalServerFailureException
 
@@ -29,7 +25,7 @@ class AppBase(BaseTestCase):
         self.log_setup_status("AppBase", "started")
 
         self.step_num = 1
-        self.initial_load = False
+        self.initial_load = self.input.param("initial_load", False)
         self.cluster_conf = self.input.param("cluster_conf", None)
         self.bucket_conf = self.input.param("bucket_conf", None)
         self.service_conf = self.input.param("service_conf", None)
@@ -37,10 +33,11 @@ class AppBase(BaseTestCase):
 
         self.rbac_util = RbacUtil()
         self.sdk_clients = global_vars.sdk_clients
-        self.config_path = "pytests/bucket_collections/app/config/"
+        self.app_path = "pytests/bucket_collections/app/"
+        self.config_path = self.app_path + "config/"
 
         if self.cluster_conf is not None:
-            with open(self.config_path + self.cluster_conf, "r") as fp:
+            with open(self.config_path+self.cluster_conf+".yaml", "r") as fp:
                 self.cluster_conf = YAML().load(fp.read())
 
             self.__init_rebalance_with_rbac_setup()
@@ -50,33 +47,22 @@ class AppBase(BaseTestCase):
         self.cbas_util = CbasUtil(self.cluster.master,
                                   self.cluster.cbas_nodes[0])
 
-        if self.rbac_conf is not None:
-            with open(self.config_path + self.rbac_conf, "r") as fp:
-                self.rbac_conf = YAML().load(fp.read())
+        # Load bucket conf
+        with open(self.config_path + self.bucket_conf + ".yaml", "r") as fp:
+            self.bucket_conf = YAML().load(fp.read())
 
-        if self.bucket_conf is not None:
-            with open(self.config_path + self.bucket_conf, "r") as fp:
-                self.bucket_conf = YAML().load(fp.read())
+        # Load RBAC conf
+        with open(self.config_path + self.rbac_conf + ".yaml", "r") as fp:
+            self.rbac_conf = YAML().load(fp.read())
 
-            self.__setup_buckets()
-        else:
-            self.map_collection_data()
-
+        self.__setup_buckets()
         self.bucket = self.bucket_util.buckets[0]
+
         for rbac_roles in self.rbac_conf["rbac_roles"]:
             self.create_sdk_clients(rbac_roles["roles"])
 
-        if self.bucket_conf is not None:
-            # Loading initial data into created collections
-            self.initial_load = True
-            for bucket in self.bucket_conf["buckets"]:
-                if bucket["name"] == self.bucket.name:
-                    self.load_initial_collection_data(bucket["scopes"])
-                    break
-            self.bucket_util.validate_docs_per_collections_all_buckets()
-
         if self.service_conf is not None:
-            with open(self.config_path + self.service_conf, "r") as fp:
+            with open(self.config_path + self.service_conf + ".yaml", "r") as fp:
                 self.service_conf = YAML().load(fp.read())["services"]
 
             # Configure backup settings
@@ -105,6 +91,14 @@ class AppBase(BaseTestCase):
         self.nodes_init = self.cluster_conf["cb_cluster"]["nodes_init"]
         self.services_init = self.cluster_conf["cb_cluster"]["services"]
 
+        # Set cluster settings
+        for setting in self.cluster_conf["cb_cluster"]["settings"]:
+            if setting["name"] == "memory_quota":
+                pass
+                # setting.pop("name")
+                # RestConnection(self.cluster.master)\
+                #     .set_node_memory_quota(setting)
+
         # Rebalance_in required nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
@@ -120,76 +114,82 @@ class AppBase(BaseTestCase):
             self.cluster_conf["cb_cluster"]["rbac_users"])
 
     def __setup_buckets(self):
+        self.bucket_util.buckets = self.bucket_util.get_all_buckets()
         for bucket in self.bucket_conf["buckets"]:
-            b_name = bucket["name"]
-            s_bucket = None
-            self.__print_step("Creating bucket %s" % b_name)
-            if bucket["sample_bucket"] is True:
-                if b_name == "travel-sample":
-                    s_bucket = TravelSample()
-                elif b_name == "beer-sample":
-                    s_bucket = BeerSample()
-                elif b_name == "gamesim-sample":
-                    s_bucket = GamesimSample()
+            bucket_obj = None
+            # Skip bucket creation if already exists in cluster
+            # Note: Useful while running instances for multi-tenant case
+            for existing_bucket in self.bucket_util.buckets:
+                if existing_bucket.name == bucket["name"]:
+                    bucket_obj = existing_bucket
+                    break
+            if bucket_obj is None:
+                if bucket["sample_bucket"] is True:
+                    if bucket["name"] == "travel-sample":
+                        s_bucket = TravelSample()
+                    elif bucket["name"] == "beer-sample":
+                        s_bucket = BeerSample()
+                    elif bucket["name"] == "gamesim-sample":
+                        s_bucket = GamesimSample()
+                    else:
+                        self.fail("Invalid sample bucket '%s'"
+                                  % bucket["name"])
+
+                    if self.bucket_util.load_sample_bucket(s_bucket) is False:
+                        self.fail("Failed to load sample bucket")
+                    if Bucket.ramQuotaMB in bucket:
+                        BucketHelper(self.cluster.master).change_bucket_props(
+                            self.bucket_util.buckets[-1],
+                            ramQuotaMB=bucket[Bucket.ramQuotaMB])
                 else:
-                    self.fail("Invalid sample bucket '%s'" % b_name)
+                    self.bucket_util.create_default_bucket(
+                        bucket_name=bucket["name"],
+                        bucket_type=bucket.get(Bucket.bucketType,
+                                               Bucket.Type.MEMBASE),
+                        ram_quota=bucket.get(Bucket.ramQuotaMB, None),
+                        replica=bucket.get(Bucket.replicaNumber,
+                                           Bucket.ReplicaNum.ONE),
+                        maxTTL=bucket.get(Bucket.maxTTL, 0),
+                        storage=bucket.get(Bucket.storageBackend,
+                                           Bucket.StorageBackend.couchstore),
+                        eviction_policy=bucket.get(
+                            Bucket.evictionPolicy,
+                            Bucket.EvictionPolicy.VALUE_ONLY),
+                        bucket_durability=bucket.get(
+                            Bucket.durabilityMinLevel,
+                            Bucket.DurabilityLevel.NONE))
 
-                if self.bucket_util.load_sample_bucket(s_bucket) is False:
-                    self.fail("Failed to load sample bucket")
-            else:
-                self.bucket_util.create_default_bucket(
-                    bucket_name=b_name,
-                    bucket_type=bucket.get(Bucket.bucketType,
-                                           Bucket.Type.MEMBASE),
-                    ram_quota=bucket.get(Bucket.ramQuotaMB, None),
-                    replica=bucket.get(Bucket.replicaNumber,
-                                       Bucket.ReplicaNum.ONE),
-                    maxTTL=bucket.get(Bucket.maxTTL, 0),
-                    storage=bucket.get(Bucket.storageBackend,
-                                       Bucket.StorageBackend.couchstore),
-                    eviction_policy=bucket.get(
-                        Bucket.evictionPolicy,
-                        Bucket.EvictionPolicy.VALUE_ONLY),
-                    bucket_durability=bucket.get(Bucket.durabilityMinLevel,
-                                                 Bucket.DurabilityLevel.NONE))
+                bucket_obj = self.bucket_util.buckets[-1]
 
-            bucket_obj = self.bucket_util.buckets[-1]
+            self.map_collection_data(bucket_obj)
             self.__print_step("Creating required scope/collections")
-            scope_dict_data = dict()
-            scope_dict_data["scopes"] = list()
             for scope in bucket["scopes"]:
-                scope_dict = dict()
-                scope_dict["name"] = scope["name"]
-                scope_dict["collections"] = \
-                    [dict(collection) for collection in
-                     scope["collections"]]
-                scope_dict_data["scopes"].append(scope_dict)
-
-            BucketHelper(self.cluster.master).import_collection_using_manifest(
-                bucket["name"],
-                json.dumps(scope_dict_data).replace("'", '"'))
-            bucket_obj.stats.increment_manifest_uid()
-
-            for scope in bucket["scopes"]:
-                self.bucket_util.create_scope_object(bucket_obj, scope)
+                if scope["name"] in bucket_obj.scopes.keys():
+                    self.log.debug("Scope %s already exists for bucket %s"
+                                   % (scope["name"], bucket_obj.name))
+                else:
+                    self.bucket_util.create_scope(self.cluster.master,
+                                                  bucket_obj,
+                                                  scope)
+                    bucket_obj.stats.increment_manifest_uid()
                 for collection in scope["collections"]:
-                    self.bucket_util.create_collection_object(bucket_obj,
-                                                              scope["name"],
-                                                              collection)
+                    if collection["name"] in \
+                            bucket_obj.scopes[scope["name"]].collections:
+                        self.log.debug("Collection %s :: %s exists"
+                                       % (scope["name"], collection["name"]))
+                    else:
+                        self.bucket_util.create_collection(self.cluster.master,
+                                                           bucket_obj,
+                                                           scope["name"],
+                                                           collection)
+                        bucket_obj.stats.increment_manifest_uid()
+
             # Create RBAC users
             for t_bucket in self.rbac_conf["rbac_roles"]:
-                if t_bucket["bucket"] == b_name:
+                if t_bucket["bucket"] == bucket["name"]:
                     self.create_rbac_users("rbac_admin", "rbac_admin",
                                            t_bucket["roles"])
                     break
-            # Create required scope/collections
-            if bucket["sample_bucket"] is True:
-                bucket_obj.scopes[CbServer.default_scope].collections[
-                    CbServer.default_collection].num_items \
-                    = s_bucket.scopes[CbServer.default_scope].collections[
-                    CbServer.default_collection].num_items
-
-        self.bucket_util.buckets = self.bucket_util.get_all_buckets()
 
     def create_rbac_users(self, rest_username, rest_password, user_role_list):
         self.__print_step("Creating RBAC users")
@@ -243,7 +243,7 @@ class AppBase(BaseTestCase):
                                                           drop_result))
 
         self.log.info("Creating collection specific indexes")
-        for query in CREATE_INDEX_QUERIES:
+        for query in self.service_conf["indexes"]:
             result = self.sdk_clients["bucket_admin"].cluster.query(query)
             if result.metaData().status().toString() != "SUCCESS":
                 self.fail("Create index '%s' failed: %s" % (query, result))
@@ -361,7 +361,7 @@ class AppBase(BaseTestCase):
                 self.fail("Create repo failed for %s" % backup_config)
         shell.disconnect()
 
-    def map_collection_data(self):
+    def map_collection_data(self, bucket):
         cb_stat_objects = list()
         collection_data = None
 
@@ -370,7 +370,7 @@ class AppBase(BaseTestCase):
             cb_stat_objects.append(Cbstats(shell))
 
         for cb_stat in cb_stat_objects:
-            tem_collection_data = cb_stat.get_collections(self.bucket)
+            tem_collection_data = cb_stat.get_collections(bucket)
             if collection_data is None:
                 collection_data = tem_collection_data
             else:
@@ -383,131 +383,16 @@ class AppBase(BaseTestCase):
         for s_name, s_data in collection_data.items():
             if type(s_data) is not dict:
                 continue
-            self.bucket_util.create_scope_object(self.bucket,
+            self.bucket_util.create_scope_object(bucket,
                                                  {"name": s_name})
             for c_name, c_data in s_data.items():
                 if type(c_data) is not dict:
                     continue
                 self.bucket_util.create_collection_object(
-                    self.bucket, s_name,
+                    bucket, s_name,
                     {"name": c_name, "num_items": c_data["items"],
                      "maxTTL": c_data.get("maxTTL", 0)})
 
         # Close shell connections
         for cb_stat in cb_stat_objects:
             cb_stat.shellConn.disconnect()
-
-    def load_initial_collection_data(self, collection_spec):
-        self.__print_step("Loading initial data into collections")
-        # Pairs of scope, collection name
-        type_collection_map = dict()
-        type_collection_map["airline"] = ("airlines", "airline")
-        type_collection_map["airport"] = ("airlines", "airport")
-        type_collection_map["route"] = ("airlines", "routes")
-        type_collection_map["hotel"] = ("hotels", "hotels")
-        type_collection_map["landmark"] = ("hotels", "landmark")
-
-        meta_data = dict()
-        for scope in collection_spec:
-            meta_data[scope["name"]] = dict()
-            for collection in scope["collections"]:
-                meta_data[scope["name"]][collection["name"]] = dict()
-                meta_data[scope["name"]][collection["name"]]["doc_counter"] = 0
-                meta_data[scope["name"]][collection["name"]]["num_items"] = 0
-
-        hotel_review_rows = list()
-        sdk_client = self.sdk_clients["bucket_data_writer"]
-        query = "SELECT * FROM `travel-sample`.`_default`.`_default` " \
-                "WHERE type='%s'"
-        for d_type, collection_info in type_collection_map.items():
-            s_name, c_name = collection_info[0], collection_info[1]
-
-            sdk_client.select_collection(s_name, c_name)
-            # TODO: Remove this retry logic once MB-41535 is fixed
-            retry_index = 0
-            query_result = None
-            while retry_index < 5:
-                try:
-                    query_result = sdk_client.cluster.query(query % d_type)
-                    break
-                except IndexFailureException:
-                    retry_index += 1
-                    self.sleep(5, "Retrying due to IndexFailure (MB-41535)")
-                    continue
-            rows_inserted = 0
-            for row in query_result.rowsAsObject():
-                value = row.getObject(CbServer.default_collection) \
-                    .removeKey("type")
-
-                doc_id = value.getInt("id")
-                if doc_id > meta_data[s_name][c_name]["doc_counter"]:
-                    meta_data[s_name][c_name]["doc_counter"] = doc_id
-
-                if d_type == "hotel":
-                    # Segregate 'reviews' from hotel collection
-                    review = JsonObject.create()
-                    review.put("id", doc_id)
-                    review.put("reviews", value.getArray("reviews"))
-                    hotel_review_rows.append(review)
-                    value = value.removeKey("reviews")
-                key = d_type + "_" + str(doc_id)
-                result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
-                                         key, value)
-                if result["status"] is False:
-                    self.fail("Loading collections failed")
-                rows_inserted += 1
-
-            self.bucket.scopes[collection_info[0]].collections[
-                collection_info[1]].num_items += rows_inserted
-            meta_data[s_name][c_name]["num_items"] = rows_inserted
-
-        # Write hotel reviews into respective collection
-        rows_inserted = 0
-        s_name, c_name = "hotels", "reviews"
-        sdk_client.select_collection(s_name, c_name)
-        for review in hotel_review_rows:
-            doc_id = review.getInt("id")
-            if doc_id > meta_data[s_name][c_name]["doc_counter"]:
-                meta_data[s_name][c_name]["doc_counter"] = doc_id
-
-            key = "review_" + str(doc_id)
-            result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
-                                     key, review)
-            if result["status"] is False:
-                self.fail("Loading reviews collection failed")
-            rows_inserted += 1
-
-        self.bucket.scopes[s_name].collections[
-            c_name].num_items += rows_inserted
-        meta_data[s_name][c_name]["num_items"] = rows_inserted
-
-        # Create collection meta_data document
-        sdk_client.select_collection(scope_name=CbServer.default_scope,
-                                     collection_name="meta_data")
-        app_data = JsonObject.create()
-        app_data.put("date", "2001-01-01")
-        result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
-                                 "application", app_data)
-        self.assertTrue(result["status"], "App_meta creation failed")
-        self.bucket.scopes[CbServer.default_scope].collections[
-            "meta_data"].num_items += 1
-
-        for s_name, scope_data in meta_data.items():
-            for c_name, c_data in scope_data.items():
-                c_meta = JsonObject.create()
-                for meta_key, meta_val in c_data.items():
-                    c_meta.put(meta_key, meta_val)
-                key = "%s.%s" % (s_name, c_name)
-                result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
-                                         key, c_meta)
-                if result["status"] is False:
-                    self.fail("Meta creation failed")
-                self.bucket.scopes[CbServer.default_scope].collections[
-                    "meta_data"].num_items += 1
-
-        create_users = User(self.bucket, op_type="scenario_user_registration",
-                            num_items=10000)
-        create_users.start()
-        create_users.join()
-
-        self.sleep(30, "Wait for num_items to get updated")

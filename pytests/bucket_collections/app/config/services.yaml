@@ -6,28 +6,123 @@ services:
       storage_location: 'filesystem'
       archive_path: '/data/cb_backups'
 
+  indexes:
+    # Index specific to agent_1
+    - 'CREATE PRIMARY INDEX booking_data_primary ON `travel-sample`.`agent_1`.`booking_data` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_checkout_cart_primary ON `travel-sample`.`agent_1`.`checkout_cart` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX user_profile_primary ON `travel-sample`.`agent_1`.`profile` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_booking_primary ON `travel-sample`.`agent_1`.`hotel_booking` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX flight_booking_primary ON `travel-sample`.`agent_1`.`flight_booking` WITH { "defer_build": true }'
+
+    # Index specific to agent_2
+    - 'CREATE PRIMARY INDEX booking_data_primary ON `travel-sample`.`agent_2`.`booking_data` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_checkout_cart_primary ON `travel-sample`.`agent_2`.`checkout_cart` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX user_profile_primary ON `travel-sample`.`agent_2`.`profile` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_booking_primary ON `travel-sample`.`agent_2`.`hotel_booking` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX flight_booking_primary ON `travel-sample`.`agent_2`.`flight_booking` WITH { "defer_build": true }'
+
+    # Index specific to agent_3
+    - 'CREATE PRIMARY INDEX booking_data_primary ON `travel-sample`.`agent_3`.`booking_data` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_checkout_cart_primary ON `travel-sample`.`agent_3`.`checkout_cart` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX user_profile_primary ON `travel-sample`.`agent_3`.`profile` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_booking_primary ON `travel-sample`.`agent_3`.`hotel_booking` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX flight_booking_primary ON `travel-sample`.`agent_3`.`flight_booking` WITH { "defer_build": true }'
+
+    # Index specific to agent_4
+    - 'CREATE PRIMARY INDEX booking_data_primary ON `travel-sample`.`agent_4`.`booking_data` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_checkout_cart_primary ON `travel-sample`.`agent_4`.`checkout_cart` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX user_profile_primary ON `travel-sample`.`agent_4`.`profile` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_booking_primary ON `travel-sample`.`agent_4`.`hotel_booking` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX flight_booking_primary ON `travel-sample`.`agent_4`.`flight_booking` WITH { "defer_build": true }'
+
+    # Index specific to agent_5
+    - 'CREATE PRIMARY INDEX booking_data_primary ON `travel-sample`.`agent_5`.`booking_data` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_checkout_cart_primary ON `travel-sample`.`agent_5`.`checkout_cart` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX user_profile_primary ON `travel-sample`.`agent_5`.`profile` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX hotel_booking_primary ON `travel-sample`.`agent_5`.`hotel_booking` WITH { "defer_build": true }'
+    - 'CREATE PRIMARY INDEX flight_booking_primary ON `travel-sample`.`agent_5`.`flight_booking` WITH { "defer_build": true }'
+
   cbas:
     dataverses:
-      - name: users
       - name: hotels
       - name: airlines
+      - name: agent_1
+      - name: agent_2
+      - name: agent_3
+      - name: agent_4
+      - name: agent_5
     datasets:
-      - name: user_senior
-        dataverse: users
-        on: "`travel-sample`.`users`.`profile`"
-        where: "age > 55"
-      - name: user_avg_age
-        dataverse: users
-        on: "`travel-sample`.`users`.`profile`"
-        where: "age > 30 and age < 55"
+      # Common data sets
       - name: hotel_with_good_ratings
         dataverse: hotels
-        on: "`travel-sample`.`hotels`.`reviews`"
-        where: "ratings.Overall >= 3"
+        on: "`travel-sample`.`inventory`.`hotel`"
+        where: "hotel.reviews.ratings.Overall >= 3"
       - name: hotel_with_low_ratings
         dataverse: hotels
-        on: "`travel-sample`.`hotels`.`reviews`"
-        where: "ratings.Overall < 3"
-      - name: user_bookings
+        on: "`travel-sample`.`inventory`.`hotel`"
+        where: "hotel.ratings.Overall < 3"
+
+      # Data sets specific to agent_1
+      - name: agent_1_user_bookings
         dataverse: airlines
-        on: "`travel-sample`.`users`.`flight_booking`"
+        on: "`travel-sample`.`agent_1`.`flight_booking`"
+      - name: user_senior
+        dataverse: agent_1
+        on: "`travel-sample`.`agent_1`.`profile`"
+        where: "age > 55"
+      - name: user_middle_age
+        dataverse: agent_1
+        on: "`travel-sample`.`agent_1`.`profile`"
+        where: "age > 30 and age < 55"
+
+      # Data sets specific to agent_2
+      - name: agent_2_user_bookings
+        dataverse: airlines
+        on: "`travel-sample`.`agent_2`.`flight_booking`"
+      - name: user_senior
+        dataverse: agent_2
+        on: "`travel-sample`.`agent_2`.`profile`"
+        where: "age > 55"
+      - name: user_middle_age
+        dataverse: agent_2
+        on: "`travel-sample`.`agent_2`.`profile`"
+        where: "age > 30 and age < 55"
+
+      # Data sets specific to agent_3
+      - name: agent_3_user_bookings
+        dataverse: airlines
+        on: "`travel-sample`.`agent_3`.`flight_booking`"
+      - name: user_senior
+        dataverse: agent_3
+        on: "`travel-sample`.`agent_3`.`profile`"
+        where: "age > 55"
+      - name: user_middle_age
+        dataverse: agent_3
+        on: "`travel-sample`.`agent_3`.`profile`"
+        where: "age > 30 and age < 55"
+
+      # Data sets specific to agent_4
+      - name: agent_4_user_bookings
+        dataverse: airlines
+        on: "`travel-sample`.`agent_4`.`flight_booking`"
+      - name: user_senior
+        dataverse: agent_4
+        on: "`travel-sample`.`agent_4`.`profile`"
+        where: "age > 55"
+      - name: user_middle_age
+        dataverse: agent_4
+        on: "`travel-sample`.`agent_4`.`profile`"
+        where: "age > 30 and age < 55"
+
+      # Data sets specific to agent_5
+      - name: agent_5_user_bookings
+        dataverse: airlines
+        on: "`travel-sample`.`agent_5`.`flight_booking`"
+      - name: user_senior
+        dataverse: agent_5
+        on: "`travel-sample`.`agent_5`.`profile`"
+        where: "age > 55"
+      - name: user_middle_age
+        dataverse: agent_5
+        on: "`travel-sample`.`agent_5`.`profile`"
+        where: "age > 30 and age < 55"

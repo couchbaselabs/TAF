@@ -13,9 +13,10 @@ class Hotel(Thread):
     scenarios = dict()
     log = logger.get("test")
 
-    def __init__(self, bucket, op_type, **kwargs):
+    def __init__(self, bucket, tenant_scope, op_type, **kwargs):
         super(Hotel, self).__init__()
         self.bucket = bucket
+        self.tenant_scope = tenant_scope
         self.op_type = op_type
         self.op_count = 1
         self.result = None
@@ -50,7 +51,7 @@ class Hotel(Thread):
                     self.result = Hotel.scenarios[rand_scenario](self)
                 else:
                     self.result = Hotel.scenarios[self.op_type](self)
-                Hotel.log.info(self.result)
+                Hotel.log.info("%s %s" % (self.tenant_scope, self.result))
             except Exception as e:
                 self.exception = e
                 traceback.print_exc()

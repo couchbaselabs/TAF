@@ -2,33 +2,60 @@ buckets:
   - name: "travel-sample"
     sample_bucket: True
     replicas: 1
+    ramQuotaMB: 1024
     scopes:
-      - name: "_default"
+      - name: "agent_1"
         collections:
-          - name: "_default"
           - name: "meta_data"
-      - name: "users"
-        collections:
+          - name: "reviews"
           - name: "profile"
           - name: "search_history"
           - name: "flight_booking"
-          - name: "hotel_booking"
-      - name: "flights"
-        collections:
-          - name: "flight_schedules"
           - name: "booking_data"
+          - name: "hotel_booking"
+          - name: "checkout_cart"
+            maxTTL: 200
+      - name: "agent_2"
+        collections:
+          - name: "meta_data"
+          - name: "reviews"
+          - name: "profile"
+          - name: "search_history"
+          - name: "flight_booking"
+          - name: "booking_data"
+          - name: "hotel_booking"
+          - name: "checkout_cart"
+            maxTTL: 200
+      - name: "agent_3"
+        collections:
+          - name: "meta_data"
+          - name: "reviews"
+          - name: "profile"
+          - name: "search_history"
+          - name: "flight_booking"
+          - name: "booking_data"
+          - name: "hotel_booking"
           - name: "checkout_cart"
             maxTTL: 300
-      - name: "hotels"
+      - name: "agent_4"
         collections:
-          - name: "hotels"
+          - name: "meta_data"
           - name: "reviews"
-          - name: "landmark"
+          - name: "profile"
+          - name: "search_history"
+          - name: "flight_booking"
           - name: "booking_data"
+          - name: "hotel_booking"
           - name: "checkout_cart"
-            maxTTL: 420
-      - name: "airlines"
+            maxTTL: 600
+      - name: "agent_5"
         collections:
-          - name: "airport"
-          - name: "airline"
-          - name: "routes"
+          - name: "meta_data"
+          - name: "reviews"
+          - name: "profile"
+          - name: "search_history"
+          - name: "flight_booking"
+          - name: "booking_data"
+          - name: "hotel_booking"
+          - name: "checkout_cart"
+            maxTTL: 900

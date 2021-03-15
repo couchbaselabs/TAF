@@ -1,6 +1,6 @@
 from random import sample, choice, randint
 
-from Cb_constants import CbServer, DocLoading
+from Cb_constants import DocLoading
 from bucket_collections.app.constants import query, global_vars
 from bucket_collections.app.constants.global_vars import sdk_clients
 from bucket_collections.app.constants.query import DAYS_IN_WEEK, UTC_FORMAT
@@ -14,33 +14,36 @@ class CommonUtil(object):
     def get_next_id(scope, collection):
         doc_key = "%s.%s" % (scope, collection)
         client = sdk_clients["bucket_data_writer"]
-        client.select_collection(CbServer.default_scope, "meta_data")
-        result, _ = client.crud(DocLoading.Bucket.SubDocOps.COUNTER, doc_key,
-                                ["doc_counter", 1],
-                                store_semantics=StoreSemantics.UPSERT)
+        client.select_collection(scope, "meta_data")
+        result, fail = client.crud(DocLoading.Bucket.SubDocOps.COUNTER,
+                                   doc_key, ["doc_counter", 1],
+                                   create_path=True,
+                                   store_semantics=StoreSemantics.UPSERT)
         return result[doc_key]['value'].contentAs(0, long)
 
     @staticmethod
-    def get_current_date():
+    def get_current_date(scope_name):
         doc_key = "application"
         client = sdk_clients["bucket_data_writer"]
-        client.select_collection(CbServer.default_scope, "meta_data")
+        client.select_collection(scope_name, "meta_data")
         result, _ = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
                                 doc_key, "date")
         return result[doc_key]['value'][0]
 
     @staticmethod
-    def incr_date():
+    def incr_date(tenants):
         doc_key = "application"
-        tem_date = CommonUtil.get_current_date()
-        client = sdk_clients["bucket_data_writer"]
-        q_result = client.cluster.query(
-            'SELECT RAW DATE_ADD_STR(STR_TO_UTC("%s"), 1, "day")' % tem_date)
-        global_vars.app_current_date = q_result.rowsAs(str)[0]
-        client.crud(DocLoading.Bucket.SubDocOps.UPSERT,
-                    doc_key, ["date", global_vars.app_current_date])
-        if tem_date == CommonUtil.get_current_date():
-            raise Exception("Date not incremented")
+        for tenant in tenants:
+            tem_date = CommonUtil.get_current_date(tenant)
+            client = sdk_clients["bucket_data_writer"]
+            q_result = client.cluster.query(
+                'SELECT RAW DATE_ADD_STR(STR_TO_UTC("%s"), 1, "day")'
+                % tem_date)
+            global_vars.app_current_date = q_result.rowsAs(str)[0]
+            client.crud(DocLoading.Bucket.SubDocOps.UPSERT,
+                        doc_key, ["date", global_vars.app_current_date])
+            if tem_date == CommonUtil.get_current_date(tenant):
+                raise Exception("Date not incremented")
 
 
 class Airline(CommonUtil):

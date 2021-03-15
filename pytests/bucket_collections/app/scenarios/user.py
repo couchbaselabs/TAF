@@ -3,6 +3,7 @@ from datetime import timedelta
 from random import choice, randint, randrange
 from threading import Thread
 
+from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from bucket_collections.app.constants import global_vars
 from bucket_collections.app.constants.global_vars import sdk_clients
@@ -23,9 +24,10 @@ class User(Thread):
     scenarios = dict()
     log = logger.get("test")
 
-    def __init__(self, bucket, op_type, **kwargs):
+    def __init__(self, bucket, scope, op_type, **kwargs):
         super(User, self).__init__()
         self.bucket = bucket
+        self.scope = scope
         self.op_type = op_type
         self.op_count = 1
         self.result = None
@@ -61,9 +63,10 @@ class User(Thread):
         template.put("phone", randint(1000000000, 9999999999))
 
     @staticmethod
-    def get_random_user_id(client):
+    def get_random_user_id(client, scope):
         result = client.cluster.query("SELECT raw id "
-                                      "FROM `travel-sample`.`users`.`profile`")
+                                      "FROM `travel-sample`.`%s`.`profile`"
+                                      % scope)
         return choice(result.rowsAs(int))
 
     def scenario_user_registration(self):
@@ -71,10 +74,10 @@ class User(Thread):
             num_items = self.num_items
         else:
             num_items = randint(1, 20)
-        scope, collection = "users", "profile"
+        collection = "profile"
         client = sdk_clients["user_manager"]
-        collection_obj = self.bucket.scopes[scope].collections[collection]
-        client.select_collection(scope, collection)
+        collection_obj = self.bucket.scopes[self.scope].collections[collection]
+        client.select_collection(self.scope, collection)
 
         template = User.get_template()
         start = collection_obj.doc_index[1]
@@ -84,12 +87,12 @@ class User(Thread):
         collection_obj.doc_index = (collection_obj.doc_index[0], end)
 
         while start < end:
-            u_id = query_util.CommonUtil.get_next_id(scope, collection)
+            u_id = query_util.CommonUtil.get_next_id(self.scope, collection)
             key = COMMON_KEY + str(u_id)
             User.populate_values(template, u_id, key)
             result = client.crud(
                 DocLoading.Bucket.DocOps.CREATE, key, template,
-                # durability=Bucket.DurabilityLevel.MAJORITY,
+                durability=Bucket.DurabilityLevel.MAJORITY,
                 timeout=10)
             if result["status"] is False:
                 raise Exception("User profile creation failed: %s" % result)
@@ -98,13 +101,13 @@ class User(Thread):
         return "User - registered: %s" % num_items
 
     @staticmethod
-    def book_flight(u_id, src_airport=None, dest_airport=None):
+    def book_flight(u_id, tenant_scope, src_airport=None, dest_airport=None):
         summary = dict()
         required_seats = choice(range(1, 7))
 
-        flights_scope = "flights"
-        users_scope = "users"
         ticket_type = "normal"
+        checkout_cart_collection = "checkout_cart"
+        d_level = Bucket.DurabilityLevel
         if [src_airport, dest_airport].count(None) == 0:
             ticket_type = "return"
 
@@ -142,10 +145,10 @@ class User(Thread):
             passenger_info.put("age", age)
             passenger_data.append(passenger_info)
 
-        c_name = "checkout_cart"
         client = sdk_clients["airline_booking"]
-        client.select_collection(flights_scope, c_name)
-        cart_id = query_util.CommonUtil.get_next_id(flights_scope, c_name)
+        client.select_collection(tenant_scope, checkout_cart_collection)
+        cart_id = query_util.CommonUtil.get_next_id(tenant_scope,
+                                                    checkout_cart_collection)
         cart_key = "cart_%s" % cart_id
         checkout_doc.put("id", cart_id)
         checkout_doc.put("user_id", u_id)
@@ -158,27 +161,27 @@ class User(Thread):
         checkout_doc.put("seat_count", required_seats)
         checkout_doc.put("passengers", passenger_data)
         result = client.crud(DocLoading.Bucket.DocOps.CREATE,
-                             cart_key, checkout_doc)
-                             # durability=Bucket.DurabilityLevel.MAJORITY)
+                             cart_key, checkout_doc,
+                             durability=d_level.MAJORITY)
         if result["status"] is False:
             raise Exception("Flight cart add failed: %s" % result)
 
         if choice([True, False]):
             # Booking confirmed scenario, add ticket under flight booking
             c_name = "booking_data"
-            booking_id = query_util.CommonUtil.get_next_id(flights_scope,
+            booking_id = query_util.CommonUtil.get_next_id(tenant_scope,
                                                            c_name)
             ticket_key = "ticket_%s" % booking_id
             checkout_doc.put("id", booking_id)
-            client.select_collection(flights_scope, c_name)
+            client.select_collection(tenant_scope, c_name)
             result = client.crud(
-                DocLoading.Bucket.DocOps.CREATE, ticket_key, checkout_doc)
-                # durability=Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE)
+                DocLoading.Bucket.DocOps.CREATE, ticket_key, checkout_doc,
+                durability=d_level.MAJORITY_AND_PERSIST_TO_ACTIVE)
             if result["status"] is False:
                 raise Exception("Ticket booking failed: %s" % result)
 
             # Add confirmed ticket under user profile
-            f_booking_id = query_util.CommonUtil.get_next_id(users_scope,
+            f_booking_id = query_util.CommonUtil.get_next_id(tenant_scope,
                                                              "flight_booking")
             f_booking_key = "booking_%s" % f_booking_id
             f_booking_doc = JsonObject.create()
@@ -188,17 +191,16 @@ class User(Thread):
             f_booking_doc.put("status", "active")
             f_booking_doc.put("booked_on", global_vars.app_current_date)
             f_booking_doc.put("ticket_type", ticket_type)
-            client.select_collection(users_scope, "flight_booking")
+            client.select_collection(tenant_scope, "flight_booking")
             result = client.crud(DocLoading.Bucket.DocOps.CREATE,
                                  f_booking_key, f_booking_doc)
             if result["status"] is False:
                 raise Exception("User flight_booking add failed: %s" % result)
 
             # Remove booked ticket from cart
-            c_name = "checkout_cart"
-            client.select_collection(flights_scope, c_name)
-            result = client.crud(DocLoading.Bucket.DocOps.DELETE, cart_key)
-                                 # durability=Bucket.DurabilityLevel.MAJORITY)
+            client.select_collection(tenant_scope, checkout_cart_collection)
+            result = client.crud(DocLoading.Bucket.DocOps.DELETE, cart_key,
+                                 durability=d_level.MAJORITY)
             if result["status"] is False:
                 raise Exception("Flight cart remove failed: %s" % result)
             summary["status"] = "Booking success"
@@ -208,8 +210,8 @@ class User(Thread):
 
     def scenario_book_one_way_flight(self):
         summary = "User - scenario_book_one_way_flight\n"
-        u_id = self.get_random_user_id(sdk_clients["user_manager"])
-        b_summary = self.book_flight(u_id)
+        u_id = self.get_random_user_id(sdk_clients["user_manager"], self.scope)
+        b_summary = self.book_flight(u_id, self.scope)
         summary += "From %s -> %s for %s people\n" \
                    % (b_summary["src_airport"], b_summary["dest_airport"],
                       b_summary["required_seats"])
@@ -221,15 +223,15 @@ class User(Thread):
 
     def scenario_book_flight_with_return(self):
         summary = "User - scenario_book_flight_with_return\n"
-        u_id = self.get_random_user_id(sdk_clients["user_manager"])
-        b_summary = self.book_flight(u_id)
+        u_id = self.get_random_user_id(sdk_clients["user_manager"], self.scope)
+        b_summary = self.book_flight(u_id, self.scope)
         summary += "From %s -> %s for %s people\n" \
                    % (b_summary["src_airport"], b_summary["dest_airport"],
                       b_summary["required_seats"])
         if b_summary["status"] != "timeout":
             summary += "%s\n" % b_summary["status"]
             b_summary = self.book_flight(
-                u_id,
+                u_id, self.scope,
                 src_airport=b_summary["dest_airport"],
                 dest_airport=b_summary["src_airport"])
             summary += "From %s -> %s for %s people\n" \
@@ -243,21 +245,21 @@ class User(Thread):
             summary += "Booking not confirmed !"
         return summary
 
-    def scenario_read_flight_booking_history(self):
-        result = "User - scenario_read_flight_booking_history\n"
-        return result
-
-    def _scenario_book_hotel(self):
-        result = "User - scenario_book_hotel\n"
-        return result
-
-    def _scenario_read_hotel_booking_history(self):
-        result = "User - scenario_read_hotel_booking_history\n"
-        return result
-
-    def _scenario_write_hotel_review(self):
-        result = "User - scenario_write_hotel_review\n"
-        return result
+    # def _scenario_read_flight_booking_history(self):
+    #     result = "User - scenario_read_flight_booking_history\n"
+    #     return result
+    #
+    # def _scenario_book_hotel(self):
+    #     result = "User - scenario_book_hotel\n"
+    #     return result
+    #
+    # def _scenario_read_hotel_booking_history(self):
+    #     result = "User - scenario_read_hotel_booking_history\n"
+    #     return result
+    #
+    # def _scenario_write_hotel_review(self):
+    #     result = "User - scenario_write_hotel_review\n"
+    #     return result
 
     def run(self):
         while self.op_count > 0:
@@ -267,7 +269,7 @@ class User(Thread):
                     self.result = User.scenarios[rand_scenario](self)
                 else:
                     self.result = User.scenarios[self.op_type](self)
-                User.log.info(self.result)
+                User.log.info("%s %s" % (self.scope, self.result))
             except Exception as e:
                 self.exception = e
                 traceback.print_exc()
