@@ -1589,7 +1589,8 @@ class BucketUtils(ScopeUtils):
             bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
             purge_interval=1,
             autoCompactionDefined="false",
-            fragmentation_percentage=50):
+            fragmentation_percentage=50,
+            bucket_name="default"):
         node_info = RestConnection(self.cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -1600,27 +1601,27 @@ class BucketUtils(ScopeUtils):
             # By default set 100Mb if unable to fetch proper value
             ram_quota_mb = 100
         if autoCompactionDefined == "true":
-            compression_mode= "passive"
+            compression_mode = "passive"
 
-        default_bucket = Bucket({Bucket.bucketType: bucket_type,
-                                 Bucket.ramQuotaMB: ram_quota_mb,
-                                 Bucket.replicaNumber: replica,
-                                 Bucket.compressionMode: compression_mode,
-                                 Bucket.maxTTL: maxTTL,
-                                 Bucket.conflictResolutionType:
-                                     conflict_resolution,
-                                 Bucket.replicaIndex: replica_index,
-                                 Bucket.storageBackend: storage,
-                                 Bucket.evictionPolicy: eviction_policy,
-                                 Bucket.flushEnabled: flush_enabled,
-                                 Bucket.durabilityMinLevel: bucket_durability,
-                                 Bucket.purge_interval: purge_interval,
-                                 Bucket.autoCompactionDefined: autoCompactionDefined,
-                                 Bucket.fragmentationPercentage: fragmentation_percentage
-                                 })
-        self.create_bucket(default_bucket, wait_for_warmup)
+        bucket_obj = Bucket(
+            {Bucket.name: bucket_name,
+             Bucket.bucketType: bucket_type,
+             Bucket.ramQuotaMB: ram_quota_mb,
+             Bucket.replicaNumber: replica,
+             Bucket.compressionMode: compression_mode,
+             Bucket.maxTTL: maxTTL,
+             Bucket.conflictResolutionType: conflict_resolution,
+             Bucket.replicaIndex: replica_index,
+             Bucket.storageBackend: storage,
+             Bucket.evictionPolicy: eviction_policy,
+             Bucket.flushEnabled: flush_enabled,
+             Bucket.durabilityMinLevel: bucket_durability,
+             Bucket.purge_interval: purge_interval,
+             Bucket.autoCompactionDefined: autoCompactionDefined,
+             Bucket.fragmentationPercentage: fragmentation_percentage})
+        self.create_bucket(bucket_obj, wait_for_warmup)
         if self.enable_time_sync:
-            self._set_time_sync_on_buckets([default_bucket.name])
+            self._set_time_sync_on_buckets([bucket_obj.name])
 
     @staticmethod
     def expand_collection_spec(buckets_spec, bucket_name, scope_name):
