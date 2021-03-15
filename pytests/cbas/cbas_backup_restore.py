@@ -30,8 +30,6 @@ class BackupRestoreTest(CBASBaseTest):
                               stage=self.setUp.__name__)
         self.synonyms_per_ds = int(self.input.param("synonyms_per_ds", 1))
         self.overlap_path = self.input.param("overlap_path", False)
-        self.log_setup_status(self.__class__.__name__, "Finished",
-                              stage=self.setUp.__name__)
         self.drop_datasets = self.input.param("drop_datasets", True)
         self.drop_synonyms = self.input.param("drop_synonyms", True)
         self.drop_indexes = self.input.param("drop_synonyms", True)
@@ -41,6 +39,8 @@ class BackupRestoreTest(CBASBaseTest):
         self.ds_fields = ['DatasetName', 'DataverseName', 'BucketName', 'ScopeName',
             'CollectionName']
         self.backup_util = BackupUtils(self.cluster.servers[0], self.cbas_node)
+        self.log_setup_status(self.__class__.__name__, "Finished",
+                              stage=self.setUp.__name__)
 
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",

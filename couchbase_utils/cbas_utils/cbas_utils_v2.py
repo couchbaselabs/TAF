@@ -4376,7 +4376,7 @@ class CBASRebalanceUtil(object):
 
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
         self.query_threads = list()
-        self.durability_level = ""
+        self.durability_level = None
 
     def wait_for_rebalance_task_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
