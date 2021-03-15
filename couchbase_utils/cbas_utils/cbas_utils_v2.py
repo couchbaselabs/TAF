@@ -214,7 +214,7 @@ class BaseUtil(object):
         :param max_length: int, number of characters in the name.
         :param fixed_length: bool, If True, creates a name with length equals to no_of_char
         specified, otherwise creates a name with length upto no_of_char specified.  
-        :param formatted bool, if True, then enclose names in ``
+        :param name_key str, if specified, it will generate name with the name_key
         """
         if 0 < name_cardinality < 3:
             if name_key:
