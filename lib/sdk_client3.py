@@ -45,6 +45,7 @@ from com.couchbase.client.java.kv import \
     RemoveOptions, \
     ReplaceOptions, \
     ReplicateTo, \
+    StoreSemantics, \
     TouchOptions, \
     UpsertOptions
 from java.time import Duration
@@ -547,16 +548,18 @@ class SDKClient(object):
                               persist_to=0, replicate_to=0, timeout=5,
                               time_unit="seconds", durability=""):
         if persist_to != 0 or replicate_to != 0:
-            return MutateInOptions.mutateInOptions().durability(
-                self.get_persist_to(persist_to), self.get_replicate_to(
-                    replicate_to)).expiry(
-                self.get_duration(exp, exp_unit)).timeout(
-                self.get_duration(timeout, time_unit))
+            return MutateInOptions.mutateInOptions()\
+                .durability(self.get_persist_to(persist_to),
+                            self.get_replicate_to(replicate_to))\
+                .expiry(self.get_duration(exp, exp_unit))\
+                .timeout(self.get_duration(timeout, time_unit))\
+                .storeSemantics(StoreSemantics.UPSERT)
         else:
             return MutateInOptions.mutateInOptions()\
                 .durability(DurabilityHelper.getDurabilityLevel(durability))\
                 .expiry(self.get_duration(exp, exp_unit))\
-                .timeout(self.get_duration(timeout, time_unit))
+                .timeout(self.get_duration(timeout, time_unit))\
+                .storeSemantics(StoreSemantics.UPSERT)
 
     @staticmethod
     def get_persist_to(persist_to):
@@ -1018,7 +1021,8 @@ class SDKClient(object):
                 sub_key, value, create_path, xattr))
             if not xattr:
                 mutate_in_specs.append(
-                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
+                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
+                                                             create_path))
             content = Tuples.of(key, mutate_in_specs)
             options = self.get_mutate_in_options(exp, time_unit,
                                                  persist_to, replicate_to,
@@ -1037,7 +1041,8 @@ class SDKClient(object):
                 sub_key, value, create_path, xattr))
             if not xattr:
                 mutate_in_specs.append(
-                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
+                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
+                                                             create_path))
             content = Tuples.of(key, mutate_in_specs)
             options = self.get_mutate_in_options(exp, time_unit,
                                                  persist_to, replicate_to,
@@ -1054,7 +1059,8 @@ class SDKClient(object):
                 value, xattr))
             if not xattr:
                 mutate_in_specs.append(
-                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
+                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
+                                                             create_path))
             content = Tuples.of(key, mutate_in_specs)
             options = self.get_mutate_in_options(exp, time_unit,
                                                  persist_to, replicate_to,
@@ -1072,7 +1078,8 @@ class SDKClient(object):
                 sub_key, value, xattr))
             if not xattr:
                 mutate_in_specs.append(
-                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1))
+                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
+                                                             create_path))
             content = Tuples.of(key, mutate_in_specs)
             options = self.get_mutate_in_options(exp, time_unit,
                                                  persist_to, replicate_to,
@@ -1097,7 +1104,8 @@ class SDKClient(object):
             if not xattr:
                 mutate_in_specs.append(
                     SDKClient.sub_doc_op.getIncrMutateInSpec(sub_key,
-                                                             step_value))
+                                                             step_value,
+                                                             create_path))
             content = Tuples.of(key, mutate_in_specs)
             options = self.get_mutate_in_options(exp, time_unit,
                                                  persist_to, replicate_to,
@@ -1231,7 +1239,7 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
                 _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1)
+                    "mutated", 1, True)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
@@ -1281,7 +1289,7 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
                 _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1)
+                    "mutated", 1, True)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
@@ -1356,7 +1364,7 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
                 _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1)
+                    "mutated", 1, True)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
@@ -1405,7 +1413,7 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
                 _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1)
+                    "mutated", 1, True)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)

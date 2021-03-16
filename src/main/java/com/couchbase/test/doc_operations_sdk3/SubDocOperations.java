@@ -35,7 +35,7 @@ public class SubDocOperations extends doc_ops {
                 mutateInSpec = MutateInSpec.insert(path, value).createPath().xattr();
             }
             else {
-                mutateInSpec = MutateInSpec.insert(path, value).createPath().xattr();
+                mutateInSpec = MutateInSpec.insert(path, value).xattr();
             }
         }
         else {
@@ -56,7 +56,7 @@ public class SubDocOperations extends doc_ops {
                 mutateInSpec = MutateInSpec.upsert(path, value).createPath().xattr();
             }
             else {
-                mutateInSpec = MutateInSpec.upsert(path, value).createPath().xattr();
+                mutateInSpec = MutateInSpec.upsert(path, value).xattr();
             }
         }
         else {
@@ -92,8 +92,15 @@ public class SubDocOperations extends doc_ops {
         return mutateInSpec;
     }
 
-    public MutateInSpec getIncrMutateInSpec(String path, long delta) {
-        return MutateInSpec.increment(path, delta);
+    public MutateInSpec getIncrMutateInSpec(String path, long delta, Boolean createPath) {
+        MutateInSpec mutateInSpec;
+        if (createPath) {
+            mutateInSpec = MutateInSpec.increment(path, delta).createPath();
+        }
+        else {
+            mutateInSpec = MutateInSpec.increment(path, delta);
+        }
+        return mutateInSpec;
     }
 
     public LookupInSpec getLookUpInSpec(String path, Boolean xattr) {
