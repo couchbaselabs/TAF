@@ -294,19 +294,21 @@ class SDKClient(object):
                                    % e)
                     i += 1
             count = 0
-            while count < 5:
+            while self.bucket is not None and count < 5:
                 try:
                     self.bucketObj = self.cluster.bucket(self.bucket.name)
-                    self.bucketObj.waitUntilReady(self.get_duration(120, "seconds"))
+                    self.bucketObj.waitUntilReady(
+                        self.get_duration(120, "seconds"))
+                    self.select_collection(self.scope_name,
+                                           self.collection_name)
                     break
                 except Exception as e:
-                    self.log.info("WaitUntilReady timeout exception count {}".format(count+1))
-                    self.log.error("Exception during waitUntilReady: %s"
-                                       % e)
+                    self.log.info("WaitUntilReady timeout exception count %s"
+                                  % (count+1))
+                    self.log.error("Exception during waitUntilReady: %s" % e)
                     self.get_memory_footprint()
                     sleep(120, "sleep before next retry for bucket connection")
                 count += 1
-            self.select_collection(self.scope_name, self.collection_name)
         except Exception as e:
             raise Exception("SDK Connection error: " + str(e))
 
