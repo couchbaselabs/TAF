@@ -734,6 +734,48 @@ class CollectionsRebalance(CollectionBase):
     def sync_data_load(self):
         self.subsequent_data_load()
 
+    def bulk_api_load(self, bucket_name, num_scopes=1, num_collections_per_scope=15,
+                      wait_for_rebalance_to_start=True):
+        """
+        Pre-requisites - bucket must have only _default scope and _default collection
+        creates one cycle of creates and drops of scopes and collections
+        new scopes/collections are named 0,1,2 etc
+        This is just for load, won't update any collection/scope objects of our libs
+        """
+        def create_collections_using_manifest_import():
+            json_content = dict()
+            json_content["scopes"] = list()
+            json_content["scopes"].append({"name": "_default", "collections": [{"name": "_default"}]})
+            for i in range(num_scopes):
+                scope = dict()
+                scope["name"] = str(i)
+                scope["collections"] = list()
+                for j in range(num_collections_per_scope):
+                    col = dict()
+                    col["name"] = str(j)
+                    scope["collections"].append(col)
+                json_content["scopes"].append(scope)
+            BucketHelper(self.cluster.master) \
+                .import_collection_using_manifest(bucket_name,
+                                                  str(json_content).replace("'", '"'))
+
+        def delete_collections_using_manifest_import():
+            json_content = dict()
+            json_content["scopes"] = list()
+            json_content["scopes"].append({"name": "_default", "collections": [{"name": "_default"}]})
+            BucketHelper(self.cluster.master) \
+                .import_collection_using_manifest(bucket_name,
+                                                  str(json_content).replace("'", '"'))
+
+        if wait_for_rebalance_to_start:
+            end_time = time.time() + 60
+            while (self.rest._rebalance_progress_status()!= "running") and (time.time() < end_time):
+                self.sleep(2, "wait for rebalance to start")
+        create_collections_using_manifest_import()
+        self.sleep(10, "wait before dropping collections using bulk api")
+        delete_collections_using_manifest_import()
+
+
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         if not self.skip_validations:
@@ -896,6 +938,7 @@ class CollectionsRebalance(CollectionBase):
         Do rebalance in and out in loop for a couple of cycles
         """
         self.cycles = self.input.param("cycles", 4)
+        self.bulk_api_crud = self.input.param("bulk_api_crud", False)
         for cycle in range(self.cycles):
             self.log.info("Cycle {0}".format(cycle))
 
@@ -904,6 +947,8 @@ class CollectionsRebalance(CollectionBase):
                         self.nodes_init:self.nodes_init + self.nodes_in]
             operation = self.task.async_rebalance(known_nodes, add_nodes, [])
             tasks = self.async_data_load()
+            if self.bulk_api_crud:
+                self.bulk_api_load(self.bucket.name)
             self.wait_for_rebalance_to_complete(operation)
             self.wait_for_async_data_load_to_complete(tasks)
             self.data_validation_collection()
@@ -912,6 +957,8 @@ class CollectionsRebalance(CollectionBase):
             remove_nodes = known_nodes[-self.nodes_in:]
             operation = self.task.async_rebalance(known_nodes, [], remove_nodes)
             tasks = self.async_data_load()
+            if self.bulk_api_crud:
+                self.bulk_api_load(self.bucket.name)
             self.wait_for_rebalance_to_complete(operation)
             self.wait_for_async_data_load_to_complete(tasks)
             self.data_validation_collection()
