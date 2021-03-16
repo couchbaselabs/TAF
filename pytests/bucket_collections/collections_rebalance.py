@@ -218,13 +218,6 @@ class CollectionsRebalance(CollectionBase):
         ignore_exceptions.append(SDKException.DocumentNotFoundException)
         doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
 
-
-    def get_active_resident_threshold(self, bucket_name):
-        self.rest_client = BucketHelper(self.cluster.master)
-        dgm = self.rest_client.fetch_bucket_stats(
-            bucket_name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
-        return dgm
-
     def load_to_dgm(self):
         if self.dgm_ttl_test:
             maxttl = 300
