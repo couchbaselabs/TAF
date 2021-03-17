@@ -304,9 +304,9 @@ class SDKClient(object):
                                            self.collection_name)
                     break
                 except Exception as e:
-                    self.log.info("WaitUntilReady timeout exception count %s"
+                    self.log.critical("WaitUntilReady timeout exception count %s"
                                   % (count+1))
-                    self.log.error("Exception during waitUntilReady: %s" % e)
+                    self.log.critical("Exception during waitUntilReady: %s" % e)
                     self.get_memory_footprint()
                     sleep(120, "sleep before next retry for bucket connection")
                 count += 1
