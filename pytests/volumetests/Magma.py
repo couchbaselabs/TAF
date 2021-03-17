@@ -1411,7 +1411,7 @@ class volume(BaseTestCase):
                 # Flush the bucket
                 result = self.bucket_util.flush_all_buckets(self.cluster.master)
                 self.assertTrue(result, "Flush bucket failed!")
-                self.sleep(300)
+                self.sleep(600)
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
                     nodes_cluster = self.cluster.nodes_in_cluster[:]
                     nodes_cluster.remove(self.cluster.master)
@@ -1759,7 +1759,7 @@ class volume(BaseTestCase):
                     self.sleep(0.5)
             self.bucket_util.flush_all_buckets(self.cluster.master)
             self.init_doc_params()
-            self.sleep(300, "Iteration %s completed successfully !!!" % self.loop)
+            self.sleep(600, "Iteration %s completed successfully !!!" % self.loop)
             self.loop += 1
             if self.end_step == 18:
                 exit(18)
