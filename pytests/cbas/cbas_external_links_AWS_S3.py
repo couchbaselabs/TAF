@@ -775,11 +775,22 @@ class CBASExternalLinks(CBASBaseTest):
                 "validate_error_msg": False
             },
             {
-                "description": "Create dataset when link's dataverse is not specified but dataset's dataverse is specified",
+                "description": "Create dataset when link's dataverse is not specified but dataset's \
+                dataverse is specified and link's dataverse does not defaults to Default dataverse",
                 "dataverse": "dataverse2",
-                "cbas_dataset_name": "{0}.{1}".format(self.link_info["dataverse"], self.cbas_dataset_name),
+                "cbas_dataset_name": "{0}".format(self.cbas_dataset_name),
                 "new_dataverse": True,
-                "validate_error_msg": False
+                "validate_error_msg": True,
+                "expected_error": "Link dataverse2.{0} does not exist".format(self.link_info["name"])
+            },
+            {
+                "description": "Create dataset when link's dataverse is not specified but dataset's \
+                dataverse is specified and link's dataverse defaults to datasets dataverse",
+                "dataverse": "dataverse2",
+                "cbas_dataset_name": "{0}".format(self.cbas_dataset_name),
+                "new_dataverse": True,
+                "validate_error_msg": False,
+                "create_new_link": True
             },
             {
                 "description": "Create dataset in non-existent dataverse",
@@ -935,6 +946,12 @@ class CBASExternalLinks(CBASBaseTest):
                 if testcase.get("new_dataverse", False):
                     if not self.cbas_util.create_dataverse_on_cbas(dataset_param["dataverse"]):
                         raise Exception("Error while creating new dataverse")
+                
+                if testcase.get("create_new_link", False):
+                    link_param = copy.deepcopy(self.link_info)
+                    link_param["dataverse"] = dataset_param["dataverse"]
+                    if not self.cbas_util.create_external_link_on_cbas(link_properties=link_param):
+                        self.fail("link creation failed")
 
                 if testcase.get("recreate_dataset", False):
                     dataset_param["validate_error_msg"] = False
