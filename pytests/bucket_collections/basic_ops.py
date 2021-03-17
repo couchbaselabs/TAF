@@ -959,3 +959,33 @@ class BasicOps(CollectionBase):
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
+
+    def test_item_count_collections(self):
+        bucket = self.bucket_util.buckets[0]
+        # verify items count for each collection
+        for _, scope in bucket.scopes.items():
+            for _, collection in scope.collections.items():
+                expected_item_count = collection.num_items
+                actual_item_count = self.bucket_util.get_total_items_count_in_a_collection\
+                    (bucket.name, scope.name, collection.name)
+                if actual_item_count != expected_item_count:
+                    fail_msg = "For bucket: %s scope: %s collections: %s , " \
+                               "Expected item count: %d actual item count: %d" %\
+                               (bucket.name, scope.name, collection.name,
+                                expected_item_count, actual_item_count)
+                    self.log_failure(fail_msg)
+
+        # Flush bucket and verify items count of each coll goes to 0
+        self.bucket_util.flush_bucket(self.cluster.master, bucket)
+        for _, scope in bucket.scopes.items():
+            for _, collection in scope.collections.items():
+                expected_item_count = 0
+                actual_item_count = self.bucket_util.get_total_items_count_in_a_collection\
+                    (bucket.name, scope.name, collection.name)
+                if actual_item_count != expected_item_count:
+                    fail_msg = "For bucket: %s scope: %s collections: %s , " \
+                               "Expected item count: %d actual item count: %d" %\
+                               (bucket.name, scope.name, collection.name,
+                                expected_item_count, actual_item_count)
+                    self.log_failure(fail_msg)
+        self.validate_test_failure()

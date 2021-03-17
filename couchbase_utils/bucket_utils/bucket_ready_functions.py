@@ -65,6 +65,7 @@ from testconstants import MAX_COMPACTION_THRESHOLD, \
     MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
 from couchbase_helper.tuq_generators import JsonGenerator
+from StatsLib.StatsOperations import StatsHelper
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods
@@ -5027,3 +5028,19 @@ class BucketUtils(ScopeUtils):
             collection_count += len(BucketUtils.get_active_collections(
                 bucket, scope.name, only_names=True))
         return collection_count
+
+    def get_total_items_count_in_a_collection(self, bucket_name, scope_name, collection_name):
+        """
+        Returns (int): the total item count in a given collection using range api
+        """
+        end_time = int(round(time.time()))
+        start_time = end_time - 10
+        metric_name = "kv_collection_item_count"
+        label_values = {"bucket": bucket_name, "scope": scope_name, "collection": collection_name,
+                        "aggregationFunction": "sum", "start": start_time, "end": end_time}
+        content = StatsHelper(self.cluster.master).\
+            get_range_api_metrics(metric_name, label_values=label_values)
+        item_count = content["data"][0]["values"][-1][-1]
+        return int(item_count)
+
+
