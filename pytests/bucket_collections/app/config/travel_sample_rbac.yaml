@@ -14,7 +14,7 @@ rbac_roles:
         password: "cbas_admin"
         select_bucket: False
         roles:
-          - "cluster_admin"
+          - "analytics_manager[*]"
       - user_name: "user_query"
         password: "user_query"
         roles:
