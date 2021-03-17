@@ -28,11 +28,12 @@ class AppBase(BaseTestCase):
         super(AppBase, self).setUp()
         self.log_setup_status("AppBase", "started")
 
+        self.step_num = 1
+        self.initial_load = False
         self.cluster_conf = self.input.param("cluster_conf", None)
         self.bucket_conf = self.input.param("bucket_conf", None)
         self.service_conf = self.input.param("service_conf", None)
         self.rbac_conf = self.input.param("rbac_conf", None)
-        self.initial_load = False
 
         self.rbac_util = RbacUtil()
         self.sdk_clients = global_vars.sdk_clients

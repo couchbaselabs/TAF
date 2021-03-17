@@ -28,7 +28,6 @@ class TravelSampleApp(AppBase):
             self.__load_intial_data()
 
         self.app_iteration = self.input.param("iteration", 1)
-        self.step_num = 1
         global_vars.app_current_date = query_util.CommonUtil.get_current_date()
         self.log_setup_status("TravelSampleApp", "complete")
 
