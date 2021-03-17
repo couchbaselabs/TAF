@@ -4732,6 +4732,10 @@ class BackupUtils(object):
             disable_analytics, exclude, include, [], configure_bkup_cmd)
         o, r = self.shell.execute_command(configure_bkup_cmd)
         self.shell.log_command_output(o, r)
+        expected_output = "Backup repository `{0}` created successfully in "\
+                          "archive `{1}`".format(repo, archive)
+        if expected_output not in o.join(""):
+            raise Exception("Configuring backup failed")
 
     def cbbackupmgr_backup_cbas(self, server, archive='/tmp/backups', repo='example',
                       disable_analytics=False, exclude=[],
@@ -4783,9 +4787,9 @@ class BackupUtils(object):
             include=include, exclude=exclude, level=level)
         return status, self.cbas_helper.get_json(content), response
 
-    def rest_restore_cbas(self, username=None, password=None, bucket="", include=[],
-                     exclude=[], remap="",
-                     level="cluster", backup={}):
+    def rest_restore_cbas(self, username=None, password=None, bucket="",
+                          include=[], exclude=[], remap="", level="cluster",
+                          backup={}):
         status, content, response = self.cbas_helper.restore_cbas(
             username=username, password=password, bucket=bucket,
             include=include, exclude=exclude, remap=remap,

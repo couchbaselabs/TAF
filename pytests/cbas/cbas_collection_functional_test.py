@@ -1614,11 +1614,9 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 self.cluster.master, dataset_objs[0].kv_bucket,
                 wait_for_bucket_deletion=True):
             self.fail("Error while deleting bucket")
-        execute_function_in_parallel(
-            self.cbas_util_v2.validate_cbas_dataset_items_count, 0)
+        self.cbas_util_v2.wait_for_ingestion_all_datasets(self.bucket_util)
         self.collectionSetUp(self.cluster, self.bucket_util, self.cluster_util)
-        execute_function_in_parallel(
-            self.cbas_util_v2.validate_cbas_dataset_items_count)
+        self.cbas_util_v2.wait_for_ingestion_all_datasets(self.bucket_util)
         execute_function_in_parallel(self.cbas_util_v2.verify_index_used)
         self.log.info("Test finished")
 

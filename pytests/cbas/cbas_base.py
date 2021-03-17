@@ -92,6 +92,8 @@ class CBASBaseTest(BaseTestCase):
         self.memcached_kill_count = self.input.param("memcached_kill_count", 0)
         self.tamper_links_count = self.input.param("tamper_links_count", 0)
         self.cbas_node = None
+        self.cbas_memory_quota_percent = int(self.input.param(
+            "cbas_memory_quota_percent", 100))
         services = None
         nodes_init = None
         # Single cluster support
@@ -708,9 +710,6 @@ class CBASBaseTest(BaseTestCase):
                     clients_per_bucket,
                     compression_settings=self.sdk_compression)
 
-        # TODO: remove this once the bug is fixed
-        # self.sleep(120, "MB-38497")
-        self.sleep(10, "MB-38497")
         cluster_util.print_cluster_stats()
         if load_data:
             self.load_data_into_buckets(cluster, bucket_util, doc_loading_spec)
@@ -817,9 +816,18 @@ class CBASBaseTest(BaseTestCase):
                         if memory_quota_available < service_mem_in_cluster:
                             if memory_quota_available > \
                                     service_mem_dict[service][1]:
+                                memory_quota = memory_quota_available
+                                if service == "cbas":
+                                    memory_quota = \
+                                        memory_quota_available * \
+                                        self.cbas_memory_quota_percent / 100
+                                    if memory_quota < service_mem_dict[service][
+                                        1]:
+                                        memory_quota = \
+                                        service_mem_dict[service][1]
                                 master_rest.set_service_memoryQuota(
                                     service=property_name,
-                                    memoryQuota=memory_quota_available)
+                                    memoryQuota=memory_quota)
                             else:
                                 self.fail("Error while setting service memory "
                                           "quota {0} for {1}"
@@ -829,9 +837,16 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("Setting {0} memory quota for {1}".format(
                         memory_quota_available, service))
                     if memory_quota_available > service_mem_dict[service][1]:
+                        memory_quota = memory_quota_available
+                        if service == "cbas":
+                            memory_quota = \
+                                memory_quota_available * \
+                                self.cbas_memory_quota_percent / 100
+                            if memory_quota < service_mem_dict[service][1]:
+                                memory_quota = service_mem_dict[service][1]
                         master_rest.set_service_memoryQuota(
                             service=service_mem_dict[service][0],
-                            memoryQuota=memory_quota_available)
+                            memoryQuota=memory_quota)
                     else:
                         self.fail(
                             "Error while setting service mem quota %s for %s"
