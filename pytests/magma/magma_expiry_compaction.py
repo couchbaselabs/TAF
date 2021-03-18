@@ -140,7 +140,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.expiry_end = self.num_items
         self.doc_ops = "expiry"
         for it in range(self.iterations):
-            self.log.info("Iteration {}".format(it))
+            self.log.info("Iteration {}".format(it+1))
             self.expiry_perc = self.input.param("expiry_perc", 100)
 
             self.generate_docs(doc_ops="expiry",
@@ -160,11 +160,15 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.sleep(self.exp_pager_stime*10, "Wait for KV purger to scan expired docs and add \
             tombstones.")
 
+            expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
             # Check for tombstone count in Storage
-            ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+            time_end = time.time() + 60 * 20
+            while time.time() < time_end:
+                ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+                if ts == expected_ts_count:
+                    break
             self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
-            expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)*(it+1)
-            self.log.info("Iterations - {}, expected_ts_count - {}".format(it, expected_ts_count))
+            self.log.info("Iterations - {}, expected_ts_count - {}".format(it+1, expected_ts_count))
             self.assertEqual(expected_ts_count, ts, "Incorrect tombstone count in storage,\
                               Expected: {}, Found: {}".
                               format(expected_ts_count, ts))
@@ -197,6 +201,8 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
                              "Incorrect tombstone count in storage,\
                              Expected: {}, Found: {}".format(self.vbuckets * (self.num_replicas+1), ts))
+            self.set_metadata_purge_interval(
+                value=3.0, buckets=self.buckets)
 
     def test_create_expire_same_items(self):
         '''
