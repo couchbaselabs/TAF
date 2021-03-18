@@ -1468,7 +1468,13 @@ class RestConnection(object):
         api = self.baseUrl + "pools/default/tasks"
         status, content, header = self._http_request(api)
         json_parsed = json.loads(content)
-        json_parsed = json_parsed[0]  # get the first dictionary
+        # Find the right dict containing the rebalance task
+        for i in range(0,len(json_parsed)):
+            json_parsed_temp = json_parsed[i]
+            if "type" in json_parsed_temp:
+                if json_parsed_temp["type"] == "rebalance":
+                    json_parsed = json_parsed[i]
+                    break
         if status:
             if "status" in json_parsed:
                 rebalance_status = json_parsed["status"]
@@ -1565,7 +1571,13 @@ class RestConnection(object):
             self.test_log.error(e)
             return None, -100
         json_parsed = json.loads(content)
-        json_parsed = json_parsed[0] # get the first dictionary
+        # Find the right dict containing the rebalance task
+        for i in range(0, len(json_parsed)):
+            json_parsed_temp = json_parsed[i]
+            if "type" in json_parsed_temp:
+                if json_parsed_temp["type"] == "rebalance":
+                    json_parsed = json_parsed[i]
+                    break
         # ToDo: Is it always the case that first dict contains the rebalance task?
         if status:
             if "status" in json_parsed:
@@ -1586,7 +1598,13 @@ class RestConnection(object):
                     sleep(5, log_type="infra")
                     status, content, header = self._http_request(api)
                     json_parsed = json.loads(content)
-                    json_parsed = json_parsed[0]  # get the first dictionary
+                    # Find the right dict containing the rebalance task
+                    for i in range(0, len(json_parsed)):
+                        json_parsed_temp = json_parsed[i]
+                        if "type" in json_parsed_temp:
+                            if json_parsed_temp["type"] == "rebalance":
+                                json_parsed = json_parsed[i]
+                                break
                     if "errorMessage" in json_parsed:
                         msg = '{0} - rebalance failed'.format(json_parsed)
                         self.print_UI_logs()
