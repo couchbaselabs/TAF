@@ -382,7 +382,7 @@ class volume(BaseTestCase):
 
         return task
 
-    def data_load(self):
+    def _loader_dict(self):
         loader_dict = dict()
         retry_exceptions = [
             SDKException.AmbiguousTimeoutException,
@@ -408,26 +408,27 @@ class volume(BaseTestCase):
                 loader_dict[bucket]["scopes"].update({scope: dict()})
                 loader_dict[bucket]["scopes"][scope].update({"collections":dict()})
                 for collection in bucket.scopes[scope].collections.keys():
-                    if collection == "_default" and scope != "default":
+                    if collection == "_default" and scope == "_default":
                         continue
                     loader_dict[bucket]["scopes"][scope]["collections"].update({collection:dict()})
                     if self.gen_update is not None:
                         op_type = "update"
                         common_params.update({"doc_gen": self.gen_update})
-                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
                     if self.gen_create is not None:
                         op_type = "create"
                         common_params.update({"doc_gen": self.gen_create})
-                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
                     if self.gen_delete is not None:
                         op_type = "delete"
                         common_params.update({"doc_gen": self.gen_delete})
-                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
                     if self.gen_expiry is not None and self.maxttl:
-                        op_type = "update"
+                        op_type = "touch"
                         common_params.update({"doc_gen": self.gen_expiry,
                                               "doc_ttl": self.maxttl})
-                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
+                        common_params.update({"doc_ttl": 0})
                     if self.gen_read is not None:
                         op_type = "read"
                         common_params.update({"doc_gen": self.gen_read,
@@ -436,7 +437,10 @@ class volume(BaseTestCase):
                                               "suppress_error_table": True})
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
         self.loader_dict = loader_dict
-        return self.doc_loader(loader_dict)
+
+    def data_load(self):
+        self._loader_dict()
+        return self.doc_loader(self.loader_dict)
 
     def wait_for_doc_load_completion(self, task, wait_for_stats=True):
         self.doc_loading_tm.get_task_result(task)
@@ -461,6 +465,9 @@ class volume(BaseTestCase):
 
     def data_validation(self):
         if self._data_validation:
+            temp = self.suppress_error_table
+            self.suppress_error_table = True
+            self._loader_dict()
             self.log.info("Validating Active/Replica Docs")
             task = self.task.async_validate_docs_using_spec(
                 self.cluster, self.doc_loading_tm, self.loader_dict,
@@ -470,6 +477,7 @@ class volume(BaseTestCase):
                 process_concurrency=self.process_concurrency)
 
             self.doc_loading_tm.get_task_result(task)
+            self.suppress_error_table = temp
 
     def get_bucket_dgm(self, bucket):
         self.rest_client = BucketHelper(self.cluster.master)
@@ -970,7 +978,7 @@ class volume(BaseTestCase):
             self.key_prefix = "random_keys"
             self.create_perc = 100*2
             self.PrintStep("Step 4: Create %s random keys" %
-                           str(self.num_items*self.update_perc/100))
+                           str(self.num_items*self.create_perc/100))
 
             self.generate_docs(doc_ops="create")
             self.perform_load(validate_data=False)
@@ -1028,7 +1036,7 @@ class volume(BaseTestCase):
             self.update_perc = 100
             self.delete_perc = 50
             self.expiry_perc = 50
-            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
+            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1056,7 +1064,7 @@ class volume(BaseTestCase):
             self.update_perc = 100
             self.delete_perc = 100
             self.expiry_perc = 0
-            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
+            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1085,7 +1093,7 @@ class volume(BaseTestCase):
             self.update_perc = 100
             self.delete_perc = 0
             self.expiry_perc = 100
-            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
+            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1115,7 +1123,7 @@ class volume(BaseTestCase):
             self.update_perc = 100
             self.delete_perc = 50
             self.expiry_perc = 50
-            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
+            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1160,7 +1168,7 @@ class volume(BaseTestCase):
             self.update_perc = 100
             self.delete_perc = 0
             self.expiry_perc = 100
-            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
+            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             tasks_info = self.data_load()
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
@@ -1231,7 +1239,7 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
+            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             tasks_info = self.data_load()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
@@ -1301,7 +1309,7 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
+            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             tasks_info = self.data_load()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
@@ -1362,7 +1370,7 @@ class volume(BaseTestCase):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=2)
 
-            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
+            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             tasks_info = self.data_load()
 
@@ -1390,7 +1398,7 @@ class volume(BaseTestCase):
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
-            self.generate_docs(doc_ops=["create", "update", "delete", "expiry"])
+            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             self.set_num_writer_and_reader_threads(
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
