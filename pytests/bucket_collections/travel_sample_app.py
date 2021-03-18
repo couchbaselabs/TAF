@@ -82,9 +82,9 @@ class TravelSampleApp(AppBase):
             for task in tasks:
                 task.join()
 
-            for task in tasks:
-                if task.exception:
-                    self.fail(task.exception)
+            # for task in tasks:
+            #     if task.exception:
+            #         self.fail(task.exception)
 
             # Print current iteration summary (Possible values)
             # Backup and restore

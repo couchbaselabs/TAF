@@ -77,7 +77,7 @@ class AppBase(BaseTestCase):
 
         if self.service_conf is not None:
             with open(self.config_path + self.service_conf, "r") as fp:
-                self.service_conf = YAML().load(fp.read())
+                self.service_conf = YAML().load(fp.read())["services"]
 
             # Configure backup settings
             self.configure_bucket_backups()
@@ -123,6 +123,7 @@ class AppBase(BaseTestCase):
         for bucket in self.bucket_conf["buckets"]:
             b_name = bucket["name"]
             s_bucket = None
+            self.__print_step("Creating bucket %s" % b_name)
             if bucket["sample_bucket"] is True:
                 if b_name == "travel-sample":
                     s_bucket = TravelSample()
