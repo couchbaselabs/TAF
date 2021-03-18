@@ -227,7 +227,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         #self.expiry_perc = 100
         for _iter in range(self.iterations):
             self.maxttl = random.randint(5, 20)
-            self.log.info("Test Iteration: {}".format(_iter))
+            self.log.info("Test Iteration: {}".format(_iter+1))
             # Create items which are expired
             self.generate_docs(doc_ops="create",
                                create_start=self.create_start,
@@ -266,7 +266,6 @@ class MagmaExpiryTests(MagmaBaseTest):
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
 
-
             # Space amplification check
             msg_stats = "Fragmentation value for {} stats exceeds\
             the configured value"
@@ -296,17 +295,18 @@ class MagmaExpiryTests(MagmaBaseTest):
                 value=self.meta_purge_interval, buckets=self.buckets)
             self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
             tomb-stones from storage")
-            self.run_compaction(compaction_iterations=1)
+            self.run_compaction(compaction_iterations=2)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
-            self.sleep(60, "wait after compaction")
-            disk_usage = self.get_disk_usage(self.buckets[0],
-                                             self.cluster.nodes_in_cluster)
-            disk_usage_after_compaction = disk_usage[0]
+
+            disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
+                                                              self.cluster.nodes_in_cluster)[0]
             self.log.info("Iteration--{}, disk usage after compaction--{}".
-                           format(_iter, disk_usage[0]))
-            self.assertTrue(disk_usage_after_compaction < 500,
-                            "Disk size after compaction exceeds 500MB")
+                          format(_iter, disk_usage[0]))
+
+            self.assertTrue(disk_usage_after_compaction <= 500,
+                            "Disk size after compaction=={} exceeds expected size=={}".
+                            format(disk_usage_after_compaction, 500))
 
     def test_expiry_no_wait_update(self):
         '''
