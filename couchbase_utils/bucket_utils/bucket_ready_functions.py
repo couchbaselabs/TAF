@@ -863,8 +863,9 @@ class CollectionUtils(DocLoaderUtils):
                 "Collection '%s:%s:%s' creation failed: %s"
                 % (bucket, scope_name, collection_name, content))
             raise Exception("create_collection failed")
-        content = json.loads(content)
-        BucketHelper(node).wait_for_collections_warmup(bucket,content["uid"])
+        # Until MB-44741 is fixed/resolved
+        # content = json.loads(content)
+        # BucketHelper(node).wait_for_collections_warmup(bucket,content["uid"])
         bucket.stats.increment_manifest_uid()
         CollectionUtils.create_collection_object(bucket,
                                                  scope_name,
@@ -893,8 +894,9 @@ class CollectionUtils(DocLoaderUtils):
                 "Collection '%s:%s:%s' delete failed: %s"
                 % (bucket, scope_name, collection_name, content))
             raise Exception("delete_collection")
-        content = json.loads(content)
-        BucketHelper(node).wait_for_collections_warmup(bucket, content["uid"])
+        # Until MB-44741 is fixed/resolved
+        # content = json.loads(content)
+        # BucketHelper(node).wait_for_collections_warmup(bucket, content["uid"])
         bucket.stats.increment_manifest_uid()
         CollectionUtils.mark_collection_as_dropped(bucket,
                                                    scope_name,
@@ -1100,8 +1102,9 @@ class ScopeUtils(CollectionUtils):
             ScopeUtils.log.error("Scope '%s:%s' creation failed: %s"
                                  % (bucket, scope_name, content))
             raise Exception("create_scope failed")
-        content = json.loads(content)
-        BucketHelper(node).wait_for_collections_warmup(bucket, content["uid"])
+        # Until MB-44741 is fixed/resolved
+        # content = json.loads(content)
+        # BucketHelper(node).wait_for_collections_warmup(bucket, content["uid"])
         bucket.stats.increment_manifest_uid()
         ScopeUtils.create_scope_object(bucket, scope_spec)
 
@@ -1124,8 +1127,9 @@ class ScopeUtils(CollectionUtils):
             ScopeUtils.log.error("Scope '%s:%s' deletion failed: %s"
                                  % (bucket, scope_name, content))
             raise Exception("delete_scope failed")
-        content = json.loads(content)
-        BucketHelper(node).wait_for_collections_warmup(bucket, content["uid"])
+        # Until MB-44741 is fixed/resolved
+        # content = json.loads(content)
+        # BucketHelper(node).wait_for_collections_warmup(bucket, content["uid"])
         bucket.stats.increment_manifest_uid()
         ScopeUtils.mark_scope_as_dropped(bucket, scope_name)
 
