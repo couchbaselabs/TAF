@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.documentgenerator import doc_generator
@@ -10,6 +10,8 @@ from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
+
+from com.couchbase.client.core.error import CouchbaseException
 
 
 class BasicOps(CollectionBase):
@@ -989,3 +991,61 @@ class BasicOps(CollectionBase):
                                 expected_item_count, actual_item_count)
                     self.log_failure(fail_msg)
         self.validate_test_failure()
+
+    def test_with_memcached_bucket(self):
+        """
+        Validates MB-35696
+        1. Create Memcached bucket
+        2. Perform create scope/collection using REST API
+        3. Perform create scope/collection using SDK client
+        4. Try performing doc_loading to validate CRUDs are happening fine
+        """
+        rand_name = self.bucket_util.get_random_name(max_length=15)
+        bucket_helper = BucketHelper(self.cluster.master)
+        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+
+        expected_err = "Not allowed on this type of bucket"
+        self.log.info("Random name: %s" % rand_name)
+        self.log.info("Trying to create new scope for memcached bucket")
+        # REST API way of creating scope
+        status, content = bucket_helper.create_scope(self.bucket, rand_name)
+        self.assertFalse(status, "Create scope succeeded for memcached bucket")
+        self.assertEqual(content, expected_err, "Invalid error message")
+
+        # SDK way of creating scope
+        try:
+            client.create_scope(rand_name)
+        except CouchbaseException as e:
+            if expected_err not in str(e):
+                self.fail("Invalid error message: %s" % e)
+
+        self.log.info("Trying to create new collection for memcached bucket")
+        # REST API way of creating collection
+        status, content = bucket_helper.create_collection(
+            self.bucket, CbServer.default_scope, {"name": rand_name})
+        self.assertFalse(status, "Create collection succeeded for mc_bucket")
+        self.assertEqual(content, expected_err, "Invalid error message")
+
+        # SDK way of creating collection
+        try:
+            client.create_collection(rand_name)
+        except CouchbaseException as e:
+            if expected_err not in str(e):
+                self.fail("Invalid error message: %s" % e)
+
+        self.log.info("Trying to perform non-default collection operation")
+        client.select_collection(CbServer.default_scope, rand_name)
+        result = client.crud(DocLoading.Bucket.DocOps.CREATE, "test", "")
+        if result["error"] is None:
+            self.fail("Non_default collection crud succeeded")
+        if SDKException.AmbiguousTimeoutException not in str(result["error"]):
+            self.fail("Invalid exception")
+
+        self.log.info("Perform default collection operation")
+        client.select_collection(CbServer.default_scope,
+                                 CbServer.default_collection)
+        result = client.crud(DocLoading.Bucket.DocOps.CREATE, "test", "")
+        if result["error"]:
+            self.fail("Default collection CRUD failed")
+
+        self.sdk_client_pool.release_client(client)

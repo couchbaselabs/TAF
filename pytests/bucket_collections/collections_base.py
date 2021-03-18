@@ -87,14 +87,16 @@ class CollectionBase(BaseTestCase):
         shell = RemoteMachineShellConnection(self.cluster.master)
         cbstat_obj = Cbstats(shell)
         for bucket in self.bucket_util.buckets:
-            result = cbstat_obj.all_stats(bucket.name)
-            self.log.info("Bucket: %s, Active Resident ratio(DGM): %s%%"
-                          % (bucket.name,
-                             result["vb_active_perc_mem_resident"]))
-            self.log.info("Bucket: %s, Replica Resident ratio(DGM): %s%%"
-                          % (bucket.name,
-                             result["vb_replica_perc_mem_resident"]))
-            if not self.skip_collections_cleanup:
+            if bucket.bucketType != Bucket.Type.MEMCACHED:
+                result = cbstat_obj.all_stats(bucket.name)
+                self.log.info("Bucket: %s, Active Resident ratio(DGM): %s%%"
+                              % (bucket.name,
+                                 result["vb_active_perc_mem_resident"]))
+                self.log.info("Bucket: %s, Replica Resident ratio(DGM): %s%%"
+                              % (bucket.name,
+                                 result["vb_replica_perc_mem_resident"]))
+            if not self.skip_collections_cleanup \
+                    and bucket.bucketType != Bucket.Type.MEMCACHED:
                 self.bucket_util.remove_scope_collections_for_bucket(bucket)
         shell.disconnect()
         if self.validate_docs_count_during_teardown:
@@ -201,6 +203,8 @@ class CollectionBase(BaseTestCase):
                     bucket_spec[Bucket.compressionMode] = self.compression_mode
                 elif key == "flushEnabled":
                     bucket_spec[Bucket.flushEnabled] = int(self.flush_enabled)
+                elif key == "bucket_type":
+                    bucket_spec[Bucket.bucketType] = self.bucket_type
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for key, value in self.input.test_params.items():
