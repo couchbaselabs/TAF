@@ -2043,7 +2043,7 @@ class CBASExternalLinks(CBASBaseTest):
             error_msg = error_msg.format(
                 Dataset.format_name_for_error(True,
                                               dataset_obj.get_fully_quantified_kv_entity_name(2),
-                                              "._default"))
+                                              "_default"))
         elif self.input.param("connect_invalid_link", False):
             original_link_name = self.link_info["name"]
             self.link_info["name"] = "invalid"
