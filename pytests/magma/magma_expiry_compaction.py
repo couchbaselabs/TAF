@@ -589,10 +589,13 @@ class MagmaExpiryTests(MagmaBaseTest):
                            read_start=self.expiry_start,
                            read_end=self.expiry_end)
         self.gen_delete = copy.deepcopy(self.gen_read)
-        _ = self.loadgen_docs(self.retry_exceptions,
+        task_in = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True,
-                                  doc_ops="delete")
+                                  _sync=False,
+                                  doc_ops="delete",
+                                  track_failures=False)
+        for task in task_in:
+            self.task_manager.get_task_result(task)
         self.sleep(180, "wait after get ops")
         #data_validation = self.task.async_validate_docs(
         #        self.cluster, self.bucket_util.buckets[0],
