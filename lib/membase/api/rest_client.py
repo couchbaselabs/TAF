@@ -382,11 +382,11 @@ class RestConnection(object):
             return False
         return True
 
-    def init_http_request(self, api):
+    def init_http_request(self, api, timeout=300):
         content = None
         try:
             status, content, header = self._http_request(api, 'GET',
-                                                         headers=self._create_capi_headers())
+                                                         headers=self._create_capi_headers(), timeout=timeout)
             json_parsed = json.loads(content)
             if status:
                 return json_parsed, True
@@ -718,7 +718,7 @@ class RestConnection(object):
         return ""
 
     def _http_request(self, api, method='GET', params='', headers=None,
-                      timeout=120):
+                      timeout=300):
         if not headers:
             headers = self._create_headers()
         end_time = time.time() + timeout
