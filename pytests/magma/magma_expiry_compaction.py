@@ -420,6 +420,8 @@ class MagmaExpiryTests(MagmaBaseTest):
             # below assert is only applicable if we expire all the items
             self.assertTrue(disk_usage_after_compaction  < 500,
                            "size after compaction shouldn't be more than 500")
+            self.set_metadata_purge_interval(
+                value=3.0, buckets=self.buckets)
 
     def test_docs_expired_wait_for_magma_purge(self):
         pass
@@ -537,9 +539,13 @@ class MagmaExpiryTests(MagmaBaseTest):
         tombstones.")
 
         # Check for tombstone count in Storage
-        ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-        self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
         expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
+        time_end = time.time() + 60 * 20
+        while time.time() < time_end:
+            ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+            if ts == expected_ts_count:
+                break
+        self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
         self.log.info("Expected ts count is {}".format(expected_ts_count))
         self.assertEqual(expected_ts_count, ts, "Incorrect tombstone count in storage,\
                               Expected: {}, Found: {}".
@@ -570,6 +576,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
                         "Incorrect tombstone count in storage,\
                         Expected: {}, Found: {}".format(self.vbuckets * (self.num_replicas+1), ts))
+        self.set_metadata_purge_interval(
+                value=3.0, buckets=self.buckets)
 
     def test_expire_read_validate_meta(self):
         self.expiry_perc = self.input.param("expiry_perc", 100)
