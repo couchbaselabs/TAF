@@ -750,6 +750,9 @@ class volume(BaseTestCase):
 
     def check_dump(self):
         count = 1
+        shells = list()
+        for server in self.cluster.nodes_in_cluster:
+            shells.append(RemoteMachineShellConnection(server))
         while self.check_dump_thread:
             self.log.debug("Checking crashes {}".format(count))
             result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
@@ -760,8 +763,22 @@ class volume(BaseTestCase):
                 self.assertFalse(
                     result,
                     "CRASH | CRITICAL | WARN messages found in cb_logs")
+            for shell in shells:
+                for bucket in self.bucket_util.buckets:
+                    output = shell.execute_command(
+                       '/opt/couchbase/bin/cbstats localhost:11210 memory \
+                       -u Administrator -p password -b {} | grep \
+                       "ep_arena:resident\|mem_used:"'.format(bucket.name))[0]
+                    self.log.debug("{}: {}".format(shell.ip,
+                                                   output[0].replace(" ", "")
+                                                   .strip()))
+                    self.log.debug("{}: {}".format(shell.ip,
+                                                   output[1].replace(" ", "")
+                                                   .strip()))
             self.sleep(60)
             count += 1
+        for shell in shells:
+            shell.disconnect()
 
     def check_warmup_complete(self, server):
         for bucket in self.bucket_util.buckets:
@@ -1463,9 +1480,7 @@ class volume(BaseTestCase):
             self.generate_docs(doc_ops="delete",
                                delete_start=self.start,
                                delete_end=self.end)
-            self.suppress_error_table = True
             self.perform_load(validate_data=True)
-            self.suppress_error_table = False
             if self.end_step == 3:
                 exit(3)
             '''
