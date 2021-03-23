@@ -1064,12 +1064,13 @@ class SDKClient(object):
             if not xattr:
                 mutate_in_specs.append(
                     SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
-                                                             create_path))
+                                                             False))
             content = Tuples.of(key, mutate_in_specs)
             options = self.get_mutate_in_options(exp, time_unit,
                                                  persist_to, replicate_to,
                                                  timeout, time_unit,
-                                                 durability)
+                                                 durability,
+                                                 store_semantics=None)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(

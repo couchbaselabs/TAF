@@ -748,29 +748,29 @@ class CollectionDurabilityTests(CollectionBase):
         self.crud_batch_size = 5
 
         # Update mutation spec based on the required doc_operation
-        if doc_ops == "create":
+        if doc_ops == DocLoading.Bucket.DocOps.CREATE:
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 1
-        elif doc_ops in "update":
+        elif doc_ops in DocLoading.Bucket.DocOps.UPDATE:
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 1
-        elif doc_ops == "delete":
+        elif doc_ops == DocLoading.Bucket.DocOps.DELETE:
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 1
-        elif doc_ops == "insert":
+        elif doc_ops == DocLoading.Bucket.SubDocOps.INSERT:
             doc_load_spec["subdoc_crud"][
                 MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION] = 1
-        elif doc_ops == "upsert":
+        elif doc_ops == DocLoading.Bucket.SubDocOps.UPSERT:
             doc_load_spec["subdoc_crud"][
                 MetaCrudParams.SubDocCrud.UPSERT_PER_COLLECTION] = 1
-        elif doc_ops == "remove":
+        elif doc_ops == DocLoading.Bucket.SubDocOps.REMOVE:
             doc_load_spec["subdoc_crud"][
                 MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION] = 1
 
         # This is to support both sync-write and non-sync-writes
         tem_durability = self.durability_level
         if self.with_non_sync_writes:
-            tem_durability = "NONE"
+            tem_durability = Bucket.DurabilityLevel.NONE
 
         # Perform specified action
         for node in target_nodes:
@@ -843,7 +843,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.log_failure("Doc CRUDs failed")
 
         # Validate docs for update success or not
-        if doc_ops == "update":
+        if doc_ops == DocLoading.Bucket.DocOps.UPDATE:
             for bucket, s_dict in doc_loading_task.loader_spec.items():
                 for s_name, c_dict in s_dict["scopes"].items():
                     for c_name, c_meta in c_dict["collections"].items():
@@ -851,7 +851,8 @@ class CollectionDurabilityTests(CollectionBase):
                             c_meta[op_type]["doc_gen"].reset()
                             read_task = self.task.async_load_gen_docs(
                                 self.cluster, self.bucket,
-                                c_meta[op_type]["doc_gen"], "read",
+                                c_meta[op_type]["doc_gen"],
+                                DocLoading.Bucket.DocOps.READ,
                                 batch_size=self.crud_batch_size,
                                 process_concurrency=1,
                                 timeout_secs=self.sdk_timeout)
