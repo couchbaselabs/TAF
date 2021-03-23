@@ -46,7 +46,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.gen_update = None
         self.gen_expiry = None
         self.exp_pager_stime = self.input.param("exp_pager_stime", 10)
-        self.iterations = self.input.param("iterations", 5)
+        self.iterations = self.input.param("iterations", 3)
         self.expiry_perc = self.input.param("expiry_perc", 100)
         self.items = self.num_items
 
