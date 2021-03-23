@@ -9,6 +9,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 
 
@@ -346,7 +347,7 @@ class CollectionDurabilityTests(CollectionBase):
         self.__get_d_level_and_error_to_simulate()
 
         # Acquire SDK client from the pool for performing doc_ops locally
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client = SDKClient([self.cluster.master], self.bucket)
 
         target_nodes = DurabilityHelper.getTargetNodes(self.cluster,
                                                        self.nodes_init,
@@ -392,16 +393,16 @@ class CollectionDurabilityTests(CollectionBase):
         doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
         doc_load_spec[MetaCrudParams.SDK_TIMEOUT] = 60
 
-        if doc_ops[0] == "create":
+        if doc_ops[0] == DocLoading.Bucket.DocOps.CREATE:
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 1
-        elif doc_ops[0] == "update":
+        elif doc_ops[0] == DocLoading.Bucket.DocOps.UPDATE:
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 1
-        elif doc_ops[0] == "replace":
+        elif doc_ops[0] == DocLoading.Bucket.DocOps.REPLACE:
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION] = 1
-        elif doc_ops[0] == "delete":
+        elif doc_ops[0] == DocLoading.Bucket.DocOps.DELETE:
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 1
 
@@ -425,7 +426,6 @@ class CollectionDurabilityTests(CollectionBase):
             for s_name, c_dict in s_dict["scopes"].items():
                 for c_name, c_meta in c_dict["collections"].items():
                     client.select_collection(s_name, c_name)
-                    self.log.info("%s::%s" % (s_name, c_name))
                     for op_type in c_meta:
                         key, value = c_meta[op_type]["doc_gen"].next()
                         for fail_fast in [True, False]:
@@ -452,8 +452,10 @@ class CollectionDurabilityTests(CollectionBase):
                                 expected_exception = \
                                     SDKException.RequestCanceledException
                                 retry_reason = sync_write_in_progress
-                            if doc_ops[0] == "create" \
-                                    and doc_ops[1] in ["delete", "replace"]:
+                            if doc_ops[0] == DocLoading.Bucket.DocOps.CREATE \
+                                    and doc_ops[1] in \
+                                    [DocLoading.Bucket.DocOps.DELETE,
+                                     DocLoading.Bucket.DocOps.REPLACE]:
                                 expected_exception = \
                                     SDKException.DocumentNotFoundException
                                 retry_reason = None
@@ -495,7 +497,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.log_failure("Doc CRUDs failed")
 
         # Release the acquired SDK client
-        self.sdk_client_pool.release_client(client)
+        client.close()
         self.validate_test_failure()
 
     def test_bulk_sync_write_in_progress(self):

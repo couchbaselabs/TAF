@@ -445,7 +445,6 @@ class GenericLoadingTask(Task):
 
     def call(self):
         self.start_task()
-        self.log.debug("Starting thread '%s'" % self.thread_name)
         try:
             while self.has_next():
                 self.next()
@@ -454,7 +453,6 @@ class GenericLoadingTask(Task):
             self.set_exception(Exception(e.message))
             return
         self.complete_task()
-        self.log.debug("Thread '%s' completed" % self.thread_name)
 
     def has_next(self):
         raise NotImplementedError
@@ -3878,7 +3876,8 @@ class MutateDocsFromSpecTask(Task):
                                                   scope_name, col_name,
                                                   op_data["doc_ttl"])
                 if op_type in DocLoading.Bucket.DOC_OPS:
-                    track_failures = op_data.get("track_failures", self.track_failures)
+                    track_failures = op_data.get("track_failures",
+                                                 self.track_failures)
                     doc_load_task = LoadDocumentsTask(
                         self.cluster, bucket, None, doc_gen,
                         op_type, op_data["doc_ttl"],
