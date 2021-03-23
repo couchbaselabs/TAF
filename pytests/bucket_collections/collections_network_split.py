@@ -5,6 +5,7 @@ from bucket_collections.collections_base import CollectionBase
 from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from membase.api.rest_client import RestConnection, RestHelper
 from sdk_exceptions import SDKException
 from bucket_utils.bucket_ready_functions import BucketUtils
 
@@ -22,6 +23,8 @@ class CollectionsNetworkSplit(CollectionBase):
         self.known_nodes = self.cluster.servers[:self.nodes_init]
 
     def tearDown(self):
+        # We are not bringing in new nodes, so init nodes should be enough to
+        # remove iprules
         for server in self.known_nodes:
             shell = RemoteMachineShellConnection(server)
             command = "/sbin/iptables -F"
@@ -96,6 +99,26 @@ class CollectionsNetworkSplit(CollectionBase):
                 self.block_traffic_between_two_nodes(second_half_node, first_half_node)
         self.set_master_node(second_half_nodes[0])
         return first_half_nodes, second_half_nodes
+
+    def wipe_config_on_removed_nodes(self, removed_nodes=None):
+        """
+        Stop servers on nodes that were failed over and removed, and wipe config dir
+        """
+        if removed_nodes is None:
+            removed_nodes = self.server_to_fail
+        for node in removed_nodes:
+            self.log.info("Wiping node config and restarting server on {0}".format(node))
+            rest = RestConnection(node)
+            data_path = rest.get_data_path()
+            shell = RemoteMachineShellConnection(node)
+            shell.stop_couchbase()
+            self.sleep(10)
+            shell.cleanup_data_config(data_path)
+            shell.start_server()
+            self.sleep(10)
+            if not RestHelper(rest).is_ns_server_running():
+                self.log.error("ns_server {0} is not running.".format(node.ip))
+            shell.disconnect()
 
     @staticmethod
     def get_common_spec():
@@ -199,8 +222,12 @@ class CollectionsNetworkSplit(CollectionBase):
 
         if self.subsequent_action == "rebalance-out":
             task = self.data_load(async_load=True)
-            result = self.task.rebalance(self.known_nodes, [], self.nodes_failover)
-            self.assertTrue(result,"Rebalance-out failed")
+            if self.allow_unsafe:
+                # just rebalance the cluster as nodes were already removed during qf
+                result = self.task.rebalance(self.known_nodes, [], [])
+            else:
+                result = self.task.rebalance(self.known_nodes, [], self.nodes_failover)
+            self.assertTrue(result,"Rebalance failed")
             self.wait_for_async_data_load_to_complete(task)
             #self.data_validation_collection()
             self.remove_network_split()
@@ -214,6 +241,9 @@ class CollectionsNetworkSplit(CollectionBase):
             self.assertTrue(result, "Rebalance-in failed")
             self.wait_for_async_data_load_to_complete(task)
             #self.data_validation_collection()
+        if self.allow_unsafe:
+            self.wipe_config_on_removed_nodes(self.nodes_failover)
+
 
     def test_quorum_loss_with_network_split(self):
         """
@@ -242,6 +272,7 @@ class CollectionsNetworkSplit(CollectionBase):
         result = self.task.rebalance(second_half_nodes, [], [])
         self.assertTrue(result, "Rebalance failed")
         self.wait_for_async_data_load_to_complete(task)
+        self.wipe_config_on_removed_nodes(first_half_nodes)
 
     def test_MB_41383(self):
         """
