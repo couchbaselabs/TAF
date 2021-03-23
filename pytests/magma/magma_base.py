@@ -911,6 +911,7 @@ class MagmaBaseTest(BaseTestCase):
 
     def get_tombstone_count_key(self, servers=[]):
         result = 0
+        result_str = ""
         for server in servers:
             data_path = RestConnection(server).get_data_path()
             bucket = self.bucket_util.buckets[0]
@@ -929,7 +930,11 @@ class MagmaBaseTest(BaseTestCase):
                     dump = cmd
                     kvstore_num = kvstore.split("-")[1].strip()
                     dump += ' --kvstore {} --tree key --treedata | grep Key |grep \'"deleted":true\' | wc -l'.format(kvstore_num)
-                    result += int(shell.execute_command(dump)[0][0].strip())
+                    ts_count = shell.execute_command(dump)[0][0].strip()
+                    self.log.info("kvstore_num=={}, ts_count=={}".format(kvstore_num, ts_count))
+                    result_str += str(ts_count) + "+"
+                    result += int(ts_count)
+        self.log.info("result_str is {}".format(result_str))
         return result
 
     def get_tombstone_count_seq(self, server=None, shard=0, kvstore=0):

@@ -162,16 +162,20 @@ class MagmaExpiryTests(MagmaBaseTest):
 
             expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
             # Check for tombstone count in Storage
+            count = 0
             time_end = time.time() + 60 * 20
             while time.time() < time_end:
+                self.log.info("Iteration=={}, ts_check_Count=={}".format(it+1, count+1))
                 ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
                 if ts == expected_ts_count:
                     break
+                count += 1
             self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
             self.log.info("Iterations - {}, expected_ts_count - {}".format(it+1, expected_ts_count))
-            self.assertEqual(expected_ts_count, ts, "Incorrect tombstone count in storage,\
-                              Expected: {}, Found: {}".
-                              format(expected_ts_count, ts))
+            self.assertTrue(expected_ts_count <= ts <= expected_ts_count+(self.vbuckets *(self.num_replicas+1)),
+                            "Incorrect tombstone count in storage,\
+                            Expected: {}, Found: {}".
+                            format(expected_ts_count, ts))
 
             self.log.info("Verifying doc counts after create doc_ops")
             self.bucket_util.verify_stats_all_buckets(items=0)
