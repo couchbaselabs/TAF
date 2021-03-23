@@ -546,20 +546,24 @@ class SDKClient(object):
 
     def get_mutate_in_options(self, exp=0, exp_unit="seconds",
                               persist_to=0, replicate_to=0, timeout=5,
-                              time_unit="seconds", durability=""):
+                              time_unit="seconds", durability="",
+                              store_semantics=StoreSemantics.UPSERT):
         if persist_to != 0 or replicate_to != 0:
-            return MutateInOptions.mutateInOptions()\
+            mutate_in_options = MutateInOptions.mutateInOptions()\
                 .durability(self.get_persist_to(persist_to),
                             self.get_replicate_to(replicate_to))\
                 .expiry(self.get_duration(exp, exp_unit))\
-                .timeout(self.get_duration(timeout, time_unit))\
-                .storeSemantics(StoreSemantics.UPSERT)
+                .timeout(self.get_duration(timeout, time_unit))
         else:
-            return MutateInOptions.mutateInOptions()\
+            mutate_in_options = MutateInOptions.mutateInOptions()\
                 .durability(DurabilityHelper.getDurabilityLevel(durability))\
                 .expiry(self.get_duration(exp, exp_unit))\
-                .timeout(self.get_duration(timeout, time_unit))\
-                .storeSemantics(StoreSemantics.UPSERT)
+                .timeout(self.get_duration(timeout, time_unit))
+        if store_semantics is not None:
+            mutate_in_options = \
+                mutate_in_options.storeSemantics(store_semantics)
+
+        return mutate_in_options
 
     @staticmethod
     def get_persist_to(persist_to):
@@ -1364,14 +1368,15 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
                 _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1, True)
+                    "mutated", 1, False)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
         options = self.get_mutate_in_options(exp, exp_unit,
                                              persist_to, replicate_to,
                                              timeout, time_unit,
-                                             durability)
+                                             durability,
+                                             store_semantics=None)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1413,14 +1418,15 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             if not xattr:
                 _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1, True)
+                    "mutated", 1, False)
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
         options = self.get_mutate_in_options(exp, exp_unit,
                                              persist_to, replicate_to,
                                              timeout, time_unit,
-                                             durability)
+                                             durability,
+                                             store_semantics=None)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
