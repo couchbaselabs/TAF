@@ -4019,8 +4019,7 @@ class ValidateDocsFromSpecTask(Task):
                 generators.append(batch_gen)
             for doc_gen in generators:
                 if op_type in DocLoading.Bucket.DOC_OPS:
-                    if op_type == DocLoading.Bucket.DocOps.TOUCH and\
-                       op_data["doc_ttl"] > 0:
+                    if op_data["doc_ttl"] > 0:
                         op_type = DocLoading.Bucket.DocOps.DELETE
                     task = ValidateDocumentsTask(
                         self.cluster, bucket, None, doc_gen,

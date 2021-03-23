@@ -424,7 +424,7 @@ class volume(BaseTestCase):
                         common_params.update({"doc_gen": self.gen_delete})
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
                     if self.gen_expiry is not None and self.maxttl:
-                        op_type = "touch"
+                        op_type = "update"
                         common_params.update({"doc_gen": self.gen_expiry,
                                               "doc_ttl": self.maxttl})
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
