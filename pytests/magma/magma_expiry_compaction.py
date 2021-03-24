@@ -228,7 +228,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.expiry_start = 0
         self.expiry_end = self.num_items
         #self.create_perc = 100
-        #self.expiry_perc = 100
+        self.expiry_perc = 100
         for _iter in range(self.iterations):
             self.maxttl = random.randint(5, 20)
             self.log.info("Test Iteration: {}".format(_iter+1))
@@ -265,11 +265,22 @@ class MagmaExpiryTests(MagmaBaseTest):
              to kickoff")
             self.sleep(self.exp_pager_stime*10, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-
             # Check for tombstone count in Storage
-            ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+            expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
+            count = 0
+            time_end = time.time() + 60 * 20
+            while time.time() < time_end:
+                self.log.info("Iteration=={}, ts_check_Count=={}".format(_iter+1, count+1))
+                ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+                if ts == expected_ts_count:
+                    break
+                count += 1
             self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
-
+            self.log.info("Iterations - {}, expected_ts_count - {}".format(_iter+1, expected_ts_count))
+            self.assertTrue(expected_ts_count <= ts <= expected_ts_count+(self.vbuckets *(self.num_replicas+1)),
+                            "Incorrect tombstone count in storage,\
+                            Expected: {}, Found: {}".
+                            format(expected_ts_count, ts))
             # Space amplification check
             msg_stats = "Fragmentation value for {} stats exceeds\
             the configured value"
