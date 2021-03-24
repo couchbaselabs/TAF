@@ -4308,10 +4308,17 @@ class DisconnectConnectLinksTask(Task):
         try:
             while True:
                 for link in self.links:
-                    disconnect_result = self.cbas_util.disconnect_link(link)
-                    self.sleep(self.interval)
-                    connect_result = self.cbas_util.connect_link(
-                        link, with_force=True)
+                    dv, name = link.split(".")
+                    if self.cbas_util.is_link_active(name, dv):
+                        disconnect_result = self.cbas_util.disconnect_link(link)
+                        self.sleep(self.interval)
+                        connect_result = self.cbas_util.connect_link(
+                            link, with_force=True)
+                    else:
+                        connect_result = self.cbas_util.connect_link(
+                            link, with_force=True)
+                        self.sleep(self.interval)
+                        disconnect_result = self.cbas_util.disconnect_link(link)
                     self.sleep(self.interval)
                     self.results.append(connect_result and disconnect_result)
                 if not self.run_infinitely:

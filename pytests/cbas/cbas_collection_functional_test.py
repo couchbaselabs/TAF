@@ -1841,11 +1841,21 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
     def test_analytics_with_tampering_links(self):
         self.cbas_logger("test_analytics_with_tampering_links started", "DEBUG")
+        create_datasets_task = CreateDatasetsTask(
+            bucket_util=self.bucket_util,
+            cbas_name_cardinality=self.input.param('cardinality', None),
+            cbas_util=self.cbas_util_v2,
+            kv_name_cardinality=self.input.param('bucket_cardinality', None),
+            creation_methods=["cbas_collection", "cbas_dataset"])
+        self.task_manager.add_new_task(create_datasets_task)
+        dataset_creation_result = self.task_manager.get_task_result(
+            create_datasets_task)
+        if not dataset_creation_result:
+            self.fail("Datasets creation failed")
         links = [dataverse + ".Local" for dataverse in
-        self.cbas_util_v2.dataverses.keys()] * self.tamper_links_count
+                 self.cbas_util_v2.dataverses.keys()] * self.tamper_links_count
         connect_disconnect_task = self.cbas_util_v2\
             .start_connect_disconnect_links_task(links=links)
-
         if connect_disconnect_task:
             if connect_disconnect_task.exception:
                 self.task_manager.get_task_result(connect_disconnect_task)
