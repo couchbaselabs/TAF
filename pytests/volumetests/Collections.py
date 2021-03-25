@@ -103,6 +103,7 @@ class volume(CollectionBase):
             self.check_logs()
 
     def check_logs(self):
+        self.log.info("Checking logs on {0}".format(self.servers))
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if not self.crash_warning:
             self.skip_check_logs = True # Setting this, as we don't have to check logs again in tearDown
