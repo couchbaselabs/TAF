@@ -137,22 +137,28 @@ class MagmaExpiryTests(MagmaBaseTest):
         '''
         self.log.info("test_expiry starts")
         self.expiry_start = 0
-        self.expiry_end = self.num_items
+        self.expiry_end = self.init_items_per_collection
         self.doc_ops = "expiry"
         for it in range(self.iterations):
             self.log.info("Iteration {}".format(it+1))
             self.expiry_perc = self.input.param("expiry_perc", 100)
 
-            self.generate_docs(doc_ops="expiry",
-                               expiry_start=self.expiry_start,
-                               expiry_end=self.expiry_end)
-            _ = self.loadgen_docs(self.retry_exceptions,
+            self.generate_docs(doc_ops="expiry")
+            tasks_info = dict()
+            for collection in self.collections:
+                task_in = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True)
+                                  collection=collection,
+                                  _sync=False)
+                tasks_info.update(task_in.items())
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util._wait_for_stats_all_buckets()
 
             self.sleep(self.maxttl, "Wait for docs to expire")
-
             # exp_pager_stime
             self.bucket_util._expiry_pager(self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
@@ -167,7 +173,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             while time.time() < time_end:
                 self.log.info("Iteration=={}, ts_check_Count=={}".format(it+1, count+1))
                 ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-                if ts == expected_ts_count:
+                if ts >= expected_ts_count:
                     break
                 count += 1
             self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
@@ -224,37 +230,52 @@ class MagmaExpiryTests(MagmaBaseTest):
         '''
         self.log.info("test_create_expire_same_items starts")
         self.create_start = 0
-        self.create_end = self.num_items
+        self.create_end = self.init_items_per_collection
         self.expiry_start = 0
-        self.expiry_end = self.num_items
+        self.expiry_end = self.init_items_per_collection
+        self.items = self.init_items_per_collection * self.num_collections
         #self.create_perc = 100
         self.expiry_perc = 100
         for _iter in range(self.iterations):
             self.maxttl = random.randint(5, 20)
             self.log.info("Test Iteration: {}".format(_iter+1))
             # Create items which are expired
-            self.generate_docs(doc_ops="create",
-                               create_start=self.create_start,
-                               create_end=self.create_end)
-            _ = self.loadgen_docs(self.retry_exceptions,
+            self.generate_docs(doc_ops="create")
+            tasks_info = dict()
+            for collection in self.collections:
+                task_in = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True,
-                                  doc_ops="create")
+                                  _sync=False,
+                                  doc_ops="create",
+                                  collection=collection)
+                tasks_info.update(task_in.items())
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util._wait_for_stats_all_buckets()
+
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
 
             self.log.info("Disk usage after creates {}".format(disk_usage))
             size_before = disk_usage[0]
 
-            self.generate_docs(doc_ops="expiry",
-                               expiry_start=self.expiry_start,
-                               expiry_end=self.expiry_end)
-
-            _ = self.loadgen_docs(self.retry_exceptions,
+            self.generate_docs(doc_ops="expiry")
+            tasks_info = dict()
+            for collection in self.collections:
+                task_in = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True,
-                                  doc_ops="expiry")
+                                  _sync=False,
+                                  doc_ops="expiry",
+                                  collection=collection)
+                tasks_info.update(task_in.items())
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util._wait_for_stats_all_buckets()
 
             self.sleep(self.maxttl, "Wait for docs to expire")
@@ -272,7 +293,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             while time.time() < time_end:
                 self.log.info("Iteration=={}, ts_check_Count=={}".format(_iter+1, count+1))
                 ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-                if ts == expected_ts_count:
+                if ts >= expected_ts_count:
                     break
                 count += 1
             self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
@@ -343,33 +364,47 @@ class MagmaExpiryTests(MagmaBaseTest):
         '''
         self.log.info(" test_expiry_no_wait_update starts")
         self.update_start = 0
-        self.update_end = self.num_items
+        self.update_end = self.init_items_per_collection
         self.expiry_start = 0
-        self.expiry_end = self.num_items
+        self.expiry_end = self.init_items_per_collection
         self.update_perc = 100
         self.expiry_perc = 100
         for _iter in range(self.iterations):
             self.log.info("Iteration--{}".format(_iter))
-            self.generate_docs(doc_ops="update",
-                               update_start=self.update_start,
-                               update_end=self.update_end)
-            _ = self.loadgen_docs(self.retry_exceptions,
+            self.generate_docs(doc_ops="update")
+            tasks_info = dict()
+            for collection in self.collections:
+                task_in = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True,
-                                  doc_ops="update")
+                                  _sync=False,
+                                  doc_ops="update",
+                                  collection=collection)
+                tasks_info.update(task_in.items())
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util._wait_for_stats_all_buckets()
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
             self.log.debug("Disk usage after updates {}".format(disk_usage))
             size_before = disk_usage[0]
 
-            self.generate_docs(doc_ops="expiry",
-                               expiry_start=self.expiry_start,
-                               expiry_end=self.expiry_end)
-            _ = self.loadgen_docs(self.retry_exceptions,
+            self.generate_docs(doc_ops="expiry")
+            tasks_info = dict()
+            for collection in self.collections:
+                task_in = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
-                                  _sync=True,
-                                  doc_ops="expiry")
+                                  _sync=False,
+                                  doc_ops="expiry",
+                                  collection=collection)
+                tasks_info.update(task_in.items())
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util._wait_for_stats_all_buckets()
 
             self.sleep(self.maxttl, "Wait for docs to expire")
@@ -388,7 +423,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             while time.time() < time_end:
                 self.log.info("Iteration=={}, ts_check_count=={}".format(_iter+1, count+1))
                 ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-                if ts == expected_ts_count:
+                if ts >= expected_ts_count:
                     break
                 count += 1
             self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
@@ -545,12 +580,22 @@ class MagmaExpiryTests(MagmaBaseTest):
         '''
         self.random_exp = True
         self.doc_ops = "expiry"
+        self.expiry_start = 0
+        self.expiry_end = self.init_items_per_collection
         self.expiry_perc = self.input.param("expiry_perc", 100)
-        self.generate_docs()
-
-        _ = self.loadgen_docs(self.retry_exceptions,
-                              self.ignore_exceptions,
-                              _sync=True)
+        self.generate_docs(doc_ops="expiry")
+        tasks_info = dict()
+        for collection in self.collections:
+            task_in = self.loadgen_docs(self.retry_exceptions,
+                                        self.ignore_exceptions,
+                                        _sync=False,
+                                        collection=collection)
+            tasks_info.update(task_in.items())
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        self.bucket_util.verify_doc_op_task_exceptions(
+            tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util._wait_for_stats_all_buckets()
 
         self.sleep(self.maxttl, "Wait for docs to expire")
@@ -569,7 +614,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         while time.time() < time_end:
             self.log.info("ts_check_count=={}".format(count+1))
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-            if ts == expected_ts_count:
+            if ts >= expected_ts_count:
                 break
             count += 1
         self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
@@ -609,11 +654,22 @@ class MagmaExpiryTests(MagmaBaseTest):
     def test_expire_read_validate_meta(self):
         self.expiry_perc = self.input.param("expiry_perc", 100)
         self.doc_ops = "expiry"
+        self.expiry_start = 0
+        self.expiry_end = self.init_items_per_collection
         self.bucket_util._expiry_pager(216000)
         self.generate_docs(doc_ops="expiry")
-        _ = self.loadgen_docs(self.retry_exceptions,
-                              self.ignore_exceptions,
-                              _sync=True)
+        tasks_info = dict()
+        for collection in self.collections:
+            task_in = self.loadgen_docs(self.retry_exceptions,
+                                        self.ignore_exceptions,
+                                        _sync=False,
+                                        collection=collection)
+            tasks_info.update(task_in.items())
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        self.bucket_util.verify_doc_op_task_exceptions(
+             tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util._wait_for_stats_all_buckets()
 
         self.sleep(self.maxttl, "Wait for docs to expire")
@@ -624,12 +680,16 @@ class MagmaExpiryTests(MagmaBaseTest):
                            read_start=self.expiry_start,
                            read_end=self.expiry_end)
         self.gen_delete = copy.deepcopy(self.gen_read)
-        task_in = self.loadgen_docs(self.retry_exceptions,
+        tasks_info = dict()
+        for collection in self.collections:
+            task_in = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=False,
                                   doc_ops="delete",
-                                  track_failures=False)
-        for task in task_in:
+                                  track_failures=False,
+                                  collection=collection)
+            tasks_info.update(task_in.items())
+        for task in tasks_info:
             self.task_manager.get_task_result(task)
         self.sleep(180, "wait after get ops")
         #data_validation = self.task.async_validate_docs(
@@ -657,10 +717,21 @@ class MagmaExpiryTests(MagmaBaseTest):
 
     def test_expiry_full_compaction(self):
         self.doc_ops = "expiry"
+        self.expiry_start = 0
+        self.expiry_end = self.init_items_per_collection
         self.generate_docs(doc_ops="expiry")
-        _ = self.loadgen_docs(self.retry_exceptions,
+        tasks_info = dict()
+        for collection in self.collections:
+            task_in = self.loadgen_docs(self.retry_exceptions,
                               self.ignore_exceptions,
-                              _sync=True)
+                              _sync=False,
+                              collection=collection)
+            tasks_info.update(task_in.items())
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        self.bucket_util.verify_doc_op_task_exceptions(
+             tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util._wait_for_stats_all_buckets()
 
         self.sleep(self.maxttl, "Wait for docs to expire")
