@@ -31,6 +31,8 @@ class CollectionsNetworkSplit(CollectionBase):
             shell.execute_command(command)
             shell.disconnect()
         self.sleep(10)
+        if self.allow_unsafe:
+            self.wipe_config_on_removed_nodes(self.nodes_failover)
         super(CollectionsNetworkSplit, self).tearDown()
 
     def set_master_node(self, node=None):
@@ -83,21 +85,23 @@ class CollectionsNetworkSplit(CollectionBase):
             self.nodes_failover = [self.node2]
         self.nodes_affected = [self.node1, self.node2]
 
-    def split_the_cluster_into_two_halves(self):
+    def split_the_cluster_into_two_halves(self, majority="first_half"):
         """
         Splits the entire cluster into 2 symmetric/asymmetric
         separate mutually-exclusive halves
         Note: First_half will contain the majority incase of asymmetric-split
         Returns first_half_nodes, second_half_nodes
         """
-        len_first_half = int(math.ceil(self.nodes_init/2.0))
-        first_half_nodes = self.known_nodes[:len_first_half] # will always have the majority
+        if majority == "first_half":
+            len_first_half = int(math.ceil(self.nodes_init/2.0))
+        else:
+            len_first_half = int(math.floor(self.nodes_init/2.0))
+        first_half_nodes = self.known_nodes[:len_first_half]
         second_half_nodes = self.known_nodes[len_first_half:]
         for first_half_node in first_half_nodes:
             for second_half_node in second_half_nodes:
                 self.block_traffic_between_two_nodes(first_half_node, second_half_node)
                 self.block_traffic_between_two_nodes(second_half_node, first_half_node)
-        self.set_master_node(second_half_nodes[0])
         return first_half_nodes, second_half_nodes
 
     def wipe_config_on_removed_nodes(self, removed_nodes=None):
@@ -252,8 +256,16 @@ class CollectionsNetworkSplit(CollectionBase):
         2. Create some collections on second-half cluster
         2. Quorum loss (majority half) failover
         """
+        majority = self.input.param("majority","first_half") # which half to have majority nodes
         task = self.data_load(async_load=True)
-        first_half_nodes, second_half_nodes = self.split_the_cluster_into_two_halves()
+        first_half_nodes, second_half_nodes = self.split_the_cluster_into_two_halves(majority=majority)
+        if majority == "first_half":
+            self.master = self.cluster.master = second_half_nodes[0]
+            self.nodes_failover = first_half_nodes
+            otp_nodes = second_half_nodes
+        else:
+            self.nodes_failover = second_half_nodes
+            otp_nodes = first_half_nodes
         self.sleep(60, "Wait for network split to finish")
         # TODO: Collection creation on second-half is failing with 500 status error
         # BucketUtils.create_collections(
@@ -264,15 +276,15 @@ class CollectionsNetworkSplit(CollectionBase):
         #     collection_name="collection_from_second_half")
         self.log.info("First half nodes {0}".format(first_half_nodes))
         self.log.info("Second half nodes {0}".format(second_half_nodes))
-        self.log.info("Failing over nodes: {0}".format(first_half_nodes))
-        result = self.task.failover(self.known_nodes, failover_nodes=first_half_nodes,
+        self.log.info("Failing over nodes: {0}".format(self.nodes_failover))
+        result = self.task.failover(otp_nodes, failover_nodes=self.nodes_failover,
                                     graceful=False, allow_unsafe=self.allow_unsafe,
                                     all_at_once=True)
         self.assertTrue(result, "Hard Failover failed")
-        result = self.task.rebalance(second_half_nodes, [], [])
+        result = self.task.rebalance(otp_nodes, [], [])
         self.assertTrue(result, "Rebalance failed")
         self.wait_for_async_data_load_to_complete(task)
-        self.wipe_config_on_removed_nodes(first_half_nodes)
+        self.wipe_config_on_removed_nodes(self.nodes_failover)
 
     def test_MB_41383(self):
         """
