@@ -2691,8 +2691,12 @@ class Synonym_Util(Dataset_Util):
                 synonyms_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
             if status.encode('utf-8') == 'success' and results:
+                results = list(
+                    map(lambda result: result.encode('utf-8').split("."),
+                        results))
                 synonyms_created = list(
-                    map(lambda syn: syn.encode('utf-8'), results))
+                    map(lambda result: CBASHelper.format_name(*result),
+                        results))
                 break
             sleep(12, "Wait for atleast one synonym to be created")
             retries -= 1

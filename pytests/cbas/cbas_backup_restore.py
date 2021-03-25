@@ -142,16 +142,28 @@ class BackupRestoreTest(CBASBaseTest):
         return all(results)
 
     def create_udfs(self):
-        for num, ds in enumerate(self.cbas_util_v2.list_all_dataset_objs()):
-            name = "func_" + str(num)
-            dv = self.cbas_util_v2.dataverses[ds.dataverse_name]
-            ds_name = ds.full_name
-            body = "select count(*) from {0}".format(ds_name)
-            create_udf_task = CreateUDFTask(
-                self.cbas_util_v2, name, dv, body,
-                parameters=[], referenced_entities=[dv.datasets[ds_name]])
-            self.task_manager.add_new_task(create_udf_task)
-            self.task_manager.get_task_result(create_udf_task)
+        if self.input.param("udfs_on_datasets", True):
+            for num, ds in enumerate(self.cbas_util_v2.list_all_dataset_objs()):
+                name = "func_ds_" + str(num)
+                dv = self.cbas_util_v2.dataverses[ds.dataverse_name]
+                ds_name = ds.full_name
+                body = "select count(*) from {0}".format(ds_name)
+                create_udf_task = CreateUDFTask(
+                    self.cbas_util_v2, name, dv, body,
+                    parameters=[], referenced_entities=[dv.datasets[ds_name]])
+                self.task_manager.add_new_task(create_udf_task)
+                self.task_manager.get_task_result(create_udf_task)
+        if self.input.param("udfs_on_synonyms", False):
+            for num, syn in enumerate(self.cbas_util_v2.get_synonyms()):
+                name = "func_syn_" + str(num)
+                dv, syn_name = syn.split(".")
+                body = "SELECT COUNT(*) FROM {0}".format(syn)
+                create_udf_task = CreateUDFTask(self.cbas_util_v2, name,
+                                                self.cbas_util_v2.dataverses[dv],
+                                                body, parameters=[],
+                                                referenced_entities=[syn])
+                self.task_manager.add_new_task(create_udf_task)
+                self.task_manager.get_task_result(create_udf_task)
 
     def drop_all_udfs(self):
         for dv in self.cbas_util_v2.dataverses.values():

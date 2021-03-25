@@ -452,6 +452,7 @@ class CBASHelper(RestConnection):
                 api += "&"
             api += "exclude={0}".format(exclude)
         self.log.info("Backup: " + api)
+        api = api.replace("%", "%25")
         return self._http_request(api)
 
     def restore_cbas(self, username=None, password=None, bucket="", include="",

@@ -1860,6 +1860,9 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             if connect_disconnect_task.exception:
                 self.task_manager.get_task_result(connect_disconnect_task)
             self.task_manager.stop_task(connect_disconnect_task)
+        if not self.cbas_util_v2.wait_for_ingestion_all_datasets(
+                self.bucket_util):
+            self.fail("Ingestion failed")
         self.cbas_logger("test_analytics_with_tampering_links completed",
                          "DEBUG")
 
