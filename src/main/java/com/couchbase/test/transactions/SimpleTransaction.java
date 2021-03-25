@@ -89,6 +89,7 @@ public class SimpleTransaction {
 			}
 		}
 
+        config = config.cleanupWindow(Duration.of(60, ChronoUnit.SECONDS));
 		return config.expirationTime(Duration.of(expiryTimeout, ChronoUnit.SECONDS)).build();
 	}
 	public List<Tuple2<String, JsonObject>> ReadTransaction(Transactions transaction, List<Collection> collections, List<String> Readkeys) {
@@ -459,19 +460,20 @@ public class SimpleTransaction {
 	public void waitForTransactionCleanupEvent(Cluster cluster, List<TransactionAttempt> attempts,
 											   Set<String> attemptIds) {
 		Iterator<TransactionAttempt> it = attempts.iterator();
-		long end_time = (TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS)) + 60;
-		long curr_time;
+		long curr_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
+		long end_time = curr_time + 300;
 		while(it.hasNext()) {
 			String id_to_check = (it.next()).attemptId();
-			System.out.println("Waiting for cleanup event for: " + id_to_check);
-			while (true) {
+			System.out.println(curr_time + " Waiting for cleanup event for: " + id_to_check);
+			while (curr_time <= end_time) {
 				if (attemptIds.contains(id_to_check)) {
+                    System.out.println(curr_time + " TransactionCleanupAttempt success: " + id_to_check);
 					break;
 				}
 				// Check for timeout case
 				curr_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
 				if (curr_time > end_time) {
-					System.out.println("Timeout waiting for attemptId: " + id_to_check);
+					System.out.println(curr_time + " Timeout waiting for attemptId: " + id_to_check);
 					break;
 				}
 			}
@@ -539,16 +541,12 @@ public class SimpleTransaction {
 				if (commit && !result.unstagingComplete()) {
 					this.waitForTransactionCleanupEvent(cluster, result.attempts(), attempt_ids);
 				}
-
-				if (result.log().logs().toString().contains(
-				        "com.couchbase.client.core.error.DurabilityImpossibleException")) {
-				    throw new TransactionFailed(result);
-				}
 			}
 			catch (TransactionFailed err) {
 				res = err.result().log().logs();
 				if (res.toString().contains("DurabilityImpossibleException")) {
-					System.out.println("DurabilityImpossibleException seen"); }
+					System.out.println("DurabilityImpossibleException seen");
+				}
 				else {
 					for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
 						System.out.println(e);
