@@ -204,7 +204,8 @@ class CBASUDF(CBASBaseTest):
                     parameters=udf_obj.parameters,
                     body=udf_obj.body,
                     dataset_dependencies=udf_obj.dataset_dependencies,
-                    udf_dependencies=udf_obj.udf_dependencies):
+                    udf_dependencies=udf_obj.udf_dependencies,
+                    synonym_dependencies=udf_obj.synonym_dependencies):
                 self.fail("Error while validating Function in Metadata")
 
             if self.input.param('num_execute_params', -1) == -1:
@@ -214,12 +215,18 @@ class CBASUDF(CBASBaseTest):
 
             execute_params = [i for i in range(1, num_execute_params + 1)]
             if not execute_params:
+                expected_result = 0
                 if udf_obj.dataset_dependencies:
-                    expected_result = 0
                     for dependency in udf_obj.dataset_dependencies:
                         obj = self.cbas_util_v2.get_dataset_obj(
                             CBASHelper.format_name(dependency[1]), 
                             CBASHelper.format_name(dependency[0]))
+                        expected_result += obj.num_of_items
+                elif udf_obj.synonym_dependencies:
+                    for dependency in udf_obj.synonym_dependencies:
+                        obj = self.cbas_util_v2.get_dataset_obj_for_synonym(
+                            synonym_name=CBASHelper.format_name(dependency[1]), 
+                            synonym_dataverse=CBASHelper.format_name(dependency[0]))
                         expected_result += obj.num_of_items
                 else:
                     expected_result = 1
@@ -444,14 +451,13 @@ class CBASUDF(CBASBaseTest):
                 timeout=300, analytics_timeout=300):
             self.fail("Successfully dropped dataset being used by a UDF")
         self.log.info("Test Finished")
-
-    def test_drop_dataverse_with_udf_and_dependent_entities(self):
+    
+    def test_drop_synonym_while_it_is_being_used_by_UDF(self):
         self.log.info("Test started")
         self.setup_for_test()
 
         udf_obj = self.create_udf_object(
-            2, "dataset", self.input.param('dependent_entity_dv', "same"),
-            True)
+            2, "synonym", self.input.param('dependent_entity_dv', "same"), True)
 
         if not self.cbas_util_v2.create_udf(
                 name=udf_obj.name, dataverse=udf_obj.dataverse_name,
@@ -461,10 +467,51 @@ class CBASUDF(CBASBaseTest):
                 validate_error_msg=False, expected_error=None,
                 timeout=300, analytics_timeout=300):
             self.fail("Error while creating Analytics UDF")
+        
+        synonym_name = CBASHelper.format_name(*udf_obj.synonym_dependencies[0])
+        if not self.cbas_util_v2.drop_analytics_synonym(
+            synonym_name, if_exists=False,
+            validate_error_msg=True, expected_error="Cannot drop synonym",
+            username=None, password=None, timeout=300, analytics_timeout=300):
+            self.fail("Successfully dropped Synonym being used by a UDF")
+        self.log.info("Test Finished")
+
+    def test_drop_dataverse_with_udf_and_dependent_entities(self):
+        self.log.info("Test started")
+        self.setup_for_test()
+
+        udf_obj = self.create_udf_object(
+            2, self.input.param('body_type', "dataset"), 
+            self.input.param('dependent_entity_dv', "same"), True)
+        if self.input.param('dependent_entity_dv', "same") == "same":
+            while udf_obj.dataverse_name == "Default":
+                udf_obj = self.create_udf_object(
+                    2, self.input.param('body_type', "dataset"), 
+                    self.input.param('dependent_entity_dv', "same"), True)
+        else:
+            while udf_obj.dataverse_name != "Default":
+                udf_obj = self.create_udf_object(
+                    2, self.input.param('body_type', "dataset"), 
+                    self.input.param('dependent_entity_dv', "same"), True)
+
+        if not self.cbas_util_v2.create_udf(
+                name=udf_obj.name, dataverse=udf_obj.dataverse_name,
+                or_replace=False, parameters=udf_obj.parameters,
+                body=udf_obj.body, if_not_exists=False,
+                query_context=False, use_statement=False,
+                validate_error_msg=False, expected_error=None,
+                timeout=300, analytics_timeout=300):
+            self.fail("Error while creating Analytics UDF")
+        
+        if udf_obj.dataset_dependencies:
+            dataverse_to_be_dropped = CBASHelper.format_name(
+                udf_obj.dataset_dependencies[0][0])
+        elif udf_obj.synonym_dependencies:
+            dataverse_to_be_dropped = CBASHelper.format_name(
+                udf_obj.synonym_dependencies[0][0]) 
 
         if not self.cbas_util_v2.drop_dataverse(
-                dataverse_name=CBASHelper.format_name(
-                    udf_obj.dataset_dependencies[0][0]),
+                dataverse_name=dataverse_to_be_dropped,
                 validate_error_msg=self.input.param('validate_error', False),
                 expected_error=self.input.param('expected_error', None),
                 timeout=300, analytics_timeout=300, delete_dataverse_obj=True,

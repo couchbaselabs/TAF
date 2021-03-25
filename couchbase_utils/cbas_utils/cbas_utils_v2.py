@@ -216,6 +216,7 @@ class BaseUtil(object):
         specified, otherwise creates a name with length upto no_of_char specified.  
         :param name_key str, if specified, it will generate name with the name_key
         """
+        random.seed(time.time())
         if 0 < name_cardinality < 3:
             if name_key:
                 return ".".join(name_key for i in range(name_cardinality))
@@ -2696,7 +2697,27 @@ class Synonym_Util(Dataset_Util):
             sleep(12, "Wait for atleast one synonym to be created")
             retries -= 1
         return synonyms_created
-
+    
+    def get_dataset_obj_for_synonym(
+            self, synonym_name, synonym_dataverse=None, 
+            cbas_entity_name=None, cbas_entity_dataverse=None):
+        
+        def inner_func(
+                synonym_name, synonym_dataverse, 
+                cbas_entity_name, cbas_entity_dataverse):
+            syn_obj = self.get_synonym_obj(
+                synonym_name, synonym_dataverse, 
+                cbas_entity_name, cbas_entity_dataverse)
+            while syn_obj.synonym_on_synonym:
+                syn_obj = inner_func(
+                    syn_obj.cbas_entity_name, syn_obj.cbas_entity_dataverse)
+            return syn_obj
+        
+        final_obj = inner_func(
+            synonym_name, synonym_dataverse, 
+            cbas_entity_name, cbas_entity_dataverse)
+        return self.get_dataset_obj(
+                final_obj.cbas_entity_name, final_obj.cbas_entity_dataverse)            
 
 
 class Index_Util(Synonym_Util):
@@ -3206,7 +3227,8 @@ class UDFUtil(Index_Util):
 
     def validate_udf_in_metadata(self, udf_name, udf_dataverse_name,
                                  parameters, body, dataset_dependencies=[],
-                                 udf_dependencies=[]):
+                                 udf_dependencies=[],
+                                 synonym_dependencies=[]):
         """
         Validates whether an entry for UDF is present in Metadata.Function.
         :param udf_name : str, UDF which has to be validated.
@@ -3217,9 +3239,11 @@ class UDFUtil(Index_Util):
         list of format [dataset's_dataverse_name, dataset_name]
         :param udf_dependencies : list, list of lists with each inner
         list of format [udf_dataverse_name, udf_name, udf_arity]
+        :param synonym_dependencies : list, list of lists with each inner
+        list of format [synonym_dataverse_name, synonym_name]
         :return boolean
         """
-        self.log.info("Validating Synonym entry in Metadata")
+        self.log.info("Validating UDF entry in Metadata")
         cmd = "select value func from Metadata.`Function` as func where " \
               "Name=\"{0}\" and DataverseName=\"{1}\"".format(
                   CBASHelper.unformat_name(udf_name),
@@ -3260,6 +3284,14 @@ class UDFUtil(Index_Util):
                         self.log.error(
                             "Expected Value : {0}\tActual Value : {1}".format(
                                 dataset_dependencies, result[
+                                    "Dependencies"][0]))
+                        response.append(False)
+                        continue
+                for synonym_dependency in synonym_dependencies:
+                    if synonym_dependency not in result["Dependencies"][3]:
+                        self.log.error(
+                            "Expected Value : {0}\tActual Value : {1}".format(
+                                synonym_dependencies, result[
                                     "Dependencies"][0]))
                         response.append(False)
                         continue

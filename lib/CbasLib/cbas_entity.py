@@ -269,11 +269,15 @@ class CBAS_UDF(object):
         self.body = body
         self.dataset_dependencies = list()
         self.udf_dependencies = list()
+        self.synonym_dependencies = list()
         for entity in referenced_entities:
             if isinstance(entity, Dataset) or isinstance(
-                entity, CBAS_Collection) or isinstance(
-                    entity, Synonym):
+                entity, CBAS_Collection):
                 self.dataset_dependencies.append([
+                    CBASHelper.unformat_name(entity.dataverse_name),
+                    CBASHelper.unformat_name(entity.name)])
+            elif isinstance(entity, Synonym):
+                self.synonym_dependencies.append([
                     CBASHelper.unformat_name(entity.dataverse_name),
                     CBASHelper.unformat_name(entity.name)])
             elif isinstance(entity, CBAS_UDF):
