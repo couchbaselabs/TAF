@@ -711,6 +711,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
+        inital_num_items = self.num_items
         # Start CRUD operation based on the given 'doc_op' type
         if self.doc_ops[0] == DocLoading.Bucket.DocOps.CREATE:
             self.num_items += self.crud_batch_size
@@ -736,7 +737,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             if self.doc_ops[1] == DocLoading.Bucket.SubDocOps.INSERT \
                     and self.doc_ops[0] == DocLoading.Bucket.DocOps.CREATE:
                 gen_subdoc = sub_doc_generator(
-                    self.key, self.num_items, self.crud_batch_size,
+                    self.key, inital_num_items, self.crud_batch_size,
                     key_size=self.key_size,
                     vbuckets=self.cluster_util.vbuckets,
                     target_vbucket=target_vbuckets)

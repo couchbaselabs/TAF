@@ -5,6 +5,7 @@ from bucket_collections.app.constants import query, global_vars
 from bucket_collections.app.constants.global_vars import sdk_clients
 from bucket_collections.app.constants.query import DAYS_IN_WEEK, UTC_FORMAT
 
+from com.couchbase.client.java.kv import StoreSemantics
 from com.couchbase.client.java.query import QueryOptions, QueryMetrics
 
 
@@ -15,7 +16,8 @@ class CommonUtil(object):
         client = sdk_clients["bucket_data_writer"]
         client.select_collection(CbServer.default_scope, "meta_data")
         result, _ = client.crud(DocLoading.Bucket.SubDocOps.COUNTER, doc_key,
-                                ["doc_counter", 1])
+                                ["doc_counter", 1],
+                                store_semantics=StoreSemantics.UPSERT)
         return result[doc_key]['value'].contentAs(0, long)
 
     @staticmethod

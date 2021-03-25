@@ -45,7 +45,6 @@ from com.couchbase.client.java.kv import \
     RemoveOptions, \
     ReplaceOptions, \
     ReplicateTo, \
-    StoreSemantics, \
     TouchOptions, \
     UpsertOptions
 from java.time import Duration
@@ -547,7 +546,7 @@ class SDKClient(object):
     def get_mutate_in_options(self, exp=0, exp_unit="seconds",
                               persist_to=0, replicate_to=0, timeout=5,
                               time_unit="seconds", durability="",
-                              store_semantics=StoreSemantics.UPSERT):
+                              store_semantics=None):
         if persist_to != 0 or replicate_to != 0:
             mutate_in_options = MutateInOptions.mutateInOptions()\
                 .durability(self.get_persist_to(persist_to),
@@ -976,7 +975,8 @@ class SDKClient(object):
 
     def crud(self, op_type, key, value=None, exp=0, replicate_to=0,
              persist_to=0, durability="", timeout=5, time_unit="seconds",
-             create_path=True, xattr=False, cas=0, fail_fast=False):
+             create_path=True, xattr=False, cas=0, fail_fast=False,
+             store_semantics=None):
         result = None
         if op_type == DocLoading.Bucket.DocOps.UPDATE:
             result = self.upsert(
@@ -1028,10 +1028,10 @@ class SDKClient(object):
                     SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
                                                              create_path))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.get_mutate_in_options(exp, time_unit,
-                                                 persist_to, replicate_to,
-                                                 timeout, time_unit,
-                                                 durability)
+            options = self.get_mutate_in_options(
+                exp, time_unit, persist_to, replicate_to,
+                timeout, time_unit, durability,
+                store_semantics=store_semantics)
             if cas > 0:
                 options = options.cas(cas)
 
@@ -1048,10 +1048,10 @@ class SDKClient(object):
                     SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
                                                              create_path))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.get_mutate_in_options(exp, time_unit,
-                                                 persist_to, replicate_to,
-                                                 timeout, time_unit,
-                                                 durability)
+            options = self.get_mutate_in_options(
+                exp, time_unit, persist_to, replicate_to,
+                timeout, time_unit, durability,
+                store_semantics=store_semantics)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1066,11 +1066,10 @@ class SDKClient(object):
                     SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
                                                              False))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.get_mutate_in_options(exp, time_unit,
-                                                 persist_to, replicate_to,
-                                                 timeout, time_unit,
-                                                 durability,
-                                                 store_semantics=None)
+            options = self.get_mutate_in_options(
+                exp, time_unit, persist_to, replicate_to,
+                timeout, time_unit, durability,
+                store_semantics=store_semantics)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1086,10 +1085,10 @@ class SDKClient(object):
                     SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
                                                              create_path))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.get_mutate_in_options(exp, time_unit,
-                                                 persist_to, replicate_to,
-                                                 timeout, time_unit,
-                                                 durability)
+            options = self.get_mutate_in_options(
+                exp, time_unit, persist_to, replicate_to,
+                timeout, time_unit, durability,
+                store_semantics=store_semantics)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1112,10 +1111,10 @@ class SDKClient(object):
                                                              step_value,
                                                              create_path))
             content = Tuples.of(key, mutate_in_specs)
-            options = self.get_mutate_in_options(exp, time_unit,
-                                                 persist_to, replicate_to,
-                                                 timeout, time_unit,
-                                                 durability)
+            options = self.get_mutate_in_options(
+                exp, time_unit, persist_to, replicate_to,
+                timeout, time_unit, durability,
+                store_semantics=store_semantics)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1213,7 +1212,8 @@ class SDKClient(object):
                              durability="",
                              create_path=False,
                              xattr=False,
-                             cas=0):
+                             cas=0,
+                             store_semantics=None):
         """
 
         :param keys: Documents to perform sub_doc operations on.
@@ -1251,7 +1251,8 @@ class SDKClient(object):
         options = self.get_mutate_in_options(exp, exp_unit,
                                              persist_to, replicate_to,
                                              timeout, time_unit,
-                                             durability)
+                                             durability,
+                                             store_semantics=store_semantics)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1264,7 +1265,8 @@ class SDKClient(object):
                              durability="",
                              create_path=False,
                              xattr=False,
-                             cas=0):
+                             cas=0,
+                             store_semantics=None):
         """
         :param keys: Documents to perform sub_doc operations on.
         Must be a dictionary with Keys and List of tuples for
@@ -1301,7 +1303,8 @@ class SDKClient(object):
         options = self.get_mutate_in_options(exp, exp_unit,
                                              persist_to, replicate_to,
                                              timeout, time_unit,
-                                             durability)
+                                             durability,
+                                             store_semantics=store_semantics)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1340,7 +1343,8 @@ class SDKClient(object):
                              timeout=5, time_unit="seconds",
                              durability="",
                              xattr=False,
-                             cas=0):
+                             cas=0,
+                             store_semantics=None):
         """
         :param keys: Documents to perform sub_doc operations on.
         Must be a dictionary with Keys and List of tuples for
@@ -1354,6 +1358,7 @@ class SDKClient(object):
         :param durability: Durability level parameter
         :param xattr: Boolean. If 'True', perform xattr operation
         :param cas: CAS for the document to use
+        :param store_semantics: Value to be used in mutate_in_option
         :return:
         """
         mutate_in_specs = []
@@ -1377,7 +1382,7 @@ class SDKClient(object):
                                              persist_to, replicate_to,
                                              timeout, time_unit,
                                              durability,
-                                             store_semantics=None)
+                                             store_semantics=store_semantics)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1389,7 +1394,8 @@ class SDKClient(object):
                               timeout=5, time_unit="seconds",
                               durability="",
                               xattr=False,
-                              cas=0):
+                              cas=0,
+                              store_semantics=None):
         """
 
         :param keys: Documents to perform sub_doc operations on.
@@ -1427,7 +1433,7 @@ class SDKClient(object):
                                              persist_to, replicate_to,
                                              timeout, time_unit,
                                              durability,
-                                             store_semantics=None)
+                                             store_semantics=store_semantics)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
