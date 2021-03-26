@@ -248,7 +248,6 @@ class CollectionsNetworkSplit(CollectionBase):
         if self.allow_unsafe:
             self.wipe_config_on_removed_nodes(self.nodes_failover)
 
-
     def test_quorum_loss_with_network_split(self):
         """
         0. Start async data load
