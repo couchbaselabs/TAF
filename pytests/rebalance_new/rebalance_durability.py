@@ -483,6 +483,7 @@ class RebalanceDurability(RebalanceBaseTest):
             # Delete the rebalance test condition to recover from the error
             self.delete_rebalance_test_condition(test_failure_condition)
             self.sleep(sleep_time)
+            self.update_count += 1
             # start update of all keys
             task_update = self.loadgen_docs()
             self.check_retry_rebalance_succeeded()
