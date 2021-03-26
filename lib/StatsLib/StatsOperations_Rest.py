@@ -373,8 +373,9 @@ class StatsHelper(RestConnection):
                     lines_seen.add(line)
                 else:
                     raise Exception("Duplicate metrics entry {0}".format(line))
-                if not check_prefixes(line):
-                    raise Exception("Invalid prefix for metric {0}".format(line))
+                # ToDo: Uncomment when you know al the valid prefixes
+                # if not check_prefixes(line):
+                #     raise Exception("Invalid prefix for metric {0}".format(line))
 
         if len(content) == 0:
             log.error("No metrics are present to validate")
