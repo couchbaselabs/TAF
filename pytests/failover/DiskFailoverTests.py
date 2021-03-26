@@ -228,6 +228,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 and count < 5:
             self.sleep(30)
             count += 1
+        if count == 5:
+            self.fail("Disk autofailover did not get initiated")
         for node in self.servers_to_add:
             self.rest.add_node(user=self.orchestrator.rest_username,
                                password=self.orchestrator.rest_password,
@@ -256,7 +258,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         Test autofailover of nodes and then addback of the node after failover
         1. Enable autofailover and validate
         2. Fail a node and validate if node is failed over if required
-        3. Addback node and validate that the addback was successful.
+        3. Remove failure from failed nodes
+        4. Addback node and validate that the addback was successful.
         :return: None
         """
         task = None
@@ -273,11 +276,18 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
+        count = 0
+        while self.get_failover_count() != self.num_node_failures \
+                and count < 5:
+            self.sleep(30)
+            count += 1
+        if count == 5:
+            self.fail("Disk autofailover did not get initiated")
         self.bring_back_failed_nodes_up()
         self.sleep(30)
         self.log.info(self.server_to_fail[0])
         self.nodes = self.rest.node_statuses()
-        self.log.info(self.nodes[0].id)
+        self.log.info("Adding back node {0}".format(self.server_to_fail[0].ip))
         self.rest.add_back_node("ns_1@{}".format(self.server_to_fail[0].ip))
         self.rest.set_recovery_type("ns_1@{}".format(self.server_to_fail[
                                                          0].ip),
@@ -299,8 +309,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         Test autofailover of nodes and remove the node via rebalance after
         the failover.
         1. Enable autofailover and validate
-        2. Fail a node and validate if node is failed over if required
-        3. Rebalance of node if failover was successful and validate.
+        2. Fail a node and validate if node is failed-over
+        3. Rebalance the cluster to ensure the failed nodes go out
         :return: None
         """
         task = None
@@ -317,6 +327,13 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
+        count = 0
+        while self.get_failover_count() != self.num_node_failures \
+                and count < 5:
+            self.sleep(30)
+            count += 1
+        if count == 5:
+            self.fail("Disk autofailover did not get initiated")
         self.nodes = self.rest.node_statuses()
         self.remove_after_failover = True
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
