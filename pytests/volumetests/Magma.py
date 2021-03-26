@@ -1674,7 +1674,8 @@ class volume(BaseTestCase):
             for bucket in self.bucket_util.buckets:
                 for scope in bucket.scopes.keys():
                     drop = 0
-                    for collection in bucket.scopes[scope].collections.keys()[1:total_collections:2]:
+                    for i in range(1, total_collections, 2):
+                        collection = self.collection_prefix + str(i)
                         self.bucket_util.drop_collection(self.cluster.master,
                                                          bucket,
                                                          scope,
@@ -1771,14 +1772,14 @@ class volume(BaseTestCase):
                 if self.end_step == 17:
                     exit(17)
             #######################################################################
-            for i in range(1, total_scopes-1, 2):
-                scope = self.scope_prefix + str(i)
-                for i in range(1, total_collections-1, 2):
-                    collection = self.collection_prefix + str(i)
-                    self.bucket_util.create_collection(self.cluster.master,
-                                                       self.bucket,
-                                                       self.scope,
-                                                       {"name": collection})
+            for bucket in self.bucket_util.buckets:
+                for scope in bucket.scopes.keys():
+                    for i in range(1, total_collections, 2):
+                        collection = self.collection_prefix + str(i)
+                        self.bucket_util.create_collection(self.cluster.master,
+                                                           bucket,
+                                                           scope,
+                                                           {"name": collection})
                     self.sleep(0.5)
             self.bucket_util.flush_all_buckets(self.cluster.master)
             self.init_doc_params()
