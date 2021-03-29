@@ -979,6 +979,7 @@ class BasicOps(CollectionBase):
 
         # Flush bucket and verify items count of each coll goes to 0
         self.bucket_util.flush_bucket(self.cluster.master, bucket)
+        self.sleep(30)
         for _, scope in bucket.scopes.items():
             for _, collection in scope.collections.items():
                 expected_item_count = 0
