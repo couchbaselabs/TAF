@@ -1,5 +1,4 @@
-import threading
-import time
+import math
 
 from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
@@ -24,11 +23,6 @@ class CollectionsQuorumLoss(CollectionBase):
     def tearDown(self):
         if self.failover_action:
             self.custom_remove_failure()
-        if self.data_loading_thread:
-            # stop data loading before tearDown if its still running
-            self.data_load_flag = False
-            self.data_loading_thread.join()
-            self.data_loading_thread = None
         super(CollectionsQuorumLoss, self).tearDown()
 
     def wait_for_rebalance_to_complete(self, task):
@@ -387,3 +381,66 @@ class CollectionsQuorumLoss(CollectionBase):
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
         self.data_validation_collection()
+
+    def test_multiple_quorum_failovers(self):
+        """
+        With constant parallel data load(on docs and collections) do:
+        0. Pick majority nodes for failover
+        1. Induce failure on step0 nodes
+        2. Failover failed nodes
+        3. Rebalance the cluster with data load
+        4. Repeat the above steps on the remaining nodes of the cluster ie;
+            qf on the remaining nodes
+        5. Wipe config dir of nodes that were failed over and removed out
+        6. Rebalance-in the nodes that were failed over and removed out,
+           with parallel data load
+        """
+        self.server_to_fail = list()
+        self.num_node_failures = int(math.ceil(len(self.nodes_in_cluster)/2.0))
+        for _ in range(2): # two quorum failovers
+            this_step_failed_nodes = self.servers_to_fail()
+            self.log.info("Inducing failure {0} on nodes: {1}".
+                          format(self.failover_action, this_step_failed_nodes))
+            self.custom_induce_failure(this_step_failed_nodes)
+            self.sleep(20, "Wait before failing over")
+
+            self.log.info("Failing over nodes explicitly {0}".format(this_step_failed_nodes))
+            result = self.task.failover(self.nodes_in_cluster, failover_nodes=this_step_failed_nodes,
+                                       graceful=False, wait_for_pending=120,
+                                       allow_unsafe=True,
+                                       all_at_once=True)
+            self.assertTrue(result, "Failover Failed")
+
+            tasks = self.data_load(async_load=True)
+            self.log.info("Rebalancing the cluster")
+            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
+                                                       retry_get_process_num=100)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+            self.wait_for_async_data_load_to_complete(tasks)
+            self.data_validation_collection()
+
+            # update the nodes in cluster
+            self.nodes_in_cluster = \
+                [node for node in self.nodes_in_cluster if node not in this_step_failed_nodes]
+            for node in this_step_failed_nodes:
+                self.server_to_fail.append(node)
+            self.num_node_failures = int(math.ceil(len(self.nodes_in_cluster) / 2.0))
+
+        self.custom_remove_failure()
+        self.sleep(20, "wait after removing failure")
+        self.wipe_config_on_removed_nodes()
+
+        tasks = self.data_load(async_load=True)
+        self.log.info("Adding back nodes which were failed and removed".
+                      format(self.server_to_fail))
+        rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
+                                                   retry_get_process_num=100)
+        self.wait_for_rebalance_to_complete(rebalance_task)
+        self.wait_for_async_data_load_to_complete(tasks)
+        self.data_validation_collection()
+
+
+
+
+
+
