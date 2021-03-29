@@ -167,11 +167,13 @@ class CollectionsQuorumLoss(CollectionBase):
         self.rest = RestConnection(self.cluster.master)
         return servers_to_fail
 
-    def custom_induce_failure(self):
+    def custom_induce_failure(self, nodes=None):
         """
         Induce failure on nodes
         """
-        for node in self.server_to_fail:
+        if nodes is None:
+            nodes = self.server_to_fail
+        for node in nodes:
             if self.failover_action == "stop_server":
                 self.cluster_util.stop_server(node)
             elif self.failover_action == "firewall":
@@ -183,11 +185,13 @@ class CollectionsQuorumLoss(CollectionBase):
                 remote.kill_erlang()
                 remote.disconnect()
 
-    def custom_remove_failure(self):
+    def custom_remove_failure(self, nodes=None):
         """
         Remove failure
         """
-        for node in self.server_to_fail:
+        if nodes is None:
+            nodes = self.server_to_fail
+        for node in nodes:
             if self.failover_action == "stop_server":
                 self.cluster_util.start_server(node)
             elif self.failover_action == "firewall":
@@ -301,20 +305,31 @@ class CollectionsQuorumLoss(CollectionBase):
             self.log.error("Caught exception from data load thread")
             self.fail(self.data_load_exception)
 
-    def test_quorum_loss_failover_in_steps(self):
+    def test_quorum_loss_failover_with_already_failed_over_node(self):
         """
         With constant parallel data load(on docs and collections) do:
-        0. Pick majority nodes for failover
-        1. Induce failure on step0 nodes and fail over them in two steps
-        2. Rebalance the cluster
-        4. Wipe config dir of nodes that were failed over and removed out
-        5. Rebalance-in the nodes that were failed over and removed out
+        0. Induce failure on one of the nodes and Hard safe failover that node
+          but don't rebalance it out yet
+        1. Pick majority nodes for failover
+        2. Induce failure on step1 nodes
+        3. Failover nodes from step 0 and step 1
+        4. Rebalance the cluster
+        5. Wipe config dir of nodes that were failed over and removed out
+        6. Rebalance-in the nodes that were failed over and removed out
+        See MB-45110 for more details
         """
 
-        if self.create_zones:
-            self.server_to_fail = self.shuffle_nodes_between_two_zones()
-        else:
-            self.server_to_fail = self.servers_to_fail()
+        # Hard regular failover the last node with any failure
+        failed_over_node = self.nodes_in_cluster[-1]
+        self.log.info("Inducing failure {0} on nodes: {1}".
+                      format(self.failover_action, failed_over_node))
+        self.custom_induce_failure(nodes=[failed_over_node])
+        self.sleep(10, "Wait before failing over")
+        result = self.task.failover(self.nodes_in_cluster, failover_nodes=[failed_over_node],
+                                    graceful=False, wait_for_pending=120)
+        self.assertTrue(result, "Failover Failed")
+
+        self.server_to_fail = self.servers_to_fail()
 
         self.data_load_flag = True
         self.data_loading_thread = threading.Thread(target=self.data_load)
@@ -326,14 +341,13 @@ class CollectionsQuorumLoss(CollectionBase):
             self.custom_induce_failure()
             self.sleep(20, "Wait before failing over")
 
-        failover_step_nodes = [self.server_to_fail[:-1], self.server_to_fail[-1]] # 2 steps
-        for failover_nodes in failover_step_nodes:
-            self.log.info("Failing over nodes explicitly {0}".format(failover_nodes))
-            result = self.task.failover(self.nodes_in_cluster, failover_nodes=failover_nodes,
-                                   graceful=False, wait_for_pending=120,
-                                   allow_unsafe=True,
-                                   all_at_once=True)
-            self.assertTrue(result, "Failover Failed")
+        self.server_to_fail.append(failed_over_node)
+        self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
+        result = self.task.failover(self.nodes_in_cluster, failover_nodes=self.server_to_fail,
+                               graceful=False, wait_for_pending=120,
+                               allow_unsafe=True,
+                               all_at_once=True)
+        self.assertTrue(result, "Failover Failed")
 
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
@@ -344,7 +358,6 @@ class CollectionsQuorumLoss(CollectionBase):
             self.sleep(20, "wait after removing failure")
 
         self.wipe_config_on_removed_nodes()
-
         self.log.info("Adding back nodes which were failed and rebalanced out".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
