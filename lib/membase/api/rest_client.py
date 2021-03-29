@@ -787,35 +787,34 @@ class RestConnection(object):
             kv_quota = int(self.get_nodes_self().mcdMemoryReserved)
         info = self.get_nodes_self()
 
+        service_quota = dict()
         cb_version = info.version[:5]
         if cb_version in COUCHBASE_FROM_VERSION_4:
             if "index" in self.node_services:
                 self.test_log.debug("%s - Index service quota will be %s MB"
-                                   % (self.ip, INDEX_QUOTA))
+                                    % (self.ip, INDEX_QUOTA))
                 kv_quota -= INDEX_QUOTA
-                self.set_service_memoryQuota(service='indexMemoryQuota',
-                                             memoryQuota=INDEX_QUOTA)
+                service_quota['indexMemoryQuota'] = INDEX_QUOTA
             if "fts" in self.node_services:
                 self.test_log.debug("%s - Fts service will be %s MB"
                                     % (self.ip, FTS_QUOTA))
                 kv_quota -= FTS_QUOTA
                 self.test_log.debug("%s - Setting both index and fts quota"
                                     % self.ip)
-                self.set_service_memoryQuota(service='ftsMemoryQuota',
-                                             memoryQuota=FTS_QUOTA)
+                service_quota['ftsMemoryQuota'] = FTS_QUOTA
             if "cbas" in self.node_services:
                 self.test_log.debug("%s - CBAS service quota will be %s MB"
                                     % (self.ip, CBAS_QUOTA))
                 kv_quota -= CBAS_QUOTA
-                self.set_service_memoryQuota(service = "cbasMemoryQuota",
-                                             memoryQuota=CBAS_QUOTA)
+                service_quota['cbasMemoryQuota'] = CBAS_QUOTA
             kv_quota -= 1
             if kv_quota < MIN_KV_QUOTA:
                     raise Exception("KV RAM needs to be more than %s MB"
                             " at node  %s"  % (MIN_KV_QUOTA, self.ip))
 
         self.test_log.debug("%s - KV quota: %s MB" % (self.ip, kv_quota))
-        self.init_cluster_memoryQuota(self.username, self.password, kv_quota)
+        service_quota['memoryQuota'] = kv_quota
+        self.set_service_mem_quota(service_quota)
         if cb_version in COUCHBASE_FROM_VERSION_4:
             self.init_node_services(username=self.username,
                                     password=self.password,
@@ -831,10 +830,10 @@ class RestConnection(object):
             return False
         if hostname == "127.0.0.1":
             hostname = "{0}:{1}".format(hostname, port)
-        params = urllib.urlencode({ 'hostname': hostname,
-                                    'user': username,
-                                    'password': password,
-                                    'services': ",".join(services)})
+        params = urllib.urlencode({'hostname': hostname,
+                                   'user': username,
+                                   'password': password,
+                                   'services': ",".join(services)})
         self.test_log.debug('/node/controller/setupServices params on {0}: {1}:{2}'
                             .format(self.ip, self.port, params))
         status, content, header = self._http_request(api, 'POST', params)
@@ -856,24 +855,10 @@ class RestConnection(object):
                             .format(self.ip, self.port, settings))
         return settings
 
-    def init_cluster_memoryQuota(self, username='Administrator',
-                                 password='password',
-                                 memoryQuota=256):
+    def set_service_mem_quota(self, ram_quota_dict):
+        self.test_log.debug('Setting RAM quotas: %s' % ram_quota_dict)
         api = self.baseUrl + 'pools/default'
-        params = urllib.urlencode({'memoryQuota': memoryQuota})
-        self.test_log.debug('pools/default params: {0}'.format(params))
-        status, content, header = self._http_request(api, 'POST', params)
-        return status
-
-    def set_service_memoryQuota(self, service, username='Administrator',
-                                password='password',
-                                memoryQuota=256):
-        ''' cbasMemoryQuota for cbas service.
-            ftsMemoryQuota for fts service.
-            indexMemoryQuota for index service.'''
-        api = self.baseUrl + 'pools/default'
-        params = urllib.urlencode({service: memoryQuota})
-        self.test_log.debug('pools/default params: {0}'.format(params))
+        params = urllib.urlencode(ram_quota_dict)
         status, content, header = self._http_request(api, 'POST', params)
         return status
 

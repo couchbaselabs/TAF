@@ -12,7 +12,7 @@ from remote.remote_util import RemoteMachineShellConnection
 class EventingSanity(EventingBaseTest):
     def setUp(self):
         super(EventingSanity, self).setUp()
-        self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=700)
+        self.rest.set_service_mem_quota({'memoryQuota': 700})
         if self.create_functions_buckets:
             self.bucket_size = 200
             self.log.info(self.bucket_size)

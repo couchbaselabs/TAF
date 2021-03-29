@@ -45,8 +45,8 @@ class RebalanceBaseTest(BaseTestCase):
         info = self.rest.get_nodes_self()
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
-        self.rest.init_cluster_memoryQuota(
-            memoryQuota=int(info.mcdMemoryReserved*node_ram_ratio))
+        self.rest.set_service_mem_quota(
+            {'memoryQuota': int(info.mcdMemoryReserved*node_ram_ratio)})
         self.check_temporary_failure_exception = False
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []

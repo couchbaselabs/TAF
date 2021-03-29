@@ -145,12 +145,10 @@ class CBASBaseTest(BaseTestCase):
                 self.log.info(
                     "Setting the min possible memory quota so that adding "
                     "more nodes to the cluster wouldn't be a problem.")
-                self.rest.set_service_memoryQuota(
-                    service='memoryQuota', memoryQuota=MIN_KV_QUOTA)
-                self.rest.set_service_memoryQuota(
-                    service='ftsMemoryQuota', memoryQuota=FTS_QUOTA)
-                self.rest.set_service_memoryQuota(
-                    service='indexMemoryQuota', memoryQuota=INDEX_QUOTA)
+                self.rest.set_service_mem_quota(
+                    {'memoryQuota': MIN_KV_QUOTA,
+                     'ftsMemoryQuota': FTS_QUOTA,
+                     'indexMemoryQuota': INDEX_QUOTA})
                 self.set_cbas_memory_from_available_free_memory = \
                     self.input.param(
                         'set_cbas_memory_from_available_free_memory', False)
@@ -158,9 +156,8 @@ class CBASBaseTest(BaseTestCase):
                 self.log.info("Setting %d memory quota for CBAS"
                               % CBAS_QUOTA)
                 self.cbas_memory_quota = CBAS_QUOTA
-
-                self.rest.set_service_memoryQuota(
-                    service='cbasMemoryQuota', memoryQuota=CBAS_QUOTA)
+                self.rest.set_service_mem_quota(
+                    {'cbasMemoryQuota': CBAS_QUOTA})
             if self.expected_error:
                 self.expected_error = \
                     self.expected_error.replace("INVALID_IP", invalid_ip)
@@ -262,12 +259,10 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info(
                         "Setting the min possible memory quota so that adding "
                         "more nodes to the cluster wouldn't be a problem.")
-                    cluster.rest.set_service_memoryQuota(
-                        service='memoryQuota', memoryQuota=MIN_KV_QUOTA)
-                    cluster.rest.set_service_memoryQuota(
-                        service='ftsMemoryQuota', memoryQuota=FTS_QUOTA)
-                    cluster.rest.set_service_memoryQuota(
-                        service='indexMemoryQuota', memoryQuota=INDEX_QUOTA)
+                    self.rest.set_service_mem_quota(
+                        {'memoryQuota': MIN_KV_QUOTA,
+                         'ftsMemoryQuota': FTS_QUOTA,
+                         'indexMemoryQuota': INDEX_QUOTA})
                     cluster.set_cbas_memory_from_available_free_memory = \
                         self.input.param(
                             'set_cbas_memory_from_available_free_memory', False)
@@ -275,9 +270,8 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("Setting %d memory quota for CBAS"
                                   % CBAS_QUOTA)
                     cluster.cbas_memory_quota = CBAS_QUOTA
-
-                    cluster.rest.set_service_memoryQuota(
-                        service='cbasMemoryQuota', memoryQuota=CBAS_QUOTA)
+                    self.rest.set_service_mem_quota(
+                        {'cbasMemoryQuota': CBAS_QUOTA})
 
                 cluster.cbas_util = None
                 # Drop any existing buckets and datasets
@@ -825,9 +819,8 @@ class CBASBaseTest(BaseTestCase):
                                         1]:
                                         memory_quota = \
                                         service_mem_dict[service][1]
-                                master_rest.set_service_memoryQuota(
-                                    service=property_name,
-                                    memoryQuota=memory_quota)
+                                master_rest.set_service_mem_quota(
+                                    {property_name: memory_quota})
                             else:
                                 self.fail("Error while setting service memory "
                                           "quota {0} for {1}"
@@ -844,9 +837,8 @@ class CBASBaseTest(BaseTestCase):
                                 self.cbas_memory_quota_percent / 100
                             if memory_quota < service_mem_dict[service][1]:
                                 memory_quota = service_mem_dict[service][1]
-                        master_rest.set_service_memoryQuota(
-                            service=service_mem_dict[service][0],
-                            memoryQuota=memory_quota)
+                        master_rest.set_service_mem_quota(
+                            {service_mem_dict[service][0]: memory_quota})
                     else:
                         self.fail(
                             "Error while setting service mem quota %s for %s"
@@ -869,9 +861,8 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("Setting {0} memory quota for {1}".format(
                         service_mem_dict[service][1], service))
                     if memory_quota_available >= service_mem_dict[service][1]:
-                        master_rest.set_service_memoryQuota(
-                            service=service_mem_dict[service][0],
-                            memoryQuota=service_mem_dict[service][1])
+                        master_rest.set_service_mem_quota(
+                            {service_mem_dict[service][0]: service_mem_dict[service][1]})
                         memory_quota_available -= service_mem_dict[service][1]
                     else:
                         self.fail(
@@ -885,16 +876,14 @@ class CBASBaseTest(BaseTestCase):
                             self.log.info(
                                 "Setting {0} memory quota for CBAS".format(
                                     memory_quota_available))
-                            master_rest.set_service_memoryQuota(
-                                service="cbasMemoryQuota",
-                                memoryQuota=memory_quota_available)
+                            master_rest.set_service_mem_quota(
+                                {"cbasMemoryQuota": memory_quota_available})
                     else:
                         self.log.info(
                             "Setting {0} memory quota for CBAS".format(
                                 memory_quota_available))
-                        master_rest.set_service_memoryQuota(
-                            service="cbasMemoryQuota",
-                            memoryQuota=memory_quota_available)
+                        master_rest.set_service_mem_quota(
+                            {"cbasMemoryQuota": memory_quota_available})
                 else:
                     self.fail("Error while setting service memory quota {0} "
                               "for CBAS".format(memory_quota_available))

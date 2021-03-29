@@ -5686,6 +5686,8 @@ class NodeInitializeTask(Task):
 
     def call(self):
         self.start_task()
+        rest = None
+        service_quota = dict()
         try:
             rest = RestConnection(self.server)
         except ServerUnavailableException as error:
@@ -5719,8 +5721,7 @@ class NodeInitializeTask(Task):
             self.test_log.debug("Quota for index service will be %s MB"
                                 % index_memory)
             total_memory -= index_memory
-            rest.set_service_memoryQuota(service='indexMemoryQuota',
-                                         memoryQuota=index_memory)
+            service_quota['indexMemoryQuota'] = index_memory
         if "fts" in set_services:
             if self.fts_quota_percent:
                 fts_memory = total_memory * self.fts_quota_percent / 100
@@ -5729,8 +5730,7 @@ class NodeInitializeTask(Task):
             self.test_log.debug("Quota for fts service will be %s MB"
                                 % fts_memory)
             total_memory -= fts_memory
-            rest.set_service_memoryQuota(service='ftsMemoryQuota',
-                                         memoryQuota=fts_memory)
+            service_quota['ftsMemoryQuota'] = fts_memory
         if "cbas" in set_services:
             if self.cbas_quota_percent:
                 cbas_memory = total_memory * self.cbas_quota_percent / 100
@@ -5739,13 +5739,13 @@ class NodeInitializeTask(Task):
             self.test_log.debug("Quota for cbas service will be %s MB"
                                 % cbas_memory)
             total_memory -= cbas_memory
-            rest.set_service_memoryQuota(service="cbasMemoryQuota",
-                                         memoryQuota=cbas_memory)
+            service_quota['cbasMemoryQuota'] = cbas_memory
         if total_memory < MIN_KV_QUOTA:
             raise Exception("KV RAM needs to be more than %s MB"
                             " at node  %s" % (MIN_KV_QUOTA, self.server.ip))
 
-        rest.init_cluster_memoryQuota(username, password, total_memory)
+        service_quota['memoryQuota'] = total_memory
+        rest.set_service_mem_quota(service_quota)
         rest.set_indexer_storage_mode(username, password, self.gsi_type)
 
         if self.services:

@@ -40,9 +40,8 @@ class MagmaBaseTest(BaseTestCase):
         self.dcp_servers = []
         if self.dcp_services:
             server = self.rest.get_nodes_self()
-            self.rest.set_service_memoryQuota(
-                service='indexMemoryQuota',
-                memoryQuota=int(server.mcdMemoryReserved - 100))
+            self.rest.set_service_mem_quota(
+                {'indexMemoryQuota': int(server.mcdMemoryReserved - 100)})
             self.dcp_services = [service.replace(":", ",") for service in self.dcp_services.split("-")]
             self.services.extend(self.dcp_services)
             self.dcp_servers = self.cluster.servers[self.nodes_init:

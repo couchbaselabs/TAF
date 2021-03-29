@@ -128,8 +128,8 @@ class volume(CollectionBase):
         if self.number_of_indexes == 0:
             return
         else:
-            self.rest.set_service_memoryQuota(service="memoryQuota", memoryQuota=10000)
-            self.rest.set_service_memoryQuota(service="indexMemoryQuota", memoryQuota=11000)
+            self.rest.set_service_mem_quota({"memoryQuota": 10000,
+                                             "indexMemoryQuota": 11000})
 
     def run_cbq_query(self, query):
         """

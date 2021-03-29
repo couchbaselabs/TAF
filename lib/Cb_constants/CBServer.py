@@ -8,6 +8,13 @@ class CbServer(object):
         EVENTING = "eventing"
         BACKUP = "backup"
 
+    class Settings(object):
+        KV_MEM_QUOTA = "memoryQuota"
+        INDEX_MEM_QUOTA = "indexMemoryQuota"
+        FTS_MEM_QUOTA = "ftsMemoryQuota"
+        CBAS_MEM_QUOTA = "cbasMemoryQuota"
+        EVENTING_MEM_QUOTA = "eventingMemoryQuota"
+
     port = 8091
     capi_port = 8092
     fts_port = 8094

@@ -191,9 +191,7 @@ class CollectionsRebalance(CollectionBase):
     def set_ram_quota_cluster(self):
         self.sleep(45, "Wait for rebalance have some progress")
         self.log.info("Changing cluster RAM size")
-        status = self.rest.init_cluster_memoryQuota(self.cluster.master.rest_username,
-                                                    self.cluster.master.rest_password,
-                                                    memoryQuota=2500)
+        status = self.rest.set_service_mem_quota({'memoryQuota': 2500})
         self.assertTrue(status, "RAM quota wasn't changed")
 
     def set_retry_exceptions(self, doc_loading_spec):

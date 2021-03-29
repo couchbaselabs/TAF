@@ -984,8 +984,7 @@ class BaseSecondaryIndexingTests(QueryTests):
         node = self.cluster_util.get_nodes_from_services_map(
             service_type="index")
         rest = RestConnection(node)
-        rest.set_service_memoryQuota(service='indexMemoryQuota',
-                                     memoryQuota=memory_quota)
+        rest.set_service_mem_quota({'indexMemoryQuota': memory_quota})
         cnt = 0
         docs = 50 + self.docs_per_day
         while cnt < 100:

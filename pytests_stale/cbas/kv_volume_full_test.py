@@ -303,13 +303,13 @@ class volume(BaseTestCase):
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
 
         print(total_memory_in_mb)
-        available_memory =  total_available_memory_in_mb - threadhold_memory
-        self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=available_memory)
-        self.rest.set_service_memoryQuota(service='cbasMemoryQuota', memoryQuota=available_memory-1024)
-        self.rest.set_service_memoryQuota(service='indexMemoryQuota', memoryQuota=available_memory-1024)
+        available_memory = total_available_memory_in_mb - threadhold_memory
+        self.rest.set_service_mem_quota(
+            {'memoryQuota': available_memory,
+             'cbasMemoryQuota': available_memory-1024,
+             'indexMemoryQuota': available_memory-1024})
 
         self.log.info("Create CB buckets")
-
         self.create_bucket(self.master, "GleambookUsers",bucket_ram=available_memory/3)
         self.create_bucket(self.master, "GleambookMessages",bucket_ram=available_memory/3)
         self.create_bucket(self.master, "ChirpMessages",bucket_ram=available_memory/3)

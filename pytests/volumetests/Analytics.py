@@ -4,7 +4,7 @@
 Assumptions for test -
 1) At max 2 cluster are present.
 2) KV, N1QL and Index services should be present on same node.
-3) While rebalanc-in, rebalance in-out or swap rebalance KV node, 
+3) While rebalanc-in, rebalance in-out or swap rebalance KV node,
 the incoming node should have KV, N1QL and Index servies.
 4) There are no other services present on node with cbas service.
 5) Initial setup (This can change based on parameter passed)-
@@ -45,12 +45,12 @@ from java.lang import Exception as Java_base_exception
 class volume(BaseTestCase):
     """
     Required test parameters
-    :testparams test_type: (str) accepted value steady_state, rebalance and service_crash 
+    :testparams test_type: (str) accepted value steady_state, rebalance and service_crash
     :testparams iterations: (int) no. of times the test has to be repeated.
     :testparams nodes_init: (int) no. of nodes in local cluster including master.
-    :testparams services_init: (str) services to be used while initializing the clusters. 
+    :testparams services_init: (str) services to be used while initializing the clusters.
     The services passed here will be used for all the clusters. Ex. - kv:n1ql:index
-    :testparams local_init_services: (str) services to be used while adding nodes to the local cluster. 
+    :testparams local_init_services: (str) services to be used while adding nodes to the local cluster.
     Ex. - "kv:n1ql-cbas", this means the first node being added (excluding master) will have kv and n1ql service and
     second node being added will have cbas service.
     :testparams remote_init_nodes: (int) no. of nodes in remote cluster including master.
@@ -67,7 +67,7 @@ class volume(BaseTestCase):
     :testparams run_parallel_cbas_query: (boolean) start running cbas queries on a seperate thread in parallel
     :testparams run_parallel_kv_query: (boolean) start running KV queries on a seperate thread in parallel
     :testparams num_parallel_queries: (int) number of queries to run in parallel
-    
+
     Test Scaling parameters
     :testparams override_spec_params: (str) ';' seperated bucket_spec and data_load_spec properties to be updated.
     :testparams remove_default_collection: (boolean) remove default collections from buckets or not.
@@ -89,22 +89,22 @@ class volume(BaseTestCase):
     :testparams api_timeout: (int) http connection timeout.
     :testparams cbas_timeout: (int) cbas query timeout.
     """
-    
+
     def setUp(self):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket": False})
         super(volume, self).setUp()
-        
+
         self.test_type = self.input.param("test_type", "steady_state")
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
-        
+
         self.bucket_spec = self.input.param("bucket_spec", "volume_templates.buckets_for_volume_test")
         self.initial_data_load = self.input.param("initial_data_load", False)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_for_volume_test")
         self.cbas_spec = self.input.param("cbas_spec", "volume")
         self.bucket_size = self.input.param("bucket_size", 0)
-        
+
         self.contains_ephemeral = self.input.param("contains_ephemeral", True)
 
         # the stage at which CRUD for collection level/ document level take place.
@@ -114,13 +114,13 @@ class volume(BaseTestCase):
 
         self.doc_and_collection_ttl = self.input.param("doc_and_collection_ttl", False)  # For using doc_ttl + coll_ttl
         self.skip_validations = self.input.param("skip_validations", True)
-        
+
         # Assuming that only 2 clusters are used
         self.local_cluster = None
         self.remote_cluster = None
         CBASRebalanceUtil.available_servers = self.servers[:]
         CBASRebalanceUtil.exclude_nodes = list()
-        
+
         # Adding nodes in clusters, creating indexes, loading data in collections and creating cbas infra
         for cluster in self.get_clusters():
             cluster.nodes_in_cluster = [cluster.master]
@@ -131,19 +131,19 @@ class volume(BaseTestCase):
             cluster.rest = RestConnection(cluster.master)
             cluster.cbas_nodes = list()
             cluster.bucket_helper_obj = BucketHelper(cluster.master)
-            
+
             for node in CBASRebalanceUtil.available_servers:
                 if node.ip == cluster.master.ip:
                     CBASRebalanceUtil.available_servers.remove(node)
                     break
             CBASRebalanceUtil.exclude_nodes.append(cluster.master)
-                    
+
             def get_init_services(services_to_use):
                 services = list()
                 for service in services_to_use.split("-"):
                     services.append(service.replace(":", ","))
                 return services if len(services) > 0 else None
-            
+
             if not self.local_cluster:
                 self.local_cluster = cluster
                 services_to_use = get_init_services(self.input.param("local_init_services", "cbas"))
@@ -152,36 +152,36 @@ class volume(BaseTestCase):
                 self.remote_cluster = cluster
                 services_to_use = get_init_services(self.input.param("remote_init_services", "kv:index"))
                 init_nodes = self.input.param("remote_init_nodes", 1)
-            
+
             # reduce init node by 1 as 1 node will be used while initializing cluster
             init_nodes -= 1
-            
+
             for i in range(0, init_nodes):
                 node_to_initialize = CBASRebalanceUtil.available_servers.pop(-1)
                 services = services_to_use.pop(0)
                 services = services.split(",")
-                
+
                 node_rest = RestConnection(node_to_initialize)
                 info = node_rest.get_nodes_self()
                 total_free_memory = int(info.mcdMemoryReserved)
-                
+
                 if "kv" in services:
                     self.set_memory_quota(cluster, False, total_free_memory)
                 if "cbas" in services:
                     self.set_memory_quota(cluster, True, total_free_memory)
                     cluster.cbas_nodes.append(node_to_initialize)
-                
+
                 cluster.cluster_util.add_node(node_to_initialize,services,rebalance=False)
                 cluster.nodes_in_cluster.append(node_to_initialize)
                 do_rebalance = True
-        
+
             if do_rebalance:
                 operation = self.task.async_rebalance(cluster.nodes_in_cluster, [], [])
                 self.task.jython_task_manager.get_task_result(operation)
                 if not operation.result:
                     self.log.error("Failed while adding nodes to cluster during setup")
                     self.tearDown()
-            
+
             try:
                 if self.initial_data_load:
                     self.data_load_spec = "initial_load"
@@ -193,16 +193,16 @@ class volume(BaseTestCase):
                     self.handle_collection_setup_exception(exception)
             except Exception as exception:
                 self.handle_collection_setup_exception(exception)
-            
+
             cluster.bucket_util._expiry_pager(val=5)
-        
+
         CBASRebalanceUtil.exclude_nodes.append(self.local_cluster.cbas_nodes[0])
         self.local_cluster.cbas_util = CbasUtil(self.local_cluster.master, self.local_cluster.cbas_nodes[0], self.task)
         self.local_cluster.rebalance_util = CBASRebalanceUtil(
-            self.local_cluster, self.local_cluster.cluster_util, self.local_cluster.bucket_util, 
-            self.task, self.local_cluster.rest, vbucket_check=self.vbucket_check, 
+            self.local_cluster, self.local_cluster.cluster_util, self.local_cluster.bucket_util,
+            self.task, self.local_cluster.rest, vbucket_check=self.vbucket_check,
             cbas_util=self.local_cluster.cbas_util)
-        
+
         cbas_spec = self.local_cluster.cbas_util.get_cbas_spec(self.cbas_spec)
         update_spec = {
             "no_of_dataverses":self.input.param('no_of_dataverses', 1),
@@ -217,18 +217,18 @@ class volume(BaseTestCase):
             update_spec["percent_of_local_datasets"] = 50
             update_spec["percent_of_remote_datasets"] = 50
         self.local_cluster.cbas_util.update_cbas_spec(cbas_spec, update_spec)
-        
+
         if self.remote_cluster:
             self.remote_cluster.rebalance_util = CBASRebalanceUtil(
-                self.remote_cluster, self.remote_cluster.cluster_util, 
-                self.remote_cluster.bucket_util, self.task, self.remote_cluster.rest, 
+                self.remote_cluster, self.remote_cluster.cluster_util,
+                self.remote_cluster.bucket_util, self.task, self.remote_cluster.rest,
                 vbucket_check=self.vbucket_check, cbas_util=None)
             link_properties = list()
             for server in self.remote_cluster.nodes_in_cluster:
                 for encryption in ['none', 'half']:
                     link_properties.append(
-                        {"type" : "couchbase", "hostname" : server.ip, 
-                         "username" : server.rest_username, "password" : server.rest_password, 
+                        {"type" : "couchbase", "hostname" : server.ip,
+                         "username" : server.rest_username, "password" : server.rest_password,
                          "encryption":encryption})
             cbas_spec["link"]["properties"] = link_properties
             if not self.local_cluster.cbas_util.create_cbas_infra_from_spec(
@@ -239,9 +239,9 @@ class volume(BaseTestCase):
             if not self.local_cluster.cbas_util.create_cbas_infra_from_spec(
                 cbas_spec, self.local_cluster.bucket_util,wait_for_ingestion=False):
                 self.fail("Error while creating infra from CBAS spec")
-        
+
         self.perform_ops_on_all_clusters("set_durability", {"durability_level": self.durability_level})
-        
+
         # start parallel query execution on KV and CBAS
         for cluster in self.get_clusters():
             if cluster.rebalance_util.cbas_util:
@@ -250,7 +250,7 @@ class volume(BaseTestCase):
             else:
                 run_parallel_cbas_query = False
             cluster.rebalance_util.start_parallel_queries(
-                run_kv_queries=self.input.param("run_parallel_kv_query", False), 
+                run_kv_queries=self.input.param("run_parallel_kv_query", False),
                 run_cbas_queries=run_parallel_cbas_query,
                 parallelism=self.input.param("num_parallel_queries", 1))
 
@@ -260,7 +260,7 @@ class volume(BaseTestCase):
             cluster.rebalance_util.stop_parallel_queries()
             self.log.info("Printing bucket stats before teardown")
             cluster.bucket_util.print_bucket_stats()
-        
+
         if self.collect_pcaps:
             self.start_fetch_pcaps()
         result = self.check_coredump_exist(self.servers, force_collect=True)
@@ -268,25 +268,25 @@ class volume(BaseTestCase):
             self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
             self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
-    
+
     def set_memory_quota(self, cluster, cbas=False, memory=0):
         """
         To set memory quota of KV and index services before starting step 5 of volume test
         """
         if cbas:
-            cluster.rest.set_service_memoryQuota(service="cbasMemoryQuota", memoryQuota=memory)
+            cluster.rest.set_service_mem_quota({"cbasMemoryQuota": memory})
         else:
             info = cluster.rest.get_nodes_self()
             kv_quota = info.mcdMemoryAllocated
-            cluster.rest.set_service_memoryQuota(service="memoryQuota", memoryQuota=kv_quota)
-    
+            cluster.rest.set_service_mem_quota({"memoryQuota": kv_quota})
+
     # This code will be removed once cbas_base is refactored
     def handle_collection_setup_exception(self, exception_obj):
         if self.sdk_client_pool is not None:
             self.sdk_client_pool.shutdown()
         traceback.print_exc()
         raise exception_obj
-    
+
     # This code will be removed once cbas_base is refactored
     def collectionSetUp(self, cluster, bucket_util, load_data=True):
         """
@@ -307,7 +307,7 @@ class volume(BaseTestCase):
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec,cluster)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
-        
+
         num_of_buckets = buckets_spec[MetaConstants.NUM_BUCKETS]
         buckets_spec["buckets"] = {}
         for i in range(1,num_of_buckets+1):
@@ -345,7 +345,7 @@ class volume(BaseTestCase):
         self.sleep(10, "MB-38497")
         if load_data:
             self.reload_data_into_buckets(cluster)
-    
+
     # This code will be removed once cbas_base is refactored
     def over_ride_bucket_template_params(self, bucket_spec, cluster):
         for over_ride_param in self.over_ride_spec_params:
@@ -377,7 +377,7 @@ class volume(BaseTestCase):
             elif over_ride_param == "num_items":
                 bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
                     self.num_items
-    
+
     # This code will be removed once cbas_base is refactored
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:
@@ -413,7 +413,7 @@ class volume(BaseTestCase):
         Initial data load happens in collections_base. But this method loads
         data again when buckets have been flushed during volume test
         """
-        
+
         doc_loading_spec = \
             cluster.bucket_util.get_crud_template_from_package(
                 self.data_load_spec)
@@ -439,7 +439,7 @@ class volume(BaseTestCase):
 
         # Prints bucket stats after doc_ops
         cluster.bucket_util.print_bucket_stats()
-    
+
     def validate_docs_in_datasets(self):
         if self.remote_cluster:
             self.assertTrue(
@@ -451,7 +451,7 @@ class volume(BaseTestCase):
                 self.local_cluster.cbas_util.validate_docs_in_all_datasets(
                     self.local_cluster.bucket_util, None),
                 "Error while validating doc count in datasets")
-    
+
     def get_tasks_results(self, tasks, rebalance=False):
         results = list()
         for cluster,task in tasks.iteritems():
@@ -460,7 +460,7 @@ class volume(BaseTestCase):
             else:
                 results.append(cluster.rebalance_util.wait_for_data_load_to_complete(task, self.skip_validations))
         return results
-    
+
     def perform_ops_on_all_clusters(self, operation, params={}):
         tasks = dict()
         for cluster in self.get_clusters():
@@ -502,10 +502,10 @@ class volume(BaseTestCase):
     def test_volume_taf(self):
         self.loop = 0
         self.log.info("Finished steps 1-7 successfully in setup")
-        
+
         while self.loop < self.iterations:
             step_count = 8
-            
+
             if self.test_type == "steady_state":
                 self.log.info("Step {0]: Verifying docs in dataset for steady state test".format(step_count))
                 self.perform_ops_on_all_clusters("reload_data_into_buckets")
@@ -870,7 +870,7 @@ class volume(BaseTestCase):
                                         "data_load_collection", {"async_load":False, "skip_read_success_results":True})
                                     if not all(task_result.values()):
                                         self.fail("Doc loading failed")
-                                
+
                                 if self.data_load_stage == "during":
                                     reset_flag = False
                                     if failover == "Hard" and "kv" in service_type:
@@ -887,15 +887,15 @@ class volume(BaseTestCase):
                                     if reset_flag:
                                         self.perform_ops_on_all_clusters(
                                                 "set_durability", {"durability_level": ""})
-                                
+
                                 self.perform_ops_on_all_clusters(
                                     "failover", {"failover_type":failover, "action":action, "service_type":service_type, "timeout":7200})
-                                
+
                                 if self.data_load_stage == "during":
                                     self.assertTrue(all(self.get_tasks_results(dataload_task, False)), "Doc_loading failed")
-                                    
+
                                 self.perform_ops_on_all_clusters("data_validation_collection")
-    
+
                                 # Bring back the rebalance out node back to cluster for further steps
                                 if action == "RebalanceOut":
                                     self.sleep(120)
@@ -943,7 +943,7 @@ class volume(BaseTestCase):
                 if self.remote_cluster:
                     cluster_init_dict[self.remote_cluster] = self.input.param("remote_init_nodes", 1)
                 # Flush buckets(s)
-                for cluster, init_node in cluster_init_dict.iteritems(): 
+                for cluster, init_node in cluster_init_dict.iteritems():
                     cluster.bucket_util.flush_all_buckets(cluster.master, skip_resetting_num_items=True)
                     self.sleep(10)
                     if len(cluster.nodes_in_cluster) > init_node:

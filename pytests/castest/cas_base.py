@@ -23,10 +23,7 @@ class CasBaseTest(BaseTestCase):
         mem_quota = int(self.rest.get_nodes_self().mcdMemoryReserved *
                         node_ram_ratio)
 
-        self.rest.init_cluster_memoryQuota(self.cluster.master.rest_username,
-                                           self.cluster.master.rest_password,
-                                           memoryQuota=mem_quota)
-
+        self.rest.set_service_mem_quota({'memoryQuota': mem_quota})
         nodes_init = self.cluster.servers[1:self.nodes_init]
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)

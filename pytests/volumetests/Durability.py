@@ -59,9 +59,7 @@ class volume(BaseTestCase):
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
 
         available_memory = total_available_memory_in_mb - threshold_memory
-        # available_memory =  total_available_memory_in_mb - threshold_memory_vagrant
-        self.rest.set_service_memoryQuota(service='memoryQuota',
-                                          memoryQuota=available_memory)
+        self.rest.set_service_mem_quota({'memoryQuota': available_memory})
 
         # Creating buckets for data loading purpose
         self.log.info("Create CB buckets")

@@ -322,22 +322,20 @@ class NodeHelper:
         if "index" in self.services:
             log.info("Setting INDEX memory quota as {0} MB on {1}"
                      .format(testconstants.INDEX_QUOTA, self.ip))
-            self.rest.set_service_memoryQuota(
-                service='indexMemoryQuota',
-                memoryQuota=testconstants.INDEX_QUOTA)
+            self.rest.set_service_mem_quota(
+                {'indexMemoryQuota': testconstants.INDEX_QUOTA})
             kv_quota -= testconstants.INDEX_QUOTA
         if "fts" in self.services:
             log.info("Setting FTS memory quota as {0} MB on {1}"
                      .format(params["fts_quota"], self.ip))
-            self.rest.set_service_memoryQuota(service='ftsMemoryQuota',
-                                              memoryQuota=params["fts_quota"])
+            self.rest.set_service_mem_quota(
+                {'ftsMemoryQuota': params["fts_quota"]})
             kv_quota -= params["fts_quota"]
         if "cbas" in self.services:
             log.info("Setting CBAS memory quota as {0} MB on {1}"
                      .format(testconstants.CBAS_QUOTA, self.ip))
-            self.rest.set_service_memoryQuota(
-                service="cbasMemoryQuota",
-                memoryQuota=testconstants.CBAS_QUOTA)
+            self.rest.set_service_mem_quota(
+                {"cbasMemoryQuota": testconstants.CBAS_QUOTA})
             kv_quota -= testconstants.CBAS_QUOTA
         if "kv" in self.services:
             if kv_quota < testconstants.MIN_KV_QUOTA:
@@ -348,9 +346,7 @@ class NodeHelper:
                 kv_quota = testconstants.MIN_KV_QUOTA
             log.info("Setting KV memory quota as {0} MB on {1}"
                      .format(kv_quota, self.ip))
-        self.rest.init_cluster_memoryQuota(self.node.rest_username,
-                                           self.node.rest_password,
-                                           kv_quota)
+        self.rest.set_service_mem_quota({'memoryQuota': kv_quota})
 
     def init_cb(self):
         duration, event, timeout = install_constants.WAIT_TIMES[self.info.deliverable_type]["init"]
