@@ -31,35 +31,6 @@ class CollectionsQuorumLoss(CollectionBase):
             self.data_loading_thread = None
         super(CollectionsQuorumLoss, self).tearDown()
 
-    def get_failover_count(self):
-        rest = RestConnection(self.cluster.master)
-        cluster_status = rest.cluster_status()
-        failover_count = 0
-        # check for inactiveFailed
-        for node in cluster_status['nodes']:
-            if node['clusterMembership'] == "inactiveFailed":
-                failover_count += 1
-        return failover_count
-
-    def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
-        time_start = time.time()
-        time_max_end = time_start + timeout
-        actual_failover_count = 0
-        while time.time() < time_max_end:
-            actual_failover_count = self.get_failover_count()
-            if actual_failover_count == expected_failover_count:
-                break
-            time.sleep(20)
-        time_end = time.time()
-        if actual_failover_count != expected_failover_count:
-            self.log.info(self.rest.print_UI_logs())
-        self.assertTrue(actual_failover_count == expected_failover_count,
-                        "{0} nodes failed over, expected : {1}"
-                        .format(actual_failover_count,
-                                expected_failover_count))
-        self.log.info("{0} nodes failed over as expected in {1} seconds"
-                      .format(actual_failover_count, time_end - time_start))
-
     def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         self.assertTrue(task.result, "Rebalance Failed")
@@ -69,7 +40,7 @@ class CollectionsQuorumLoss(CollectionBase):
         spec = {
             # Scope/Collection ops params
             MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
-            MetaCrudParams.COLLECTIONS_TO_DROP: 5,
+            MetaCrudParams.COLLECTIONS_TO_DROP: 10,
 
             MetaCrudParams.SCOPES_TO_DROP: 0,
             MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 0,
@@ -82,7 +53,7 @@ class CollectionsQuorumLoss(CollectionBase):
             # In both the collection creation case, previous maxTTL value of
             # individual collection is considered
             MetaCrudParams.SCOPES_TO_RECREATE: 0,
-            MetaCrudParams.COLLECTIONS_TO_RECREATE: 5,
+            MetaCrudParams.COLLECTIONS_TO_RECREATE: 10,
 
             # Applies only for the above listed scope/collection operations
             MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS: "all",
@@ -95,7 +66,7 @@ class CollectionsQuorumLoss(CollectionBase):
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 50,
 
                 MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
-                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 0,
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 10,
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 5,
                 MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
@@ -121,28 +92,28 @@ class CollectionsQuorumLoss(CollectionBase):
         ignore_exceptions.append(SDKException.DocumentNotFoundException)
         doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
 
-    def data_load(self):
-        """
-        Continuous data load
-        """
-        while self.data_load_flag:
-            doc_loading_spec = self.get_common_spec()
-            self.set_retry_exceptions(doc_loading_spec)
-            self.set_ignore_exceptions(doc_loading_spec)
-            try:
-                tasks = self.bucket_util.run_scenario_from_spec(self.task,
-                                                                self.cluster,
-                                                                self.bucket_util.buckets,
-                                                                doc_loading_spec,
-                                                                mutation_num=0,
-                                                                async_load=False,
-                                                                batch_size=self.batch_size)
-                if tasks.result is False:
-                    raise Exception("subsequent doc loading task failed")
-            except Exception as e:
-                self.data_load_exception = e
-                raise
-            self.sleep(5)
+    def wait_for_async_data_load_to_complete(self, task):
+        self.task.jython_task_manager.get_task_result(task)
+        self.bucket_util.validate_doc_loading_results(task)
+        if task.result is False:
+            self.fail("Doc_loading failed")
+
+    def data_validation_collection(self):
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+
+    def data_load(self, async_load=True):
+        doc_loading_spec = self.get_common_spec()
+        self.set_retry_exceptions(doc_loading_spec)
+        self.set_ignore_exceptions(doc_loading_spec)
+        tasks = self.bucket_util.run_scenario_from_spec(self.task,
+                                                            self.cluster,
+                                                            self.bucket_util.buckets,
+                                                            doc_loading_spec,
+                                                            mutation_num=0,
+                                                            async_load=async_load,
+                                                            batch_size=self.batch_size)
+        return tasks
 
     def servers_to_fail(self):
         """
@@ -259,16 +230,13 @@ class CollectionsQuorumLoss(CollectionBase):
         2. Rebalance the cluster
         3. Remove failures if you had added them
         4. Wipe config dir of nodes that were failed over and removed out
-        5. Rebalance-in the nodes that were failed over and removed out
+        5. Rebalance-in the nodes that were failed over and removed out,
+          with parallel data load
         """
         if self.create_zones:
             self.server_to_fail = self.shuffle_nodes_between_two_zones()
         else:
             self.server_to_fail = self.servers_to_fail()
-
-        self.data_load_flag = True
-        self.data_loading_thread = threading.Thread(target=self.data_load)
-        self.data_loading_thread.start()
 
         if self.failover_action:
             self.log.info("Inducing failure {0} on nodes: {1}".
@@ -283,27 +251,27 @@ class CollectionsQuorumLoss(CollectionBase):
                                all_at_once=True)
         self.assertTrue(result, "Failover Failed")
 
+        tasks = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
                                                    retry_get_process_num=100)
         self.wait_for_rebalance_to_complete(rebalance_task)
+        self.wait_for_async_data_load_to_complete(tasks)
+        self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
             self.sleep(20, "wait after removing failure")
 
         self.wipe_config_on_removed_nodes()
 
+        tasks = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
                                                    retry_get_process_num=100)
         self.wait_for_rebalance_to_complete(rebalance_task)
-
-        self.data_load_flag = False
-        self.data_loading_thread.join()
-        if self.data_load_exception:
-            self.log.error("Caught exception from data load thread")
-            self.fail(self.data_load_exception)
+        self.wait_for_async_data_load_to_complete(tasks)
+        self.data_validation_collection()
 
     def test_quorum_loss_failover_with_already_failed_over_node(self):
         """
@@ -313,9 +281,10 @@ class CollectionsQuorumLoss(CollectionBase):
         1. Pick majority nodes for failover
         2. Induce failure on step1 nodes
         3. Failover nodes from step 0 and step 1
-        4. Rebalance the cluster
+        4. Rebalance the cluster with data load
         5. Wipe config dir of nodes that were failed over and removed out
-        6. Rebalance-in the nodes that were failed over and removed out
+        6. Rebalance-in the nodes that were failed over and removed out,
+           with parallel data load
         See MB-45110 for more details
         """
 
@@ -331,10 +300,6 @@ class CollectionsQuorumLoss(CollectionBase):
 
         self.server_to_fail = self.servers_to_fail()
 
-        self.data_load_flag = True
-        self.data_loading_thread = threading.Thread(target=self.data_load)
-        self.data_loading_thread.start()
-
         if self.failover_action:
             self.log.info("Inducing failure {0} on nodes: {1}".
                           format(self.failover_action, self.server_to_fail))
@@ -349,26 +314,26 @@ class CollectionsQuorumLoss(CollectionBase):
                                all_at_once=True)
         self.assertTrue(result, "Failover Failed")
 
+        tasks = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
                                                    retry_get_process_num=100)
         self.wait_for_rebalance_to_complete(rebalance_task)
+        self.wait_for_async_data_load_to_complete(tasks)
+        self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
             self.sleep(20, "wait after removing failure")
-
         self.wipe_config_on_removed_nodes()
+
+        tasks = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and rebalanced out".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
                                                    retry_get_process_num=100)
         self.wait_for_rebalance_to_complete(rebalance_task)
-
-        self.data_load_flag = False
-        self.data_loading_thread.join()
-        if self.data_load_exception:
-            self.log.error("Caught exception from data load thread")
-            self.fail(self.data_load_exception)
+        self.wait_for_async_data_load_to_complete(tasks)
+        self.data_validation_collection()
 
     def test_quorum_loss_failover_more_than_failed_nodes(self):
         """
@@ -376,18 +341,15 @@ class CollectionsQuorumLoss(CollectionBase):
         0. Pick majority nodes for failover
         1. Induce failure on step0 nodes
         2. Failover failed nodes + a healthy node (more nodes than failed nodes)
-        2. Rebalance the cluster
+        2. Rebalance the cluster with data load
         4. Wipe config dir of nodes that were failed over and removed out
-        5. Rebalance-in the nodes that were failed over and removed out
+        5. Rebalance-in the nodes that were failed over and removed out,
+           with parallel data load
         """
         if self.create_zones:
             self.server_to_fail = self.shuffle_nodes_between_two_zones()
         else:
             self.server_to_fail = self.servers_to_fail()
-
-        self.data_load_flag = True
-        self.data_loading_thread = threading.Thread(target=self.data_load)
-        self.data_loading_thread.start()
 
         if self.failover_action:
             self.log.info("Inducing failure {0} on nodes: {1}".
@@ -403,10 +365,13 @@ class CollectionsQuorumLoss(CollectionBase):
                                all_at_once=True)
         self.assertTrue(result, "Failover Failed")
 
+        tasks = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
                                                    retry_get_process_num=100)
         self.wait_for_rebalance_to_complete(rebalance_task)
+        self.wait_for_async_data_load_to_complete(tasks)
+        self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
             self.sleep(20, "wait after removing failure")
@@ -414,14 +379,11 @@ class CollectionsQuorumLoss(CollectionBase):
         removed_nodes = failover_nodes
         self.wipe_config_on_removed_nodes(removed_nodes)
 
+        tasks = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and rebalanced out".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
                                                    retry_get_process_num=100)
         self.wait_for_rebalance_to_complete(rebalance_task)
-
-        self.data_load_flag = False
-        self.data_loading_thread.join()
-        if self.data_load_exception:
-            self.log.error("Caught exception from data load thread")
-            self.fail(self.data_load_exception)
+        self.wait_for_async_data_load_to_complete(tasks)
+        self.data_validation_collection()
