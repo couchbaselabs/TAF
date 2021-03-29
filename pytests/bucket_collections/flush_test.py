@@ -192,14 +192,20 @@ class FlushTests(CollectionBase):
         mutate_spec = self.__get_mutate_spec(doc_ttl, durability_level)
 
         doc_mutation_spec = {
+            MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
+            MetaCrudParams.COLLECTIONS_TO_DROP: 0,
+            MetaCrudParams.SCOPES_TO_DROP: 0,
+            MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 0,
+            MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 0,
+            MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 0,
+
             "doc_crud": {
                 MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
-                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 100,
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 20,
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 20,
-                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 50,
-                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 10,
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 20,
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 20,
             },
-
             # Doc_loading task options
             MetaCrudParams.DOC_TTL: doc_ttl,
             MetaCrudParams.DURABILITY_LEVEL: durability_level,
@@ -243,24 +249,25 @@ class FlushTests(CollectionBase):
         # Wait for mutation task to complete
         self.task_manager.get_task_result(mutate_task)
 
-        # Validate only the scope/collection hierarchy
-        for node in kv_nodes:
-            # Fetch scope/collection stats after flush for validation
-            node_dict[node]["scope_stats"]["post_flush"] = \
-                node_dict[node]["cbstat"].get_scopes(self.bucket)
-            node_dict[node]["collection_stats"]["post_flush"] = \
-                node_dict[node]["cbstat"].get_collections(self.bucket)
+        if not collection_mutations:
+            # Validate only the scope/collection hierarchy
+            for node in kv_nodes:
+                # Fetch scope/collection stats after flush for validation
+                node_dict[node]["scope_stats"]["post_flush"] = \
+                    node_dict[node]["cbstat"].get_scopes(self.bucket)
+                node_dict[node]["collection_stats"]["post_flush"] = \
+                    node_dict[node]["cbstat"].get_collections(self.bucket)
 
-            # Validate pre and post flush stats
-            if node_dict[node]["scope_stats"]["pre_flush"] \
-                    != node_dict[node]["scope_stats"]["post_flush"]:
-                self.log_failure("%s - Scope stats mismatch after flush")
-            if node_dict[node]["collection_stats"]["pre_flush"] \
-                    != node_dict[node]["collection_stats"]["post_flush"]:
-                self.log_failure("%s - Collection stats mismatch after flush")
+                # Validate pre and post flush stats
+                if node_dict[node]["scope_stats"]["pre_flush"]["manifest_uid"] \
+                        != node_dict[node]["scope_stats"]["post_flush"]["manifest_uid"]:
+                    self.log_failure("%s - Scope stats mismatch after flush")
+                if node_dict[node]["collection_stats"]["pre_flush"]["manifest_uid"] \
+                        != node_dict[node]["collection_stats"]["post_flush"]["manifest_uid"]:
+                    self.log_failure("%s - Collection stats mismatch after flush")
 
-            # Close node's shell connections
-            node_dict[node]["shell"].disconnect()
+                # Close node's shell connections
+                node_dict[node]["shell"].disconnect()
 
         # Fails test case in case of any detected failure
         self.validate_test_failure()
