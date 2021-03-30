@@ -4304,7 +4304,7 @@ class AutoFailoverNodesFailureTask(Task):
             self.set_exception(AutoFailoverException(message))
             return False
         if self.rebalance_in_progress:
-            status, stop_time = self._check_if_rebalance_in_progress(120)
+            status, stop_time = self._check_if_rebalance_in_progress(180)
             if not status:
                 if stop_time == -1:
                     message = "Rebalance already completed before failover " \
