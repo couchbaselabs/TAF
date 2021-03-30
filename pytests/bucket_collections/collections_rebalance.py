@@ -1,7 +1,7 @@
 import time
 
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
@@ -244,6 +244,7 @@ class CollectionsRebalance(CollectionBase):
             self.task.jython_task_manager.get_task_result(task)
             if task.fail:
                 self.fail("preload dgm failed")
+
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.print_bucket_stats()
 
@@ -961,3 +962,65 @@ class CollectionsRebalance(CollectionBase):
             self.wait_for_rebalance_to_complete(operation)
             self.wait_for_async_data_load_to_complete(tasks)
             self.data_validation_collection()
+
+    def test_Orchestrator_Node_failover(self):
+        """
+        create buckets and load initial items
+        """
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets()
+
+        """
+        Get the orchestrator ip value
+        """
+        self.graceful = self.input.param("graceful", False)
+        self.cycles = self.input.param("cycles", 4)
+        for cycle in range(self.cycles):
+            self.log.info("Cycle {0}".format(cycle))
+            orchestratorValue = self.cluster_util.find_orchestrator(self.cluster.master)
+
+            orchestrator_node_ip = orchestratorValue[1].split("@")[1]
+
+            for server in self.servers:
+                if server.ip == orchestrator_node_ip:
+                    failover_nodes = [server]
+                    break
+
+            result = self.task.failover(self.cluster.servers, failover_nodes=failover_nodes,
+                                                    graceful=self.graceful)
+
+            self.assertTrue(result, "Hard Failover failed")
+
+            rebalance_task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [],
+                                                   failover_nodes)
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.assertTrue(result, "Rebalance failed")
+
+            """
+            find first non-failover nodes and pass it to find_orchestrator function
+            """
+            for server in self.servers:
+                if server.ip != orchestrator_node_ip:
+                    node = server
+                    break
+
+            orchestratorValue = self.cluster_util.find_orchestrator(node)
+
+            orchestrator_node_ip = orchestratorValue[1].split("@")[1]
+            for server in self.servers:
+                if server.ip == orchestrator_node_ip:
+                    self.cluster.master = server
+                    break
+
+            """
+            Adding the failover node again and performing rebalance in
+            """
+            rest = RestConnection(self.cluster.master)
+            self.log.info("master node is:"+str(self.cluster.master.ip))
+            self.log.info("Added node is:"+str(failover_nodes[0].ip))
+            otpNode = rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+                                failover_nodes[0].ip, failover_nodes[0].port)
+
+            rebalance_task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+
