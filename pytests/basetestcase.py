@@ -549,17 +549,21 @@ class BaseTestCase(unittest.TestCase):
                           port=None, quota_percent=None, services=None):
         quota = 0
         init_tasks = []
+        ssh_sessions = dict()
+
+        # Open ssh_connections for command execution
+        for server in cluster.servers:
+            ssh_sessions[server.ip] = RemoteMachineShellConnection(server)
+
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user
             if not server.index_path:
                 server.index_path = server.data_path
             for path in set([_f for _f in [server.data_path, server.index_path]
                              if _f]):
-                shell = RemoteMachineShellConnection(server)
                 for cmd in ("rm -rf {0}/*".format(path),
                             "chown -R couchbase:couchbase {0}".format(path)):
-                    shell.execute_command(cmd)
-                shell.disconnect()
+                    ssh_sessions[server.ip].execute_command(cmd)
                 rest = RestConnection(server)
                 rest.set_data_path(data_path=server.data_path,
                                    index_path=server.index_path,
@@ -586,10 +590,12 @@ class BaseTestCase(unittest.TestCase):
                                         for server in self.servers])) == 1:
             self.log.warn("RAM quota was defined less than 100 MB:")
             for server in cluster.servers:
-                remote_client = RemoteMachineShellConnection(server)
-                ram = remote_client.extract_remote_info().ram
+                ram = ssh_sessions[server.ip].extract_remote_info().ram
                 self.log.debug("{0}: {1}".format(server.ip, ram))
-                remote_client.disconnect()
+
+        # Close all ssh_connections
+        for server in cluster.servers:
+            ssh_sessions[server.ip].disconnect()
 
         if self.jre_path:
             for server in cluster.servers:
