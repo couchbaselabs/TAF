@@ -278,7 +278,7 @@ class CBASUDF(CBASBaseTest):
         else:
             while test_udf_obj.dataverse_name == udf_objs[0].dataverse_name:
                 test_udf_obj.dataverse_name = random.choice(
-                    self.cbas_util_v2.dataverses.values())
+                    self.cbas_util_v2.dataverses.values()).name
         if self.input.param('test_udf_param_name', "diff") == "same":
             test_udf_obj.parameters = udf_objs[0].parameters
 

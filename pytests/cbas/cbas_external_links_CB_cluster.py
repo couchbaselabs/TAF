@@ -978,9 +978,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "hostname": self.remove_and_return_new_list(self.to_clusters,
                                                             to_cluster)[
                     0].master.ip,
-                "load_sample_bucket": True,
-                "validate_connect_error": True,
-                "expected_connect_error": "Bucket UUID has changed"
+                "load_sample_bucket": True
             },
             {
                 "description": "Changing hostname to another cluster with force flag on connect link",
@@ -1016,7 +1014,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Changing credentials to a user which has less than minimum role required",
                 "new_user": "analytics_reader",
                 "validate_connect_error": True,
-                "expected_connect_error": "Connect link failed"
+                "expected_connect_error": "Invalid credentials for link"
             },
             {
                 "description": "Changing encryption type to half",
@@ -1218,6 +1216,12 @@ class CBASExternalLinks(CBASBaseTest):
                 self.log.info("Test Passed")
             except Exception as err:
                 self.log.error(str(err))
+                if testcase.get("load_sample_bucket", False) and \
+                not self.to_clusters[0].bucket_util.delete_bucket(
+                    self.to_clusters[0].master, self.sample_bucket):
+                    raise Exception(
+                        "Error while deleting {0} bucket in remote cluster".format(
+                            self.sample_bucket.name))
                 reset_original = True
                 failed_testcases.append(testcase["description"])
         if failed_testcases:
