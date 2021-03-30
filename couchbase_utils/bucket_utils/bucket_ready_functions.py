@@ -2213,11 +2213,6 @@ class BucketUtils(ScopeUtils):
             for bucket in self.buckets:
                 if bucket.bucketType == 'memcached':
                     continue
-                shell_conn = RemoteMachineShellConnection(server)
-                tasks.append(self.task.async_wait_for_stats(
-                    [shell_conn], bucket, cbstat_cmd,
-                    stat_name, comparison_condition, expected_val,
-                    timeout=timeout))
                 if check_ep_items_remaining:
                     dcp_cmd = "dcp"
                     shell_conn = RemoteMachineShellConnection(server)
@@ -2225,6 +2220,11 @@ class BucketUtils(ScopeUtils):
                         [shell_conn], bucket, dcp_cmd,
                         'ep_dcp_items_remaining', "==", 0,
                         timeout=timeout))
+                shell_conn = RemoteMachineShellConnection(server)
+                tasks.append(self.task.async_wait_for_stats(
+                    [shell_conn], bucket, cbstat_cmd,
+                    stat_name, comparison_condition, expected_val,
+                    timeout=timeout))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
             for shell in task.shellConnList:
