@@ -15,6 +15,8 @@ from java.util.concurrent import Executors, TimeUnit
 from com.couchbase.client.java.analytics import AnalyticsQuery, AnalyticsParams
 
 import bulk_doc_operations.doc_ops as doc_op
+
+from Cb_constants import CbServer
 from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import bucket_utils
 from common_lib import sleep
@@ -341,12 +343,11 @@ class analytics(CBASBaseTest):
         if "eventing" in active_service:
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
 
-        print(total_memory_in_mb)
         available_memory = total_available_memory_in_mb - threadhold_memory
         self.rest.set_service_mem_quota(
-            {'memoryQuota': available_memory,
-             'cbasMemoryQuota': available_memory - 1024,
-             'indexMemoryQuota': available_memory - 1024})
+            {CbServer.Settings.KV_MEM_QUOTA: available_memory,
+             CbServer.Settings.CBAS_MEM_QUOTA: available_memory - 1024,
+             CbServer.Settings.INDEX_MEM_QUOTA: available_memory - 1024})
 
         self.log.info("Create CB buckets")
         self.create_bucket(self.master, "ChirpMessages", bucket_ram=100)

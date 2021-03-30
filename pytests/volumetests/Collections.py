@@ -7,6 +7,8 @@ from backup_service import BackupServiceTest
 from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
+
+from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
@@ -128,8 +130,9 @@ class volume(CollectionBase):
         if self.number_of_indexes == 0:
             return
         else:
-            self.rest.set_service_mem_quota({"memoryQuota": 10000,
-                                             "indexMemoryQuota": 11000})
+            self.rest.set_service_mem_quota(
+                {CbServer.Settings.KV_MEM_QUOTA: 10000,
+                 CbServer.Settings.INDEX_MEM_QUOTA: 11000})
 
     def run_cbq_query(self, query):
         """

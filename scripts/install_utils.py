@@ -7,6 +7,7 @@ import time
 import os
 
 import testconstants
+from Cb_constants import CbServer
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from membase.api.rest_client import RestConnection
 import install_constants
@@ -323,19 +324,19 @@ class NodeHelper:
             log.info("Setting INDEX memory quota as {0} MB on {1}"
                      .format(testconstants.INDEX_QUOTA, self.ip))
             self.rest.set_service_mem_quota(
-                {'indexMemoryQuota': testconstants.INDEX_QUOTA})
+                {CbServer.Settings.INDEX_MEM_QUOTA: testconstants.INDEX_QUOTA})
             kv_quota -= testconstants.INDEX_QUOTA
         if "fts" in self.services:
             log.info("Setting FTS memory quota as {0} MB on {1}"
                      .format(params["fts_quota"], self.ip))
             self.rest.set_service_mem_quota(
-                {'ftsMemoryQuota': params["fts_quota"]})
+                {CbServer.Settings.FTS_MEM_QUOTA: params["fts_quota"]})
             kv_quota -= params["fts_quota"]
         if "cbas" in self.services:
             log.info("Setting CBAS memory quota as {0} MB on {1}"
                      .format(testconstants.CBAS_QUOTA, self.ip))
             self.rest.set_service_mem_quota(
-                {"cbasMemoryQuota": testconstants.CBAS_QUOTA})
+                {CbServer.Settings.CBAS_MEM_QUOTA: testconstants.CBAS_QUOTA})
             kv_quota -= testconstants.CBAS_QUOTA
         if "kv" in self.services:
             if kv_quota < testconstants.MIN_KV_QUOTA:
@@ -346,7 +347,8 @@ class NodeHelper:
                 kv_quota = testconstants.MIN_KV_QUOTA
             log.info("Setting KV memory quota as {0} MB on {1}"
                      .format(kv_quota, self.ip))
-        self.rest.set_service_mem_quota({'memoryQuota': kv_quota})
+        self.rest.set_service_mem_quota(
+            {CbServer.Settings.KV_MEM_QUOTA: kv_quota})
 
     def init_cb(self):
         duration, event, timeout = install_constants.WAIT_TIMES[self.info.deliverable_type]["init"]

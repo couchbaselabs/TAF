@@ -3,6 +3,8 @@ import threading
 import random
 from java.util.concurrent import Callable
 from java.util.concurrent import Executors, TimeUnit
+
+from Cb_constants import CbServer
 from pytests.cbas.cbas_base import CBASBaseTest
 from lib.membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
@@ -90,9 +92,9 @@ class analytics_high_doc_ops(CBASBaseTest):
 
         available_memory = total_available_memory_in_mb - threadhold_memory
         self.rest.set_service_mem_quota(
-            {'memoryQuota': available_memory,
-             'cbasMemoryQuota': available_memory-1024,
-             'indexMemoryQuota': available_memory-1024})
+            {CbServer.Settings.KV_MEM_QUOTA: available_memory,
+             CbServer.Settings.CBAS_MEM_QUOTA: available_memory-1024,
+             CbServer.Settings.INDEX_MEM_QUOTA: available_memory-1024})
 
         self.log.info("Create CB buckets")
         self.create_bucket(self.cluster.master, "GleambookUsers",

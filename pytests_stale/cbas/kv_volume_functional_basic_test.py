@@ -23,6 +23,7 @@ import json
 from com.couchbase.client.java.analytics import AnalyticsQuery, AnalyticsParams
 import sys, time
 
+from Cb_constants import CbServer
 from common_lib import sleep
 from pytests.cbas.cbas_base import CBASBaseTest
 from lib.membase.api.rest_client import RestConnection, RestHelper
@@ -195,12 +196,11 @@ class volume(BaseTestCase):
         if "eventing" in active_service:
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
 
-        print(total_memory_in_mb)
         available_memory = total_available_memory_in_mb - threadhold_memory
         self.rest.set_service_mem_quota(
-            {'memoryQuota': available_memory,
-             'cbasMemoryQuota': available_memory-1024,
-             'indexMemoryQuota': available_memory-1024})
+            {CbServer.Settings.KV_MEM_QUOTA: available_memory,
+             CbServer.Settings.CBAS_MEM_QUOTA: available_memory-1024,
+             CbServer.Settings.INDEX_MEM_QUOTA: available_memory-1024})
 
         self.log.info("Create CB buckets")
         self.create_bucket(self.master, "GleambookUsers",bucket_ram=available_memory)

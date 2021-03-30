@@ -3,7 +3,7 @@ Created on 04-Mar-2021
 
 @author: Umang
 
-Very important note - 
+Very important note -
 Number of datasets in <= 6.5.0 should not be more than 8.
 '''
 
@@ -73,7 +73,7 @@ class UpgradeTests(UpgradeBase):
                     "Error while creating infra from CBAS spec -- {0}".format(
                         cbas_infra_result[1]))
                 return False
-        
+
         if connect_local_link:
             for dataverse in self.cbas_util.dataverses:
                 if not self.cbas_util.connect_link(".".join([dataverse,"Local"])):
@@ -97,14 +97,15 @@ class UpgradeTests(UpgradeBase):
         if not rebalance_passed:
             self.log_failure("Rebalance operation Failed")
             return False
-        
+
         # Update RAM quota allocated to buckets created before upgrade
         cluster_info = rest.get_nodes_self()
-        kv_quota = cluster_info.__getattribute__("memoryQuota")
+        kv_quota = \
+            cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
         bucket_size = kv_quota // (self.input.param("num_buckets", 1) + 1)
         for bucket in self.bucket_util.buckets:
             self.bucket_util.update_bucket_property(bucket,bucket_size)
-        
+
         validation_results = {}
         cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
             service_type="cbas", get_all_nodes=True,
@@ -182,7 +183,7 @@ class UpgradeTests(UpgradeBase):
             self.log.error("Data ingestion did not happen in the datasets")
         else:
             validation_results["post_upgrade_data_load"] = True
-        
+
         self.log.info("Deleting all the data from default collection of buckets created before upgrade")
         for bucket in self.bucket_util.buckets:
             gen_load = doc_generator(
@@ -197,7 +198,7 @@ class UpgradeTests(UpgradeBase):
                 batch_size=500,
                 sdk_client_pool=self.sdk_client_pool)
             self.task_manager.get_task_result(async_load_task)
-            
+
             # Verify doc load count
             self.bucket_util._wait_for_stats_all_buckets()
             while True:
@@ -207,7 +208,7 @@ class UpgradeTests(UpgradeBase):
                     break
                 else:
                     self.sleep(30, "Wait for num_items to get reflected")
-        
+
         bucket.scopes[CbServer.default_scope].collections[
                 CbServer.default_collection].num_items = self.num_items
 
@@ -219,7 +220,7 @@ class UpgradeTests(UpgradeBase):
         self.bucket_util.create_collection_object(
             bucket, scope_spec["name"], collection_spec)
         bucket_helper = BucketHelper(self.cluster.master)
-        
+
         status, content = bucket_helper.create_scope(self.bucket.name, scope_spec["name"])
         if status is False:
             self.fail(
@@ -232,24 +233,24 @@ class UpgradeTests(UpgradeBase):
             self.fail("Create collection failed for %s:%s:%s, Reason - %s"
                       % (self.bucket.name, scope_spec["name"], collection_spec["name"], content))
         self.bucket.stats.increment_manifest_uid()
-        
+
         self.log.info("Creating new buckets with scopes and collections")
         for i in range(1, self.input.param("num_buckets", 1)+1):
             self.bucket_util.create_default_bucket(
                 replica=self.num_replicas,
                 compression_mode=self.compression_mode,
                 ram_quota=bucket_size,
-                bucket_type=self.bucket_type, 
+                bucket_type=self.bucket_type,
                 storage=self.bucket_storage,
                 eviction_policy=self.bucket_eviction_policy,
                 bucket_durability=self.bucket_durability_level,
                 bucket_name="bucket_{0}".format(i))
         self.over_ride_spec_params = self.input.param(
             "override_spec_params", "").split(";")
-        
+
         self.doc_spec_name = self.input.param("doc_spec", "initial_load")
         self.load_data_into_buckets()
-        
+
         self.log.info("Create CBAS infra post upgrade and check for data "
                       "ingestion")
         update_spec = {
@@ -308,7 +309,7 @@ class UpgradeTests(UpgradeBase):
                 self.sdk_client_pool.create_clients(
                     bucket, [self.cluster.master], clients_per_bucket,
                     compression_settings=self.sdk_compression)
-                
+
         if not doc_loading_spec:
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
                 self.doc_spec_name)
@@ -321,7 +322,7 @@ class UpgradeTests(UpgradeBase):
             doc_loading_spec, mutation_num=0, batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Initial reloading failed")
-        
+
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.validate_docs_per_collections_all_buckets()
@@ -357,7 +358,7 @@ class UpgradeTests(UpgradeBase):
             node_to_upgrade = self.fetch_node_to_upgrade()
         if not all(self.post_upgrade_validation().values()):
             self.fail("Post upgrade scenarios failed")
-    
+
     def test_upgrade_with_failover(self):
         self.log.info("Upgrading cluster nodes to target version")
         node_to_upgrade = self.fetch_node_to_upgrade()

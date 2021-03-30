@@ -1,6 +1,8 @@
 from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
+
+from Cb_constants import CbServer
 from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
@@ -59,7 +61,8 @@ class volume(BaseTestCase):
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
 
         available_memory = total_available_memory_in_mb - threshold_memory
-        self.rest.set_service_mem_quota({'memoryQuota': available_memory})
+        self.rest.set_service_mem_quota(
+            {CbServer.Settings.KV_MEM_QUOTA: available_memory})
 
         # Creating buckets for data loading purpose
         self.log.info("Create CB buckets")

@@ -10,6 +10,7 @@ import time
 import uuid
 
 from BucketLib.BucketOperations import BucketHelper
+from Cb_constants import CbServer
 from cbas.cbas_base import CBASBaseTest
 from couchbase_helper.documentgenerator import DocumentGenerator
 from couchbase_helper.tuq_generators import JsonGenerator
@@ -379,7 +380,8 @@ class BucketOperations(CBASBaseTest):
 
         self.log.info("Fetch and set memory quota")
         memory_for_kv = int(self.bucket_util.fetch_available_memory_for_kv_on_a_node())
-        self.rest.set_service_mem_quota({'memoryQuota': memory_for_kv})
+        self.rest.set_service_mem_quota(
+            {CbServer.Settings.KV_MEM_QUOTA: memory_for_kv})
 
         self.log.info("Update storageMaxActiveWritableDatasets count")
         active_data_set_count = self.num_of_cb_buckets * self.num_of_dataset_per_cbas
@@ -548,7 +550,7 @@ class CBASDataOperations(CBASBaseTest):
 
         self.log.info("Increase analytics memory quota")
         self.rest.set_service_mem_quota(
-            {'cbasMemoryQuota': self.analytics_memory})
+            {CbServer.Settings.CBAS_MEM_QUOTA: self.analytics_memory})
 
         self.log.info("Insert MB documents into default buckets")
         start = 0
@@ -574,7 +576,7 @@ class CBASDataOperations(CBASBaseTest):
 
         self.log.info("Decrease analytics memory quota to 1024 MB")
         self.rest.set_service_mem_quota(
-            {'cbasMemoryQuota': testconstants.CBAS_QUOTA})
+            {CbServer.Settings.CBAS_MEM_QUOTA: testconstants.CBAS_QUOTA})
 
         self.log.info("Verify document count remains unchanged")
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.dataset_name, total_documents))

@@ -12,7 +12,7 @@ from threading import Thread
 
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
-from Cb_constants import constants
+from Cb_constants import constants, CbServer
 from common_lib import sleep
 from global_vars import logger
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
@@ -794,26 +794,26 @@ class RestConnection(object):
                 self.test_log.debug("%s - Index service quota will be %s MB"
                                     % (self.ip, INDEX_QUOTA))
                 kv_quota -= INDEX_QUOTA
-                service_quota['indexMemoryQuota'] = INDEX_QUOTA
+                service_quota[CbServer.Settings.INDEX_MEM_QUOTA] = INDEX_QUOTA
             if "fts" in self.node_services:
                 self.test_log.debug("%s - Fts service will be %s MB"
                                     % (self.ip, FTS_QUOTA))
                 kv_quota -= FTS_QUOTA
                 self.test_log.debug("%s - Setting both index and fts quota"
                                     % self.ip)
-                service_quota['ftsMemoryQuota'] = FTS_QUOTA
+                service_quota[CbServer.Settings.FTS_MEM_QUOTA] = FTS_QUOTA
             if "cbas" in self.node_services:
                 self.test_log.debug("%s - CBAS service quota will be %s MB"
                                     % (self.ip, CBAS_QUOTA))
                 kv_quota -= CBAS_QUOTA
-                service_quota['cbasMemoryQuota'] = CBAS_QUOTA
+                service_quota[CbServer.Settings.CBAS_MEM_QUOTA] = CBAS_QUOTA
             kv_quota -= 1
             if kv_quota < MIN_KV_QUOTA:
                     raise Exception("KV RAM needs to be more than %s MB"
                             " at node  %s"  % (MIN_KV_QUOTA, self.ip))
 
         self.test_log.debug("%s - KV quota: %s MB" % (self.ip, kv_quota))
-        service_quota['memoryQuota'] = kv_quota
+        service_quota[CbServer.Settings.KV_MEM_QUOTA] = kv_quota
         self.set_service_mem_quota(service_quota)
         if cb_version in COUCHBASE_FROM_VERSION_4:
             self.init_node_services(username=self.username,
@@ -3632,14 +3632,14 @@ class RestParser(object):
         node.mcdMemoryAllocated = parsed['mcdMemoryAllocated']
         node.mcdMemoryReserved = parsed['mcdMemoryReserved']
 
-        if 'indexMemoryQuota' in parsed:
-            node.indexMemoryQuota = parsed['indexMemoryQuota']
-        if 'ftsMemoryQuota' in parsed:
-            node.ftsMemoryQuota = parsed['ftsMemoryQuota']
-        if 'cbasMemoryQuota' in parsed:
-            node.cbasMemoryQuota = parsed['cbasMemoryQuota']
-        if 'eventingMemoryQuota' in parsed:
-            node.eventingMemoryQuota = parsed['eventingMemoryQuota']
+        if CbServer.Settings.INDEX_MEM_QUOTA in parsed:
+            node.indexMemoryQuota = parsed[CbServer.Settings.INDEX_MEM_QUOTA]
+        if CbServer.Settings.FTS_MEM_QUOTA in parsed:
+            node.ftsMemoryQuota = parsed[CbServer.Settings.FTS_MEM_QUOTA]
+        if CbServer.Settings.CBAS_MEM_QUOTA in parsed:
+            node.cbasMemoryQuota = parsed[CbServer.Settings.CBAS_MEM_QUOTA]
+        if CbServer.Settings.EVENTING_MEM_QUOTA in parsed:
+            node.eventingMemoryQuota = parsed[CbServer.Settings.EVENTING_MEM_QUOTA]
 
         node.status = parsed['status']
         node.hostname = parsed['hostname']
@@ -3662,8 +3662,8 @@ class RestParser(object):
             node.ip = parsed["hostname"].rsplit(":", 1)[0]
 
         # memoryQuota
-        if 'memoryQuota' in parsed:
-            node.memoryQuota = parsed['memoryQuota']
+        if CbServer.Settings.KV_MEM_QUOTA in parsed:
+            node.memoryQuota = parsed[CbServer.Settings.KV_MEM_QUOTA]
         if 'availableStorage' in parsed:
             available_storage = parsed['availableStorage']
             for key in available_storage:

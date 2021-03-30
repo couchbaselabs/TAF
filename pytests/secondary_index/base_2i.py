@@ -1,6 +1,7 @@
 import random
 import time
 
+from Cb_constants import CbServer
 from gsiLib.gsiHelper import GsiHelper
 from newtuq import QueryTests
 from couchbase_helper.tuq_generators import TuqGenerators
@@ -984,7 +985,8 @@ class BaseSecondaryIndexingTests(QueryTests):
         node = self.cluster_util.get_nodes_from_services_map(
             service_type="index")
         rest = RestConnection(node)
-        rest.set_service_mem_quota({'indexMemoryQuota': memory_quota})
+        rest.set_service_mem_quota(
+            {CbServer.Settings.INDEX_MEM_QUOTA: memory_quota})
         cnt = 0
         docs = 50 + self.docs_per_day
         while cnt < 100:

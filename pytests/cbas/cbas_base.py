@@ -4,6 +4,7 @@ import traceback
 from math import ceil
 
 from BucketLib.bucket import TravelSample, BeerSample, Bucket
+from Cb_constants import CbServer
 from basetestcase import BaseTestCase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cbas_utils.cbas_utils import CbasUtil
@@ -146,9 +147,9 @@ class CBASBaseTest(BaseTestCase):
                     "Setting the min possible memory quota so that adding "
                     "more nodes to the cluster wouldn't be a problem.")
                 self.rest.set_service_mem_quota(
-                    {'memoryQuota': MIN_KV_QUOTA,
-                     'ftsMemoryQuota': FTS_QUOTA,
-                     'indexMemoryQuota': INDEX_QUOTA})
+                    {CbServer.Settings.KV_MEM_QUOTA: MIN_KV_QUOTA,
+                     CbServer.Settings.FTS_MEM_QUOTA: FTS_QUOTA,
+                     CbServer.Settings.INDEX_MEM_QUOTA: INDEX_QUOTA})
                 self.set_cbas_memory_from_available_free_memory = \
                     self.input.param(
                         'set_cbas_memory_from_available_free_memory', False)
@@ -157,7 +158,7 @@ class CBASBaseTest(BaseTestCase):
                               % CBAS_QUOTA)
                 self.cbas_memory_quota = CBAS_QUOTA
                 self.rest.set_service_mem_quota(
-                    {'cbasMemoryQuota': CBAS_QUOTA})
+                    {CbServer.Settings.CBAS_MEM_QUOTA: CBAS_QUOTA})
             if self.expected_error:
                 self.expected_error = \
                     self.expected_error.replace("INVALID_IP", invalid_ip)
@@ -260,9 +261,9 @@ class CBASBaseTest(BaseTestCase):
                         "Setting the min possible memory quota so that adding "
                         "more nodes to the cluster wouldn't be a problem.")
                     self.rest.set_service_mem_quota(
-                        {'memoryQuota': MIN_KV_QUOTA,
-                         'ftsMemoryQuota': FTS_QUOTA,
-                         'indexMemoryQuota': INDEX_QUOTA})
+                        {CbServer.Settings.KV_MEM_QUOTA: MIN_KV_QUOTA,
+                         CbServer.Settings.FTS_MEM_QUOTA: FTS_QUOTA,
+                         CbServer.Settings.INDEX_MEM_QUOTA: INDEX_QUOTA})
                     cluster.set_cbas_memory_from_available_free_memory = \
                         self.input.param(
                             'set_cbas_memory_from_available_free_memory', False)
@@ -271,7 +272,7 @@ class CBASBaseTest(BaseTestCase):
                                   % CBAS_QUOTA)
                     cluster.cbas_memory_quota = CBAS_QUOTA
                     self.rest.set_service_mem_quota(
-                        {'cbasMemoryQuota': CBAS_QUOTA})
+                        {CbServer.Settings.CBAS_MEM_QUOTA: CBAS_QUOTA})
 
                 cluster.cbas_util = None
                 # Drop any existing buckets and datasets
@@ -754,7 +755,7 @@ class CBASBaseTest(BaseTestCase):
             elif over_ride_param == "bucket_size":
                 if self.bucket_size == "auto":
                     cluster_info = self.rest.get_nodes_self()
-                    kv_quota = cluster_info.__getattribute__("memoryQuota")
+                    kv_quota = cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
                     self.bucket_size = kv_quota // bucket_spec[
                         MetaConstants.NUM_BUCKETS]
                 bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
@@ -783,10 +784,10 @@ class CBASBaseTest(BaseTestCase):
         services = services.split(",")
         if len(services) > 0:
             service_mem_dict = {
-                "kv": ["memoryQuota", MIN_KV_QUOTA],
-                "fts": ["ftsMemoryQuota", FTS_QUOTA],
-                "index": ["indexMemoryQuota", INDEX_QUOTA],
-                "cbas": ["cbasMemoryQuota", CBAS_QUOTA]}
+                "kv": [CbServer.Settings.KV_MEM_QUOTA, MIN_KV_QUOTA],
+                "fts": [CbServer.Settings.FTS_MEM_QUOTA, FTS_QUOTA],
+                "index": [CbServer.Settings.INDEX_MEM_QUOTA, INDEX_QUOTA],
+                "cbas": [CbServer.Settings.CBAS_MEM_QUOTA, CBAS_QUOTA]}
             if "n1ql" in services:
                 services.remove("n1ql")
             # Get all services that are already running in cluster
@@ -848,8 +849,8 @@ class CBASBaseTest(BaseTestCase):
                 # Assuming that KV node will always be present in the master
                 if "kv" in services:
                     services.remove("kv")
-                    memory_quota_available -= cluster_info.__getattribute__(
-                        "memoryQuota")
+                    memory_quota_available -= cluster_info\
+                        .__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
 
                 set_cbas_mem = False
                 if "cbas" in services:
@@ -872,18 +873,18 @@ class CBASBaseTest(BaseTestCase):
                         service_mem_dict["cbas"][1]:
                     if "cbas" in cluster_services:
                         if cluster_info.__getattribute__(
-                                "cbasMemoryQuota") >= memory_quota_available:
+                                CbServer.Settings.CBAS_MEM_QUOTA) >= memory_quota_available:
                             self.log.info(
                                 "Setting {0} memory quota for CBAS".format(
                                     memory_quota_available))
                             master_rest.set_service_mem_quota(
-                                {"cbasMemoryQuota": memory_quota_available})
+                                {CbServer.Settings.CBAS_MEM_QUOTA: memory_quota_available})
                     else:
                         self.log.info(
                             "Setting {0} memory quota for CBAS".format(
                                 memory_quota_available))
                         master_rest.set_service_mem_quota(
-                            {"cbasMemoryQuota": memory_quota_available})
+                            {CbServer.Settings.CBAS_MEM_QUOTA: memory_quota_available})
                 else:
                     self.fail("Error while setting service memory quota {0} "
                               "for CBAS".format(memory_quota_available))

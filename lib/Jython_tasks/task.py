@@ -5721,7 +5721,7 @@ class NodeInitializeTask(Task):
             self.test_log.debug("Quota for index service will be %s MB"
                                 % index_memory)
             total_memory -= index_memory
-            service_quota['indexMemoryQuota'] = index_memory
+            service_quota[CbServer.Settings.INDEX_MEM_QUOTA] = index_memory
         if "fts" in set_services:
             if self.fts_quota_percent:
                 fts_memory = total_memory * self.fts_quota_percent / 100
@@ -5730,7 +5730,7 @@ class NodeInitializeTask(Task):
             self.test_log.debug("Quota for fts service will be %s MB"
                                 % fts_memory)
             total_memory -= fts_memory
-            service_quota['ftsMemoryQuota'] = fts_memory
+            service_quota[CbServer.Settings.FTS_MEM_QUOTA] = fts_memory
         if "cbas" in set_services:
             if self.cbas_quota_percent:
                 cbas_memory = total_memory * self.cbas_quota_percent / 100
@@ -5739,12 +5739,12 @@ class NodeInitializeTask(Task):
             self.test_log.debug("Quota for cbas service will be %s MB"
                                 % cbas_memory)
             total_memory -= cbas_memory
-            service_quota['cbasMemoryQuota'] = cbas_memory
+            service_quota[CbServer.Settings.CBAS_MEM_QUOTA] = cbas_memory
         if total_memory < MIN_KV_QUOTA:
             raise Exception("KV RAM needs to be more than %s MB"
                             " at node  %s" % (MIN_KV_QUOTA, self.server.ip))
 
-        service_quota['memoryQuota'] = total_memory
+        service_quota[CbServer.Settings.KV_MEM_QUOTA] = total_memory
         rest.set_service_mem_quota(service_quota)
         rest.set_indexer_storage_mode(username, password, self.gsi_type)
 

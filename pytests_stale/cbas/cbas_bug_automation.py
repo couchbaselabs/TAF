@@ -2,6 +2,7 @@ import datetime
 import time
 import json
 
+from Cb_constants import CbServer
 from cbas.cbas_base import CBASBaseTest
 from common_lib import sleep
 from couchbase_helper.documentgenerator import DocumentGenerator
@@ -99,9 +100,9 @@ class CBASBugAutomation(CBASBaseTest):
         if "eventing" in active_service:
             total_available_memory_in_mb -= self.info.eventingMemoryQuota
 
-        print(total_memory_in_mb)
         available_memory = total_available_memory_in_mb - threadhold_memory
-        self.rest.set_service_mem_quota({'memoryQuota': available_memory})
+        self.rest.set_service_mem_quota(
+            {CbServer.Settings.KV_MEM_QUOTA: available_memory})
 
         self.log.info("Add a KV nodes")
         result = self.cluster_util.add_node(self.servers[1], services=["kv"], rebalance=False)

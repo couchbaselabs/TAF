@@ -34,14 +34,14 @@ class MagmaBaseTest(BaseTestCase):
                                password=self.cluster.master.rest_password)
 
         nodes_init = self.cluster.servers[1:self.nodes_init]
-        self.services = ["kv"]*(self.nodes_init)
+        self.services = ["kv"] * self.nodes_init
 
         self.dcp_services = self.input.param("dcp_services", None)
         self.dcp_servers = []
         if self.dcp_services:
             server = self.rest.get_nodes_self()
             self.rest.set_service_mem_quota(
-                {'indexMemoryQuota': int(server.mcdMemoryReserved - 100)})
+                {CbServer.Settings.INDEX_MEM_QUOTA: int(server.mcdMemoryReserved - 100)})
             self.dcp_services = [service.replace(":", ",") for service in self.dcp_services.split("-")]
             self.services.extend(self.dcp_services)
             self.dcp_servers = self.cluster.servers[self.nodes_init:

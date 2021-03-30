@@ -12,6 +12,8 @@ import sys
 from datetime import datetime
 from threading import Thread
 
+from Cb_constants import CbServer
+
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "connections"] + sys.path
 import testconstants
@@ -463,7 +465,7 @@ class MembaseServerInstaller(Installer):
                 rest.init_cluster(username=server.rest_username,
                                   password=server.rest_password)
                 rest.set_service_mem_quota(
-                    {'memoryQuota': rest.get_nodes_self().mcdMemoryReserved})
+                    {CbServer.Settings.KV_MEM_QUOTA: rest.get_nodes_self().mcdMemoryReserved})
                 cluster_initialized = True
                 break
             except ServerUnavailableException:
@@ -624,27 +626,24 @@ class CouchbaseServerInstaller(Installer):
 
                     if cb_version in COUCHBASE_FROM_VERSION_4:
                         if "index" in set_services:
-                            log.info(
-                                "quota for index service will be %s "
-                                "MB" % (
-                                    INDEX_QUOTA))
+                            log.info("quota for index service will be %s MB"
+                                     % INDEX_QUOTA)
                             kv_quota -= INDEX_QUOTA
                             log.info(
                                 "set index quota to node %s " %
                                 server.ip)
                             rest.set_service_mem_quota(
-                                {'indexMemoryQuota': INDEX_QUOTA})
+                                {CbServer.Settings.INDEX_MEM_QUOTA: INDEX_QUOTA})
                         if "fts" in set_services:
                             log.info(
                                 "quota for fts service will be %s MB"
-                                % (
-                                    FTS_QUOTA))
+                                % FTS_QUOTA)
                             kv_quota -= FTS_QUOTA
                             log.info(
                                 "set both index and fts quota at node "
                                 "%s " % server.ip)
                             rest.set_service_mem_quota(
-                                {'ftsMemoryQuota': FTS_QUOTA})
+                                {CbServer.Settings.FTS_MEM_QUOTA: FTS_QUOTA})
                         if "cbas" in set_services:
                             log.info(
                                 "quota for cbas service will be %s "
@@ -652,7 +651,7 @@ class CouchbaseServerInstaller(Installer):
                                     CBAS_QUOTA))
                             kv_quota -= CBAS_QUOTA
                             rest.set_service_mem_quota(
-                                {"cbasMemoryQuota": CBAS_QUOTA})
+                                {CbServer.Settings.CBAS_MEM_QUOTA: CBAS_QUOTA})
                         if kv_quota < MIN_KV_QUOTA:
                             raise Exception(
                                 "KV RAM needs to be more than %s MB"
@@ -663,7 +662,8 @@ class CouchbaseServerInstaller(Installer):
                         the condition smaller than allow quota """
                     kv_quota -= 1
                     log.info("quota for kv: %s MB" % kv_quota)
-                    rest.set_service_mem_quota({'memoryQuota': kv_quota})
+                    rest.set_service_mem_quota(
+                        {CbServer.Settings.KV_MEM_QUOTA: kv_quota})
                     if params["version"][
                        :5] in COUCHBASE_FROM_VERSION_4:
                         rest.init_node_services(

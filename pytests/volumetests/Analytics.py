@@ -23,7 +23,7 @@ import random
 #from com.couchbase.client.java import *
 #from com.couchbase.client.java.json import *
 #from com.couchbase.client.java.query import *
-
+from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from membase.api.rest_client import RestConnection
 from TestInput import TestInputSingleton
@@ -274,11 +274,13 @@ class volume(BaseTestCase):
         To set memory quota of KV and index services before starting step 5 of volume test
         """
         if cbas:
-            cluster.rest.set_service_mem_quota({"cbasMemoryQuota": memory})
+            cluster.rest.set_service_mem_quota(
+                {CbServer.Settings.CBAS_MEM_QUOTA: memory})
         else:
             info = cluster.rest.get_nodes_self()
             kv_quota = info.mcdMemoryAllocated
-            cluster.rest.set_service_mem_quota({"memoryQuota": kv_quota})
+            cluster.rest.set_service_mem_quota(
+                {CbServer.Settings.KV_MEM_QUOTA: kv_quota})
 
     # This code will be removed once cbas_base is refactored
     def handle_collection_setup_exception(self, exception_obj):
@@ -365,7 +367,7 @@ class volume(BaseTestCase):
             elif over_ride_param == "bucket_size":
                 if self.bucket_size < 100:
                     cluster_info = cluster.rest.get_nodes_self()
-                    kv_quota = cluster_info.__getattribute__("memoryQuota")
+                    kv_quota = cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
                     self.bucket_size = kv_quota // bucket_spec[MetaConstants.NUM_BUCKETS]
                 bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
             elif over_ride_param == "num_scopes":
