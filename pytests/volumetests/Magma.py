@@ -767,13 +767,17 @@ class volume(BaseTestCase):
                 for bucket in self.bucket_util.buckets:
                     output = shell.execute_command(
                        '/opt/couchbase/bin/cbstats localhost:11210 memory \
-                       -u Administrator -p password -b {} | grep \
-                       "ep_arena:resident\|mem_used:"'.format(bucket.name))[0]
+                       -u Administrator -p password -b {} | grep -e \
+                       ep_arena:resident -e  ep_arena:allocated \
+                       -e mem_used:'.format(bucket.name))[0]
                     self.log.debug("{}: {}".format(shell.ip,
                                                    output[0].replace(" ", "")
                                                    .strip()))
                     self.log.debug("{}: {}".format(shell.ip,
                                                    output[1].replace(" ", "")
+                                                   .strip()))
+                    self.log.debug("{}: {}".format(shell.ip,
+                                                   output[2].replace(" ", "")
                                                    .strip()))
             self.sleep(60)
             count += 1
