@@ -221,7 +221,6 @@ class BucketDurabilityBase(BaseTestCase):
                 cb_stat.vbucket_list(bucket_name, "replica")
 
     def get_bucket_dict(self, bucket_type, bucket_durability):
-
         bucket_dict = deepcopy(self.bucket_template)
         bucket_dict[Bucket.bucketType] = bucket_type
         bucket_dict[Bucket.durabilityMinLevel] = \

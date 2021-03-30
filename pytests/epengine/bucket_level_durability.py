@@ -29,6 +29,8 @@ class CreateBucketTests(BucketDurabilityBase):
         # Create cb_cli session object
         shell = self.vbs_in_node[self.cluster.master]["shell"]
         cb_cli = CbCli(shell)
+        err_for_three_replicas = "ERROR: durability_min_level - Durability " \
+                                 "minimum level cannot be specified with 3"
 
         for d_level in self.bucket_util.get_supported_durability_levels():
             create_failed = False
@@ -44,14 +46,25 @@ class CreateBucketTests(BucketDurabilityBase):
             bucket_obj = Bucket(bucket_dict)
 
             output = cb_cli.create_bucket(bucket_dict, wait=True)
-            self.get_vbucket_type_mapping(bucket_obj.name)
-            if "SUCCESS: Bucket created" not in str(output):
+            self.log.info(output)
+            if self.num_replicas == Bucket.ReplicaNum.THREE \
+                    and d_level != Bucket.DurabilityLevel.NONE:
+                if err_for_three_replicas not in str(output):
+                    self.log_failure("Bucket created with replica=3")
+                else:
+                    create_failed = True
+            elif "SUCCESS: Bucket created" not in str(output):
                 create_failed = True
                 if d_level in self.possible_d_levels[self.bucket_type]:
                     self.log_failure("Create failed for %s bucket "
                                      "with min_durability_level %s"
                                      % (self.bucket_type, d_level))
+            else:
+                # Wait for bucket warm_up to complete
+                while not self.bucket_util.is_warmup_complete([bucket_obj]):
+                    pass
 
+            self.get_vbucket_type_mapping(bucket_obj.name)
             self.bucket_util.buckets = [bucket_obj]
             self.bucket_util.print_bucket_stats()
             self.summary.add_step(test_step)
@@ -75,6 +88,7 @@ class CreateBucketTests(BucketDurabilityBase):
             self.summary.add_step("Delete bucket")
 
     def test_create_bucket_using_rest(self):
+        log_failure_msg = "Bucket creation succeeded for replica=3"
         for d_level in self.bucket_util.get_supported_durability_levels():
             create_failed = False
             test_step = "Creating %s bucket with level %s" \
@@ -88,13 +102,16 @@ class CreateBucketTests(BucketDurabilityBase):
                 self.bucket_util.create_bucket(bucket_obj,
                                                wait_for_warmup=True)
                 self.get_vbucket_type_mapping(bucket_obj.name)
-                if d_level not in self.possible_d_levels[self.bucket_type]:
+                if self.num_replicas == Bucket.ReplicaNum.THREE:
+                    if d_level != Bucket.DurabilityLevel.NONE:
+                        self.log_failure(log_failure_msg)
+                elif d_level not in self.possible_d_levels[self.bucket_type]:
                     self.log_failure("Create succeeded for %s bucket for "
                                      "unsupported durability %s"
                                      % (self.bucket_type, d_level))
             except Exception as rest_exception:
                 create_failed = True
-                self.log.info(rest_exception)
+                self.log.debug(rest_exception)
 
             self.bucket_util.print_bucket_stats()
             self.summary.add_step(test_step)
