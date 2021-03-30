@@ -1,4 +1,5 @@
 import math
+import sys
 
 from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
@@ -15,10 +16,6 @@ class CollectionsQuorumLoss(CollectionBase):
         self.failover_orchestrator = self.input.param("failover_orchestrator", False)
         self.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
         self.create_zones = self.input.param("create_zones", False)
-
-        self.data_loading_thread = None
-        self.data_load_flag = False
-        self.data_load_exception = None # Object variable to assign data load thread's exception
 
     def tearDown(self):
         if self.failover_action:
@@ -173,7 +170,7 @@ class CollectionsQuorumLoss(CollectionBase):
         Group 1 and Group 2 in an alternate manner ie;
         1st node in Group 1, 2nd node in Group 2, 3rd node in Group 1 and so on
         and finally rebalances the resulting cluster
-        :return nodes of 2nd zone
+        :return: nodes of 2nd zone
         """
         serverinfo = self.cluster.master
         rest = RestConnection(serverinfo)
@@ -440,7 +437,64 @@ class CollectionsQuorumLoss(CollectionBase):
         self.data_validation_collection()
 
 
+    def test_negative_unsafe_failover_orchestrator(self):
+        """
+        Negative case: unsafe hard failover of healthy orchestrator node
+        """
+        self.failover_orchestrator = True
+        self.server_to_fail = self.servers_to_fail()
+        self.rest = RestConnection(self.cluster.master)
+        self.log.info("Failing over nodes {0}".format(self.server_to_fail))
+        otp_nodes = list()
+        for node in self.server_to_fail:
+            ip = "ns_1@" + node.ip
+            otp_nodes.append(ip)
+        try:
+            self.rest.fail_over(otp_nodes, graceful=False, allowUnsafe=True, all_at_once=True)
+        except:
+            self.log.info("Failed as expected: {0} {1}"
+                          .format( sys.exc_info()[0], sys.exc_info()[1]))
+            # TODO add code to verify the error response after MB-45086 is resolved
+        else:
+            self.wipe_config_on_removed_nodes()
+            self.fail("Unsafe failover of healthy orchestrator node did not fail")
 
+    def test_negative_add_back_node_without_wiping(self):
+        """
+        0. Pick majority nodes for failover
+        1. Induce failure on step0 nodes
+        2. Failover failed nodes
+        3. Rebalance the cluster
+        4. Verify add back of failed-over nodes fails
+        5. Wipe off nodes
+        """
+        self.server_to_fail = self.servers_to_fail()
+        self.custom_induce_failure()
+        self.sleep(20, "Wait before failing over")
 
+        self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
+        result = self.task.failover(self.nodes_in_cluster, failover_nodes=self.server_to_fail,
+                                    graceful=False, wait_for_pending=120,
+                                    allow_unsafe=True,
+                                    all_at_once=True)
+        self.assertTrue(result, "Failover Failed")
 
+        self.log.info("Rebalancing the cluster")
+        self.task.rebalance(self.nodes_in_cluster, [], [])
+        self.custom_remove_failure()
+        self.sleep(20, "wait after removing failure")
 
+        self.log.info("Adding back nodes which were failed and removed".
+                      format(self.server_to_fail))
+        self.rest = RestConnection(self.cluster.master)
+        for node in self.server_to_fail:
+            try:
+                self.rest.add_node(user=self.cluster.master.rest_username,
+                          password=self.cluster.master.rest_password,
+                          remoteIp=node.ip)
+            except:
+                self.log.info("Failed as expected: {0} {1}"
+                              .format(sys.exc_info()[0], sys.exc_info()[1]))
+            else:
+                self.fail("Adding back nodes without wiping did not fail")
+        self.wipe_config_on_removed_nodes()
