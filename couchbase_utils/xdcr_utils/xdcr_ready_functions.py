@@ -676,14 +676,15 @@ class XDCRUtils:
             else:
                 return 0
         except Exception as e:
-            self.fail(
+            self.log.error(
                 "Errors encountered while executing query {0} on {1} : {2}".format(query, server, e.message))
 
     def _create_index(self, server, bucket):
+        bkt = bucket.replace('.', '-')
         query_check_index_exists = "SELECT COUNT(*) FROM system:indexes " \
-                                   "WHERE name=`" + bucket + "_index`"
+                                   "WHERE name=`" + bkt + "_index`"
         if not self.__execute_query(server, query_check_index_exists):
-            self.__execute_query(server, "CREATE PRIMARY INDEX `" + bucket + "_index` "
+            self.__execute_query(server, "CREATE PRIMARY INDEX `" + bkt + "_index` "
                                  + "ON `" + bucket + '`')
 
     def _get_doc_count(self, server, bucket, exp):
