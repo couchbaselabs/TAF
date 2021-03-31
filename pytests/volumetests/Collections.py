@@ -497,10 +497,10 @@ class volume(CollectionBase):
             for action in [CouchbaseError.STOP_MEMCACHED, CouchbaseError.STOP_PROMETHEUS]:
                 step_count = step_count + 1
                 self.log.info("Step {0}: {1}".format(step_count, action))
-                self.log.info("Forcing durability level: MAJORITY")
                 # TODO Uncomment this after debugging CBQE-6721
+                #self.log.info("Forcing durability level: MAJORITY")
                 #self.durability_level = "MAJORITY"
-                #task = self.data_load_collection()
+                task = self.data_load_collection()
                 self.induce_and_revert_failure(action)
                 # Rebalance is required after error is reverted
                 rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=200)
