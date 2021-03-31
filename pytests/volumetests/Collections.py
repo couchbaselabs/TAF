@@ -498,8 +498,9 @@ class volume(CollectionBase):
                 step_count = step_count + 1
                 self.log.info("Step {0}: {1}".format(step_count, action))
                 self.log.info("Forcing durability level: MAJORITY")
-                self.durability_level = "MAJORITY"
-                task = self.data_load_collection()
+                # TODO Uncomment this after debugging CBQE-6721
+                #self.durability_level = "MAJORITY"
+                #task = self.data_load_collection()
                 self.induce_and_revert_failure(action)
                 # Rebalance is required after error is reverted
                 rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=200)
@@ -541,8 +542,9 @@ class volume(CollectionBase):
                     reset_flag = False
                     if (not self.durability_level) and failover == "Hard":
                         # Force a durability level to prevent data loss during hard failover
-                        self.log.info("Forcing durability level: MAJORITY")
-                        self.durability_level = "MAJORITY"
+                        #TODO Uncomment this after debugging CBQE-6721
+                        #self.log.info("Forcing durability level: MAJORITY")
+                        #self.durability_level = "MAJORITY"
                         reset_flag = True
                     task = self.data_load_collection()
                     if reset_flag:
