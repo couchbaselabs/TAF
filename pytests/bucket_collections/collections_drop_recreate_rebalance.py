@@ -7,6 +7,7 @@ from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.tuq_helper import N1QLHelper
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
 from table_view import TableView
 
@@ -20,6 +21,10 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.recovery_type = self.input.param("recovery_type", "delta")
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 2)
         self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
+        self.change_ephemeral_purge_age_and_interval = self.input.param("change_ephemeral_purge_age_and_interval",
+                                                                        True)
+        if self.change_ephemeral_purge_age_and_interval:
+            self.set_ephemeral_purge_age_and_interval()
         self.data_load_flag = False  # When to start/stop drop/recreate
         self.data_loading_thread = None
         self.data_load_exception = None # Object variable to assign data load thread's exception
@@ -54,6 +59,24 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             super(CollectionBase, self).tearDown()
         else:
             super(CollectionsDropRecreateRebalance, self).tearDown()
+
+    def set_ephemeral_purge_age_and_interval(self, ephemeral_metadata_purge_age=0,
+                                             ephemeral_metadata_purge_interval=1):
+        """
+        Enables diag eval on master node and updates the above two parameters
+        for all ephemeral buckets on the cluster
+        """
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+        ephemeral_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "ephemeral"]
+        for ephemeral_bucket in ephemeral_buckets:
+            rest = RestConnection(self.cluster.master)
+            status, content = rest.set_ephemeral_purge_age_and_interval(bucket=ephemeral_bucket.name,
+                                                                        ephemeral_metadata_purge_age=ephemeral_metadata_purge_age,
+                                                                        ephemeral_metadata_purge_interval=ephemeral_metadata_purge_interval)
+            if not status:
+                raise Exception(content)
 
     def pick_nodes_for_rebalance(self):
         if self.nodes_swap:
@@ -107,7 +130,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         spec = {
             # Scope/Collection ops params
             MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
-            MetaCrudParams.COLLECTIONS_TO_DROP: 250,
+            MetaCrudParams.COLLECTIONS_TO_DROP: 50,
 
             MetaCrudParams.SCOPES_TO_DROP: 3,
             MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 0,
@@ -120,7 +143,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             # In both the collection creation case, previous maxTTL value of
             # individual collection is considered
             MetaCrudParams.SCOPES_TO_RECREATE: 3,
-            MetaCrudParams.COLLECTIONS_TO_RECREATE: 250,
+            MetaCrudParams.COLLECTIONS_TO_RECREATE: 50,
 
             # Applies only for the above listed scope/collection operations
             MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS: "all",
