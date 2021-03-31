@@ -23,7 +23,7 @@ spec = {
     "buckets": {
         "default": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
-            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 25,
+            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 50,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 10,
             Bucket.ramQuotaMB: 1000
         },
@@ -31,7 +31,7 @@ spec = {
             Bucket.bucketType: Bucket.Type.EPHEMERAL,
             Bucket.evictionPolicy: Bucket.EvictionPolicy.NRU_EVICTION,
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
-            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 23,
+            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 50,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 10,
             Bucket.ramQuotaMB: 1000
         }
