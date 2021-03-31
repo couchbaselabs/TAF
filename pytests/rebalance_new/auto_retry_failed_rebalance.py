@@ -487,11 +487,11 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         elif error_condition == "kill_memcached":
             self.cluster_util.kill_server_memcached(self.servers[1])
         elif error_condition == "reboot_server":
-            # cb_collect_err_str = "failed"
+            cb_collect_err_str = "failed"
             shell = RemoteMachineShellConnection(self.servers[1])
             shell.reboot_node()
         elif error_condition == "kill_erlang":
-            # cb_collect_err_str = "failed"
+            cb_collect_err_str = "failed"
             shell = RemoteMachineShellConnection(self.servers[1])
             shell.kill_erlang()
             self.sleep(self.sleep_time * 3)
