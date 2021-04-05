@@ -1764,7 +1764,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             else:
                 validate_error = True
             if validate_error and not self.cbas_util_v2.validate_error_in_response(
-                    status, errors, "Unauthorized user"):
+                    status, errors, "User must have permission"):
                 self.fail("RBAC user is able to query dataset {0}".format(
                     dataset_name[0]))
         self.log.info("Test finished")

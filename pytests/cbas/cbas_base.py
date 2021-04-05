@@ -95,6 +95,7 @@ class CBASBaseTest(BaseTestCase):
         self.cbas_node = None
         self.cbas_memory_quota_percent = int(self.input.param(
             "cbas_memory_quota_percent", 100))
+        self.bucket_size = self.input.param("bucket_size", 100)
         services = None
         nodes_init = None
         # Single cluster support

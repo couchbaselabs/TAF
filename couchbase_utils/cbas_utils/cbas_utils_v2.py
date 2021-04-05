@@ -2324,7 +2324,8 @@ class Dataset_Util(Link_Util):
                 break
 
     def validate_docs_in_all_datasets(self, local_bucket_util,
-                                      remote_bucket_util=None):
+                                      remote_bucket_util=None, 
+                                      timeout=600):
         self.refresh_dataset_item_count(local_bucket_util, remote_bucket_util)
         datasets = self.list_all_dataset_objs()
         jobs = Queue()
@@ -2336,7 +2337,7 @@ class Dataset_Util(Link_Util):
         for dataset in datasets:
             jobs.put((self.wait_for_ingestion_complete,
                       {"dataset_names": [dataset.full_name],
-                       "num_items": dataset.num_of_items, "timeout": 600}))
+                       "num_items": dataset.num_of_items, "timeout": timeout}))
 
         self.run_jobs_in_parallel(consumer_func, jobs, results, 50,
                                   async_run=False)
