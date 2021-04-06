@@ -102,6 +102,7 @@ class CollectionsNetworkSplit(CollectionBase):
             for second_half_node in second_half_nodes:
                 self.block_traffic_between_two_nodes(first_half_node, second_half_node)
                 self.block_traffic_between_two_nodes(second_half_node, first_half_node)
+        self.nodes_affected = self.known_nodes
         return first_half_nodes, second_half_nodes
 
     def wipe_config_on_removed_nodes(self, removed_nodes=None):
@@ -276,4 +277,5 @@ class CollectionsNetworkSplit(CollectionBase):
         result = self.task.rebalance(otp_nodes, [], [])
         self.assertTrue(result, "Rebalance failed")
         self.wait_for_async_data_load_to_complete(task)
+        self.remove_network_split()
         self.wipe_config_on_removed_nodes(self.nodes_failover)
