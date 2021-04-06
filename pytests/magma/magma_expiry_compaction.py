@@ -156,7 +156,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
             # exp_pager_stime
@@ -256,7 +256,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
 
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
@@ -278,7 +278,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
 
@@ -390,7 +390,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
             self.log.debug("Disk usage after updates {}".format(disk_usage))
@@ -410,7 +410,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
 
@@ -603,7 +603,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
 
@@ -680,7 +680,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
              tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
         self.sigkill_memcached()
@@ -742,7 +742,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
              tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
 
