@@ -163,9 +163,11 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util._expiry_pager(self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
              to kickoff")
-            self.sleep(self.exp_pager_stime*10, "Wait for KV purger to scan expired docs and add \
+            self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+                                                         stat_name="vb_replica_queue_size")
             expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
             # Check for tombstone count in Storage
             count = 0
@@ -284,8 +286,11 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util._expiry_pager(self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
              to kickoff")
-            self.sleep(self.exp_pager_stime*10, "Wait for KV purger to scan expired docs and add \
+            self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+                                                         stat_name="vb_replica_queue_size")
             # Check for tombstone count in Storage
             expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
             count = 0
@@ -413,9 +418,11 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util._expiry_pager(self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
              to kickoff")
-            self.sleep(self.exp_pager_stime*10, "Wait for KV purger to scan expired docs and add \
+            self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-
+            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+                                                         stat_name="vb_replica_queue_size")
             # Check for tombstone count in Storage
             expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
             count = 0
@@ -604,8 +611,11 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util._expiry_pager(self.exp_pager_stime)
         self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
          to kickoff")
-        self.sleep(self.exp_pager_stime*10, "Wait for KV purger to scan expired docs and add \
+        self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
         tombstones.")
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+                                                     stat_name="vb_replica_queue_size")
 
         # Check for tombstone count in Storage
         expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
