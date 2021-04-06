@@ -33,7 +33,8 @@ from testconstants import LINUX_CAPI_INI, LINUX_DISTRIBUTION_NAME, \
                           LINUX_CB_PATH, LINUX_COUCHBASE_BIN_PATH, \
                           LINUX_STATIC_CONFIG, LINUX_LOG_PATH, \
                           LINUX_COUCHBASE_LOGS_PATH, LINUX_CONFIG_FILE, \
-                          LINUX_MOXI_PATH
+                          LINUX_MOXI_PATH, WIN_COUCHBASE_OLD_CONFIG_PATH, \
+                          LINUX_COUCHBASE_OLD_CONFIG_PATH
 
 from testconstants import WIN_COUCHBASE_BIN_PATH, WIN_COUCHBASE_BIN_PATH_RAW, \
                           WIN_CB_PATH, WIN_PSSUSPEND, WIN_PROCESSES_KILLED, \
@@ -3712,7 +3713,7 @@ class RemoteMachineShellConnection:
             words = filter(lambda x: x != "", words)
             return words[1]
 
-    def cleanup_data_config(self, data_path):
+    def cleanup_data_config(self, data_path, config_path=None):
         self.extract_remote_info()
         if self.info.type.lower() == 'windows':
             if "c:/Program Files" in data_path:
@@ -3720,14 +3721,17 @@ class RemoteMachineShellConnection:
                                               "/cygdrive/c/Program\ Files")
             o, r = self.execute_command("rm -rf ""{0}""/*".format(data_path))
             self.log_command_output(o, r)
-            o, r = self.execute_command("rm -rf ""{0}""/*"
-                                        .format(data_path.replace("data", "config")))
-            self.log_command_output(o, r)
+            if config_path is None:
+                config_path = WIN_COUCHBASE_OLD_CONFIG_PATH
+            o, r = self.execute_command("rm -rf {0}/*" \
+                                        .format(config_path))
         else:
             o, r = self.execute_command("rm -rf {0}/*".format(data_path))
             self.log_command_output(o, r)
+            if config_path is None:
+                config_path = LINUX_COUCHBASE_OLD_CONFIG_PATH
             o, r = self.execute_command("rm -rf {0}/*"\
-                                        .format(data_path.replace("data", "config")))
+                                        .format(config_path))
             self.log_command_output(o, r)
 
     def stop_couchbase(self):
