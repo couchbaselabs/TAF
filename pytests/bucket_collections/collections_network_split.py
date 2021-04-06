@@ -266,13 +266,6 @@ class CollectionsNetworkSplit(CollectionBase):
             self.nodes_failover = second_half_nodes
             otp_nodes = first_half_nodes
         self.sleep(60, "Wait for network split to finish")
-        # TODO: Collection creation on second-half is failing with 500 status error
-        # BucketUtils.create_collections(
-        #     self.cluster,
-        #     self.bucket_util.buckets[0],
-        #     5,
-        #     CbServer.default_scope,
-        #     collection_name="collection_from_second_half")
         self.log.info("First half nodes {0}".format(first_half_nodes))
         self.log.info("Second half nodes {0}".format(second_half_nodes))
         self.log.info("Failing over nodes: {0}".format(self.nodes_failover))
@@ -284,35 +277,3 @@ class CollectionsNetworkSplit(CollectionBase):
         self.assertTrue(result, "Rebalance failed")
         self.wait_for_async_data_load_to_complete(task)
         self.wipe_config_on_removed_nodes(self.nodes_failover)
-
-    def test_MB_41383(self):
-        """
-        1. Introduce network split between orchestrator(node1) and the last node.
-        2. Create collections on node1
-        3. Create collections on the last node.
-        4. Perform data validation
-        """
-        self.involve_orchestrator = True
-        self.node1 = self.cluster.servers[0]
-        self.node2 = self.cluster.servers[self.nodes_init-1]
-        self.block_traffic_between_two_nodes(self.node1, self.node2)
-        self.block_traffic_between_two_nodes(self.node2, self.node1)
-        self.sleep(120, "wait for network split to finish")
-
-        BucketUtils.create_collections(
-            self.cluster,
-            self.bucket_util.buckets[0],
-            5,
-            CbServer.default_scope,
-            collection_name="collection_from_first_node")
-
-        self.cluster.master = self.master = self.node2
-        BucketUtils.create_collections(
-            self.cluster,
-            self.bucket_util.buckets[0],
-            5,
-            CbServer.default_scope,
-            collection_name="collection_from_last_node")
-        self.remove_network_split()
-        self.sleep(30, "wait for iptables rules to take effect")
-        self.data_validation_collection()
