@@ -323,7 +323,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.log.info("Disk usage after expiry {}".format(disk_usage))
             size_after = disk_usage[0]
 
-            self.assertTrue(size_after < size_before * 0.8,
+            self.assertTrue(size_after < size_before * 2.5,
                             "Data Size before(%s) and after expiry(%s)"
                             .format(size_before, size_after))
             # Metadata Purge Interva
@@ -450,7 +450,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.log.info("Disk usage after expiry {}".format(disk_usage))
             size_after = disk_usage[0]
 
-            self.assertTrue(size_after < self.disk_usage[self.disk_usage.keys()[0]] * 0.6,
+            self.assertTrue(size_after < self.disk_usage[self.disk_usage.keys()[0]] * 2.5,
                             "Data Size before(%s) and after expiry(%s)"
                             .format(self.disk_usage[self.disk_usage.keys()[0]], size_after))
 
