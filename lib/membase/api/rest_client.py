@@ -1469,69 +1469,6 @@ class RestConnection(object):
         else:
             return None
 
-    def _old_rebalance_status_and_progress(self):
-        #ToDo: Remove this function as the endpoint used here is deprecated
-        """
-        Returns a 2-tuple capturing the rebalance status and progress, as follows:
-            ('running', progress) - if rebalance is running
-            ('none', 100)         - if rebalance is not running (i.e. assumed done)
-            (None, -100)          - if there's an error getting the rebalance progress
-                                    from the server
-            (None, -1)            - if the server responds but there's no information on
-                                    what the status of rebalance is
-
-        The progress is computed as a average of the progress of each node
-        rounded to 2 decimal places.
-
-        Throws RebalanceFailedException if rebalance progress returns an error message
-        """
-        avg_percentage = -1
-        rebalance_status = None
-        api = self.baseUrl + "pools/default/rebalanceProgress"
-        try:
-            status, content, header = self._http_request(api)
-        except ServerUnavailableException as e:
-            self.test_log.error(e)
-            return None, -100
-        json_parsed = json.loads(content)
-        self.log.debug(json_parsed)
-        if status:
-            if "status" in json_parsed:
-                rebalance_status = json_parsed["status"]
-                if "errorMessage" in json_parsed:
-                    msg = '{0} - rebalance failed'.format(json_parsed)
-                    self.test_log.error(msg)
-                    self.print_UI_logs()
-                    raise RebalanceFailedException(msg)
-                elif rebalance_status == "running":
-                    total_percentage = 0
-                    count = 0
-                    for key in json_parsed:
-                        if key.find('@') >= 0:
-                            ns_1_dictionary = json_parsed[key]
-                            percentage = ns_1_dictionary['progress'] * 100
-                            count += 1
-                            total_percentage += percentage
-                    if count:
-                        avg_percentage = (total_percentage / count)
-                    else:
-                        avg_percentage = 0
-                    self.test_log.debug("Rebalance percentage: {0:.02f} %"
-                                        .format(round(avg_percentage, 2)))
-                else:
-                    # Sleep before printing rebalance failure log
-                    sleep(5, log_type="infra")
-                    status, content, header = self._http_request(api)
-                    json_parsed = json.loads(content)
-                    if "errorMessage" in json_parsed:
-                        msg = '{0} - rebalance failed'.format(json_parsed)
-                        self.print_UI_logs()
-                        raise RebalanceFailedException(msg)
-                    avg_percentage = 100
-        else:
-            avg_percentage = -100
-        return rebalance_status, avg_percentage
-
     def _rebalance_status_and_progress(self):
         """
         Returns a 2-tuple capturing the rebalance status and progress, as follows:
