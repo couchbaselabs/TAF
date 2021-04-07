@@ -7,6 +7,7 @@ from collections import OrderedDict
 from datetime import datetime
 from ruamel.yaml import YAML
 
+import global_vars
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 from cb_tools.cb_cli import CbCli
@@ -15,13 +16,16 @@ from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from global_vars import logger
 from couchbase_helper.durability_helper import BucketDurability
-from membase.api.rest_client import RestHelper, RestConnection
+from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
+
+
+from java.util.logging import Level
 
 
 class BaseTestCase(unittest.TestCase):

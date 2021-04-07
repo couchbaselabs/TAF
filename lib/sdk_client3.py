@@ -9,6 +9,7 @@ import json as pyJson
 import subprocess
 import os
 from _threading import Lock
+
 from common_lib import sleep
 
 from com.couchbase.client.core.env import \
@@ -55,10 +56,6 @@ from java.util import \
     Collections, \
     HashSet, \
     Optional
-from java.util.logging import \
-    ConsoleHandler, \
-    Level, \
-    Logger
 from reactor.util.function import Tuples
 
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
@@ -241,12 +238,6 @@ class SDKClient(object):
         try:
             self.log.debug("Creating SDK connection for '%s'" % self.bucket)
             System.setProperty("com.couchbase.forceIPv4", "false")
-            sdk_logger = Logger.getLogger("com.couchbase.client")
-            # TO-DO: Make it SEVERE after bug is fixed
-            sdk_logger.setLevel(Level.OFF)
-            for h in sdk_logger.getParent().getHandlers():
-                if isinstance(h, ConsoleHandler):
-                    h.setLevel(Level.OFF)
             cluster_env = \
                 ClusterEnvironment \
                 .builder() \
