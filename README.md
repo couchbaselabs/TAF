@@ -122,10 +122,15 @@ services:kv
 
 ## Cluster_run support
 TAF supports cluster_run with following additional params under the specified sections,
+Note: Make sure your rest_password is 'password'
 
 ```
-[global]:
-cli:<cluster_run_repo>/build/kv_engine/
+[global]
+cli:<cluster_run_repo>
+
+[membase]
+rest_username:Administrator
+rest_password:password
 
 [_1]
 port:9000
