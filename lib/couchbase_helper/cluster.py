@@ -37,8 +37,9 @@ class ServerTasks(object):
         Parameters:
           servers - servers used for connection. (TestInputServer)
           failover_nodes - Servers that will be failed over (TestInputServer)
-          graceful = True/False. True - graceful, False - hard. (Boolean)
-          all_at_once = whether to failover all of failover_nodes at once in case of
+          graceful - True/False. True - graceful, False - hard. (Boolean)
+          allow_unsafe - True/False. whether to allow unsafe failover (Boolean)
+          all_at_once - whether to failover all of failover_nodes at once in case of
                         multiple failover nodes
 
         Returns:
@@ -682,7 +683,7 @@ class ServerTasks(object):
                                       index_name=None, verify_results=True,
                                       retry_time=2, scan_consistency=None,
                                       scan_vector=None, timeout=900):
-        """Asynchronously runs n1ql querya and verifies result if required
+        """Asynchronously runs n1ql query and verifies result if required
 
         Parameters:
           server - Server to handle query verification task (TestInputServer)
@@ -902,17 +903,18 @@ class ServerTasks(object):
     def failover(self, servers=[], failover_nodes=[], graceful=False,
                  use_hostnames=False, wait_for_pending=0, allow_unsafe=False,
                  all_at_once=False):
-        """Synchronously flushes a bucket
+        """Synchronously Failover nodes
 
         Parameters:
             servers - node used for connection (TestInputServer)
             failover_nodes - Servers to be failed over (TestInputServer)
-            bucket - The name of the bucket to be flushed. (String)
+            graceful - Boolean on if it is graceful failover
+            allow_unsafe - Boolean on if it is unsafe failover
             all_at_once = whether to failover all of failover_nodes at once in case of
                         multiple failover nodes
 
         Returns:
-            boolean - Whether or not the bucket was flushed."""
+            boolean - Whether or not the bucket was failed-over."""
         _task = self.async_failover(servers, failover_nodes, graceful,
                                     use_hostnames, wait_for_pending, allow_unsafe,
                                     all_at_once=all_at_once)
