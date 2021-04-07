@@ -1500,7 +1500,6 @@ class RestConnection(object):
                 if json_parsed_temp["type"] == "rebalance":
                     json_parsed = json_parsed[i]
                     break
-        # ToDo: Is it always the case that first dict contains the rebalance task?
         if status:
             if "status" in json_parsed:
                 rebalance_status = json_parsed["status"]
