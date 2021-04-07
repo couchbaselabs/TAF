@@ -20,7 +20,6 @@ repositories {
     }
 }
 
-
 dependencies {
     def trans_version = "1.1.0"
     def java_client = "default"
@@ -31,6 +30,9 @@ dependencies {
     if (project.hasProperty("client_version")) {
         java_client = project.property("client_version")
     }
+
+    println("Executing 'gradle clean'")
+    clean
 
     println("Using Transaction_client :: " + trans_version)
     implementation 'com.couchbase.client:couchbase-transactions:' + trans_version
@@ -44,11 +46,14 @@ dependencies {
         }
     }
     // This will transitively pull in all dependencies of transactions, including Couchbase java-client
-    // compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: '1.1.0'
-    // compile group: 'com.couchbase.client', name: 'java-client', version: '3.0.8'
+    // compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: trans_version
+    // compile group: 'com.couchbase.client', name: 'java-client', version: java_client
 
     // For creating ssh sessions for testing
     compile group: 'com.jcraft', name: 'jsch', version: '0.1.54'
+
+    // For fetching SDK logs
+    compile group: 'org.apache.logging.log4j', name: 'log4j-core', version: '2.8.2'
 }
 
 task copyDeps(type: Copy) {
@@ -67,9 +72,7 @@ task iptables(type:Exec) {
         def cmd = [jythonLocation, '-J-cp', jythonpath, 'scripts/ssh.py']
 
         testRunnerArgs.each { cmd.add(it) }
-
         println("Running: " + cmd.join(" "))
-
         commandLine cmd
     }
 }
@@ -83,9 +86,7 @@ task sniffer(type:Exec) {
         def cmd = [jythonLocation, '-J-cp', jythonpath, 'scripts/eagles_all_around.py']
 
         testRunnerArgs.each { cmd.add(it) }
-
         println("Running: " + cmd.join(" "))
-
         commandLine cmd
     }
 }
@@ -101,16 +102,14 @@ task install(type:Exec) {
         def cmd = [jythonLocation, '-J-cp', jythonpath + ":build/classes/java/main", 'scripts/install.py']
 
         testRunnerArgs.each { cmd.add(it) }
-
         println("Running: " + cmd.join(" "))
-
         commandLine cmd
     }
 }
 
 tasks.withType(JavaCompile).all {
     options.forkOptions.jvmArgs += '-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp'
-  }
+}
 
 // Task that runs "jython testrunner.py" with the correct CLASSPATH
 task testrunner(type:Exec) {
@@ -124,9 +123,7 @@ task testrunner(type:Exec) {
         def cmd = [jythonLocation, '-J-cp', jythonpath + ":build/classes/java/main:src/main/resources", 'testrunner.py']
 
         testRunnerArgs.each { cmd.add(it) }
-
         println("Running: " + cmd.join(" "))
-
         commandLine cmd
     }
 }
@@ -143,9 +140,7 @@ task rerun_job(type:Exec) {
         def cmd = [jythonLocation, '-J-cp', jythonpath + ":build/classes/java/main:src/main/resources", 'scripts/rerun_jobs.py']
 
         rerunArgs.each { cmd.add(it) }
-
         println("Running: " + cmd.join(" "))
-
         commandLine cmd
     }
 }
