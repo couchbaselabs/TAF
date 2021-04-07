@@ -7,7 +7,6 @@ from collections import OrderedDict
 from datetime import datetime
 from ruamel.yaml import YAML
 
-import global_vars
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 from cb_tools.cb_cli import CbCli
@@ -23,9 +22,6 @@ from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
-
-
-from java.util.logging import Level
 
 
 class BaseTestCase(unittest.TestCase):

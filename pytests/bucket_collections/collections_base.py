@@ -142,6 +142,15 @@ class CollectionBase(BaseTestCase):
         if self.sdk_client_pool is None:
             self.init_sdk_pool_object()
 
+        # Fetch num_collections per bucket. Used for 'req_clients' calc
+        cols_in_bucket = dict()
+        for bucket in self.bucket_util.buckets:
+            collections_in_bucket = 0
+            for _, scope in bucket.scopes.items():
+                for _, _ in scope.collections.items():
+                    collections_in_bucket += 1
+            cols_in_bucket[bucket.name] = collections_in_bucket
+
         # Create clients in SDK client pool
         self.log.info("Creating required SDK clients for client_pool")
         bucket_count = len(self.bucket_util.buckets)
@@ -149,9 +158,10 @@ class CollectionBase(BaseTestCase):
         clients_per_bucket = int(ceil(max_clients / bucket_count))
         for bucket in self.bucket_util.buckets:
             self.sdk_client_pool.create_clients(
-                bucket,
-                [self.cluster.master],
-                clients_per_bucket,
+                bucket=bucket,
+                servers=[self.cluster.master],
+                req_clients=min(cols_in_bucket[bucket.name],
+                                clients_per_bucket),
                 compression_settings=self.sdk_compression)
 
         doc_loading_task = \
