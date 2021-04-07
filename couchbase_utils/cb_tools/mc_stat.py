@@ -12,10 +12,9 @@ class McStat(CbCmdBase):
         Resets mcstat for the specified bucket_name
         :param bucket_name: Bucket name to reset stat
         """
-        cmd = "%s -u %s -P %s -b %s reset" % (self.cbstatCmd,
-                                              self.username,
-                                              self.password,
-                                              bucket_name)
+        cmd = "%s -h localhost:%s -u %s -P %s -b %s reset" \
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
+                 bucket_name)
         _, error = self._execute_cmd(cmd)
         if error:
             raise Exception("".join(error))
