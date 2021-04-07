@@ -701,7 +701,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             tasks_info.update(task_in.items())
         for task in tasks_info:
             self.task_manager.get_task_result(task)
-        self.sleep(180, "wait after get ops")
+        self.sleep(600, "wait after get ops")
         #data_validation = self.task.async_validate_docs(
         #        self.cluster, self.bucket_util.buckets[0],
         #        self.gen_read, "delete", 0,
