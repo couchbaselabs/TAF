@@ -42,21 +42,15 @@ class BucketHelper(BucketHelperRest):
         return self.cb_cli.flush_bucket(bucket_name, force=True)
 
     @__use_shell
-    def change_bucket_props(self, bucket, ramQuotaMB=None, authType=None,
-                            saslPassword=None, replicaNumber=None,
-                            proxyPort=None, replicaIndex=None,
-                            flushEnabled=None, timeSynchronization=None,
-                            maxTTL=None, compressionMode=None,
-                            bucket_durability=None):
+    def change_bucket_props(self, bucket, ramQuotaMB=None,
+                            replicaNumber=None, proxyPort=None,
+                            replicaIndex=None, flushEnabled=None,
+                            timeSynchronization=None, maxTTL=None,
+                            compressionMode=None, bucket_durability=None):
         bucket_params = dict()
         bucket_params["name"] = "%s" % bucket
         if ramQuotaMB:
             bucket_params["ramQuotaMB"] = ramQuotaMB
-        if authType:
-            bucket_params["authType"] = authType
-        if saslPassword:
-            bucket_params["authType"] = "sasl"
-            bucket_params["saslPassword"] = saslPassword
         if replicaNumber is not None:
             bucket_params["replicaNumber"] = replicaNumber
         if replicaIndex:

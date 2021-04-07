@@ -88,9 +88,6 @@ class MemcachedHelper:
                         # Longer term when we don't disconnect clients in this state we
                         # should probably remove this code.
                         log.error("got disconnected from the server, reconnecting")
-                        client.reconnect()
-                        client.sasl_auth_plain(bucket_info.name.encode('ascii'),
-                                               bucket_info.saslPassword.encode('ascii'))
                         continue
 
                     if c.find("\x01") > 0 or c.find("\x02") > 0:

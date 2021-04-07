@@ -138,7 +138,7 @@ class CasBaseTest(BaseTestCase):
         info = self.rest.get_nodes_self()
 
         status, content = self.rest.change_bucket_props(bucket=self.bucket,
-                                                        ramQuotaMB=512,authType='sasl',timeSynchronization='enabledWithOutDrift')
+                                                        ramQuotaMB=512,timeSynchronization='enabledWithOutDrift')
         if re.search('TimeSyncronization not allowed in update bucket', content):
             self.log.info('[PASS]Expected modify bucket to disallow Time Synchronization.')
         else:

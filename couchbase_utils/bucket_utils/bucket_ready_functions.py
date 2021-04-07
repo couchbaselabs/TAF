@@ -2022,14 +2022,13 @@ class BucketUtils(ScopeUtils):
             status[bucket] = self.flush_bucket(kv_node, bucket, skip_resetting_num_items=skip_resetting_num_items)
         return status
 
-    def update_bucket_property(self, bucket, ram_quota_mb=None, auth_type=None,
-                               sasl_password=None, replica_number=None,
-                               replica_index=None, flush_enabled=None,
-                               time_synchronization=None, max_ttl=None,
-                               compression_mode=None, bucket_durability=None):
+    def update_bucket_property(self, bucket, ram_quota_mb=None,
+                               replica_number=None, replica_index=None,
+                               flush_enabled=None, time_synchronization=None,
+                               max_ttl=None, compression_mode=None,
+                               bucket_durability=None):
         BucketHelper(self.cluster.master).change_bucket_props(
-            bucket, ramQuotaMB=ram_quota_mb, authType=auth_type,
-            saslPassword=sasl_password, replicaNumber=replica_number,
+            bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
             timeSynchronization=time_synchronization, maxTTL=max_ttl,
             compressionMode=compression_mode,
@@ -3458,9 +3457,6 @@ class BucketUtils(ScopeUtils):
                         # state we should probably remove this code.
                         self.log.error("Reconnecting to the server")
                         client.reconnect()
-                        client.sasl_auth_plain(
-                            bucket.name.encode('ascii'),
-                            bucket.saslPassword.encode('ascii'))
                         continue
 
                     if c.find("\x01") > 0 or c.find("\x02") > 0:
@@ -3686,8 +3682,6 @@ class BucketUtils(ScopeUtils):
         bucket.bucketType = parsed['bucketType']
         if str(parsed['bucketType']) == 'membase':
             bucket.bucketType = Bucket.Type.MEMBASE
-        bucket.authType = parsed["authType"]
-        bucket.saslPassword = parsed["saslPassword"]
         bucket.nodes = list()
         if "maxTTL" in parsed:
             bucket.maxTTL = parsed["maxTTL"]

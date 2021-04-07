@@ -120,10 +120,6 @@ class N1QLHelper:
             username = 'Administrator'
             password = 'password'
         cred_params['creds'].append({'user': username, 'pass': password})
-        for bucket in self.buckets:
-            if hasattr(bucket,"saslPassword") and bucket.saslPassword:
-                cred_params['creds'].append({'user': 'local:%s' % bucket.name,
-                                             'pass': bucket.saslPassword})
         query_params.update(cred_params)
 
         if self.use_rest:

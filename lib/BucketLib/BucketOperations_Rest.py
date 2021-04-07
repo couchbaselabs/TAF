@@ -390,23 +390,17 @@ class BucketHelper(RestConnection):
         self.log.debug("Memcached settings updated")
         return status
 
-    def change_bucket_props(self, bucket, ramQuotaMB=None, authType=None,
-                            saslPassword=None, replicaNumber=None,
-                            proxyPort=None, replicaIndex=None,
-                            flushEnabled=None, timeSynchronization=None,
-                            maxTTL=None, compressionMode=None,
-                            bucket_durability=None):
+    def change_bucket_props(self, bucket, ramQuotaMB=None,
+                            replicaNumber=None ,proxyPort=None,
+                            replicaIndex=None, flushEnabled=None,
+                            timeSynchronization=None, maxTTL=None,
+                            compressionMode=None, bucket_durability=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
         params_dict = {}
         if ramQuotaMB:
             params_dict["ramQuotaMB"] = ramQuotaMB
-        if authType:
-            params_dict["authType"] = authType
-        if saslPassword:
-            params_dict["authType"] = "sasl"
-            params_dict["saslPassword"] = saslPassword
         if replicaNumber is not None:
             params_dict["replicaNumber"] = replicaNumber
         # if proxyPort:
@@ -430,7 +424,7 @@ class BucketHelper(RestConnection):
         status, content, _ = self._http_request(api, 'POST', params)
         if timeSynchronization:
             if status:
-                raise Exception("Erroneously able to set bucket settings %s for bucket on time-sync" % (params, bucket))
+                raise Exception("Erroneously able to set bucket settings %s for bucket %s on time-sync" % (params, bucket))
             return status, content
         if not status:
             raise Exception("Failure while setting bucket %s param %s: %s"
@@ -472,10 +466,6 @@ class BucketHelper(RestConnection):
             bucket_info = self.get_bucket_json(bucket)
 #             quota = self.get_bucket_json(bucket)["quota"]["ram"] / (1048576 * num_nodes)
 #             params["ramQuotaMB"] = quota
-            if bucket_info["authType"] == "sasl" \
-                    and bucket_info["name"] != "default":
-                params["authType"] = self.get_bucket_json(bucket)["authType"]
-                params["saslPassword"] = self.get_bucket_json(bucket)["saslPassword"]
 
         params["parallelDBAndViewCompaction"] = parallelDBAndVC
         # Need to verify None because the value could be = 0

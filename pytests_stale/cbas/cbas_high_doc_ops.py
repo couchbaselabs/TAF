@@ -198,7 +198,7 @@ class analytics_high_doc_ops(CBASBaseTest):
         ########################################################################################################################
         self.log.info("Step 3: Create 10M docs average of 1k docs for 8 couchbase buckets.")
 
-        GleambookUsers = buck(name="GleambookUsers", authType=None, saslPassword=None,
+        GleambookUsers = buck(name="GleambookUsers",
                             num_replicas=self.num_replicas,
                             bucket_size=self.bucket_size,
                             eviction_policy='noEviction', lww=self.lww)
