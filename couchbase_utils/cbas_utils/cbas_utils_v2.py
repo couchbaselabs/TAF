@@ -355,7 +355,7 @@ class Dataverse_Util(BaseUtil):
         self.log.debug("Validating dataverse entry in Metadata")
         cmd = "select value dv from Metadata.`Dataverse` as dv where\
          dv.DataverseName = \"{0}\";".format(
-            CBASHelper.unformat_name(dataverse_name))
+            CBASHelper.metadata_format(CBASHelper.unformat_name(dataverse_name)))
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cmd, username=username, password=password, timeout=timeout,
@@ -1158,7 +1158,7 @@ class Dataset_Util(Link_Util):
             CBASHelper.unformat_name(dataset_name))
         if dataverse_name:
             cmd += ' and DataverseName = "{0}"'.format(
-                CBASHelper.unformat_name(dataverse_name))
+                CBASHelper.metadata_format(CBASHelper.unformat_name(dataverse_name)))
         cmd += ";"
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
@@ -2420,16 +2420,16 @@ class Synonym_Util(Dataset_Util):
         cmd = "select value sy from Metadata.`Synonym` as sy where \
         sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\";".format(
             CBASHelper.unformat_name(synonym_name),
-            CBASHelper.unformat_name(synonym_dataverse_name))
+            CBASHelper.metadata_format(CBASHelper.unformat_name(synonym_dataverse_name)))
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cmd, username=username, password=password)
         if status == "success":
             for result in results:
-                if result['ObjectDataverseName'] == CBASHelper.unformat_name(
-                        cbas_entity_dataverse_name) and result[
-                    'ObjectName'] == CBASHelper.unformat_name(
+                if result['ObjectDataverseName'] == CBASHelper.metadata_format(
+                    CBASHelper.unformat_name(cbas_entity_dataverse_name)) and result[
+                        'ObjectName'] == CBASHelper.unformat_name(
                     cbas_entity_name):
                     return True
             return False

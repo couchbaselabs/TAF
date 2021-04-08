@@ -193,7 +193,7 @@ dropping dataverses")
                 expected_error=error_msg,
                 expected_error_code=self.input.param('error_code', None)):
             self.fail(
-                "Dropping of Dataverse {0} failed".format(self.entity_name))
+                "Dropping of Dataverse {0} failed".format(dataverse_name))
 
     def test_drop_analytics_scope(self):
         """
@@ -218,7 +218,7 @@ dropping dataverses")
                 expected_error=error_msg,
                 expected_error_code=self.input.param('error_code', None)):
             self.fail(
-                "Dropping of Dataverse {0} failed".format(self.entity_name))
+                "Dropping of Dataverse {0} failed".format(dataverse_name))
 
     def test_use_statement(self):
         dataverse_name = CBASHelper.format_name(
@@ -532,7 +532,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.log.info("Test started")
         if not self.cbas_util_v2.drop_dataset(
                 "invalid", validate_error_msg=True,
-                expected_error="Cannot find dataset with name invalid",
+                expected_error="Cannot find collection with name invalid",
                 analytics_collection=self.input.param('cbas_collection',
                                                       False)):
             self.fail("Successfully deleted non-existent dataset")
@@ -1531,7 +1531,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         index = CBAS_Index(
             self.index_name, synonym.name, synonym.dataverse_name,
             indexed_fields=self.input.param('index_fields', None))
-        expected_error = "Cannot find dataset with name {0} in dataverse {" \
+        expected_error = "Cannot find collection with name {0} in scope {" \
                          "1}".format(
             CBASHelper.unformat_name(synonym.name), synonym.dataverse_name)
         if not self.cbas_util_v2.create_cbas_index(

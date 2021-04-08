@@ -43,3 +43,8 @@ class CBASHelper(CbasLib):
                 _ = _.strip("`")
                 full_name.append(_)
         return '.'.join(full_name)
+    
+    @staticmethod
+    def metadata_format(name):
+        name = name.split(".")
+        return "/".join(name)
