@@ -291,7 +291,9 @@ class CBASUDF(CBASBaseTest):
                 query_context=False, use_statement=False,
                 validate_error_msg=self.input.param('validate_error', False),
                 expected_error=self.input.param('expected_error', "").format(
-                    CBASHelper.unformat_name(test_udf_obj.full_name)),
+                    CBASHelper.unformat_name(
+                        CBASHelper.metadata_format(test_udf_obj.dataverse_name), 
+                        test_udf_obj.name)),
                 timeout=300, analytics_timeout=300):
             self.fail("Error while creating Analytics UDF")
 
@@ -409,7 +411,8 @@ class CBASUDF(CBASBaseTest):
             self.fail("Error while creating Analytics UDF")
             
         if not self.cbas_util_v2.create_dataset(
-                dataset_name=self.cbas_util_v2.generate_name(),
+                dataset_name=CBASHelper.format_name(
+                    self.cbas_util_v2.generate_name()),
                 kv_entity=(
                     self.cbas_util_v2.list_all_dataset_objs()[0]
                     ).full_kv_entity_name,
@@ -446,7 +449,7 @@ class CBASUDF(CBASBaseTest):
         if not self.cbas_util_v2.drop_dataset(
                 dataset_name=dataset_name,
                 validate_error_msg=True,
-                expected_error="Cannot drop dataset", 
+                expected_error="Cannot drop collection", 
                 expected_error_code=24142,
                 timeout=300, analytics_timeout=300):
             self.fail("Successfully dropped dataset being used by a UDF")

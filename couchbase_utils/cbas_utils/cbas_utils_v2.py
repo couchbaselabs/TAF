@@ -3252,7 +3252,7 @@ class UDFUtil(Index_Util):
         cmd = "select value func from Metadata.`Function` as func where " \
               "Name=\"{0}\" and DataverseName=\"{1}\"".format(
                   CBASHelper.unformat_name(udf_name),
-                  CBASHelper.unformat_name(udf_dataverse_name))
+                  CBASHelper.metadata_format(CBASHelper.unformat_name(udf_dataverse_name)))
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, \
