@@ -13,8 +13,6 @@ file_name_patterns:
           - 'compaction failed for vb'
             # TODo: Remove the below after MB-45330
           - 'Create bucket .* failed - Already exists'
-            # TODo: Remove the below after MB-45221
-          - 'CouchKVStore::compactDB: exception while performing compaction'
       #- string: 'WARN'
       #  exclude_patterns:
       #    - 'Slow'
