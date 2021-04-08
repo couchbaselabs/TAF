@@ -508,12 +508,12 @@ class CBASHelper(RestConnection):
         status, content, header = self._http_request(url, 'PUT', setting, headers=headers)
         return status
     
-    def analytics_link_operations(self,method="GET", params="", timeout=120, username=None, password=None):
+    def analytics_link_operations(self,method="GET", uri="", params="", timeout=120, username=None, password=None):
         if not username:
             username = self.username
         if not password:
             password = self.password
-        api = self.cbas_base_url + "/analytics/link"
+        api = self.cbas_base_url + "/analytics/link" + uri
         headers = self._create_headers(username, password)
         if method.lower() == "get":
             api += "?{0}".format(params)

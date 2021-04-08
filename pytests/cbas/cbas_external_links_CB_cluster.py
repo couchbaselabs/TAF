@@ -362,7 +362,7 @@ class CBASExternalLinks(CBASBaseTest):
                 {
                     "description": "Create a link with a non-existent dataverse",
                     "dataverse": invalid_dv,
-                    "expected_error": "Cannot find dataverse with name {0}".format(
+                    "expected_error": "Cannot find scope with name {0}".format(
                         invalid_dv)
                 },
                 {
@@ -386,8 +386,7 @@ class CBASExternalLinks(CBASBaseTest):
                 {
                     "description": "Create a link with an invalid encryption value",
                     "encryption": self.invalid_value,
-                    "expected_error": "Unknown encryption value: '{0}'".format(
-                        self.invalid_value)
+                    "expected_error": "Unknown encryption value"
                 },
                 {
                     "description": "Create a link with an invalid root certificate",
@@ -696,7 +695,7 @@ class CBASExternalLinks(CBASBaseTest):
                      "expected_hits": 0,
                      "description": "Parameters Passed - Name",
                      "validate_error_msg": True,
-                     "expected_error": "You must specify 'dataverse' if 'name' is specified"
+                     "expected_error": "Cannot find scope with name {0}".format(self.link_info["name"])
                      },
                     {"dataverse": self.link_info["dataverse"],
                      "name": self.link_info["name"],
@@ -746,7 +745,7 @@ class CBASExternalLinks(CBASBaseTest):
                                 "Expected links - {0} \t Actual links - {1}".format(
                                     testcase["expected_hits"], len(response)))
                         if not (response[0][
-                                    "dataverse"] == Dataset.format_name_for_error(
+                                    "scope"] == Dataset.format_name_for_error(
                                 True, self.link_info["dataverse"])):
                             raise Exception(
                                 "Expected - {0} \t Actual- {1}".format(
@@ -960,7 +959,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "invalid_dataverse": invalid_dv,
                 "new_dataverse": True,
                 "validate_error_msg": True,
-                "expected_error": "Cannot find dataverse with name {0}".format(
+                "expected_error": "Cannot find scope with name {0}".format(
                     invalid_dv)
             },
             {
@@ -1447,7 +1446,7 @@ class CBASExternalLinks(CBASBaseTest):
                 if testcase.get("username") in ["analytics_admin",
                                                 "admin_analytics"]:
                     testcase["validate_error_msg"] = True
-                    testcase["expected_error"] = "Unauthorized user"
+                    testcase["expected_error"] = "User must have permission"
                 status, metrics, errors, cbas_result, _ = self.analytics_cluster.cbas_util.execute_statement_on_cbas_util(
                     statement=query_statement.format(self.cbas_dataset_name),
                     username=testcase.get("username", self.analytics_username))

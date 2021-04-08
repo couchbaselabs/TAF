@@ -10,6 +10,7 @@ import time
 from threading import Thread
 import string,random
 import urllib
+import copy
 
 from CbasLib.CBASOperations import CBASHelper
 from common_lib import sleep
@@ -246,10 +247,23 @@ class CbasUtil:
         <Optional> serviceEndpoint : The service endpoint of the link.
         Note - please use the exact key names as provided above in link properties dict.
         """
+        link_prop = copy.deepcopy(link_properties)
         params = dict()
-        for key, value in link_properties.iteritems():
-            if key == "dataverse":
-                key = "scope"
+        uri = ""
+        if "dataverse" in link_prop:
+            uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
+                CBASHelper.unformat_name(link_prop["dataverse"])), safe=""))
+            del link_prop["dataverse"]
+        if "scope" in link_prop:
+            uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
+                CBASHelper.unformat_name(link_prop["scope"])), safe=""))
+            del link_prop["scope"]
+        if "name" in link_prop:
+            uri += "/{0}".format(urllib.quote(
+                CBASHelper.unformat_name(link_prop["name"]), safe=""))
+            del link_prop["name"] 
+        
+        for key, value in link_prop.iteritems():
             if value:
                 if isinstance(value, unicode):
                     params[key] = str(value)
@@ -257,7 +271,7 @@ class CbasUtil:
                     params[key] = value
         params = urllib.urlencode(params)
         status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
-            method="POST", params=params, timeout=timeout, username=username, password=password)
+            method="POST", uri=uri, params=params, timeout=timeout, username=username, password=password)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
         return status
@@ -282,15 +296,18 @@ class CbasUtil:
         """
         if restapi:
             params = dict()
+            uri = ""
             if dataverse:
-                params["scope"] = dataverse
+                uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
+                    CBASHelper.unformat_name(dataverse)), safe=""))
             if link_name:
-                params["name"] = link_name
+                uri += "/{0}".format(urllib.quote(
+                    CBASHelper.unformat_name(link_name), safe=""))
             if link_type:
                 params["type"] = link_type
             params = urllib.urlencode(params)
             status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
-                method="GET", params=params, timeout=timeout, username=username, password=password)
+                method="GET", uri=uri, params=params, timeout=timeout, username=username, password=password)
             if validate_error_msg:
                 return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
             if status:
@@ -332,10 +349,23 @@ class CbasUtil:
         <Optional> serviceEndpoint : The service endpoint of the link.
         Note - please use the exact key names as provided above in link properties dict.
         """
+        link_prop = copy.deepcopy(link_properties)
         params = dict()
-        for key, value in link_properties.iteritems():
-            if key == "dataverse":
-                key = "scope"
+        uri = ""
+        if "dataverse" in link_prop:
+            uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
+                CBASHelper.unformat_name(link_prop["dataverse"])), safe=""))
+            del link_prop["dataverse"]
+        if "scope" in link_prop:
+            uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
+                CBASHelper.unformat_name(link_prop["scope"])), safe=""))
+            del link_prop["scope"]
+        if "name" in link_prop:
+            uri += "/{0}".format(urllib.quote(
+                CBASHelper.unformat_name(link_prop["name"]), safe=""))
+            del link_prop["name"]
+        
+        for key, value in link_prop.iteritems():
             if value:
                 if isinstance(value, unicode):
                     params[key] = str(value)
@@ -343,7 +373,7 @@ class CbasUtil:
                     params[key] = value
         params = urllib.urlencode(params)
         status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
-            method="PUT", params=params, timeout=timeout, username=username, password=password)
+            method="PUT", uri=uri, params=params, timeout=timeout, username=username, password=password)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
         return status
