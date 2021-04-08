@@ -48,8 +48,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.exp_pager_stime = self.input.param("exp_pager_stime", 10)
         self.iterations = self.input.param("iterations", 3)
         self.expiry_perc = self.input.param("expiry_perc", 100)
+        self.meta_purge_interval = self.input.param("meta_purge_interval", 180)
         self.items = self.num_items
-
     def load_bucket(self):
         tasks = dict()
         for collection in self.collections:
@@ -189,12 +189,11 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_stats_all_buckets(items=0)
 
             # Metadata Purge Interval
-            self.meta_purge_interval = 180
-            self.meta_purge_interval_in_days = 180 / 86400.0
+            self.meta_purge_interval_in_days = self.meta_purge_interval / 86400.0
 
             self.set_metadata_purge_interval(
                 value=self.meta_purge_interval_in_days, buckets=self.buckets)
-            self.sleep(180, "sleeping after setting metadata purge interval using diag/eval")
+            self.sleep(self.meta_purge_interval, "sleeping after setting metadata purge interval using diag/eval")
             self.bucket_util.cbepctl_set_metadata_purge_interval(
                 value=self.meta_purge_interval, buckets=self.buckets)
     #         self.bucket_util.set_metadata_purge_interval(str(self.meta_purge_interval),
