@@ -63,7 +63,7 @@ class volume(BaseTestCase):
         process_concurrency = int(math.ceil(self.max_tasks_per_collection /
                                             float(len(self.doc_ops))))
         process_concurrency = self.input.param("pc", process_concurrency)
-        doc_tasks = (self.num_buckets*self.num_scopes*self.num_collections) * len(self.doc_ops) * process_concurrency + 1
+        doc_tasks = (self.num_buckets*self.num_scopes*self.num_collections) * len(self.doc_ops) * process_concurrency + 2
         self.thread_to_use = min(64, doc_tasks)
         self.input.test_params.update({"threads_to_use":
                                        self.thread_to_use})
@@ -163,7 +163,7 @@ class volume(BaseTestCase):
             self.num_scopes += 1
         for bucket in self.bucket_util.buckets:
             for scope in bucket.scopes.keys():
-                if self.num_collections > 1:
+                if self.num_collections >= 1:
                     self.collection_prefix = self.input.param("collection_prefix",
                                                               "VolumeCollection")
 
@@ -1462,6 +1462,36 @@ class volume(BaseTestCase):
             else:
                 self.log.info("Volume Test Run Complete")
 
+    def SteadyStateVolume1(self):
+        #######################################################################
+        self.expiry_perc = 100
+        self.create_perc = 100
+        self.update_perc = 100
+        self.delete_perc = 100
+        self.key_prefix = "random_keys"
+        self.loop = 1
+        self.skip_read_on_error = True
+        self.suppress_error_table = True
+        self.track_failures = False
+        check_dump_th = threading.Thread(target=self.check_dump)
+        check_dump_th.start()
+
+        self.doc_ops = "create"
+        for bucket in self.bucket_util.buckets:
+            self.PrintStep("Step 1: Create %s items" % self.num_items)
+            dgm = self.get_bucket_dgm(bucket)
+            while self.dgm and dgm > self.dgm:
+                self.generate_docs(doc_ops=self.doc_ops)
+                dgm = self.get_bucket_dgm(bucket)
+                self.perform_load(validate_data=False)
+
+        self.doc_ops = "update:read"
+        while self.loop <= self.iterations:
+            self.generate_docs(doc_ops=self.doc_ops,
+                               update_start=0,
+                               update_end=self.end)
+            self.perform_load(validate_data=False)
+
     def SteadyStateVolume(self):
         check_dump_th = threading.Thread(target=self.check_dump)
         check_dump_th.start()
@@ -2099,6 +2129,7 @@ class volume(BaseTestCase):
         self.track_failures = False
         self.crash_count = 0
         self.stop_rebalance = self.input.param("pause_rebalance", False)
+        self.rebalance_timeout = self.input.param("rebalance_timeout", 3000)
 
         self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
         self.expiry_perc = 100
@@ -2127,7 +2158,7 @@ class volume(BaseTestCase):
             self.PrintStep("Step 4.{}: Rebalance IN with Loading of docs".
                            format(self.loop))
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0,
-                                            retry_get_process_num=3000)
+                                            retry_get_process_num=self.rebalance_timeout)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
@@ -2136,7 +2167,7 @@ class volume(BaseTestCase):
             self.PrintStep("Step 5.{}: Rebalance OUT with Loading of docs".
                            format(self.loop))
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1,
-                                            retry_get_process_num=3000)
+                                            retry_get_process_num=self.rebalance_timeout)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
@@ -2145,7 +2176,7 @@ class volume(BaseTestCase):
             self.PrintStep("Step 6.{}: Rebalance SWAP with Loading of docs".
                            format(self.loop))
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1,
-                                            retry_get_process_num=3000)
+                                            retry_get_process_num=self.rebalance_timeout)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
@@ -2154,7 +2185,7 @@ class volume(BaseTestCase):
             self.PrintStep("Step 7.{}: Rebalance IN/OUT with Loading of docs".
                            format(self.loop))
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1,
-                                            retry_get_process_num=3000)
+                                            retry_get_process_num=self.rebalance_timeout)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
@@ -2163,7 +2194,7 @@ class volume(BaseTestCase):
             self.PrintStep("Step 8.{}: Rebalance OUT/IN with Loading of docs".
                            format(self.loop))
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=2,
-                                            retry_get_process_num=3000)
+                                            retry_get_process_num=self.rebalance_timeout)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
