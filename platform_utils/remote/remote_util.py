@@ -3675,12 +3675,12 @@ class RemoteMachineShellConnection:
             o = "Total Physical Memory =" + win_info['Total Physical Memory'] + '\n'
             o += "Available Physical Memory =" + win_info['Available Physical Memory']
         elif mac:
-            o, r = self.execute_command_raw_jsch('df -h', debug=False)
+            o, r = self.execute_command_raw_jsch('df -hl', debug=False)
         else:
             if not in_MB:
-                o, r = self.execute_command_raw_jsch('df -Th', debug=False)
+                o, r = self.execute_command_raw_jsch('df -Thl', debug=False)
             else:
-                o, r = self.execute_command_raw_jsch('df -BM {}'.format(path),
+                o, r = self.execute_command_raw_jsch('df -lBM {}'.format(path),
                                                      debug=False)
         if o:
             return o
@@ -4987,7 +4987,7 @@ class RemoteMachineShellConnection:
         :param location: Mount location
         :return: Output and error message from the mount command
         """
-        command = "mount -o loop,rw,usrquota,grpquota /usr/disk-img/disk-quota.ext3 {0}; df -Th".format(location)
+        command = "mount -o loop,rw,usrquota,grpquota /usr/disk-img/disk-quota.ext3 {0}; df -Thl".format(location)
         output, error = self.execute_command(command)
         return output, error
 
@@ -4997,7 +4997,7 @@ class RemoteMachineShellConnection:
         :param location: Location of the partition which has to be unmounted
         :return: Output and error message from the umount command
         """
-        command = "umount -l {0}; df -Th".format(location)
+        command = "umount -l {0}; df -Thl".format(location)
         output, error = self.execute_command(command)
         return output, error
 
@@ -5010,7 +5010,7 @@ class RemoteMachineShellConnection:
         :return: Output and error message from filling up the disk.
         """
         count = (size * 1024 * 1024) / 512
-        command = "dd if=/dev/zero of={0}/disk-quota.ext3 count={1}; df -Th".format(location, count)
+        command = "dd if=/dev/zero of={0}/disk-quota.ext3 count={1}; df -Thl".format(location, count)
         output, error = self.execute_command(command)
         return output, error
 
