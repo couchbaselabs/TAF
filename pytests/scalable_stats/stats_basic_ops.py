@@ -209,54 +209,79 @@ class StatsBasicOps(CollectionBase):
 
     def test_change_global_scrape_interval(self):
         """
-        Change global scrape interval and verify the prometheus config by querying Prometheus Federation
+        1. Change global scrape interval via diag eval
+        2. verify the prometheus config by querying Prometheus Federation
+        3. Reset the global scrape interval back to default via rest api
+        4. verify the prometheus config by querying Prometheus Federation
         """
+
+        def verify_prometheus_config(expected_scrape_interval):
+            self.log.info("Validating by querying prometheus")
+            StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval\
+                ("prometheus_auth_enabled", "false")
+            StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval\
+                ("listen_addr_type", "any")
+            self.sleep(10, "Waiting for prometheus federation")
+            for server in self.cluster.servers[:self.nodes_init]:
+                content = StatsHelper(server).query_prometheus_federation(query)
+                yaml_code = yaml.load(content["data"]["yaml"])
+                global_scrape_interval = yaml_code["global"]["scrape_interval"]
+                if str(global_scrape_interval) != (str(expected_scrape_interval) + "s"):
+                    self.fail("Expected scrape interval {0}, but Actual {1}"
+                              .format(expected_scrape_interval, global_scrape_interval))
+
         scrape_interval = self.input.param("scrape_interval", 15)
+        query = "status/config"
+        yaml = YAML()
         self.bucket_util.load_sample_bucket(TravelSample())
         self.bucket_util.load_sample_bucket(BeerSample())
 
-        self.log.info("Changing scrape interval to {0}".format(scrape_interval))
-        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_interval", scrape_interval)
+        self.log.info("Changing scrape interval to {0} via diag_eval".format(scrape_interval))
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_interval",
+                                                                          scrape_interval)
+        verify_prometheus_config(expected_scrape_interval=scrape_interval)
 
-        self.log.info("Validating by querying prometheus")
-        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("prometheus_auth_enabled", "false")
-        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("listen_addr_type", "any")
-        self.sleep(10, "Waiting for prometheus federation")
-        query = "status/config"
-        yaml = YAML()
-        for server in self.cluster.servers[:self.nodes_init]:
-            content = StatsHelper(server).query_prometheus_federation(query)
-            yaml_code = yaml.load(content["data"]["yaml"])
-            global_scrape_interval = yaml_code["global"]["scrape_interval"]
-            if str(global_scrape_interval) != (str(scrape_interval) + "s"):
-                self.fail("Expected scrape interval {0}, but Actual {1}"
-                          .format(scrape_interval, global_scrape_interval))
+        self.log.info("Changing scrape interval to 10s via rest api")
+        settings = StatsHelper(self.cluster.master).change_scrape_interval(10)
+        verify_prometheus_config(expected_scrape_interval=10)
 
     def test_change_global_scrape_timeout(self):
         """
-        Change global scrape timeout and verify the prometheus config by querying Prometheus Federation
+        1. Change global scrape timeout via diag eval
+        2. Verify the prometheus config by querying Prometheus Federation
+        3. Reset the global scrape timeout back to default via rest api
+        4. Verify the prometheus config by querying Prometheus Federation
         (Positive test case as a valid scrape_timeout is always less than scrape_interval)
         """
+        def verify_prometheus_config(expected_scrape_timeout):
+            self.log.info("Validating by querying prometheus")
+            StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval\
+                ("prometheus_auth_enabled", "false")
+            StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval\
+                ("listen_addr_type", "any")
+            self.sleep(10, "Waiting for prometheus federation")
+            for server in self.cluster.servers[:self.nodes_init]:
+                content = StatsHelper(server).query_prometheus_federation(query)
+                yaml_code = yaml.load(content["data"]["yaml"])
+                global_scrape_timeout = yaml_code["global"]["scrape_timeout"]
+                if str(global_scrape_timeout) != (str(expected_scrape_timeout) + "s"):
+                    self.fail("Expected scrape timeout {0}, but Actual {1}"
+                              .format(expected_scrape_timeout, global_scrape_timeout))
+
         scrape_timeout = self.input.param("scrape_timeout", 5)
+        query = "status/config"
+        yaml = YAML()
         self.bucket_util.load_sample_bucket(TravelSample())
         self.bucket_util.load_sample_bucket(BeerSample())
 
-        self.log.info("Changing scrape interval to {0}".format(scrape_timeout))
-        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_timeout", scrape_timeout)
+        self.log.info("Changing scrape timeout to {0} via diag_eval".format(scrape_timeout))
+        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_timeout",
+                                                                          scrape_timeout)
+        verify_prometheus_config(expected_scrape_timeout=scrape_timeout)
 
-        self.log.info("Validating by querying prometheus")
-        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("prometheus_auth_enabled", "false")
-        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("listen_addr_type", "any")
-        self.sleep(10, "Waiting for prometheus federation")
-        query = "status/config"
-        yaml = YAML()
-        for server in self.cluster.servers[:self.nodes_init]:
-            content = StatsHelper(server).query_prometheus_federation(query)
-            yaml_code = yaml.load(content["data"]["yaml"])
-            global_scrape_timeout = yaml_code["global"]["scrape_timeout"]
-            if str(global_scrape_timeout) != (str(scrape_timeout) + "s"):
-                self.fail("Expected scrape timeout {0}, but Actual {1}"
-                          .format(scrape_timeout, global_scrape_timeout))
+        self.log.info("Changing scrape timeout to 10s via rest api")
+        settings = StatsHelper(self.cluster.master).change_scrape_timeout(10)
+        verify_prometheus_config(expected_scrape_timeout=10)
 
     def test_stats_1000_collections(self):
         """

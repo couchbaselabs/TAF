@@ -36,6 +36,7 @@ class StatsHelper(RestConnection):
         if type.lower() == 'windows':
             self.path = testconstants.WIN_COUCHBASE_BIN_PATH
             self.curl_path = "%scurl" % self.path
+        shell.disconnect()
 
     def get_prometheus_metrics(self, component="ns_server", parse=False):
         """
@@ -185,6 +186,45 @@ class StatsHelper(RestConnection):
                 status, content = self.rest.diag_eval('ns_config:set_sub(stats_settings, [%s])' % key_value)
                 if not status:
                     raise Exception(content)
+
+    def configure_stats_settings_from_api(self, metrics_data):
+        """
+        uses ns_server's rest api to change stats settings
+        :param: metrics_data (json_string): metrics to update in the form of json string
+        :returns (dict): all metrics settings
+        """
+        api = '%s%s' % (self.base_url, '/settings/metrics/')
+        headers = self.get_headers_for_content_type_json()
+        status, content, _ = self._http_request(api, method="POST",
+                                                params=metrics_data,
+                                                headers=headers)
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
+    def change_scrape_interval(self, scrape_interval):
+        """
+        changes scrape_interval via rest api
+        :param: scrape_interval (int) - scrape_interval
+        :returns: all metrics settings as a dict
+        """
+        stats_dict = dict()
+        stats_dict["scrapeInterval"] = scrape_interval
+        metrics_data = json.dumps(stats_dict)
+        settings = self.configure_stats_settings_from_api(metrics_data)
+        return settings
+
+    def change_scrape_timeout(self, scrape_timeout):
+        """
+        changes scrape_interval via rest api
+        :param: scrape timeout (int) - scrape timeout
+        :returns: all metrics settings as a dict
+        """
+        stats_dict = dict()
+        stats_dict["scrapeTimeout"] = scrape_timeout
+        metrics_data = json.dumps(stats_dict)
+        settings = self.configure_stats_settings_from_api(metrics_data)
+        return settings
 
     def query_prometheus_federation(self, query):
         """
