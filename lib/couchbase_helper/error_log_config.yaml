@@ -13,7 +13,7 @@ file_name_patterns:
           - 'XERROR'
           - 'compaction failed for vb'
             # TODo: Remove the below after MB-45330
-          - 'Create bucket .* failed - Already exists'
+          - 'failed - Already exists'
       #- string: 'WARN'
       #  exclude_patterns:
       #    - 'Slow'
