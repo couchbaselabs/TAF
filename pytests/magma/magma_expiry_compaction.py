@@ -718,6 +718,29 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.log.info("Expected ts count is {}".format(expected_ts_count))
         self.assertEqual(expected_ts_count, ts, "Incorrect tombstone count in storage,\
                         Expected: {}, Found: {}".format(expected_ts_count, ts))
+        # Metadata Purge Interval
+        self.meta_purge_interval = 180
+        self.meta_purge_interval_in_days = 180 / 86400.0
+
+        self.set_metadata_purge_interval(
+            value=self.meta_purge_interval_in_days, buckets=self.buckets)
+        self.sleep(180, "sleeping after setting metadata purge interval using diag/eval")
+        self.bucket_util.cbepctl_set_metadata_purge_interval(
+            value=self.meta_purge_interval, buckets=self.buckets)
+        self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
+        tomb-stones from storage")
+        ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+        self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
+
+        #Check for tombs-tones removed
+        self.run_compaction(compaction_iterations=1)
+        ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+        self.log.info("Tombstones after bucket compaction: {}".format(ts))
+        self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
+                        "Incorrect tombstone count in storage,\
+                        Expected: {}, Found: {}".format(self.vbuckets * (self.num_replicas+1), ts))
+        self.set_metadata_purge_interval(
+            value=3.0, buckets=self.buckets)
 
     def test_wait_for_expiry_read_repeat(self):
         for _iter in range(self.iterations):
