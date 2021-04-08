@@ -261,7 +261,7 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info(
                         "Setting the min possible memory quota so that adding "
                         "more nodes to the cluster wouldn't be a problem.")
-                    self.rest.set_service_mem_quota(
+                    cluster.rest.set_service_mem_quota(
                         {CbServer.Settings.KV_MEM_QUOTA: MIN_KV_QUOTA,
                          CbServer.Settings.FTS_MEM_QUOTA: FTS_QUOTA,
                          CbServer.Settings.INDEX_MEM_QUOTA: INDEX_QUOTA})
@@ -272,7 +272,7 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("Setting %d memory quota for CBAS"
                                   % CBAS_QUOTA)
                     cluster.cbas_memory_quota = CBAS_QUOTA
-                    self.rest.set_service_mem_quota(
+                    cluster.rest.set_service_mem_quota(
                         {CbServer.Settings.CBAS_MEM_QUOTA: CBAS_QUOTA})
 
                 cluster.cbas_util = None
