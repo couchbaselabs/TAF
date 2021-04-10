@@ -1,7 +1,7 @@
 import threading
 import time
-import urllib
 import random
+import math
 
 from backup_service import BackupServiceTest
 from com.couchbase.client.java import *
@@ -38,6 +38,7 @@ class volume(CollectionBase):
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_for_volume_test")
+        self.perform_quorum_failover = self.input.param("perform_quorum_failover", True)
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 4)
         self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
         self.scrape_interval = self.input.param("scrape_interval", None)
@@ -251,6 +252,55 @@ class volume(CollectionBase):
             error_sim.revert(action)
         remote.disconnect()
 
+    def custom_induce_failure(self, nodes, failover_action="stop_server"):
+        """
+        Induce failure on nodes
+        """
+        for node in nodes:
+            if failover_action == "stop_server":
+                self.cluster_util.stop_server(node)
+            elif failover_action == "firewall":
+                self.cluster_util.start_firewall_on_node(node)
+            elif failover_action == "stop_memcached":
+                self.cluster_util.stop_memcached_on_node(node)
+            elif failover_action == "kill_erlang":
+                remote = RemoteMachineShellConnection(node)
+                remote.kill_erlang()
+                remote.disconnect()
+
+    def custom_remove_failure(self, nodes, revert_failure="stop_server"):
+        """
+        Remove failure
+        """
+        for node in nodes:
+            if revert_failure == "stop_server":
+                self.cluster_util.start_server(node)
+            elif revert_failure == "firewall":
+                self.cluster_util.stop_firewall_on_node(node)
+            elif revert_failure == "stop_memcached":
+                self.cluster_util.start_memcached_on_node(node)
+            elif revert_failure == "kill_erlang":
+                self.cluster_util.stop_server(node)
+                self.cluster_util.start_server(node)
+
+    def wipe_config_on_removed_nodes(self, remove_nodes):
+        """
+        Stop servers on nodes that were failed over and removed, and wipe config dir
+        """
+        for node in remove_nodes:
+            self.log.info("Wiping node config and restarting server on {0}".format(node))
+            rest = RestConnection(node)
+            data_path = rest.get_data_path()
+            shell = RemoteMachineShellConnection(node)
+            shell.stop_couchbase()
+            self.sleep(10)
+            shell.cleanup_data_config(data_path)
+            shell.start_server()
+            self.sleep(10)
+            if not RestHelper(rest).is_ns_server_running():
+                self.log.error("ns_server {0} is not running.".format(node.ip))
+            shell.disconnect()
+
     def rebalance(self, nodes_in=0, nodes_out=0):
         servs_in = random.sample(self.available_servers, nodes_in)
 
@@ -279,7 +329,7 @@ class volume(CollectionBase):
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         return rebalance_task
 
-    def wait_for_rebalance_to_complete(self, task, wait_step=120):
+    def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         self.assertTrue(task.result, "Rebalance Failed")
 
@@ -623,7 +673,42 @@ class volume(CollectionBase):
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             ########################################################################################################################
-            self.log.info("Step 19: Flush bucket(s) and start the entire process again")
+            self.cluster.nodes_in_cluster = self.cluster.servers
+            step_count = 19
+            removed_nodes = list() # total list of all nodes that will be removed
+            if self.perform_quorum_failover:
+                self.log.info("Step {0}: Quorum failover nodes".format(step_count))
+                # keep performing QF until one node is left
+                while len(self.cluster.nodes_in_cluster)!=1:
+                    majority_number = int(math.ceil(len(self.cluster.nodes_in_cluster)/2.0))
+                    self.nodes_cluster = self.cluster.nodes_in_cluster[:]
+                    self.nodes_cluster.remove(self.cluster.master)
+                    remove_nodes = random.sample(self.nodes_cluster, majority_number)
+                    self.custom_induce_failure(remove_nodes, failover_action="stop_server")
+                    self.sleep(10, "Wait after inducing failure")
+                    self.log.info("Failing over nodes explicitly {0}".format(remove_nodes))
+                    result = self.task.failover(self.cluster.nodes_in_cluster, failover_nodes=remove_nodes,
+                                                graceful=False, wait_for_pending=120,
+                                                allow_unsafe=True,
+                                                all_at_once=True)
+                    self.assertTrue(result, "Failover Failed")
+                    self.custom_remove_failure(nodes=remove_nodes, revert_failure="stop_server")
+                    self.sleep(15)
+                    self.wipe_config_on_removed_nodes(remove_nodes)
+                    for node in remove_nodes:
+                        removed_nodes.append(node)
+                    self.cluster.nodes_in_cluster = [node for node in self.cluster.nodes_in_cluster
+                                                     if node not in remove_nodes]
+                # add back all the nodes
+                rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster, removed_nodes, [],
+                                                           retry_get_process_num=200)
+                self.wait_for_rebalance_to_complete(rebalance_task)
+                self.cluster.nodes_in_cluster = self.cluster.servers[:]
+                step_count = step_count + 1
+                self.bucket_util.print_bucket_stats()
+                self.check_logs()
+            ########################################################################################################################
+            self.log.info("Step {0}: Flush bucket(s) and start the entire process again".format(step_count))
             self.loop += 1
             if self.loop < self.iterations:
                 # Flush buckets(s)
