@@ -155,10 +155,10 @@ class StatsBasicOps(CollectionBase):
         self.bucket_util.load_sample_bucket(BeerSample())
 
         self.log.info("Disabling high cardinality metrics of all services")
-        value = "[{index,[{high_cardinality_enabled,false}]}, {fts,[{high_cardinality_enabled,false}]},\
-                 {kv,[{high_cardinality_enabled,false}]}, {cbas,[{high_cardinality_enabled,false}]}, \
-                 {eventing,[{high_cardinality_enabled,false}]}]"
-        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("services", value)
+        metrics_data = '{"services":{"analytics":{"highCardEnabled":false}, "clusterManager":{"highCardEnabled":false},\
+        "data":{"highCardEnabled":false}, "eventing":{"highCardEnabled":false}, \
+        "fullTextSearch":{"highCardEnabled":false}, "index":{"highCardEnabled":false}}}'
+        StatsHelper(self.cluster.master).configure_stats_settings_from_api(metrics_data)
 
         self.log.info("Validating by querying prometheus")
         StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("prometheus_auth_enabled", "false")
