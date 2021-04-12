@@ -187,10 +187,10 @@ class StatsBasicOps(CollectionBase):
         self.bucket_util.load_sample_bucket(BeerSample())
 
         self.log.info("Disabling external prometheus high cardinality metrics of all services")
-        value = "[{index,[{high_cardinality_enabled,false}]}, {fts,[{high_cardinality_enabled,false}]},\
-                         {kv,[{high_cardinality_enabled,false}]}, {cbas,[{high_cardinality_enabled,false}]}, \
-                         {eventing,[{high_cardinality_enabled,false}]}]"
-        StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("external_prometheus_services", value)
+        metrics_data = '{"statsExport":{"analytics":{"highCardEnabled":false}, "clusterManager":{"highCardEnabled":false},\
+                "data":{"highCardEnabled":false}, "eventing":{"highCardEnabled":false}, \
+                "fullTextSearch":{"highCardEnabled":false}, "index":{"highCardEnabled":false}}}'
+        StatsHelper(self.cluster.master).configure_stats_settings_from_api(metrics_data)
         for server in self.cluster.servers[:self.nodes_init]:
             len_low_cardinality_metrics = 0
             content = StatsHelper(server).get_prometheus_metrics(component="ns_server", parse=False)
@@ -201,6 +201,7 @@ class StatsBasicOps(CollectionBase):
                 content = StatsHelper(server).get_prometheus_metrics(component=component, parse=False)
                 self.log.info("lc count of {2} on {0} is {1}".format(server.ip, len(content), component))
                 len_low_cardinality_metrics = len_low_cardinality_metrics + len(content)
+            self.sleep(20, "Wait before fetching metrics")
             content = StatsHelper(server).get_all_metrics()
             len_metrics = len(content)
             if len_metrics != len_low_cardinality_metrics:

@@ -396,7 +396,7 @@ class StatsHelper(RestConnection):
 
         def check_prefixes(line_to_check):
             allowed_prefixes = ["audit", "sysproc", "sys", "couch",
-                                "exposer", "kv",
+                                "exposer", "cm", "kv",
                                 "index", "n1ql", "fts", "eventing", "xdcr"
                                 ]
             for prefix in allowed_prefixes:
@@ -413,9 +413,8 @@ class StatsHelper(RestConnection):
                     lines_seen.add(line)
                 else:
                     raise Exception("Duplicate metrics entry {0}".format(line))
-                # ToDo: Uncomment when you know al the valid prefixes
-                # if not check_prefixes(line):
-                #     raise Exception("Invalid prefix for metric {0}".format(line))
+                if not check_prefixes(line):
+                    raise Exception("Invalid prefix for metric {0}".format(line))
 
         if len(content) == 0:
             log.error("No metrics are present to validate")
