@@ -591,7 +591,7 @@ class BaseTestCase(unittest.TestCase):
             self.log.warn("RAM quota was defined less than 100 MB:")
             for server in cluster.servers:
                 ram = ssh_sessions[server.ip].extract_remote_info().ram
-                self.log.debug("{0}: {1}".format(server.ip, ram))
+                self.log.debug("Node: {0}: RAM: {1}".format(server.ip, ram))
 
         # Close all ssh_connections
         for server in cluster.servers:

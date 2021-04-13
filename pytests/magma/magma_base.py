@@ -480,34 +480,53 @@ class MagmaBaseTest(BaseTestCase):
                                                       target_vbucket=target_vbucket,
                                                       mutate=expiry_mutate)
 
-    def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
+    def load_bucekts_in_dgm(self, kv_gen, op_type, exp, flag=0,
                           only_store_hash=True, batch_size=1000, pause_secs=1,
                           timeout_secs=30, compression=True, dgm_batch=5000,
                           skip_read_on_error=False,
                           suppress_error_table=False,
-                          track_failures=True):
-
-        retry_exceptions = self.retry_exceptions
-        tasks_info = self.bucket_util.sync_load_all_buckets(
-            cluster, kv_gen, op_type, exp, flag,
-            persist_to=self.persist_to, replicate_to=self.replicate_to,
-            durability=self.durability_level, timeout_secs=timeout_secs,
-            only_store_hash=only_store_hash, batch_size=batch_size,
-            pause_secs=pause_secs, sdk_compression=compression,
-            process_concurrency=self.process_concurrency,
-            retry_exceptions=retry_exceptions,
-            active_resident_threshold=self.active_resident_threshold,
-            skip_read_on_error=skip_read_on_error,
-            suppress_error_table=suppress_error_table,
-            dgm_batch=dgm_batch,
-            monitor_stats=self.monitor_stats,
-            track_failures=track_failures)
+                          track_failures=False):
+        tasks_info = dict()
+        self.collections.remove(CbServer.default_collection)
+        docs_per_task = dict()
+        docs_per_scope = dict.fromkeys(self.scopes, dict())
+        for scope in self.scopes:
+            task_per_collection = dict()
+            if scope == CbServer.default_scope:
+                self.collections.append(CbServer.default_collection)
+            for collection in self.collections:
+                task_info = self.bucket_util._async_load_all_buckets(
+                    self.cluster, kv_gen, op_type, exp, flag,
+                    persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    durability=self.durability_level, timeout_secs=timeout_secs,
+                    only_store_hash=only_store_hash, batch_size=batch_size,
+                    pause_secs=pause_secs, sdk_compression=compression,
+                    process_concurrency=self.process_concurrency,
+                    retry_exceptions=self.retry_exceptions,
+                    active_resident_threshold=self.active_resident_threshold,
+                    skip_read_on_error=skip_read_on_error,
+                    suppress_error_table=suppress_error_table,
+                    dgm_batch=dgm_batch,
+                    scope=scope,
+                    collection=collection,
+                    monitor_stats=self.monitor_stats,
+                    track_failures=track_failures)
+                tasks_info.update(task_info.items())
+                task_per_collection[collection] = list(task_info.keys())[0]
+            if scope == CbServer.default_scope:
+                self.collections.remove(CbServer.default_collection)
+            docs_per_scope[scope]= task_per_collection
+        for task in tasks_info.keys():
+            self.task_manager.get_task_result(task)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
-                self.num_items = task.doc_index
-        self.assertTrue(self.bucket_util.doc_ops_tasks_status(tasks_info),
-                        "Doc_ops failed in MagmaBase._load_all_buckets")
-        return tasks_info
+                docs_per_task[task] = task.doc_index
+            self.log.info("docs_per_task : {}".format(docs_per_task))
+            for scope in self.scopes:
+                for collection in self.collections:
+                    docs_per_scope[scope][collection] = docs_per_task[docs_per_scope[scope][collection]]
+            docs_per_scope[CbServer.default_scope][CbServer.default_collection] = docs_per_task[docs_per_scope[CbServer.default_scope][CbServer.default_collection]]
+        self.log.info("docs_per_scope :  {}".format(docs_per_scope))
 
     def loadgen_docs(self,
                      retry_exceptions=[],
