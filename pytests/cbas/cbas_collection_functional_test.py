@@ -1111,6 +1111,9 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 self.fail("Error creating dataset {0}".format(dataset.name))
             if self.input.param('dangling_synonym', False):
                 break
+        if not self.cbas_util_v2.wait_for_ingestion_all_datasets(self.bucket_util):
+            self.fail("Data ingestion failed")
+        
         syn_obj = Synonym(dataset_objs[0].name, dataset_objs[1].name,
                           dataset_objs[1].dataverse_name,
                           dataverse_name=dataset_objs[0].dataverse_name,

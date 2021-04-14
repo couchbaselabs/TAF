@@ -265,7 +265,7 @@ class CBASExternalLinks(CBASBaseTest):
                 {
                     "description": "Create a link with a non-existent dataverse",
                     "dataverse": invalid_dv,
-                    "expected_error": "Cannot find dataverse with name {0}".format(self.invalid_value)
+                    "expected_error": "Cannot find analytics scope with name {0}".format(self.invalid_value)
                 },
                 {
                     "description": "Create a link with an invalid region name",
@@ -423,7 +423,7 @@ class CBASExternalLinks(CBASBaseTest):
                     "expected_hits": 0,
                     "description": "Parameters Passed - Name",
                     "validate_error_msg": True,
-                    "expected_error": "You must specify 'dataverse' if 'name' is specified"
+                    "expected_error": "Cannot find analytics scope with name {0}".format(self.link_info["name"])
                 },
                 {
                     "dataverse": self.link_info["dataverse"],
@@ -468,10 +468,10 @@ class CBASExternalLinks(CBASBaseTest):
                             raise Exception(
                                 "Expected links - {0} \t Actual links - {1}".format(testcase["expected_hits"],
                                                                                     len(response)))
-                        if not (response[0]["dataverse"] == Dataset.format_name_for_error(
+                        if not (response[0]["scope"] == Dataset.format_name_for_error(
                             True,self.link_info["dataverse"])):
                             raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["dataverse"],
-                                                                                   response[0]["dataverse"]))
+                                                                                   response[0]["scope"]))
                         if not (response[0]["name"] == self.link_info["name"]):
                             raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["name"],
                                                                                    response[0]["name"]))
@@ -518,14 +518,14 @@ class CBASExternalLinks(CBASBaseTest):
             {
                 "description": "Changing dataverse to another existing dataverse",
                 "validate_error_msg": True,
-                "expected_error": "Link {0} does not exist".format(self.link_info["name"]),
+                "expected_error": "Link {0} does not exist",
                 "new_dataverse": True
             },
             {
                 "description": "Changing dataverse to a non-existing dataverse",
                 "dataverse": invalid_dv,
                 "validate_error_msg": True,
-                "expected_error": "Cannot find dataverse with name {0}".format(self.invalid_value)
+                "expected_error": "Cannot find analytics scope with name {0}".format(self.invalid_value)
             },
             {
                 "description": "Changing link type",
@@ -611,6 +611,8 @@ class CBASExternalLinks(CBASBaseTest):
                     if not self.cbas_util.create_dataverse_on_cbas(dataverse_name=link_properties["dataverse"],
                                                                    username=self.analytics_username):
                         raise Exception("Dataverse creation failed")
+                    testcase["expected_error"] = testcase.get("expected_error", None).format(
+                        link_properties["dataverse"] + "." + self.link_info["name"])
 
                 response = self.cbas_util.update_external_link_properties(
                     link_properties, validate_error_msg=testcase.get("validate_error_msg", False),
@@ -714,7 +716,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Create dataset with same name",
                 "recreate_dataset": True,
                 "validate_error_msg": True,
-                "expected_error": "A dataset with name {0} already exists in dataverse {1}".format(
+                "expected_error": "A analytics collection with name {0} already exists in analytics scope {1}".format(
                     self.cbas_dataset_name,
                     self.link_info["dataverse"])
             },
@@ -983,6 +985,61 @@ class CBASExternalLinks(CBASBaseTest):
                                                 dataset_param["dataverse"])
             except Exception:
                 failed_testcases.append(testcase["description"])
+        if failed_testcases:
+            self.fail("Following testcases failed - {0}".format(str(failed_testcases)))
+    
+    def test_drop_dataset(self):
+
+        self.setup_for_dataset()
+
+        # Create users with all RBAC roles.
+        self.create_or_delete_users(self.rbac_util, rbac_users_created)
+
+        testcases = self.create_testcase_for_rbac_user(
+            "Dropping dataset on external link using {0} user", rbac_users_created)
+        
+        for tc in testcases:
+            if tc["validate_error_msg"]:
+                tc["expected_error"] = "User must have permission"
+
+        failed_testcases = list()
+        
+        if not self.cbas_util.create_dataset_on_external_resource(
+            **self.dataset_params):
+            self.fail("Error while creating dataset")
+        
+        recreate_dataset = False
+
+        for testcase in testcases:
+            try:
+                self.log.info(testcase["description"])
+
+                if recreate_dataset: 
+                    if not self.cbas_util.create_dataset_on_external_resource(
+                        **self.dataset_params):
+                        self.fail("Error while creating dataset")
+                    recreate_dataset = False
+                
+                dataset_param = copy.deepcopy(self.dataset_params)
+                for param in testcase:
+                    if param in dataset_param:
+                        dataset_param[param] = testcase[param]
+                
+                if not self.cbas_util.drop_dataset(
+                    cbas_dataset_name=dataset_param["cbas_dataset_name"],
+                    dataverse=dataset_param["dataverse"],
+                    validate_error_msg=dataset_param["validate_error_msg"],
+                    username=dataset_param["username"], 
+                    password=dataset_param["password"], 
+                    expected_error=dataset_param["expected_error"]):
+                    raise Exception("Error while dropping dataset")
+                    
+                if not dataset_param["validate_error_msg"]:
+                    recreate_dataset = True
+                     
+            except Exception:
+                failed_testcases.append(testcase["description"])
+        
         if failed_testcases:
             self.fail("Following testcases failed - {0}".format(str(failed_testcases)))
 

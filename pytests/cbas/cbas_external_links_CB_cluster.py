@@ -750,7 +750,7 @@ class CBASExternalLinks(CBASBaseTest):
                             raise Exception(
                                 "Expected - {0} \t Actual- {1}".format(
                                     self.link_info["dataverse"],
-                                    response[0]["dataverse"]))
+                                    response[0]["scope"]))
                         if not (response[0]["name"] == self.link_info["name"]):
                             raise Exception(
                                 "Expected - {0} \t Actual- {1}".format(
