@@ -282,7 +282,7 @@ class RebalanceInTests(RebalanceBaseTest):
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
             self.cluster.servers[:self.nodes_init], self.bucket_util.buckets, path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
-        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [])
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [], retry_get_process_num=40)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
