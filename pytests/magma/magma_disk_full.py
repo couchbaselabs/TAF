@@ -517,7 +517,7 @@ class MagmaDiskFull(MagmaBaseTest):
             pause_secs=5, timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
-        self.bucket_util.update_all_bucket_replicas(replicas=0)
+        self.bucket_util.update_all_bucket_replicas(replicas=1)
         rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
                                                [], [])
         self.assertTrue(rebalance_result)
@@ -550,7 +550,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for t in th:
             t.join()
 
-        self.bucket_util.update_all_bucket_replicas(replicas=3)
+        self.bucket_util.update_all_bucket_replicas(replicas=2)
         rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
                                                [], [])
         self.assertFalse(rebalance_result)
@@ -564,7 +564,7 @@ class MagmaDiskFull(MagmaBaseTest):
             pause_secs=5, timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
-        self.bucket_util.update_all_bucket_replicas(replicas=0)
+        self.bucket_util.update_all_bucket_replicas(replicas=1)
         rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
                                                [], [])
         self.assertTrue(rebalance_result)
@@ -802,8 +802,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                             stat_name="ep_data_write_failed",
                                             stat_cond=">", timeout=300)
             self.assertTrue(self.bucket_util.flush_bucket(self.cluster.master,
-                                                          bucket)
-            )
+                                                          bucket))
 
     def test_unmount_mount_partition(self):
         pass
