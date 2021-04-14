@@ -801,7 +801,9 @@ class MagmaDiskFull(MagmaBaseTest):
                                             cbstat_cmd="all",
                                             stat_name="ep_data_write_failed",
                                             stat_cond=">", timeout=300)
-            self.assertTrue(self.bucket_util.flush_bucket())
+            self.assertTrue(self.bucket_util.flush_bucket(self.cluster.master,
+                                                          bucket)
+            )
 
     def test_unmount_mount_partition(self):
         pass
