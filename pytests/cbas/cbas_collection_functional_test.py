@@ -1534,7 +1534,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         index = CBAS_Index(
             self.index_name, synonym.name, synonym.dataverse_name,
             indexed_fields=self.input.param('index_fields', None))
-        expected_error = "Cannot find collection with name {0} in scope {" \
+        expected_error = "Cannot find analytics collection with name {0} in analytics scope {" \
                          "1}".format(
             CBASHelper.unformat_name(synonym.name), synonym.dataverse_name)
         if not self.cbas_util_v2.create_cbas_index(
