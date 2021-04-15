@@ -3,9 +3,7 @@ import json
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from testconstants import LINUX_DISTRIBUTION_NAME
-import logger
-
-log = logger.Logger.get_logger()
+from global_vars import logger
 
 
 class audit:
@@ -26,8 +24,9 @@ class audit:
                  method='REST'):
 
         rest = RestConnection(host)
+        self.log = logger.get("test")
         if (rest.is_enterprise_edition()):
-            log.info ("Enterprise Edition, Audit is part of the test")
+            self.log.info ("Enterprise Edition, Audit is part of the test")
         else:
             raise Exception(" Install is not an enterprise edition, Audit requires enterprise edition.")
         self.method = method
@@ -50,7 +49,7 @@ class audit:
         shell = RemoteMachineShellConnection(self.host)
         os_type = shell.extract_remote_info().distribution_type
         dist_ver = (shell.extract_remote_info().distribution_version).rstrip()
-        log.info ("OS type is {0}".format(os_type))
+        self.log.info ("OS type is {0}".format(os_type))
         if os_type == 'windows':
             auditconfigpath = audit.WINCONFIFFILEPATH
             self.currentLogFile = audit.WINLOGFILEPATH
@@ -147,7 +146,7 @@ class audit:
             f.close()
             return data[len(data) - 1]
         except:
-            log.info("ERROR ---- Event Not Found in audit.log file. Please check the log file")
+            self.log.info("ERROR ---- Event Not Found in audit.log file. Please check the log file")
             if filtering:
                 return None
 
@@ -357,11 +356,11 @@ class audit:
                                         tempStr = tempStr + ":" + secLevel[0]
                                     optionalSecLevel.append(tempStr)
 
-        #log.info ("Value of default fields is - {0}".format(defaultFields))
-        #log.info ("Value of mandatory fields is {0}".format(mandatoryFields))
-        #log.info ("Value of mandatory sec level is {0}".format(mandatorySecLevel))
-        #log.info ("Value of optional fields i {0}".format(optionalFields))
-        #log.info ("Value of optional sec level is {0}".format(optionalSecLevel))
+        #self.log.info ("Value of default fields is - {0}".format(defaultFields))
+        #self.log.info ("Value of mandatory fields is {0}".format(mandatoryFields))
+        #self.log.info ("Value of mandatory sec level is {0}".format(mandatorySecLevel))
+        #self.log.info ("Value of optional fields i {0}".format(optionalFields))
+        #self.log.info ("Value of optional sec level is {0}".format(optionalSecLevel))
         return defaultFields, mandatoryFields, mandatorySecLevel, optionalFields, optionalSecLevel
 
     '''
@@ -381,44 +380,44 @@ class audit:
     def validateFieldActualLog(self, data, eventNumber, module, defaultFields, mandatoryFields, manFieldSecLevel=None, optionalFields=None, optFieldSecLevel=None, method="Rest", n1ql_audit=False):
         flag = True
         for items in defaultFields:
-            #log.info ("Default Value getting checked is - {0}".format(items))
+            #self.log.info ("Default Value getting checked is - {0}".format(items))
             if items not in data:
-                log.info (" Default value not matching with expected expected value is - {0}".format(items))
+                self.log.info (" Default value not matching with expected expected value is - {0}".format(items))
                 flag = False
         for items in mandatoryFields:
-            log.info ("Top Level Mandatory Field Default getting checked is - {0}".format(items))
+            self.log.info ("Top Level Mandatory Field Default getting checked is - {0}".format(items))
             if items in data:
                 if (isinstance ((data[items]), dict)):
                     for items1 in manFieldSecLevel:
                         tempStr = items1.split(":")
                         if tempStr[0] == items:
                             for items in data[items]:
-                                #log.info ("Second Level Mandatory Field Default getting checked is - {0}".format(items))
+                                #self.log.info ("Second Level Mandatory Field Default getting checked is - {0}".format(items))
                                 if (items not in tempStr and method is not 'REST'):
-                                    #log.info (" Second level Mandatory field not matching with expected expected value is - {0}".format(items))
+                                    #self.log.info (" Second level Mandatory field not matching with expected expected value is - {0}".format(items))
                                     flag = False
             else:
                 flag = False
                 if (method == 'REST' and items == 'sessionid'):
                     flag = True
-                log.info (" Top level Mandatory field not matching with expected expected value is - {0}".format(items))
+                self.log.info (" Top level Mandatory field not matching with expected expected value is - {0}".format(items))
         for items in optionalFields:
-            log.info ("Top Level Optional Field Default getting checked is - {0}".format(items))
+            self.log.info ("Top Level Optional Field Default getting checked is - {0}".format(items))
             if items in data:
                 if (isinstance ((data[items]), dict)):
                     for items1 in optFieldSecLevel:
                         tempStr = items1.split(":")
                         if tempStr[0] == items:
                             for items in data[items]:
-                                #log.info ("Second Level Optional Field Default getting checked is - {0}".format(items))
+                                #self.log.info ("Second Level Optional Field Default getting checked is - {0}".format(items))
                                 if (items not in tempStr and method is not 'REST'):
-                                    log.info (" Second level Optional field not matching with expected expected value is - {0}".format(items))
+                                    self.log.info (" Second level Optional field not matching with expected expected value is - {0}".format(items))
                                     #flag = False
             else:
                 #flag = False
                 if (method == 'REST' and items == "sessionid"):
                     flag = True
-                log.info (" Top level Optional field not matching with expected expected value is - {0}".format(items))
+                self.log.info (" Top level Optional field not matching with expected expected value is - {0}".format(items))
         if n1ql_audit:
             flag = True
         return flag
@@ -433,7 +432,7 @@ class audit:
     '''
 
     def validateData(self, data, expectedResult):
-        log.info (" Event from audit.log -- {0}".format(data))
+        self.log.info (" Event from audit.log -- {0}".format(data))
         flag = True
         ignore = False
         for items in data:
@@ -454,31 +453,31 @@ class audit:
                                 ignore = True
                                 tempValue = data[items][seclevel]
                         if (seclevel == 'port' and data[items][seclevel] >= 30000 and data[items][seclevel] <= 65535):
-                            log.info ("Matching port is an ephemeral port -- actual port is {0}".format(data[items][seclevel]))
+                            self.log.info ("Matching port is an ephemeral port -- actual port is {0}".format(data[items][seclevel]))
                         else:
                             if not ignore:
-                                log.info('expected values - {0} -- actual value -- {1} - eventName - {2}'
+                                self.log.info('expected values - {0} -- actual value -- {1} - eventName - {2}'
                                          .format(tempValue,data[items][seclevel], tempLevel))
                             if data[items][seclevel] != tempValue:
-                                log.info('Mis-Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'
+                                self.log.info('Mis-Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'
                                          .format(tempValue, data[items][seclevel], tempLevel))
                                 flag = False
                         ignore = False
                 else:
                     if (items == 'port' and data[items] >= 30000 and data[items] <= 65535):
-                        log.info ("Matching port is an ephemeral port -- actual port is {0}".format(data[items]))
+                        self.log.info ("Matching port is an ephemeral port -- actual port is {0}".format(data[items]))
                     else:
                         if items == "requestId" or items == 'clientContextId':
                             expectedResult[items] = data[items]
-                        log.info ('expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items.encode('utf-8')], data[items.encode('utf-8')], items))
+                        self.log.info ('expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items.encode('utf-8')], data[items.encode('utf-8')], items))
                         if (items == 'peername'):
                             if (expectedResult[items] not in data[items]):
                                 flag = False
-                                log.info ('Mis - Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items.encode('utf-8')], data[items.encode('utf-8')], items))
+                                self.log.info ('Mis - Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items.encode('utf-8')], data[items.encode('utf-8')], items))
                         else:
                             if (data[items] != expectedResult[items]):
                                 flag = False
-                                log.info ('Mis - Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items.encode('utf-8')], data[items.encode('utf-8')], items))
+                                self.log.info ('Mis - Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items.encode('utf-8')], data[items.encode('utf-8')], items))
             ignore = False
         return flag
 
@@ -491,7 +490,7 @@ class audit:
     '''
     def validateTimeStamp(self, actualTime=None):
         try:
-            log.info(actualTime)
+            self.log.info(actualTime)
             date = actualTime[:10]
             hourMin = actualTime[11:16]
             tempTimeZone = actualTime[-6:]
@@ -502,26 +501,26 @@ class audit:
                 currTimeZone = shell.execute_command('date +%z')
             finally:
                 shell.disconnect()
-            log.info (" Matching expected date - currDate {0}; actual Date - {1}".format(currDate[0][0], date))
-            log.info (" Matching expected time - currTime {0} ; actual Time - {1}".format(currHourMin[0][0], hourMin))
+            self.log.info (" Matching expected date - currDate {0}; actual Date - {1}".format(currDate[0][0], date))
+            self.log.info (" Matching expected time - currTime {0} ; actual Time - {1}".format(currHourMin[0][0], hourMin))
             if date != currDate[0][0].rstrip():
-                log.info('Compare date')
-                log.info ("Mis-match in values for timestamp - date")
+                self.log.info('Compare date')
+                self.log.info ("Mis-match in values for timestamp - date")
                 return False
             else:
-                log.info('Compare hours and minutes')
+                self.log.info('Compare hours and minutes')
                 if ((int((hourMin.split(":"))[0])) != (int((currHourMin[0][0].split(":"))[0]))) or ((int((hourMin.split(":"))[1]) + 10) < (int((currHourMin[0][0].split(":"))[1]))):
-                    log.info ("Mis-match in values for timestamp - time")
+                    self.log.info ("Mis-match in values for timestamp - time")
                     return False
                 else:
-                    log.info('Compare timezone')
+                    self.log.info('Compare timezone')
                     tempTimeZone = tempTimeZone.replace(":", "")
                     if (tempTimeZone != currTimeZone[0][0].rstrip()):
-                        log.info("Mis-match in value of timezone. Actual: %s Expected: %s" %(tempTimeZone, currTimeZone[0][0].rstrip()))
+                        self.log.info("Mis-match in value of timezone. Actual: %s Expected: %s" %(tempTimeZone, currTimeZone[0][0].rstrip()))
                         return False
 
         except Exception, e:
-            log.info ("Value of execption is {0}".format(e))
+            self.log.info ("Value of execption is {0}".format(e))
             return False
 
 
