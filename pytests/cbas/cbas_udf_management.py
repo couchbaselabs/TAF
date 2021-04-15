@@ -449,7 +449,7 @@ class CBASUDF(CBASBaseTest):
         if not self.cbas_util_v2.drop_dataset(
                 dataset_name=dataset_name,
                 validate_error_msg=True,
-                expected_error="Cannot drop collection", 
+                expected_error="Cannot drop analytics collection", 
                 expected_error_code=24142,
                 timeout=300, analytics_timeout=300):
             self.fail("Successfully dropped dataset being used by a UDF")

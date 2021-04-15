@@ -532,7 +532,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.log.info("Test started")
         if not self.cbas_util_v2.drop_dataset(
                 "invalid", validate_error_msg=True,
-                expected_error="Cannot find collection with name invalid",
+                expected_error="Cannot find analytics collection with name invalid",
                 analytics_collection=self.input.param('cbas_collection',
                                                       False)):
             self.fail("Successfully deleted non-existent dataset")
