@@ -1,7 +1,10 @@
+import json
 from basetestcase import BaseTestCase
 from membase.api.exception import BucketCreationException
 from membase.api.rest_client import RestConnection
 from BucketLib.bucket import Bucket
+from remote.remote_util import RemoteMachineShellConnection
+from testconstants import LINUX_COUCHBASE_LOGS_PATH
 
 
 class CreateBucketTests(BaseTestCase):
@@ -52,3 +55,24 @@ class CreateBucketTests(BaseTestCase):
         except BucketCreationException as ex:
             self.log.error(ex)
             self.fail('could not create bucket with valid length')
+
+    def test_audit_logging_for_create_bucket(self):
+        rest = RestConnection(self.cluster.master)
+        logfilePath = LINUX_COUCHBASE_LOGS_PATH + "/audit.log"
+        rest.setAuditSettings()
+        self.remote_shell = RemoteMachineShellConnection(self.cluster.master)
+        bucketNameValue = self.bucket_util.get_random_name()
+        self.bucket_util.create_default_bucket(
+            bucket_type=self.bucket_type,
+            replica=self.num_replicas,
+            storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy,
+            bucket_durability=self.bucket_durability_level,
+            bucket_name=bucketNameValue)
+
+        contentValue = self.remote_shell.execute_command(
+            "cat " + logfilePath + " | grep 'Bucket was created'")
+
+        jsonValue = json.loads(contentValue[0][0])
+        self.assertEqual(jsonValue["bucket_name"], bucketNameValue, "Value are not equal")
+        self.remote_shell.disconnect()

@@ -1,8 +1,10 @@
+import json
 import time
 from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
 from BucketLib.bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
+from testconstants import LINUX_COUCHBASE_LOGS_PATH
 
 
 class DeleteBucketTests(BaseTestCase):
@@ -67,3 +69,32 @@ class DeleteBucketTests(BaseTestCase):
                 self.wait_for_data_files_deletion(name,
                                                   remote_connection=remote,
                                                   rest=rest, timeout_in_seconds=20), msg=msg)
+
+    def test_audit_logging_for_delete_bucket(self):
+        rest = RestConnection(self.cluster.master)
+        logfilePath = LINUX_COUCHBASE_LOGS_PATH + "/audit.log"
+        rest.setAuditSettings()
+        self.remote_shell = RemoteMachineShellConnection(self.cluster.master)
+        bucketNameValue = self.bucket_util.get_random_name()
+        self.bucket_util.create_default_bucket(
+            bucket_type=self.bucket_type,
+            replica=self.num_replicas,
+            storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy,
+            bucket_durability=self.bucket_durability_level,
+            bucket_name=bucketNameValue)
+
+        contentValue = self.remote_shell.execute_command(
+            "cat " + logfilePath + " | grep 'Bucket was created'")
+
+        jsonValue = json.loads(contentValue[0][0])
+        self.assertEqual(jsonValue["bucket_name"], bucketNameValue, "Value are not equal")
+
+        self.bucket_util.delete_bucket(self.cluster.master, self.bucket_util.buckets[0])
+
+        contentValue = self.remote_shell.execute_command(
+            "cat " + logfilePath + " | grep 'Bucket was deleted'")
+
+        jsonValue = json.loads(contentValue[0][0])
+        self.assertEqual(jsonValue["bucket_name"], bucketNameValue, "Value are not equal")
+        self.remote_shell.disconnect()
