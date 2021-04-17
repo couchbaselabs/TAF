@@ -599,9 +599,8 @@ class Dataverse_Util(BaseUtil):
 
     def get_dataverses(self, retries=10):
         dataverses_created = []
-        dataverse_query = 'SELECT VALUE d.DataverseName FROM ' \
-                         'Metadata.`Dataverse` d WHERE ' \
-                         'd.DataverseName <> "Metadata"'
+        dataverse_query = "select value regexp_replace(dv.DataverseName,\"/\"," \
+            "\".\") from Metadata.`Dataverse` as dv where dv.DataverseName <> \"Metadata\";"
         while not dataverses_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 dataverse_query, mode="immediate", timeout=300,
@@ -2346,11 +2345,11 @@ class Dataset_Util(Link_Util):
                             continue
                         create_object(bucket, scope, collection)
                         count += 1
-                        if count > no_of_objs:
+                        if count >= no_of_objs:
                             break
-                    if count > no_of_objs:
+                    if count >= no_of_objs:
                         break
-            if count > no_of_objs:
+            if count >= no_of_objs:
                 break
 
     def validate_docs_in_all_datasets(self, local_bucket_util,
@@ -2393,9 +2392,9 @@ class Dataset_Util(Link_Util):
 
     def get_datasets(self, retries=10, fields=[]):
         datasets_created = []
-        datasets_query = 'SELECT VALUE d.DataverseName || "." || ' \
-                         'd.DatasetName FROM Metadata.`Dataset` d WHERE ' \
-                         'd.DataverseName <> "Metadata"'
+        datasets_query = "select value regexp_replace(ds.DataverseName,\"/\",\".\") || " \
+              "\".\" || ds.DatasetName from Metadata.`Dataset` as ds " \
+              "where ds.DataverseName  <> \"Metadata\";"
         if fields:
             datasets_query = 'SELECT * ' \
                              'FROM Metadata.`Dataset` d ' \
@@ -2714,9 +2713,9 @@ class Synonym_Util(Dataset_Util):
 
     def get_synonyms(self, retries=10):
         synonyms_created = []
-        synonyms_query = 'SELECT VALUE d.DataverseName || "." || ' \
-                         'd.SynonymName FROM Metadata.`Synonym` d WHERE ' \
-                         'd.DataverseName <> "Metadata"'
+        synonyms_query = "select value regexp_replace(syn.DataverseName,\"/\",\".\") " \
+              "|| \".\" || syn.SynonymName from Metadata.`Synonym` as syn " \
+              "where syn.DataverseName <> \"Metadata\";"
         while not synonyms_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 synonyms_query, mode="immediate", timeout=300,
@@ -3059,10 +3058,9 @@ class Index_Util(Synonym_Util):
 
     def get_indexes(self, retries=10):
         indexes_created = []
-        indexes_query = 'SELECT VALUE d.DataverseName || "." || ' \
-                        'd.DatasetName || "." || d.IndexName FROM ' \
-                        'Metadata.`Index` d WHERE ' \
-                        'd.DataverseName <> "Metadata"'
+        indexes_query = "select value regexp_replace(idx.DataverseName,\"/\",\".\") " \
+              "|| \".\" || idx.DatasetName || \".\" || idx.IndexName " \
+              "from Metadata.`Index` as idx where idx.DataverseName <> \"Metadata\""
         while not indexes_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 indexes_query, mode="immediate", timeout=300,
