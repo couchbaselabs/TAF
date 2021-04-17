@@ -440,7 +440,7 @@ class CBASHelper(RestConnection):
             if not bucket:
                 raise Exception(
                     "Bucket name is not specified for bucket level backup api")
-            api += "/api/v1/bucket/{0}/backup".format(bucket)
+            api += "/api/v1/bucket/{0}/backup".format(urllib.quote(bucket))
         else:
             raise Exception("Un-known backup level")
         if include or exclude:

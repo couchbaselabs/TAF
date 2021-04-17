@@ -7,6 +7,7 @@ from Jython_tasks.task import CreateDatasetsTask, DropDatasetsTask, \
 from cbas_utils.cbas_utils_v2 import BackupUtils
 from remote.remote_util import RemoteMachineShellConnection
 from TestInput import TestInputSingleton
+import urllib
 
 
 class BackupRestoreTest(CBASBaseTest):
@@ -62,12 +63,12 @@ class BackupRestoreTest(CBASBaseTest):
         idx_after_restore = self.cbas_util_v2.get_indexes(retries=1)
         if include:
             if not isinstance(include, list):
-                include = include.replace("%25", "%").split(",")
+                include = urllib.quote(include).split(",")
             self.assertEquals(len(ds_after_restore), len(include))
             self.assertEquals(len(idx_after_restore), len(include) * 2)
         elif exclude:
             if not isinstance(exclude, list):
-                exclude = exclude.replace("%25", "%").split(",")
+                exclude = urllib.quote(exclude).split(",")
             self.assertEquals(len(ds_after_restore),
                               len(ds_before_backup) - len(exclude))
             self.assertEquals(len(idx_after_restore),
@@ -275,7 +276,7 @@ class BackupRestoreTest(CBASBaseTest):
         path = scope.name + "." + collection.name
         if self.overlap_path:
             path = scope.name + "," + path
-        path = path.replace("%", "%25")
+        path = urllib.quote(path)
         if include:
             include = path
         else:
@@ -357,24 +358,21 @@ class BackupRestoreTest(CBASBaseTest):
         remap_collection = random.choice(
             self.bucket_util.get_active_collections(remap_bucket,
                                                     remap_scope.name))
-        remap = "{0}.{1}:{2}.{3}".format(original_scope.name,
+        remap = urllib.quote("{0}.{1}:{2}.{3}".format(original_scope.name,
                                          original_collection.name,
                                          remap_scope.name,
-                                         remap_collection.name).replace(
-            "%", "%25")
+                                         remap_collection.name))
         if self.overlap_path:
-            remap += ",{0}:{1}".format(
-                original_scope.name, remap_scope.name).replace("%", "%25")
+            remap += urllib.quote(",{0}:{1}".format(
+                original_scope.name, remap_scope.name))
         if include:
-            include = "{0}.{1}".format(
-                original_scope.name, original_collection.name).replace("%",
-                                                                       "%25")
+            include = urllib.quote("{0}.{1}".format(
+                original_scope.name, original_collection.name))
         else:
             include = ""
         if exclude:
-            exclude = "{0}.{1}".format(
-                original_scope.name, original_collection.name).replace("%",
-                                                                       "%25")
+            exclude = urllib.quote("{0}.{1}".format(
+                original_scope.name, original_collection.name))
         else:
             exclude = ""
         status, backup, response = self.backup_util.rest_backup_cbas(
