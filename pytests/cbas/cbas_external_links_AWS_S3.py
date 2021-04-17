@@ -172,23 +172,23 @@ class CBASExternalLinks(CBASBaseTest):
                     random.randint(1, 1000)))
                 retry += 1
         self.get_link_property_dict(self.aws_access_key, self.aws_secret_key,
-                                    create_dataverse=create_dataverse, 
+                                    create_dataverse=create_dataverse,
                                     dataverse_cardinality=dataverse_cardinality)
         if not self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info):
             self.fail("link creation failed")
         self.link_created = True
         self.get_dataset_parameters()
-        
+
         self.shell = RemoteMachineShellConnection(self.cluster.master)
         self.n1ql_helper = N1QLHelper(shell=self.shell, buckets=self.bucket_util.buckets,
                                       item_flag=0, n1ql_port=8093, log=self.log,
-                                      input=self.input, server=self.cluster.master, 
+                                      input=self.input, server=self.cluster.master,
                                       use_rest=True)
-        
+
         self.s3_data_helper = S3DataHelper(
             aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
             aws_session_token=self.aws_session_token, cluster=self.cluster,
-            bucket_util=self.bucket_util, rest=self.rest, task=self.task, log=self.log, 
+            bucket_util=self.bucket_util, rest=self.rest, task=self.task, log=self.log,
             n1ql_helper=self.n1ql_helper)
 
     def execute_cbas_query(self, cbas_query, result, timeout=120, analytics_timeout=120):
@@ -250,7 +250,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Check for link creation failure scenario
         if no_of_link == 1:
-            
+
             if self.input.param("multipart_dataverse", False):
                 self.get_link_property_dict(self.aws_access_key, self.aws_secret_key, None ,True, 2)
                 invalid_dv = "invalid.invalid"
@@ -391,7 +391,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.get_link_property_dict(self.aws_access_key, self.aws_secret_key, None, True, 2)
         else:
             self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
-        
+
         if self.cbas_util.create_external_link_on_cbas(link_properties=self.link_info,
                                                        username=self.analytics_username):
             self.link_created = True
@@ -508,7 +508,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Create users with all RBAC roles.
         self.create_or_delete_users(self.rbac_util, rbac_users_created)
-        
+
         self.dataset_params["dataverse"] = self.link_info["dataverse"]
 
         aws_access_key_1, aws_secret_key_1, aws_session_token_1 = self.get_aws_credentials("full_access_2")
@@ -716,7 +716,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Create dataset with same name",
                 "recreate_dataset": True,
                 "validate_error_msg": True,
-                "expected_error": "A analytics collection with name {0} already exists in analytics scope {1}".format(
+                "expected_error": "An analytics collection with name {0} already exists in analytics scope {1}".format(
                     self.cbas_dataset_name,
                     self.link_info["dataverse"])
             },
@@ -725,20 +725,20 @@ class CBASExternalLinks(CBASBaseTest):
                 "file_format": "csv",
                 "header": False,
                 "validate_error_msg": True,
-                "expected_error": "Inline type definition is required for external datasets with 'csv' format"
+                "expected_error": "Inline type definition is required for external analytics collections with 'csv' format"
             },
             {
                 "description": "Create dataset without type definition for TSV format",
                 "file_format": "tsv",
                 "header": False,
                 "validate_error_msg": True,
-                "expected_error": "Inline type definition is required for external datasets with 'tsv' format"
+                "expected_error": "Inline type definition is required for external analytics collections with 'tsv' format"
             },
             {
                 "description": "Create dataset with type definition for JSON format",
                 "object_construction_def": "id INT",
                 "validate_error_msg": True,
-                "expected_error": "Inline type definition is not allowed for external datasets with 'json' format"
+                "expected_error": "Inline type definition is not allowed for external analytics collections with 'json' format"
             },
             {
                 "description": "Create dataset with upsupported data type in type definition",
@@ -798,7 +798,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Create dataset in non-existent dataverse",
                 "dataverse": self.invalid_value,
                 "validate_error_msg": True,
-                "expected_error": "Cannot find dataverse with name {0}".format(self.invalid_value)
+                "expected_error": "Cannot find analytics scope with name {0}".format(self.invalid_value)
             },
             {
                 "description": "Create dataset on non-existent link",
@@ -810,7 +810,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Create dataset on Local link",
                 "link_name": "Local",
                 "validate_error_msg": True,
-                "expected_error": "Link Default.Local cannot be used for external datasets"
+                "expected_error": "Link Default.Local cannot be used for external analytics collections"
             },
             {
                 "description": "Create dataset with empty string as aws path",
@@ -948,7 +948,7 @@ class CBASExternalLinks(CBASBaseTest):
                 if testcase.get("new_dataverse", False):
                     if not self.cbas_util.create_dataverse_on_cbas(dataset_param["dataverse"]):
                         raise Exception("Error while creating new dataverse")
-                
+
                 if testcase.get("create_new_link", False):
                     link_param = copy.deepcopy(self.link_info)
                     link_param["dataverse"] = dataset_param["dataverse"]
@@ -987,7 +987,7 @@ class CBASExternalLinks(CBASBaseTest):
                 failed_testcases.append(testcase["description"])
         if failed_testcases:
             self.fail("Following testcases failed - {0}".format(str(failed_testcases)))
-    
+
     def test_drop_dataset(self):
 
         self.setup_for_dataset()
@@ -997,49 +997,49 @@ class CBASExternalLinks(CBASBaseTest):
 
         testcases = self.create_testcase_for_rbac_user(
             "Dropping dataset on external link using {0} user", rbac_users_created)
-        
+
         for tc in testcases:
             if tc["validate_error_msg"]:
                 tc["expected_error"] = "User must have permission"
 
         failed_testcases = list()
-        
+
         if not self.cbas_util.create_dataset_on_external_resource(
             **self.dataset_params):
             self.fail("Error while creating dataset")
-        
+
         recreate_dataset = False
 
         for testcase in testcases:
             try:
                 self.log.info(testcase["description"])
 
-                if recreate_dataset: 
+                if recreate_dataset:
                     if not self.cbas_util.create_dataset_on_external_resource(
                         **self.dataset_params):
                         self.fail("Error while creating dataset")
                     recreate_dataset = False
-                
+
                 dataset_param = copy.deepcopy(self.dataset_params)
                 for param in testcase:
                     if param in dataset_param:
                         dataset_param[param] = testcase[param]
-                
+
                 if not self.cbas_util.drop_dataset(
                     cbas_dataset_name=dataset_param["cbas_dataset_name"],
                     dataverse=dataset_param["dataverse"],
                     validate_error_msg=dataset_param["validate_error_msg"],
-                    username=dataset_param["username"], 
-                    password=dataset_param["password"], 
+                    username=dataset_param["username"],
+                    password=dataset_param["password"],
                     expected_error=dataset_param["expected_error"]):
                     raise Exception("Error while dropping dataset")
-                    
+
                 if not dataset_param["validate_error_msg"]:
                     recreate_dataset = True
-                     
+
             except Exception:
                 failed_testcases.append(testcase["description"])
-        
+
         if failed_testcases:
             self.fail("Following testcases failed - {0}".format(str(failed_testcases)))
 
@@ -1698,7 +1698,7 @@ class CBASExternalLinks(CBASBaseTest):
                                                                 doc_counts[file_format], timeout=7200,
                                                                 analytics_timeout=7200):
             self.fail("Expected data does not match actual data")
-    
+
     def test_create_query_drop_dataset_with_3_part_dataset_name(self):
         self.setup_for_dataset(create_dataverse=True, dataverse_cardinality=2)
 
@@ -1706,7 +1706,7 @@ class CBASExternalLinks(CBASBaseTest):
         for param in self.dataset_params:
             if param in self.input.test_params:
                 self.dataset_params[param] = self.convert_string_to_bool(self.input.test_params.get(param))
-        
+
         self.dataset_params["dataverse"] = self.link_info["dataverse"]
 
         missing_field = [False]
@@ -1731,11 +1731,10 @@ class CBASExternalLinks(CBASBaseTest):
 
         n1ql_result = self.rest.query_tool(n1ql_query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
         if not self.cbas_util.validate_cbas_dataset_items_count(
-            ".".join([self.dataset_params["links_dataverse"], self.dataset_params["cbas_dataset_name"]]), 
+            ".".join([self.dataset_params["links_dataverse"], self.dataset_params["cbas_dataset_name"]]),
             n1ql_result, timeout=300, analytics_timeout=300):
             self.fail("Expected data does not match actual data")
-        
-        if not self.cbas_util.drop_dataset(cbas_dataset_name=self.dataset_params["cbas_dataset_name"], 
+
+        if not self.cbas_util.drop_dataset(cbas_dataset_name=self.dataset_params["cbas_dataset_name"],
                                            dataverse=self.dataset_params["links_dataverse"]):
             self.fail("Error while dropping dataset")
-        
