@@ -101,9 +101,9 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         rebalance_task = self.task.async_rebalance(self.servers,
                                                    self.servers_to_add,
                                                    self.servers_to_remove)
-        self.sleep(5)
-        tasks = self.subsequent_load_gen()
+        self.sleep(2)
         self._multi_node_failover()
+        tasks = self.subsequent_load_gen()
         try:
             rebalance_task.result()
         except RebalanceFailedException:
