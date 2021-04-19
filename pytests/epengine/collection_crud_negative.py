@@ -143,6 +143,7 @@ class CollectionDurabilityTests(CollectionBase):
                     cbstat_obj[node.ip].vbucket_seqno(self.bucket.name))
 
             # Verify doc count has not changed due to expected exceptions
+            self.sleep(10, "Wait for item_count to update")
             curr_num_items = self.bucket_util.get_bucket_current_item_count(
                 self.cluster, self.bucket)
             if curr_num_items != num_items_before_d_load:
@@ -340,8 +341,6 @@ class CollectionDurabilityTests(CollectionBase):
         vb_info = dict()
         active_vbs = dict()
         replica_vbs = dict()
-        sync_write_in_progress = \
-            SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
 
         # Override d_level, error_simulation type based on d_level
         self.__get_d_level_and_error_to_simulate()
@@ -428,62 +427,55 @@ class CollectionDurabilityTests(CollectionBase):
                     client.select_collection(s_name, c_name)
                     for op_type in c_meta:
                         key, value = c_meta[op_type]["doc_gen"].next()
-                        for fail_fast in [True, False]:
-                            if self.with_non_sync_writes:
-                                fail = client.crud(
-                                    doc_ops[1], key, value,
-                                    exp=0, timeout=2, time_unit="seconds",
-                                    fail_fast=fail_fast)
-                            else:
-                                fail = client.crud(
-                                    doc_ops[1], key, value,
-                                    exp=0,
-                                    durability=self.durability_level,
-                                    timeout=2, time_unit="seconds",
-                                    fail_fast=fail_fast)
+                        if self.with_non_sync_writes:
+                            fail = client.crud(
+                                doc_ops[1], key, value,
+                                exp=0, timeout=2, time_unit="seconds",
+                                fail_fast=False)
+                        else:
+                            fail = client.crud(
+                                doc_ops[1], key, value,
+                                exp=0,
+                                durability=self.durability_level,
+                                timeout=2, time_unit="seconds",
+                                fail_fast=False)
 
+                        expected_exception = \
+                            SDKException.AmbiguousTimeoutException
+                        retry_reason = \
+                            SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
+                        if doc_ops[0] == DocLoading.Bucket.DocOps.CREATE \
+                                and doc_ops[1] in \
+                                [DocLoading.Bucket.DocOps.DELETE,
+                                 DocLoading.Bucket.DocOps.REPLACE]:
                             expected_exception = \
-                                SDKException.AmbiguousTimeoutException
-                            retry_reason = \
-                                SDKException \
-                                .RetryReason \
-                                .KV_SYNC_WRITE_IN_PROGRESS
-                            if fail_fast:
-                                expected_exception = \
-                                    SDKException.RequestCanceledException
-                                retry_reason = sync_write_in_progress
-                            if doc_ops[0] == DocLoading.Bucket.DocOps.CREATE \
-                                    and doc_ops[1] in \
-                                    [DocLoading.Bucket.DocOps.DELETE,
-                                     DocLoading.Bucket.DocOps.REPLACE]:
-                                expected_exception = \
-                                    SDKException.DocumentNotFoundException
-                                retry_reason = None
+                                SDKException.DocumentNotFoundException
+                            retry_reason = None
 
-                            # Validate the returned error from the SDK
-                            if expected_exception not in str(fail["error"]):
-                                self.log_failure("Invalid exception for %s: %s"
-                                                 % (key, fail["error"]))
-                            if retry_reason \
-                                    and retry_reason not in str(fail["error"]):
+                        # Validate the returned error from the SDK
+                        if expected_exception not in str(fail["error"]):
+                            self.log_failure("Invalid exception for %s: %s"
+                                             % (key, fail["error"]))
+                        if retry_reason \
+                                and retry_reason not in str(fail["error"]):
+                            self.log_failure(
+                                "Invalid retry reason for %s: %s"
+                                % (key, fail["error"]))
+
+                        # Try reading the value in SyncWrite state
+                        fail = client.crud("read", key)
+                        if doc_ops[0] == "create":
+                            # Expected KeyNotFound in case of CREATE op
+                            if fail["status"] is True:
                                 self.log_failure(
-                                    "Invalid retry reason for %s: %s"
-                                    % (key, fail["error"]))
-
-                            # Try reading the value in SyncWrite state
-                            fail = client.crud("read", key)
-                            if doc_ops[0] == "create":
-                                # Expected KeyNotFound in case of CREATE op
-                                if fail["status"] is True:
-                                    self.log_failure(
-                                        "%s returned value during SyncWrite %s"
-                                        % (key, fail))
-                            else:
-                                # Expects prev val in case of other operations
-                                if fail["status"] is False:
-                                    self.log_failure(
-                                        "Key %s read failed for prev value: %s"
-                                        % (key, fail))
+                                    "%s returned value during SyncWrite %s"
+                                    % (key, fail))
+                        else:
+                            # Expects prev val in case of other operations
+                            if fail["status"] is False:
+                                self.log_failure(
+                                    "Key %s read failed for prev value: %s"
+                                    % (key, fail))
 
         # Revert the introduced error condition
         for node in target_nodes:
