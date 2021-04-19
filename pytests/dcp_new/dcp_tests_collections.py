@@ -196,7 +196,7 @@ class DcpTestCase(DCPBase):
             self.check_dcp_event(self.scope_name,
                                  output_string, "drop_scope")
             self.check_dcp_event(self.scope_name,
-                                 output_string, "create_scope")
+                                 output_string, "create_scope", 2)
 
         if operation == "recreate_collection":
             self.check_dcp_event(self.collection_name,
@@ -377,7 +377,7 @@ class DcpTestCase(DCPBase):
         self.mutation_count = stream.mutation_count
 
         self.__perform_operation()
-        self.verify_operation(self.operation, stream.mutation_count)
+        self.verify_operation(self.operation, stream.mutation_count, verify=False)
         self.validate_test_failure()
 
     def test_dcp_stream_disconnect(self):
