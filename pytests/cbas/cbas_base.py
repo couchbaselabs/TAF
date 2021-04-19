@@ -6,6 +6,7 @@ from math import ceil
 from BucketLib.bucket import TravelSample, BeerSample, Bucket
 from Cb_constants import CbServer
 from basetestcase import BaseTestCase
+from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cbas_utils.cbas_utils import CbasUtil
 # TODO: Need to removed once the old CbasUtil is deprecated.
@@ -695,18 +696,12 @@ class CBASBaseTest(BaseTestCase):
         if self.sdk_client_pool is None:
             self.init_sdk_pool_object()
 
-        # Create clients in SDK client pool
-        if self.sdk_client_pool:
-            self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(bucket_util.buckets)
-            max_clients = self.task_manager.number_of_threads
-            clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in bucket_util.buckets:
-                self.sdk_client_pool.create_clients(
-                    bucket,
-                    [cluster.master],
-                    clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+        self.log.info("Creating required SDK clients for client_pool")
+        CollectionBase.create_sdk_clients(self.task_manager.number_of_threads,
+                                          cluster.master,
+                                          self.bucket_util.buckets,
+                                          self.sdk_client_pool,
+                                          self.sdk_compression)
 
         cluster_util.print_cluster_stats()
         if load_data:
