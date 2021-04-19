@@ -318,6 +318,7 @@ class StatsHelper(RestConnection):
             b: For sysproc: metric_name->process_name->metric_value
             c: For sys: metric_name->metric_value
             d: for couch: metric_name->bucket_name->metric_value
+            e: for cm: metric_name->metric_value
         :Raises exception
             a. If a metric name does not start with the above prefixes
             b. If duplicate metrics are returned
@@ -373,6 +374,11 @@ class StatsHelper(RestConnection):
                                                 format(metric_name, bucket_name, value))
                             map[metric_name][bucket_name] = value
                             break
+                elif metric_name.startswith("cm"):
+                    value = matched.group(3)
+                    if map[metric_name]:
+                        raise Exception("Duplicate stats of type cm {0}".format(metric_name))
+                    map[metric_name] = value
                 else:
                     raise Exception("Found some other metric type {0}".format(line))
         if len(map) == 0:
