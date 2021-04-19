@@ -1645,7 +1645,9 @@ class CbasUtil:
         """
         self.log.debug("Validating dataset entry in Metadata")
         cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE DatasetName="{0}" \
-        and DataverseName = "{1}";'.format(dataset_name, dataverse)
+        and DataverseName = "{1}";'.format(
+            CBASHelper.unformat_name(dataset_name), 
+            CBASHelper.metadata_format(CBASHelper.unformat_name(dataverse)))
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cmd, username=username, password=password)
@@ -1685,7 +1687,8 @@ class CbasUtil:
         """
         self.log.debug("Validating dataverse entry in Metadata")
         cmd = "select value dv from Metadata.`Dataverse` as dv where\
-         dv.DataverseName = \"{0}\";".format(dataverse)
+         dv.DataverseName = \"{0}\";".format(
+            CBASHelper.metadata_format(CBASHelper.unformat_name(dataverse)))
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cmd, username=username, password=password)

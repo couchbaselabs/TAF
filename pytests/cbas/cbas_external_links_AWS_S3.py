@@ -167,6 +167,7 @@ class CBASExternalLinks(CBASBaseTest):
                         bucket_name=self.aws_bucket_name, region=self.region):
                     self.fail("Creating S3 bucket - {0}. Failed.".format(self.aws_bucket_name))
                 self.aws_bucket_created = True
+                self.sleep(60, "Sleeping for 60 seconds to ensure that AWS bucket is created")
             except Exception as err:
                 self.aws_bucket_name = self.input.test_params.get("aws_bucket_name", "cbas-regression-{0}".format(
                     random.randint(1, 1000)))
@@ -710,6 +711,7 @@ class CBASExternalLinks(CBASBaseTest):
                 return True
             else:
                 return False
+            self.sleep(60, "Sleeping for 60 seconds to ensure that AWS bucket is created")
 
         testcases = [
             {
@@ -979,6 +981,7 @@ class CBASExternalLinks(CBASBaseTest):
                             bucket_name=dataset_param["aws_bucket_name"],
                             delete_bucket=True):
                         raise Exception("Error while deleting bucket")
+                    self.sleep(60, "Sleeping for 60 seconds to ensure that AWS bucket is deleted")
 
                 if not dataset_param["validate_error_msg"]:
                     self.cbas_util.drop_dataset(dataset_param["cbas_dataset_name"],
