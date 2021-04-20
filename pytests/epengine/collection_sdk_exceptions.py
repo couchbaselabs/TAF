@@ -119,6 +119,7 @@ class SDKExceptionTests(CollectionBase):
                          self.scope_name,
                          self.collection_name))
 
+        retry_reason = SDKException.RetryReason
         while doc_gen.has_next():
             key, value = doc_gen.next()
             result = client.crud("create", key, value,
@@ -138,10 +139,15 @@ class SDKExceptionTests(CollectionBase):
             elif result["status"] is True:
                 self.log_failure("Create didn't fail as expected for key: %s"
                                  % key)
-            elif SDKException.AmbiguousTimeoutException \
-                    not in str(result["error"]) \
-                    or SDKException.RetryReason.COLLECTION_NOT_FOUND \
-                    not in str(result["error"]):
+            elif (SDKException.AmbiguousTimeoutException
+                    not in str(result["error"])
+                    or retry_reason.COLLECTION_NOT_FOUND
+                    not in str(result["error"])) \
+                    and (
+                    SDKException.RequestCanceledException
+                    not in str(result["error"])
+                    or retry_reason.COLLECTION_MAP_REFRESH_IN_PROGRESS
+                    not in str(result["error"])):
                 self.log_failure("Invalid exception for key %s: %s"
                                  % (key, result["error"]))
 
