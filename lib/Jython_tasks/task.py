@@ -1990,6 +1990,9 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  dgm_batch=5000,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
+                 skip_read_on_error=False,
+                 suppress_error_table=False,
+                 track_failures=True,
                  task_identifier="",
                  sdk_client_pool=None):
         super(LoadDocumentsForDgmTask, self).__init__(
@@ -2015,6 +2018,9 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.active_resident_threshold = active_resident_threshold
         self.dgm_batch = dgm_batch
         self.task_identifier = task_identifier
+        self.skip_read_on_error = skip_read_on_error
+        self.suppress_error_table = suppress_error_table
+        self.track_failures = track_failures
         self.op_type = "create"
         self.rest_client = BucketHelper(self.cluster.master)
         self.doc_index = self.doc_gen.start
@@ -2064,7 +2070,9 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                 replicate_to=self.replicate_to,
                 durability=self.durability,
                 timeout_secs=self.timeout_secs,
-                skip_read_on_error=True,
+                skip_read_on_error=self.skip_read_on_error,
+                suppress_error_table=self.suppress_error_table,
+                track_failures=self.track_failures,
                 sdk_client_pool=self.sdk_client_pool)
             self.task_manager.add_new_task(task)
             doc_tasks.append(task)

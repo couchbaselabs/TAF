@@ -208,6 +208,10 @@ class ServerTasks(object):
                 process_concurrency=process_concurrency,
                 active_resident_threshold=active_resident_threshold,
                 dgm_batch=dgm_batch,
+                scope=scope, collection=collection,
+                skip_read_on_error=skip_read_on_error,
+                suppress_error_table=suppress_error_table,
+                track_failures=track_failures,
                 sdk_client_pool=sdk_client_pool)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
