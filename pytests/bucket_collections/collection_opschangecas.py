@@ -1,6 +1,6 @@
 from threading import Thread
 
-from Cb_constants import DocLoading
+from Cb_constants import DocLoading, CbServer
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.documentgenerator import doc_generator
@@ -296,6 +296,10 @@ class OpsChangeCasTests(CollectionBase):
                         if result["status"] is not True:
                             self.log_failure("Touch on %s failed: %s"
                                              % (key, result))
+        # change back client's scope and coll name to _default
+        # since it was changed in the while loop to select different collection
+        client.scope_name = CbServer.default_scope
+        client.collection_name = CbServer.default_collection
         self.sdk_client_pool.release_client(client)
         self.validate_test_failure()
 
