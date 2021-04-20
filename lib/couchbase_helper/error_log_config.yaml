@@ -38,3 +38,22 @@ file_name_patterns:
   - file: 'babysitter.log'
     grep_for:
       - string: ' CRITICAL '
+
+  - file: 'indexer.log*'
+    grep_for:
+      - string: 'panic'
+      - string: 'fatal'
+        exclude_patterns:
+          - 'fatal remote'
+      - string: 'Error parsing XATTR'
+      - string: 'protobuf.Error'
+      - string: 'Encounter planner error'
+      - string: 'corruption'
+      - string: 'processFlushAbort'
+      - string: 'Failed to initialize metadata provider'
+      - string: 'Waiting for Node Alloc'
+      - string: 'found missing page'
+      - string: 'invalid last page'
+      - string: 'Storage corrupted and unrecoverable'
+      - string: 'ensureMonotonicTs  Align seqno smaller than lastFlushTs'
+      - string: 'TS falls out of snapshot boundary'
