@@ -18,7 +18,6 @@ from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
 
 
-
 class CbasUtil:
     def __init__(self, master, cbas_node, server_task=None):
         self.log = logger.get("test")
@@ -2221,6 +2220,11 @@ class Dataset:
                 else:
                     full_name.append(_)
         return '.'.join(full_name)
+    
+    @staticmethod
+    def metadata_format(name):
+        name = name.split(".")
+        return "/".join(x.strip("`") for x in name)
     
     def get_fully_quantified_dataset_name(self):
         """

@@ -362,7 +362,7 @@ class CBASExternalLinks(CBASBaseTest):
                 {
                     "description": "Create a link with a non-existent dataverse",
                     "dataverse": invalid_dv,
-                    "expected_error": "Cannot find scope with name {0}".format(
+                    "expected_error": "Cannot find analytics scope with name {0}".format(
                         invalid_dv)
                 },
                 {
@@ -695,7 +695,7 @@ class CBASExternalLinks(CBASBaseTest):
                      "expected_hits": 0,
                      "description": "Parameters Passed - Name",
                      "validate_error_msg": True,
-                     "expected_error": "Cannot find scope with name {0}".format(self.link_info["name"])
+                     "expected_error": "Cannot find analytics scope with name {0}".format(self.link_info["name"])
                      },
                     {"dataverse": self.link_info["dataverse"],
                      "name": self.link_info["name"],
@@ -745,8 +745,8 @@ class CBASExternalLinks(CBASBaseTest):
                                 "Expected links - {0} \t Actual links - {1}".format(
                                     testcase["expected_hits"], len(response)))
                         if not (response[0][
-                                    "scope"] == Dataset.format_name_for_error(
-                                True, self.link_info["dataverse"])):
+                                    "scope"] == Dataset.metadata_format(
+                                        self.link_info["dataverse"])):
                             raise Exception(
                                 "Expected - {0} \t Actual- {1}".format(
                                     self.link_info["dataverse"],
