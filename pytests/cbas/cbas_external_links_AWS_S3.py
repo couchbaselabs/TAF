@@ -469,8 +469,7 @@ class CBASExternalLinks(CBASBaseTest):
                             raise Exception(
                                 "Expected links - {0} \t Actual links - {1}".format(testcase["expected_hits"],
                                                                                     len(response)))
-                        if not (response[0]["scope"] == Dataset.format_name_for_error(
-                            True,self.link_info["dataverse"])):
+                        if not (response[0]["scope"] == Dataset.metadata_format(self.link_info["dataverse"])):
                             raise Exception("Expected - {0} \t Actual- {1}".format(self.link_info["dataverse"],
                                                                                    response[0]["scope"]))
                         if not (response[0]["name"] == self.link_info["name"]):
