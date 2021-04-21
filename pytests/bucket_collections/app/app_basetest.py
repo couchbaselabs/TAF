@@ -48,21 +48,25 @@ class AppBase(BaseTestCase):
                                   self.cluster.cbas_nodes[0])
 
         # Load bucket conf
-        with open(self.config_path + self.bucket_conf + ".yaml", "r") as fp:
-            self.bucket_conf = YAML().load(fp.read())
+        if self.bucket_conf is not None:
+            with open(self.config_path+self.bucket_conf+".yaml", "r") as fp:
+                self.bucket_conf = YAML().load(fp.read())
 
         # Load RBAC conf
-        with open(self.config_path + self.rbac_conf + ".yaml", "r") as fp:
-            self.rbac_conf = YAML().load(fp.read())
+        if self.rbac_conf is not None:
+            with open(self.config_path + self.rbac_conf + ".yaml", "r") as fp:
+                self.rbac_conf = YAML().load(fp.read())
 
-        self.__setup_buckets()
+        if self.bucket_conf is not None:
+            self.__setup_buckets()
         self.bucket = self.bucket_util.buckets[0]
 
-        for rbac_roles in self.rbac_conf["rbac_roles"]:
-            self.create_sdk_clients(rbac_roles["roles"])
+        if self.rbac_conf is not None:
+            for rbac_roles in self.rbac_conf["rbac_roles"]:
+                self.create_sdk_clients(rbac_roles["roles"])
 
         if self.service_conf is not None:
-            with open(self.config_path + self.service_conf + ".yaml", "r") as fp:
+            with open(self.config_path+self.service_conf+".yaml", "r") as fp:
                 self.service_conf = YAML().load(fp.read())["services"]
 
             # Configure backup settings

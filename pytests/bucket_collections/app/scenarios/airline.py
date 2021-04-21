@@ -56,7 +56,7 @@ class Airline(Thread):
                     self.result = Airline.scenarios[rand_scenario](self)
                 else:
                     self.result = Airline.scenarios[self.op_type](self)
-                Airline.log.info("%s %s" % (self.tenant_scope, self.result))
+                Airline.log.debug("%s %s" % (self.tenant_scope, self.result))
             except Exception as e:
                 self.exception = e
                 traceback.print_exc()

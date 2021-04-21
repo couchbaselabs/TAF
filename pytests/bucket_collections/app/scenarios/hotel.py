@@ -51,7 +51,7 @@ class Hotel(Thread):
                     self.result = Hotel.scenarios[rand_scenario](self)
                 else:
                     self.result = Hotel.scenarios[self.op_type](self)
-                Hotel.log.info("%s %s" % (self.tenant_scope, self.result))
+                Hotel.log.debug("%s %s" % (self.tenant_scope, self.result))
             except Exception as e:
                 self.exception = e
                 traceback.print_exc()

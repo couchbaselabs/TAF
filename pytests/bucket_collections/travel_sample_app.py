@@ -6,6 +6,7 @@ from bucket_collections.app.app_basetest import AppBase
 from bucket_collections.app.constants import global_vars
 from bucket_collections.app.lib import query_util
 from bucket_collections.app.scenarios.airline import Airline
+from bucket_collections.app.scenarios.cluster import Cluster
 from bucket_collections.app.scenarios.guest import Guest
 from bucket_collections.app.scenarios.hotel import Hotel
 from bucket_collections.app.scenarios.user import User
@@ -41,8 +42,9 @@ class TravelSampleApp(AppBase):
             self.__load_initial_data()
 
         self.app_iteration = self.input.param("iteration", 1)
-        global_vars.app_current_date = \
-            query_util.CommonUtil.get_current_date(self.tenants[0])
+        if self.tenants:
+            global_vars.app_current_date = \
+                query_util.CommonUtil.get_current_date(self.tenants[0])
 
         with open(self.app_path + "/scenarios/" + self.playbook + ".yaml",
                   "r") as fp:
@@ -79,7 +81,7 @@ class TravelSampleApp(AppBase):
             create_users = User(self.bucket,
                                 scope=tenant,
                                 op_type="scenario_user_registration",
-                                num_items=10000)
+                                num_items=20000)
             create_users.start()
             create_users.join()
 
@@ -87,7 +89,14 @@ class TravelSampleApp(AppBase):
         default_op_count = 10
         random_op = "random"
         all_tenants = "all"
+        # List of supported app activity types
+        cluster_activity = "cluster"
+        guest_activity = "guest"
+        user_activity = "user"
+        hotel_activity = "hotel"
+        airline_activity = "airline"
 
+        cluster_scenario = Cluster(self.task, self.cluster, self.cluster_util)
         itr_index = 1
         while itr_index <= self.app_iteration:
             self.log.info("#### Iteration :: %d ####" % itr_index)
@@ -101,37 +110,68 @@ class TravelSampleApp(AppBase):
                 num_tenant = activity.get("tenants", all_tenants)
                 if type(num_tenant) is int:
                     tenants = sample(self.tenants, activity["tenants"])
-                if activity_type == "user":
+                if activity_type == user_activity:
                     for tenant in tenants:
                         task = User(self.bucket, tenant,
                                     op_type=op_type,
                                     op_count=op_count)
-                elif activity_type == "guest":
+                elif activity_type == guest_activity:
                     for tenant in tenants:
                         task = Guest(self.bucket, tenant,
                                      op_type=op_type,
                                      op_count=op_count)
-                elif activity_type == "hotel":
+                elif activity_type == hotel_activity:
                     for tenant in tenants:
                         task = Hotel(self.bucket, tenant,
                                      op_type=op_type,
                                      op_count=op_count)
-                elif activity_type == "airline":
+                elif activity_type == airline_activity:
                     for tenant in tenants:
                         task = Airline(self.bucket, tenant,
                                        op_type=op_type,
                                        op_count=op_count)
+                elif activity_type == cluster_activity:
+                    if cluster_scenario.rebalance_task is not None:
+                        # Validate running rebalance result
+                        if cluster_scenario.rebalance_task:
+                            self.task_manager.get_task_result(
+                                cluster_scenario.rebalance_task)
+                            self.assertTrue(cluster_scenario.rebalance_task,
+                                            "Rebalance failure")
+                            cluster_scenario.rebalance_task = None
+
+                    services = list()
+                    num_nodes = activity.get("nodes", 1)
+                    for service in activity.get("service", "kv").split(","):
+                        services.append(service.replace(":", ","))
+
+                    len_services = len(services)
+                    if len_services != num_nodes:
+                        services += [services[-1]] * (num_nodes - len_services)
+
+                    cluster_scenario.run(op_type,
+                                         services=services)
                 else:
                     self.fail("Unsupported activity_type: %s" % activity_type)
 
-                # Start the activity
-                task.start()
-                # Append the task to the list for tracking
-                tasks.append(task)
+                if task:
+                    # Start the activity
+                    task.start()
+                    # Append the task to the list for tracking
+                    tasks.append(task)
 
             # Wait for threads to complete
             for task in tasks:
                 task.join()
+
+            if cluster_scenario.rebalance_task is not None:
+                # Validate running rebalance result (if any)
+                if cluster_scenario.rebalance_task:
+                    self.task_manager.get_task_result(
+                        cluster_scenario.rebalance_task)
+                    self.assertTrue(cluster_scenario.rebalance_task,
+                                    "Rebalance failure")
+                    cluster_scenario.rebalance_task = None
 
             # for task in tasks:
             #     if task.exception:
