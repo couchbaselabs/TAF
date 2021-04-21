@@ -699,7 +699,7 @@ class CBASBaseTest(BaseTestCase):
         self.log.info("Creating required SDK clients for client_pool")
         CollectionBase.create_sdk_clients(self.task_manager.number_of_threads,
                                           cluster.master,
-                                          self.bucket_util.buckets,
+                                          bucket_util.buckets,
                                           self.sdk_client_pool,
                                           self.sdk_compression)
 
