@@ -411,26 +411,28 @@ class BaseTestCase(unittest.TestCase):
                            "then kill -s TERM $(pgrep tcpdump); fi"
             o, e = remote_client.execute_command(stop_tcp_cmd)
             remote_client.log_command_output(o, e)
-            # install zip unzip
-            o, e = remote_client.execute_command("yum install -y zip unzip")
-            remote_client.log_command_output(o, e)
-            # zip the pcaps folder
-            zip_cmd = "zip -r " + server.ip + "_pcaps.zip pcaps"
-            o, e = remote_client.execute_command(zip_cmd)
-            remote_client.log_command_output(o, e)
-            # transfer the zip file
-            zip_file_copied = remote_client.get_file(
-                "/root",
-                os.path.basename(server.ip + "_pcaps.zip"),
-                log_path)
-            self.log.info(
-                "%s node pcap zip copied on client : %s"
-                % (server.ip, zip_file_copied))
-            if zip_file_copied:
-                # clean up everything
-                remote_client.execute_command("rm -rf pcaps")
-                remote_client.execute_command("rm -rf "
-                                              + server.ip + "_pcaps.zip")
+            if self.is_test_failed():
+                # install zip unzip
+                o, e = remote_client.execute_command("yum install -y zip unzip")
+                remote_client.log_command_output(o, e)
+                # zip the pcaps folder
+                zip_cmd = "zip -r " + server.ip + "_pcaps.zip pcaps"
+                o, e = remote_client.execute_command(zip_cmd)
+                remote_client.log_command_output(o, e)
+                # transfer the zip file
+                zip_file_copied = remote_client.get_file(
+                    "/root",
+                    os.path.basename(server.ip + "_pcaps.zip"),
+                    log_path)
+                self.log.info(
+                    "%s node pcap zip copied on client : %s"
+                    % (server.ip, zip_file_copied))
+                if zip_file_copied:
+                    # Remove the zips
+                    remote_client.execute_command("rm -rf "
+                                                  + server.ip + "_pcaps.zip")
+            # Remove pcaps
+            remote_client.execute_command("rm -rf pcaps")
             remote_client.disconnect()
 
     def tearDown(self):
