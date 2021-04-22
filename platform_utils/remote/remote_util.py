@@ -579,7 +579,7 @@ class RemoteMachineShellConnection:
 
     def kill_cbas(self):
         return self.kill_process("cbas", "cbas", signum=9)
-    
+
     def start_prometheus(self):
         return self.kill_process("prometheus", "prometheus", signum=18)
 
@@ -1091,8 +1091,8 @@ class RemoteMachineShellConnection:
                 result = True
             else:
                 os.system("cp {0}/{1} {2}".format(remotepath, filename, todir))
-        except:
-            pass
+        except Exception as e:
+            self.log.critical("Sftp error: %s" % e)
         finally:
             channel.disconnect()
 
@@ -1267,11 +1267,10 @@ class RemoteMachineShellConnection:
                 elif name.getFilename() == filename and int(name.getAttrs().getSize()) == 0:
                     if name.getFilename() == NR_INSTALL_LOCATION_FILE:
                         continue
-                    self.log.info("%s - Deleting file %s"
-                                  % (self.ip, filename))
+                    self.log.info("%s - Delete file: %s" % (self.ip, filename))
                     channel.rm(remotepath + filename)
-        except:
-            pass
+        except Exception as e:
+            self.log.critical("Sftp error: %s" % e)
         finally:
             channel.disconnect()
         return result
@@ -5025,7 +5024,7 @@ class RemoteMachineShellConnection:
 class RemoteUtilHelper(object):
 
     @staticmethod
-    def enable_firewall(server, bidirectional=False, xdcr=False, action_on_packet="REJECT", 
+    def enable_firewall(server, bidirectional=False, xdcr=False, action_on_packet="REJECT",
                         block_ips=[], all_interface=False, interface_names=["eth0"]):
         """ Check if user is root or non root in unix """
         shell = RemoteMachineShellConnection(server)

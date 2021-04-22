@@ -1124,22 +1124,31 @@ class ClusterUtils:
                 remote_client = RemoteMachineShellConnection(server)
                 cb_collect_path = \
                     cb_collect_response['perNode'][node_ids[idx]]['path']
+                remote_path = os.path.dirname(cb_collect_path)
+                remote_file_name = os.path.basename(cb_collect_path)
+                if remote_client.info.type.lower() == "windows":
+                    cb_collect_path_split = cb_collect_path.split('/')
+                    remote_path = '/'.join(cb_collect_path_split[:-1]) \
+                        .replace(":", "") \
+                        .replace(" ", "\\ ")
+                    remote_path = "/cygdrive/" + remote_path
+                    remote_file_name = cb_collect_path_split[-1]
                 zip_file_copied = remote_client.get_file(
-                    os.path.dirname(cb_collect_path),
-                    os.path.basename(cb_collect_path),
-                    log_path)
+                    remote_path, remote_file_name, log_path)
                 if zip_file_copied:
-                    remote_client.execute_command("rm -f %s"
-                                                  % cb_collect_path)
-                remote_client.disconnect()
-                cb_collect_size = int(os.path.getsize(
-                    log_path + "/" + os.path.basename(cb_collect_path)))
-                if cb_collect_size == 0:
-                    self.log.critical("%s cb_collect zip file size: %s"
-                                      % (node.ip, cb_collect_size))
+                    remote_client.execute_command(
+                        "rm -f %s/%s" % (remote_path, remote_file_name))
+                    cb_collect_size = int(os.path.getsize(
+                        log_path + "/" + os.path.basename(cb_collect_path)))
+                    if cb_collect_size == 0:
+                        status = False
+                        self.log.critical("%s cb_collect zip file size: %s"
+                                          % (node.ip, cb_collect_size))
+                else:
                     status = False
-                self.log.error("%s node cb collect zip copied on client : %s"
-                               % (node.ip, zip_file_copied))
+                    self.log.error("%s - Failed to copy cb collect zip file"
+                                   % node_ids[idx])
+                remote_client.disconnect()
         return status
 
     def run_cb_collect(self, node, file_name,
