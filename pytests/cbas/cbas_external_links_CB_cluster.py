@@ -950,8 +950,7 @@ class CBASExternalLinks(CBASBaseTest):
             {
                 "description": "Changing dataverse to another existing dataverse",
                 "validate_error_msg": True,
-                "expected_error": "Link {0} does not exist".format(
-                    self.link_info["name"]),
+                "expected_error": "Link {0}.{1} does not exist",
                 "new_dataverse": True
             },
             {
@@ -959,7 +958,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "invalid_dataverse": invalid_dv,
                 "new_dataverse": True,
                 "validate_error_msg": True,
-                "expected_error": "Cannot find scope with name {0}".format(
+                "expected_error": "Cannot find analytics scope with name {0}".format(
                     invalid_dv)
             },
             {
@@ -981,9 +980,8 @@ class CBASExternalLinks(CBASBaseTest):
             },
             {
                 "description": "Changing hostname to another cluster with force flag on connect link",
-                "hostname": self.remove_and_return_new_list(self.to_clusters,
-                                                            to_cluster)[
-                    0].master.ip,
+                "hostname": self.remove_and_return_new_list(
+                    self.to_clusters, to_cluster)[0].master.ip,
                 "load_sample_bucket": True,
                 "with_force": True
             },
@@ -1138,6 +1136,8 @@ class CBASExternalLinks(CBASBaseTest):
                                 dataverse_name=link_properties["dataverse"],
                                 username=self.analytics_username):
                             raise Exception("Dataverse creation failed")
+                    testcase["expected_error"] = testcase["expected_error"].format(
+                        link_properties["dataverse"], self.link_info["name"]) 
                 elif testcase.get("new_user", None):
                     link_properties["username"] = testcase["new_user"].replace(
                         "[*]", "")

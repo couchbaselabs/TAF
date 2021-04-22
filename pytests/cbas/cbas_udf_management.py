@@ -422,7 +422,7 @@ class CBASUDF(CBASBaseTest):
                 validate_error_msg=True,
                 expected_error="Illegal use of user-defined function {"
                                "0}".format(
-                                   CBASHelper.format_name(udf_obj.full_name)),
+                                   CBASHelper.unformat_name(udf_obj.full_name)),
                 timeout=300, analytics_timeout=300,
                 analytics_collection=False):
             self.fail("Dataset creation was successfull while using user "
