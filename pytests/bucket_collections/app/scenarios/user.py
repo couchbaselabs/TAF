@@ -19,10 +19,13 @@ from global_vars import logger
 from com.couchbase.client.java.json import JsonObject
 from java.lang import Exception as Java_base_exception
 
+from sdk_exceptions import SDKException
+
 
 class User(Thread):
     scenarios = dict()
     log = logger.get("test")
+    max_retries = 5
 
     def __init__(self, bucket, scope, op_type, **kwargs):
         super(User, self).__init__()
@@ -90,13 +93,23 @@ class User(Thread):
             u_id = query_util.CommonUtil.get_next_id(self.scope, collection)
             key = COMMON_KEY + str(u_id)
             User.populate_values(template, u_id, key)
-            result = client.crud(
-                DocLoading.Bucket.DocOps.CREATE, key, template,
-                durability=Bucket.DurabilityLevel.MAJORITY,
-                timeout=10)
-            if result["status"] is False:
-                raise Exception("User profile creation failed: %s" % result)
-            collection_obj.num_items += 1
+            retry = 1
+            while retry <= User.max_retries:
+                result = client.crud(
+                    DocLoading.Bucket.DocOps.CREATE, key, template,
+                    durability=Bucket.DurabilityLevel.MAJORITY,
+                    timeout=10)
+                if result["status"] is False:
+                    if SDKException.DurabilityImpossibleException \
+                            in str(result["error"]):
+                        User.log.debug("Retrying due to d_impossible")
+                    if retry == User.max_retries:
+                        raise Exception("User profile creation failed: %s"
+                                        % result)
+                else:
+                    collection_obj.num_items += 1
+                    break
+                retry += 1
             start += 1
         return "User - registered: %s" % num_items
 
@@ -160,11 +173,18 @@ class User(Thread):
         checkout_doc.put("day_of_week", flight_to_book.get("day"))
         checkout_doc.put("seat_count", required_seats)
         checkout_doc.put("passengers", passenger_data)
-        result = client.crud(DocLoading.Bucket.DocOps.CREATE,
-                             cart_key, checkout_doc,
-                             durability=d_level.MAJORITY)
-        if result["status"] is False:
-            raise Exception("Flight cart add failed: %s" % result)
+        retry = 1
+        while retry <= User.max_retries:
+            result = client.crud(DocLoading.Bucket.DocOps.CREATE,
+                                 cart_key, checkout_doc,
+                                 durability=d_level.MAJORITY)
+            if result["status"] is False:
+                if SDKException.DurabilityImpossibleException \
+                        in str(result["error"]):
+                    User.log.debug("Retrying due to d_impossible")
+                else:
+                    raise Exception("Flight cart add failed: %s" % result)
+            retry += 1
 
         if choice([True, False]):
             # Booking confirmed scenario, add ticket under flight booking
@@ -173,12 +193,19 @@ class User(Thread):
                                                            c_name)
             ticket_key = "ticket_%s" % booking_id
             checkout_doc.put("id", booking_id)
-            client.select_collection(tenant_scope, c_name)
-            result = client.crud(
-                DocLoading.Bucket.DocOps.CREATE, ticket_key, checkout_doc,
-                durability=d_level.MAJORITY_AND_PERSIST_TO_ACTIVE)
-            if result["status"] is False:
-                raise Exception("Ticket booking failed: %s" % result)
+            retry = 1
+            while retry <= User.max_retries:
+                client.select_collection(tenant_scope, c_name)
+                result = client.crud(
+                    DocLoading.Bucket.DocOps.CREATE, ticket_key, checkout_doc,
+                    durability=d_level.MAJORITY_AND_PERSIST_TO_ACTIVE)
+                if result["status"] is False:
+                    if SDKException.DurabilityImpossibleException \
+                            in str(result["error"]):
+                        User.log.debug("Retrying due to d_impossible")
+                    else:
+                        raise Exception("Ticket booking failed: %s" % result)
+                retry += 1
 
             # Add confirmed ticket under user profile
             f_booking_id = query_util.CommonUtil.get_next_id(tenant_scope,
@@ -198,11 +225,19 @@ class User(Thread):
                 raise Exception("User flight_booking add failed: %s" % result)
 
             # Remove booked ticket from cart
-            client.select_collection(tenant_scope, checkout_cart_collection)
-            result = client.crud(DocLoading.Bucket.DocOps.DELETE, cart_key,
-                                 durability=d_level.MAJORITY)
-            if result["status"] is False:
-                raise Exception("Flight cart remove failed: %s" % result)
+            retry = 1
+            while retry <= User.max_retries:
+                client.select_collection(tenant_scope,
+                                         checkout_cart_collection)
+                result = client.crud(DocLoading.Bucket.DocOps.DELETE, cart_key,
+                                     durability=d_level.MAJORITY)
+                if result["status"] is False:
+                    if SDKException.DurabilityImpossibleException \
+                            in str(result["error"]):
+                        User.log.debug("Retrying due to d_impossible")
+                else:
+                    break
+                retry += 1
             summary["status"] = "Booking success"
         else:
             summary["status"] = "cancelled"
