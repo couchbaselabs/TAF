@@ -1091,8 +1091,8 @@ class RemoteMachineShellConnection:
                 result = True
             else:
                 os.system("cp {0}/{1} {2}".format(remotepath, filename, todir))
-        except Exception as e:
-            self.log.critical("Sftp error: %s" % e)
+        except:
+            pass
         finally:
             channel.disconnect()
 
@@ -1269,8 +1269,8 @@ class RemoteMachineShellConnection:
                         continue
                     self.log.info("%s - Delete file: %s" % (self.ip, filename))
                     channel.rm(remotepath + filename)
-        except Exception as e:
-            self.log.critical("Sftp error: %s" % e)
+        except:
+            pass
         finally:
             channel.disconnect()
         return result
