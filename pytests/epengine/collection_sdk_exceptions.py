@@ -309,6 +309,8 @@ class SDKExceptionTests(CollectionBase):
             pass
 
         # Release the acquired client
+        client.select_collection(CbServer.default_scope,
+                                 CbServer.default_collection)
         self.sdk_client_pool.release_client(client)
         self.validate_test_failure()
 
