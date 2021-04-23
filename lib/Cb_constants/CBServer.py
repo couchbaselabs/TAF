@@ -15,6 +15,15 @@ class CbServer(object):
         CBAS_MEM_QUOTA = "cbasMemoryQuota"
         EVENTING_MEM_QUOTA = "eventingMemoryQuota"
 
+    class Failover(object):
+        class Type(object):
+            GRACEFUL = "graceful"
+            FORCEFUL = "forceful"
+
+        class RecoveryType(object):
+            FULL = "full"
+            DELTA = "delta"
+
     port = 8091
     capi_port = 8092
     fts_port = 8094

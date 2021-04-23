@@ -23,19 +23,13 @@ activities:
     op_type: "rebalance_swap"
     nodes: 1
     service: "index:n1ql"
-  #- type: "cluster"
-  #  op_type: "graceful_failover"
-  #  nodes: 1
-  #  service: "kv"
-  #- type: "cluster"
-  #  op_type: "failover_node_delta_recovery"
-  #  nodes: 1
-  #  service: "kv"
-  #- type: "cluster"
-  #  op_type: "graceful_failover"
-  #  nodes: 1
-  #  service: "kv"
-  #- type: "cluster"
-  #  op_type: "failover_node_full_recovery"
-  #  nodes: 1
-  #  service: "kv"
+  - type: "cluster"
+    op_type: "graceful_failover"
+    nodes: 1
+    service: "kv"
+  - type: "cluster"
+    op_type: "failover_node_delta_recovery"
+    nodes: 1
+    service: "kv"
+  - type: "cluster"
+    op_type: "rebalance"
