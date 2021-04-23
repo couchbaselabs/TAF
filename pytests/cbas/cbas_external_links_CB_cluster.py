@@ -1186,13 +1186,6 @@ class CBASExternalLinks(CBASBaseTest):
                         if testcase.get("with_force", False):
                             self.validate_alter_link(self.to_clusters[0],
                                                      link_properties, "create")
-                        if testcase.get("load_sample_bucket", False) and not \
-                        self.to_clusters[0].bucket_util.delete_bucket(
-                                self.to_clusters[0].master,
-                                self.sample_bucket):
-                            raise Exception(
-                                "Error while deleting {0} bucket in remote cluster".format(
-                                    self.sample_bucket.name))
                         reset_original = True
                     else:
                         raise Exception("Error while connecting the link ")
@@ -1211,6 +1204,11 @@ class CBASExternalLinks(CBASBaseTest):
                 if testcase.get("new_user", None):
                     to_cluster.rbac_util._drop_user(
                         testcase["new_user"].replace("[*]", ""))
+                
+                if testcase.get("load_sample_bucket", False) and not self.to_clusters[0].bucket_util.delete_bucket(
+                    self.to_clusters[0].master, self.sample_bucket):
+                    raise Exception("Error while deleting {0} bucket in remote cluster".format(
+                        self.sample_bucket.name))
 
                 self.log.info("Test Passed")
             except Exception as err:
