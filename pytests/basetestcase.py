@@ -2,6 +2,7 @@ import os
 import re
 import traceback
 import unittest
+import time
 from collections import OrderedDict
 
 from datetime import datetime
@@ -208,6 +209,7 @@ class BaseTestCase(unittest.TestCase):
         '''
         self.stop_server_on_crash = self.input.param("stop_server_on_crash",
                                                      False)
+        self.collect_data = self.input.param("collect_data", False)
 
         # Configure loggers
         self.log.setLevel(self.log_level)
@@ -443,7 +445,7 @@ class BaseTestCase(unittest.TestCase):
             self.sdk_client_pool.shutdown()
         if self.collect_pcaps:
             self.start_fetch_pcaps()
-        result = self.check_coredump_exist(self.servers, force_collect=True)
+        result = self.check_coredump_exist(self.servers, force_collect=True, collect_data=self.collect_data)
         self.tearDownEverything()
         if not self.crash_warning:
             self.assertFalse(result, msg="Cb_log file validation failed")
@@ -647,12 +649,13 @@ class BaseTestCase(unittest.TestCase):
         self.sdk_client_pool = SDKClientPool()
         DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
 
-    def check_coredump_exist(self, servers, force_collect=False):
+    def check_coredump_exist(self, servers, force_collect=False, collect_data=False):
         bin_cb = "/opt/couchbase/bin/"
         lib_cb = "/opt/couchbase/var/lib/couchbase/"
         # crash_dir = "/opt/couchbase/var/lib/couchbase/"
         crash_dir_win = "c://CrashDumps"
         result = False
+        self.data_sets = dict()
 
         def find_index_of(str_list, sub_string):
             for i in range(len(str_list)):
@@ -778,6 +781,12 @@ class BaseTestCase(unittest.TestCase):
                                 cmd_to_run += " | grep -v '%s'" % pattern
 
                         grep_output = shell.execute_command(cmd_to_run)[0]
+                        if grep_output and check_if_new_messages(grep_output):
+                            regex =  r"(\bkvstore-\d+)"
+                            grep_str = "".join(grep_output)
+                            kvstores = list(set(re.findall(regex, grep_str)))
+                            self.data_sets[server] = kvstores
+                            grep_str = None
                         if err_pattern is not None:
                             for pattern in err_pattern:
                                 index = find_index_of(grep_output, pattern)
@@ -808,9 +817,75 @@ class BaseTestCase(unittest.TestCase):
                         break
 
             shell.disconnect()
-
+        self.log.critical("data_sets ==> {}".format(self.data_sets))
         if result and force_collect and not self.stop_server_on_crash:
             self.fetch_cb_collect_logs()
             self.get_cbcollect_info = False
+        if collect_data:
+                self.copy_data_on_slave()
 
         return result
+
+    def copy_data_on_slave(self, servers=None):
+        log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+            for node in servers:
+                if "kv" not in node.services.lower():
+                    servers.remove(node)
+        if type(servers) is not list:
+            servers = [servers]
+        remote_path = RestConnection(servers[0]).get_data_path()
+        file_path = os.path.join(remote_path, self.bucket_util.buckets[0].name)
+        file_name = self.bucket_util.buckets[0].name + ".tar.gz"
+
+        def get_tar(remotepath, filepath, filename, servers, todir="."):
+            if type(servers) is not list:
+                servers = [servers]
+            for server in servers:
+                shell = RemoteMachineShellConnection(server)
+                _ = shell.execute_command("tar -zcvf %s.tar.gz %s" %(filepath, filepath))
+                file_check = shell.file_exists(remotepath, filename)
+                if not file_check:
+                    self.log.info("Tar File {} doesn't exist".format(filename))
+                tar_file_copied = shell.get_file(remotepath, filename, todir)
+                if not tar_file_copied:
+                    self.log.info("Failed to copy Tar file")
+
+                _ = shell.execute_command("rm -rf %s.tar.gz" %(filepath))
+
+        if self.data_sets and self.bucket_storage == "magma":
+            wal_tar = "wal.tar.gz"
+            config_json_tar = "config.json.tar.gz"
+            for server, kvstores in self.data_sets.items():
+                shell = RemoteMachineShellConnection(server)
+                if not kvstores:
+                    copy_to_path=os.path.join(log_path, server.ip.replace(".", "_"))
+                    if not os.path.isdir(copy_to_path):
+                        os.makedirs(copy_to_path, 0o777)
+                    get_tar(remote_path, file_path, file_name, server, todir=copy_to_path)
+                else:
+                    for kvstore in kvstores:
+                        if int(kvstore.split("-")[1]) >= self.vbuckets:
+                            continue
+                        kvstore_path = shell.execute_command(
+                            "find %s -type d -name '%s'" % (remote_path, kvstore))[0][0]
+                        magma_dir = kvstore_path.split(kvstore)[0]
+                        wal_path = kvstore_path.split(kvstore)[0] + "wal"
+                        config_json_path = kvstore_path.split(kvstore)[0] + "config.json"
+                        kvstore_path = kvstore_path.split(kvstore)[0] + kvstore
+                        kvstore_tar = kvstore + ".tar.gz"
+                        copy_to_path = os.path.join(log_path, kvstore)
+                        if not os.path.isdir(copy_to_path):
+                            os.makedirs(copy_to_path, 0o777)
+
+                        get_tar(magma_dir, kvstore_path, kvstore_tar, server, todir=copy_to_path)
+                        get_tar(magma_dir, wal_path, wal_tar, server, todir=copy_to_path)
+                        get_tar(magma_dir, config_json_path, config_json_tar, server, todir=copy_to_path)
+        else:
+            for server in servers:
+                copy_to_path=os.path.join(log_path, server.ip.replace(".", "_"))
+                if not os.path.isdir(copy_to_path):
+                    os.makedirs(copy_to_path, 0o777)
+                self.log.info("copy_to_path {} for server {} in else".format(copy_to_path, server.ip))
+                get_tar(remote_path, file_path, file_name, server, todir=copy_to_path)

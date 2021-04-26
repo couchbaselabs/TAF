@@ -1097,7 +1097,22 @@ class RemoteMachineShellConnection:
             channel.disconnect()
 
         return result
-
+    def get_dir(self, remotepath, dirname, todir="."):
+        channel = self.session.openChannel("sftp")
+        channel.connect()
+        channelSftp = channel
+        result = False
+        try:
+            channelSftp.cd(remotepath)
+            if self.file_exists(remotepath, dirname):
+                channelSftp.get('-r {0}/{1}'.format(remotepath, dirname), todir)
+                channel.disconnect()
+                result = True
+        except:
+            self.log.info("Copying file to slave failed")
+        finally:
+            channel.disconnect()
+        return result
     def read_remote_file(self, remote_path, filename):
         if self.file_exists(remote_path, filename):
             if self.remote:
