@@ -13,6 +13,7 @@ buckets:
           - name: "flight_booking"
           - name: "booking_data"
           - name: "hotel_booking"
+          - name: "eventing_meta"
           - name: "checkout_cart"
             maxTTL: 200
       - name: "agent_2"
@@ -24,6 +25,7 @@ buckets:
           - name: "flight_booking"
           - name: "booking_data"
           - name: "hotel_booking"
+          - name: "eventing_meta"
           - name: "checkout_cart"
             maxTTL: 200
       - name: "agent_3"
@@ -35,6 +37,7 @@ buckets:
           - name: "flight_booking"
           - name: "booking_data"
           - name: "hotel_booking"
+          - name: "eventing_meta"
           - name: "checkout_cart"
             maxTTL: 300
       - name: "agent_4"
@@ -46,6 +49,7 @@ buckets:
           - name: "flight_booking"
           - name: "booking_data"
           - name: "hotel_booking"
+          - name: "eventing_meta"
           - name: "checkout_cart"
             maxTTL: 600
       - name: "agent_5"
@@ -57,5 +61,6 @@ buckets:
           - name: "flight_booking"
           - name: "booking_data"
           - name: "hotel_booking"
+          - name: "eventing_meta"
           - name: "checkout_cart"
             maxTTL: 900
