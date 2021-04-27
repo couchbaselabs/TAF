@@ -30,9 +30,9 @@ class volume(CollectionBase):
     def index_setup(self):
         # Initialize parameters for index querying
         self.n1ql_nodes = None
-        self.number_of_indexes_per_coll = self.input.param("number_of_indexes_per_coll", 3) # with 2 replicas = total 9 indexes per coll
+        self.number_of_indexes_per_coll = self.input.param("number_of_indexes_per_coll", 5) # with 1 replicas = total 10 indexes per coll
         # Below is the total num of indexes to drop after each rebalance (and recreate them)
-        self.num_indexes_to_drop = self.input.param("num_indexes_to_drop", 15)
+        self.num_indexes_to_drop = self.input.param("num_indexes_to_drop", 500)
         self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
         self.set_memory_quota_kv_index()
         self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
@@ -138,7 +138,7 @@ class volume(CollectionBase):
                         gsi_index_name = "gsi-" + str(count)
                         create_index_query = "CREATE INDEX `%s` " \
                                              "ON `%s`.`%s`.`%s`(`age`)" \
-                                             "WITH { 'defer_build': true, 'num_replica': 2 }" \
+                                             "WITH { 'defer_build': true, 'num_replica': 1 }" \
                                              % (gsi_index_name, bucket.name, scope.name, collection.name)
                         result = self.run_cbq_query(create_index_query)
                         # self.assertTrue(result['status'] == "success", "Defer build Query %s failed." % create_index_query)
@@ -160,7 +160,7 @@ class volume(CollectionBase):
                     for gsi_index_name in gsi_index_names:
                         create_index_query = "CREATE INDEX `%s` " \
                                              "ON `%s`.`%s`.`%s`(`age`)" \
-                                             "WITH { 'defer_build': true, 'num_replica': 2 }" \
+                                             "WITH { 'defer_build': true, 'num_replica': 1 }" \
                                              % (gsi_index_name, bucket, scope, collection)
                         result = self.run_cbq_query(create_index_query)
         self.build_deferred_indexes(indexes_dropped)
@@ -256,3 +256,40 @@ class volume(CollectionBase):
 
             self.check_logs()
             step_count = step_count + 1
+
+    def test_volume_rebalance_cycles(self):
+        """
+        1. Rebalance-in
+        2. drop and recreate indexes
+        3. Rebalance-out and repeat this cycle
+        """
+        self.reload_data_into_buckets()
+        cycles = 1
+        while cycles < 6:
+            add_node = self.available_servers[0]
+            self.log.info("Cycle: {0}".format(cycles))
+            operation = self.task.async_rebalance(self.nodes_in_cluster, [add_node], [],
+                                                  services=["index"],
+                                                  retry_get_process_num=200)
+            self.wait_for_rebalance_to_complete(operation)
+            self.available_servers.remove(add_node)
+            self.nodes_in_cluster.append(add_node)
+
+            self.log.info("################# Dropping indexes ###################")
+            indexes_dropped = self.drop_indexes(num_indexes_to_drop=self.num_indexes_to_drop)
+
+            query = "select state from system:indexes where state='online'"
+            result = self.run_cbq_query(query)
+            self.log.info("online indexes count: {0}".format(len(result['results'])))
+
+            self.log.info("################# Recreating indexes ###################")
+            self.recreate_dropped_indexes(indexes_dropped)
+
+            remove_node = self.nodes_in_cluster[-1]
+            operation = self.task.async_rebalance(self.nodes_in_cluster, [], [remove_node],
+                                                  retry_get_process_num=200)
+            self.wait_for_rebalance_to_complete(operation)
+            self.available_servers.append(remove_node)
+            self.nodes_in_cluster.remove(remove_node)
+
+            cycles = cycles + 1
