@@ -476,7 +476,7 @@ class SDKClient(object):
     def get_upsert_options(self, exp=0, exp_unit="seconds",
                            persist_to=0, replicate_to=0,
                            timeout=5, time_unit="seconds",
-                           durability=""):
+                           durability="", preserve_expiry=None):
         if durability:
             options = UpsertOptions.upsertOptions() \
                 .timeout(self.get_duration(timeout, time_unit)) \
@@ -488,6 +488,8 @@ class SDKClient(object):
                 .expiry(self.get_duration(exp, exp_unit)) \
                 .durability(self.get_persist_to(persist_to),
                             self.get_replicate_to(replicate_to))
+        if preserve_expiry is not None:
+            options = options.preserveExpiry(preserve_expiry)
         return options
 
     def get_remove_options(self, persist_to=0, replicate_to=0,
@@ -512,7 +514,8 @@ class SDKClient(object):
     def get_replace_options(self, exp=0, exp_unit="seconds",
                             persist_to=0, replicate_to=0,
                             timeout=5, time_unit="seconds",
-                            durability="", cas=0):
+                            durability="", cas=0,
+                            preserve_expiry=None):
         options = ReplaceOptions.replaceOptions() \
             .expiry(self.get_duration(exp, exp_unit)) \
             .timeout(self.get_duration(timeout, time_unit))
@@ -527,6 +530,8 @@ class SDKClient(object):
             options = options \
                 .durability(self.get_persist_to(persist_to),
                             self.get_replicate_to(replicate_to))
+        if preserve_expiry is not None:
+            options = options.preserveExpiry(preserve_expiry)
 
         return options
 
@@ -537,7 +542,8 @@ class SDKClient(object):
     def get_mutate_in_options(self, exp=0, exp_unit="seconds",
                               persist_to=0, replicate_to=0, timeout=5,
                               time_unit="seconds", durability="",
-                              store_semantics=None):
+                              store_semantics=None,
+                              preserve_expiry=None):
         if persist_to != 0 or replicate_to != 0:
             mutate_in_options = MutateInOptions.mutateInOptions()\
                 .durability(self.get_persist_to(persist_to),
@@ -552,6 +558,9 @@ class SDKClient(object):
         if store_semantics is not None:
             mutate_in_options = \
                 mutate_in_options.storeSemantics(store_semantics)
+        if preserve_expiry is not None:
+            mutate_in_options = \
+                mutate_in_options.preserveExpiry(preserve_expiry)
 
         return mutate_in_options
 
@@ -786,7 +795,8 @@ class SDKClient(object):
     def replace(self, key, value, exp=0, exp_unit="seconds",
                 persist_to=0, replicate_to=0,
                 timeout=5, time_unit="seconds",
-                durability="", cas=0, fail_fast=False):
+                durability="", cas=0, fail_fast=False,
+                preserve_expiry=None):
         result = dict()
         result["cas"] = 0
         content = self.translate_to_json_object(value)
@@ -796,7 +806,8 @@ class SDKClient(object):
                                                timeout=timeout,
                                                time_unit=time_unit,
                                                durability=durability,
-                                               cas=cas)
+                                               cas=cas,
+                                               preserve_expiry=preserve_expiry)
             if fail_fast:
                 options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
 
@@ -920,7 +931,7 @@ class SDKClient(object):
     def upsert(self, key, value, exp=0, exp_unit="seconds",
                persist_to=0, replicate_to=0,
                timeout=5, time_unit="seconds",
-               durability="", fail_fast=False):
+               durability="", fail_fast=False, preserve_expiry=None):
         content = self.translate_to_json_object(value)
         result = dict()
         result["cas"] = 0
@@ -930,7 +941,8 @@ class SDKClient(object):
                                               replicate_to=replicate_to,
                                               timeout=timeout,
                                               time_unit=time_unit,
-                                              durability=durability)
+                                              durability=durability,
+                                              preserve_expiry=preserve_expiry)
             if fail_fast:
                 options = options.retryStrategy(FailFastRetryStrategy.INSTANCE)
 
@@ -967,7 +979,7 @@ class SDKClient(object):
     def crud(self, op_type, key, value=None, exp=0, replicate_to=0,
              persist_to=0, durability="", timeout=5, time_unit="seconds",
              create_path=True, xattr=False, cas=0, fail_fast=False,
-             store_semantics=None):
+             store_semantics=None, preserve_expiry=None):
         result = None
         if op_type == DocLoading.Bucket.DocOps.UPDATE:
             result = self.upsert(
@@ -975,7 +987,8 @@ class SDKClient(object):
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=durability,
                 timeout=timeout, time_unit=time_unit,
-                fail_fast=fail_fast)
+                fail_fast=fail_fast,
+                preserve_expiry=preserve_expiry)
         elif op_type == DocLoading.Bucket.DocOps.CREATE:
             result = self.insert(
                 key, value, exp=exp,
@@ -997,7 +1010,8 @@ class SDKClient(object):
                 durability=durability,
                 timeout=timeout, time_unit=time_unit,
                 cas=cas,
-                fail_fast=fail_fast)
+                fail_fast=fail_fast,
+                preserve_expiry=preserve_expiry)
         elif op_type == DocLoading.Bucket.DocOps.TOUCH:
             result = self.touch(
                 key, exp=exp,
@@ -1022,7 +1036,8 @@ class SDKClient(object):
             options = self.get_mutate_in_options(
                 exp, time_unit, persist_to, replicate_to,
                 timeout, time_unit, durability,
-                store_semantics=store_semantics)
+                store_semantics=store_semantics,
+                preserve_expiry=preserve_expiry)
             if cas > 0:
                 options = options.cas(cas)
 
@@ -1042,7 +1057,8 @@ class SDKClient(object):
             options = self.get_mutate_in_options(
                 exp, time_unit, persist_to, replicate_to,
                 timeout, time_unit, durability,
-                store_semantics=store_semantics)
+                store_semantics=store_semantics,
+                preserve_expiry=preserve_expiry)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1060,7 +1076,8 @@ class SDKClient(object):
             options = self.get_mutate_in_options(
                 exp, time_unit, persist_to, replicate_to,
                 timeout, time_unit, durability,
-                store_semantics=store_semantics)
+                store_semantics=store_semantics,
+                preserve_expiry=preserve_expiry)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1079,7 +1096,8 @@ class SDKClient(object):
             options = self.get_mutate_in_options(
                 exp, time_unit, persist_to, replicate_to,
                 timeout, time_unit, durability,
-                store_semantics=store_semantics)
+                store_semantics=store_semantics,
+                preserve_expiry=preserve_expiry)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1105,7 +1123,8 @@ class SDKClient(object):
             options = self.get_mutate_in_options(
                 exp, time_unit, persist_to, replicate_to,
                 timeout, time_unit, durability,
-                store_semantics=store_semantics)
+                store_semantics=store_semantics,
+                preserve_expiry=preserve_expiry)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1158,13 +1177,15 @@ class SDKClient(object):
     def upsert_multi(self, docs, exp=0, exp_unit="seconds",
                      persist_to=0, replicate_to=0,
                      timeout=5, time_unit="seconds", retry=5,
-                     doc_type="json", durability=""):
+                     doc_type="json", durability="",
+                     preserve_expiry=None):
         options = self.get_upsert_options(exp=exp, exp_unit=exp_unit,
                                           persist_to=persist_to,
                                           replicate_to=replicate_to,
                                           timeout=timeout,
                                           time_unit=time_unit,
-                                          durability=durability)
+                                          durability=durability,
+                                          preserve_expiry=preserve_expiry)
         if doc_type.lower() == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
         elif doc_type.lower() == "string":
@@ -1176,13 +1197,15 @@ class SDKClient(object):
     def replace_multi(self, docs, exp=0, exp_unit="seconds",
                       persist_to=0, replicate_to=0,
                       timeout=5, time_unit="seconds",
-                      doc_type="json", durability=""):
+                      doc_type="json", durability="",
+                      preserve_expiry=None):
         options = self.get_replace_options(exp=exp, exp_unit=exp_unit,
                                            persist_to=persist_to,
                                            replicate_to=replicate_to,
                                            timeout=timeout,
                                            time_unit=time_unit,
-                                           durability=durability)
+                                           durability=durability,
+                                           preserve_expiry=preserve_expiry)
         if doc_type.lower() == "binary":
             options = options.transcoder(RawBinaryTranscoder.INSTANCE)
         elif doc_type.lower() == "string":
@@ -1204,7 +1227,8 @@ class SDKClient(object):
                              create_path=False,
                              xattr=False,
                              cas=0,
-                             store_semantics=None):
+                             store_semantics=None,
+                             preserve_expiry=None):
         """
 
         :param keys: Documents to perform sub_doc operations on.
@@ -1220,6 +1244,8 @@ class SDKClient(object):
         :param create_path: Boolean used to create sub_doc path if not exists
         :param xattr: Boolean. If 'True', perform xattr operation
         :param cas: CAS for the document to use
+        :param store_semantics: Extra action to take during mutate_in op
+        :param preserve_expiry: Boolean to preserver ttl of the doc or not
         :return:
         """
         mutate_in_specs = []
@@ -1243,7 +1269,8 @@ class SDKClient(object):
                                              persist_to, replicate_to,
                                              timeout, time_unit,
                                              durability,
-                                             store_semantics=store_semantics)
+                                             store_semantics=store_semantics,
+                                             preserve_expiry=preserve_expiry)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1257,7 +1284,8 @@ class SDKClient(object):
                              create_path=False,
                              xattr=False,
                              cas=0,
-                             store_semantics=None):
+                             store_semantics=None,
+                             preserve_expiry=None):
         """
         :param keys: Documents to perform sub_doc operations on.
         Must be a dictionary with Keys and List of tuples for
@@ -1272,6 +1300,8 @@ class SDKClient(object):
         :param create_path: Boolean used to create sub_doc path if not exists
         :param xattr: Boolean. If 'True', perform xattr operation
         :param cas: CAS for the document to use
+        :param store_semantics: Extra action to take during mutate_in op
+        :param preserve_expiry: Boolean to preserver ttl of the doc or not
         :return:
         """
         mutate_in_specs = []
@@ -1295,7 +1325,8 @@ class SDKClient(object):
                                              persist_to, replicate_to,
                                              timeout, time_unit,
                                              durability,
-                                             store_semantics=store_semantics)
+                                             store_semantics=store_semantics,
+                                             preserve_expiry=preserve_expiry)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1335,7 +1366,8 @@ class SDKClient(object):
                              durability="",
                              xattr=False,
                              cas=0,
-                             store_semantics=None):
+                             store_semantics=None,
+                             preserve_expiry=None):
         """
         :param keys: Documents to perform sub_doc operations on.
         Must be a dictionary with Keys and List of tuples for
@@ -1350,6 +1382,7 @@ class SDKClient(object):
         :param xattr: Boolean. If 'True', perform xattr operation
         :param cas: CAS for the document to use
         :param store_semantics: Value to be used in mutate_in_option
+        :param preserve_expiry: Boolean to preserver ttl of the doc or not
         :return:
         """
         mutate_in_specs = []
@@ -1373,7 +1406,8 @@ class SDKClient(object):
                                              persist_to, replicate_to,
                                              timeout, time_unit,
                                              durability,
-                                             store_semantics=store_semantics)
+                                             store_semantics=store_semantics,
+                                             preserve_expiry=preserve_expiry)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1386,7 +1420,8 @@ class SDKClient(object):
                               durability="",
                               xattr=False,
                               cas=0,
-                              store_semantics=None):
+                              store_semantics=None,
+                              preserve_expiry=None):
         """
 
         :param keys: Documents to perform sub_doc operations on.
@@ -1401,6 +1436,8 @@ class SDKClient(object):
         :param durability: Durability level parameter
         :param xattr: Boolean. If 'True', perform xattr operation
         :param cas: CAS for the document to use
+        :param store_semantics: Extra action to take during mutate_in op
+        :param preserve_expiry: Boolean to preserver ttl of the doc or not
         :return:
         """
         mutate_in_specs = []
@@ -1424,7 +1461,8 @@ class SDKClient(object):
                                              persist_to, replicate_to,
                                              timeout, time_unit,
                                              durability,
-                                             store_semantics=store_semantics)
+                                             store_semantics=store_semantics,
+                                             preserve_expiry=preserve_expiry)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(

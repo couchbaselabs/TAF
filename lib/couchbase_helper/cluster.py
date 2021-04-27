@@ -133,7 +133,8 @@ class ServerTasks(object):
                             collection=CbServer.default_collection,
                             sdk_client_pool=None,
                             monitor_stats=["doc_ops"],
-                            track_failures=True):
+                            track_failures=True,
+                            preserve_expiry=None):
         clients = list()
         if active_resident_threshold == 100:
             if not task_identifier:
@@ -169,7 +170,8 @@ class ServerTasks(object):
                     sdk_client_pool=sdk_client_pool,
                     scope=scope, collection=collection,
                     monitor_stats=monitor_stats,
-                    track_failures=track_failures)
+                    track_failures=track_failures,
+                    preserve_expiry=preserve_expiry)
             else:
                 majority_value = (bucket.replicaNumber + 1) / 2 + 1
 
@@ -230,7 +232,8 @@ class ServerTasks(object):
                                 task_identifier="",
                                 sdk_client_pool=None,
                                 scope=CbServer.default_scope,
-                                collection=CbServer.default_collection):
+                                collection=CbServer.default_collection,
+                                preserve_expiry=None):
         self.log.debug("Loading sub documents to {}".format(bucket.name))
         if not isinstance(generator, SubdocDocumentGenerator):
             raise Exception("Document generator needs to be of "
@@ -270,7 +273,8 @@ class ServerTasks(object):
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate,
             durability=durability,
-            task_identifier=task_identifier)
+            task_identifier=task_identifier,
+            preserve_expiry=preserve_expiry)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task

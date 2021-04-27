@@ -424,7 +424,8 @@ class GenericLoadingTask(Task):
                  retries=5, transaction=False, commit=False,
                  suppress_error_table=False, sdk_client_pool=None,
                  scope=CbServer.default_scope,
-                 collection=CbServer.default_collection):
+                 collection=CbServer.default_collection,
+                 preserve_expiry=None):
         super(GenericLoadingTask, self).__init__("Loadgen_task_%s_%s_%s_%s"
                                                  % (bucket, scope, collection,
                                                     time.time()))
@@ -442,6 +443,7 @@ class GenericLoadingTask(Task):
         self.retries = retries
         self.suppress_error_table = suppress_error_table
         self.docs_loaded = 0
+        self.preserve_expiry = preserve_expiry
 
     def call(self):
         self.start_task()
@@ -524,7 +526,8 @@ class GenericLoadingTask(Task):
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
-                doc_type=doc_type, durability=durability)
+                doc_type=doc_type, durability=durability,
+                preserve_expiry=self.preserve_expiry)
 
             if fail:
                 key_val = dict(key_val)
@@ -572,7 +575,8 @@ class GenericLoadingTask(Task):
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
-                doc_type=doc_type, durability=durability)
+                doc_type=doc_type, durability=durability,
+                preserve_expiry=self.preserve_expiry)
             if fail:
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
@@ -675,7 +679,8 @@ class GenericLoadingTask(Task):
                 time_unit=time_unit,
                 durability=durability,
                 create_path=create_path,
-                xattr=xattr)
+                xattr=xattr,
+                preserve_expiry=self.preserve_expiry)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc insert: {0}"
@@ -700,7 +705,8 @@ class GenericLoadingTask(Task):
                 time_unit=time_unit,
                 durability=durability,
                 create_path=create_path,
-                xattr=xattr)
+                xattr=xattr,
+                preserve_expiry=self.preserve_expiry)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc upsert: {0}"
@@ -723,7 +729,8 @@ class GenericLoadingTask(Task):
                 timeout=timeout,
                 time_unit=time_unit,
                 durability=durability,
-                xattr=xattr)
+                xattr=xattr,
+                preserve_expiry=self.preserve_expiry)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc upsert: {0}"
@@ -746,7 +753,8 @@ class GenericLoadingTask(Task):
                 timeout=timeout,
                 time_unit=time_unit,
                 durability=durability,
-                xattr=xattr)
+                xattr=xattr,
+                preserve_expiry=self.preserve_expiry)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc remove: {0}"
@@ -779,7 +787,8 @@ class LoadDocumentsTask(GenericLoadingTask):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  track_failures=True,
-                 skip_read_success_results=False):
+                 skip_read_success_results=False,
+                 preserve_expiry=None):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
@@ -787,7 +796,8 @@ class LoadDocumentsTask(GenericLoadingTask):
             compression=compression,
             retries=retries, suppress_error_table=suppress_error_table,
             sdk_client_pool=sdk_client_pool,
-            scope=scope, collection=collection)
+            scope=scope, collection=collection,
+            preserve_expiry=preserve_expiry)
         self.thread_name = "LoadDocs_%s_%s_%s_%s_%s_%s" \
                            % (task_identifier,
                               op_type,
@@ -918,13 +928,15 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  durability="", task_identifier="",
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
-                 collection=CbServer.default_collection):
+                 collection=CbServer.default_collection,
+                 preserve_expiry=None):
         super(LoadSubDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             compression=compression,
             sdk_client_pool=sdk_client_pool,
-            scope=scope, collection=collection)
+            scope=scope, collection=collection,
+            preserve_expiry=preserve_expiry)
         self.thread_name = "LoadSubDocsTask-%s_%s_%s_%s_%s" % (
             task_identifier,
             generator._doc_gen.start,
@@ -1527,7 +1539,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  monitor_stats=["doc_ops"],
-                 track_failures=True):
+                 track_failures=True,
+                 preserve_expiry=None):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "LoadDocsGen_%s_%s_%s_%s_%s"
             % (bucket, scope, collection, task_identifier, time.time()))
@@ -1561,6 +1574,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.monitor_stats = monitor_stats
         self.scope = scope
         self.collection = collection
+        self.preserve_expiry = preserve_expiry
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1694,7 +1708,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 suppress_error_table=self.suppress_error_table,
                 sdk_client_pool=self.sdk_client_pool,
                 scope=self.scope, collection=self.collection,
-                track_failures=self.track_failures)
+                track_failures=self.track_failures,
+                preserve_expiry=self.preserve_expiry)
             tasks.append(task)
         return tasks
 
@@ -1712,7 +1727,8 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  task_identifier="",
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
-                 collection=CbServer.default_collection):
+                 collection=CbServer.default_collection,
+                 preserve_expiry=None):
         thread_name = "SubDocumentsLoadGenTask_%s_%s_%s_%s_%s" \
                       % (task_identifier,
                          bucket.name,
@@ -1747,6 +1763,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
         self.sdk_client_pool = sdk_client_pool
         self.scope = scope
         self.collection = collection
+        self.preserve_expiry = preserve_expiry
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1870,7 +1887,8 @@ class LoadSubDocumentsGeneratorsTask(Task):
                                         durability=self.durability,
                                         scope=self.scope,
                                         collection=self.collection,
-                                        sdk_client_pool=self.sdk_client_pool)
+                                        sdk_client_pool=self.sdk_client_pool,
+                                        preserve_expiry=self.preserve_expiry)
             tasks.append(task)
         return tasks
 
