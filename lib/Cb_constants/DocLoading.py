@@ -8,11 +8,12 @@ class Bucket(object):
         TOUCH = "touch"
 
     class SubDocOps(object):
-        INSERT = "insert"
-        UPSERT = "upsert"
-        REMOVE = "remove"
-        LOOKUP = "lookup"
-        COUNTER = "counter"
+        INSERT = "sd_insert"
+        UPSERT = "sd_upsert"
+        REMOVE = "sd_remove"
+        REPLACE = "sd_replace"
+        LOOKUP = "sd_lookup"
+        COUNTER = "sd_counter"
 
     DOC_OPS = [DocOps.DELETE,
                DocOps.CREATE,

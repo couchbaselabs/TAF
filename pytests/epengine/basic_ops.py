@@ -835,7 +835,8 @@ class basic_ops(BaseTestCase):
                                      % (t_key, crud_result["error"]))
                     break
                 self.num_items += 1
-                client.crud("subdoc_insert", t_key, xattr_kv, xattr=True)
+                client.crud(DocLoading.Bucket.SubDocOps.INSERT,
+                            t_key, xattr_kv, xattr=True)
 
         nodes_data = dict()
         stop_loader = False
