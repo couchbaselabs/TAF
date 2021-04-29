@@ -1261,7 +1261,7 @@ class basic_ops(BaseTestCase):
             self.log.info("Result: %s" % result)
             self.log_failure("Invalid exception with prepared doc: %s"
                              % result["error"])
-        result = client_2.getFromAllReplica(self.key)
+        result = client_2.get_from_all_replicas(self.key)
         if result:
             self.log_failure("Able to read deleted value: %s" % result)
         create_thread.join()
