@@ -1570,6 +1570,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.sleep(30, "30s sleep after crash")
                     num_crashes -= 1
                     crash_count += 1
+                num_crashes = 5
             else:
                 tasks_in = dict()
                 nodes = self.cluster.nodes_in_cluster[target_active_nodes:]
