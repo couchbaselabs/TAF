@@ -191,7 +191,7 @@ class CBASUDF(CBASBaseTest):
                 query_context=self.input.param('query_context', False),
                 use_statement=self.input.param('use_statement', False),
                 validate_error_msg=self.input.param('validate_error', False),
-                expected_error=self.input.param('expected_error', None).format(
+                expected_error=self.input.param('expected_error', "").format(
                     udf_obj.dataverse_name),
                 timeout=300, analytics_timeout=300):
             self.fail("Error while creating Analytics UDF")
