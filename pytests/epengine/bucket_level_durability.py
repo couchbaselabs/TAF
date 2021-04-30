@@ -2,7 +2,6 @@ from copy import deepcopy
 from random import sample, choice
 
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading
 from cb_tools.cb_cli import CbCli
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import BucketDurability
@@ -245,9 +244,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 self.log_failure("Doc insert failed for key: %s" % key)
 
             # Perform sub_doc CRUD
-            for sub_doc_op in [DocLoading.Bucket.SubDocOps.INSERT,
-                               DocLoading.Bucket.SubDocOps.UPSERT,
-                               DocLoading.Bucket.SubDocOps.REPLACE]:
+            for sub_doc_op in ["subdoc_insert", "subdoc_upsert",
+                               "subdoc_replace"]:
                 sub_doc_val = choice(sub_doc_vals)
                 _, fail = client.crud(sub_doc_op, key,
                                       [sub_doc_key, sub_doc_val])
@@ -259,8 +257,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                     verification_dict["ops_update"] += 1
                     verification_dict["sync_write_committed_count"] += 1
 
-                success, fail = client.crud(
-                    DocLoading.Bucket.SubDocOps.LOOKUP, key, sub_doc_key)
+                success, fail = client.crud("subdoc_read", key, sub_doc_key)
                 if fail or str(success[key]["value"].get(0)) != sub_doc_val:
                     self.log_failure("%s failed. Expected: %s, Actual: %s"
                                      % (sub_doc_op, sub_doc_val,
@@ -268,7 +265,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 self.summary.add_step("%s for key %s" % (sub_doc_op, key))
 
             # Subdoc_delete and verify
-            sub_doc_op = DocLoading.Bucket.SubDocOps.REMOVE
+            sub_doc_op = "subdoc_delete"
             _, fail = client.crud(sub_doc_op, key, sub_doc_key)
             if fail:
                 self.log_failure("%s failure. Key %s, sub_doc (%s, %s): %s"

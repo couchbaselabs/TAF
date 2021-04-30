@@ -252,9 +252,10 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
     def __read_doc_and_validate(self, expected_val, subdoc_key=None):
         if subdoc_key:
-            success, failed_items = self.client.crud(
-                DocLoading.Bucket.SubDocOps.LOOKUP, self.doc_id, subdoc_key,
-                xattr=self.xattr)
+            success, failed_items = self.client.crud("subdoc_read",
+                                                     self.doc_id,
+                                                     subdoc_key,
+                                                     xattr=self.xattr)
             self.assertFalse(failed_items, "Xattr read failed")
             self.assertEqual(expected_val,
                              str(success[self.doc_id]["value"][0]),
@@ -271,14 +272,14 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.__upsert_document_and_validate("create", {})
 
         # Try to upsert a single xattr
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            "my.attr", "value")
 
         # Read full doc and validate
         self.__read_doc_and_validate("{}")
 
         # Using lookup_in
-        result, _ = self.client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+        result, _ = self.client.crud("subdoc_read",
                                      self.doc_id,
                                      "my.attr")
         self.assertEqual(
@@ -297,8 +298,8 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
         # Try to upsert multiple xattr
         for key, val in xattrs_to_insert:
-            self.__insert_sub_doc_and_validate(
-                DocLoading.Bucket.SubDocOps.INSERT, key, val)
+            self.__insert_sub_doc_and_validate("subdoc_insert",
+                                               key, val)
 
         # Read full doc and validate
         self.__read_doc_and_validate("{}")
@@ -312,7 +313,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         value = {"v": "v" * 500000}
         self.__upsert_document_and_validate("update", value)
 
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            sub_doc_key, value)
 
         # Read full doc and validate
@@ -322,9 +323,10 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                          "Document value mismatch: %s != %s" % (result, value))
 
         # Read sub_doc for validating the value
-        success, failed_items = self.client.crud(
-            DocLoading.Bucket.SubDocOps.LOOKUP, self.doc_id, sub_doc_key,
-            xattr=self.xattr)
+        success, failed_items = self.client.crud("subdoc_read",
+                                                 self.doc_id,
+                                                 sub_doc_key,
+                                                 xattr=self.xattr)
         self.assertFalse(failed_items, "Xattr read failed")
         result = json.loads(str(success[self.doc_id]["value"][0]))
         self.assertEqual(result, value,
@@ -338,7 +340,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["status"], "Read failed")
         initial_cas = result["cas"]
 
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            "my", {'value': 1})
 
         # Read and record CAS
@@ -346,7 +348,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["status"], "Read failed")
         updated_cas_1 = result["cas"]
 
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            "my.inner", {'value_inner': 2})
 
         # Read and record CAS
@@ -356,7 +358,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
         self.__read_doc_and_validate("{}")
 
-        result, _ = self.client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+        result, _ = self.client.crud("subdoc_read",
                                      self.doc_id,
                                      "my.attr")
         self.assertEqual(
@@ -374,11 +376,11 @@ class SubdocXattrSdkTest(SubdocBaseTest):
     # https://issues.couchbase.com/browse/PYCBC-378
     def test_key_length_big(self):
         self.__upsert_document_and_validate("update", {})
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            "g" * 15, 1)
 
         _, failed_items = self.client.crud(
-            DocLoading.Bucket.SubDocOps.INSERT,
+            "subdoc_insert",
             self.doc_id,
             ["f" * 16, 2],
             durability=self.durability_level,
@@ -484,7 +486,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
     def test_delete_doc_with_xattr(self):
         self.__upsert_document_and_validate("update", {})
 
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            "my_attr", "value")
         self.__read_doc_and_validate("value", "my_attr")
 
@@ -502,9 +504,10 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
         # Try reading the sub_doc and xattr to validate
         for is_xattr in [False, True]:
-            _, failed_items = self.client.crud(
-                DocLoading.Bucket.SubDocOps.LOOKUP, self.doc_id, "my_attr",
-                xattr=is_xattr)
+            _, failed_items = self.client.crud("subdoc_read",
+                                               self.doc_id,
+                                               "my_attr",
+                                               xattr=is_xattr)
             self.assertEqual(failed_items[self.doc_id]["cas"], 0,
                              "CAS is non-zero")
             self.assertTrue(SDKException.DocumentNotFoundException
@@ -572,7 +575,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.__upsert_document_and_validate("update", {})
 
         # Trying getting non-existing xattr
-        result, _ = self.client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+        result, _ = self.client.crud("subdoc_read",
                                      self.doc_id,
                                      "my_attr",
                                      xattr=True)
@@ -582,7 +585,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             "Invalid SDK return value: %s" % result["xattrs"]["value"])
 
         # Try to upsert a single xattr
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            "my_attr", "value")
         self.__read_doc_and_validate("value", "my_attr")
 
@@ -594,9 +597,10 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         cas_before = result["cas"]
 
         # Delete xattr
-        success, failed_items = self.client.crud(
-            DocLoading.Bucket.SubDocOps.REMOVE, self.doc_id, "my_attr",
-            xattr=True)
+        success, failed_items = self.client.crud("subdoc_delete",
+                                                 self.doc_id,
+                                                 "my_attr",
+                                                 xattr=True)
         self.assertFalse(failed_items, "Subdoc delete failed")
 
         # Trying get doc after xattr deleted
@@ -610,7 +614,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                          % (result["value"], "{}"))
 
         # Read deleted xattr to verify
-        result, _ = self.client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+        result, _ = self.client.crud("subdoc_read",
                                      self.doc_id,
                                      "my_attr",
                                      xattr=True)
@@ -630,7 +634,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["status"], "Read failed")
         initial_cas = result["cas"]
 
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            "my", {'value': 1})
 
         # Read and record CAS
@@ -638,7 +642,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["status"], "Read failed")
         updated_cas_1 = result["cas"]
 
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            "my.inner", {'value_inner': 2})
 
         # Read and record CAS
@@ -649,7 +653,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         if self.xattr:
             self.__read_doc_and_validate("{}")
 
-        result, _ = self.client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+        result, _ = self.client.crud("subdoc_read",
                                      self.doc_id,
                                      "my.attr")
         if self.xattr:
@@ -677,7 +681,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["status"], "Read failed")
         initial_cas = result["cas"]
 
-        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("subdoc_insert",
                                            "my", {'value': 1})
 
         # Read and record CAS
@@ -686,7 +690,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         updated_cas_1 = result["cas"]
 
         _, failed_items = self.client.crud(
-            DocLoading.Bucket.SubDocOps.INSERT,
+            "subdoc_insert",
             self.doc_id,
             ["my.inner", {'value_inner': 2}],
             durability=self.durability_level,
@@ -698,7 +702,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(failed_items, "Subdoc Xattr insert failed")
 
         success, failed_items = self.client.crud(
-            DocLoading.Bucket.SubDocOps.INSERT,
+            "subdoc_insert",
             self.doc_id,
             ["my.inner", {'value_inner': 2}],
             durability=self.durability_level,
@@ -723,25 +727,27 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         for i in xrange(5):
             self.log.info("Create iteration: %d" % (i+1))
             # Try to upsert a single xattr
-            self.__insert_sub_doc_and_validate(
-                DocLoading.Bucket.SubDocOps.INSERT, "my_attr", "value")
+            self.__insert_sub_doc_and_validate("subdoc_insert",
+                                               "my_attr", "value")
 
             # Get and validate
-            success, failed_item = self.client.crud(
-                DocLoading.Bucket.SubDocOps.LOOKUP, self.doc_id, "my_attr",
-                xattr=self.xattr)
+            success, failed_item = self.client.crud("subdoc_read",
+                                                    self.doc_id,
+                                                    "my_attr",
+                                                    xattr=self.xattr)
             self.assertFalse(failed_item, "Subdoc read failed")
             self.assertTrue(success[self.doc_id]["cas"] != 0, "CAS is zero")
 
             # Delete sub_doc
-            success, failed_item = self.client.crud(
-                DocLoading.Bucket.SubDocOps.REMOVE, self.doc_id, "my_attr",
-                xattr=self.xattr)
+            success, failed_item = self.client.crud("subdoc_delete",
+                                                    self.doc_id,
+                                                    "my_attr",
+                                                    xattr=self.xattr)
             self.assertFalse(failed_item, "Subdoc delete failed")
             self.assertTrue(success[self.doc_id]["cas"] != 0, "CAS is zero")
 
             # Get and validate
-            success, _ = self.client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+            success, _ = self.client.crud("subdoc_read",
                                           self.doc_id,
                                           "my_attr",
                                           xattr=self.xattr)
@@ -755,10 +761,10 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         # use xattr like a counters
         for i in xrange(5):
             self.log.info("Update iteration: %d" % (i+1))
-            self.__insert_sub_doc_and_validate(
-                DocLoading.Bucket.SubDocOps.UPSERT, "my_attr", i)
+            self.__insert_sub_doc_and_validate("subdoc_upsert",
+                                               "my_attr", i)
 
-            success, _ = self.client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+            success, _ = self.client.crud("subdoc_read",
                                           self.doc_id,
                                           "my_attr",
                                           xattr=self.xattr)
@@ -1619,7 +1625,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
         # Trying creating a subdoc without enough kv nodes
         success, failed_items = self.client.crud(
-            DocLoading.Bucket.SubDocOps.INSERT
+            "subdoc_insert",
             self.doc_id,
             ["my_attr", "value"],
             xattr=self.xattr,
@@ -1637,10 +1643,8 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                      DocLoading.Bucket.DocOps.DELETE]
         basic_ops = [DocLoading.Bucket.DocOps.CREATE,
                      DocLoading.Bucket.DocOps.UPDATE,
-                     DocLoading.Bucket.SubDocOps.INSERT,
-                     DocLoading.Bucket.SubDocOps.UPSERT,
-                     DocLoading.Bucket.SubDocOps.REPLACE,
-                     DocLoading.Bucket.SubDocOps.REMOVE,
+                     "subdoc_insert", "subdoc_upsert",
+                     "subdoc_replace", "subdoc_delete",
                      DocLoading.Bucket.DocOps.DELETE]
         doc_gen = dict()
         doc_gen["doc_crud"] = doc_generator(self.doc_id, 0, 1)
@@ -1691,9 +1695,9 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 value = "test_val"
                 if sw_test_op not in doc_tasks:
                     value = ["exists_path", "0"]
-                    if sw_test_op in [DocLoading.Bucket.SubDocOps.INSERT]:
+                    if sw_test_op in ["subdoc_insert"]:
                         value = ["non_exists_path", "val"]
-                    if sw_test_op in [DocLoading.Bucket.SubDocOps.REMOVE]:
+                    if sw_test_op in ["subdoc_delete"]:
                         value = "exists_path"
 
                 result = self.client.crud(sw_test_op, doc_key, value,
@@ -1737,7 +1741,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             error_sim.revert(CouchbaseError.STOP_MEMCACHED)
             self.task_manager.get_task_result(sync_write_task)
             if op_type != DocLoading.Bucket.DocOps.DELETE:
-                self.client.crud(DocLoading.Bucket.SubDocOps.INSERT,
+                self.client.crud("subdoc_insert",
                                  doc_key, ["exists_path", 1],
                                  durability=self.durability_level,
                                  timeout=3, time_unit="seconds",
@@ -1769,7 +1773,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
         self.client.crud(DocLoading.Bucket.DocOps.CREATE, doc_key, "{}",
                          timeout=3, time_unit="seconds")
-        self.client.crud(DocLoading.Bucket.SubDocOps.INSERT,
+        self.client.crud("subdoc_insert",
                          doc_key, ["exists_path", 1],
                          durability=self.durability_level,
                          timeout=3, time_unit="seconds",
@@ -1777,10 +1781,10 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                          xattr=self.xattr)
 
         sub_doc_op_dict = dict()
-        sub_doc_op_dict["insert"] = DocLoading.Bucket.SubDocOps.INSERT
-        sub_doc_op_dict["upsert"] = DocLoading.Bucket.SubDocOps.UPSERT
-        sub_doc_op_dict["replace"] = DocLoading.Bucket.SubDocOps.REPLACE
-        sub_doc_op_dict["remove"] = DocLoading.Bucket.SubDocOps.REMOVE
+        sub_doc_op_dict["insert"] = "subdoc_insert"
+        sub_doc_op_dict["upsert"] = "subdoc_upsert"
+        sub_doc_op_dict["replace"] = "subdoc_replace"
+        sub_doc_op_dict["remove"] = "subdoc_delete"
 
         for op_type in sub_doc_op_dict.keys():
             doc_gen[op_type] = sub_doc_generator(self.doc_id, 0, 1,

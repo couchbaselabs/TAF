@@ -5,7 +5,6 @@ Basic test cases with commit,rollback scenarios
 import threading
 
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import DocumentGenerator
 from sdk_client3 import SDKClient
@@ -381,9 +380,10 @@ class basic_ops(BaseTestCase):
 
     def __read_doc_and_validate(self, doc_id, expected_val, subdoc_key=None):
         if subdoc_key:
-            success, failed_items = self.client.crud(
-                DocLoading.Bucket.SubDocOps.LOOKUP, doc_id, subdoc_key,
-                xattr=True)
+            success, failed_items = self.client.crud("subdoc_read",
+                                                     doc_id,
+                                                     subdoc_key,
+                                                     xattr=True)
             self.assertFalse(failed_items, "Xattr read failed")
             self.assertEqual(expected_val,
                              str(success[doc_id]["value"][0]),
@@ -415,8 +415,7 @@ class basic_ops(BaseTestCase):
                   self.transaction_commit, self.update_count))
         thread.start()
         self.sleep(1)
-        self.__insert_sub_doc_and_validate("test_docs-0",
-                                           DocLoading.Bucket.SubDocOps.INSERT,
+        self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
                                            xattr_key, val)
 
         thread.join()
@@ -448,8 +447,8 @@ class basic_ops(BaseTestCase):
         thread.start()
         self.sleep(1, "Wait for transx-thread to start")
         for key, val in xattrs_to_insert:
-            self.__insert_sub_doc_and_validate(
-                "test_docs-0", DocLoading.Bucket.SubDocOps.INSERT, key, val)
+            self.__insert_sub_doc_and_validate("test_docs-0", "subdoc_insert",
+                                               key, val)
         thread.join()
 
         if self.transaction_commit:

@@ -1023,7 +1023,7 @@ class SDKClient(object):
             result = self.read(
                 key, timeout=timeout, time_unit=time_unit,
                 fail_fast=fail_fast)
-        elif op_type in DocLoading.Bucket.SubDocOps.INSERT:
+        elif op_type in [DocLoading.Bucket.SubDocOps.INSERT, "subdoc_insert"]:
             sub_key, value = value[0], value[1]
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getInsertMutateInSpec(
@@ -1044,7 +1044,7 @@ class SDKClient(object):
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
             return self.__translate_upsert_multi_sub_doc_result(result)
-        elif op_type in DocLoading.Bucket.SubDocOps.UPSERT:
+        elif op_type in [DocLoading.Bucket.SubDocOps.UPSERT, "subdoc_upsert"]:
             sub_key, value = value[0], value[1]
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getUpsertMutateInSpec(
@@ -1064,7 +1064,7 @@ class SDKClient(object):
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
             return self.__translate_upsert_multi_sub_doc_result(result)
-        elif op_type in DocLoading.Bucket.SubDocOps.REMOVE:
+        elif op_type in [DocLoading.Bucket.SubDocOps.REMOVE, "subdoc_delete"]:
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getRemoveMutateInSpec(
                 value, xattr))
@@ -1083,7 +1083,7 @@ class SDKClient(object):
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
             result = self.__translate_upsert_multi_sub_doc_result(result)
-        elif op_type == DocLoading.Bucket.SubDocOps.REPLACE:
+        elif op_type == "subdoc_replace":
             sub_key, value = value[0], value[1]
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getReplaceMutateInSpec(
@@ -1103,7 +1103,7 @@ class SDKClient(object):
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
             result = self.__translate_upsert_multi_sub_doc_result(result)
-        elif op_type in DocLoading.Bucket.SubDocOps.LOOKUP:
+        elif op_type in [DocLoading.Bucket.SubDocOps.LOOKUP, "subdoc_read"]:
             mutate_in_specs = list()
             mutate_in_specs.append(
                 SDKClient.sub_doc_op.getLookUpInSpec(value, xattr))
@@ -1490,7 +1490,7 @@ class SDKClient(object):
 
     def insert_xattr_attribute(self, document_id, path, value, xattr=True,
                                create_parents=True):
-        self.crud(DocLoading.Bucket.SubDocOps.INSERT,
+        self.crud("subdoc_insert",
                   document_id,
                   [path, value],
                   time_unit="seconds",
@@ -1499,7 +1499,7 @@ class SDKClient(object):
 
     def update_xattr_attribute(self, document_id, path, value, xattr=True,
                                create_parents=True):
-        self.crud(DocLoading.Bucket.SubDocOps.UPSERT,
+        self.crud("subdoc_upsert",
                   document_id,
                   [path, value],
                   time_unit="seconds",
