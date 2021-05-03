@@ -1,7 +1,7 @@
 import time
 
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import CbServer, DocLoading
+from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
@@ -963,22 +963,15 @@ class CollectionsRebalance(CollectionBase):
 
     def test_Orchestrator_Node_failover(self):
         """
-        create buckets and load initial items
-        """
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
-
-        """
-        Get the orchestrator ip value
+        Failover orchestrator node and remove it and rebalance-in it back
+        Repeats the above for a couple of cycles
         """
         self.graceful = self.input.param("graceful", False)
         self.cycles = self.input.param("cycles", 4)
         for cycle in range(self.cycles):
             self.log.info("Cycle {0}".format(cycle))
             orchestratorValue = self.cluster_util.find_orchestrator(self.cluster.master)
-
             orchestrator_node_ip = orchestratorValue[1].split("@")[1]
-
             for server in self.servers:
                 if server.ip == orchestrator_node_ip:
                     failover_nodes = [server]
@@ -986,7 +979,6 @@ class CollectionsRebalance(CollectionBase):
 
             result = self.task.failover(self.cluster.servers, failover_nodes=failover_nodes,
                                                     graceful=self.graceful)
-
             self.assertTrue(result, "Hard Failover failed")
 
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [],
@@ -1001,9 +993,7 @@ class CollectionsRebalance(CollectionBase):
                 if server.ip != orchestrator_node_ip:
                     node = server
                     break
-
             orchestratorValue = self.cluster_util.find_orchestrator(node)
-
             orchestrator_node_ip = orchestratorValue[1].split("@")[1]
             for server in self.servers:
                 if server.ip == orchestrator_node_ip:
@@ -1014,11 +1004,9 @@ class CollectionsRebalance(CollectionBase):
             Adding the failover node again and performing rebalance in
             """
             rest = RestConnection(self.cluster.master)
-            self.log.info("master node is:"+str(self.cluster.master.ip))
-            self.log.info("Added node is:"+str(failover_nodes[0].ip))
-            otpNode = rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+            self.log.info("master node is: "+str(self.cluster.master.ip))
+            self.log.info("Added node is: "+str(failover_nodes[0].ip))
+            _ = rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                 failover_nodes[0].ip, failover_nodes[0].port)
-
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [])
             self.task.jython_task_manager.get_task_result(rebalance_task)
-
