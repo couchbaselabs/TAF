@@ -2313,6 +2313,9 @@ class Dataset_Util(Link_Util):
                 dataset_source="internal", dataset_properties={},
                 bucket=bucket, scope=scope, collection=collection,
                 enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
+            
+            self.log.info("Adding Dataset object for - {0}".format(
+                dataset_obj.full_name))
 
             dataverse_obj.datasets[dataset_obj.full_name] = dataset_obj
 
