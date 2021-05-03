@@ -989,10 +989,8 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Changing hostname to an invalid hostname",
                 "hostname": self.invalid_ip,
                 "validate_error_msg": True,
-                "expected_error": "Cannot connect to host {0}:8091 for link {1}".format(
-                    self.invalid_ip,
-                    Dataset.format_name_for_error(
-                        True, self.link_info["dataverse"], self.link_info["name"]))
+                "expected_error": "Cannot connect to host {0}".format(
+                    self.invalid_ip)
             },
             {
                 "description": "Changing credentials to invalid credentials",
@@ -1028,10 +1026,8 @@ class CBASExternalLinks(CBASBaseTest):
                 "certificate": self.read_file(
                     self.analytics_cluster.root_ca_path),
                 "validate_error_msg": True,
-                "expected_error": "Cannot connect to host {0}:18091 for link {1}".format(
-                    self.link_info["hostname"],
-                    Dataset.format_name_for_error(
-                        True, self.link_info["dataverse"], self.link_info["name"]))
+                "expected_error": "Cannot connect to host {0}".format(
+                    self.link_info["hostname"])
             },
             {
                 "description": "Changing encryption type to full, with valid root certificate, clientcertificate and client key",
@@ -1059,10 +1055,8 @@ class CBASExternalLinks(CBASBaseTest):
                     self.analytics_cluster.client_certs[
                         self.analytics_cluster.master.ip]["cert_key"]),
                 "validate_error_msg": True,
-                "expected_error": "Cannot connect to host {0}:18091 for link {1}".format(
-                    self.link_info["hostname"],
-                    Dataset.format_name_for_error(
-                        True, self.link_info["dataverse"], self.link_info["name"]))
+                "expected_error": "Cannot connect to host {0}".format(
+                    self.link_info["hostname"])
             },
             {
                 "description": "Changing encryption type to full, with valid root certificate and clientKey and invalid clientcertificate",
@@ -1077,10 +1071,8 @@ class CBASExternalLinks(CBASBaseTest):
                     self.analytics_cluster.client_certs[
                         self.analytics_cluster.master.ip]["cert_pem"]),
                 "validate_error_msg": True,
-                "expected_error": "Cannot connect to host {0}:18091 for link {1}".format(
-                    self.link_info["hostname"],
-                    Dataset.format_name_for_error(
-                        True, self.link_info["dataverse"], self.link_info["name"]))
+                "expected_error": "Cannot connect to host {0}".format(
+                    self.link_info["hostname"])
             }
         ]
 
