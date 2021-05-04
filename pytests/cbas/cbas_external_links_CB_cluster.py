@@ -390,8 +390,7 @@ class CBASExternalLinks(CBASBaseTest):
                     "encryption": "full",
                     "certificate": self.read_file(
                         self.analytics_cluster.root_ca_path),
-                    "expected_error": "Cannot connect to host {0}".format(
-                        self.link_info["hostname"])
+                    "expected_error": "Cannot connect to host"
                 },
                 {
                     "description": "Create a link with an invalid client certificate",
