@@ -391,7 +391,7 @@ class CBASExternalLinks(CBASBaseTest):
                     "certificate": self.read_file(
                         self.analytics_cluster.root_ca_path),
                     "expected_error": "Cannot connect to host {0}".format(
-                        self.invalid_ip)
+                        self.link_info["hostname"])
                 },
                 {
                     "description": "Create a link with an invalid client certificate",
@@ -406,7 +406,7 @@ class CBASExternalLinks(CBASBaseTest):
                         self.analytics_cluster.client_certs[
                             self.analytics_cluster.master.ip]["cert_pem"]),
                     "expected_error": "Cannot connect to host {0}".format(
-                        self.invalid_ip)
+                        self.link_info["hostname"])
                 },
                 {
                     "description": "Create a link with an invalid client key",
@@ -421,7 +421,7 @@ class CBASExternalLinks(CBASBaseTest):
                     "username": None,
                     "password": None,
                     "expected_error": "Cannot connect to host {0}".format(
-                        self.invalid_ip)
+                        self.link_info["hostname"])
                 },
                 {
                     "description": "Create a link with a name that already exists in the dataverse",
