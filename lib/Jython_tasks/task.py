@@ -1983,7 +1983,8 @@ class ContinuousDocOpsTask(Task):
                 del task
         self.test_log.info("Closing SDK clients..")
         for client in self.clients:
-            client.close()
+            if client is not None:
+                client.close()
         self.test_log.info("Done doc_ops on %s. Total iterations: %d"
                            % (bucket.name, self.itr_count))
 
