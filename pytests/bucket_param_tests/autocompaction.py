@@ -4,6 +4,7 @@ import datetime
 from threading import Thread, Event
 
 from BucketLib.BucketOperations import BucketHelper
+from Cb_constants import DocLoading
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.documentgenerator import doc_generator
@@ -18,6 +19,7 @@ from cb_tools.cbstats import Cbstats
 class AutoCompactionTests(CollectionBase):
     def setUp(self):
         super(AutoCompactionTests, self).setUp()
+        self.key = self.input.param("key", "test_collections")
         self.is_crashed = Event()
         self.autocompaction_value = self.input.param("autocompaction_value", 0)
         self.during_ops = self.input.param("during_ops", None)
@@ -256,6 +258,23 @@ class AutoCompactionTests(CollectionBase):
         compaction_task = self.task.async_monitor_compaction(self.cluster,
                                                              self.bucket)
         self._monitor_DB_fragmentation(self.bucket)
+        bucket_obj = self.bucket_util.get_bucket_obj(
+            self.bucket_util.buckets, self.bucket.name)
+        collections = self.bucket_util.get_random_collections(
+            [bucket_obj], 1, 1, 1)
+        scope_dict = collections[self.bucket.name]["scopes"]
+        scope_name = scope_dict.keys()[0]
+        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        doc_update_task = self.task.async_continuous_doc_ops(
+            self.cluster, self.bucket, self.gen_update,
+            op_type=DocLoading.Bucket.DocOps.UPDATE,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            batch_size=300,
+            process_concurrency=4,
+            scope=scope_name,
+            collection=collection_name,
+            sdk_client_pool=self.sdk_client_pool)
         servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
         rebalance = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init],
@@ -266,6 +285,8 @@ class AutoCompactionTests(CollectionBase):
         monitor_fragm = self.task.async_monitor_db_fragmentation(
             self.cluster.master, self.bucket.name, 0)
         self.task.jython_task_manager.get_task_result(monitor_fragm)
+        doc_update_task.end_task()
+        self.task_manager.get_task_result(doc_update_task)
         self.bucket_util._wait_for_stats_all_buckets()
         remote_client.disconnect()
 
@@ -372,6 +393,23 @@ class AutoCompactionTests(CollectionBase):
         compaction_task = self.task.async_monitor_compaction(self.cluster,
                                                              self.bucket)
         self._monitor_DB_fragmentation(self.bucket)
+        bucket_obj = self.bucket_util.get_bucket_obj(
+            self.bucket_util.buckets, self.bucket.name)
+        collections = self.bucket_util.get_random_collections(
+            [bucket_obj], 1, 1, 1)
+        scope_dict = collections[self.bucket.name]["scopes"]
+        scope_name = scope_dict.keys()[0]
+        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        doc_update_task = self.task.async_continuous_doc_ops(
+            self.cluster, self.bucket, self.gen_update,
+            op_type=DocLoading.Bucket.DocOps.UPDATE,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            batch_size=300,
+            process_concurrency=4,
+            scope=scope_name,
+            collection=collection_name,
+            sdk_client_pool=self.sdk_client_pool)
         rebalance = self.task.async_rebalance(servs_init,
                                               servs_in, servs_out,
                                               check_vbucket_shuffling=False)
@@ -381,6 +419,8 @@ class AutoCompactionTests(CollectionBase):
         monitor_fragm = self.task.async_monitor_db_fragmentation(
             self.cluster.master, self.bucket.name, 0)
         self.task.jython_task_manager.get_task_result(monitor_fragm)
+        doc_update_task.end_task()
+        self.task_manager.get_task_result(doc_update_task)
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.validate_docs_per_collections_all_buckets()
         self.validate_test_failure()
@@ -691,13 +731,14 @@ class AutoCompactionTests(CollectionBase):
 
         doc_update_task = self.task.async_continuous_doc_ops(
             self.cluster, bucket, self.gen_update,
-            op_type="update",
+            op_type=DocLoading.Bucket.DocOps.UPDATE,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             batch_size=300,
             process_concurrency=4,
             scope=scope_name,
-            collection=collection_name)
+            collection=collection_name,
+            sdk_client_pool=self.sdk_client_pool)
 
         while monitor_fragm.completed is False:
             if end_time < time.time():
