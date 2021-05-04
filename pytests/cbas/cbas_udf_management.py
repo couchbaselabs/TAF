@@ -421,9 +421,10 @@ class CBASUDF(CBASBaseTest):
                 where_clause="age > {0}({1})".format(
                     udf_obj.full_name, ",".join(udf_obj.parameters)),
                 validate_error_msg=True,
-                expected_error="Illegal use of user-defined function {"
-                               "0}".format(
-                                   CBASHelper.unformat_name(udf_obj.full_name)),
+                expected_error="Illegal use of user-defined function {0}".format(
+                    CBASHelper.unformat_name(
+                        CBASHelper.metadata_format(udf_obj.dataverse_name), 
+                        udf_obj.name)),
                 timeout=300, analytics_timeout=300,
                 analytics_collection=False):
             self.fail("Dataset creation was successfull while using user "
@@ -483,6 +484,7 @@ class CBASUDF(CBASBaseTest):
     def test_drop_dataverse_with_udf_and_dependent_entities(self):
         self.log.info("Test started")
         self.setup_for_test()
+        self.log.info("Setup complete.")
 
         udf_obj = self.create_udf_object(
             2, self.input.param('body_type', "dataset"), 
