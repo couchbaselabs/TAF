@@ -83,3 +83,21 @@ class CbCli(CbCmdBase):
             raise Exception("\n".join(error))
         if "SUCCESS: Cluster is in developer preview mode" not in str(output):
             raise Exception("Expected output not seen: %s" % output)
+
+    def enable_n2n_encryption(self):
+        cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --enable" \
+             % (self.cbstatCmd, self.shellConn.ip, self.port,
+                self.username, self.password)
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception(str(error))
+        return output
+
+    def set_n2n_encryption_level(self, level="all"):
+        cmd = "%s setting-security -c %s:%s -u %s -p %s --set --cluster-encryption-level %s" \
+              % (self.cbstatCmd, self.shellConn.ip, self.port,
+                 self.username, self.password, level)
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception(str(error))
+        return output

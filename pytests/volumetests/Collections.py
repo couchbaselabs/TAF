@@ -10,6 +10,7 @@ from com.couchbase.client.java.query import *
 
 from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
+from couchbase_utils.cb_tools.cb_cli import CbCli
 from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
 from BucketLib.BucketOperations import BucketHelper
@@ -31,7 +32,6 @@ class volume(CollectionBase):
         super(volume, self).setUp()
         self.bucket_util._expiry_pager(val=5)
         self.rest = RestConnection(self.servers[0])
-        self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.exclude_nodes = [self.cluster.master]
         self.skip_check_logs = False
@@ -50,6 +50,14 @@ class volume(CollectionBase):
             value = "[{S, [{high_cardinality_enabled, true}, {high_cardinality_scrape_interval, %s}]} " \
                     "|| S <- [index, fts, kv, cbas, eventing]]" % self.scrape_interval
             StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("services", value)
+
+        self.enable_n2n_encryption = self.input.param("enable_n2n_encryption", False)
+        if self.enable_n2n_encryption:
+            shell_conn = RemoteMachineShellConnection(self.cluster.master)
+            cb_cli = CbCli(shell_conn)
+            cb_cli.enable_n2n_encryption()
+            cb_cli.set_n2n_encryption_level(level="all")
+            shell_conn.disconnect()
 
         self.doc_and_collection_ttl = self.input.param("doc_and_collection_ttl", False)  # For using doc_ttl + coll_ttl
         self.skip_validations = self.input.param("skip_validations", True)
@@ -83,6 +91,7 @@ class volume(CollectionBase):
         self.query_thread = None
         self.ui_stats_thread_flag = False
         self.ui_stats_thread = None
+
         # Setup the backup service
         if self.backup_service_test:
             self.backup_service.setup()
@@ -97,6 +106,7 @@ class volume(CollectionBase):
             self.query_thread_flag = False
             self.query_thread.join()
             self.query_thread = None
+        if self.ui_stats_thread:
             # Join ui_stats thread
             self.ui_stats_thread_flag = False
             self.ui_stats_thread.join()

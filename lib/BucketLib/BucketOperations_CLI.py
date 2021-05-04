@@ -67,3 +67,11 @@ class BucketHelper(BucketHelperRest):
             bucket_params["durabilityMinLevel"] = bucket_durability
 
         return self.cb_cli.edit_bucket(bucket_params)
+
+    @__use_shell
+    def enable_n2n_encryption(self):
+        return self.cb_cli.enable_n2n_encryption()
+
+    @__use_shell
+    def set_n2n_encryption_level(self, level="all"):
+        return self.cb_cli.set_n2n_encryption_level(level=level)
