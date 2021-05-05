@@ -5041,10 +5041,8 @@ class BucketUtils(ScopeUtils):
         start_time = end_time - 10
         metric_name = "kv_collection_item_count"
         label_values = {"bucket": bucket_name, "scope": scope_name, "collection": collection_name,
-                        "aggregationFunction": "sum", "start": start_time, "end": end_time}
+                        "nodesAggregation": "sum", "start": start_time, "end": end_time}
         content = StatsHelper(self.cluster.master).\
             get_range_api_metrics(metric_name, label_values=label_values)
         item_count = content["data"][0]["values"][-1][-1]
         return int(item_count)
-
-

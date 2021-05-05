@@ -101,7 +101,7 @@ class StatsHelper(RestConnection):
         :metric_name: metric_name to query
         :function: function such as rate, avg_over_time
         :label_values: dict of label as key and it's value as value
-        :optional_params: optional params like start,end,step,nodes,time_window,aggregationFunction
+        :optional_params: optional params like start,end,step,nodes,time_window,nodesAggregation
         :return json.loads(content): dictionary of returned metrics
         """
         api = '%s%s%s' % (self.base_url, '/pools/default/stats/range/', urllib.quote_plus("%s" % metric_name))
@@ -136,7 +136,7 @@ class StatsHelper(RestConnection):
         :metric_name: metric_name to query
         :function: function such as rate, avg_over_time
         :label_values: dict of label as key and it's value as value
-        :optional_params: optional params like ,nodes,aggregationFunction
+        :optional_params: optional params like ,nodes,nodesAggregation
         :return json.loads(content): dictionary of returned metrics
         """
         api = '%s%s%s' % (self.base_url, '/pools/default/stats/instant/', urllib.quote_plus("%s" % metric_name))
@@ -431,73 +431,73 @@ class StatsHelper(RestConnection):
         Method that returns important ui params, given a bucket_name
         """
         ui_params = [[{"step": 1, "start": -60, "metric": {"name": "kv_ops", "bucket": bucket_name},
-                       "aggregationFunction": "sum", "applyFunctions": ["irate", "sum"]},
-                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests"}, "aggregationFunction": "sum",
+                       "nodesAggregation": "sum", "applyFunctions": ["irate", "sum"]},
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests"}, "nodesAggregation": "sum",
                        "applyFunctions": ["irate"]}, {"step": 1, "start": -60, "metric": {"name": "fts_total_queries",
                                                                                           "bucket":
                                                                                               bucket_name},
-                                                      "aggregationFunction": "sum", "applyFunctions": ["irate"]},
+                                                      "nodesAggregation": "sum", "applyFunctions": ["irate"]},
                       {"step": 1, "start": -60,
                        "metric": {"name": "kv_ep_tmp_oom_errors", "bucket": bucket_name},
-                       "aggregationFunction": "sum", "applyFunctions": ["irate"]}, {"step": 1, "start": -60, "metric": {
+                       "nodesAggregation": "sum", "applyFunctions": ["irate"]}, {"step": 1, "start": -60, "metric": {
                 "name": "kv_ep_cache_miss_ratio", "bucket": bucket_name},
-                                                                                    "aggregationFunction": "sum"},
+                                                                                    "nodesAggregation": "sum"},
                       {"step": 1, "start": -60,
                        "metric": {"name": "kv_ops", "op": "get", "bucket": bucket_name},
-                       "aggregationFunction": "sum", "applyFunctions": ["irate", "sum"]}, {"step": 1, "start": -60,
+                       "nodesAggregation": "sum", "applyFunctions": ["irate", "sum"]}, {"step": 1, "start": -60,
                                                                                            "metric": {"name": "kv_ops",
                                                                                                       "op": "set",
                                                                                                       "bucket":
                                                                                                           bucket_name},
-                                                                                           "aggregationFunction": "sum",
+                                                                                           "nodesAggregation": "sum",
                                                                                            "applyFunctions": ["irate",
                                                                                                               "sum"]},
                       {"step": 1, "start": -60, "metric": {"name": "kv_ops", "op": "delete", "result": "hit",
                                                            "bucket": bucket_name},
-                       "aggregationFunction": "sum", "applyFunctions": ["irate"]},
+                       "nodesAggregation": "sum", "applyFunctions": ["irate"]},
                       {"step": 1, "start": -60, "metric": {"name": "accesses", "bucket": bucket_name},
-                       "aggregationFunction": "sum"}, {"step": 1, "start": -60, "metric": {"name": "kv_mem_used_bytes",
+                       "nodesAggregation": "sum"}, {"step": 1, "start": -60, "metric": {"name": "kv_mem_used_bytes",
                                                                                            "bucket": bucket_name},
-                                                       "aggregationFunction": "sum"},
+                                                       "nodesAggregation": "sum"},
                       {"step": 1, "start": -60, "metric": {
-                          "name": "kv_ep_mem_low_wat", "bucket": bucket_name}, "aggregationFunction": "sum"},
+                          "name": "kv_ep_mem_low_wat", "bucket": bucket_name}, "nodesAggregation": "sum"},
                       {"step": 1, "start": -60,
                        "metric": {"name": "kv_ep_mem_high_wat", "bucket": bucket_name},
-                       "aggregationFunction": "sum"}, {"step": 1, "start": -60, "metric": {"name": "kv_curr_items",
+                       "nodesAggregation": "sum"}, {"step": 1, "start": -60, "metric": {"name": "kv_curr_items",
                                                                                            "bucket": bucket_name},
-                                                       "aggregationFunction": "sum"},
+                                                       "nodesAggregation": "sum"},
                       {"step": 1, "start": -60, "metric": {
                           "name": "kv_vb_replica_curr_items", "bucket": bucket_name},
-                       "aggregationFunction": "sum"},
+                       "nodesAggregation": "sum"},
                       {"step": 1, "start": -60,
                        "metric": {"name": "kv_vb_active_resident_items_ratio", "bucket": bucket_name},
-                       "aggregationFunction": "sum"}, {"step": 1, "start": -60,
+                       "nodesAggregation": "sum"}, {"step": 1, "start": -60,
                                                        "metric": {"name": "kv_vb_replica_resident_items_ratio",
                                                                   "bucket": bucket_name},
-                                                       "aggregationFunction": "sum"},
+                                                       "nodesAggregation": "sum"},
                       {"step": 1, "start": -60, "metric": {
                           "name": "kv_disk_write_queue", "bucket": bucket_name}}, {"step": 1, "start": -60,
                                                                               "metric": {
                                                                                   "name": "kv_ep_data_read_failed",
                                                                                   "bucket":
                                                                                       bucket_name},
-                                                                              "aggregationFunction": "sum"},
+                                                                              "nodesAggregation": "sum"},
                       {"step": 1, "start": -60,
                        "metric": {"name": "kv_ep_data_write_failed", "bucket": bucket_name},
-                       "aggregationFunction": "sum"},
-                      {"step": 1, "start": -60, "metric": {"name": "n1ql_errors"}, "aggregationFunction": "sum",
+                       "nodesAggregation": "sum"},
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_errors"}, "nodesAggregation": "sum",
                        "applyFunctions": ["irate"]},
                       {"step": 1, "start": -60, "metric": {"name": "eventing_failed_count"},
-                       "aggregationFunction": "sum"},
-                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_250ms"}, "aggregationFunction": "sum",
+                       "nodesAggregation": "sum"},
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_250ms"}, "nodesAggregation": "sum",
                        "applyFunctions": ["irate"]},
-                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_500ms"}, "aggregationFunction": "sum",
+                      {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_500ms"}, "nodesAggregation": "sum",
                        "applyFunctions": ["irate"]},
                       {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_1000ms"},
-                       "aggregationFunction": "sum",
+                       "nodesAggregation": "sum",
                        "applyFunctions": ["irate"]},
                       {"step": 1, "start": -60, "metric": {"name": "n1ql_requests_5000ms"},
-                       "aggregationFunction": "sum",
+                       "nodesAggregation": "sum",
                        "applyFunctions": ["irate"]}, {"step": 1, "start": -60,
                                                       "metric": {"name": "replication_changes_left",
                                                                  "bucket": bucket_name}},
