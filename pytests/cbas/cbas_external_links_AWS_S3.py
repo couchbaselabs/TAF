@@ -1299,7 +1299,7 @@ class CBASExternalLinks(CBASBaseTest):
                          args=(cbas_query, result, 300, 300,))
         thread1.start()
         threads.append(thread1)
-        self.sleep(30)
+        self.sleep(3)
 
         thread2 = Thread(target=self.perform_delete_recreate_file_on_AWS_S3,
                          name="s3_thread",
