@@ -14,6 +14,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from StatsLib.StatsOperations import StatsHelper
 
 from sdk_exceptions import SDKException
+from FtsLib.FtsOperations import FtsHelper
 
 
 class CollectionsRebalance(CollectionBase):
@@ -72,6 +73,11 @@ class CollectionsRebalance(CollectionBase):
             self.num_savepoints = self.input.param("num_savepoints", 0)
             self.override_savepoint = self.input.param("override_savepoint", 0)
             self.num_buckets = self.input.param("num_buckets", 1)
+        self.create_metakv_entries = self.input.param("create_metakv_entries", False)
+        if self.create_metakv_entries:
+            self.log.info("Creating metakv entries start")
+            self.load_metakv_entries_using_fts()
+            self.log.info("Creating metakv entries end")
 
     def tearDown(self):
         if self.scrape_interval:
@@ -122,6 +128,87 @@ class CollectionsRebalance(CollectionBase):
             except Exception as error:
                 self.log.info("error is %s"%error)
                 self.retry_n1qltxn = True
+
+    def load_metakv_entries_using_fts(self):
+        self.fts_index_partitions = self.input.param("fts_index_partition", 6)
+        self.fts_indexes_to_create_drop = self.input.param("fts_indexes_to_create_drop", 500)
+
+        def create_fts_index(bucket_obj, t_index, s_name, c_name):
+            fts_index_name = "%s_fts_%d" % (bucket_obj.name.replace(".", ""), t_index)
+            status, content = fts_helper.create_fts_index_from_json(
+                fts_index_name,
+                fts_param_template % (fts_index_name,
+                                      bucket_obj.name,
+                                      self.fts_index_partitions,
+                                      s_name, c_name))
+            if status is False:
+                self.fail("Failed to create fts index %s: %s"
+                          % (fts_index_name, content))
+
+        def drop_fts_index(b_name, t_index):
+            fts_index_name = "%s_fts_%d" % (b_name.replace(".", ""), t_index)
+            status, content = fts_helper.delete_fts_index(fts_index_name)
+            if status is False:
+                self.fail("Failed to drop fts index %s: %s"
+                          % (fts_index_name, content))
+
+        fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
+            service_type=CbServer.Services.FTS,
+            get_all_nodes=False))
+        fts_param_template = '{ \
+          "type": "fulltext-index", \
+          "name": "%s", \
+          "sourceType": "gocbcore", \
+          "sourceName": "%s", \
+          "planParams": { \
+            "maxPartitionsPerPIndex": 1024, \
+            "indexPartitions": %d \
+          }, \
+          "params": { \
+            "doc_config": { \
+              "docid_prefix_delim": "", \
+              "docid_regexp": "", \
+              "mode": "scope.collection.type_field", \
+              "type_field": "type" \
+            }, \
+            "mapping": { \
+              "analysis": {}, \
+              "default_analyzer": "standard", \
+              "default_datetime_parser": "dateTimeOptional", \
+              "default_field": "_all", \
+              "default_mapping": { \
+                "dynamic": true, \
+                "enabled": false \
+              }, \
+              "default_type": "_default", \
+              "docvalues_dynamic": false, \
+              "index_dynamic": true, \
+              "store_dynamic": false, \
+              "type_field": "_type", \
+              "types": { \
+                "%s.%s": { \
+                  "dynamic": true, \
+                  "enabled": true \
+                } \
+              } \
+            }, \
+            "store": { \
+              "indexType": "scorch", \
+              "segmentVersion": 15 \
+            } \
+          }, \
+          "sourceParams": {} \
+        }'
+
+        bucket = self.bucket_util.buckets[0]
+        for index in range(0, self.fts_indexes_to_create_drop):
+            random_scope_collection = \
+                self.bucket_util.get_random_collections([bucket], 1, 1, 1)[bucket.name]["scopes"]
+            scope_name = random_scope_collection.keys()[0]
+            col_name = \
+                random_scope_collection[scope_name]["collections"].keys()[0]
+            create_fts_index(bucket, index, scope_name, col_name)
+            drop_fts_index(bucket.name, index)
 
     def validate_N1qltxn_data(self):
         if self.retry_n1qltxn:
