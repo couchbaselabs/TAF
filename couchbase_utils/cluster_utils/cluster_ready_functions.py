@@ -111,6 +111,16 @@ class ClusterUtils:
         # set it to 0.04 i.e. 1 hour if not given
         return self.rest.set_metadata_purge_interval(interval)
 
+    def create_metakv_key(self, key, value):
+        return self.rest.create_metakv_key(key, value)
+
+    def delete_metakv_key(self, key):
+        return self.rest.delete_metakv_key(key)
+
+    def get_metakv_dicts(self, key=None):
+        metakv_key_count, metakv_dict = self.rest.get_metakv_dicts(key=key)
+        return metakv_key_count, metakv_dict
+
     def set_rebalance_moves_per_nodes(self, rebalanceMovesPerNode=4):
         body = dict()
         body["rebalanceMovesPerNode"] = rebalanceMovesPerNode
@@ -448,7 +458,6 @@ class ClusterUtils:
                 remote_client = RemoteMachineShellConnection(server)
                 remote_client.stop_memcached()
                 remote_client.disconnect()
-
 
     def start_firewall_on_node(self, node):
         """ Method to start a server which is subject to failover """

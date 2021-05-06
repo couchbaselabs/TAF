@@ -2012,6 +2012,51 @@ class RestConnection(object):
                                 .format(content))
         return status
 
+    def create_metakv_key(self, key, value):
+        """
+        Creates a random metakv key
+        """
+        api = self.baseUrl + "_metakv/" + str(key)
+        params = {"value": value}
+        status, content, _ = self._http_request(api, "PUT", urllib.urlencode(params))
+        if not status:
+            raise Exception(content)
+
+    def delete_metakv_key(self, key):
+        """
+        Deletes a metakv key
+        """
+        api = self.baseUrl + "_metakv/" + str(key)
+        status, content, _ = self._http_request(api, "DELETE")
+        if not status:
+            raise Exception(content)
+
+    def get_metakv_dicts(self, key=None):
+        """
+        Returns metakv_key_count,  list of metakv_dicts
+        if key is given, then returns dict of only that key
+        else dict of all keys are returned
+        CAUTION: Don't use when metakv has too many keys to cause OOM
+        This is useful when key is NOT deleted
+        """
+        if key is None:
+            api = self.baseUrl + "_metakv/"
+        else:
+            api = self.baseUrl + "_metakv/" + str(key)
+        status, content, _ = self._http_request(api, "GET")
+        if not status:
+            raise Exception(content)
+        else:
+            # content is a string of dicts like: `{}{}{}'
+            content = content.replace("}{", "}seperator{")
+            # convert it to ['{}', '{}']
+            content = content.split("seperator")
+            metakv_key_count = len(content)
+            metakv_dicts = []
+            for json_str in content:
+                metakv_dicts.append(json.loads(json_str))
+            return metakv_key_count, metakv_dicts
+
     def stop_rebalance(self, wait_timeout=10):
         api = self.baseUrl + '/controller/stopRebalance'
         status, content, header = self._http_request(api, 'POST')
