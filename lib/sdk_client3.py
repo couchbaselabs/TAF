@@ -31,9 +31,11 @@ from com.couchbase.client.core.error import \
     TemporaryFailureException, \
     TimeoutException
 from com.couchbase.client.core.retry import FailFastRetryStrategy
+from com.couchbase.client.core.service import ServiceType
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.codec import RawBinaryTranscoder,\
     RawStringTranscoder
+from com.couchbase.client.java.diagnostics import WaitUntilReadyOptions
 from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.java.json import JsonObject
 from com.couchbase.client.java.manager.collection import CollectionSpec
@@ -288,8 +290,12 @@ class SDKClient(object):
             while self.bucket is not None and count < 5:
                 try:
                     self.bucketObj = self.cluster.bucket(self.bucket.name)
+                    wait_until_ready_options = \
+                        WaitUntilReadyOptions.waitUntilReadyOptions() \
+                        .serviceTypes(ServiceType.KV)
                     self.bucketObj.waitUntilReady(
-                        self.get_duration(120, "seconds"))
+                        self.get_duration(120, "seconds"),
+                        wait_until_ready_options)
                     self.select_collection(self.scope_name,
                                            self.collection_name)
                     break
