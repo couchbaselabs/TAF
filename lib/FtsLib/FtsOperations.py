@@ -1,4 +1,4 @@
-from FtsLib.FtsOperations_Rest import CBASHelper as FtsLib
+from FtsLib.FtsOperations_Rest import FtsHelper as FtsLib
 
 
 class FtsHelper(FtsLib):

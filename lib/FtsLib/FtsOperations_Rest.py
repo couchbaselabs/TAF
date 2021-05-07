@@ -4,9 +4,9 @@ import requests
 from connections.Rest_Connection import RestConnection
 
 
-class CBASHelper(RestConnection):
+class FtsHelper(RestConnection):
     def __init__(self, fts_node):
-        super(CBASHelper, self).__init__(fts_node)
+        super(FtsHelper, self).__init__(fts_node)
 
     def create_fts_index_from_json(self, index_name, param_data):
         api = self.ftsUrl + "api/index/%s" % index_name
