@@ -65,16 +65,32 @@ class volume(CollectionBase):
         # Services to be added on rebalance-in nodes during the volume test
         self.services_for_rebalance_in = self.input.param("services_for_rebalance_in", None)
 
-        # Initialize parameters for index querying
-        self.n1ql_nodes = None
+        self.index_and_query_setup()
+        self.query_thread_flag = False
+        self.query_thread = None
+        self.ui_stats_thread_flag = False
+        self.ui_stats_thread = None
+
+        # Setup the backup service
+        if self.backup_service_test:
+            self.backup_service.setup()
+
+    def index_and_query_setup(self):
+        """
+        Init index, query objects and create initial indexes
+        """
         self.number_of_indexes = self.input.param("number_of_indexes", 0)
+        self.n1ql_nodes = None
         self.flush_buckets_before_indexes_creation = False
         if self.number_of_indexes > 0:
             self.flush_buckets_before_indexes_creation = \
                 self.input.param("flush_buckets_before_indexes_creation", True)
             if self.flush_buckets_before_indexes_creation:
                 self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
+            self.kv_mem_quota = self.input.param("kv_mem_quota", 10000)
+            self.index_mem_quota = self.input.param("index_mem_quota", 11000)
             self.set_memory_quota_kv_index()
+
             self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
                                                                             get_all_nodes=True,
                                                                             servers=self.cluster.servers[
@@ -85,22 +101,27 @@ class volume(CollectionBase):
                 self.n1ql_rest_connections.append(RestConnection(n1ql_node))
                 self.exclude_nodes.append(n1ql_node)
             self.n1ql_turn_counter = 0  # To distribute the turn of using n1ql nodes for query. Start with first node
+
             indexes_to_build = self.create_indexes_and_initialize_queries()
             self.build_deferred_indexes(indexes_to_build)
-        self.query_thread_flag = False
-        self.query_thread = None
-        self.ui_stats_thread_flag = False
-        self.ui_stats_thread = None
-
-        # Setup the backup service
-        if self.backup_service_test:
-            self.backup_service.setup()
 
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
         if self.scrape_interval:
             self.log.info("Reverting prometheus settings back to default")
             StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
+        self.close_all_threads()
+        # Cleanup the backup service
+        if self.backup_service_test:
+            self.backup_service.clean()
+        self.log.info("Printing bucket stats before teardown")
+        self.bucket_util.print_bucket_stats()
+        if self.collect_pcaps:
+            self.start_fetch_pcaps()
+        if not self.skip_check_logs:
+            self.check_logs()
+
+    def close_all_threads(self):
         if self.query_thread:
             # Join query thread
             self.query_thread_flag = False
@@ -111,15 +132,6 @@ class volume(CollectionBase):
             self.ui_stats_thread_flag = False
             self.ui_stats_thread.join()
             self.ui_stats_thread = None
-        # Cleanup the backup service
-        if self.backup_service_test:
-            self.backup_service.clean()
-        self.log.info("Printing bucket stats before teardown")
-        self.bucket_util.print_bucket_stats()
-        if self.collect_pcaps:
-            self.start_fetch_pcaps()
-        if not self.skip_check_logs:
-            self.check_logs()
 
     def check_logs(self):
         self.log.info("Checking logs on {0}".format(self.servers))
@@ -132,14 +144,11 @@ class volume(CollectionBase):
 
     def set_memory_quota_kv_index(self):
         """
-        To set memory quota of KV and index services before starting step 5 of volume test
+        To set memory quota of KV and index services before creating indexes
         """
-        if self.number_of_indexes == 0:
-            return
-        else:
-            self.rest.set_service_mem_quota(
-                {CbServer.Settings.KV_MEM_QUOTA: 10000,
-                 CbServer.Settings.INDEX_MEM_QUOTA: 11000})
+        self.rest.set_service_mem_quota(
+            {CbServer.Settings.KV_MEM_QUOTA: int(self.kv_mem_quota),
+             CbServer.Settings.INDEX_MEM_QUOTA: int(self.index_mem_quota)})
 
     def run_cbq_query(self, query):
         """
@@ -721,7 +730,7 @@ class volume(CollectionBase):
             self.log.info("Step {0}: Flush bucket(s) and start the entire process again".format(step_count))
             self.loop += 1
             if self.loop < self.iterations:
-                # Flush buckets(s)
+                # Flush bucket(s)
                 self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
                 self.sleep(10)
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
@@ -736,13 +745,6 @@ class volume(CollectionBase):
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
             else:
                 if self.number_of_indexes > 0:
-                    # Join query thread
-                    self.query_thread_flag = False
-                    self.query_thread.join()
-                    self.query_thread = None
-                    # Join ui_stats thread
-                    self.ui_stats_thread_flag = False
-                    self.ui_stats_thread.join()
-                    self.ui_stats_thread = None
+                    self.close_all_threads()
                 self.log.info("Volume Test Run Complete")
         ############################################################################################################################
