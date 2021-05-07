@@ -2,7 +2,9 @@ import threading
 import time
 import random
 import math
+import urllib
 
+from FtsLib.FtsOperations import FtsHelper
 from backup_service import BackupServiceTest
 from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
@@ -66,6 +68,7 @@ class volume(CollectionBase):
         self.services_for_rebalance_in = self.input.param("services_for_rebalance_in", None)
 
         self.index_and_query_setup()
+        self.fts_setup()
         self.query_thread_flag = False
         self.query_thread = None
         self.ui_stats_thread_flag = False
@@ -104,6 +107,17 @@ class volume(CollectionBase):
 
             indexes_to_build = self.create_indexes_and_initialize_queries()
             self.build_deferred_indexes(indexes_to_build)
+
+    def fts_setup(self):
+        """
+        Create initial fts indexes
+        """
+        self.fts_index_partitions = self.input.param("fts_index_partition", 6)
+        self.fts_indexes_to_create = self.input.param("fts_indexes_to_create", 500)
+        self.fts_indexes_to_recreate = self.input.param("fts_indexes_to_recreate", 10)
+        self.fts_mem_quota = self.input.param("fts_mem_quota", 22000)
+        self.set_memory_quota_fts()
+        _ = self.create_fts_indexes(self.fts_indexes_to_create)
 
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
@@ -149,6 +163,13 @@ class volume(CollectionBase):
         self.rest.set_service_mem_quota(
             {CbServer.Settings.KV_MEM_QUOTA: int(self.kv_mem_quota),
              CbServer.Settings.INDEX_MEM_QUOTA: int(self.index_mem_quota)})
+
+    def set_memory_quota_fts(self):
+        """
+        Set fts memoryquota
+        """
+        self.rest.set_service_mem_quota(
+            {CbServer.Settings.FTS_MEM_QUOTA: int(self.fts_mem_quota)})
 
     def run_cbq_query(self, query):
         """
@@ -257,6 +278,125 @@ class volume(CollectionBase):
             for bucket in self.bucket_util.buckets:
                 _ = StatsHelper(self.cluster.master).post_range_api_metrics(bucket.name)
                 self.sleep(10)
+
+    @staticmethod
+    def get_fts_param_template():
+        fts_param_template = '{ \
+                  "type": "fulltext-index", \
+                  "name": "%s", \
+                  "sourceType": "gocbcore", \
+                  "sourceName": "%s", \
+                  "planParams": { \
+                    "maxPartitionsPerPIndex": 1024, \
+                    "indexPartitions": %d \
+                  }, \
+                  "params": { \
+                    "doc_config": { \
+                      "docid_prefix_delim": "", \
+                      "docid_regexp": "", \
+                      "mode": "scope.collection.type_field", \
+                      "type_field": "type" \
+                    }, \
+                    "mapping": { \
+                      "analysis": {}, \
+                      "default_analyzer": "standard", \
+                      "default_datetime_parser": "dateTimeOptional", \
+                      "default_field": "_all", \
+                      "default_mapping": { \
+                        "dynamic": true, \
+                        "enabled": false \
+                      }, \
+                      "default_type": "_default", \
+                      "docvalues_dynamic": false, \
+                      "index_dynamic": true, \
+                      "store_dynamic": false, \
+                      "type_field": "_type", \
+                      "types": { \
+                        "%s.%s": { \
+                          "dynamic": true, \
+                          "enabled": true \
+                        } \
+                      } \
+                    }, \
+                    "store": { \
+                      "indexType": "scorch", \
+                      "segmentVersion": 15 \
+                    } \
+                  }, \
+                  "sourceParams": {} \
+                }'
+        return fts_param_template
+
+    def create_fts_indexes(self, count=100, base_name="fts"):
+        """
+        Creates count number of fts indexes on collections
+        count should be less than number of collections
+        """
+        self.log.info("Creating {} fts indexes ".format(count))
+        fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
+            service_type=CbServer.Services.FTS,
+            get_all_nodes=False))
+        couchbase_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "couchbase"]
+        created_count = 0
+        fts_indexes = dict()
+        for bucket in couchbase_buckets:
+            fts_indexes[bucket.name] = dict()
+            for _, scope in bucket.scopes.items():
+                fts_indexes[bucket.name][scope.name] = dict()
+                for _, collection in scope.collections.items():
+                    fts_index_name = base_name + str(created_count)
+                    fts_param_template = self.get_fts_param_template()
+                    status, content = fts_helper.create_fts_index_from_json(
+                        fts_index_name,
+                        fts_param_template % (fts_index_name,
+                                              bucket.name,
+                                              self.fts_index_partitions,
+                                              scope.name, collection.name))
+
+                    if status is False:
+                        self.fail("Failed to create fts index %s: %s"
+                                  % (fts_index_name, content))
+                    if collection not in fts_indexes[bucket.name][scope.name]:
+                        fts_indexes[bucket.name][scope.name][collection.name] = list()
+                    fts_indexes[bucket.name][scope.name][collection.name].append(fts_index_name)
+                    created_count = created_count + 1
+                    if created_count >= count:
+                        return fts_indexes
+
+    def drop_fts_indexes(self, fts_dict, count=10):
+        """
+        Drop count number of fts indexes using fts name
+        from fts_dict
+        """
+        self.log.info("Dropping {0} fts indexes".format(count))
+        fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
+            service_type=CbServer.Services.FTS,
+            get_all_nodes=False))
+        indexes_dropped = dict()
+        dropped_count = 0
+        for bucket, bucket_data in fts_dict.items():
+            indexes_dropped[bucket] = dict()
+            for scope, collection_data in bucket_data.items():
+                indexes_dropped[bucket][scope] = dict()
+                for collection, fts_index_names in collection_data.items():
+                    for fts_index_name in fts_index_names:
+                        status, content = fts_helper.delete_fts_index(fts_index_name)
+                        if status is False:
+                            self.fail("Failed to drop fts index %s: %s"
+                                      % (fts_index_name, content))
+                        if collection not in indexes_dropped[bucket][scope]:
+                            indexes_dropped[bucket][scope][collection] = list()
+                        indexes_dropped[bucket][scope][collection].append(fts_index_name)
+                        dropped_count = dropped_count + 1
+                        if dropped_count >= count:
+                            return indexes_dropped
+
+    def create_and_drop_fts_indexes(self, count=10):
+        """
+        Create and drop count number of fts indexes
+        """
+        fts_dict = self.create_fts_indexes(count=count, base_name="fts-recreate-")
+        self.drop_fts_indexes(fts_dict)
 
     # Inducing and reverting failures wrt memcached/prometheus process
     def induce_and_revert_failure(self, action):
@@ -512,6 +652,7 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
+            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             #########################################################################################################################
@@ -521,6 +662,7 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
+            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             #######################################################################################################################
@@ -530,6 +672,7 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
+            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             ########################################################################################################################
@@ -540,6 +683,7 @@ class volume(CollectionBase):
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.tasks = []
+            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             ########################################################################################################################
@@ -553,6 +697,7 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
+            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             ########################################################################################################################
@@ -575,6 +720,7 @@ class volume(CollectionBase):
                 self.wait_for_rebalance_to_complete(rebalance_task)
                 self.wait_for_async_data_load_to_complete(task)
                 self.data_validation_collection()
+                self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
                 self.bucket_util.print_bucket_stats()
                 self.check_logs()
             self.durability_level = ""
@@ -675,6 +821,7 @@ class volume(CollectionBase):
                         rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
                         # self.sleep(600)
                         self.wait_for_rebalance_to_complete(rebalance_task)
+                    self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
                     self.bucket_util.print_bucket_stats()
                     self.check_logs()
             ########################################################################################################################
@@ -689,6 +836,7 @@ class volume(CollectionBase):
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.tasks = []
+            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             ########################################################################################################################
