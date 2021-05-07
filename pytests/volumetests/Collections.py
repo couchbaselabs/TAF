@@ -2,7 +2,6 @@ import threading
 import time
 import random
 import math
-import urllib
 
 from FtsLib.FtsOperations import FtsHelper
 from backup_service import BackupServiceTest
@@ -112,12 +111,13 @@ class volume(CollectionBase):
         """
         Create initial fts indexes
         """
-        self.fts_index_partitions = self.input.param("fts_index_partition", 6)
-        self.fts_indexes_to_create = self.input.param("fts_indexes_to_create", 500)
-        self.fts_indexes_to_recreate = self.input.param("fts_indexes_to_recreate", 10)
+        self.fts_indexes_to_create = self.input.param("fts_indexes_to_create", 0)
+        self.fts_indexes_to_recreate = self.input.param("fts_indexes_to_recreate", 0)
         self.fts_mem_quota = self.input.param("fts_mem_quota", 22000)
-        self.set_memory_quota_fts()
-        _ = self.create_fts_indexes(self.fts_indexes_to_create)
+        if self.fts_indexes_to_create > 0:
+            self.fts_index_partitions = self.input.param("fts_index_partition", 6)
+            self.set_memory_quota_fts()
+            _ = self.create_fts_indexes(self.fts_indexes_to_create)
 
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
@@ -151,7 +151,7 @@ class volume(CollectionBase):
         self.log.info("Checking logs on {0}".format(self.servers))
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if not self.crash_warning:
-            self.skip_check_logs = True # Setting this, as we don't have to check logs again in tearDown
+            self.skip_check_logs = True  # Setting this, as we don't have to check logs again in tearDown
             self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
             self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
@@ -266,7 +266,7 @@ class volume(CollectionBase):
                 result = self.run_cbq_query(select_query)
                 if result['status'] != "success":
                     self.log.warn("Query failed: {0}".format(select_query))
-                #time.sleep(1)
+                # time.sleep(1)
         self.log.info("Stopping select queries")
 
     def run_ui_stats_queries(self):
@@ -400,7 +400,7 @@ class volume(CollectionBase):
 
     # Inducing and reverting failures wrt memcached/prometheus process
     def induce_and_revert_failure(self, action):
-        target_node = self.servers[-1] # select last node
+        target_node = self.servers[-1]  # select last node
         remote = RemoteMachineShellConnection(target_node)
         error_sim = CouchbaseError(self.log, remote)
         error_sim.create(action)
@@ -652,7 +652,8 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
+            if self.fts_indexes_to_recreate > 0:
+                self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             #########################################################################################################################
@@ -662,7 +663,8 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
+            if self.fts_indexes_to_recreate > 0:
+                self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             #######################################################################################################################
@@ -672,7 +674,8 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
+            if self.fts_indexes_to_recreate > 0:
+                self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             ########################################################################################################################
@@ -683,11 +686,12 @@ class volume(CollectionBase):
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.tasks = []
-            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
+            if self.fts_indexes_to_recreate > 0:
+                self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             ########################################################################################################################
-            self.log.info("Step 9: Updating the bucket replica to 2")
+            self.log.info("Step 9: Updating the bucket replica to 2 and rebalance-in")
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
@@ -697,7 +701,8 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
+            if self.fts_indexes_to_recreate > 0:
+                self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             ########################################################################################################################
@@ -711,8 +716,8 @@ class volume(CollectionBase):
                 step_count = step_count + 1
                 self.log.info("Step {0}: {1}".format(step_count, action))
                 # TODO Uncomment this after debugging CBQE-6721
-                #self.log.info("Forcing durability level: MAJORITY")
-                #self.durability_level = "MAJORITY"
+                # self.log.info("Forcing durability level: MAJORITY")
+                # self.durability_level = "MAJORITY"
                 task = self.data_load_collection()
                 self.induce_and_revert_failure(action)
                 # Rebalance is required after error is reverted
@@ -720,7 +725,8 @@ class volume(CollectionBase):
                 self.wait_for_rebalance_to_complete(rebalance_task)
                 self.wait_for_async_data_load_to_complete(task)
                 self.data_validation_collection()
-                self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
+                if self.fts_indexes_to_recreate > 0:
+                    self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
                 self.bucket_util.print_bucket_stats()
                 self.check_logs()
             self.durability_level = ""
@@ -748,51 +754,61 @@ class volume(CollectionBase):
                     disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
                         kv_nodes, self.bucket_util.buckets, path=None)
 
-                    self.rest = RestConnection(self.cluster.master)
-                    self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-                    self.chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1,
-                                                               exclude_nodes=self.exclude_nodes)
+                    # Pick node(s) for failover
+                    failover_nodes = list()
+                    kv_nodes = self.cluster_util.get_kv_nodes()
+                    for node in kv_nodes:
+                        if node.ip != self.cluster.master.ip:
+                            failover_nodes.append(node)
+                            break
 
                     reset_flag = False
                     if (not self.durability_level) and failover == "Hard":
                         # Force a durability level to prevent data loss during hard failover
-                        #TODO Uncomment this after debugging CBQE-6721
-                        #self.log.info("Forcing durability level: MAJORITY")
-                        #self.durability_level = "MAJORITY"
+                        # TODO Uncomment this after debugging CBQE-6721
+                        # self.log.info("Forcing durability level: MAJORITY")
+                        # self.durability_level = "MAJORITY"
                         reset_flag = True
                     task = self.data_load_collection()
                     if reset_flag:
                         self.durability_level = ""
 
-                    # Mark Node for failover
+                    # Failover the node(s)
                     if failover == "Graceful":
-                        self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=True)
+                        failover_result = self.task.failover(self.cluster.nodes_in_cluster,
+                                                             failover_nodes=failover_nodes,
+                                                             graceful=True, wait_for_pending=120,
+                                                             all_at_once=True)
                     else:
-                        self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
+                        failover_result = self.task.failover(self.cluster.nodes_in_cluster,
+                                                             failover_nodes=failover_nodes,
+                                                             graceful=False, wait_for_pending=120,
+                                                             all_at_once=True)
 
-                    self.sleep(300)
-                    self.wait_for_failover_or_assert(1)
+                    self.assertTrue(failover_result, "Failover Failed")
 
                     # Perform the action
                     if action == "RebalanceOut":
-                        self.nodes = self.rest.node_statuses()
-                        self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[self.chosen[0].id])
-                        # self.sleep(600)
-                        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=False), msg="Rebalance failed")
-                        servs_out = [node for node in self.cluster.servers if node.ip == self.chosen[0].ip]
-                        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-                        self.available_servers += servs_out
+                        rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster, [], failover_nodes,
+                                                                   retry_get_process_num=200)
+                        self.wait_for_rebalance_to_complete(rebalance_task)
+                        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) -
+                                                             set(failover_nodes))
+                        for node in failover_nodes:
+                            self.available_servers.append(node)
                         self.sleep(10)
                     else:
                         if action == "FullRecovery":
-                            if self.success_failed_over:
-                                self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="full")
+                            for failover_node in failover_nodes:
+                                self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
+                                                            recoveryType="full")
                         elif action == "DeltaRecovery":
-                            if self.success_failed_over:
-                                self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="delta")
+                            for failover_node in failover_nodes:
+                                self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
+                                                            recoveryType="delta")
 
                         rebalance_task = self.task.async_rebalance(
-                            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=200)
+                            self.cluster.nodes_in_cluster, [], [], retry_get_process_num=200)
                         self.wait_for_rebalance_to_complete(rebalance_task)
                         self.sleep(10)
 
@@ -818,10 +834,12 @@ class volume(CollectionBase):
                     # Bring back the rebalance out node back to cluster for further steps
                     if action == "RebalanceOut":
                         self.sleep(120)
+                        self.log.info("Rebalancing-in a node")
                         rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
                         # self.sleep(600)
                         self.wait_for_rebalance_to_complete(rebalance_task)
-                    self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
+                    if self.fts_indexes_to_recreate > 0:
+                        self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
                     self.bucket_util.print_bucket_stats()
                     self.check_logs()
             ########################################################################################################################
@@ -836,18 +854,19 @@ class volume(CollectionBase):
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             self.tasks = []
-            self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
+            if self.fts_indexes_to_recreate > 0:
+                self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats()
             self.check_logs()
             ########################################################################################################################
             self.cluster.nodes_in_cluster = self.cluster.servers
             step_count = 19
-            removed_nodes = list() # total list of all nodes that will be removed
+            removed_nodes = list()  # total list of all nodes that will be removed
             if self.perform_quorum_failover:
                 self.log.info("Step {0}: Quorum failover nodes".format(step_count))
                 # keep performing QF until one node is left
-                while len(self.cluster.nodes_in_cluster)!=1:
-                    majority_number = int(math.ceil(len(self.cluster.nodes_in_cluster)/2.0))
+                while len(self.cluster.nodes_in_cluster) != 1:
+                    majority_number = int(math.ceil(len(self.cluster.nodes_in_cluster) / 2.0))
                     self.nodes_cluster = self.cluster.nodes_in_cluster[:]
                     self.nodes_cluster.remove(self.cluster.master)
                     remove_nodes = random.sample(self.nodes_cluster, majority_number)
@@ -866,7 +885,7 @@ class volume(CollectionBase):
                         removed_nodes.append(node)
                     self.cluster.nodes_in_cluster = [node for node in self.cluster.nodes_in_cluster
                                                      if node not in remove_nodes]
-                # add back all the nodes
+                # add back all the nodes with kv service
                 rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster, removed_nodes, [],
                                                            retry_get_process_num=200)
                 self.wait_for_rebalance_to_complete(rebalance_task)
