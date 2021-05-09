@@ -1237,9 +1237,10 @@ class ClusterUtils:
         for node in nodes:
             shell = RemoteMachineShellConnection(node)
             shell.enable_diag_eval_on_non_local_hosts()
-            command = "curl --silent -u %s:%s http://localhost:8091/diag/eval -d 'ns_config:get()' " \
-                      "| grep '_deleted' | wc -l" % (self.rest.username, self.rest.password)
-            output, _ = shell.execute_command(command)
+            cmd = "curl --silent -u %s:%s http://localhost:8091/diag/eval " \
+                  "-d 'ns_config:get()' | grep '_deleted' | wc -l" \
+                  % (self.rest.username, self.rest.password)
+            output, _ = shell.execute_command(cmd)
             shell.disconnect()
-            deleted_keys_count_dict[node.ip] = output[0].strip('\n')
+            deleted_keys_count_dict[node.ip] = int(output[0].strip('\n'))
         return deleted_keys_count_dict

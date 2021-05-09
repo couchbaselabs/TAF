@@ -1,13 +1,8 @@
-import time
-from threading import Thread
-
 from FtsLib.FtsOperations import FtsHelper
 from couchbase_helper.tuq_helper import N1QLHelper
 from membase.api.rest_client import RestConnection
 from rebalance_new.rebalance_base import RebalanceBaseTest
 from sdk_client3 import SDKClient
-
-from com.couchbase.client.core.error import InternalServerFailureException
 
 
 class ServiceRebalanceTests(RebalanceBaseTest):
