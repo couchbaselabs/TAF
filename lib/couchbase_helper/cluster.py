@@ -127,7 +127,7 @@ class ServerTasks(object):
                             skip_read_on_error=False,
                             ryow=False, check_persistence=False,
                             start_task=True,
-                            suppress_error_table=False,
+                            suppress_error_table=True,
                             dgm_batch=5000,
                             scope=CbServer.default_scope,
                             collection=CbServer.default_collection,
@@ -414,7 +414,7 @@ class ServerTasks(object):
                             scope=CbServer.default_scope,
                             collection=CbServer.default_collection,
                             sdk_client_pool=None, is_sub_doc=False,
-                            suppress_error_table=False):
+                            suppress_error_table=True):
         clients = list()
         gen_start = int(generator.start)
         gen_end = int(generator.end)
@@ -631,7 +631,7 @@ class ServerTasks(object):
                       skip_read_on_error=False,
                       ryow=False, check_persistence=False,
                       start_task=True,
-                      suppress_error_table=False,
+                      suppress_error_table=True,
                       dgm_batch=5000,
                       scope=CbServer.default_scope,
                       collection=CbServer.default_collection):
