@@ -69,13 +69,6 @@ from Cb_constants import ClusterRun, CbServer, DocLoading
 from couchbase_helper.durability_helper import DurabilityHelper
 from global_vars import logger
 
-System.setProperty("com.couchbase.forceIPv4", "false")
-cluster_env = ClusterEnvironment.builder() \
-            .ioConfig(IoConfig.numKvConnections(25)) \
-            .timeoutConfig(TimeoutConfig.builder()
-                           .connectTimeout(Duration.ofSeconds(20))
-                           .kvTimeout(Duration.ofSeconds(10)))
-
 
 class SDKClientPool(object):
     """
@@ -246,6 +239,15 @@ class SDKClient(object):
     def __create_conn(self):
         try:
             self.log.debug("Creating SDK connection for '%s'" % self.bucket)
+            System.setProperty("com.couchbase.forceIPv4", "false")
+            cluster_env = \
+                ClusterEnvironment \
+                .builder() \
+                .ioConfig(IoConfig.numKvConnections(25)) \
+                .timeoutConfig(TimeoutConfig.builder()
+                               .connectTimeout(Duration.ofSeconds(20))
+                               .kvTimeout(Duration.ofSeconds(10)))
+
             # Having 'None' will enable us to test without sending any
             # compression settings and explicitly setting to 'False' as well
             if self.compression is not None:
