@@ -817,7 +817,6 @@ class BaseTestCase(unittest.TestCase):
                         break
 
             shell.disconnect()
-        self.log.critical("data_sets ==> {}".format(self.data_sets))
         if result and force_collect and not self.stop_server_on_crash:
             self.fetch_cb_collect_logs()
             self.get_cbcollect_info = False
@@ -847,20 +846,21 @@ class BaseTestCase(unittest.TestCase):
                 _ = shell.execute_command("tar -zcvf %s.tar.gz %s" %(filepath, filepath))
                 file_check = shell.file_exists(remotepath, filename)
                 if not file_check:
-                    self.log.info("Tar File {} doesn't exist".format(filename))
+                    self.log.error("Tar File {} doesn't exist".format(filename))
                 tar_file_copied = shell.get_file(remotepath, filename, todir)
                 if not tar_file_copied:
-                    self.log.info("Failed to copy Tar file")
+                    self.log.error("Failed to copy Tar file")
 
                 _ = shell.execute_command("rm -rf %s.tar.gz" %(filepath))
 
         if self.data_sets and self.bucket_storage == "magma":
+            self.log.critical("data_sets ==> {}".format(self.data_sets))
             wal_tar = "wal.tar.gz"
             config_json_tar = "config.json.tar.gz"
             for server, kvstores in self.data_sets.items():
                 shell = RemoteMachineShellConnection(server)
                 if not kvstores:
-                    copy_to_path=os.path.join(log_path, server.ip.replace(".", "_"))
+                    copy_to_path = os.path.join(log_path, server.ip.replace(".", "_"))
                     if not os.path.isdir(copy_to_path):
                         os.makedirs(copy_to_path, 0o777)
                     get_tar(remote_path, file_path, file_name, server, todir=copy_to_path)
@@ -884,7 +884,7 @@ class BaseTestCase(unittest.TestCase):
                         get_tar(magma_dir, config_json_path, config_json_tar, server, todir=copy_to_path)
         else:
             for server in servers:
-                copy_to_path=os.path.join(log_path, server.ip.replace(".", "_"))
+                copy_to_path = os.path.join(log_path, server.ip.replace(".", "_"))
                 if not os.path.isdir(copy_to_path):
                     os.makedirs(copy_to_path, 0o777)
                 self.log.info("copy_to_path {} for server {} in else".format(copy_to_path, server.ip))

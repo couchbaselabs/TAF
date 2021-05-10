@@ -109,6 +109,7 @@ class MagmaCrashTests(MagmaBaseTest):
             self.task_manager.get_task_result(task)
 
         self.stop_crash = True
+        self.log.critical("Stopping the crash thread: Done")
         th.join()
         self.validate_seq_itr()
 
@@ -137,6 +138,7 @@ class MagmaCrashTests(MagmaBaseTest):
             self.task_manager.get_task_result(task)
 
         self.stop_crash = True
+        self.log.critical("Stopping the crash thread: Done")
         th.join()
         self.validate_seq_itr()
 
@@ -307,6 +309,7 @@ class MagmaCrashTests(MagmaBaseTest):
             self.task_manager.get_task_result(task)
 
         self.stop_crash = True
+        self.log.critical("Stopping the crash thread: Done")
         th.join()
 
         self.bucket_util._wait_for_stats_all_buckets()
@@ -394,6 +397,7 @@ class MagmaCrashTests(MagmaBaseTest):
             th.join()
 
         self.stop_crash = True
+        self.log.critical("Stopping the crash thread: Done")
         th1.join()
 
         self.bucket_util._wait_for_stats_all_buckets()
@@ -473,6 +477,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
             count += 1
         self.stop_crash = True
+        self.log.critical("Stopping the crash thread: Done")
         th.join()
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
