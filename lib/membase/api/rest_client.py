@@ -1402,6 +1402,44 @@ class RestConnection(object):
         status, password = self.diag_eval(code % "admin_pass")
         return id.strip('"'), password.strip('"')
 
+    def disable_tombstone_purger(self):
+        code = 'ns_config:set(tombstone_purger_enabled, false).'
+        status, content = self.diag_eval(code)
+        return status, content
+
+    def enable_tombstone_purger(self):
+        code = 'ns_config:set(tombstone_purger_enabled, true).'
+        status, content = self.diag_eval(code)
+        return status, content
+
+    def run_tombstone_purger(self, age):
+        """
+        Triggers tombstone_purger immediately
+        and purges the keys > 'age' seconds
+        """
+        code = 'tombstone_purger:purge_now(' + str(age) + ')'
+        status, content = self.diag_eval(code)
+        return status, content
+
+    def update_tombstone_purger_run_interval(self, new_interval):
+        """
+        Updates tombstone_purger interval to run.
+        Example: if 'new_interval' is 10, purger will be run every 10(seconds)
+        """
+        code = 'ns_config:set({timeout, {tombstone_purger, upgrade}}, %d)' \
+               % new_interval
+        status, content = self.diag_eval(code)
+        return status, content
+
+    def update_tombstone_purge_age_for_removal(self, ts_age):
+        """
+        Updates tombstone purge age to be considered.
+        Will tell the purger to remove tombstone age >= ts_age(seconds)
+        """
+        code = 'ns_config:set({tombstone_purger, purge_age}, %d)' % ts_age
+        status, content = self.diag_eval(code)
+        return status, content
+
     def monitorRebalance(self, stop_if_loop=True):
         start = time.time()
         progress = 0
