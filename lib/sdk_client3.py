@@ -174,6 +174,14 @@ class SDKClientPool(object):
 
 
 class SDKClient(object):
+    System.setProperty("com.couchbase.forceIPv4", "false")
+    cluster_env = \
+        ClusterEnvironment \
+        .builder() \
+        .ioConfig(IoConfig.numKvConnections(25)) \
+        .timeoutConfig(TimeoutConfig.builder()
+                       .connectTimeout(Duration.ofSeconds(20))
+                       .kvTimeout(Duration.ofSeconds(10)))
     sdk_connections = 0
     sdk_disconnections = 0
     doc_op = doc_op()
@@ -239,14 +247,6 @@ class SDKClient(object):
     def __create_conn(self):
         try:
             self.log.debug("Creating SDK connection for '%s'" % self.bucket)
-            System.setProperty("com.couchbase.forceIPv4", "false")
-            cluster_env = \
-                ClusterEnvironment \
-                .builder() \
-                .ioConfig(IoConfig.numKvConnections(25)) \
-                .timeoutConfig(TimeoutConfig.builder()
-                               .connectTimeout(Duration.ofSeconds(20))
-                               .kvTimeout(Duration.ofSeconds(10)))
 
             # Having 'None' will enable us to test without sending any
             # compression settings and explicitly setting to 'False' as well
@@ -260,11 +260,11 @@ class SDKClient(object):
                     compression_config = compression_config.minRatio(
                         self.compression["minRatio"])
 
-                cluster_env = cluster_env.compressionConfig(compression_config)
+                SDKClient.cluster_env = SDKClient.cluster_env.compressionConfig(compression_config)
             cluster_options = \
                 ClusterOptions \
                 .clusterOptions(self.username, self.password) \
-                .environment(cluster_env.build())
+                .environment(SDKClient.cluster_env.build())
             i = 1
             while i <= 5:
                 try:
