@@ -30,6 +30,9 @@ class MagmaCrashTests(MagmaBaseTest):
         self.graceful = self.input.param("graceful", False)
 
     def tearDown(self):
+        self.stop_crash = True
+        if self.crash_th.is_alive():
+            self.crash_th.join()
         super(MagmaCrashTests, self).tearDown()
 
     def compute_docs_ranges(self):
@@ -86,10 +89,10 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.compute_docs_ranges()
 
-        th = threading.Thread(target=self.crash,
+        self.crash_th = threading.Thread(target=self.crash,
                               kwargs=dict(graceful=self.graceful,
                                           wait=wait_warmup))
-        th.start()
+        self.crash_th.start()
         tasks_info = dict()
         for collection in self.collections:
             self.generate_docs(doc_ops=self.doc_ops, target_vbucket=None)
@@ -110,14 +113,14 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.stop_crash = True
         self.log.critical("Stopping the crash thread: Done")
-        th.join()
+        self.crash_th.join()
         self.validate_seq_itr()
 
     def test_crash_during_recovery(self):
         self.compute_docs_ranges()
 
-        th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
-        th.start()
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
+        self.crash_th.start()
 
         tasks_info = dict()
         for collection in self.collections:
@@ -139,7 +142,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.stop_crash = True
         self.log.critical("Stopping the crash thread: Done")
-        th.join()
+        self.crash_th.join()
         self.validate_seq_itr()
 
     def test_crash_before_upserts(self):
@@ -281,9 +284,9 @@ class MagmaCrashTests(MagmaBaseTest):
         end = 1
         reverse_read_gen = self.genrate_docs_basic(start, end)
 
-        th = threading.Thread(target=self.crash, kwargs={"graceful":
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"graceful":
                                                          self.graceful})
-        th.start()
+        self.crash_th.start()
 
         count = 0
         while count < self.read_thread_count:
@@ -310,7 +313,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.stop_crash = True
         self.log.critical("Stopping the crash thread: Done")
-        th.join()
+        self.crash_th.join()
 
         self.bucket_util._wait_for_stats_all_buckets()
 
@@ -328,9 +331,9 @@ class MagmaCrashTests(MagmaBaseTest):
         self.update_start = 0
         self.update_end = self.num_items
 
-        th = threading.Thread(target=self.crash, kwargs={"graceful":
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"graceful":
                                                          self.graceful})
-        th.start()
+        self.crash_th.start()
 
         count = 0
         while count < self.read_thread_count:
@@ -350,7 +353,7 @@ class MagmaCrashTests(MagmaBaseTest):
             self.task_manager.get_task_result(task)
 
         self.stop_crash = True
-        th.join()
+        self.crash_th.join()
 
         self.bucket_util._wait_for_stats_all_buckets()
 
@@ -388,13 +391,13 @@ class MagmaCrashTests(MagmaBaseTest):
         for _ in range(10):
             start = end
             end += 10
-            th = threading.Thread(
+            self.crash_th = threading.Thread(
                 target=upsert_doc, args=[start, end, key, val])
-            th.start()
+            self.crash_th.start()
             threads.append(th)
 
         for th in threads:
-            th.join()
+            self.crash_th.join()
 
         self.stop_crash = True
         self.log.critical("Stopping the crash thread: Done")
@@ -436,9 +439,9 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.update_end = 1
         self.doc_ops = "update"
 
-        th = threading.Thread(target=self.crash, kwargs={"graceful":
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"graceful":
                                                          self.graceful})
-        th.start()
+        self.crash_th.start()
 
         count = 0
         while count < self.test_itr:
@@ -478,7 +481,7 @@ class MagmaCrashTests(MagmaBaseTest):
             count += 1
         self.stop_crash = True
         self.log.critical("Stopping the crash thread: Done")
-        th.join()
+        self.crash_th.join()
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
