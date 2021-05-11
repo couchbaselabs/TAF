@@ -381,9 +381,9 @@ class MagmaCrashTests(MagmaBaseTest):
                 val_obj.put("mutated", i)
                 self.client.upsert(key_obj, val_obj)
 
-        th1 = threading.Thread(target=self.crash, kwargs={"graceful":
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"graceful":
                                                           self.graceful})
-        th1.start()
+        self.crash_th.start()
 
         threads = []
         start = 0
@@ -391,17 +391,17 @@ class MagmaCrashTests(MagmaBaseTest):
         for _ in range(10):
             start = end
             end += 10
-            self.crash_th = threading.Thread(
+            th = threading.Thread(
                 target=upsert_doc, args=[start, end, key, val])
-            self.crash_th.start()
+            th.start()
             threads.append(th)
 
         for th in threads:
-            self.crash_th.join()
+            th.join()
 
         self.stop_crash = True
         self.log.critical("Stopping the crash thread: Done")
-        th1.join()
+        self.crash_th.join()
 
         self.bucket_util._wait_for_stats_all_buckets()
 
