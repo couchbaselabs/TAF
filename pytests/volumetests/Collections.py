@@ -38,6 +38,7 @@ class volume(CollectionBase):
         self.skip_check_logs = False
         self.iterations = self.input.param("iterations", 2)
         self.vbucket_check = self.input.param("vbucket_check", True)
+        self.retry_get_process_num = self.input.param("retry_get_process_num", 400)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_for_volume_test")
         self.perform_quorum_failover = self.input.param("perform_quorum_failover", True)
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 4)
@@ -479,7 +480,7 @@ class volume(CollectionBase):
 
         rebalance_task = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], servs_in, servs_out, check_vbucket_shuffling=self.vbucket_check,
-            retry_get_process_num=200, services=services)
+            retry_get_process_num=self.retry_get_process_num, services=services)
 
         self.available_servers = [servs for servs in self.available_servers if servs not in servs_in]
         self.available_servers += servs_out
@@ -721,7 +722,7 @@ class volume(CollectionBase):
                 task = self.data_load_collection()
                 self.induce_and_revert_failure(action)
                 # Rebalance is required after error is reverted
-                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=200)
+                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=self.retry_get_process_num)
                 self.wait_for_rebalance_to_complete(rebalance_task)
                 self.wait_for_async_data_load_to_complete(task)
                 self.data_validation_collection()
@@ -790,7 +791,7 @@ class volume(CollectionBase):
                     # Perform the action
                     if action == "RebalanceOut":
                         rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster, [], failover_nodes,
-                                                                   retry_get_process_num=200)
+                                                                   retry_get_process_num=self.retry_get_process_num)
                         self.wait_for_rebalance_to_complete(rebalance_task)
                         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) -
                                                              set(failover_nodes))
@@ -808,7 +809,7 @@ class volume(CollectionBase):
                                                             recoveryType="delta")
 
                         rebalance_task = self.task.async_rebalance(
-                            self.cluster.nodes_in_cluster, [], [], retry_get_process_num=200)
+                            self.cluster.nodes_in_cluster, [], [], retry_get_process_num=self.retry_get_process_num)
                         self.wait_for_rebalance_to_complete(rebalance_task)
                         self.sleep(10)
 
@@ -848,7 +849,7 @@ class volume(CollectionBase):
             for i in range(len(self.bucket_util.buckets)):
                 bucket_helper.change_bucket_props(
                     self.bucket_util.buckets[i], replicaNumber=1)
-            rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=200)
+            rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=self.retry_get_process_num)
             task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
@@ -887,7 +888,7 @@ class volume(CollectionBase):
                                                      if node not in remove_nodes]
                 # add back all the nodes with kv service
                 rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster, removed_nodes, [],
-                                                           retry_get_process_num=200)
+                                                           retry_get_process_num=self.retry_get_process_num)
                 self.wait_for_rebalance_to_complete(rebalance_task)
                 self.cluster.nodes_in_cluster = self.cluster.servers[:]
                 step_count = step_count + 1
@@ -906,7 +907,7 @@ class volume(CollectionBase):
                     servs_out = random.sample(self.nodes_cluster,
                                               int(len(self.cluster.nodes_in_cluster) - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.servers[:self.nodes_init], [], servs_out, retry_get_process_num=200)
+                        self.cluster.servers[:self.nodes_init], [], servs_out, retry_get_process_num=self.retry_get_process_num)
                     self.wait_for_rebalance_to_complete(rebalance_task)
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))

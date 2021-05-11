@@ -23,6 +23,7 @@ class volume(CollectionBase):
         self.exclude_nodes = [self.cluster.master]
         self.skip_check_logs = False
         self.iterations = self.input.param("iterations", 1)
+        self.retry_get_process_num = self.input.param("retry_get_process_num", 400)
         self.kv_mem_quota = self.input.param("kv_mem_quota", 2000)
         self.index_mem_quota = self.input.param("index_mem_quota", 15000)
         self.index_setup()
@@ -239,7 +240,7 @@ class volume(CollectionBase):
             self.log.info("Step: {0} Adding node {1}".format(step_count, add_node.ip))
             operation = self.task.async_rebalance(self.nodes_in_cluster, [add_node], [],
                                                   services = ["index"],
-                                                  retry_get_process_num=200)
+                                                  retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(operation)
             self.available_servers.remove(add_node)
             self.nodes_in_cluster.append(add_node)
@@ -270,7 +271,7 @@ class volume(CollectionBase):
             self.log.info("Cycle: {0}".format(cycles))
             operation = self.task.async_rebalance(self.nodes_in_cluster, [add_node], [],
                                                   services=["index"],
-                                                  retry_get_process_num=200)
+                                                  retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(operation)
             self.available_servers.remove(add_node)
             self.nodes_in_cluster.append(add_node)
@@ -287,7 +288,7 @@ class volume(CollectionBase):
 
             remove_node = self.nodes_in_cluster[-1]
             operation = self.task.async_rebalance(self.nodes_in_cluster, [], [remove_node],
-                                                  retry_get_process_num=200)
+                                                  retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(operation)
             self.available_servers.append(remove_node)
             self.nodes_in_cluster.remove(remove_node)
