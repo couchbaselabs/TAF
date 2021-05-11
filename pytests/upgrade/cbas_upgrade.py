@@ -89,7 +89,7 @@ class UpgradeTests(UpgradeBase):
 
     def post_upgrade_validation(self):
         # rebalance once again to activate CBAS service
-        self.sleep(60, "Sleep before rebalancing to activate CBAS service")
+        self.sleep(180, "Sleep before rebalancing to activate CBAS service")
         rest = RestConnection(self.cluster.master)
         otp_nodes = [node.id for node in rest.node_statuses()]
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
@@ -97,7 +97,6 @@ class UpgradeTests(UpgradeBase):
         if not rebalance_passed:
             self.log_failure("Rebalance operation Failed")
             return False
-
         # Update RAM quota allocated to buckets created before upgrade
         cluster_info = rest.get_nodes_self()
         kv_quota = \
@@ -132,15 +131,15 @@ class UpgradeTests(UpgradeBase):
                     dataset_name=dataset.full_name,
                     expected_count=dataset.num_of_items))
         for index in self.cbas_util.list_all_index_objs():
-            results.append(
-                self.cbas_util.verify_index_created(
+            result, _ = self.cbas_util.verify_index_created(
                     index_name=index.name, dataset_name=index.dataset_name,
-                    indexed_fields=index.indexed_fields))
+                    indexed_fields=index.indexed_fields)
+            results.append(result)
             results.append(
                 self.cbas_util.verify_index_used(
                     statement="SELECT VALUE v FROM {0} v WHERE age > 2".format(
                         index.full_dataset_name),
-                    index_used=True, index_name=index.name))
+                    index_used=True, index_name=None))
         validation_results["pre_upgrade"] = all(results)
 
         self.log.info("Loading docs in default collection of existing buckets")
@@ -288,6 +287,12 @@ class UpgradeTests(UpgradeBase):
                     else:
                         results.append(False)
             validation_results["bucket_delete"] = all(results)
+        
+        for scenario in validation_results:
+            if validation_results[scenario]:
+                self.log.info("{0} : Passed".format(scenario))
+            else:
+                self.log.info("{0} : Failed".format(scenario))
 
         return validation_results
 

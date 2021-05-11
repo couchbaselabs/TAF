@@ -2832,7 +2832,7 @@ class Index_Util(Synonym_Util):
                         self.log.info(
                             "INDEX-SEARCH is found in EXPLAIN hence indexed data will be scanned to serve %s" % statement)
                         if index_name:
-                            if CBASHelper.format_name(index_name) in str(
+                            if CBASHelper.unformat_name(index_name) in str(
                                     results):
                                 return True
                             else:
