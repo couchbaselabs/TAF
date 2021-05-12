@@ -758,14 +758,14 @@ class GenericLoadingTask(Task):
                                .format(error))
         return success, fail
 
-    def batch_sub_doc_read(self, key_value, time_unit="seconds"):
+    def batch_sub_doc_read(self, key_value):
         success = dict()
         fail = dict()
         try:
             success, fail = self.client.sub_doc_read_multi(
                 key_value,
                 timeout=self.timeout,
-                time_unit=time_unit)
+                time_unit=self.time_unit)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc read: {0}"
@@ -848,7 +848,6 @@ class LoadDocumentsTask(GenericLoadingTask):
             success, fail = self.batch_create(
                 key_value,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                timeout=self.timeout, time_unit=self.time_unit,
                 doc_type=self.generator.doc_type, durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
             if self.track_failures:
@@ -859,8 +858,6 @@ class LoadDocumentsTask(GenericLoadingTask):
                 key_value,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
-                timeout=self.timeout,
-                time_unit=self.time_unit,
                 doc_type=self.generator.doc_type,
                 durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
@@ -872,8 +869,6 @@ class LoadDocumentsTask(GenericLoadingTask):
                 key_value,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
-                timeout=self.timeout,
-                time_unit=self.time_unit,
                 doc_type=self.generator.doc_type,
                 durability=self.durability,
                 skip_read_on_error=self.skip_read_on_error)
@@ -884,17 +879,13 @@ class LoadDocumentsTask(GenericLoadingTask):
             success, fail = self.batch_delete(key_value,
                                               persist_to=self.persist_to,
                                               replicate_to=self.replicate_to,
-                                              timeout=self.timeout,
-                                              time_unit=self.time_unit,
                                               durability=self.durability)
             if self.track_failures:
                 self.fail.update(fail)
 
         elif self.op_type == DocLoading.Bucket.DocOps.TOUCH:
             success, fail = self.batch_touch(key_value,
-                                             exp=self.exp,
-                                             timeout=self.timeout,
-                                             timeunit=self.time_unit)
+                                             exp=self.exp)
             if self.track_failures:
                 self.fail.update(fail)
 
@@ -972,8 +963,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 key_value,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
-                timeout=self.timeout,
-                time_unit=self.time_unit,
                 durability=self.durability,
                 create_path=self.create_path,
                 xattr=self.xattr)
@@ -984,8 +973,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 key_value,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
-                timeout=self.timeout,
-                time_unit=self.time_unit,
                 durability=self.durability,
                 create_path=self.create_path,
                 xattr=self.xattr)
@@ -996,8 +983,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 key_value,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
-                timeout=self.timeout,
-                time_unit=self.time_unit,
                 durability=self.durability,
                 xattr=self.xattr)
             self.fail.update(fail)
@@ -1007,16 +992,12 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 key_value,
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
-                timeout=self.timeout,
-                time_unit=self.time_unit,
                 durability=self.durability,
                 xattr=self.xattr)
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type in ['read', 'lookup']:
-            success, fail = self.batch_sub_doc_read(key_value,
-                                                    timeout=self.timeout,
-                                                    time_unit=self.time_unit)
+            success, fail = self.batch_sub_doc_read(key_value)
             self.fail.update(fail)
             self.success.update(success)
         else:

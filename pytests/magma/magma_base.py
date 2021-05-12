@@ -12,6 +12,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from BucketLib.BucketOperations import BucketHelper
 import time
+import subprocess
 
 
 class MagmaBaseTest(BaseTestCase):
@@ -481,11 +482,11 @@ class MagmaBaseTest(BaseTestCase):
                                                       mutate=expiry_mutate)
 
     def load_bucekts_in_dgm(self, kv_gen, op_type, exp, flag=0,
-                          only_store_hash=True, batch_size=1000, pause_secs=1,
-                          timeout_secs=30, compression=True, dgm_batch=5000,
-                          skip_read_on_error=False,
-                          suppress_error_table=False,
-                          track_failures=False):
+                            only_store_hash=True, batch_size=1000, pause_secs=1,
+                            timeout_secs=30, compression=True, dgm_batch=5000,
+                            skip_read_on_error=False,
+                            suppress_error_table=False,
+                            track_failures=False):
         tasks_info = dict()
         self.collections.remove(CbServer.default_collection)
         docs_per_task = dict()
@@ -498,7 +499,8 @@ class MagmaBaseTest(BaseTestCase):
                 task_info = self.bucket_util._async_load_all_buckets(
                     self.cluster, kv_gen, op_type, exp, flag,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
-                    durability=self.durability_level, timeout_secs=timeout_secs,
+                    durability=self.durability_level,
+                    timeout_secs=timeout_secs, time_unit=self.time_unit,
                     only_store_hash=only_store_hash, batch_size=batch_size,
                     pause_secs=pause_secs, sdk_compression=compression,
                     process_concurrency=self.process_concurrency,
@@ -555,6 +557,7 @@ class MagmaBaseTest(BaseTestCase):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                time_unit=self.time_unit,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
                 skip_read_on_error=skip_read_on_error,
@@ -572,6 +575,7 @@ class MagmaBaseTest(BaseTestCase):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                time_unit=self.time_unit,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
                 skip_read_on_error=skip_read_on_error,
@@ -591,6 +595,7 @@ class MagmaBaseTest(BaseTestCase):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                time_unit=self.time_unit,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
                 skip_read_on_error=skip_read_on_error,
@@ -607,6 +612,7 @@ class MagmaBaseTest(BaseTestCase):
                batch_size=self.batch_size,
                process_concurrency=self.process_concurrency,
                pause_secs=5, timeout_secs=self.sdk_timeout,
+               time_unit=self.time_unit,
                retry_exceptions=retry_exceptions,
                ignore_exceptions=ignore_exceptions,
                scope=scope,
@@ -620,6 +626,7 @@ class MagmaBaseTest(BaseTestCase):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level, pause_secs=5,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                time_unit=self.time_unit,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
                 skip_read_on_error=skip_read_on_error,
@@ -853,6 +860,12 @@ class MagmaBaseTest(BaseTestCase):
             [self.cluster_util.cluster.master],
             self.bucket_util.buckets[0],
             wait_time=self.wait_timeout * 20))
+
+    def get_memory_footprint(self):
+        out = subprocess.Popen(['ps', 'v', '-p', str(os.getpid())],stdout=subprocess.PIPE).communicate()[0].split(b'\n')
+        vsz_index = out[0].split().index(b'RSS')
+        mem = float(out[1].split()[vsz_index]) / 1024
+        print("RAM FootPrint: %s" % str(mem))
 
     def crash(self, nodes=None, kill_itr=1, graceful=False,
               wait=True, force_collect=False):

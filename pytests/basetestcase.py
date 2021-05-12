@@ -136,6 +136,7 @@ class BaseTestCase(unittest.TestCase):
         self.persist_to = self.input.param("persist_to", 0)
         self.sdk_retries = self.input.param("sdk_retries", 5)
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
+        self.time_unit = self.input.param("time_unit", "seconds")
         self.durability_level = self.input.param("durability", "").upper()
         self.sdk_client_pool = self.input.param("sdk_client_pool", None)
         self.sdk_pool_capacity = self.input.param("sdk_pool_capacity", 1)
