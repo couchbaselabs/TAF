@@ -2464,7 +2464,7 @@ class BucketUtils(ScopeUtils):
     def async_load_bucket(self, cluster, bucket, generator, op_type,
                           exp=0, random_exp=False,
                           flag=0, persist_to=0, replicate_to=0,
-                          durability="", sdk_timeout=5,
+                          durability="", sdk_timeout=5, time_unit="seconds",
                           only_store_hash=True, batch_size=10, pause_secs=1,
                           compression=True, process_concurrency=8, retries=5,
                           active_resident_threshold=100,
@@ -2480,7 +2480,7 @@ class BucketUtils(ScopeUtils):
             cluster, bucket, generator, op_type,
             exp=exp, random_exp=random_exp,
             flag=flag, persist_to=persist_to, replicate_to=replicate_to,
-            durability=durability, timeout_secs=sdk_timeout,
+            durability=durability, timeout_secs=sdk_timeout, time_unit=time_unit,
             only_store_hash=only_store_hash, batch_size=batch_size,
             pause_secs=pause_secs, compression=compression,
             process_concurrency=process_concurrency, retries=retries,
@@ -2537,7 +2537,7 @@ class BucketUtils(ScopeUtils):
                                 exp, random_exp=False,
                                 flag=0, persist_to=0, replicate_to=0,
                                 only_store_hash=True, batch_size=1,
-                                pause_secs=1, timeout_secs=30,
+                                pause_secs=1, timeout_secs=30, time_unit="seconds",
                                 sdk_compression=True, process_concurrency=8,
                                 retries=5, durability="",
                                 ignore_exceptions=[], retry_exceptions=[],
@@ -2568,7 +2568,7 @@ class BucketUtils(ScopeUtils):
             task = self.async_load_bucket(
                 cluster, bucket, kv_gen, op_type, exp, random_exp,
                 flag, persist_to,
-                replicate_to, durability, timeout_secs,
+                replicate_to, durability, timeout_secs, time_unit,
                 only_store_hash, batch_size, pause_secs,
                 sdk_compression, process_concurrency, retries,
                 active_resident_threshold=active_resident_threshold,
@@ -2587,14 +2587,15 @@ class BucketUtils(ScopeUtils):
                 replicate_to=replicate_to,
                 persist_to=persist_to,
                 durability=durability,
-                timeout=timeout_secs, time_unit="seconds",
+                timeout=timeout_secs, time_unit=time_unit,
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions)
         return tasks_info
 
     def _async_validate_docs(self, cluster, kv_gen, op_type, exp,
                              flag=0, only_store_hash=True, batch_size=1,
-                             pause_secs=1, timeout_secs=5, compression=True,
+                             pause_secs=1, timeout_secs=5, time_unit="seconds",
+                             compression=True,
                              process_concurrency=4, check_replica=False,
                              ignore_exceptions=[], retry_exceptions=[],
                              scope=CbServer.default_scope,
@@ -2606,7 +2607,7 @@ class BucketUtils(ScopeUtils):
             gen = copy.deepcopy(kv_gen)
             task = self.task.async_validate_docs(
                 cluster, bucket, gen, op_type, exp, flag, only_store_hash,
-                batch_size, pause_secs, timeout_secs, compression,
+                batch_size, pause_secs, timeout_secs, time_unit, compression,
                 process_concurrency, check_replica,
                 scope, collection,
                 suppress_error_table=suppress_error_table,
@@ -2615,7 +2616,7 @@ class BucketUtils(ScopeUtils):
                 bucket, op_type, exp,
                 scope=scope,
                 collection=collection,
-                timeout=timeout_secs, time_unit="seconds",
+                timeout=timeout_secs, time_unit=time_unit,
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions)
             return task_info

@@ -420,8 +420,8 @@ class RebalanceTask(Task):
 
 class GenericLoadingTask(Task):
     def __init__(self, cluster, bucket, client, batch_size=1, pause_secs=1,
-                 timeout_secs=60, compression=None,
-                 retries=5, transaction=False, commit=False,
+                 timeout_secs=5, time_unit="seconds", compression=None,
+                 retries=5,
                  suppress_error_table=False, sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
@@ -432,6 +432,7 @@ class GenericLoadingTask(Task):
         self.batch_size = batch_size
         self.pause = pause_secs
         self.timeout = timeout_secs
+        self.time_unit = time_unit
         self.cluster = cluster
         self.bucket = bucket
         self.scope = scope
@@ -464,7 +465,7 @@ class GenericLoadingTask(Task):
 
     # start of batch methods
     def batch_create(self, key_val, client=None, persist_to=0,
-                     replicate_to=0, timeout=5, time_unit="seconds",
+                     replicate_to=0,
                      doc_type="json", durability="", skip_read_on_error=False):
         """
         standalone method for creating key/values in batch (sans kvstore)
@@ -480,7 +481,7 @@ class GenericLoadingTask(Task):
             success, fail = client.set_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
-                timeout=timeout, time_unit=time_unit, retry=self.retries,
+                timeout=self.timeout, time_unit=self.time_unit, retry=self.retries,
                 doc_type=doc_type, durability=durability)
             if fail:
                 failed_item_table = None
@@ -491,7 +492,7 @@ class GenericLoadingTask(Task):
                 if not skip_read_on_error:
                     self.log.debug(
                         "Sleep before reading the doc for verification")
-                    Thread.sleep(timeout)
+                    Thread.sleep(self.timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
                     read_map, _ = self.batch_read(fail.keys())
@@ -516,7 +517,7 @@ class GenericLoadingTask(Task):
         return success, copy.deepcopy(fail)
 
     def batch_update(self, key_val, client=None, persist_to=0,
-                     replicate_to=0, timeout=5, time_unit="seconds",
+                     replicate_to=0,
                      doc_type="json", durability="", skip_read_on_error=False):
         success = dict()
         fail = dict()
@@ -525,7 +526,7 @@ class GenericLoadingTask(Task):
             success, fail = client.upsert_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
-                timeout=timeout, time_unit=time_unit,
+                timeout=self.timeout, time_unit=self.time_unit,
                 doc_type=doc_type, durability=durability,
                 preserve_expiry=self.preserve_expiry)
 
@@ -538,7 +539,7 @@ class GenericLoadingTask(Task):
                 if not skip_read_on_error:
                     self.log.debug(
                         "Sleep before reading the doc for verification")
-                    Thread.sleep(timeout)
+                    Thread.sleep(self.timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
                     read_map, _ = self.batch_read(fail.keys())
@@ -564,7 +565,7 @@ class GenericLoadingTask(Task):
         return success, copy.deepcopy(fail)
 
     def batch_replace(self, key_val, client=None, persist_to=0,
-                      replicate_to=0, timeout=5, time_unit="seconds",
+                      replicate_to=0,
                       doc_type="json", durability="",
                       skip_read_on_error=False):
         success = dict()
@@ -574,7 +575,7 @@ class GenericLoadingTask(Task):
             success, fail = client.replace_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
-                timeout=timeout, time_unit=time_unit,
+                timeout=self.timeout, time_unit=self.time_unit,
                 doc_type=doc_type, durability=durability,
                 preserve_expiry=self.preserve_expiry)
             if fail:
@@ -585,7 +586,7 @@ class GenericLoadingTask(Task):
                 if not skip_read_on_error:
                     self.log.debug(
                         "Sleep before reading the doc for verification")
-                    Thread.sleep(timeout)
+                    Thread.sleep(self.timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
                     read_map, _ = self.batch_read(fail.keys())
@@ -610,14 +611,14 @@ class GenericLoadingTask(Task):
         return success, copy.deepcopy(fail)
 
     def batch_delete(self, key_val, client=None, persist_to=None,
-                     replicate_to=None, timeout=None, timeunit=None,
+                     replicate_to=None,
                      durability=""):
         client = client or self.client
         success, fail = client.delete_multi(dict(key_val).keys(),
                                             persist_to=persist_to,
                                             replicate_to=replicate_to,
-                                            timeout=timeout,
-                                            time_unit=timeunit,
+                                            timeout=self.timeout,
+                                            time_unit=self.time_unit,
                                             durability=durability)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
@@ -630,12 +631,11 @@ class GenericLoadingTask(Task):
                                         self.collection))
         return success, fail
 
-    def batch_touch(self, key_val, exp=0,
-                    timeout=None, timeunit=None):
+    def batch_touch(self, key_val, exp=0):
         success, fail = self.client.touch_multi(dict(key_val).keys(),
                                                 exp=exp,
-                                                timeout=timeout,
-                                                time_unit=timeunit)
+                                                timeout=self.timeout,
+                                                time_unit=self.timeunit)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Touch Key", "Exception"])
@@ -649,7 +649,8 @@ class GenericLoadingTask(Task):
 
     def batch_read(self, keys, client=None):
         client = client or self.client
-        success, fail = client.get_multi(keys, self.timeout)
+        success, fail = client.get_multi(keys, timeout=self.timeout,
+                                         time_unit=self.time_unit)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Read Key", "Exception"])
@@ -663,7 +664,6 @@ class GenericLoadingTask(Task):
 
     def batch_sub_doc_insert(self, key_value,
                              persist_to=0, replicate_to=0,
-                             timeout=5, time_unit="seconds",
                              durability="",
                              create_path=True, xattr=False):
         success = dict()
@@ -675,8 +675,8 @@ class GenericLoadingTask(Task):
                 exp_unit=self.exp_unit,
                 persist_to=persist_to,
                 replicate_to=replicate_to,
-                timeout=timeout,
-                time_unit=time_unit,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
                 durability=durability,
                 create_path=create_path,
                 xattr=xattr,
@@ -689,7 +689,6 @@ class GenericLoadingTask(Task):
 
     def batch_sub_doc_upsert(self, key_value,
                              persist_to=0, replicate_to=0,
-                             timeout=5, time_unit="seconds",
                              durability="",
                              create_path=True, xattr=False):
         success = dict()
@@ -701,8 +700,8 @@ class GenericLoadingTask(Task):
                 exp_unit=self.exp_unit,
                 persist_to=persist_to,
                 replicate_to=replicate_to,
-                timeout=timeout,
-                time_unit=time_unit,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
                 durability=durability,
                 create_path=create_path,
                 xattr=xattr,
@@ -715,7 +714,6 @@ class GenericLoadingTask(Task):
 
     def batch_sub_doc_replace(self, key_value,
                               persist_to=0, replicate_to=0,
-                              timeout=5, time_unit="seconds",
                               durability="", xattr=False):
         success = dict()
         fail = dict()
@@ -726,8 +724,8 @@ class GenericLoadingTask(Task):
                 exp_unit=self.exp_unit,
                 persist_to=persist_to,
                 replicate_to=replicate_to,
-                timeout=timeout,
-                time_unit=time_unit,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
                 durability=durability,
                 xattr=xattr,
                 preserve_expiry=self.preserve_expiry)
@@ -739,7 +737,6 @@ class GenericLoadingTask(Task):
 
     def batch_sub_doc_remove(self, key_value,
                              persist_to=0, replicate_to=0,
-                             timeout=5, time_unit="seconds",
                              durability="", xattr=False):
         success = dict()
         fail = dict()
@@ -750,8 +747,8 @@ class GenericLoadingTask(Task):
                 exp_unit=self.exp_unit,
                 persist_to=persist_to,
                 replicate_to=replicate_to,
-                timeout=timeout,
-                time_unit=time_unit,
+                timeout=self.timeout,
+                time_unit=self.time_unit,
                 durability=durability,
                 xattr=xattr,
                 preserve_expiry=self.preserve_expiry)
@@ -761,13 +758,13 @@ class GenericLoadingTask(Task):
                                .format(error))
         return success, fail
 
-    def batch_sub_doc_read(self, key_value, timeout=5, time_unit="seconds"):
+    def batch_sub_doc_read(self, key_value, time_unit="seconds"):
         success = dict()
         fail = dict()
         try:
             success, fail = self.client.sub_doc_read_multi(
                 key_value,
-                timeout=timeout,
+                timeout=self.timeout,
                 time_unit=time_unit)
         except Exception as error:
             self.log.error(error)
@@ -792,7 +789,7 @@ class LoadDocumentsTask(GenericLoadingTask):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
-            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            pause_secs=pause_secs, timeout_secs=timeout_secs, time_unit=time_unit,
             compression=compression,
             retries=retries, suppress_error_table=suppress_error_table,
             sdk_client_pool=sdk_client_pool,
@@ -888,7 +885,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                                               persist_to=self.persist_to,
                                               replicate_to=self.replicate_to,
                                               timeout=self.timeout,
-                                              timeunit=self.time_unit,
+                                              time_unit=self.time_unit,
                                               durability=self.durability)
             if self.track_failures:
                 self.fail.update(fail)
@@ -933,7 +930,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         super(LoadSubDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
-            compression=compression,
+            time_unit=time_unit, compression=compression,
             sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection,
             preserve_expiry=preserve_expiry)
@@ -1261,12 +1258,12 @@ class Durability(Task):
                     keys_for_update.append(item.getT1())
                 self.docs_to_be_deleted.update(
                     self.batch_read(keys_for_update)[0])
-                success, fail = self.batch_delete(
+                _, fail = self.batch_delete(
                     key_value,
                     persist_to=self.persist_to,
                     replicate_to=self.replicate_to,
                     timeout=self.timeout,
-                    timeunit=self.time_unit,
+                    time_unit=self.time_unit,
                     durability=self.durability)
                 self.delete_failed.update(fail)
             else:
@@ -2145,7 +2142,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
 class ValidateDocumentsTask(GenericLoadingTask):
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
                  flag=0, proxy_client=None, batch_size=1, pause_secs=1,
-                 timeout_secs=30, compression=None, check_replica=False,
+                 timeout_secs=30, time_unit="seconds",
+                 compression=None, check_replica=False,
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
@@ -2154,6 +2152,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
         super(ValidateDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
+            time_unit=time_unit,
             compression=compression, sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection)
         self.thread_name = "ValidateDocumentsTask-%s_%s_%s_%s_%s_%s_%s" % (
@@ -5043,7 +5042,7 @@ class Atomicity(Task):
                             persist_to=self.persist_to,
                             replicate_to=self.replicate_to,
                             timeout=self.timeout,
-                            timeunit=self.time_unit,
+                            time_unit=self.time_unit,
                             durability="")
                     self.delete_keys = last_batch.keys()
                 elif op_type in ["rebalance_update", "create_update"]:
