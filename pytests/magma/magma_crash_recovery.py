@@ -5,7 +5,6 @@ Created on Dec 12, 2019
 '''
 
 import copy
-import random
 import threading
 
 from Cb_constants.CBServer import CbServer
@@ -30,10 +29,11 @@ class MagmaCrashTests(MagmaBaseTest):
         self.sdk_timeout = self.input.param("sdk_timeout", 10)
         self.time_unit = "milliseconds"
         self.graceful = self.input.param("graceful", False)
+        self.crash_th = None
 
     def tearDown(self):
         self.stop_crash = True
-        if self.crash_th.is_alive():
+        if self.crash_th and self.crash_th.is_alive():
             self.crash_th.join()
         super(MagmaCrashTests, self).tearDown()
 
@@ -91,10 +91,6 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.compute_docs_ranges()
 
-        self.crash_th = threading.Thread(target=self.crash,
-                              kwargs=dict(graceful=self.graceful,
-                                          wait=wait_warmup))
-        self.crash_th.start()
         tasks_info = dict()
         for collection in self.collections:
             self.generate_docs(doc_ops=self.doc_ops, target_vbucket=None)
@@ -110,6 +106,10 @@ class MagmaCrashTests(MagmaBaseTest):
                 track_failures=False)
             tasks_info.update(tem_tasks_info.items())
 
+        self.crash_th = threading.Thread(target=self.crash,
+                                         kwargs=dict(graceful=self.graceful,
+                                                     wait=wait_warmup))
+        self.crash_th.start()
         for task in tasks_info:
             self.task_manager.get_task_result(task)
 
@@ -120,11 +120,8 @@ class MagmaCrashTests(MagmaBaseTest):
 
     def test_crash_during_recovery(self):
         self.compute_docs_ranges()
-
-        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
-        self.crash_th.start()
-
         tasks_info = dict()
+
         for collection in self.collections:
             self.generate_docs(doc_ops=self.doc_ops, target_vbucket=None)
             tem_tasks_info = self.loadgen_docs(
@@ -139,6 +136,8 @@ class MagmaCrashTests(MagmaBaseTest):
                 track_failures=False)
             tasks_info.update(tem_tasks_info.items())
 
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
+        self.crash_th.start()
         for task in tasks_info:
             self.task_manager.get_task_result(task)
 
@@ -286,10 +285,6 @@ class MagmaCrashTests(MagmaBaseTest):
         end = 1
         reverse_read_gen = self.genrate_docs_basic(start, end)
 
-        self.crash_th = threading.Thread(target=self.crash, kwargs={"graceful":
-                                                         self.graceful})
-        self.crash_th.start()
-
         count = 0
         while count < self.read_thread_count:
             read_task_info = self.loadgen_docs(self.retry_exceptions,
@@ -310,6 +305,10 @@ class MagmaCrashTests(MagmaBaseTest):
                     suppress_error_table=False)
                 tasks_info.update(read_task_info.items())
                 count += 1
+
+        self.crash_th = threading.Thread(target=self.crash,
+                                         kwargs={"graceful": self.graceful})
+        self.crash_th.start()
         for task in tasks_info:
             self.task_manager.get_task_result(task)
 
@@ -333,10 +332,6 @@ class MagmaCrashTests(MagmaBaseTest):
         self.update_start = 0
         self.update_end = self.num_items
 
-        self.crash_th = threading.Thread(target=self.crash, kwargs={"graceful":
-                                                         self.graceful})
-        self.crash_th.start()
-
         count = 0
         while count < self.read_thread_count:
             self.generate_docs(doc_ops="update")
@@ -351,6 +346,9 @@ class MagmaCrashTests(MagmaBaseTest):
             count += 1
             self.sleep(5)
 
+        self.crash_th = threading.Thread(target=self.crash,
+                                         kwargs={"graceful": self.graceful})
+        self.crash_th.start()
         for task in tasks_info:
             self.task_manager.get_task_result(task)
 
