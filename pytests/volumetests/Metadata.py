@@ -1,4 +1,5 @@
 import random
+import re
 import time
 
 from com.couchbase.client.java import *
@@ -6,9 +7,12 @@ from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
 
 from Cb_constants import CbServer
+from FtsLib.FtsOperations import FtsHelper
 from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
 from bucket_collections.collections_base import CollectionBase
+
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
 
 class volume(CollectionBase):
@@ -25,10 +29,16 @@ class volume(CollectionBase):
         self.skip_check_logs = False
         self.iterations = self.input.param("iterations", 1)
         self.retry_get_process_num = self.input.param("retry_get_process_num", 400)
-        self.kv_mem_quota = self.input.param("kv_mem_quota", 2000)
+        self.kv_mem_quota = self.input.param("kv_mem_quota", 22000)
         self.index_mem_quota = self.input.param("index_mem_quota", 22700)
         self.skip_index_creation_in_setup = self.input.param("skip_index_creation_in_setup", False)
+        self.tombstone_purge_age = self.input.param("tombstone_purge_age", 300)
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+        self.rest.update_tombstone_purge_age_for_removal(self.tombstone_purge_age)
         self.index_setup()
+        self.fts_setup()
 
     def index_setup(self):
         # Initialize parameters for index querying
@@ -52,6 +62,18 @@ class volume(CollectionBase):
         if not self.skip_index_creation_in_setup:
             self.indexes_to_build = self.create_indexes()
             self.build_deferred_indexes(self.indexes_to_build)
+
+    def fts_setup(self):
+        """
+        Create initial fts indexes
+        """
+        self.fts_indexes_to_create = self.input.param("fts_indexes_to_create", 0)
+        self.fts_indexes_to_recreate = self.input.param("fts_indexes_to_recreate", 0)
+        self.fts_mem_quota = self.input.param("fts_mem_quota", 22000)
+        if self.fts_indexes_to_create > 0:
+            self.fts_index_partitions = self.input.param("fts_index_partition", 6)
+            self.set_memory_quota_fts()
+            self.fts_dict = self.create_fts_indexes(self.fts_indexes_to_create)
 
     def tearDown(self):
         self.log.info("Printing bucket stats before teardown")
@@ -77,6 +99,13 @@ class volume(CollectionBase):
         self.rest.set_service_mem_quota(
             {CbServer.Settings.KV_MEM_QUOTA: int(self.kv_mem_quota),
              CbServer.Settings.INDEX_MEM_QUOTA: int(self.index_mem_quota)})
+
+    def set_memory_quota_fts(self):
+        """
+        Set fts memoryquota
+        """
+        self.rest.set_service_mem_quota(
+            {CbServer.Settings.FTS_MEM_QUOTA: int(self.fts_mem_quota)})
 
     def run_cbq_query(self, query):
         """
@@ -196,9 +225,205 @@ class volume(CollectionBase):
                         if count >= num_indexes_to_drop:
                             return indexes_dropped
 
+    @staticmethod
+    def get_fts_param_template():
+        fts_param_template = '{ \
+                     "type": "fulltext-index", \
+                     "name": "%s", \
+                     "sourceType": "gocbcore", \
+                     "sourceName": "%s", \
+                     "planParams": { \
+                       "maxPartitionsPerPIndex": 1024, \
+                       "indexPartitions": %d \
+                     }, \
+                     "params": { \
+                       "doc_config": { \
+                         "docid_prefix_delim": "", \
+                         "docid_regexp": "", \
+                         "mode": "scope.collection.type_field", \
+                         "type_field": "type" \
+                       }, \
+                       "mapping": { \
+                         "analysis": {}, \
+                         "default_analyzer": "standard", \
+                         "default_datetime_parser": "dateTimeOptional", \
+                         "default_field": "_all", \
+                         "default_mapping": { \
+                           "dynamic": true, \
+                           "enabled": false \
+                         }, \
+                         "default_type": "_default", \
+                         "docvalues_dynamic": false, \
+                         "index_dynamic": true, \
+                         "store_dynamic": false, \
+                         "type_field": "_type", \
+                         "types": { \
+                           "%s.%s": { \
+                             "dynamic": true, \
+                             "enabled": true \
+                           } \
+                         } \
+                       }, \
+                       "store": { \
+                         "indexType": "scorch", \
+                         "segmentVersion": 15 \
+                       } \
+                     }, \
+                     "sourceParams": {} \
+                   }'
+        return fts_param_template
+
+    def create_fts_indexes(self, count=100, base_name="fts"):
+        """
+        Creates count number of fts indexes on collections
+        count should be less than number of collections
+        """
+        self.log.debug("Creating {} fts indexes ".format(count))
+        fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
+            service_type=CbServer.Services.FTS,
+            get_all_nodes=False))
+        couchbase_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "couchbase"]
+        created_count = 0
+        fts_indexes = dict()
+        for bucket in couchbase_buckets:
+            fts_indexes[bucket.name] = dict()
+            for _, scope in bucket.scopes.items():
+                fts_indexes[bucket.name][scope.name] = dict()
+                for _, collection in scope.collections.items():
+                    fts_index_name = base_name + str(created_count)
+                    fts_param_template = self.get_fts_param_template()
+                    status, content = fts_helper.create_fts_index_from_json(
+                        fts_index_name,
+                        fts_param_template % (fts_index_name,
+                                              bucket.name,
+                                              self.fts_index_partitions,
+                                              scope.name, collection.name))
+
+                    if status is False:
+                        self.fail("Failed to create fts index %s: %s"
+                                  % (fts_index_name, content))
+                    if collection not in fts_indexes[bucket.name][scope.name]:
+                        fts_indexes[bucket.name][scope.name][collection.name] = list()
+                    fts_indexes[bucket.name][scope.name][collection.name].append(fts_index_name)
+                    created_count = created_count + 1
+                    if created_count >= count:
+                        return fts_indexes
+
+    def drop_fts_indexes(self, fts_dict, count=10):
+        """
+        Drop count number of fts indexes using fts name
+        from fts_dict
+        """
+        self.log.debug("Dropping {0} fts indexes".format(count))
+        fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
+            service_type=CbServer.Services.FTS,
+            get_all_nodes=False))
+        indexes_dropped = dict()
+        dropped_count = 0
+        for bucket, bucket_data in fts_dict.items():
+            indexes_dropped[bucket] = dict()
+            for scope, collection_data in bucket_data.items():
+                indexes_dropped[bucket][scope] = dict()
+                for collection, fts_index_names in collection_data.items():
+                    for fts_index_name in fts_index_names:
+                        status, content = fts_helper.delete_fts_index(fts_index_name)
+                        if status is False:
+                            self.fail("Failed to drop fts index %s: %s"
+                                      % (fts_index_name, content))
+                        if collection not in indexes_dropped[bucket][scope]:
+                            indexes_dropped[bucket][scope][collection] = list()
+                        indexes_dropped[bucket][scope][collection].append(fts_index_name)
+                        dropped_count = dropped_count + 1
+                        if dropped_count >= count:
+                            return indexes_dropped
+
+    def create_and_drop_fts_indexes(self, count=10):
+        """
+        Create and drop count number of fts indexes
+        """
+        fts_dict = self.create_fts_indexes(count=count, base_name="fts-recreate-")
+        self.drop_fts_indexes(fts_dict, count=count)
+
     def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         self.assertTrue(task.result, "Rebalance Failed")
+
+    def get_latest_tombstones_purged_count(self, nodes=None):
+        """
+        grep debug log for the latest tombstones purged count
+        Return dict with key = node_ip and value = ts purged count
+        as string
+        """
+        ts_purged_count_dict = dict()
+        if nodes is None:
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+        for node in nodes:
+            shell = RemoteMachineShellConnection(node)
+            command = "grep 'tombstone_agent:purge:' /opt/couchbase/var/lib/couchbase/logs/debug.log | tail -1"
+            output, _ = shell.execute_command(command)
+            self.log.info("On {0} {1}".format(node.ip, output))
+            shell.disconnect()
+            purged_count = re.findall("Purged [0-9]+", output[0])[0].split(" ")[1]
+            ts_purged_count_dict[node.ip] = purged_count
+        return ts_purged_count_dict
+
+    def get_ns_config_deleted_keys_count(self, nodes=None):
+        """
+        get a dump of ns_config and grep for "_deleted" to get
+        deleted keys count
+        Return dict with key = node_ip and value = deleted key count
+        as string
+        """
+        deleted_keys_count_dict = dict()
+        if nodes is None:
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+        for node in nodes:
+            shell = RemoteMachineShellConnection(node)
+            shell.enable_diag_eval_on_non_local_hosts()
+            command = "curl --silent -u %s:%s http://localhost:8091/diag/eval -d 'ns_config:get()' " \
+                      "| grep '_deleted' | wc -l" % (self.rest.username, self.rest.password)
+            output, _ = shell.execute_command(command)
+            shell.disconnect()
+            deleted_keys_count_dict[node.ip] = output[0].strip('\n')
+        return deleted_keys_count_dict
+
+    def validation_for_ts_purging(self, nodes=None):
+        """
+        1. Disable ts purger
+        2. Create fts indexes (to create metakv, ns_config entries)
+        3. Delete fts indexes
+        4. Grep ns_config for '_deleted' to get total deleted keys count
+        5. enable ts purger and age = 1 mins
+        6. Sleep for 2 minutes
+        7. Grep for debug.log and check for latest tombstones purged count
+        8. Validate step4 count matches step 7 count for all nodes
+        """
+        if nodes is None:
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+
+        self.rest.update_tombstone_purge_age_for_removal(self.tombstone_purge_age)
+        self.rest.disable_tombstone_purger()
+
+        for i in range(self.fts_indexes_to_recreate):
+            fts_dict = self.create_fts_indexes(count=1, base_name="recreate-" + str(i))
+            self.drop_fts_indexes(fts_dict, count=1)
+        self.sleep(60, "Wait after dropping fts indexes")
+
+        deleted_keys_count_dict = self.get_ns_config_deleted_keys_count(nodes=nodes)
+        self.rest.enable_tombstone_purger()
+
+        self.sleep(60, "Waiting for purger agent to wake up")
+        self.sleep(self.tombstone_purge_age, "waiting for purging to finish")
+
+        ts_purged_count_dict = self.get_latest_tombstones_purged_count(nodes=nodes)
+        for node in nodes:
+            expected_ts_purge_count = deleted_keys_count_dict[node.ip]
+            actual_ts_purge_count = ts_purged_count_dict[node.ip]
+            if expected_ts_purge_count != actual_ts_purge_count:
+                self.log.critical("On {0}: Expected ts purged count: {1} "
+                                  "Actual ts purged count: {2}".
+                                  format(node.ip, expected_ts_purge_count,
+                                         actual_ts_purge_count))
 
     def reload_data_into_buckets(self):
         """
@@ -343,3 +568,70 @@ class volume(CollectionBase):
             gsi_base_name = "gsi-set-" + str(increment_count) + "-"
             self.indexes_to_build = self.create_indexes(gsi_base_name=gsi_base_name)
             self.build_deferred_indexes(self.indexes_to_build)
+
+    def test_nsconfig_tombstones_purging_volume(self):
+        self.reload_data_into_buckets()
+        self.cycles = self.input.param("cycles", 5)
+        cycles = 0
+        while cycles < self.cycles:
+            self.log.info("Cycle: {0}".format(cycles))
+            # KV rebalance
+            add_nodes = random.sample(self.available_servers, 2)
+            operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [],
+                                                  services=["kv", "kv"],
+                                                  retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(operation)
+            for node in add_nodes:
+                self.available_servers.remove(node)
+                self.nodes_in_cluster.append(node)
+            self.validation_for_ts_purging()
+
+            # Index rebalance + drop and recreate indexes
+            add_nodes = random.sample(self.available_servers, 2)
+            operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [],
+                                                  services=["index", "index"],
+                                                  retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(operation)
+            for node in add_nodes:
+                self.available_servers.remove(node)
+                self.nodes_in_cluster.append(node)
+            indexes_dropped = self.drop_indexes(num_indexes_to_drop=self.num_indexes_to_drop)
+            self.recreate_dropped_indexes(indexes_dropped)
+            self.validation_for_ts_purging()
+
+            # fts rebalance + create and drop fts indexes
+            add_nodes = random.sample(self.available_servers, 2)
+            operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [],
+                                                  services=["fts", "fts"],
+                                                  retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(operation)
+            for node in add_nodes:
+                self.available_servers.remove(node)
+                self.nodes_in_cluster.append(node)
+            self.validation_for_ts_purging()
+
+            remove_nodes = list()
+            kv_nodes = self.cluster_util.get_nodes_from_services_map(service_type="kv",
+                                                                     get_all_nodes=True,
+                                                                     servers=self.nodes_in_cluster,
+                                                                     master=self.cluster.master)
+            kv_nodes.remove(self.cluster.master)
+            remove_nodes.extend(random.sample(kv_nodes, 2))
+            gsi_nodes = self.cluster_util.get_nodes_from_services_map(service_type="index",
+                                                                      get_all_nodes=True,
+                                                                      servers=self.nodes_in_cluster,
+                                                                      master=self.cluster.master)
+            remove_nodes.extend(random.sample(gsi_nodes, 2))
+            fts_nodes = self.cluster_util.get_nodes_from_services_map(service_type="fts",
+                                                                      get_all_nodes=True,
+                                                                      servers=self.nodes_in_cluster,
+                                                                      master=self.cluster.master)
+            remove_nodes.extend(random.sample(fts_nodes, 2))
+            operation = self.task.async_rebalance(self.nodes_in_cluster, [], remove_nodes,
+                                                  retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(operation)
+            for node in remove_nodes:
+                self.available_servers.append(node)
+                self.nodes_in_cluster.remove(node)
+            self.validation_for_ts_purging()
+            cycles = cycles + 1
