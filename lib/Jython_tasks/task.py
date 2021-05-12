@@ -2350,7 +2350,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
 class DocumentsValidatorTask(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generators,
                  op_type, exp, flag=0, only_store_hash=True, batch_size=1,
-                 pause_secs=1, timeout_secs=60, compression=None,
+                 pause_secs=1, timeout_secs=60, time_unit="seconds",
+                 compression=None,
                  process_concurrency=4, check_replica=False,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
@@ -2366,6 +2367,7 @@ class DocumentsValidatorTask(Task):
         self.only_store_hash = only_store_hash
         self.pause_secs = pause_secs
         self.timeout_secs = timeout_secs
+        self.time_unit = time_unit
         self.compression = compression
         self.process_concurrency = process_concurrency
         self.clients = clients
@@ -2468,6 +2470,7 @@ class DocumentsValidatorTask(Task):
                 self.cluster, self.bucket, self.clients[i], generators[i],
                 self.op_type, self.exp, self.flag, batch_size=self.batch_size,
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                time_unit=self.time_unit,
                 compression=self.compression, check_replica=self.check_replica,
                 scope=self.scope, collection=self.collection,
                 sdk_client_pool=self.sdk_client_pool,
