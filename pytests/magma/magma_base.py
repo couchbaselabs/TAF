@@ -869,7 +869,7 @@ class MagmaBaseTest(BaseTestCase):
 
         while not self.stop_crash:
             loop_itr += 1
-            sleep = random.randint(60, 120)
+            sleep = random.randint(30, 60)
             self.sleep(sleep,
                        "Iteration:{} waiting for {} sec to kill memcached on all nodes".
                        format(loop_itr, sleep))
