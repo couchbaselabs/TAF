@@ -68,6 +68,7 @@ from com.couchbase.client.core.deps.io.netty.util import CharsetUtil
 from Cb_constants import ClusterRun, CbServer, DocLoading
 from couchbase_helper.durability_helper import DurabilityHelper
 from global_vars import logger
+from java.lang import Exception as JException
 
 
 class SDKClientPool(object):
@@ -301,7 +302,13 @@ class SDKClient(object):
                     break
                 except Exception as e:
                     self.log.critical("WaitUntilReady timeout exception count %s"
-                                  % (count+1))
+                                      % (count+1))
+                    self.log.critical("Exception during waitUntilReady: %s" % e)
+                    self.get_memory_footprint()
+                    sleep(120, "sleep before next retry for bucket connection")
+                except JException as e:
+                    self.log.critical("WaitUntilReady timeout exception count %s"
+                                      % (count+1))
                     self.log.critical("Exception during waitUntilReady: %s" % e)
                     self.get_memory_footprint()
                     sleep(120, "sleep before next retry for bucket connection")
