@@ -635,7 +635,7 @@ class GenericLoadingTask(Task):
         success, fail = self.client.touch_multi(dict(key_val).keys(),
                                                 exp=exp,
                                                 timeout=self.timeout,
-                                                time_unit=self.timeunit)
+                                                time_unit=self.time_unit)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Touch Key", "Exception"])
