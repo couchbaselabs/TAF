@@ -851,11 +851,7 @@ class CollectionUtils(DocLoaderUtils):
                                 bucket.Collection class
         :param session: session to be used instead of httplib2 _http request
         """
-        if scope_name == "_default":
-            scope_name = "`_default`"
         collection_name = collection_spec.get("name")
-        if collection_name == "_default":
-            collection_spec["name"] = "`_default`"
         CollectionUtils.log.debug("Creating Collection %s:%s:%s"
                                   % (bucket.name, scope_name, collection_name))
         status, content = BucketHelper(node).create_collection(bucket,
