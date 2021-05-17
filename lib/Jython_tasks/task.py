@@ -1213,8 +1213,7 @@ class Durability(Task):
             if self.op_type == 'create':
                 _, f_docs = self.batch_create(
                     key_value, persist_to=self.persist_to,
-                    replicate_to=self.replicate_to, timeout=self.timeout,
-                    time_unit=self.time_unit,
+                    replicate_to=self.replicate_to,
                     doc_type=self.generator.doc_type,
                     durability=self.durability)
 
@@ -1228,9 +1227,8 @@ class Durability(Task):
                     self.batch_read(keys_for_update)[0])
                 _, f_docs = self.batch_update(
                     key_value, persist_to=self.persist_to,
-                    replicate_to=self.replicate_to, timeout=self.timeout,
+                    replicate_to=self.replicate_to,
                     durability=self.durability,
-                    time_unit=self.time_unit,
                     doc_type=self.generator.doc_type)
                 self.update_failed.update(f_docs)
             elif self.op_type == 'delete':
@@ -1243,8 +1241,6 @@ class Durability(Task):
                     key_value,
                     persist_to=self.persist_to,
                     replicate_to=self.replicate_to,
-                    timeout=self.timeout,
-                    time_unit=self.time_unit,
                     durability=self.durability)
                 self.delete_failed.update(fail)
             else:
