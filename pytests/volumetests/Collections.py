@@ -92,7 +92,7 @@ class volume(CollectionBase):
                 self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
             self.kv_mem_quota = self.input.param("kv_mem_quota", 10000)
             self.index_mem_quota = self.input.param("index_mem_quota", 11000)
-            self.set_memory_quota_kv_index()
+            self.set_memory_quota(services=["kv", "index"])
 
             self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
                                                                             get_all_nodes=True,
@@ -117,7 +117,7 @@ class volume(CollectionBase):
         self.fts_mem_quota = self.input.param("fts_mem_quota", 22000)
         if self.fts_indexes_to_create > 0:
             self.fts_index_partitions = self.input.param("fts_index_partition", 6)
-            self.set_memory_quota_fts()
+            self.set_memory_quota(services=["fts"])
             _ = self.create_fts_indexes(self.fts_indexes_to_create)
 
     def tearDown(self):
@@ -157,20 +157,23 @@ class volume(CollectionBase):
         if self.crash_warning and result:
             self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
 
-    def set_memory_quota_kv_index(self):
+    def set_memory_quota(self, services=None):
         """
-        To set memory quota of KV and index services before creating indexes
+        Set memory quota of services before starting volume steps
+        services: list of services for which mem_quota has to be updated
         """
-        self.rest.set_service_mem_quota(
-            {CbServer.Settings.KV_MEM_QUOTA: int(self.kv_mem_quota),
-             CbServer.Settings.INDEX_MEM_QUOTA: int(self.index_mem_quota)})
-
-    def set_memory_quota_fts(self):
-        """
-        Set fts memoryquota
-        """
-        self.rest.set_service_mem_quota(
-            {CbServer.Settings.FTS_MEM_QUOTA: int(self.fts_mem_quota)})
+        if services is None:
+            return
+        ram_quota_dict = dict()
+        if "kv" in services:
+            ram_quota_dict[CbServer.Settings.KV_MEM_QUOTA] = \
+                int(self.kv_mem_quota)
+        if "index" in services:
+            ram_quota_dict[CbServer.Settings.INDEX_MEM_QUOTA] = \
+                int(self.index_mem_quota)
+        if "fts" in services:
+            ram_quota_dict[CbServer.Settings.FTS_MEM_QUOTA] = \
+                int(self.fts_mem_quota)
 
     def run_cbq_query(self, query):
         """
