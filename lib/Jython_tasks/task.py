@@ -4908,7 +4908,7 @@ class Atomicity(Task):
                 batch_size=batch_size,
                 pause_secs=pause_secs,
                 timeout_secs=timeout_secs, compression=compression,
-                retries=retries, transaction=transaction, commit=commit,
+                retries=retries,
                 sdk_client_pool=sdk_client_pool,
                 scope=scope, collection=collection)
 
@@ -4919,7 +4919,6 @@ class Atomicity(Task):
                                   generator._doc_gen.start,
                                   generator._doc_gen.end,
                                   time.time())
-            self.commit = commit
             self.exp = exp
             self.flag = flag
             self.persist_to = persist_to
@@ -4931,6 +4930,8 @@ class Atomicity(Task):
             self.instance = instance_num
             self.transaction_app = transaction_app
             self.transaction = transaction
+            self.commit = commit
+            self.defer = defer
             self.clients = clients
             self.bucket = bucket
             self.exp_unit = "seconds"
@@ -4939,7 +4940,6 @@ class Atomicity(Task):
             self.exception = None
             self.num_docs = num_docs
             self.update_count = update_count
-            self.defer = defer
             self.sync = sync
             self.record_fail = record_fail
 
@@ -4980,7 +4980,6 @@ class Atomicity(Task):
                             self.key_value_list, client,
                             persist_to=self.persist_to,
                             replicate_to=self.replicate_to,
-                            timeout=self.timeout, time_unit=self.time_unit,
                             doc_type=self.generator.doc_type)
                 elif op_type == "create":
                     if len(self.op_type) != 1:
@@ -5014,8 +5013,6 @@ class Atomicity(Task):
                         self.batch_update(self.batch, client,
                                           persist_to=self.persist_to,
                                           replicate_to=self.replicate_to,
-                                          timeout=self.timeout,
-                                          time_unit=self.time_unit,
                                           doc_type=self.generator.doc_type)
                 elif op_type == "general_delete":
                     self.test_log.debug("Performing delete for keys %s"
@@ -5025,8 +5022,6 @@ class Atomicity(Task):
                             self.batch, client,
                             persist_to=self.persist_to,
                             replicate_to=self.replicate_to,
-                            timeout=self.timeout,
-                            time_unit=self.time_unit,
                             durability="")
                     self.delete_keys = last_batch.keys()
                 elif op_type in ["rebalance_update", "create_update"]:
