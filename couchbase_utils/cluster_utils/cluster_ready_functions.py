@@ -1205,7 +1205,7 @@ class ClusterUtils:
             self.log.error("%s - du command failure: %s" % (node.ip, output))
         shell.disconnect()
 
-    def get_metaKV_tombstones_purged_count(self, nodes=None):
+    def get_latest_ns_config_tombstones_purged_count(self, nodes=None):
         """
         grep debug log for the latest tombstones purged count
         Return dict with key = node_ip and value = ts purged count
