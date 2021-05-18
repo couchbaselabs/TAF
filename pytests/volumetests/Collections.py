@@ -174,6 +174,7 @@ class volume(CollectionBase):
         if "fts" in services:
             ram_quota_dict[CbServer.Settings.FTS_MEM_QUOTA] = \
                 int(self.fts_mem_quota)
+        self.rest.set_service_mem_quota(ram_quota_dict)
 
     def run_cbq_query(self, query):
         """
