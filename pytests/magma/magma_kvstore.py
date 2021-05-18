@@ -1,3 +1,7 @@
+import time
+import threading
+import random
+
 from Cb_constants.CBServer import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
@@ -8,9 +12,38 @@ from BucketLib.bucket import Bucket
 class KVStoreTests(MagmaBaseTest):
     def setUp(self):
         super(KVStoreTests, self).setUp()
+        self.crash_memcached = self.input.param("crash_memcached", False)
+        self.graceful = self.input.param("graceful", False)
 
     def tearDown(self):
         super(KVStoreTests, self).tearDown()
+
+    def crash(self, nodes=None, kill_itr=2, graceful=False):
+        nodes = nodes or self.cluster.nodes_in_cluster
+        self.stop_crash = False
+        count = kill_itr
+        loop_itr = 0
+        connections = dict()
+        for node in nodes:
+            shell = RemoteMachineShellConnection(node)
+            connections.update({node: shell})
+
+        while not self.stop_crash:
+            loop_itr += 1
+            self.log.info("Iteration:{} to kill memcached on all nodes".format(loop_itr))
+            for node, shell in connections.items():
+                if "kv" in node.services:
+                    if graceful:
+                        shell.restart_couchbase()
+                    else:
+                        while count > 0:
+                            shell.kill_memcached()
+                            self.sleep(5, "Sleep before killing memcached on same node again.")
+                            count -= 1
+                        count = kill_itr
+
+            for _, shell in connections.items():
+                shell.disconnect()
 
     def loadgen_docs_per_bucket(self, bucket,
                      retry_exceptions=[],
@@ -316,9 +349,14 @@ class KVStoreTests(MagmaBaseTest):
             Step 4
             -- Bucket recreation steps
             '''
+
+            if self.crash_memcached:
+                self.crash_th = threading.Thread(target=self.crash,
+                                                  kwargs=dict(graceful=self.graceful))
+                self.crash_th.start()
+
             buckets_created = self.bucket_util.create_multiple_buckets(
-            self.cluster.master,
-            self.num_replicas,
+            self.cluster.master, self.num_replicas,
             bucket_count=self.num_delete_buckets,
             bucket_type=self.bucket_type,
             storage={"couchstore": 0,
@@ -326,7 +364,28 @@ class KVStoreTests(MagmaBaseTest):
             eviction_policy=self.bucket_eviction_policy,
             ram_quota=bucket_ram_quota,
             bucket_name=self.bucket_name)
+
+            if self.crash_memcached:
+                self.stop_crash = True
+                self.crash_th.join()
+
+            if not buckets_created:
+                if self.crash_th and self.crash_th.is_alive():
+                    self.crash_th.join()
+                buckets_created = self.bucket_util.create_multiple_buckets(
+                    self.cluster.master, self.num_replicas,
+                    bucket_count=self.num_delete_buckets,
+                    bucket_type=self.bucket_type,
+                    storage={"couchstore": 0,
+                             "magma": self.num_delete_buckets},
+                    eviction_policy=self.bucket_eviction_policy,
+                    ram_quota=bucket_ram_quota,
+                    bucket_name=self.bucket_name)
+
             self.assertTrue(buckets_created, "Unable to create multiple buckets after bucket deletion")
+
+            if self.crash_th and self.crash_th.is_alive():
+                self.crash_th.join()
             for bucket in self.bucket_util.buckets:
                 ready = self.bucket_util.wait_for_memcached(
                     self.cluster.master,
