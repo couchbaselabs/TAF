@@ -1204,3 +1204,42 @@ class ClusterUtils:
         else:
             self.log.error("%s - du command failure: %s" % (node.ip, output))
         shell.disconnect()
+
+    def get_metaKV_tombstones_purged_count(self, nodes=None):
+        """
+        grep debug log for the latest tombstones purged count
+        Return dict with key = node_ip and value = ts purged count
+        as string
+        """
+        ts_purged_count_dict = dict()
+        if nodes is None:
+            nodes = self.get_nodes_in_cluster(self.cluster.master)
+        for node in nodes:
+            shell = RemoteMachineShellConnection(node)
+            command = "grep 'tombstone_agent:purge:' /opt/couchbase/var/lib/couchbase/logs/debug.log | tail -1"
+            output, _ = shell.execute_command(command)
+            self.log.info("On {0} {1}".format(node.ip, output))
+            shell.disconnect()
+            purged_count = re.findall("Purged [0-9]+", output[0])[0].split(" ")[1]
+            ts_purged_count_dict[node.ip] = purged_count
+        return ts_purged_count_dict
+
+    def get_ns_config_deleted_keys_count(self, nodes=None):
+        """
+        get a dump of ns_config and grep for "_deleted" to get
+        deleted keys count
+        Return dict with key = node_ip and value = deleted key count
+        as string
+        """
+        deleted_keys_count_dict = dict()
+        if nodes is None:
+            nodes = self.get_nodes_in_cluster(self.cluster.master)
+        for node in nodes:
+            shell = RemoteMachineShellConnection(node)
+            shell.enable_diag_eval_on_non_local_hosts()
+            command = "curl --silent -u %s:%s http://localhost:8091/diag/eval -d 'ns_config:get()' " \
+                      "| grep '_deleted' | wc -l" % (self.rest.username, self.rest.password)
+            output, _ = shell.execute_command(command)
+            shell.disconnect()
+            deleted_keys_count_dict[node.ip] = output[0].strip('\n')
+        return deleted_keys_count_dict
