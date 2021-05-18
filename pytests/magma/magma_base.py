@@ -195,6 +195,18 @@ class MagmaBaseTest(BaseTestCase):
         self.read_thread_count = self.input.param("read_thread_count", 4)
         self.disk_usage = dict()
 
+        # Creating clients in SDK client pool
+        if self.sdk_client_pool:
+            self.log.info("Creating SDK clients for client_pool")
+            max_clients = min(self.task_manager.number_of_threads,
+                              20)
+            clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
+            for bucket in self.bucket_util.buckets:
+                self.sdk_client_pool.create_clients(
+                    bucket, [self.cluster.master],
+                    clients_per_bucket,
+                    compression_settings=self.sdk_compression)
+
         # Initial Data Load
         self.initial_load()
         self.log.info("==========Finished magma base setup========")
@@ -481,7 +493,7 @@ class MagmaBaseTest(BaseTestCase):
                                                       target_vbucket=target_vbucket,
                                                       mutate=expiry_mutate)
 
-    def load_bucekts_in_dgm(self, kv_gen, op_type, exp, flag=0,
+    def load_buckets_in_dgm(self, kv_gen, op_type, exp, flag=0,
                             only_store_hash=True, batch_size=1000, pause_secs=1,
                             timeout_secs=30, compression=True, dgm_batch=5000,
                             skip_read_on_error=False,
@@ -512,7 +524,8 @@ class MagmaBaseTest(BaseTestCase):
                     scope=scope,
                     collection=collection,
                     monitor_stats=self.monitor_stats,
-                    track_failures=track_failures)
+                    track_failures=track_failures,
+                    sdk_client_pool=self.sdk_client_pool)
                 tasks_info.update(task_info.items())
                 task_per_collection[collection] = list(task_info.keys())[0]
             if scope == CbServer.default_scope:
