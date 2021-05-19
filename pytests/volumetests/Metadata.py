@@ -45,6 +45,7 @@ class volume(CollectionBase):
         self.n1ql_nodes = None
         self.number_of_indexes_per_coll = self.input.param("number_of_indexes_per_coll",
                                                            5)  # with 1 replicas = total 10 indexes per coll
+        self.max_2i_count = self.input.param("max_2i_count", 10000)
         # Below is the total num of indexes to drop after each rebalance (and recreate them)
         self.num_indexes_to_drop = self.input.param("num_indexes_to_drop", 500)
         self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
@@ -70,6 +71,12 @@ class volume(CollectionBase):
         self.fts_indexes_to_create = self.input.param("fts_indexes_to_create", 0)
         self.fts_indexes_to_recreate = self.input.param("fts_indexes_to_recreate", 0)
         self.fts_mem_quota = self.input.param("fts_mem_quota", 22000)
+        self.fts_nodes = self.cluster_util.get_nodes_from_services_map(service_type="fts",
+                                                                       get_all_nodes=True,
+                                                                       servers=self.cluster.servers[
+                                                                               :self.nodes_init],
+                                                                       master=self.cluster.master)
+
         if self.fts_indexes_to_create > 0:
             self.fts_index_partitions = self.input.param("fts_index_partition", 6)
             self.set_memory_quota(services=["fts"])
@@ -185,6 +192,8 @@ class volume(CollectionBase):
                             indexes_to_build[bucket.name][scope.name][collection.name] = list()
                         indexes_to_build[bucket.name][scope.name][collection.name].append(gsi_index_name)
                         count = count + 1
+                        if count >= self.max_2i_count:
+                            return indexes_to_build
         return indexes_to_build
 
     def recreate_dropped_indexes(self, indexes_dropped):
@@ -283,9 +292,7 @@ class volume(CollectionBase):
         count should be less than number of collections
         """
         self.log.debug("Creating {} fts indexes ".format(count))
-        fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
-            service_type=CbServer.Services.FTS,
-            get_all_nodes=False))
+        fts_helper = FtsHelper(self.fts_nodes[0])
         couchbase_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "couchbase"]
         created_count = 0
         fts_indexes = dict()
@@ -348,6 +355,24 @@ class volume(CollectionBase):
         fts_dict = self.create_fts_indexes(count=count, base_name="fts-recreate-")
         self.drop_fts_indexes(fts_dict, count=count)
 
+    def create_and_drop_metakv_keys(self, metakv_cycles=50, sleep_time_between=3, batches=1000):
+        """
+        metakv_cycles: Number of create and drops cycles
+        sleep_time_between: Sleep time between create and delete
+        batch: number of creates before starting drops
+        """
+        self.log.info("Creating and dropping metakv keys, cycles {0}, batches {1}"
+                      .format(metakv_cycles, batches))
+        for cycle in range(metakv_cycles):
+            keys = list()
+            for batch in range(batches):
+                key = "random_key-cycle-" + str(cycle) + "-batch-" + str(batch)
+                self.rest.create_metakv_key(key=key, value=key)
+                keys.append(key)
+            self.sleep(sleep_time_between)
+            for key in keys:
+                self.rest.delete_metakv_key(key=key)
+
     def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         self.assertTrue(task.result, "Rebalance Failed")
@@ -365,10 +390,22 @@ class volume(CollectionBase):
             shell = RemoteMachineShellConnection(node)
             command = "grep 'tombstone_agent:purge:' /opt/couchbase/var/lib/couchbase/logs/debug.log | tail -1"
             output, _ = shell.execute_command(command)
-            self.log.info("On {0} {1}".format(node.ip, output))
-            shell.disconnect()
-            purged_count = re.findall("Purged [0-9]+", output[0])[0].split(" ")[1]
-            ts_purged_count_dict[node.ip] = purged_count
+            try:
+                if len(output) == 0:
+                    self.log.info("Debug.log must have got rotated; trying to find the latest gz file")
+                    command = "find /opt/couchbase/var/lib/couchbase/logs -name 'debug.log.*.gz' -print0 " \
+                              "| xargs -r -0 ls -1 -t | tail -1"
+                    output, _ = shell.execute_command(command)
+                    log_file = output[0]
+                    command = "zgrep 'tombstone_agent:purge:' %s | tail -1" % log_file
+                    output, _ = shell.execute_command(command)
+                self.log.info("On {0} {1}".format(node.ip, output))
+                shell.disconnect()
+                purged_count = re.findall("Purged [0-9]+", output[0])[0].split(" ")[1]
+                ts_purged_count_dict[node.ip] = purged_count
+            except Exception as e:
+                print(e)
+                ts_purged_count_dict[node.ip] = 0
         return ts_purged_count_dict
 
     def get_ns_config_deleted_keys_count(self, nodes=None):
@@ -397,8 +434,8 @@ class volume(CollectionBase):
         2. Create fts indexes (to create metakv, ns_config entries)
         3. Delete fts indexes
         4. Grep ns_config for '_deleted' to get total deleted keys count
-        5. enable ts purger and age = 1 mins
-        6. Sleep for 2 minutes
+        5. Sleep for "age" minutes
+        6. enable ts purger and age  & wait for 1 min
         7. Grep for debug.log and check for latest tombstones purged count
         8. Validate step4 count matches step 7 count for all nodes
         """
@@ -408,16 +445,20 @@ class volume(CollectionBase):
         self.rest.update_tombstone_purge_age_for_removal(self.tombstone_purge_age)
         self.rest.disable_tombstone_purger()
 
-        for i in range(self.fts_indexes_to_recreate):
-            fts_dict = self.create_fts_indexes(count=1, base_name="recreate-" + str(i))
-            self.drop_fts_indexes(fts_dict, count=1)
-        self.sleep(60, "Wait after dropping fts indexes")
+        # self.log.info("Creating and deleting FTS index for {0} times".
+        #               format(self.fts_indexes_to_recreate))
+        # for i in range(self.fts_indexes_to_recreate):
+        #     fts_dict = self.create_fts_indexes(count=1, base_name="recreate-" + str(i) + str(i))
+        #     self.drop_fts_indexes(fts_dict, count=1)
+        # self.sleep(60, "Wait after dropping fts indexes")
+        self.create_and_drop_metakv_keys(metakv_cycles=self.metakv_cycles)
+        self.sleep(60, "Wait after dropping keys")
 
         deleted_keys_count_dict = self.get_ns_config_deleted_keys_count(nodes=nodes)
-        self.rest.enable_tombstone_purger()
 
-        self.sleep(60, "Waiting for purger agent to wake up")
         self.sleep(self.tombstone_purge_age, "waiting for purging to finish")
+        self.rest.enable_tombstone_purger()
+        self.sleep(60, "Waiting for purger agent to wake up")
 
         ts_purged_count_dict = self.get_latest_tombstones_purged_count(nodes=nodes)
         for node in nodes:
@@ -575,6 +616,7 @@ class volume(CollectionBase):
 
     def test_nsconfig_tombstones_purging_volume(self):
         self.reload_data_into_buckets()
+        self.metakv_cycles = self.input.param("metakv_cycles", 500)
         self.cycles = self.input.param("cycles", 5)
         cycles = 0
         while cycles < self.cycles:
@@ -584,17 +626,29 @@ class volume(CollectionBase):
             operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [],
                                                   services=["kv", "kv"],
                                                   retry_get_process_num=self.retry_get_process_num)
+            # self.log.info("Creating and deleting FTS index for {0} times".
+            #               format(self.fts_indexes_to_recreate))
+            # for i in range(self.fts_indexes_to_recreate / 10):
+            #     fts_dict = self.create_fts_indexes(count=10, base_name="recreate-reb-" + str(i))
+            #     self.drop_fts_indexes(fts_dict, count=10)
+            self.create_and_drop_metakv_keys(metakv_cycles=self.metakv_cycles)
             self.wait_for_rebalance_to_complete(operation)
             for node in add_nodes:
                 self.available_servers.remove(node)
                 self.nodes_in_cluster.append(node)
             self.validation_for_ts_purging()
-
+            ############################################################################################
             # Index rebalance + drop and recreate indexes
             add_nodes = random.sample(self.available_servers, 2)
             operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [],
                                                   services=["index", "index"],
                                                   retry_get_process_num=self.retry_get_process_num)
+            # self.log.info("Creating and deleting FTS index for {0} times".
+            #               format(self.fts_indexes_to_recreate))
+            # for i in range(self.fts_indexes_to_recreate / 10):
+            #     fts_dict = self.create_fts_indexes(count=10, base_name="recreate-reb-" + str(i))
+            #     self.drop_fts_indexes(fts_dict, count=10)
+            self.create_and_drop_metakv_keys(metakv_cycles=self.metakv_cycles)
             self.wait_for_rebalance_to_complete(operation)
             for node in add_nodes:
                 self.available_servers.remove(node)
@@ -602,18 +656,24 @@ class volume(CollectionBase):
             indexes_dropped = self.drop_indexes(num_indexes_to_drop=self.num_indexes_to_drop)
             self.recreate_dropped_indexes(indexes_dropped)
             self.validation_for_ts_purging()
-
+            ############################################################################################
             # fts rebalance + create and drop fts indexes
             add_nodes = random.sample(self.available_servers, 2)
             operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [],
                                                   services=["fts", "fts"],
                                                   retry_get_process_num=self.retry_get_process_num)
+            # self.log.info("Creating and deleting FTS index for {0} times".
+            #               format(self.fts_indexes_to_recreate))
+            # for i in range(self.fts_indexes_to_recreate / 10):
+            #     fts_dict = self.create_fts_indexes(count=10, base_name="recreate-reb-" + str(i))
+            #     self.drop_fts_indexes(fts_dict, count=10)
+            self.create_and_drop_metakv_keys(metakv_cycles=self.metakv_cycles)
             self.wait_for_rebalance_to_complete(operation)
             for node in add_nodes:
                 self.available_servers.remove(node)
                 self.nodes_in_cluster.append(node)
             self.validation_for_ts_purging()
-
+            ############################################################################################
             remove_nodes = list()
             kv_nodes = self.cluster_util.get_nodes_from_services_map(service_type="kv",
                                                                      get_all_nodes=True,
@@ -633,9 +693,25 @@ class volume(CollectionBase):
             remove_nodes.extend(random.sample(fts_nodes, 2))
             operation = self.task.async_rebalance(self.nodes_in_cluster, [], remove_nodes,
                                                   retry_get_process_num=self.retry_get_process_num)
+            # for i in range(self.fts_indexes_to_recreate / 10):
+            #     fts_dict = self.create_fts_indexes(count=10, base_name="recreate-reb-" + str(i))
+            #     self.drop_fts_indexes(fts_dict, count=10)
+            self.create_and_drop_metakv_keys(metakv_cycles=self.metakv_cycles)
             self.wait_for_rebalance_to_complete(operation)
             for node in remove_nodes:
                 self.available_servers.append(node)
                 self.nodes_in_cluster.remove(node)
             self.validation_for_ts_purging()
+            ############################################################################################
+            self.log.info("Killing erlang on {0}".format(self.cluster.master))
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            shell.kill_erlang()
+            shell.disconnect()
+            self.sleep(120, "Wait after killing erlang")
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            self.log.info("restarting server on {0}".format(self.cluster.master))
+            shell.restart_couchbase()
+            shell.disconnect()
+            self.validation_for_ts_purging()
+            ############################################################################################
             cycles = cycles + 1
