@@ -734,10 +734,16 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             synonym_name = dataset.get_fully_qualified_kv_entity_name(3)
         else:
             synonym_name = None
-        if synonym_name and not self.cbas_util_v2.create_analytics_synonym(
+            
+        if synonym_name:
+            if self.input.param('synonym_on_other_dataset', False):
+                cbas_entity_full_name = CBASHelper.format_name(dataset.dataverse_name, "other")
+            else:
+                cbas_entity_full_name = dataset.full_name
+            if not self.cbas_util_v2.create_analytics_synonym(
                 synonym_full_name=synonym_name,
-                cbas_entity_full_name=dataset.full_name):
-            self.fail("Error while creating synonym {0} on dataset {1}".format(
+                cbas_entity_full_name=cbas_entity_full_name):
+                self.fail("Error while creating synonym {0} on dataset {1}".format(
                 synonym_name, dataset.full_name))
         if self.input.param('precreate_dataset', None):
             if self.input.param('precreate_dataset', None) == "Default":
