@@ -2747,7 +2747,8 @@ class Synonym_Util(Dataset_Util):
                 cbas_entity_name, cbas_entity_dataverse)
             while syn_obj.synonym_on_synonym:
                 syn_obj = inner_func(
-                    syn_obj.cbas_entity_name, syn_obj.cbas_entity_dataverse)
+                    syn_obj.cbas_entity_name, syn_obj.cbas_entity_dataverse,
+                    None, None)
             return syn_obj
         
         final_obj = inner_func(
