@@ -63,14 +63,15 @@ class CollectionBase(BaseTestCase):
         # Initialize cluster using given nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        result = self.task.rebalance([self.cluster.master], nodes_init, [],
-                                     services=services)
-        if result is False:
-            # Need this block since cb-collect won't be collected
-            # in BaseTest if failure happens during setup() stage
-            if self.get_cbcollect_info:
-                self.fetch_cb_collect_logs()
-            self.fail("Initial rebalance failed")
+        if nodes_init:
+            result = self.task.rebalance([self.cluster.master], nodes_init, [],
+                                         services=services)
+            if result is False:
+                # Need this block since cb-collect won't be collected
+                # in BaseTest if failure happens during setup() stage
+                if self.get_cbcollect_info:
+                    self.fetch_cb_collect_logs()
+                self.fail("Initial rebalance failed")
 
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
 
