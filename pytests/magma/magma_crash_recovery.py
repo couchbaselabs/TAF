@@ -30,6 +30,8 @@ class MagmaCrashTests(MagmaBaseTest):
         self.time_unit = "milliseconds"
         self.graceful = self.input.param("graceful", False)
         self.crash_th = None
+        if not self.init_loading and self.active_resident_threshold < 100:
+            self.load_buckets_in_dgm(self.gen_create, "create", 0)
 
     def tearDown(self):
         self.stop_crash = True
