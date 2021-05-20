@@ -111,13 +111,27 @@ class ConfigPurging(CollectionBase):
         super(ConfigPurging, self).tearDown()
 
     def __perform_meta_kv_op_on_rand_key(self, op_type, key_name, value=None):
-        self.log.debug("%s meta_kv key '%s'" % (op_type, key_name))
+        self.log.info("%s meta_kv key '%s'" % (op_type, key_name))
         if op_type == self.op_create:
             self.cluster_util.create_metakv_key(key_name, value)
         elif op_type == self.op_remove:
             self.cluster_util.delete_metakv_key(key_name)
         else:
             self.fail("Invalid operation: %s" % op_type)
+
+    def __get_deleted_key_count(self, check_if_zero=False):
+        deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count()
+        tbl = TableView(self.log.info)
+        tbl.set_headers(["Node", "Deleted_key_count"])
+        for t_ip, k_count in deleted_keys.items():
+            tbl.add_row(["%s" % t_ip, "%s" % k_count])
+        tbl.display("Tombstone count on cluster nodes:")
+
+        if not check_if_zero:
+            return
+        for t_ip, k_count in deleted_keys.items():
+            if k_count != 0:
+                self.fail("%s Deleted key count %s != 0" % (t_ip, k_count))
 
     def __fts_index(self, op_type, index_name):
         self.log.info("%s fts index %s" % (op_type, index_name))
@@ -154,7 +168,7 @@ class ConfigPurging(CollectionBase):
         tail_cmd = "cat /opt/couchbase/var/lib/couchbase/logs/debug.log " \
                    "| sed -n '/%s/,$p'"
         purged_ts_count_pattern = ".*Purged ([0-9]+) ns_config tombstone"
-        meta_kv_keys_pattern = "{metakv,[ ]*<<\"/([0-9a-zA-Z_\-\.]+)\">>"
+        meta_kv_keys_pattern = ".*{metakv,[ ]*<<\"/([0-9a-zA-Z_\-\.]+)\">>"
         start_of_line = "^\[ns_server:"
 
         start_of_line = re.compile(start_of_line)
@@ -171,6 +185,9 @@ class ConfigPurging(CollectionBase):
             shell = RemoteMachineShellConnection(node)
             output, _ = shell.execute_command(
                 tail_cmd % self.ts_during_start[node.ip])
+            if not output:
+                output, _ = shell.execute_command(
+                    " ".join(tail_cmd.split(' ')[:2]))
             self.log.debug("Tail stdout:\n%s" % output)
             o_len = len(output)
             target_buffer = ""
@@ -222,19 +239,6 @@ class ConfigPurging(CollectionBase):
         6. Wait for purger to cleanup the tombstones
         7. Validate the memory and disk space to reclaimed properly
         """
-        def get_deleted_key_count(check_if_zero=False):
-            deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count()
-            tbl = TableView(self.log.info)
-            tbl.set_headers(["Node", "Deleted_key_count"])
-            for t_ip, k_count in deleted_keys.items():
-                tbl.add_row(["%s" % t_ip, "%s" % k_count])
-            tbl.display("Tombstone count on cluster nodes:")
-            if not check_if_zero:
-                return
-            for t_ip, k_count in deleted_keys.items():
-                if k_count != 0:
-                    self.fail("%s Deleted key count %s != 0" % (t_ip, k_count))
-
         def get_node_stats():
             for t_ip, t_conn in shell_conn.items():
                 self.log.info("Node: %s" % t_ip)
@@ -257,7 +261,7 @@ class ConfigPurging(CollectionBase):
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
 
         self.log.info("Collecting initial cluster stats")
-        get_deleted_key_count(check_if_zero=True)
+        self.__get_deleted_key_count(check_if_zero=True)
         get_node_stats()
 
         # Create required indexes
@@ -288,7 +292,7 @@ class ConfigPurging(CollectionBase):
             self.sleep(30, "Wait for FTS delete to complete")
 
         self.log.info("Stats with active tombstones")
-        get_deleted_key_count()
+        self.__get_deleted_key_count()
         get_node_stats()
 
         self.log.info("Triggering tombstone purger")
@@ -299,7 +303,7 @@ class ConfigPurging(CollectionBase):
         self.log.info(self.__get_purged_tombstone_from_last_run())
 
         self.log.info("Post purge cluster stats")
-        get_deleted_key_count(check_if_zero=True)
+        self.__get_deleted_key_count(check_if_zero=True)
         get_node_stats()
 
         # Close all ssh connections
@@ -697,19 +701,42 @@ class ConfigPurging(CollectionBase):
                 self.fail("%s - Key %s missing in purger: %s"
                           % (node_ip, custom_meta_kv_key, purged_data['keys']))
 
-    def test_add_back_node_within_purge_interval(self):
+    def test_node_add_back(self):
         """
         1. Create tombstones in meta_kv
         2. Rebalance random_node out the the cluster
-        3. Add back the node within meta_kv purger interval
+        3. Add back the node within/after meta_kv purger interval
         4. Validate purging happening for prev. deleted keys
         """
-        custom_meta_kv_key = "metakv/key/01"
+        def run_purger_and_validate_purged_key(check_key="exists"):
+            self.__get_deleted_key_count()
+            self.log.info("Triggering meta_kv purger")
+            self.cluster_util.rest.run_tombstone_purger(10)
+            self.sleep(10, "Wait for purger to complete")
+
+            # Validate purger runs on targeted node
+            purged_keys_dict = self.__get_purged_tombstone_from_last_run()
+            self.log.info(purged_keys_dict)
+            for t_ip, purged_data in purged_keys_dict.items():
+                if check_key == "exists" \
+                        and custom_meta_kv_key not in purged_data['keys']:
+                    self.fail("%s - keys not present as expected: %s"
+                              % (t_ip, purged_data['keys']))
+                elif check_key == "not_exists" \
+                        and custom_meta_kv_key in purged_data['keys']:
+                    self.fail("%s - keys purged again: %s"
+                              % (t_ip, purged_data['keys']))
+
+            self.__get_deleted_key_count(check_if_zero=True)
+
+        custom_meta_kv_key = "metakv_key_%s" % int(self.time_stamp)
         fts_key = "fts_index_%s" % int(self.time_stamp)
         target_node_type = \
             self.input.param("target_node", CbServer.Services.KV)
         remove_node_method = \
             self.input.param("removal_method", "rebalance_out")
+        add_back_node_timing = self.input.param("add_back_node",
+                                                "within_purge_interval")
 
         self.log.info("Stopping meta_kv purger autorun")
         self.cluster_util.rest.disable_tombstone_purger()
@@ -719,12 +746,19 @@ class ConfigPurging(CollectionBase):
         self.__perform_meta_kv_op_on_rand_key(self.op_create,
                                               custom_meta_kv_key, "value")
 
+        # Remove meta_kv keys for tombstone creation
+        self.__fts_index(self.op_remove, fts_key)
+        self.__perform_meta_kv_op_on_rand_key(self.op_remove,
+                                              custom_meta_kv_key)
+
         if target_node_type == CbServer.Services.KV:
             target_node = choice(self.cluster.kv_nodes)
         elif target_node_type == CbServer.Services.FTS:
             target_node = choice(self.cluster.fts_nodes)
         else:
             target_node = choice(self.cluster.nodes_in_cluster)
+
+        self.__get_deleted_key_count()
 
         self.log.info("Removing node %s using %s"
                       % (target_node.ip, remove_node_method))
@@ -745,11 +779,19 @@ class ConfigPurging(CollectionBase):
             self.fail("Invalid remove method '%s'" % remove_node_method)
 
         self.task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result, "Rebalance failed")
+        self.sleep(15, "Wait after rebalance")
+
+        self.__get_deleted_key_count()
+
         # Update new master node
         if target_node.ip == self.cluster.master.ip:
             self.cluster_util.find_orchestrator(self.cluster.servers[1])
 
-        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
+        self.log.info("Current master node: %s" % self.cluster.master.ip)
+
+        if add_back_node_timing == "before_purge_interval":
+            run_purger_and_validate_purged_key(check_key="exists")
 
         # Add back the removed node
         self.log.info("Adding back node %s" % target_node.ip)
@@ -758,106 +800,15 @@ class ConfigPurging(CollectionBase):
         elif remove_node_method == "failover":
             self.cluster_util.rest.set_recovery_type(
                 otpNode="ns_1@"+target_node.ip,
-                recoveryType=CbServer.Failover.RecoveryType.DELTA)
+                recoveryType=self.recovery_type)
+            rebalance_result = self.task.rebalance(
+                self.cluster_util.get_nodes_in_cluster(), [], [])
+            self.assertTrue(rebalance_result, "Add back rebalance failed")
 
-        self.task_manager.get_task_result(rebalance_task)
-
-        self.sleep(15, "Wait before triggering purger")
-        self.log.info("Triggering meta_kv purger")
-        self.cluster_util.rest.run_tombstone_purger(10)
-
-        # Validate purger runs on targeted node
-        purged_keys_dict = self.__get_purged_tombstone_from_last_run()
-        for node_ip, purged_data in purged_keys_dict.items():
-            if custom_meta_kv_key not in purged_data['keys'] \
-                    or fts_key not in purged_data['keys']:
-                self.fail("%s - keys not present as expected: %s"
-                          % (node_ip, purged_data['keys']))
-
-    def test_add_back_node_after_purge_interval(self):
-        """
-        1. Create tombstones in meta_kv
-        2. Rebalance random_node out the the cluster
-        3. Add back the node within meta_kv purger interval
-        4. Validate purging happening for prev. deleted keys
-        """
-        custom_meta_kv_key = "custom_meta_key-%s" % self.time_stamp
-        fts_key = "fts_index_%s" % int(self.time_stamp)
-        target_node_type = \
-            self.input.param("target_node", CbServer.Services.KV)
-        remove_node_method = \
-            self.input.param("removal_method", "rebalance_out")
-
-        self.log.info("Stopping meta_kv purger autorun")
-        self.cluster_util.rest.disable_tombstone_purger()
-
-        # Creating meta_kv keys
-        self.__fts_index(self.op_create, fts_key)
-        self.__perform_meta_kv_op_on_rand_key(self.op_create,
-                                              custom_meta_kv_key, "value")
-
-        if target_node_type == CbServer.Services.KV:
-            target_node = choice(self.cluster.kv_nodes)
-        elif target_node_type == CbServer.Services.FTS:
-            target_node = choice(self.cluster.fts_nodes)
-        else:
-            target_node = choice(self.cluster.nodes_in_cluster)
-
-        self.log.info("Removing node %s using %s"
-                      % (target_node.ip, remove_node_method))
-
-        # Remove the target node
-        if remove_node_method == "rebalance_out":
-            rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[0:self.nodes_init], [], [target_node])
-        elif remove_node_method == "swap_rebalance":
-            rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[0:self.nodes_init],
-                [self.cluster.servers[self.nodes_init]], [target_node])
-        elif remove_node_method == "failover":
-            rebalance_task = self.task.async_failover(
-                self.cluster.servers[0:self.nodes_init], [target_node],
-                graceful=True)
-        else:
-            self.fail("Invalid remove method '%s'" % remove_node_method)
-
-        self.task_manager.get_task_result(rebalance_task)
-
-        # Update new master node
-        if target_node.ip == self.cluster.master.ip:
-            self.cluster_util.find_orchestrator(self.cluster.servers[1])
-
-        self.cluster_util.update_cluster_nodes_service_list()
-
-        self.sleep(60, "Wait before running tombstone purger")
-        self.log.info("Run purger to remove tombstones from the existing")
-        self.cluster_util.rest.run_tombstone_purger(60)
-        purged_key_dict = self.__get_purged_tombstone_from_last_run()
-        for node_ip, purged_data in purged_key_dict.items():
-            if custom_meta_kv_key not in purged_data['keys'] \
-                    or fts_key not in purged_data['keys']:
-                self.fail("%s - Expected purger keys missing. Purged: %s"
-                          % (node_ip, purged_data['keys']))
-
-        # Add back the removed node
-        self.log.info("Adding back node %s" % target_node.ip)
-        if remove_node_method in ["rebalance_out", "swap_rebalance"]:
-            self.cluster_util.add_node(target_node, CbServer.Services.KV)
-        elif remove_node_method == "failover":
-            self.cluster_util.rest.set_recovery_type(
-                otpNode="ns_1@"+target_node.ip,
-                recoveryType=CbServer.Failover.RecoveryType.DELTA)
-
-        self.task_manager.get_task_result(rebalance_task)
-
-        self.log.info("Run purger after rebalance-in the node back")
-        self.cluster_util.rest.run_tombstone_purger(60)
-        purged_key_dict = self.__get_purged_tombstone_from_last_run()
-        for node_ip, purged_data in purged_key_dict.items():
-            if custom_meta_kv_key not in purged_data['keys'] \
-                    or fts_key not in purged_data['keys']:
-                self.fail("%s - Expected purger keys missing. Purged: %s"
-                          % (node_ip, purged_data['keys']))
+        if add_back_node_timing == "within_purge_interval":
+            run_purger_and_validate_purged_key(check_key="exists")
+        elif add_back_node_timing == "before_purge_interval":
+            run_purger_and_validate_purged_key(check_key="not_exists")
 
     def test_fts_2i_purging_with_cluster_ops(self):
         """
@@ -887,7 +838,8 @@ class ConfigPurging(CollectionBase):
             self.input.param("target_nodes", "kv").split(";")
         self.cluster_actions = \
             self.input.param("cluster_action", "rebalance_in").split(";")
-        self.recovery_type = self.input.param("recovery_type", "delta")
+        self.recovery_type = self.input.param(
+            "recovery_type", CbServer.Failover.RecoveryType.DELTA)
 
         fts_generic_name = "fts_%s" % int(self.time_stamp) + "_%d"
 
