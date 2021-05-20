@@ -854,6 +854,7 @@ class BaseTestCase(unittest.TestCase):
 
                 _ = shell.execute_command("rm -rf %s.tar.gz" %(filepath))
 
+        copy_path_msg_format = "Copying data, Server :: %s, Path :: %s"
         if self.data_sets and self.bucket_storage == "magma":
             self.log.critical("data_sets ==> {}".format(self.data_sets))
             wal_tar = "wal.tar.gz"
@@ -864,6 +865,7 @@ class BaseTestCase(unittest.TestCase):
                     copy_to_path = os.path.join(log_path, server.ip.replace(".", "_"))
                     if not os.path.isdir(copy_to_path):
                         os.makedirs(copy_to_path, 0o777)
+                    self.log.info(copy_path_msg_format % (server.ip, copy_to_path))
                     get_tar(remote_path, file_path, file_name, server, todir=copy_to_path)
                 else:
                     for kvstore in kvstores:
@@ -879,7 +881,7 @@ class BaseTestCase(unittest.TestCase):
                         copy_to_path = os.path.join(log_path, kvstore)
                         if not os.path.isdir(copy_to_path):
                             os.makedirs(copy_to_path, 0o777)
-
+                        self.log.info(copy_path_msg_format % (server.ip, copy_to_path))
                         get_tar(magma_dir, kvstore_path, kvstore_tar, server, todir=copy_to_path)
                         get_tar(magma_dir, wal_path, wal_tar, server, todir=copy_to_path)
                         get_tar(magma_dir, config_json_path, config_json_tar, server, todir=copy_to_path)
@@ -888,5 +890,5 @@ class BaseTestCase(unittest.TestCase):
                 copy_to_path = os.path.join(log_path, server.ip.replace(".", "_"))
                 if not os.path.isdir(copy_to_path):
                     os.makedirs(copy_to_path, 0o777)
-                self.log.info("copy_to_path {} for server {} in else".format(copy_to_path, server.ip))
+                self.log.info(copy_path_msg_format % (server.ip, copy_to_path))
                 get_tar(remote_path, file_path, file_name, server, todir=copy_to_path)
