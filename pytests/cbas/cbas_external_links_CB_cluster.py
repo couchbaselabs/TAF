@@ -369,7 +369,8 @@ class CBASExternalLinks(CBASBaseTest):
                     "description": "Create a link with an invalid hostname",
                     "hostname": self.invalid_ip,
                     "expected_error": "Cannot connect to host {0}".format(
-                        self.invalid_ip)
+                        self.invalid_ip),
+                    "timeout": 600
                 },
                 {
                     "description": "Create a link with an invalid credentials",
@@ -501,7 +502,8 @@ class CBASExternalLinks(CBASBaseTest):
                             expected_error=testcase.get(
                                 "expected_error", None),
                             username=testcase.get("username",
-                                                  self.analytics_username)):
+                                                  self.analytics_username),
+                            timeout=testcase.get("timeout", 120)):
                         raise Exception(
                             "Error message is different than expected.")
 
