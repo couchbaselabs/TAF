@@ -134,9 +134,6 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             # induce the failure during the rebalance
             self._induce_error(during_rebalance_failure)
             self.task.jython_task_manager.get_task_result(rebalance)
-            # Trigger cbcollect after rebalance interrupted
-            self.cbcollect_info(trigger=True, validate=False,
-                                known_failures=self.cb_collect_failure_nodes)
             self.assertTrue(rebalance.result, self.rebalance_failed_msg)
         except Exception as e:
             self.log.info("Rebalance failed with: {0}".format(str(e)))
@@ -161,9 +158,6 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 self.fail("Rebalance did not fail as expected. "
                           "Hence could not validate auto-retry feature..")
         finally:
-            # Validate cbcollect results
-            self.cbcollect_info(trigger=False, validate=True,
-                                known_failures=self.cb_collect_failure_nodes)
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
             self.cluster_util.start_server(self.servers[1])
@@ -198,9 +192,6 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.assertTrue(rebalance.result, self.rebalance_failed_msg)
         except Exception as e:
             self.log.info("Rebalance failed with: %s" % e)
-            # Start cbcollect after rebalance failure
-            self.cbcollect_info(trigger=True, validate=False,
-                                known_failures=self.cb_collect_failure_nodes)
             # Recover from the error
             self._recover_from_error(during_rebalance_failure)
             # TODO : Data load at this stage fails;
@@ -213,10 +204,6 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             retry_rebalance = result["retry_rebalance"]
             rebalance_id = result["rebalance_id"]
             if retry_rebalance != "pending":
-                # Wait for cbcollect to complete before asserting
-                self.cbcollect_info(
-                    trigger=False, validate=True,
-                    known_failures=self.cb_collect_failure_nodes)
                 self.fail("Auto-retry of failed rebalance is not triggered")
             if post_failure_operation == "cancel_pending_rebalance":
                 # cancel pending rebalance
@@ -235,9 +222,6 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             # Now check and ensure retry won't happen
             result = json.loads(self.rest.get_pending_rebalance_info())
             self.log.info(result)
-            # Validate cbcollect results
-            self.cbcollect_info(trigger=False, validate=True,
-                                known_failures=self.cb_collect_failure_nodes)
             retry_rebalance = result["retry_rebalance"]
             if retry_rebalance != "not_pending":
                 self.fail("Auto-retry of failed rebalance is not cancelled")
@@ -339,30 +323,20 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         # induce the failure before the rebalance starts
         self._induce_rebalance_test_condition(test_failure_condition)
         self.sleep(self.sleep_time)
-        # Start cbcollect before rebalance starts
-        self.cbcollect_info(trigger=True, validate=False)
         try:
             rebalance = self._rebalance_operation(self.rebalance_operation)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, self.rebalance_failed_msg)
         except Exception as e:
             self.log.info("Rebalance failed with: %s" % e)
-            # Validate cbcollect result
-            self.cbcollect_info(trigger=False, validate=True)
-            # Restart cbcollect to test with error recovery
-            self.cbcollect_info(trigger=True, validate=False)
             # Delete the rebalance test condition to recover from the error
             self._delete_rebalance_test_condition(test_failure_condition)
             if self.data_load:
                 tasks = self.async_data_load()
             self.check_retry_rebalance_succeeded()
-            # Validate cbcollect result
-            self.cbcollect_info(trigger=False, validate=True)
             if self.data_load:
                 self.data_validation(tasks)
         else:
-            # Wait for cbcollect to complete
-            self.cbcollect_info(trigger=False, validate=True)
             self.fail("Rebalance did not fail as expected. "
                       "Hence could not validate auto-retry feature..")
         finally:
