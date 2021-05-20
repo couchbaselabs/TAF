@@ -101,7 +101,9 @@ class CBASUDF(CBASBaseTest):
                     if len(list_of_objects) == 1:
                         dataverse = random.choice(
                             self.cbas_util_v2.dataverses.values())
+                        break
                     else:
+                        list_of_objects.remove(entity)
                         entity = random.choice(list_of_objects)
                     self.log.debug("select entity --> {0} entity_dv --> {1} expected_dv --> {2}".format(
                         entity.full_name, entity.dataverse_name, dataverse.name))
@@ -110,8 +112,10 @@ class CBASUDF(CBASBaseTest):
                     if len(list_of_objects) == 1:
                         dataverse = random.choice(
                             self.cbas_util_v2.dataverses.values())
+                        break
                     else:
                         entity = random.choice(list_of_objects)
+                        list_of_objects.remove(entity)
                 self.log.debug("select entity --> {0} entity_dv --> {1} expected_dv --> {2}".format(
                     entity.full_name, entity.dataverse_name, dataverse.name))
             self.log.debug("select entity --> {0} entity_dv --> {1} expected_dv --> {2}".format(
@@ -119,7 +123,6 @@ class CBASUDF(CBASBaseTest):
             return entity
 
         if body_type == "dataset" or body_type == "synonym":
-            
             if body_type == "dataset":
                 entity_list = self.cbas_util_v2.list_all_dataset_objs()
             elif body_type == "synonym":
