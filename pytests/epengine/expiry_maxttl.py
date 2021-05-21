@@ -138,7 +138,15 @@ class ExpiryMaxTTL(BaseTestCase):
             self._load_json(bucket, self.num_items, exp=self.maxttl)
         self.sleep(self.maxttl, "Waiting for docs to expire as per maxTTL")
         self.bucket_util._expiry_pager()
+        self.log.info("Calling compaction after expiry pager call")
+        compact_tasks = []
+        for bucket in self.bucket_util.buckets:
+            compact_tasks.append(self.task.async_compact_bucket(self.cluster.master, bucket))
+        for task in compact_tasks:
+            self.task.jython_task_manager.get_task_result(task)
+            self.assertTrue(task.result, "Compaction failed due to:" + str(task.exception))
         self.sleep(20, "Waiting for item count to come down...")
+
         for bucket in self.bucket_util.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Doc expiry {0}s, maxTTL {1}s, "
