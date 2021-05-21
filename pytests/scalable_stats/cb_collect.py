@@ -20,11 +20,15 @@ class CbCollectInfoTests(CollectionBase):
 
         file_generic_name = "/tmp/cbcollect_info_test-"
         file_ext = ".zip"
+        self.cbcollect_timeout = 300
 
         # Dict to store server-shell connections
         self.node_data = dict()
         for node in self.servers:
             shell = RemoteMachineShellConnection(node)
+            if shell.info.type.lower() == "windows":
+                file_generic_name = "C:\\\\tmp\\\\cbcollect_info_test-"
+                self.cbcollect_timeout = self.cbcollect_timeout * 5
             self.node_data[node] = dict()
             self.node_data[node]["shell"] = shell
             self.node_data[node]["cb_collect"] = CbCollectInfo(shell)
@@ -112,7 +116,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_in_cluster:
             try:
                 t_node = self.node_data[node]
-                t_node["cb_collect_task"].join(300)
+                t_node["cb_collect_task"].join(self.cbcollect_timeout)
                 if str(t_node["cb_collect_result"]["file_size"]) == "0":
                     self.log_failure("%s - cbcollect file size is zero"
                                      % node.ip)
@@ -160,7 +164,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_in_cluster:
             try:
                 t_node = self.node_data[node]
-                t_node["cb_collect_task"].join(300)
+                t_node["cb_collect_task"].join(self.cbcollect_timeout)
                 if str(t_node["cb_collect_result"]["file_size"]) == "0":
                     self.log_failure("%s - cbcollect file size is zero"
                                      % node.ip)
@@ -210,7 +214,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_to_affect:
             try:
                 t_node = self.node_data[node]
-                t_node["cb_collect_task"].join(300)
+                t_node["cb_collect_task"].join(self.cbcollect_timeout)
                 if str(t_node["cb_collect_result"]["file_size"]) == "0":
                     self.log_failure("%s - cbcollect file size is zero"
                                      % node.ip)
@@ -286,7 +290,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_in_cluster:
             try:
                 t_node = self.node_data[node]
-                t_node["cb_collect_task"].join(300)
+                t_node["cb_collect_task"].join(self.cbcollect_timeout)
                 if str(t_node["cb_collect_result"]["file_size"]) == "0":
                     self.log_failure("%s - cbcollect file size is zero"
                                      % node.ip)
@@ -366,7 +370,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_in_cluster:
             try:
                 t_node = self.node_data[node]
-                t_node["cb_collect_task"].join(300)
+                t_node["cb_collect_task"].join(self.cbcollect_timeout)
                 if str(t_node["cb_collect_result"]["file_size"]) == "0":
                     self.log_failure("%s - cbcollect file size is zero"
                                      % node.ip)
