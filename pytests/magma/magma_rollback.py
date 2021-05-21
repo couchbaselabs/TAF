@@ -855,6 +855,10 @@ class MagmaRollbackTests(MagmaBaseTest):
 
                 ep_queue_size_map = {node:
                                      mem_item_count}
+                if self.durability_level:
+                    self.log.info("updating the num_items on disk check to double due to durability")
+                    ep_queue_size_map = {node:
+                                     mem_item_count * 2}
                 vb_replica_queue_size_map = {node: 0}
 
                 for nod in self.cluster.nodes_in_cluster:
@@ -1045,6 +1049,10 @@ class MagmaRollbackTests(MagmaBaseTest):
 
                 ep_queue_size_map = {node:
                                      mem_item_count}
+                if self.durability_level:
+                    self.log.info("updating the num_items on disk check to double due to durability")
+                    ep_queue_size_map = {node:
+                                     mem_item_count * 2}
                 vb_replica_queue_size_map = {node: 0}
 
                 for nod in self.cluster.nodes_in_cluster:
