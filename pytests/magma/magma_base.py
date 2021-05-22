@@ -22,6 +22,7 @@ class MagmaBaseTest(BaseTestCase):
         self.rest = RestConnection(self.cluster.master)
         self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.fragmentation = int(self.input.param("fragmentation", 50))
+        self.wait_timeout = self.input.param("wait_timeout", 300)
         self.check_temporary_failure_exception = False
         self.retry_exceptions = [SDKException.TimeoutException,
                                  SDKException.AmbiguousTimeoutException,
