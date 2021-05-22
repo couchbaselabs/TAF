@@ -8,16 +8,21 @@ from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.tuq_helper import N1QLHelper
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
+from remote.remote_util import RemoteMachineShellConnection, OS
 from table_view import TableView
+
+from java.lang import Exception as Java_base_exception
 
 
 class ConfigPurging(CollectionBase):
     def setUp(self):
         super(ConfigPurging, self).setUp()
+        is_windows = False
 
         for node in self.cluster.servers:
             shell = RemoteMachineShellConnection(node)
+            if shell.info.type.lower() == OS.WINDOWS:
+                is_windows = True
             shell.enable_diag_eval_on_non_local_hosts()
             shell.disconnect()
 
@@ -28,7 +33,6 @@ class ConfigPurging(CollectionBase):
         self.default_purge_age = 300
 
         self.time_stamp = time()
-        self.bucket = self.bucket_util.buckets[0]
         self.num_index = self.input.param("num_index", 0)
         self.index_type = self.input.param("index_type", CbServer.Services.FTS)
         self.index_name_len = self.input.param("index_name_len", 10)
@@ -40,6 +44,10 @@ class ConfigPurging(CollectionBase):
                                       use_rest=True, log=self.log) \
             if self.cluster.query_nodes else None
         self.spare_node = self.servers[-1]
+        self.couchbase_base_dir = "/opt/couchbase"
+        if is_windows:
+            self.couchbase_base_dir = \
+                "/cygdrive/c/Program\\ Files/Couchbase/Server"
 
         # Param order:
         # fts_name, bucket_name, index_partitions, scope_name, collection_name
@@ -133,13 +141,12 @@ class ConfigPurging(CollectionBase):
             if k_count != 0:
                 self.fail("%s Deleted key count %s != 0" % (t_ip, k_count))
 
-    def __fts_index(self, op_type, index_name):
+    def __fts_index(self, op_type, index_name, bucket, scope, collection):
         self.log.info("%s fts index %s" % (op_type, index_name))
         if op_type == self.op_create:
             template = self.fts_param_template % (
-                index_name, self.bucket.name, self.bucket.uuid,
-                self.fts_index_partition,
-                self.scope_name, self.collection_name)
+                index_name, bucket.name, bucket.uuid,
+                self.fts_index_partition, scope, collection)
             self.fts_helper.create_fts_index_from_json(index_name, template)
         elif op_type == self.op_remove:
             self.fts_helper.delete_fts_index(index_name)
@@ -159,14 +166,17 @@ class ConfigPurging(CollectionBase):
             self.n1ql_helper.run_cbq_query(query)
         except Exception as e:
             self.log.critical(e)
+        except Java_base_exception as e:
+            self.log.critical(e)
 
     def __get_purged_tombstone_from_last_run(self, nodes=None):
         """
         :return last_purged_tombstones: Dict of format,
             { node_ip: {'count': N, 'keys': [k1, k2, ..] }, ...}
         """
-        tail_cmd = "cat /opt/couchbase/var/lib/couchbase/logs/debug.log " \
-                   "| sed -n '/%s/,$p'"
+        tail_cmd = "cat %s/var/lib/couchbase/logs/debug.log " \
+                   % self.couchbase_base_dir \
+                   + "| sed -n '/%s/,$p'"
         purged_ts_count_pattern = ".*Purged ([0-9]+) ns_config tombstone"
         meta_kv_keys_pattern = ".*{metakv,[ ]*<<\"/([0-9a-zA-Z_\-\.]+)\">>"
         start_of_line = "^\[ns_server:"
@@ -215,8 +225,8 @@ class ConfigPurging(CollectionBase):
         return last_purged_tombstones
 
     def __get_current_timestamps_from_debug_log(self):
-        cmd = "tail -10 /opt/couchbase/var/lib/couchbase/logs/debug.log " \
-              "| grep '\[ns_server:' | tail -1"
+        cmd = "cat %s/var/lib/couchbase/logs/debug.log " \
+              "| grep '\[ns_server:' | tail -1" % self.couchbase_base_dir
         timestamp_pattern = "\[ns_server:[a-zA-Z]+,([T0-9-:.]+),"
         timestamp_pattern = re.compile(timestamp_pattern)
         ts_result = dict()
@@ -249,8 +259,8 @@ class ConfigPurging(CollectionBase):
         fts_generic_name = "fts_%s" % int(self.time_stamp) + "-%d"
         commands_to_run = [
             "free -h",
-            "ls -lh /opt/couchbase/var/lib/couchbase/config/config.dat "
-            "| awk '{print $5,$9}'"]
+            "ls -lh %s/var/lib/couchbase/config/config.dat "
+            "| awk '{print $5,$9}'" % self.couchbase_base_dir]
         self.log.info("Stopping meta_kv purger autorun")
         self.cluster_util.rest.disable_tombstone_purger()
         self.cluster_util.rest.run_tombstone_purger(1)
@@ -272,7 +282,10 @@ class ConfigPurging(CollectionBase):
                 self.__perform_meta_kv_op_on_rand_key(self.op_create, key,
                                                       "dummy_val")
             else:
-                self.__fts_index(self.op_create, fts_generic_name % index)
+                self.__fts_index(self.op_create, key,
+                                 self.bucket_util.buckets[0],
+                                 CbServer.default_scope,
+                                 CbServer.default_collection)
         self.log.info("Done creating indexes")
 
         self.log.info("Stats after index creation")
@@ -285,7 +298,10 @@ class ConfigPurging(CollectionBase):
             if self.fts_helper is None:
                 self.__perform_meta_kv_op_on_rand_key(self.op_create, key)
             else:
-                self.__fts_index(self.op_remove, key)
+                self.__fts_index(self.op_remove, key,
+                                 self.bucket_util.buckets[0],
+                                 CbServer.default_scope,
+                                 CbServer.default_collection)
         self.log.info("Done creating tombstones")
 
         if self.fts_helper is not None:
@@ -335,7 +351,14 @@ class ConfigPurging(CollectionBase):
                 self.__perform_meta_kv_op_on_rand_key(
                     self.op_remove, index_name)
             elif key_type == CbServer.Services.FTS:
-                self.__fts_index(self.op_create, index_name)
+                self.__fts_index(self.op_create, index_name,
+                                 self.bucket_util.buckets[0],
+                                 CbServer.default_scope,
+                                 CbServer.default_collection)
+                self.__fts_index(self.op_remove, index_name,
+                                 self.bucket_util.buckets[0],
+                                 CbServer.default_scope,
+                                 CbServer.default_collection)
             created_keys.append(index_name)
             i_count += 1
         self.log.info("Created %d meta_kv_tombstones" % i_count)
@@ -372,13 +395,19 @@ class ConfigPurging(CollectionBase):
         # Create req. number of index
         for index in range(self.num_index):
             fts_name = t_fts_name % index
-            self.__fts_index(self.op_create, fts_name)
+            self.__fts_index(self.op_create, fts_name,
+                             self.bucket_util.buckets[0],
+                             CbServer.default_scope,
+                             CbServer.default_collection)
 
         self.log.info("Deleting indexes to create tombstones")
         # Delete created indexes
         for index in range(self.num_index):
             fts_name = t_fts_name % index
-            self.__fts_index(self.op_remove, fts_name)
+            self.__fts_index(self.op_remove, fts_name,
+                             self.bucket_util.buckets[0],
+                             CbServer.default_scope,
+                             CbServer.default_collection)
 
         deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count()
         self.sleep(60, "Wait before triggering purger")
@@ -570,8 +599,14 @@ class ConfigPurging(CollectionBase):
         self.log.info("Creating fts_index tombstones")
         for index in range(self.num_index):
             key = t_key % index
-            self.__fts_index(self.op_create, key)
-            self.__fts_index(self.op_remove, key)
+            self.__fts_index(self.op_create, key,
+                             self.bucket_util.buckets[0],
+                             CbServer.default_scope,
+                             CbServer.default_collection)
+            self.__fts_index(self.op_remove, key,
+                             self.bucket_util.buckets[0],
+                             CbServer.default_scope,
+                             CbServer.default_collection)
 
         deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count()
         del_key_count = None
@@ -638,7 +673,10 @@ class ConfigPurging(CollectionBase):
         self.cluster_util.rest.disable_tombstone_purger()
 
         # Creating meta_kv keys
-        self.__fts_index(self.op_create, fts_key)
+        self.__fts_index(self.op_create, fts_key,
+                         self.bucket_util.buckets[0],
+                         CbServer.default_scope,
+                         CbServer.default_collection)
         self.__perform_meta_kv_op_on_rand_key(self.op_create,
                                               custom_meta_kv_key, "value")
 
@@ -656,7 +694,10 @@ class ConfigPurging(CollectionBase):
             cb_err.create(cb_err.KILL_BEAMSMP)
 
         # Removing meta_kv keys when one of the node is down
-        self.__fts_index(self.op_remove, fts_key)
+        self.__fts_index(self.op_remove, fts_key,
+                         self.bucket_util.buckets[0],
+                         CbServer.default_scope,
+                         CbServer.default_collection)
         self.__perform_meta_kv_op_on_rand_key(self.op_remove,
                                               custom_meta_kv_key)
 
@@ -742,12 +783,18 @@ class ConfigPurging(CollectionBase):
         self.cluster_util.rest.disable_tombstone_purger()
 
         # Creating meta_kv keys
-        self.__fts_index(self.op_create, fts_key)
+        self.__fts_index(self.op_create, fts_key,
+                         self.bucket_util.buckets[0],
+                         CbServer.default_scope,
+                         CbServer.default_collection)
         self.__perform_meta_kv_op_on_rand_key(self.op_create,
                                               custom_meta_kv_key, "value")
 
         # Remove meta_kv keys for tombstone creation
-        self.__fts_index(self.op_remove, fts_key)
+        self.__fts_index(self.op_remove, fts_key,
+                         self.bucket_util.buckets[0],
+                         CbServer.default_scope,
+                         CbServer.default_collection)
         self.__perform_meta_kv_op_on_rand_key(self.op_remove,
                                               custom_meta_kv_key)
 
@@ -812,6 +859,7 @@ class ConfigPurging(CollectionBase):
 
     def test_fts_2i_purging_with_cluster_ops(self):
         """
+        MB-43291
         1. Cluster with 3 kv, 2 index+n1ql, 4 search nodes
         2. 6 buckets with 5000 docs each
         3. Built 200 GSI indexes with replica 1 (50 indexes on each bucket)
@@ -829,9 +877,9 @@ class ConfigPurging(CollectionBase):
         self.num_gsi_index = self.input.param("num_gsi_index", 50)
         self.num_fts_index = self.input.param("num_fts_index", 10)
         self.fts_indexes_to_create_drop = \
-            self.input.param("fts_indexes_to_create_drop", 10)
+            self.input.param("fts_indexes_to_create_drop", 50)
         self.gsi_indexes_to_create_drop = \
-            self.input.param("gsi_index_to_create_drop", 10)
+            self.input.param("gsi_index_to_create_drop", 200)
 
         self.num_nodes_to_run = self.input.param("num_nodes_to_run", 1)
         self.target_service_nodes = \
@@ -841,62 +889,71 @@ class ConfigPurging(CollectionBase):
         self.recovery_type = self.input.param(
             "recovery_type", CbServer.Failover.RecoveryType.DELTA)
 
-        fts_generic_name = "fts_%s" % int(self.time_stamp) + "_%d"
+        fts_generic_name = "fts_%s" % int(self.time_stamp) + "_%s_%s_%s_%d"
+
+        # Set RAM quota and Index storage mode
+        self.cluster_util.rest.set_service_mem_quota(
+            {CbServer.Settings.KV_MEM_QUOTA: 1024,
+             CbServer.Settings.INDEX_MEM_QUOTA: 4096,
+             CbServer.Settings.FTS_MEM_QUOTA: 4096,
+             CbServer.Settings.CBAS_MEM_QUOTA: 1024,
+             CbServer.Settings.EVENTING_MEM_QUOTA: 256})
+        self.cluster_util.rest.set_indexer_storage_mode(storageMode="plasma")
 
         # Open SDK for connection for running n1ql queries
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        self.client = self.sdk_client_pool.get_client_for_bucket(
+            self.bucket_util.buckets[0])
 
         # Create required GSI indexes
-        for bucket in self.bucket_util.buckets[:4]:
-            self.log.info("Creating GSI indexes %d::%d for %s"
-                          % (0, self.num_gsi_index, bucket.name))
-            for _, scope in self.bucket.scopes.items():
+        for bucket in self.bucket_util.buckets[:2]:
+            for _, scope in bucket.scopes.items():
                 for c_name, _ in scope.collections.items():
                     for index in range(0, self.num_gsi_index):
-                        self.__gsi_index(self.op_create, self.bucket.name,
+                        self.__gsi_index(self.op_create, bucket.name,
                                          scope.name, c_name, index)
             self.log.info("Done creating GSI indexes for %s" % bucket.name)
 
         # Create required FTS indexes
-        for bucket in self.bucket_util.buckets[:3]:
-            self.log.info("Creating FTS indexes %d::%d for %s"
-                          % (0, self.num_fts_index, bucket.name))
-            for _, scope in self.bucket.scopes.items():
-                for c_name, _ in scope.collections.items():
-                    for index in range(0, self.num_fts_index):
-                        fts_name = fts_generic_name % index
-                        self.__fts_index(self.op_create, fts_name)
-            self.log.info("Done creating FTS indexes for %s" % bucket.name)
+        bucket = self.bucket_util.buckets[0]
+        for _, scope in bucket.scopes.items():
+            for c_name, _ in scope.collections.items():
+                for index in range(0, self.num_fts_index):
+                    fts_name = fts_generic_name % (bucket.name, scope.name,
+                                                   c_name, index)
+                    self.__fts_index(self.op_create, fts_name,
+                                     bucket, scope.name, c_name)
+        self.log.info("Done creating FTS indexes for %s" % bucket.name)
 
         # Create GSI tombstones
-        for bucket in self.bucket_util.buckets[:4]:
+        for bucket in self.bucket_util.buckets[:2]:
             self.log.info("Create and drop %s GSI indexes on %s"
                           % (self.gsi_indexes_to_create_drop, bucket.name))
-            for _, scope in self.bucket.scopes.items():
+            for _, scope in bucket.scopes.items():
                 for c_name, _ in scope.collections.items():
                     for index in range(self.num_gsi_index,
                                        self.num_gsi_index
                                        + self.gsi_indexes_to_create_drop):
-                        self.__gsi_index(self.op_create, self.bucket.name,
+                        self.__gsi_index(self.op_create, bucket.name,
                                          scope.name, c_name, index)
-                        self.__gsi_index(self.op_remove, self.bucket.name,
+                        self.__gsi_index(self.op_remove, bucket.name,
                                          scope.name, c_name, index)
 
         # Create FTS tombstones
-        for bucket in self.bucket_util.buckets[:3]:
-            self.log.info("Create and drop %s FTS indexes on %s"
-                          % (self.fts_indexes_to_create_drop, bucket.name))
-            for _, scope in self.bucket.scopes.items():
-                for c_name, _ in scope.collections.items():
-                    for index in range(self.num_fts_index,
-                                       self.num_fts_index
-                                       + self.fts_indexes_to_create_drop):
-                        fts_name = fts_generic_name % index
-                        self.__fts_index(self.op_create, fts_name)
-                        self.__fts_index(self.op_remove, fts_name)
+        bucket = self.bucket_util.buckets[0]
+        for _, scope in bucket.scopes.items():
+            for c_name, _ in scope.collections.items():
+                for index in range(self.num_fts_index,
+                                   self.num_fts_index
+                                   + self.fts_indexes_to_create_drop):
+                    fts_name = fts_generic_name % (bucket.name, scope.name,
+                                                   c_name, index)
+                    self.__fts_index(self.op_create, fts_name,
+                                     bucket, scope.name, c_name)
+                    self.__fts_index(self.op_remove, fts_name,
+                                     bucket, scope.name, c_name)
 
         # Release the SDK client
-        self.sdk_client_pool.release_client(client)
+        self.sdk_client_pool.release_client(self.client)
 
         nodes_involved = list()
         for service in self.target_service_nodes:
@@ -946,7 +1003,8 @@ class ConfigPurging(CollectionBase):
                         for t_node in nodes_in_cluster:
                             cluster_node = t_node
                             if cluster_node.ip != self.cluster.master.ip:
-                                self.cluster.update_master(cluster_node)
+                                self.cluster_util.find_orchestrator(
+                                    cluster_node)
                                 break
                     elif cluster_action == "swap_rebalance":
                         rest = RestConnection(self.cluster.master)
@@ -960,8 +1018,9 @@ class ConfigPurging(CollectionBase):
                             "Swap_rebalance failed")
                         if node.ip == self.cluster.master.ip:
                             self.cluster.master = self.spare_node
+                            self.cluster_util.find_orchestrator(
+                                self.spare_node)
                         self.spare_node = node
-                        self.cluster.update_master()
                     elif cluster_action == "graceful_failover":
                         rest = None
                         for t_node in nodes_in_cluster:
@@ -987,7 +1046,7 @@ class ConfigPurging(CollectionBase):
                         self.assertTrue(
                             rest.monitorRebalance(stop_if_loop=True),
                             "Rebalance failed with failover node %s" % node.ip)
-                        self.cluster.update_master(self.new_master)
+                        self.cluster_util.find_orchestrator(self.new_master)
                     elif cluster_action == "add_back_failover_node":
                         rest = RestConnection(self.cluster.master)
                         rest.set_recovery_type("ns_1@" + node.ip,
@@ -997,7 +1056,7 @@ class ConfigPurging(CollectionBase):
                         self.assertTrue(
                             rest.monitorRebalance(stop_if_loop=True),
                             "Rebalance failed with failover node %s" % node.ip)
-                        self.cluster.update_master(self.new_master)
+                        self.cluster_util.find_orchestrator(self.new_master)
 
                 # Break if max nodes to run has reached per service
                 num_nodes_run += 1

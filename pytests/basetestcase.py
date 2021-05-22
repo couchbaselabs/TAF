@@ -2,7 +2,6 @@ import os
 import re
 import traceback
 import unittest
-import time
 from collections import OrderedDict
 
 from datetime import datetime
