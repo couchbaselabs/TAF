@@ -1,7 +1,7 @@
 import threading
 import time
 
-from java.util.concurrent import Executors, TimeUnit
+from java.util.concurrent import Executors, TimeUnit, CancellationException
 from threading import InterruptedException
 
 from common_lib import sleep
@@ -25,7 +25,11 @@ class TaskManager:
     def get_task_result(self, task):
         self.log.debug("Getting task result for %s" % task.thread_name)
         future = self.futures[task.thread_name]
-        result = future.get()
+        result = False
+        try:
+            result = future.get()
+        except CancellationException:
+            self.log.warning("%s is already cancelled" % task.thread_name)
         self.futures.pop(task.thread_name)
         return result
 

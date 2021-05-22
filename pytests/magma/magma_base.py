@@ -928,6 +928,8 @@ class MagmaBaseTest(BaseTestCase):
                                     self.bucket_util.buckets[0],
                                     wait_time=self.wait_timeout * 5)
                         if not result:
+                            self.log.critical("warm-up couldn't complete\
+                             in %s seconds" % self.wait_timeout * 5)
                             self.stop_crash = True
                             self.task.jython_task_manager.abort_all_tasks()
                             self.assertFalse(result)
