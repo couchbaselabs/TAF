@@ -116,8 +116,8 @@ class MagmaCrashTests(MagmaBaseTest):
             self.task_manager.get_task_result(task)
 
         self.stop_crash = True
-        self.log.critical("Stopping the crash thread: Done")
         self.crash_th.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
         self.validate_seq_itr()
 
     def test_crash_during_recovery(self):
@@ -144,8 +144,8 @@ class MagmaCrashTests(MagmaBaseTest):
             self.task_manager.get_task_result(task)
 
         self.stop_crash = True
-        self.log.critical("Stopping the crash thread: Done")
         self.crash_th.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
         self.validate_seq_itr()
 
     def test_crash_before_upserts(self):
@@ -315,9 +315,8 @@ class MagmaCrashTests(MagmaBaseTest):
             self.task_manager.get_task_result(task)
 
         self.stop_crash = True
-        self.log.critical("Stopping the crash thread: Done")
         self.crash_th.join()
-
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
         self.bucket_util._wait_for_stats_all_buckets()
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
@@ -356,6 +355,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.stop_crash = True
         self.crash_th.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         self.bucket_util._wait_for_stats_all_buckets()
 
@@ -402,8 +402,8 @@ class MagmaCrashTests(MagmaBaseTest):
             th.join()
 
         self.stop_crash = True
-        self.log.critical("Stopping the crash thread: Done")
         self.crash_th.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         self.bucket_util._wait_for_stats_all_buckets()
 
@@ -482,8 +482,8 @@ class MagmaCrashTests(MagmaBaseTest):
 
             count += 1
         self.stop_crash = True
-        self.log.critical("Stopping the crash thread: Done")
         self.crash_th.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)

@@ -22,7 +22,7 @@ class MagmaBaseTest(BaseTestCase):
         self.rest = RestConnection(self.cluster.master)
         self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.fragmentation = int(self.input.param("fragmentation", 50))
-        self.wait_timeout = self.input.param("wait_timeout", 300)
+#         self.wait_timeout = self.input.param("wait_timeout", 300)
         self.check_temporary_failure_exception = False
         self.retry_exceptions = [SDKException.TimeoutException,
                                  SDKException.AmbiguousTimeoutException,
@@ -884,6 +884,7 @@ class MagmaBaseTest(BaseTestCase):
     def crash(self, nodes=None, kill_itr=1, graceful=False,
               wait=True, force_collect=False):
         self.stop_crash = False
+        self.crash_failure = False
         count = kill_itr
         loop_itr = 0
 
@@ -917,8 +918,8 @@ class MagmaBaseTest(BaseTestCase):
             if result:
                 self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
-                self.assertFalse(result, "CRASH | CRITICAL | WARN messages "
-                                         "found in cb_logs")
+                self.crash_failure = result
+                self.log.critical("CRASH | CRITICAL | WARN messages found in cb_logs")
 
             if wait:
                 for node in nodes:
@@ -928,11 +929,12 @@ class MagmaBaseTest(BaseTestCase):
                                     self.bucket_util.buckets[0],
                                     wait_time=self.wait_timeout * 5)
                         if not result:
-                            self.log.critical("warm-up couldn't complete\
-                             in %s seconds" % self.wait_timeout * 5)
-                            self.stop_crash = True
+                            self.log.critical(
+                                "warm-up couldn't complete in %s seconds" %
+                                (self.wait_timeout * 5))
                             self.task.jython_task_manager.abort_all_tasks()
-                            self.assertFalse(result)
+                            self.stop_crash = True
+                            self.crash_failure = True
 
         for _, shell in connections.items():
             shell.disconnect()

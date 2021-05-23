@@ -445,6 +445,7 @@ class BaseTestCase(unittest.TestCase):
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
         if self.collect_pcaps:
+            self.log.info("Starting Pcaps collection!!")
             self.start_fetch_pcaps()
         result = self.check_coredump_exist(self.servers, force_collect=True, collect_data=self.collect_data)
         self.tearDownEverything()

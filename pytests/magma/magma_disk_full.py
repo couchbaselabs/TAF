@@ -96,6 +96,7 @@ class MagmaDiskFull(MagmaBaseTest):
             self.sleep(300)
             self.stop_crash = True
             th.join()
+            self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         self.free_disk(self.cluster.master)
         self.doc_ops = "update"
