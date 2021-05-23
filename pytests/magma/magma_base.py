@@ -182,6 +182,18 @@ class MagmaBaseTest(BaseTestCase):
         self.expiry_end = None
         self.mutate = 0
         self.init_items_per_collection = self.num_items
+        '''
+           --For DGM test
+                  -self.init_items_per collection will overwrite in
+                    load_buckets_in_dgm method
+
+           --For Non-DGM tests in MultiCollection environment,
+                  -self.num_items will be updated after doc loading
+
+           -- self.init_num_items is needed to preserve initial
+              doc count given in test
+        '''
+        self.init_num_items = self.num_items
         self.maxttl = self.input.param("maxttl", 10)
 
         # Common test params
@@ -543,6 +555,9 @@ class MagmaBaseTest(BaseTestCase):
                     docs_per_scope[scope][collection] = docs_per_task[docs_per_scope[scope][collection]]
             docs_per_scope[CbServer.default_scope][CbServer.default_collection] = docs_per_task[docs_per_scope[CbServer.default_scope][CbServer.default_collection]]
         self.log.info("docs_per_scope :  {}".format(docs_per_scope))
+        # For DGM TESTS, init_items_per_collection ==  max(list of items in each collection)
+        self.init_items_per_collection = max([max(docs_per_scope[scope].values()) for scope in docs_per_scope])
+        self.log.info("init_items_per_collection =={} ".format(self.init_items_per_collection))
 
     def loadgen_docs(self,
                      retry_exceptions=[],
