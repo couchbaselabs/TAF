@@ -246,75 +246,56 @@ class SDKClient(object):
         SDKClient.sdk_connections += 1
 
     def __create_conn(self):
-        try:
-            self.log.debug("Creating SDK connection for '%s'" % self.bucket)
+        self.log.debug("Creating SDK connection for '%s'" % self.bucket)
 
-            # Having 'None' will enable us to test without sending any
-            # compression settings and explicitly setting to 'False' as well
-            if self.compression is not None:
-                is_compression = self.compression.get("enabled", False)
-                compression_config = CompressionConfig.enable(is_compression)
-                if "minSize" in self.compression:
-                    compression_config = compression_config.minSize(
-                        self.compression["minSize"])
-                if "minRatio" in self.compression:
-                    compression_config = compression_config.minRatio(
-                        self.compression["minRatio"])
+        # Having 'None' will enable us to test without sending any
+        # compression settings and explicitly setting to 'False' as well
+        if self.compression is not None:
+            is_compression = self.compression.get("enabled", False)
+            compression_config = CompressionConfig.enable(is_compression)
+            if "minSize" in self.compression:
+                compression_config = compression_config.minSize(
+                    self.compression["minSize"])
+            if "minRatio" in self.compression:
+                compression_config = compression_config.minRatio(
+                    self.compression["minRatio"])
 
-                SDKClient.cluster_env = SDKClient.cluster_env.compressionConfig(compression_config)
-            cluster_options = \
-                ClusterOptions \
-                .clusterOptions(self.username, self.password) \
-                .environment(SDKClient.cluster_env.build())
-            i = 1
-            while i <= 5:
-                try:
-                    # Code for cluster_run
-                    if int(self.servers[0][1]) in xrange(ClusterRun.port,
-                                                         ClusterRun.port+10):
-                        master_seed = HashSet(Collections.singletonList(
-                            SeedNode.create(
-                                self.servers[0][0],
-                                Optional.of(ClusterRun.memcached_port),
-                                Optional.of(int(self.servers[0][1])))))
-                        self.cluster = Cluster.connect(master_seed, cluster_options)
-                    else:
-                        self.cluster = Cluster.connect(
-                            ", ".join(self.hosts).replace(" ", ""),
-                            cluster_options)
-                    break
-                except ConfigException as e:
-                    self.log.error("Exception during cluster connection: %s"
-                                   % e)
-                    i += 1
-            count = 0
-            while self.bucket is not None and count < 5:
-                try:
-                    self.bucketObj = self.cluster.bucket(self.bucket.name)
-                    wait_until_ready_options = \
-                        WaitUntilReadyOptions.waitUntilReadyOptions() \
-                        .serviceTypes(ServiceType.KV)
-                    self.bucketObj.waitUntilReady(
-                        self.get_duration(120, "seconds"),
-                        wait_until_ready_options)
-                    self.select_collection(self.scope_name,
-                                           self.collection_name)
-                    break
-                except Exception as e:
-                    self.log.critical("WaitUntilReady timeout exception count %s"
-                                      % (count+1))
-                    self.log.critical("Exception during waitUntilReady: %s" % e)
-                    self.get_memory_footprint()
-                    sleep(120, "sleep before next retry for bucket connection")
-                except JException as e:
-                    self.log.critical("WaitUntilReady timeout exception count %s"
-                                      % (count+1))
-                    self.log.critical("Exception during waitUntilReady: %s" % e)
-                    self.get_memory_footprint()
-                    sleep(120, "sleep before next retry for bucket connection")
-                count += 1
-        except Exception as e:
-            raise Exception("SDK Connection error: " + str(e))
+            SDKClient.cluster_env = SDKClient.cluster_env.compressionConfig(compression_config)
+        cluster_options = \
+            ClusterOptions \
+            .clusterOptions(self.username, self.password) \
+            .environment(SDKClient.cluster_env.build())
+        i = 1
+        while i <= 5:
+            try:
+                # Code for cluster_run
+                if int(self.servers[0][1]) in xrange(ClusterRun.port,
+                                                     ClusterRun.port+10):
+                    master_seed = HashSet(Collections.singletonList(
+                        SeedNode.create(
+                            self.servers[0][0],
+                            Optional.of(ClusterRun.memcached_port),
+                            Optional.of(int(self.servers[0][1])))))
+                    self.cluster = Cluster.connect(master_seed, cluster_options)
+                else:
+                    self.cluster = Cluster.connect(
+                        ", ".join(self.hosts).replace(" ", ""),
+                        cluster_options)
+                break
+            except ConfigException as e:
+                self.log.error("Exception during cluster connection: %s"
+                               % e)
+                i += 1
+        if self.bucket is not None:
+            self.bucketObj = self.cluster.bucket(self.bucket.name)
+            wait_until_ready_options = \
+                WaitUntilReadyOptions.waitUntilReadyOptions() \
+                .serviceTypes(ServiceType.KV)
+            self.bucketObj.waitUntilReady(
+                self.get_duration(120, "seconds"),
+                wait_until_ready_options)
+            self.select_collection(self.scope_name,
+                                   self.collection_name)
 
     def get_diagnostics_report(self):
         diagnostics_results = self.cluster.diagnostics()
