@@ -43,9 +43,9 @@ class CBASUDF(CBASBaseTest):
 
     def setup_for_test(self):
         update_spec = {
-            "no_of_dataverses": self.input.param('no_of_dv', 2),
-            "no_of_datasets_per_dataverse": self.input.param('ds_per_dv', 5),
-            "no_of_synonyms": self.input.param('no_of_synonym', 5),
+            "no_of_dataverses": self.input.param('no_of_dv', 3),
+            "no_of_datasets_per_dataverse": self.input.param('ds_per_dv', 4),
+            "no_of_synonyms": self.input.param('no_of_synonym', 10),
             "no_of_indexes": self.input.param('no_of_index', 5),
             "max_thread_count": self.input.param('no_of_threads', 10),
             "cardinality": self.input.param('cardinality', 0)
@@ -66,7 +66,8 @@ class CBASUDF(CBASBaseTest):
                           cbas_infra_result[1])
 
     def create_udf_object(self, no_of_parameters=0, body_type="expression",
-                          dependent_entity_dv="same", use_full_name=True):
+                          dependent_entity_dv="same", use_full_name=True,
+                          consider_default_dataverse=True):
         if no_of_parameters == -1:
             parameters = ["..."]
         else:
@@ -75,6 +76,10 @@ class CBASUDF(CBASBaseTest):
                 parameters.append("param_{0}".format(i))
 
         dataverse = random.choice(self.cbas_util_v2.dataverses.values())
+        if not consider_default_dataverse:
+            while dataverse.name == "Default":
+                dataverse = random.choice(self.cbas_util_v2.dataverses.values())
+            
         dependent_entity = list()
         body_template = {
             "expression": "",
@@ -91,58 +96,55 @@ class CBASUDF(CBASBaseTest):
                 body = body.rstrip("+")
             else:
                 body = "{0}".format(1)
-
-        def get_dependent_entity_in_a_dv(list_of_objects, dataverse):
-            entity = random.choice(list_of_objects)
-            self.log.debug("select entity --> {0} entity_dv --> {1} expected_dv --> {2}".format(
+        
+        def get_entity(dataverse, skip_dataverses=[]):
+            if not consider_default_dataverse:
+                skip_dataverses.append("Default")
+            entity = None
+            while not entity:
+                if body_type == "dataset" and dataverse.datasets:
+                    entity = random.choice(dataverse.datasets.values())
+                elif body_type == "synonym" and dataverse.synonyms:
+                    entity = random.choice(dataverse.synonyms.values())
+                elif body_type == "udf" and dataverse.udfs:
+                    entity = random.choice(dataverse.udfs.values())
+                else:
+                    self.log.info(
+                        "No entity of type \"{0}\" present in dataverse {1}, hence selecting another dataverse".format(
+                            body_type, dataverse.name))
+                    new_dataverse = random.choice(self.cbas_util_v2.dataverses.values())
+                    while new_dataverse.name == dataverse.name or new_dataverse.name in skip_dataverses:
+                        new_dataverse = random.choice(self.cbas_util_v2.dataverses.values())
+                    dataverse = new_dataverse
+            self.log.debug("selected_entity --> {0} selected_entity_dv --> {1} expected_dv --> {2}".format(
                 entity.full_name, entity.dataverse_name, dataverse.name))
+            return dataverse, entity
+        
+        def get_dependent_entity_in_a_dv(dataverse):
             if dependent_entity_dv == "same":
-                while entity.dataverse_name != dataverse.name:
-                    if len(list_of_objects) == 1:
-                        dataverse = random.choice(
-                            self.cbas_util_v2.dataverses.values())
-                        break
-                    else:
-                        list_of_objects.remove(entity)
-                        entity = random.choice(list_of_objects)
-                    self.log.debug("select entity --> {0} entity_dv --> {1} expected_dv --> {2}".format(
-                        entity.full_name, entity.dataverse_name, dataverse.name))
+                return get_entity(dataverse)
             elif dependent_entity_dv == "diff":
-                while entity.dataverse_name == dataverse.name:
-                    if len(list_of_objects) == 1:
-                        dataverse = random.choice(
-                            self.cbas_util_v2.dataverses.values())
-                        break
-                    else:
-                        entity = random.choice(list_of_objects)
-                        list_of_objects.remove(entity)
-                self.log.debug("select entity --> {0} entity_dv --> {1} expected_dv --> {2}".format(
-                    entity.full_name, entity.dataverse_name, dataverse.name))
-            self.log.debug("select entity --> {0} entity_dv --> {1} expected_dv --> {2}".format(
-                entity.full_name, entity.dataverse_name, dataverse.name))
-            return entity
+                diff_dataverse = random.choice(self.cbas_util_v2.dataverses.values())
+                while diff_dataverse.name == dataverse.name:
+                    diff_dataverse = random.choice(self.cbas_util_v2.dataverses.values())
+                diff_dataverse, entity = get_entity(dataverse, [dataverse.name])
+                return dataverse, entity
 
         if body_type == "dataset" or body_type == "synonym":
-            if body_type == "dataset":
-                entity_list = self.cbas_util_v2.list_all_dataset_objs()
-            elif body_type == "synonym":
-                entity_list = self.cbas_util_v2.list_all_synonym_objs()
-            
             if use_full_name:
-                dependent_entity.append(get_dependent_entity_in_a_dv(
-                    entity_list, dataverse))
+                dataverse, entity = get_dependent_entity_in_a_dv(dataverse)
+                dependent_entity.append(entity)
                 body += body_template["dataset"].format(
                     dependent_entity[0].full_name)
             else:
-                dataverse = self.cbas_util_v2.get_dataverse_obj("Default") 
-                dependent_entity.append(get_dependent_entity_in_a_dv(
-                    entity_list, dataverse))
+                dataverse = self.cbas_util_v2.get_dataverse_obj("Default")
+                dataverse, entity = get_dependent_entity_in_a_dv(dataverse)
+                dependent_entity.append(entity)
                 body += body_template["dataset"].format(
                     dependent_entity[0].name)
         elif body_type == "udf":
-            dependent_entity.append(get_dependent_entity_in_a_dv(
-                self.cbas_util_v2.list_all_udf_objs(), dataverse
-            ))
+            dataverse, entity = get_dependent_entity_in_a_dv(dataverse)
+            dependent_entity.append(entity)
             if use_full_name:
                 body += body_template[body_type].format(
                     dependent_entity[0].full_name,
@@ -510,18 +512,8 @@ class CBASUDF(CBASBaseTest):
 
         udf_obj = self.create_udf_object(
             2, self.input.param('body_type', "dataset"), 
-            self.input.param('dependent_entity_dv', "same"), True)
+            self.input.param('dependent_entity_dv', "same"), True, False)
         self.log.debug("Udf objects created")
-        if self.input.param('dependent_entity_dv', "same") == "same":
-            while udf_obj.dataverse_name == "Default":
-                udf_obj = self.create_udf_object(
-                    2, self.input.param('body_type', "dataset"), 
-                    self.input.param('dependent_entity_dv', "same"), True)
-        else:
-            while udf_obj.dataverse_name != "Default":
-                udf_obj = self.create_udf_object(
-                    2, self.input.param('body_type', "dataset"), 
-                    self.input.param('dependent_entity_dv', "same"), True)
 
         if not self.cbas_util_v2.create_udf(
                 name=udf_obj.name, dataverse=udf_obj.dataverse_name,
