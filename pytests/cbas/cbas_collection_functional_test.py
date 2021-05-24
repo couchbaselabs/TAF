@@ -1060,8 +1060,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                             'validate_query_error', False),
                         expected_error=self.input.param('query_error',
                                                         '').format(
-                            CBASHelper.unformat_name(obj.name),
-                            CBASHelper.unformat_name(obj.dataverse_name))):
+                            obj.name,obj.dataverse_name)):
                     self.fail(
                         "Error while validating synonym doc count for synonym")
         self.log.info("Test finished")

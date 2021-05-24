@@ -2089,6 +2089,44 @@ class CbasUtil:
             if dataset_results != synonym_results:
                 return False
             return True
+    
+    def is_link_active(self, link_name, dataverse_name, link_type="Local",
+                       username=None, password=None, timeout=120, analytics_timeout=120):
+        """
+        Validates whether a link is active or not. Valid only for 
+        Local and couchbase links
+        :param link_name: str, Name of the link to be validated.
+        :param dataverse_name: str, dataverse name where the link is present
+        :param link_type: str, type of link, valid values are Local, s3 or couchbase
+        :param username : str
+        :param password : str
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        """
+        self.log.debug("Validating link entry in Metadata")
+        cmd = "select value lnk from Metadata.`Link` as lnk where\
+         lnk.DataverseName = \"{0}\" and lnk.Name = \"{1}\"".format(
+            CBASHelper.unformat_name(dataverse_name),
+            CBASHelper.unformat_name(link_name))
+
+        if link_type != "Local":
+            cmd += " and lnk.`Type` = \"{0}\"".format((link_type).upper())
+        cmd += ";"
+
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if status == "success":
+            if results:
+                if (link_type).lower() != "s3" and results[0]["IsActive"]:
+                    return True
+                else:
+                    return False
+            else:
+                return False
+        else:
+            return False
         
             
 class Dataset:
@@ -2520,4 +2558,3 @@ class Dataset:
                         "Doc count in Synonym does not match with dataset on which it was created.")
                     return False
         return True
-        

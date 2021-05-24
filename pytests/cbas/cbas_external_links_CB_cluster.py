@@ -1015,8 +1015,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "certificate": self.read_file(
                     self.analytics_cluster.root_ca_path),
                 "validate_error_msg": True,
-                "expected_error": "Cannot connect to host {0}".format(
-                    self.link_info["hostname"])
+                "expected_error": "Cannot connect to host"
             },
             {
                 "description": "Changing encryption type to full, with valid root certificate, clientcertificate and client key",
@@ -1687,7 +1686,6 @@ class CBASExternalLinks(CBASBaseTest):
 
         RemoteUtilHelper.enable_firewall(
             server=to_cluster.master,
-            block_ips=[self.analytics_cluster.master.ip],
             all_interface=True, action_on_packet="DROP")
 
         def sleep_and_bring_network_up():
@@ -1698,6 +1696,14 @@ class CBASExternalLinks(CBASBaseTest):
             thread = Thread(target=sleep_and_bring_network_up,
                             name="connect_link_thread")
             thread.start()
+        else:
+            end_time = time.time() + 600
+            while time.time() < end_time:
+                if self.analytics_cluster.cbas_util.is_link_active(
+                    self.link_info["name"], self.link_info["dataverse"]):
+                    self.sleep(30, "Waiting for link to be disconnected")
+                else:
+                    break
 
         if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(
                 cbas_bucket_name=self.sample_bucket.name,
