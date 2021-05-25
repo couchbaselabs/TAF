@@ -737,6 +737,27 @@ class BucketHelper(RestConnection):
         manifest_uid = json_parsed["uid"]
         return manifest_uid
 
+    def get_scope_id(self, bucket, scope_name):
+        status, content = self.list_collections(bucket)
+        json_parsed = json.loads(content)
+        scopes_data = json_parsed["scopes"]
+        for scope_data in scopes_data:
+            if scope_data["name"] == scope_name:
+                sid = scope_data["uid"]
+                return sid
+
+    def get_collection_id(self, bucket, scope_name, collection_name):
+        status, content = self.list_collections(bucket)
+        json_parsed = json.loads(content)
+        scopes_data = json_parsed["scopes"]
+        for scope_data in scopes_data:
+            if scope_data["name"] == scope_name:
+                collections_data = scope_data["collections"]
+                for collection_data in collections_data:
+                    if collection_data["name"] == collection_name:
+                        cid = collection_data["uid"]
+                        return cid
+
     def import_collection_using_manifest(self, bucket_name, manifest_data):
         url = "pools/default/buckets/%s/scopes" \
               % urllib.quote_plus(bucket_name)

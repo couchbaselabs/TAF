@@ -1,8 +1,11 @@
 import math
 import sys
 
+from BucketLib.BucketOperations_Rest import BucketHelper
 from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
+
+from couchbase_utils.bucket_utils.bucket_ready_functions import BucketUtils
 from membase.api.rest_client import RestConnection, RestHelper
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
@@ -98,12 +101,12 @@ class CollectionsQuorumLoss(CollectionBase):
         self.set_retry_exceptions(doc_loading_spec)
         self.set_ignore_exceptions(doc_loading_spec)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
-                                                            self.cluster,
-                                                            self.bucket_util.buckets,
-                                                            doc_loading_spec,
-                                                            mutation_num=0,
-                                                            async_load=async_load,
-                                                            batch_size=self.batch_size)
+                                                        self.cluster,
+                                                        self.bucket_util.buckets,
+                                                        doc_loading_spec,
+                                                        mutation_num=0,
+                                                        async_load=async_load,
+                                                        batch_size=self.batch_size)
         return tasks
 
     def servers_to_fail(self):
@@ -211,6 +214,52 @@ class CollectionsQuorumLoss(CollectionBase):
                 self.log.error("ns_server {0} is not running.".format(node.ip))
             shell.disconnect()
 
+    def populate_uids(self, base_name="pre_qf"):
+        """
+        Creates a scope, collection in each bucket and
+        returns a dict like:
+        {bucket_name:{"uid":uid, "cid":cid, "sid":sid}, ..}
+        """
+        uids = dict()
+        for bucket in self.bucket_util.buckets:
+            scope_name = "custom_scope-" + base_name
+            collection_name = "custom_collection" + base_name
+            BucketUtils.create_scope(self.cluster.master, bucket,
+                                     {"name": scope_name})
+            BucketUtils.create_collection(self.cluster.master,
+                                          bucket,
+                                          scope_name,
+                                          {"name": collection_name})
+            uids[bucket.name] = dict()
+            uids[bucket.name]["sid"] = BucketHelper(self.cluster.master).\
+                get_scope_id(bucket.name, scope_name)
+            uids[bucket.name]["cid"] = BucketHelper(self.cluster.master).\
+                get_collection_id(bucket.name, scope_name, collection_name)
+            uids[bucket.name]["uid"] = BucketHelper(self.cluster.master).\
+                get_bucket_manifest_uid(bucket.name)
+        return uids
+
+    def validate_uids(self, pre_qf_ids, post_qf_ids):
+        """
+        Validates if manifest, scope, coll uids are bumped by 4096
+        after qf
+        """
+        self.log.info("Validating UIDs after QF")
+        uid_keys = ["uid", "sid", "cid"]
+        for bucket in self.bucket_util.buckets:
+            for uid_key in uid_keys:
+                int_uid_diff = int(post_qf_ids[bucket.name][uid_key], 16) - \
+                               int(pre_qf_ids[bucket.name][uid_key], 16)
+                if uid_key == "uid":
+                    expected_diff = 4096 + 2
+                else:
+                    expected_diff = 4096 + 1
+                if int_uid_diff != expected_diff:
+                    self.fail("For bucket: {0}, uid_key: {1}, "
+                              "expected diff: {2} "
+                              "but actual diff: {3}".
+                              format(bucket.name, uid_key, expected_diff, int_uid_diff))
+
     def test_quorum_loss_failover(self):
         """
         With constant parallel data load(on docs and collections) do:
@@ -229,6 +278,7 @@ class CollectionsQuorumLoss(CollectionBase):
         else:
             self.server_to_fail = self.servers_to_fail()
 
+        pre_qf_ids = self.populate_uids(base_name="pre_qf")
         if self.failover_action:
             self.log.info("Inducing failure {0} on nodes: {1}".
                           format(self.failover_action, self.server_to_fail))
@@ -237,10 +287,12 @@ class CollectionsQuorumLoss(CollectionBase):
 
         self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
         result = self.task.failover(self.nodes_in_cluster, failover_nodes=self.server_to_fail,
-                               graceful=False, wait_for_pending=120,
-                               allow_unsafe=True,
-                               all_at_once=True)
+                                    graceful=False, wait_for_pending=120,
+                                    allow_unsafe=True,
+                                    all_at_once=True)
         self.assertTrue(result, "Failover Failed")
+        post_qf_ids = self.populate_uids(base_name="post_qf")
+        self.validate_uids(pre_qf_ids, post_qf_ids)
 
         tasks = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
@@ -291,6 +343,7 @@ class CollectionsQuorumLoss(CollectionBase):
 
         self.server_to_fail = self.servers_to_fail()
 
+        pre_qf_ids = self.populate_uids(base_name="pre_qf")
         if self.failover_action:
             self.log.info("Inducing failure {0} on nodes: {1}".
                           format(self.failover_action, self.server_to_fail))
@@ -300,10 +353,12 @@ class CollectionsQuorumLoss(CollectionBase):
         self.server_to_fail.append(failed_over_node)
         self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
         result = self.task.failover(self.nodes_in_cluster, failover_nodes=self.server_to_fail,
-                               graceful=False, wait_for_pending=120,
-                               allow_unsafe=True,
-                               all_at_once=True)
+                                    graceful=False, wait_for_pending=120,
+                                    allow_unsafe=True,
+                                    all_at_once=True)
         self.assertTrue(result, "Failover Failed")
+        post_qf_ids = self.populate_uids(base_name="post_qf")
+        self.validate_uids(pre_qf_ids, post_qf_ids)
 
         tasks = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
@@ -342,19 +397,22 @@ class CollectionsQuorumLoss(CollectionBase):
         else:
             self.server_to_fail = self.servers_to_fail()
 
+        pre_qf_ids = self.populate_uids(base_name="pre_qf")
         if self.failover_action:
             self.log.info("Inducing failure {0} on nodes: {1}".
                           format(self.failover_action, self.server_to_fail))
             self.custom_induce_failure()
             self.sleep(20, "Wait before failing over")
 
-        failover_nodes =  [node for node in self.server_to_fail]
-        failover_nodes.append(self.nodes_in_cluster[-1]) # healthy node
+        failover_nodes = [node for node in self.server_to_fail]
+        failover_nodes.append(self.nodes_in_cluster[-1])  # healthy node
         result = self.task.failover(self.nodes_in_cluster, failover_nodes=failover_nodes,
-                               graceful=False, wait_for_pending=120,
-                               allow_unsafe=True,
-                               all_at_once=True)
+                                    graceful=False, wait_for_pending=120,
+                                    allow_unsafe=True,
+                                    all_at_once=True)
         self.assertTrue(result, "Failover Failed")
+        post_qf_ids = self.populate_uids(base_name="post_qf")
+        self.validate_uids(pre_qf_ids, post_qf_ids)
 
         tasks = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
@@ -393,9 +451,10 @@ class CollectionsQuorumLoss(CollectionBase):
            with parallel data load
         """
         self.server_to_fail = list()
-        self.num_node_failures = int(math.ceil(len(self.nodes_in_cluster)/2.0))
-        for _ in range(2): # two quorum failovers
+        self.num_node_failures = int(math.ceil(len(self.nodes_in_cluster) / 2.0))
+        for i in range(2):  # two quorum failovers
             this_step_failed_nodes = self.servers_to_fail()
+            pre_qf_ids = self.populate_uids(base_name="pre_qf-"+str(i))
             self.log.info("Inducing failure {0} on nodes: {1}".
                           format(self.failover_action, this_step_failed_nodes))
             self.custom_induce_failure(this_step_failed_nodes)
@@ -403,10 +462,12 @@ class CollectionsQuorumLoss(CollectionBase):
 
             self.log.info("Failing over nodes explicitly {0}".format(this_step_failed_nodes))
             result = self.task.failover(self.nodes_in_cluster, failover_nodes=this_step_failed_nodes,
-                                       graceful=False, wait_for_pending=120,
-                                       allow_unsafe=True,
-                                       all_at_once=True)
+                                        graceful=False, wait_for_pending=120,
+                                        allow_unsafe=True,
+                                        all_at_once=True)
             self.assertTrue(result, "Failover Failed")
+            post_qf_ids = self.populate_uids(base_name="post_qf-"+str(i))
+            self.validate_uids(pre_qf_ids, post_qf_ids)
 
             tasks = self.data_load(async_load=True)
             self.log.info("Rebalancing the cluster")
@@ -436,7 +497,6 @@ class CollectionsQuorumLoss(CollectionBase):
         self.wait_for_async_data_load_to_complete(tasks)
         self.data_validation_collection()
 
-
     def test_negative_unsafe_failover_orchestrator(self):
         """
         Negative case: unsafe hard failover of healthy orchestrator node
@@ -453,7 +513,7 @@ class CollectionsQuorumLoss(CollectionBase):
             self.rest.fail_over(otp_nodes, graceful=False, allowUnsafe=True, all_at_once=True)
         except:
             self.log.info("Failed as expected: {0} {1}"
-                          .format( sys.exc_info()[0], sys.exc_info()[1]))
+                          .format(sys.exc_info()[0], sys.exc_info()[1]))
             # TODO add code to verify the error response after MB-45086 is resolved
         else:
             self.wipe_config_on_removed_nodes()
@@ -490,8 +550,8 @@ class CollectionsQuorumLoss(CollectionBase):
         for node in self.server_to_fail:
             try:
                 self.rest.add_node(user=self.cluster.master.rest_username,
-                          password=self.cluster.master.rest_password,
-                          remoteIp=node.ip)
+                                   password=self.cluster.master.rest_password,
+                                   remoteIp=node.ip)
             except:
                 self.log.info("Failed as expected: {0} {1}"
                               .format(sys.exc_info()[0], sys.exc_info()[1]))
