@@ -1687,9 +1687,11 @@ class CBASExternalLinks(CBASBaseTest):
         RemoteUtilHelper.enable_firewall(
             server=to_cluster.master,
             all_interface=True, action_on_packet="DROP")
+        
+        self.sleep(10, "Waiting after applying firewall rule")
 
         def sleep_and_bring_network_up():
-            time.sleep(60)
+            time.sleep(25)
             to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
 
         if self.input.param("network_up_before_timeout", False):
