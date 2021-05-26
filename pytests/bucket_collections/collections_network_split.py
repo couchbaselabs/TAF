@@ -2,6 +2,7 @@ import math
 
 from bucket_collections.collections_base import CollectionBase
 
+from BucketLib.BucketOperations_Rest import BucketHelper
 from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
@@ -54,7 +55,7 @@ class CollectionsNetworkSplit(CollectionBase):
     def block_traffic_between_two_nodes(self, node1, node2):
         shell = RemoteMachineShellConnection(node1)
         self.log.info("Blocking traffic from {0} in {1}"
-                            .format(node2.ip, node1.ip))
+                      .format(node2.ip, node1.ip))
         command = "iptables -A INPUT -s {0} -j DROP".format(node2.ip)
         shell.execute_command(command)
         shell.disconnect()
@@ -93,9 +94,9 @@ class CollectionsNetworkSplit(CollectionBase):
         Returns first_half_nodes, second_half_nodes
         """
         if majority == "first_half":
-            len_first_half = int(math.ceil(self.nodes_init/2.0))
+            len_first_half = int(math.ceil(self.nodes_init / 2.0))
         else:
-            len_first_half = int(math.floor(self.nodes_init/2.0))
+            len_first_half = int(math.floor(self.nodes_init / 2.0))
         first_half_nodes = self.known_nodes[:len_first_half]
         second_half_nodes = self.known_nodes[len_first_half:]
         for first_half_node in first_half_nodes:
@@ -124,6 +125,52 @@ class CollectionsNetworkSplit(CollectionBase):
             if not RestHelper(rest).is_ns_server_running():
                 self.log.error("ns_server {0} is not running.".format(node.ip))
             shell.disconnect()
+
+    def populate_uids(self, base_name="pre_qf"):
+        """
+        Creates a scope, collection in each bucket and
+        returns a dict like:
+        {bucket_name:{"uid":uid, "cid":cid, "sid":sid}, ..}
+        """
+        uids = dict()
+        for bucket in self.bucket_util.buckets:
+            scope_name = "custom_scope-" + base_name
+            collection_name = "custom_collection" + base_name
+            BucketUtils.create_scope(self.cluster.master, bucket,
+                                     {"name": scope_name})
+            BucketUtils.create_collection(self.cluster.master,
+                                          bucket,
+                                          scope_name,
+                                          {"name": collection_name})
+            uids[bucket.name] = dict()
+            uids[bucket.name]["sid"] = BucketHelper(self.cluster.master). \
+                get_scope_id(bucket.name, scope_name)
+            uids[bucket.name]["cid"] = BucketHelper(self.cluster.master). \
+                get_collection_id(bucket.name, scope_name, collection_name)
+            uids[bucket.name]["uid"] = BucketHelper(self.cluster.master). \
+                get_bucket_manifest_uid(bucket.name)
+        return uids
+
+    def validate_uids(self, pre_qf_ids, post_qf_ids):
+        """
+        Validates if manifest, scope, coll uids are bumped by 4096
+        after qf
+        """
+        self.log.info("Validating UIDs after QF")
+        uid_keys = ["uid", "sid", "cid"]
+        for bucket in self.bucket_util.buckets:
+            for uid_key in uid_keys:
+                int_uid_diff = int(post_qf_ids[bucket.name][uid_key], 16) - \
+                               int(pre_qf_ids[bucket.name][uid_key], 16)
+                if uid_key == "uid":
+                    expected_diff = 4096 + 2
+                else:
+                    expected_diff = 4096 + 1
+                if int_uid_diff != expected_diff:
+                    self.fail("For bucket: {0}, uid_key: {1}, "
+                              "expected diff: {2} "
+                              "but actual diff: {3}".
+                              format(bucket.name, uid_key, expected_diff, int_uid_diff))
 
     @staticmethod
     def get_common_spec():
@@ -220,7 +267,7 @@ class CollectionsNetworkSplit(CollectionBase):
         self.sleep(60, "wait for network split to finish")
 
         result = self.task.failover(self.known_nodes, failover_nodes=self.nodes_failover,
-                           graceful=False, allow_unsafe=self.allow_unsafe)
+                                    graceful=False, allow_unsafe=self.allow_unsafe)
         self.assertTrue(result, "Hard Failover failed")
         self.wait_for_async_data_load_to_complete(task)
         self.data_load()
@@ -232,9 +279,9 @@ class CollectionsNetworkSplit(CollectionBase):
                 result = self.task.rebalance(self.known_nodes, [], [])
             else:
                 result = self.task.rebalance(self.known_nodes, [], self.nodes_failover)
-            self.assertTrue(result,"Rebalance failed")
+            self.assertTrue(result, "Rebalance failed")
             self.wait_for_async_data_load_to_complete(task)
-            #self.data_validation_collection()
+            # self.data_validation_collection()
             self.remove_network_split()
         else:
             self.remove_network_split()
@@ -245,19 +292,19 @@ class CollectionsNetworkSplit(CollectionBase):
             result = self.task.rebalance(self.known_nodes, [], [])
             self.assertTrue(result, "Rebalance-in failed")
             self.wait_for_async_data_load_to_complete(task)
-            #self.data_validation_collection()
+            # self.data_validation_collection()
         if self.allow_unsafe:
             self.wipe_config_on_removed_nodes(self.nodes_failover)
 
     def test_quorum_loss_with_network_split(self):
         """
-        0. Start async data load
         1. Split into symmetric/asymmetric two halves
         2. Create some collections on second-half cluster
-        2. Quorum loss (majority half) failover
+        3. Quorum loss (majority half) failover
+        4. Rebalance the cluster with async load
         """
-        majority = self.input.param("majority","first_half") # which half to have majority nodes
-        task = self.data_load(async_load=True)
+        majority = self.input.param("majority", "first_half")  # which half to have majority nodes
+        pre_qf_ids = self.populate_uids(base_name="pre_qf")
         first_half_nodes, second_half_nodes = self.split_the_cluster_into_two_halves(majority=majority)
         if majority == "first_half":
             self.master = self.cluster.master = second_half_nodes[0]
@@ -274,6 +321,9 @@ class CollectionsNetworkSplit(CollectionBase):
                                     graceful=False, allow_unsafe=self.allow_unsafe,
                                     all_at_once=True)
         self.assertTrue(result, "Hard Failover failed")
+        post_qf_ids = self.populate_uids(base_name="post_qf")
+        self.validate_uids(pre_qf_ids, post_qf_ids)
+        task = self.data_load(async_load=True)
         result = self.task.rebalance(otp_nodes, [], [])
         self.assertTrue(result, "Rebalance failed")
         self.wait_for_async_data_load_to_complete(task)
