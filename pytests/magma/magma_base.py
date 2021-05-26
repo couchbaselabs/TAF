@@ -887,6 +887,7 @@ class MagmaBaseTest(BaseTestCase):
         self.crash_failure = False
         count = kill_itr
         loop_itr = 0
+        msg = None
 
         nodes = nodes or self.cluster.nodes_in_cluster
 
@@ -919,7 +920,8 @@ class MagmaBaseTest(BaseTestCase):
                 self.stop_crash = True
                 self.task.jython_task_manager.abort_all_tasks()
                 self.crash_failure = result
-                self.log.critical("CRASH | CRITICAL | WARN messages found in cb_logs")
+                msg = "CRASH | CRITICAL | WARN messages found in cb_logs"
+                self.log.critical(msg)
 
             if wait:
                 for node in nodes:
@@ -929,9 +931,9 @@ class MagmaBaseTest(BaseTestCase):
                                     self.bucket_util.buckets[0],
                                     wait_time=self.wait_timeout * 5)
                         if not result:
-                            self.log.critical(
-                                "warm-up couldn't complete in %s seconds" %
-                                (self.wait_timeout * 5))
+                            msg = "warm-up couldn't complete in %s seconds" %\
+                                (self.wait_timeout * 5)
+                            self.log.critical(msg)
                             self.task.jython_task_manager.abort_all_tasks()
                             self.stop_crash = True
                             self.crash_failure = True
