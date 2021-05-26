@@ -863,7 +863,12 @@ class BaseTestCase(unittest.TestCase):
                 _ = shell.execute_command("rm -rf %s.tar.gz" % (filepath))
 
         copy_path_msg_format = "Copying data, Server :: %s, Path :: %s"
-        if self.data_sets and self.bucket_storage == "magma":
+        '''
+          Temporarily enabling data copy
+          of all nodes irrespective of nodes in
+          data_sets
+        '''
+        if False and self.data_sets and self.bucket_storage == "magma":
             self.log.critical("data_sets ==> {}".format(self.data_sets))
             wal_tar = "wal.tar.gz"
             config_json_tar = "config.json.tar.gz"
