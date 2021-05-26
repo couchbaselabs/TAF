@@ -1109,11 +1109,11 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.log.info("Iteration-{}, node-{}, check for wait for stats".format(i, x+1))
                 for bucket in self.bucket_util.buckets:
                     self.bucket_util._wait_for_stat(bucket,
-                                                    ep_queue_size_map, timeout=300)
+                                                    ep_queue_size_map, timeout=600)
                     self.bucket_util._wait_for_stat(bucket,
                                                     vb_replica_queue_size_map,
                                                     cbstat_cmd="all",
-                                                    stat_name="vb_replica_queue_size", timeout=300)
+                                                    stat_name="vb_replica_queue_size", timeout=600)
                 shell.disconnect()
             ###################################################################
             '''
