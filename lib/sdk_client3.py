@@ -182,7 +182,7 @@ class SDKClient(object):
         .ioConfig(IoConfig.numKvConnections(25)) \
         .timeoutConfig(TimeoutConfig.builder()
                        .connectTimeout(Duration.ofSeconds(20))
-                       .kvTimeout(Duration.ofSeconds(10)))
+                       .kvTimeout(Duration.ofSeconds(10))).build()
     sdk_connections = 0
     sdk_disconnections = 0
     doc_op = doc_op()
@@ -259,12 +259,16 @@ class SDKClient(object):
             if "minRatio" in self.compression:
                 compression_config = compression_config.minRatio(
                     self.compression["minRatio"])
-
-            SDKClient.cluster_env = SDKClient.cluster_env.compressionConfig(compression_config)
-        cluster_options = \
-            ClusterOptions \
+            SDKClient.cluster_env = ClusterEnvironment \
+                .builder() \
+                .ioConfig(IoConfig.numKvConnections(25)) \
+                .timeoutConfig(TimeoutConfig.builder()
+                               .connectTimeout(Duration.ofSeconds(20))
+                               .kvTimeout(Duration.ofSeconds(10)))\
+                .compressionConfig(compression_config).build()
+        cluster_options = ClusterOptions \
             .clusterOptions(self.username, self.password) \
-            .environment(SDKClient.cluster_env.build())
+            .environment(SDKClient.cluster_env)
         i = 1
         while i <= 5:
             try:
@@ -314,7 +318,7 @@ class SDKClient(object):
         self.log.debug("Closing SDK for bucket '%s'" % self.bucket)
         if self.cluster:
             self.cluster.disconnect()
-            self.cluster.environment().shutdown()
+#             self.cluster.environment().shutdown()
             self.log.debug("Cluster disconnected and env shutdown")
             SDKClient.sdk_disconnections += 1
 
