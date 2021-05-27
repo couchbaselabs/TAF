@@ -447,8 +447,7 @@ class BaseTestCase(unittest.TestCase):
         if self.collect_pcaps:
             self.log.info("Starting Pcaps collection!!")
             self.start_fetch_pcaps()
-        result = self.check_coredump_exist(self.servers, force_collect=True,
-                                           collect_data=self.collect_data)
+        result = self.check_coredump_exist(self.servers, force_collect=True)
         self.tearDownEverything()
         if not self.crash_warning:
             self.assertFalse(result, msg="Cb_log file validation failed")
@@ -653,8 +652,7 @@ class BaseTestCase(unittest.TestCase):
         self.sdk_client_pool = SDKClientPool()
         DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
 
-    def check_coredump_exist(self, servers, force_collect=False,
-                             collect_data=False):
+    def check_coredump_exist(self, servers, force_collect=False):
         bin_cb = "/opt/couchbase/bin/"
         lib_cb = "/opt/couchbase/var/lib/couchbase/"
         # crash_dir = "/opt/couchbase/var/lib/couchbase/"
@@ -827,7 +825,7 @@ class BaseTestCase(unittest.TestCase):
         if result and force_collect and not self.stop_server_on_crash:
             self.fetch_cb_collect_logs()
             self.get_cbcollect_info = False
-        if collect_data:
+        if (self.is_test_failed() or result) and self.collect_data:
                 self.copy_data_on_slave()
 
         return result
