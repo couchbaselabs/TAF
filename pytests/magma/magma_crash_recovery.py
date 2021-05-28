@@ -26,7 +26,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
     def setUp(self):
         super(MagmaCrashTests, self).setUp()
-        self.sdk_timeout = self.input.param("sdk_timeout", 10)
+        self.sdk_timeout = self.input.param("sdk_timeout", 100)
         self.time_unit = "milliseconds"
         self.graceful = self.input.param("graceful", False)
         self.crash_th = None
