@@ -50,6 +50,7 @@ class DurabilityTestsBase(BaseTestCase):
 
         # Create default bucket and add rbac user
         self.bucket_util.create_default_bucket(
+            ram_quota=self.bucket_size,
             replica=self.num_replicas, compression_mode=self.compression_mode,
             bucket_type=self.bucket_type, storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)

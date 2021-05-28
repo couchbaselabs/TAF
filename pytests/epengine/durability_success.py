@@ -1,4 +1,5 @@
 from BucketLib.bucket import Bucket
+from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
@@ -89,13 +90,15 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         self.log.info("Starting parallel doc_ops - Create/Read/Update/Delete")
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_create, "create", 0,
+            self.cluster, self.bucket, gen_create,
+            DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout))
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "update", 0,
+            self.cluster, self.bucket, gen_update,
+            DocLoading.Bucket.DocOps.UPDATE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
@@ -110,13 +113,15 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                                  .format(task.op_type, task.fail))
 
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "read", 0,
+            self.cluster, self.bucket, gen_update,
+            DocLoading.Bucket.DocOps.READ, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout))
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_delete, "delete", 0,
+            self.cluster, self.bucket, gen_delete,
+            DocLoading.Bucket.DocOps.DELETE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
@@ -155,13 +160,13 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):
             if index == 0:
-                op_type = "create"
+                op_type = DocLoading.Bucket.DocOps.CREATE
             elif index == 1:
-                op_type = "update"
+                op_type = DocLoading.Bucket.DocOps.UPDATE
             elif index == 2:
-                op_type = "read"
+                op_type = DocLoading.Bucket.DocOps.READ
             elif index == 3:
-                op_type = "delete"
+                op_type = DocLoading.Bucket.DocOps.DELETE
 
             op_failed = self.durability_helper.retry_with_no_error(
                 client, task.fail, op_type)
@@ -260,28 +265,32 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Perform CRUDs with induced error scenario is active
         self.log.info("Starting parallel doc_ops - Create/Read/Update/Delete")
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_create, "create", 0,
+            self.cluster, self.bucket, gen_create,
+            DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             start_task=False))
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "update", 0,
+            self.cluster, self.bucket, gen_update,
+            DocLoading.Bucket.DocOps.UPDATE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             start_task=False))
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_update, "read", 0,
+            self.cluster, self.bucket, gen_update,
+            DocLoading.Bucket.DocOps.READ, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             start_task=False))
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, gen_delete, "delete", 0,
+            self.cluster, self.bucket, gen_delete,
+            DocLoading.Bucket.DocOps.DELETE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
@@ -352,13 +361,13 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):
             if index == 0:
-                op_type = "create"
+                op_type = DocLoading.Bucket.DocOps.CREATE
             elif index == 1:
-                op_type = "update"
+                op_type = DocLoading.Bucket.DocOps.UPDATE
             elif index == 2:
-                op_type = "read"
+                op_type = DocLoading.Bucket.DocOps.READ
             elif index == 3:
-                op_type = "delete"
+                op_type = DocLoading.Bucket.DocOps.DELETE
 
             op_failed = self.durability_helper.retry_with_no_error(
                 client, task.fail, op_type)
@@ -419,26 +428,27 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         3. Make sure all CRUDs succeeded without any unexpected exceptions
         """
 
-        doc_ops = self.input.param("doc_ops", "create")
+        doc_ops = self.input.param("doc_ops", DocLoading.Bucket.DocOps.CREATE)
         doc_gen = dict()
         half_of_num_items = int(self.num_items/2)
 
         # Create required doc_generators for CRUD ops
         read_gen = doc_generator(self.key, 0, self.num_items)
-        if doc_ops == "create":
+        if doc_ops == DocLoading.Bucket.DocOps.CREATE:
             doc_gen[0] = doc_generator(self.key, self.num_items,
                                        self.num_items * 2)
             doc_gen[1] = doc_generator(self.key, self.num_items * 2,
                                        self.num_items * 3)
             # Update expected self.num_items at the end of this op
             self.num_items *= 3
-        elif doc_ops in ["update", "delete"]:
+        elif doc_ops in [DocLoading.Bucket.DocOps.UPDATE,
+                         DocLoading.Bucket.DocOps.DELETE]:
             doc_gen[0] = doc_generator(self.key, 0, half_of_num_items)
             doc_gen[1] = doc_generator(self.key, half_of_num_items,
                                        self.num_items)
 
             # Update expected self.num_items at the end of "delete" op
-            if doc_ops == "delete":
+            if doc_ops == DocLoading.Bucket.DocOps.DELETE:
                 self.num_items = 0
 
         tasks = list()
@@ -458,7 +468,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         # Generic reader task
         tasks.append(self.task.async_load_gen_docs(
-            self.cluster, self.bucket, read_gen, "read", 0,
+            self.cluster, self.bucket, read_gen,
+            DocLoading.Bucket.DocOps.READ, 0,
             batch_size=10, process_concurrency=1,
             timeout_secs=self.sdk_timeout))
 
@@ -491,12 +502,14 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         tasks = list()
 
         # Create required doc_generators for CRUD ops
-        doc_gen["create"] = doc_generator(self.key, self.num_items,
-                                          self.num_items * 2)
-        doc_gen["update"] = doc_generator(self.key, half_of_num_items,
-                                          self.num_items)
-        doc_gen["delete"] = doc_generator(self.key, 0, half_of_num_items)
-        doc_gen["read"] = doc_gen["update"]
+        doc_gen[DocLoading.Bucket.DocOps.CREATE] = \
+            doc_generator(self.key, self.num_items, self.num_items * 2)
+        doc_gen[DocLoading.Bucket.DocOps.UPDATE] = \
+            doc_generator(self.key, half_of_num_items, self.num_items)
+        doc_gen[DocLoading.Bucket.DocOps.DELETE] = \
+            doc_generator(self.key, 0, half_of_num_items)
+        doc_gen[DocLoading.Bucket.DocOps.READ] = \
+            doc_gen[DocLoading.Bucket.DocOps.UPDATE]
 
         for index in range(0, 4):
             op_type = doc_ops[index]
@@ -529,3 +542,40 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Verify doc count and other stats
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
+
+    def test_buffer_ack_during_dcp_commit(self):
+        """
+        MB-46482
+        - Create bucket with min_ram
+        - Perform huge number of sync_writes
+        - Validate 'dcp unacked_bytes' stats are all ZERO
+        """
+
+        if self.durability_level == ""  \
+                or self.durability_level.upper() == "NONE":
+            self.fail("Test requires valid durability level for sync_writes")
+
+        doc_gen = doc_generator(self.key, self.num_items, self.num_items*3,
+                                key_size=10, doc_size=5)
+        self.log.info("Loading %s keys into the bucket" % (self.num_items*2))
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, doc_gen,
+            DocLoading.Bucket.DocOps.UPDATE,
+            durability=self.durability_level,
+            print_ops_rate=False)
+        self.task_manager.get_task_result(load_task)
+
+        self.bucket_util._wait_for_stats_all_buckets()
+        self.sleep(5, "Wait for dcp")
+        for node in self.cluster_util.get_kv_nodes():
+            shell = RemoteMachineShellConnection(node)
+            cb_stat = Cbstats(shell)
+            dcp_stats = cb_stat.dcp_stats(self.bucket.name)
+            for stat_name, val in dcp_stats.items():
+                if stat_name.split(":")[-1] == "unacked_bytes":
+                    self.log.debug("%s: %s" % (stat_name, val))
+                    if int(val) != 0:
+                        self.log_failure("%s: %s != 0" % (stat_name, val))
+            shell.disconnect()
+
+        self.validate_test_failure()

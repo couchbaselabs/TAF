@@ -452,15 +452,17 @@ class Cbstats(CbCmdBase):
 
     def dcp_stats(self, bucket_name):
         stats = dict()
-        output, error = self.get_stats(bucket_name, "failovers")
+        output, error = self.get_stats(bucket_name, "dcp")
         if len(error) != 0:
             raise Exception("\n".join(error))
         for line in output:
-            line = line.strip()
-            list_all = line.rsplit(":", 1)
-            stat = list_all[0]
-            val = list_all[1].strip()
-            stats[stat] = val
+            line = line.split()
+            # TODO: Remove try..catch once MB-46630 is fixed
+            try:
+                stat = line[0].rstrip(":")
+                stats[stat] = line[1].strip()
+            except IndexError:
+                pass
         return stats
 
     def dcp_vbtakeover(self, bucket_name, vb_num, key):
