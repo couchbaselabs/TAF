@@ -1,4 +1,5 @@
 import Jython_tasks.task as jython_tasks
+from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
@@ -704,6 +705,11 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.sleep(20)
         shell.start_couchbase()
         shell.disconnect()
+
+        # Workaround for Eph case (MB-44682 - Not a bug)
+        if self.bucket_type == Bucket.Type.EPHEMERAL:
+            self.sleep(15, "Wait for couchbase server to start")
+
         rebalance = self.task.async_rebalance(
             self.cluster.servers, [], servs_out)
         self.task.jython_task_manager.get_task_result(rebalance)
