@@ -98,10 +98,8 @@ class AppBase(BaseTestCase):
         # Set cluster settings
         for setting in self.cluster_conf["cb_cluster"]["settings"]:
             if setting["name"] == "memory_quota":
-                pass
-                # setting.pop("name")
-                # RestConnection(self.cluster.master)\
-                #     .set_node_memory_quota(setting)
+                setting.pop("name")
+                self.cluster_util.rest.set_service_mem_quota(setting)
 
         # Rebalance_in required nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
