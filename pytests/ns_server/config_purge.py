@@ -770,6 +770,11 @@ class ConfigPurging(CollectionBase):
 
             self.__get_deleted_key_count(check_if_zero=True)
 
+            # Reset timestamp to track since the purger ran now
+            self.ts_during_start = \
+                self.__get_current_timestamps_from_debug_log()
+            self.log.info("New timestamp reference: %s" % self.ts_during_start)
+
         custom_meta_kv_key = "metakv_key_%s" % int(self.time_stamp)
         fts_key = "fts_index_%s" % int(self.time_stamp)
         target_node_type = \
