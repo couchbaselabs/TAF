@@ -29,6 +29,8 @@ class MagmaCrashTests(MagmaBaseTest):
         self.sdk_timeout = self.input.param("sdk_timeout", 100)
         self.time_unit = "milliseconds"
         self.graceful = self.input.param("graceful", False)
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
         self.crash_th = None
         if not self.init_loading and self.active_resident_threshold < 100:
             self.load_buckets_in_dgm(self.gen_create, "create", 0)
@@ -88,8 +90,6 @@ class MagmaCrashTests(MagmaBaseTest):
         self.graceful = self.input.param("graceful", False)
         wait_warmup = self.input.param("wait_warmup", True)
         self.log.info("====test_crash_during_ops starts====")
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
-                        "AutoFailover disabling failed")
 
         self.compute_docs_ranges()
 
