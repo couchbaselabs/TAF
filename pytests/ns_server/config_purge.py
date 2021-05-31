@@ -509,14 +509,18 @@ class ConfigPurging(CollectionBase):
         self.cluster_util.rest.update_tombstone_purge_age_for_removal(
             self.default_purge_age)
 
+        self.sleep(40, "Wait for purger to start running")
+
         # Trigger purger with default values to validate the purging keys
         for index in range(max_ts_to_create):
+            # Reset timestamp to track since the purger ran now
+            self.ts_during_start = \
+                self.__get_current_timestamps_from_debug_log()
+            self.log.info("New timestamp reference: %s" % self.ts_during_start)
+
             key = t_key % index
-            self.sleep(self.default_run_interval,
-                       "Wait before creating next tombstone")
-            self.log.info("Validating purger for key '%s'" % key)
-            # self.cluster_util.rest.run_tombstone_purger(self.default_purge_age)
             self.sleep(self.default_run_interval, "Wait for purger to run")
+            self.log.info("Validating purger for key '%s'" % key)
             purged_ts = self.__get_purged_tombstone_from_last_run()
             for node_ip, purged_data in purged_ts.items():
                 if not purged_data['keys']:
