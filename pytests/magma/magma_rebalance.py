@@ -1,12 +1,12 @@
-import time
 from math import ceil
-
-from Cb_constants.CBServer import CbServer
-from magma_base import MagmaBaseTest
-from remote.remote_util import RemoteMachineShellConnection
+import time
 
 from BucketLib.BucketOperations import BucketHelper
+from Cb_constants.CBServer import CbServer
+from collections_helper.collections_spec_constants import MetaCrudParams
+from magma_base import MagmaBaseTest
 from membase.api.rest_client import RestConnection, RestHelper
+from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
 
@@ -656,7 +656,7 @@ class MagmaRebalance(MagmaBaseTest):
         start = self.init_items_per_collection
         self.compute_docs_ranges(start)
         self.generate_docs(doc_ops=self.doc_ops, target_vbucket=None)
-        collections = self.buckets[0].scopes[self.scope_name].collections.keys()
+        collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
         self.log.info("collections list is {}".format(collections))
 
         if self.data_load_stage == "before":
@@ -679,7 +679,7 @@ class MagmaRebalance(MagmaBaseTest):
                     tasks_info.update(tem_tasks_in.items())
             tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
                                              ignore_exceptions=self.ignore_exceptions,
-                                             scope=self.scope_name,
+                                             scope=CbServer.default_scope,
                                              collection=CbServer.default_collection,
                                              _sync=False)
             tasks_info.update(tem_tasks_in.items())
@@ -694,7 +694,7 @@ class MagmaRebalance(MagmaBaseTest):
                                                      collection_name=collection)
                         self.bucket_util.buckets[self.bucket_util.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
                     self.collections.remove(collection)
-                #self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
+                #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
 
         if self.dgm_test:
@@ -782,7 +782,7 @@ class MagmaRebalance(MagmaBaseTest):
                                                      collection_name=collection)
                         self.bucket_util.buckets[self.bucket_util.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
                     self.collections.remove(collection)
-                #self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
+                #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
         if not self.warmup:
             self.wait_for_rebalance_to_complete(rebalance)
@@ -839,7 +839,7 @@ class MagmaRebalance(MagmaBaseTest):
                                                      collection_name=collection)
                         self.bucket_util.buckets[self.bucket_util.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
                     self.collections.remove(collection)
-                #self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
+                #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
 
             for task in tasks_info:

@@ -1,7 +1,10 @@
 import math
 import os
 import random
+import subprocess
+import time
 
+from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from Cb_constants.CBServer import CbServer
 from basetestcase import BaseTestCase
@@ -10,27 +13,36 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
-from BucketLib.BucketOperations import BucketHelper
-import time
-import subprocess
 
 
 class MagmaBaseTest(BaseTestCase):
     def setUp(self):
         super(MagmaBaseTest, self).setUp()
-        self.vbuckets = self.input.param("vbuckets", self.cluster_util.vbuckets)
         self.rest = RestConnection(self.cluster.master)
+
+        # Bucket Params
+        self.vbuckets = self.input.param("vbuckets", self.cluster_util.vbuckets)
         self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.fragmentation = int(self.input.param("fragmentation", 50))
-#         self.wait_timeout = self.input.param("wait_timeout", 300)
+        self.bucket_storage = self.input.param("bucket_storage",
+                                               Bucket.StorageBackend.magma)
+        self.bucket_eviction_policy = self.input.param("bucket_eviction_policy",
+                                                       Bucket.EvictionPolicy.FULL_EVICTION)
+        self.bucket_util.add_rbac_user()
+        self.bucket_name = self.input.param("bucket_name", None)
+        self.magma_buckets = self.input.param("magma_buckets", 0)
+
+        # SDK Exceptions
         self.check_temporary_failure_exception = False
         self.retry_exceptions = [SDKException.TimeoutException,
                                  SDKException.AmbiguousTimeoutException,
                                  SDKException.RequestCanceledException,
                                  SDKException.UnambiguousTimeoutException]
         self.ignore_exceptions = []
+
         # Sets autocompaction at bucket level
         self.autoCompactionDefined = str(self.input.param("autoCompactionDefined", "false")).lower()
+
         # Create Cluster
         self.rest.init_cluster(username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
@@ -58,22 +70,29 @@ class MagmaBaseTest(BaseTestCase):
             [self.cluster.master] + nodes_in)
         for idx, node in enumerate(self.cluster.nodes_in_cluster):
             node.services = self.services[idx]
-        # Create Buckets
-        self.bucket_storage = self.input.param("bucket_storage",
-                                               Bucket.StorageBackend.magma)
-        self.bucket_eviction_policy = self.input.param("bucket_eviction_policy",
-                                                       Bucket.EvictionPolicy.FULL_EVICTION)
-        self.bucket_util.add_rbac_user()
-        self.bucket_name = self.input.param("bucket_name",
-                                               None)
 
-        self.magma_buckets = self.input.param("magma_buckets", 0)
-        if self.standard_buckets > 10:
-            self.bucket_util.change_max_buckets(self.standard_buckets)
+        # Create Buckets
         if self.standard_buckets == 1:
-            self._create_default_bucket()
+            self.bucket_util.create_default_bucket(
+                bucket_type=self.bucket_type,
+                ram_quota=self.bucket_ram_quota,
+                replica=self.num_replicas,
+                storage=self.bucket_storage,
+                eviction_policy=self.bucket_eviction_policy,
+                autoCompactionDefined=self.autoCompactionDefined,
+                fragmentation_percentage=self.fragmentation)
         else:
-            self._create_multiple_buckets()
+            buckets_created = self.bucket_util.create_multiple_buckets(
+                self.cluster.master,
+                self.num_replicas,
+                bucket_count=self.standard_buckets,
+                bucket_type=self.bucket_type,
+                storage={"couchstore": self.standard_buckets - self.magma_buckets,
+                         "magma": self.magma_buckets},
+                eviction_policy=self.bucket_eviction_policy,
+                bucket_name=self.bucket_name,
+                fragmentation_percentage=self.fragmentation)
+            self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         self.buckets = self.bucket_util.buckets
 
@@ -81,7 +100,6 @@ class MagmaBaseTest(BaseTestCase):
         self.num_collections = self.input.param("num_collections", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
 
-        self.scope_name = CbServer.default_scope
         # Creation of scopes of num_scopes is > 1
         scope_prefix = "Scope"
         for bucket in self.bucket_util.buckets:
@@ -90,8 +108,8 @@ class MagmaBaseTest(BaseTestCase):
                 self.log.info("Creating bucket::scope {} {}\
                 ".format(bucket.name, scope_name))
                 self.bucket_util.create_scope(self.cluster.master,
-                                          bucket,
-                                          {"name": scope_name})
+                                              bucket,
+                                              {"name": scope_name})
                 self.sleep(2)
         self.scopes = self.buckets[0].scopes.keys()
         self.log.info("Scopes list is {}".format(self.scopes))
@@ -108,7 +126,7 @@ class MagmaBaseTest(BaseTestCase):
                         self.cluster.master, bucket,
                         scope_name, {"name": collection_name})
                     self.sleep(2)
-        self.collections = self.buckets[0].scopes[self.scope_name].collections.keys()
+        self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
         self.log.debug("Collections list == {}".format(self.collections))
 
         if self.dcp_services and self.num_collections == 1:
@@ -116,7 +134,7 @@ class MagmaBaseTest(BaseTestCase):
             self.initial_idx_q = "CREATE INDEX %s on default:`%s`.`%s`.`%s`(meta().id) with \
                 {\"defer_build\": false};" % (self.initial_idx,
                                               self.buckets[0].name,
-                                              self.scope_name,
+                                              CbServer.default_scope,
                                               self.collections[0])
             self.query_client = RestConnection(self.dcp_servers[0])
             result = self.query_client.query_tool(self.initial_idx_q)
@@ -148,10 +166,11 @@ class MagmaBaseTest(BaseTestCase):
         self.monitor_stats = ["doc_ops", "ep_queue_size"]
         if not self.ep_queue_stats:
             self.monitor_stats = ["doc_ops"]
-        #Disk usage before data load
-        self.disk_usage_before_loading = self.get_disk_usage(self.buckets[0],
-                                                 self.cluster.nodes_in_cluster)[0]
-        self.log.info("disk usage before loading {}".format(self.disk_usage_before_loading))
+        # Disk usage before data load
+        self.empty_bucket_disk_usage = self.get_disk_usage(
+            self.buckets[0], self.cluster.nodes_in_cluster)[0]
+        self.log.info("Empty magma bucket disk usage: {}".format(
+            self.empty_bucket_disk_usage))
 
         # Doc controlling params
         self.key = 'test_docs'
@@ -201,8 +220,7 @@ class MagmaBaseTest(BaseTestCase):
         self.update_itr = self.input.param("update_itr", 2)
         self.next_half = self.input.param("next_half", False)
         self.deep_copy = self.input.param("deep_copy", False)
-        if self.active_resident_threshold < 100:
-            self.check_temporary_failure_exception = True
+
         # self.thread_count is used to define number of thread use
         # to read same number of documents parallelly
         self.read_thread_count = self.input.param("read_thread_count", 4)
@@ -211,8 +229,7 @@ class MagmaBaseTest(BaseTestCase):
         # Creating clients in SDK client pool
         if self.sdk_client_pool:
             self.log.info("Creating SDK clients for client_pool")
-            max_clients = min(self.task_manager.number_of_threads,
-                              20)
+            max_clients = min(self.task_manager.number_of_threads, 20)
             clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
             for bucket in self.bucket_util.buckets:
                 self.sdk_client_pool.create_clients(
@@ -221,7 +238,13 @@ class MagmaBaseTest(BaseTestCase):
                     compression_settings=self.sdk_compression)
 
         # Initial Data Load
-        self.initial_load()
+        self.init_loading = self.input.param("init_loading", True)
+        if self.init_loading:
+            if self.active_resident_threshold < 100:
+                self.check_temporary_failure_exception = True
+                self.load_buckets_in_dgm(self.gen_create, "create", 0)
+            else:
+                self.initial_load()
         self.log.info("==========Finished magma base setup========")
 
     def initial_load(self):
@@ -231,76 +254,95 @@ class MagmaBaseTest(BaseTestCase):
             self.create_start = -int(self.init_items_per_collection - 1)
             self.create_end = 1
 
-        self.generate_docs(doc_ops="create")
-        self.init_loading = self.input.param("init_loading", True)
-        self.dgm_batch = self.input.param("dgm_batch", 5000)
-        if self.init_loading:
-            self.log.debug("initial_items_in_each_collection {}".format(self.init_items_per_collection))
-
-            tasks_info = dict()
-            for collection in self.collections:
-                self.generate_docs(doc_ops="create", target_vbucket=None)
-                tem_tasks_info = self.loadgen_docs(
-                    self.retry_exceptions,
-                    self.ignore_exceptions,
-                    scope=self.scope_name,
-                    collection=collection,
-                    _sync=False,
-                    doc_ops="create")
-                tasks_info.update(tem_tasks_info.items())
-            for task in tasks_info:
-                self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
-            self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True,
-                                                         timeout=3600)
-            if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
-                for bucket in self.bucket_util.get_all_buckets():
-                    disk_usage = self.get_disk_usage(
-                        bucket, self.cluster.nodes_in_cluster)
-                    self.disk_usage[bucket.name] = disk_usage[0]
-                    self.log.info(
-                        "For bucket {} disk usage after initial creation is {}MB\
-                        ".format(bucket.name,
-                                 self.disk_usage[bucket.name]))
-            self.num_items = self.init_items_per_collection * self.num_collections
+        self.log.debug("initial_items_in_each_collection {}".format(self.init_items_per_collection))
+        tasks_info = dict()
+        for collection in self.collections:
+            self.generate_docs(doc_ops="create", target_vbucket=None)
+            tem_tasks_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                scope=CbServer.default_scope,
+                collection=collection,
+                _sync=False,
+                doc_ops="create")
+            tasks_info.update(tem_tasks_info.items())
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        self.bucket_util.verify_doc_op_task_exceptions(
+            tasks_info, self.cluster)
+        self.bucket_util.log_doc_ops_task_failures(tasks_info)
+        self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True,
+                                                     timeout=3600)
+        if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
+            for bucket in self.bucket_util.get_all_buckets():
+                disk_usage = self.get_disk_usage(
+                    bucket, self.cluster.nodes_in_cluster)
+                self.disk_usage[bucket.name] = disk_usage[0]
+                self.log.info(
+                    "For bucket {} disk usage after initial creation is {}MB\
+                    ".format(bucket.name,
+                             self.disk_usage[bucket.name]))
+        self.num_items = self.init_items_per_collection * self.num_collections
         self.read_start = 0
         self.read_end = self.init_items_per_collection
 
-    def _create_default_bucket(self):
-        self.bucket_util.create_default_bucket(
-            bucket_type=self.bucket_type,
-            ram_quota=self.bucket_ram_quota,
-            replica=self.num_replicas,
-            storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy,
-            autoCompactionDefined=self.autoCompactionDefined,
-            fragmentation_percentage=self.fragmentation)
-
-    def _create_multiple_buckets(self):
-        buckets_created = self.bucket_util.create_multiple_buckets(
-            self.cluster.master,
-            self.num_replicas,
-            bucket_count=self.standard_buckets,
-            bucket_type=self.bucket_type,
-            storage={"couchstore": self.standard_buckets - self.magma_buckets,
-                     "magma": self.magma_buckets},
-            eviction_policy=self.bucket_eviction_policy,
-            bucket_name=self.bucket_name,
-            fragmentation_percentage=self.fragmentation)
-        self.assertTrue(buckets_created, "Unable to create multiple buckets")
-
-        for bucket in self.bucket_util.buckets:
-            ready = self.bucket_util.wait_for_memcached(
-                self.cluster.master,
-                bucket)
-            self.assertTrue(ready, msg="Wait_for_memcached failed")
+    def load_buckets_in_dgm(self, kv_gen, op_type, exp, flag=0,
+                            only_store_hash=True, batch_size=1000, pause_secs=1,
+                            timeout_secs=30, compression=True, dgm_batch=5000,
+                            skip_read_on_error=False,
+                            suppress_error_table=False,
+                            track_failures=False):
+        tasks_info = dict()
+        self.collections.remove(CbServer.default_collection)
+        docs_per_task = dict()
+        docs_per_scope = dict.fromkeys(self.scopes, dict())
+        for scope in self.scopes:
+            task_per_collection = dict()
+            if scope == CbServer.default_scope:
+                self.collections.append(CbServer.default_collection)
+            for collection in self.collections:
+                task_info = self.bucket_util._async_load_all_buckets(
+                    self.cluster, kv_gen, op_type, exp, flag,
+                    persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    durability=self.durability_level,
+                    timeout_secs=timeout_secs, time_unit=self.time_unit,
+                    only_store_hash=only_store_hash, batch_size=batch_size,
+                    pause_secs=pause_secs, sdk_compression=compression,
+                    process_concurrency=self.process_concurrency,
+                    retry_exceptions=self.retry_exceptions,
+                    active_resident_threshold=self.active_resident_threshold,
+                    skip_read_on_error=skip_read_on_error,
+                    suppress_error_table=suppress_error_table,
+                    dgm_batch=dgm_batch,
+                    scope=scope,
+                    collection=collection,
+                    monitor_stats=self.monitor_stats,
+                    track_failures=track_failures,
+                    sdk_client_pool=self.sdk_client_pool)
+                tasks_info.update(task_info.items())
+                task_per_collection[collection] = list(task_info.keys())[0]
+            if scope == CbServer.default_scope:
+                self.collections.remove(CbServer.default_collection)
+            docs_per_scope[scope]= task_per_collection
+        for task in tasks_info.keys():
+            self.task_manager.get_task_result(task)
+        if self.active_resident_threshold < 100:
+            for task, _ in tasks_info.items():
+                docs_per_task[task] = task.doc_index
+            self.log.info("docs_per_task : {}".format(docs_per_task))
+            for scope in self.scopes:
+                for collection in self.collections:
+                    docs_per_scope[scope][collection] = docs_per_task[docs_per_scope[scope][collection]]
+            docs_per_scope[CbServer.default_scope][CbServer.default_collection] = docs_per_task[docs_per_scope[CbServer.default_scope][CbServer.default_collection]]
+        self.log.info("docs_per_scope :  {}".format(docs_per_scope))
+        # For DGM TESTS, init_items_per_collection ==  max(list of items in each collection)
+        self.init_items_per_collection = max([max(docs_per_scope[scope].values()) for scope in docs_per_scope])
+        self.log.info("init_items_per_collection =={} ".format(self.init_items_per_collection))
 
     def tearDown(self):
         self.cluster_util.print_cluster_stats()
         dgm = None
-        timeout = 65
+        timeout = 60
         while dgm is None and timeout > 0:
             try:
                 stats = BucketHelper(self.cluster.master).fetch_bucket_stats(
@@ -341,7 +383,7 @@ class MagmaBaseTest(BaseTestCase):
             self.final_idx_q = "CREATE INDEX %s on default:`%s`.`%s`.`%s`(body) with \
                 {\"defer_build\": false};" % (self.final_idx,
                                               self.buckets[0].name,
-                                              self.scope_name,
+                                              CbServer.default_scope,
                                               self.collections[0])
             result = self.query_client.query_tool(self.final_idx_q, timeout=3600)
             start = time.time()
@@ -359,10 +401,10 @@ class MagmaBaseTest(BaseTestCase):
             self.sleep(5)
             self.initial_count_q = "Select count(*) as items "\
                 "from default:`{}`.`{}`.`{}` where meta().id like '%%';".format(
-                    self.buckets[0].name, self.scope_name, self.collections[0])
+                    self.buckets[0].name, CbServer.default_scope, self.collections[0])
             self.final_count_q = "Select count(*) as items "\
                 "from default:`{}`.`{}`.`{}` where body like '%%';".format(
-                    self.buckets[0].name, self.scope_name, self.collections[0])
+                    self.buckets[0].name, CbServer.default_scope, self.collections[0])
             self.log.info(self.initial_count_q)
             self.log.info(self.final_count_q)
             initial_count, final_count = 0, 0
@@ -378,13 +420,13 @@ class MagmaBaseTest(BaseTestCase):
 
                 self.log.info("## Initial Index item count in %s:%s:%s == %s"
                               % (self.buckets[0].name,
-                                 self.scope_name, self.collections[0],
+                                 CbServer.default_scope, self.collections[0],
                                  initial_count))
 
                 final_count = self.query_client.query_tool(self.final_count_q)["results"][0]["items"]
                 self.log.info("## Final Index item count in %s:%s:%s == %s"
                               % (self.buckets[0].name,
-                                 self.scope_name, self.collections[0],
+                                 CbServer.default_scope, self.collections[0],
                                  final_count))
 
                 if initial_count != kv_items or final_count != kv_items:
@@ -505,59 +547,6 @@ class MagmaBaseTest(BaseTestCase):
                                                       self.expiry_end,
                                                       target_vbucket=target_vbucket,
                                                       mutate=expiry_mutate)
-
-    def load_buckets_in_dgm(self, kv_gen, op_type, exp, flag=0,
-                            only_store_hash=True, batch_size=1000, pause_secs=1,
-                            timeout_secs=30, compression=True, dgm_batch=5000,
-                            skip_read_on_error=False,
-                            suppress_error_table=False,
-                            track_failures=False):
-        tasks_info = dict()
-        self.collections.remove(CbServer.default_collection)
-        docs_per_task = dict()
-        docs_per_scope = dict.fromkeys(self.scopes, dict())
-        for scope in self.scopes:
-            task_per_collection = dict()
-            if scope == CbServer.default_scope:
-                self.collections.append(CbServer.default_collection)
-            for collection in self.collections:
-                task_info = self.bucket_util._async_load_all_buckets(
-                    self.cluster, kv_gen, op_type, exp, flag,
-                    persist_to=self.persist_to, replicate_to=self.replicate_to,
-                    durability=self.durability_level,
-                    timeout_secs=timeout_secs, time_unit=self.time_unit,
-                    only_store_hash=only_store_hash, batch_size=batch_size,
-                    pause_secs=pause_secs, sdk_compression=compression,
-                    process_concurrency=self.process_concurrency,
-                    retry_exceptions=self.retry_exceptions,
-                    active_resident_threshold=self.active_resident_threshold,
-                    skip_read_on_error=skip_read_on_error,
-                    suppress_error_table=suppress_error_table,
-                    dgm_batch=dgm_batch,
-                    scope=scope,
-                    collection=collection,
-                    monitor_stats=self.monitor_stats,
-                    track_failures=track_failures,
-                    sdk_client_pool=self.sdk_client_pool)
-                tasks_info.update(task_info.items())
-                task_per_collection[collection] = list(task_info.keys())[0]
-            if scope == CbServer.default_scope:
-                self.collections.remove(CbServer.default_collection)
-            docs_per_scope[scope]= task_per_collection
-        for task in tasks_info.keys():
-            self.task_manager.get_task_result(task)
-        if self.active_resident_threshold < 100:
-            for task, _ in tasks_info.items():
-                docs_per_task[task] = task.doc_index
-            self.log.info("docs_per_task : {}".format(docs_per_task))
-            for scope in self.scopes:
-                for collection in self.collections:
-                    docs_per_scope[scope][collection] = docs_per_task[docs_per_scope[scope][collection]]
-            docs_per_scope[CbServer.default_scope][CbServer.default_collection] = docs_per_task[docs_per_scope[CbServer.default_scope][CbServer.default_collection]]
-        self.log.info("docs_per_scope :  {}".format(docs_per_scope))
-        # For DGM TESTS, init_items_per_collection ==  max(list of items in each collection)
-        self.init_items_per_collection = max([max(docs_per_scope[scope].values()) for scope in docs_per_scope])
-        self.log.info("init_items_per_collection =={} ".format(self.init_items_per_collection))
 
     def loadgen_docs(self,
                      retry_exceptions=[],
@@ -865,7 +854,7 @@ class MagmaBaseTest(BaseTestCase):
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 pause_secs=5, timeout_secs=self.sdk_timeout,
-                scope=self.scope_name,
+                scope=CbServer.default_scope,
                 collection=collection,
                 retry_exceptions=self.retry_exceptions,
                 ignore_exceptions=self.ignore_exceptions)

@@ -32,8 +32,6 @@ class MagmaCrashTests(MagmaBaseTest):
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
         self.crash_th = None
-        if not self.init_loading and self.active_resident_threshold < 100:
-            self.load_buckets_in_dgm(self.gen_create, "create", 0)
 
     def tearDown(self):
         self.stop_crash = True
@@ -99,7 +97,7 @@ class MagmaCrashTests(MagmaBaseTest):
             tem_tasks_info = self.loadgen_docs(
                 self.retry_exceptions,
                 self.ignore_exceptions,
-                scope=self.scope_name,
+                scope=CbServer.default_scope,
                 collection=collection,
                 suppress_error_table=True,
                 skip_read_on_error=True,
@@ -129,7 +127,7 @@ class MagmaCrashTests(MagmaBaseTest):
             tem_tasks_info = self.loadgen_docs(
                 self.retry_exceptions,
                 self.ignore_exceptions,
-                scope=self.scope_name,
+                scope=CbServer.default_scope,
                 collection=collection,
                 suppress_error_table=True,
                 skip_read_on_error=True,

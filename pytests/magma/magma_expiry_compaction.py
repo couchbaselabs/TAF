@@ -1,16 +1,3 @@
-from Cb_constants.CBServer import CbServer
-from com.couchbase.client.core.error import DocumentUnretrievableException
-from com.couchbase.client.java.kv import GetAnyReplicaOptions
-from couchbase_helper.documentgenerator import doc_generator
-from magma_base import MagmaBaseTest
-from sdk_client3 import SDKClient
-import random
-from remote.remote_util import RemoteMachineShellConnection
-from cb_tools.cbstats import Cbstats
-import time
-import os
-import copy
-
 '''
 Post-Expiration Purging: Storage will have nothing to do once the expiration
 surpasses for items present in the storage. It is KV which inserts the deletes
@@ -36,6 +23,20 @@ after which, a tombstone remains for a default period of 3(Metadata Purge Interv
 The expiry pager runs every 60 minutes by default: for information
 on changing the interval, see cbepctl set flush_param.
 '''
+
+import copy
+import os
+import random
+import time
+
+from Cb_constants.CBServer import CbServer
+from cb_tools.cbstats import Cbstats
+from com.couchbase.client.core.error import DocumentUnretrievableException
+from com.couchbase.client.java.kv import GetAnyReplicaOptions
+from couchbase_helper.documentgenerator import doc_generator
+from magma_base import MagmaBaseTest
+from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 
 
 class MagmaExpiryTests(MagmaBaseTest):
@@ -64,7 +65,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                     retry_exceptions=self.retry_exceptions,
                     ignore_exceptions=self.ignore_exceptions,
                     skip_read_on_error=False,
-                    scope=self.scope_name,
+                    scope=CbServer.default_scope,
                     collection=collection,
                     monitor_stats=self.monitor_stats))
         for task in tasks:
@@ -846,7 +847,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         tasks = dict()
         for collection in self.collections[::2]:
             self.generate_docs(doc_ops="expiry")
-            task = self.loadgen_docs(scope=self.scope_name,
+            task = self.loadgen_docs(scope=CbServer.default_scope,
                                      collection=collection,
                                      _sync=False,
                                      doc_ops="expiry")
@@ -865,7 +866,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 pause_secs=5, timeout_secs=self.sdk_timeout,
-                scope=self.scope_name,
+                scope=CbServer.default_scope,
                 collection=collection,
                 retry_exceptions=self.retry_exceptions,
                 ignore_exceptions=self.ignore_exceptions)
@@ -876,9 +877,9 @@ class MagmaExpiryTests(MagmaBaseTest):
         for collection in self.collections[::2]:
             self.bucket_util.drop_collection(self.cluster.master,
                                              self.buckets[0],
-                                             scope_name=self.scope_name,
+                                             scope_name=CbServer.default_scope,
                                              collection_name=collection)
-            self.buckets[0].scopes[self.scope_name].collections.pop(collection)
+            self.buckets[0].scopes[CbServer.default_scope].collections.pop(collection)
             self.collections.remove(collection)
         self.sleep(180, "sleep after dropping collections")
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
@@ -886,7 +887,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.assertEqual(ts, 0, "Tombstones found after collections(expired items) drop.")
 
     def test_drop_collection_during_tombstone_creation(self):
-        scope_name, collections = self.scope_name, self.collections
+        scope_name, collections = CbServer.default_scope, self.collections
         self.load_bucket()
         tasks = []
         for collection in collections[::2]:

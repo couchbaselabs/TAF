@@ -3,14 +3,16 @@ Created on 16-Feb-2021
 
 @author: riteshagarwal
 '''
-from magma.magma_base import MagmaBaseTest
-from remote.remote_util import RemoteMachineShellConnection
-import time
+import copy
 import os
 import threading
-from memcached.helper.data_helper import MemcachedClientHelper
+import time
+
+from Cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
-import copy
+from magma.magma_base import MagmaBaseTest
+from memcached.helper.data_helper import MemcachedClientHelper
+from remote.remote_util import RemoteMachineShellConnection
 
 
 class MagmaDiskFull(MagmaBaseTest):
@@ -71,7 +73,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -106,7 +108,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                update_end=self.create_end)
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
@@ -140,7 +142,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -165,7 +167,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
@@ -250,7 +252,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -285,7 +287,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
@@ -309,7 +311,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -344,7 +346,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
@@ -368,7 +370,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -403,7 +405,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
@@ -427,7 +429,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -462,7 +464,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
@@ -493,7 +495,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -528,7 +530,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
@@ -582,7 +584,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
@@ -601,7 +603,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -633,7 +635,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -655,7 +657,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
@@ -688,7 +690,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -737,7 +739,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -784,7 +786,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -832,7 +834,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                suppress_error_table=True,
                                                skip_read_on_error=True,
@@ -862,7 +864,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
-                                               scope=self.scope_name,
+                                               scope=CbServer.default_scope,
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
