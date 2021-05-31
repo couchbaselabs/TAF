@@ -1987,7 +1987,6 @@ class MagmaRollbackTests(MagmaBaseTest):
             for shell in shell_conn:
                 shell.disconnect()
 
-
 class MagmaSpaceAmplification(MagmaBaseTest):
 
     def test_space_amplification(self):

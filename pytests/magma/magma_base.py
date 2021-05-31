@@ -3,6 +3,7 @@ import os
 import random
 import subprocess
 import time
+import copy
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
@@ -37,7 +38,8 @@ class MagmaBaseTest(BaseTestCase):
         self.retry_exceptions = [SDKException.TimeoutException,
                                  SDKException.AmbiguousTimeoutException,
                                  SDKException.RequestCanceledException,
-                                 SDKException.UnambiguousTimeoutException]
+                                 SDKException.UnambiguousTimeoutException,
+                                 SDKException.ServerOutOfMemoryException]
         self.ignore_exceptions = []
 
         # Sets autocompaction at bucket level
@@ -184,6 +186,7 @@ class MagmaBaseTest(BaseTestCase):
         self.gen_delete = None
         self.gen_read = None
         self.gen_update = None
+        self.gen_expiry = None
         self.create_perc = self.input.param("update_perc", 100)
         self.update_perc = self.input.param("update_perc", 0)
         self.delete_perc = self.input.param("delete_perc", 0)
@@ -221,6 +224,9 @@ class MagmaBaseTest(BaseTestCase):
         self.update_itr = self.input.param("update_itr", 2)
         self.next_half = self.input.param("next_half", False)
         self.deep_copy = self.input.param("deep_copy", False)
+        self.suppress_error_table = True
+        self.skip_read_on_error = False
+        self.track_failures = True
 
         # self.thread_count is used to define number of thread use
         # to read same number of documents parallelly
@@ -239,6 +245,7 @@ class MagmaBaseTest(BaseTestCase):
                     compression_settings=self.sdk_compression)
 
         # Initial Data Load
+        self.loader_dict = None
         self.init_loading = self.input.param("init_loading", True)
         if self.init_loading:
             if self.active_resident_threshold < 100:
@@ -248,6 +255,83 @@ class MagmaBaseTest(BaseTestCase):
                 self.initial_load()
         self.log.info("==========Finished magma base setup========")
 
+    def _loader_dict(self):
+        loader_dict = dict()
+        common_params = {"retry_exceptions": self.retry_exceptions,
+                         "suppress_error_table": self.suppress_error_table,
+                         "durability_level": self.durability_level,
+                         "skip_read_success_results": False,
+                         "target_items": 5000,
+                         "skip_read_on_error": self.skip_read_on_error,
+                         "track_failures": self.track_failures,
+                         "ignore_exceptions": self.ignore_exceptions,
+                         "sdk_timeout_unit": "seconds",
+                         "sdk_timeout": 60,
+                         "doc_ttl": 0,
+                         "doc_gen_type": "default"}
+        for bucket in self.bucket_util.buckets:
+            loader_dict.update({bucket: dict()})
+            loader_dict[bucket].update({"scopes": dict()})
+            for scope in bucket.scopes.keys():
+                loader_dict[bucket]["scopes"].update({scope: dict()})
+                loader_dict[bucket]["scopes"][scope].update({"collections":dict()})
+                for collection in bucket.scopes[scope].collections.keys():
+                    loader_dict[bucket]["scopes"][scope]["collections"].update({collection:dict()})
+                    if self.gen_update is not None:
+                        op_type = "update"
+                        common_params.update({"doc_gen": self.gen_update})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
+                    if self.gen_create is not None:
+                        op_type = "create"
+                        common_params.update({"doc_gen": self.gen_create})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
+                    if self.gen_delete is not None:
+                        op_type = "delete"
+                        common_params.update({"doc_gen": self.gen_delete})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
+                    if self.gen_expiry is not None and self.maxttl:
+                        op_type = "update"
+                        common_params.update({"doc_gen": self.gen_expiry,
+                                              "doc_ttl": self.maxttl})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
+                        common_params.update({"doc_ttl": 0})
+                    if self.gen_read is not None:
+                        op_type = "read"
+                        common_params.update({"doc_gen": self.gen_read,
+                                              "skip_read_success_results": True,
+                                              "track_failures": False,
+                                              "suppress_error_table": True})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
+        self.loader_dict = loader_dict
+
+    def doc_loader(self, loader_spec):
+        task = self.task.async_load_gen_docs_from_spec(
+            self.cluster, self.task_manager, loader_spec,
+            self.sdk_client_pool,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            print_ops_rate=True,
+            start_task=True,
+            track_failures=self.track_failures)
+
+        return task
+
+    def data_load(self):
+        self._loader_dict()
+        return self.doc_loader(self.loader_dict)
+
+    def wait_for_doc_load_completion(self, task, wait_for_stats=True):
+        self.task_manager.get_task_result(task)
+        self.bucket_util.validate_doc_loading_results(task)
+        self.assertTrue(task.result,
+                        "Doc ops failed for task: {}".format(task.thread_name))
+
+        if wait_for_stats:
+            try:
+                self.bucket_util._wait_for_stats_all_buckets(timeout=1800)
+            except Exception as e:
+                raise e
+
     def initial_load(self):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
@@ -255,25 +339,12 @@ class MagmaBaseTest(BaseTestCase):
             self.create_start = -int(self.init_items_per_collection - 1)
             self.create_end = 1
 
+        self.generate_docs(doc_ops="create")
+
         self.log.debug("initial_items_in_each_collection {}".format(self.init_items_per_collection))
-        tasks_info = dict()
-        for collection in self.collections:
-            self.generate_docs(doc_ops="create", target_vbucket=None)
-            tem_tasks_info = self.loadgen_docs(
-                self.retry_exceptions,
-                self.ignore_exceptions,
-                scope=CbServer.default_scope,
-                collection=collection,
-                _sync=False,
-                doc_ops="create")
-            tasks_info.update(tem_tasks_info.items())
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
-        self.bucket_util.verify_doc_op_task_exceptions(
-            tasks_info, self.cluster)
-        self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(check_ep_items_remaining=True,
-                                                     timeout=3600)
+        task = self.data_load()
+        self.wait_for_doc_load_completion(task, True)
+
         if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
             for bucket in self.bucket_util.get_all_buckets():
                 disk_usage = self.get_disk_usage(
