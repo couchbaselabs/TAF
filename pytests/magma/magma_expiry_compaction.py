@@ -213,7 +213,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
             #Check for tombs-tones removed
-            self.run_compaction(compaction_iterations=1)
+            self.bucket_util._run_compaction(number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after bucket compaction: {}".format(ts))
             self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
@@ -348,7 +348,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                 value=self.meta_purge_interval, buckets=self.buckets)
             self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
             tomb-stones from storage")
-            self.run_compaction(compaction_iterations=2)
+            self.bucket_util._run_compaction(number_of_times=2)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
@@ -488,7 +488,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
             # Check for tombs-tones removed
-            self.run_compaction(compaction_iterations=2)
+            self.bucket_util._run_compaction(number_of_times=2)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after bucket compaction: {}".format(ts))
 
@@ -582,7 +582,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
         # Check for tombs-tones removed
-        self.run_compaction()
+        self.bucket_util._run_compaction()
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after bucket compaction: {}".format(ts))
 
@@ -674,7 +674,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
         # Check for tombs-tones removed
-        self.run_compaction(compaction_iterations=1)
+        self.bucket_util._run_compaction(number_of_times=1)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after bucket compaction: {}".format(ts))
         self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
@@ -761,7 +761,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
         #Check for tombs-tones removed
-        self.run_compaction(compaction_iterations=1)
+        self.bucket_util._run_compaction(number_of_times=1)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after bucket compaction: {}".format(ts))
         self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
@@ -800,7 +800,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         # exp_pager_stime
         self.bucket_util._expiry_pager(21600)
         self.log.info("Starting compaction for each bucket to add tombstones")
-        self.run_compaction(compaction_iterations=1)
+        self.bucket_util._run_compaction(number_of_times=1)
 
         self.sleep(300, "sleep after triggering compaction")
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
@@ -828,7 +828,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         tomb-stones from storage")
 
         self.log.info("Starting compaction for each bucket")
-        self.run_compaction(compaction_iterations=1)
+        self.bucket_util._run_compaction(number_of_times=1)
         self.sleep(300, "sleep after triggering compaction, to drop tombstones")
 
         # All docs and tomb-stone should be dropped from the storage
@@ -953,7 +953,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         tomb-stones from storage")
 
         self.log.info("Starting compaction for each bucket")
-        self.run_compaction()
+        self.bucket_util._run_compaction()
 
         # All docs and tomb-stone should be dropped from the storage
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
@@ -1007,7 +1007,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.sleep(self.maxttl, "Wait for docs to expire")
 
         self.log.info("Starting compaction for each bucket")
-        self.run_compaction()
+        self.bucket_util._run_compaction()
 
         # All docs and tomb-stone should be dropped from the storage
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)

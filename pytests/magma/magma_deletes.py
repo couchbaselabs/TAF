@@ -69,7 +69,7 @@ class BasicDeleteTests(BasicCrudTests):
                 self.disk_usage.keys()[0]], False,
                 msg.format(disk_usage[0], 1,
                            self.disk_usage[self.disk_usage.keys()[0]]))
-            self.run_compaction(compaction_iterations=1)
+            self.bucket_util._run_compaction(number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
             self.log.info("Iterations == {}, Actual tomb stone count == {},\
@@ -185,7 +185,7 @@ class BasicDeleteTests(BasicCrudTests):
             self.log.info("Iterations - {}, Actual tomb stone count == {} expected_ts_count == {}"
                           .format(count+1, ts, expected_ts_count))
 
-            self.run_compaction(compaction_iterations=1)
+            self.bucket_util._run_compaction(number_of_times=1)
             self.sleep(300, "sleep after triggering full compaction")
             disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)[0]

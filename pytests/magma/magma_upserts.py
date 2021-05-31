@@ -234,7 +234,7 @@ class BasicUpsertTests(BasicCrudTests):
                 False, msg.format(
                     "delete", i+1, _res,
                     self.disk_usage[self.disk_usage.keys()[0]]))
-            self.run_compaction(compaction_iterations=1)
+            self.bucket_util._run_compaction(number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             expected_ts_count = (self.items // 2)*(self.num_replicas+1)*(count+1)
             self.log.info("Iterations - {}, Actual tombstones == {} expected_ts_count == {}".format(i+1,  ts, expected_ts_count))

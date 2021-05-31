@@ -166,6 +166,7 @@ class MagmaBaseTest(BaseTestCase):
         self.monitor_stats = ["doc_ops", "ep_queue_size"]
         if not self.ep_queue_stats:
             self.monitor_stats = ["doc_ops"]
+
         # Disk usage before data load
         self.empty_bucket_disk_usage = self.get_disk_usage(
             self.buckets[0], self.cluster.nodes_in_cluster)[0]
@@ -880,7 +881,7 @@ class MagmaBaseTest(BaseTestCase):
             wait_time=self.wait_timeout * 20))
 
     def get_memory_footprint(self):
-        out = subprocess.Popen(['ps', 'v', '-p', str(os.getpid())],stdout=subprocess.PIPE).communicate()[0].split(b'\n')
+        out = subprocess.Popen(['ps', 'v', '-p', str(os.getpid())], stdout=subprocess.PIPE).communicate()[0].split(b'\n')
         vsz_index = out[0].split().index(b'RSS')
         mem = float(out[1].split()[vsz_index]) / 1024
         print("RAM FootPrint: %s" % str(mem))

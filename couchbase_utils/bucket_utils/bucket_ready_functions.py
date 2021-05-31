@@ -3306,13 +3306,13 @@ class BucketUtils(ScopeUtils):
             shell_conn.disconnect()
 
     def _run_compaction(self, number_of_times=100):
-        try:
-            for _ in range(0, number_of_times):
-                for bucket in self.buckets:
-                    BucketHelper(self.cluster.master).compact_bucket(
-                        bucket.name)
-        except Exception, ex:
-            self.log.error(ex)
+        for _ in range(number_of_times):
+            compaction_tasks = list()
+            for bucket in self.buckets:
+                compaction_tasks.append(self.task.async_compact_bucket(
+                    self.cluster.master, bucket))
+            for task in compaction_tasks:
+                self.task_manager.get_task_result(task)
 
     def _load_data_in_buckets_using_mc_bin_client(self, bucket, data_set,
                                                   max_expiry_range=None):
