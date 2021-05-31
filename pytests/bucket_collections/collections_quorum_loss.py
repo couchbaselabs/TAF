@@ -147,7 +147,11 @@ class CollectionsQuorumLoss(CollectionBase):
                 self.cluster_util.stop_memcached_on_node(node)
             elif self.failover_action == "kill_erlang":
                 remote = RemoteMachineShellConnection(node)
-                remote.kill_erlang()
+                remote.info = remote.extract_remote_info()
+                if remote.info.type.lower() == "windows":
+                    remote.kill_erlang(os="windows")
+                else:
+                    remote.kill_erlang(os="unix")
                 remote.disconnect()
 
     def custom_remove_failure(self, nodes=None):
