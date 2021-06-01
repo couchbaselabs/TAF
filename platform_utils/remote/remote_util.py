@@ -5053,10 +5053,10 @@ class RemoteUtilHelper(object):
             suspend_erlang = shell.windows_process_utils("pssuspend.exe",
                                                          "erl.exe", option="")
             if suspend_erlang:
-                shell.test_log.log.debug("%s - Erlang process is suspended"
+                shell.test_log.debug("%s - Erlang process is suspended"
                                          % shell.ip)
             else:
-                shell.test_log.log.error("%s - Erlang process failed to suspend"
+                shell.test_log.error("%s - Erlang process failed to suspend"
                                          % shell.ip)
         else:
             copy_server = copy.deepcopy(server)
