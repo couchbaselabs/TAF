@@ -3,6 +3,7 @@ from random import sample, choice
 
 from BucketLib.bucket import Bucket
 from cb_tools.cb_cli import CbCli
+from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import BucketDurability
 from epengine.durability_base import BucketDurabilityBase
@@ -323,7 +324,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             while durability_index < d_level_order_len:
                 # Ephemeral case
-                if self.d_level_order[durability_index] not in supported_d_levels:
+                if self.d_level_order[durability_index] \
+                        not in supported_d_levels:
                     durability_index += 1
                     continue
                 self.validate_durability_with_crud(
@@ -751,23 +753,25 @@ class BucketDurabilityTests(BucketDurabilityBase):
             tem_gen = deepcopy(gen_loader_2)
             while tem_gen.has_next():
                 key, value = tem_gen.next()
-                for fail_fast in [True, False]:
+                for retry_strategy in [
+                        SDKConstants.RetryStrategy.FAIL_FAST,
+                        SDKConstants.RetryStrategy.BEST_EFFORT]:
                     if with_sync_write_val:
                         fail = client.crud(doc_ops[1], key, value=value,
                                            exp=0,
                                            durability=with_sync_write_val,
                                            timeout=3, time_unit="seconds",
-                                           fail_fast=fail_fast)
+                                           sdk_retry_strategy=retry_strategy)
                     else:
                         fail = client.crud(doc_ops[1], key, value=value,
                                            exp=0,
                                            timeout=3, time_unit="seconds",
-                                           fail_fast=fail_fast)
+                                           sdk_retry_strategy=retry_strategy)
 
                     expected_exception = SDKException.AmbiguousTimeoutException
                     retry_reason = \
                         SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
-                    if fail_fast:
+                    if retry_strategy == SDKConstants.RetryStrategy.FAIL_FAST:
                         expected_exception = \
                             SDKException.RequestCanceledException
                         retry_reason = \

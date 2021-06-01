@@ -425,7 +425,7 @@ class GenericLoadingTask(Task):
                  suppress_error_table=False, sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 preserve_expiry=None):
+                 preserve_expiry=None, sdk_retry_strategy=None):
         super(GenericLoadingTask, self).__init__("Loadgen_task_%s_%s_%s_%s"
                                                  % (bucket, scope, collection,
                                                     time.time()))
@@ -445,6 +445,7 @@ class GenericLoadingTask(Task):
         self.suppress_error_table = suppress_error_table
         self.docs_loaded = 0
         self.preserve_expiry = preserve_expiry
+        self.sdk_retry_strategy = sdk_retry_strategy
 
     def call(self):
         self.start_task()
@@ -481,8 +482,9 @@ class GenericLoadingTask(Task):
             success, fail = client.set_multi(
                 key_val, self.exp, exp_unit=self.exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
-                timeout=self.timeout, time_unit=self.time_unit, retry=self.retries,
-                doc_type=doc_type, durability=durability)
+                timeout=self.timeout, time_unit=self.time_unit,
+                doc_type=doc_type, durability=durability,
+                sdk_retry_strategy=self.sdk_retry_strategy)
             if fail:
                 failed_item_table = None
                 if not self.suppress_error_table:
@@ -528,7 +530,8 @@ class GenericLoadingTask(Task):
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=self.timeout, time_unit=self.time_unit,
                 doc_type=doc_type, durability=durability,
-                preserve_expiry=self.preserve_expiry)
+                preserve_expiry=self.preserve_expiry,
+                sdk_retry_strategy=self.sdk_retry_strategy)
 
             if fail:
                 key_val = dict(key_val)
@@ -577,7 +580,8 @@ class GenericLoadingTask(Task):
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=self.timeout, time_unit=self.time_unit,
                 doc_type=doc_type, durability=durability,
-                preserve_expiry=self.preserve_expiry)
+                preserve_expiry=self.preserve_expiry,
+                sdk_retry_strategy=self.sdk_retry_strategy)
             if fail:
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
@@ -614,12 +618,14 @@ class GenericLoadingTask(Task):
                      replicate_to=None,
                      durability=""):
         client = client or self.client
-        success, fail = client.delete_multi(dict(key_val).keys(),
-                                            persist_to=persist_to,
-                                            replicate_to=replicate_to,
-                                            timeout=self.timeout,
-                                            time_unit=self.time_unit,
-                                            durability=durability)
+        success, fail = client.delete_multi(
+            dict(key_val).keys(),
+            persist_to=persist_to,
+            replicate_to=replicate_to,
+            timeout=self.timeout,
+            time_unit=self.time_unit,
+            durability=durability,
+            sdk_retry_strategy=self.sdk_retry_strategy)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Delete Key", "Exception"])
@@ -632,10 +638,12 @@ class GenericLoadingTask(Task):
         return success, fail
 
     def batch_touch(self, key_val, exp=0):
-        success, fail = self.client.touch_multi(dict(key_val).keys(),
-                                                exp=exp,
-                                                timeout=self.timeout,
-                                                time_unit=self.time_unit)
+        success, fail = self.client.touch_multi(
+            dict(key_val).keys(),
+            exp=exp,
+            timeout=self.timeout,
+            time_unit=self.time_unit,
+            sdk_retry_strategy=self.sdk_retry_strategy)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Touch Key", "Exception"])
@@ -649,8 +657,10 @@ class GenericLoadingTask(Task):
 
     def batch_read(self, keys, client=None):
         client = client or self.client
-        success, fail = client.get_multi(keys, timeout=self.timeout,
-                                         time_unit=self.time_unit)
+        success, fail = client.get_multi(
+            keys, timeout=self.timeout,
+            time_unit=self.time_unit,
+            sdk_retry_strategy=self.sdk_retry_strategy)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Read Key", "Exception"])
@@ -680,7 +690,8 @@ class GenericLoadingTask(Task):
                 durability=durability,
                 create_path=create_path,
                 xattr=xattr,
-                preserve_expiry=self.preserve_expiry)
+                preserve_expiry=self.preserve_expiry,
+                sdk_retry_strategy=self.sdk_retry_strategy)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc insert: {0}"
@@ -705,7 +716,8 @@ class GenericLoadingTask(Task):
                 durability=durability,
                 create_path=create_path,
                 xattr=xattr,
-                preserve_expiry=self.preserve_expiry)
+                preserve_expiry=self.preserve_expiry,
+                sdk_retry_strategy=self.sdk_retry_strategy)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc upsert: {0}"
@@ -728,7 +740,8 @@ class GenericLoadingTask(Task):
                 time_unit=self.time_unit,
                 durability=durability,
                 xattr=xattr,
-                preserve_expiry=self.preserve_expiry)
+                preserve_expiry=self.preserve_expiry,
+                sdk_retry_strategy=self.sdk_retry_strategy)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc upsert: {0}"
@@ -751,7 +764,8 @@ class GenericLoadingTask(Task):
                 time_unit=self.time_unit,
                 durability=durability,
                 xattr=xattr,
-                preserve_expiry=self.preserve_expiry)
+                preserve_expiry=self.preserve_expiry,
+                sdk_retry_strategy=self.sdk_retry_strategy)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc remove: {0}"
@@ -785,16 +799,18 @@ class LoadDocumentsTask(GenericLoadingTask):
                  collection=CbServer.default_collection,
                  track_failures=True,
                  skip_read_success_results=False,
-                 preserve_expiry=None):
+                 preserve_expiry=None, sdk_retry_strategy=None):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
-            pause_secs=pause_secs, timeout_secs=timeout_secs, time_unit=time_unit,
+            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            time_unit=time_unit,
             compression=compression,
             retries=retries, suppress_error_table=suppress_error_table,
             sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection,
-            preserve_expiry=preserve_expiry)
+            preserve_expiry=preserve_expiry,
+            sdk_retry_strategy=sdk_retry_strategy)
         self.thread_name = "LoadDocs_%s_%s_%s_%s_%s_%s" \
                            % (task_identifier,
                               op_type,
@@ -917,14 +933,16 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 preserve_expiry=None):
+                 preserve_expiry=None,
+                 sdk_retry_strategy=None):
         super(LoadSubDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             time_unit=time_unit, compression=compression,
             sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection,
-            preserve_expiry=preserve_expiry)
+            preserve_expiry=preserve_expiry,
+            sdk_retry_strategy=sdk_retry_strategy)
         self.thread_name = "LoadSubDocsTask-%s_%s_%s_%s_%s" % (
             task_identifier,
             generator._doc_gen.start,
@@ -1018,7 +1036,8 @@ class Durability(Task):
                  only_store_hash=True, batch_size=1, pause_secs=1,
                  timeout_secs=5, compression=None, process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
-                 majority_value=0, check_persistence=False):
+                 majority_value=0, check_persistence=False,
+                 sdk_retry_strategy=None):
 
         super(Durability, self).__init__("DurabilityDocumentsMainTask_%s_%s"
                                          % (bucket, time.time()))
@@ -1054,6 +1073,7 @@ class Durability(Task):
         self.buckets = None
         self.print_ops_rate = print_ops_rate
         self.retries = retries
+        self.sdk_retry_strategy = sdk_retry_strategy
         self.tasks = list()
         if isinstance(op_type, list):
             self.op_types = op_type
@@ -1093,7 +1113,8 @@ class Durability(Task):
                 pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
                 compression=self.compression,
                 instance_num=i, durability=self.durability,
-                check_persistence=self.check_persistence)
+                check_persistence=self.check_persistence,
+                sdk_retry_strategy=self.sdk_retry_strategy)
             self.tasks.append(task)
             i += 1
         try:
@@ -1141,13 +1162,15 @@ class Durability(Task):
                      instance_num=0, durability="", check_persistence=False,
                      sdk_client_pool=None,
                      scope=CbServer.default_scope,
-                     collection=CbServer.default_collection):
+                     collection=CbServer.default_collection,
+                     sdk_retry_strategy=None):
             super(Durability.Loader, self).__init__(
                 cluster, bucket, client, batch_size=batch_size,
                 pause_secs=pause_secs, timeout_secs=timeout_secs,
                 compression=compression,
                 sdk_client_pool=sdk_client_pool,
-                scope=scope, collection=collection)
+                scope=scope, collection=collection,
+                sdk_retry_strategy=sdk_retry_strategy)
             self.thread_name = "DurableDocLoaderTask_%d_%s_%d_%d_%s" \
                                % (instance_num, bucket,
                                   generator._doc_gen.start,
@@ -1514,7 +1537,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  collection=CbServer.default_collection,
                  monitor_stats=["doc_ops"],
                  track_failures=True,
-                 preserve_expiry=None):
+                 preserve_expiry=None,
+                 sdk_retry_strategy=None):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "LoadDocsGen_%s_%s_%s_%s_%s"
             % (bucket, scope, collection, task_identifier, time.time()))
@@ -1549,6 +1573,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.scope = scope
         self.collection = collection
         self.preserve_expiry = preserve_expiry
+        self.sdk_retry_strategy = sdk_retry_strategy
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1683,7 +1708,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 sdk_client_pool=self.sdk_client_pool,
                 scope=self.scope, collection=self.collection,
                 track_failures=self.track_failures,
-                preserve_expiry=self.preserve_expiry)
+                preserve_expiry=self.preserve_expiry,
+                sdk_retry_strategy=self.sdk_retry_strategy)
             tasks.append(task)
         return tasks
 
@@ -1702,7 +1728,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 preserve_expiry=None):
+                 preserve_expiry=None, sdk_retry_strategy=None):
         thread_name = "SubDocumentsLoadGenTask_%s_%s_%s_%s_%s" \
                       % (task_identifier,
                          bucket.name,
@@ -1738,6 +1764,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
         self.scope = scope
         self.collection = collection
         self.preserve_expiry = preserve_expiry
+        self.sdk_retry_strategy = sdk_retry_strategy
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1843,26 +1870,28 @@ class LoadSubDocumentsGeneratorsTask(Task):
                 self.batch_size)
             generators.append(batch_gen)
         for i in range(0, len(generators)):
-            task = LoadSubDocumentsTask(self.cluster, self.bucket,
-                                        self.clients[i], generators[i],
-                                        self.op_type, self.exp,
-                                        create_paths=self.create_path,
-                                        xattr=self.xattr,
-                                        exp_unit=self.exp_unit,
-                                        flag=self.flag,
-                                        persist_to=self.persist_to,
-                                        replicate_to=self.replicate_to,
-                                        time_unit=self.time_unit,
-                                        batch_size=self.batch_size,
-                                        pause_secs=self.pause_secs,
-                                        timeout_secs=self.timeout_secs,
-                                        compression=self.compression,
-                                        retries=self.retries,
-                                        durability=self.durability,
-                                        scope=self.scope,
-                                        collection=self.collection,
-                                        sdk_client_pool=self.sdk_client_pool,
-                                        preserve_expiry=self.preserve_expiry)
+            task = LoadSubDocumentsTask(
+                self.cluster, self.bucket,
+                self.clients[i], generators[i],
+                self.op_type, self.exp,
+                create_paths=self.create_path,
+                xattr=self.xattr,
+                exp_unit=self.exp_unit,
+                flag=self.flag,
+                persist_to=self.persist_to,
+                replicate_to=self.replicate_to,
+                time_unit=self.time_unit,
+                batch_size=self.batch_size,
+                pause_secs=self.pause_secs,
+                timeout_secs=self.timeout_secs,
+                compression=self.compression,
+                retries=self.retries,
+                durability=self.durability,
+                scope=self.scope,
+                collection=self.collection,
+                sdk_client_pool=self.sdk_client_pool,
+                preserve_expiry=self.preserve_expiry,
+                sdk_retry_strategy=self.sdk_retry_strategy)
             tasks.append(task)
         return tasks
 
@@ -1876,7 +1905,7 @@ class ContinuousDocOpsTask(Task):
                  process_concurrency=4,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 sdk_client_pool=None):
+                 sdk_client_pool=None, sdk_retry_strategy=None):
         super(ContinuousDocOpsTask, self).__init__(
             "ContDocOps_%s_%s_%s_%s"
             % (bucket.name, scope, collection, time.time()))
@@ -1906,6 +1935,7 @@ class ContinuousDocOpsTask(Task):
         self.doc_end_num = self.generator.end
         self.doc_type = self.generator.doc_type
         self.op_type = op_type
+        self.sdk_retry_strategy = sdk_retry_strategy
         self.itr_count = 0
         self.__stop_updates = False
 
@@ -1946,7 +1976,8 @@ class ContinuousDocOpsTask(Task):
                     scope=self.scope,
                     collection=self.collection,
                     sdk_client_pool=self.sdk_client_pool,
-                    skip_read_success_results=True)
+                    skip_read_success_results=True,
+                    sdk_retry_strategy=self.sdk_retry_strategy)
                 self.task_manager.add_new_task(task)
                 doc_tasks.append(task)
                 self.fail.update(task.fail)
@@ -1987,7 +2018,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  suppress_error_table=False,
                  track_failures=True,
                  task_identifier="",
-                 sdk_client_pool=None):
+                 sdk_client_pool=None,
+                 sdk_retry_strategy=None):
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
             "create", exp,
@@ -2025,6 +2057,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.scope = scope
         self.collection = collection
         self.sdk_client_pool = sdk_client_pool
+        self.sdk_retry_strategy = sdk_retry_strategy
 
     def _get_bucket_dgm(self, bucket):
         """
@@ -2066,7 +2099,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                 skip_read_on_error=self.skip_read_on_error,
                 suppress_error_table=self.suppress_error_table,
                 track_failures=self.track_failures,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=self.sdk_retry_strategy)
             self.task_manager.add_new_task(task)
             doc_tasks.append(task)
 

@@ -4,6 +4,7 @@ import json
 
 from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
+from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
@@ -267,21 +268,22 @@ class DurabilityFailureTests(DurabilityTestsBase):
         tem_gen = copy.deepcopy(gen_loader_2)
         while tem_gen.has_next():
             key, value = tem_gen.next()
-            for fail_fast in [True, False]:
+            for retry_strategy in [SDKConstants.RetryStrategy.FAIL_FAST,
+                                   SDKConstants.RetryStrategy.BEST_EFFORT]:
                 if self.with_non_sync_writes:
                     fail = client.crud(self.doc_ops[1], key, value=value,
                                        exp=0, timeout=3, time_unit="seconds",
-                                       fail_fast=fail_fast)
+                                       sdk_retry_strategy=retry_strategy)
                 else:
                     fail = client.crud(self.doc_ops[1], key, value=value,
                                        exp=0, durability=self.durability_level,
                                        timeout=3, time_unit="seconds",
-                                       fail_fast=fail_fast)
+                                       sdk_retry_strategy=retry_strategy)
 
                 expected_exception = SDKException.AmbiguousTimeoutException
                 retry_reason = \
                     SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
-                if fail_fast:
+                if retry_strategy == SDKConstants.RetryStrategy.FAIL_FAST:
                     expected_exception = \
                         SDKException.RequestCanceledException
                     retry_reason = \

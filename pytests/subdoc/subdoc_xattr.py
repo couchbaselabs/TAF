@@ -6,6 +6,7 @@ from BucketLib.bucket import Bucket
 from Cb_constants import CbServer, DocLoading
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
+from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import \
     doc_generator, \
     sub_doc_generator
@@ -1700,12 +1701,13 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                     if sw_test_op in ["subdoc_delete"]:
                         value = "exists_path"
 
-                result = self.client.crud(sw_test_op, doc_key, value,
-                                          durability=self.durability_level,
-                                          timeout=3, time_unit="seconds",
-                                          create_path=True,
-                                          xattr=self.xattr,
-                                          fail_fast=True)
+                result = self.client.crud(
+                    sw_test_op, doc_key, value,
+                    durability=self.durability_level,
+                    timeout=3, time_unit="seconds",
+                    create_path=True,
+                    xattr=self.xattr,
+                    sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
                 if sw_test_op not in doc_tasks:
                     result = result[1][doc_key]
 

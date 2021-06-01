@@ -430,15 +430,13 @@ class CollectionDurabilityTests(CollectionBase):
                         if self.with_non_sync_writes:
                             fail = client.crud(
                                 doc_ops[1], key, value,
-                                exp=0, timeout=2, time_unit="seconds",
-                                fail_fast=False)
+                                exp=0, timeout=2, time_unit="seconds")
                         else:
                             fail = client.crud(
                                 doc_ops[1], key, value,
                                 exp=0,
                                 durability=self.durability_level,
-                                timeout=2, time_unit="seconds",
-                                fail_fast=False)
+                                timeout=2, time_unit="seconds")
 
                         expected_exception = \
                             SDKException.AmbiguousTimeoutException

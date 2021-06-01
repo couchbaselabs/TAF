@@ -9,7 +9,6 @@ from cb_tools.cbstats import Cbstats
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 
-from com.couchbase.client.core.msg.kv import DurabilityLevel
 
 # Required since the str(values) are different for bucket-create
 BucketDurability = dict()
@@ -61,21 +60,6 @@ class DurabilityHelper:
         elif comparison == DurabilityHelper.GREATER_THAN_EQ:
             return lhs_val >= rhs_val
         return False
-
-    @staticmethod
-    def getDurabilityLevel(durability_level):
-        durability_level = durability_level.upper()
-        if durability_level == Bucket.DurabilityLevel.MAJORITY:
-            return DurabilityLevel.MAJORITY
-
-        if durability_level == \
-                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
-            return DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
-
-        if durability_level == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
-            return DurabilityLevel.PERSIST_TO_MAJORITY
-
-        return DurabilityLevel.NONE
 
     @staticmethod
     def getTargetNodes(cluster, nodes_init, num_nodes_affected):

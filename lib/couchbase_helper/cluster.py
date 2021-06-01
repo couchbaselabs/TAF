@@ -135,7 +135,8 @@ class ServerTasks(object):
                             sdk_client_pool=None,
                             monitor_stats=["doc_ops"],
                             track_failures=True,
-                            preserve_expiry=None):
+                            preserve_expiry=None,
+                            sdk_retry_strategy=None):
         clients = list()
         if active_resident_threshold == 100:
             if not task_identifier:
@@ -173,7 +174,8 @@ class ServerTasks(object):
                     scope=scope, collection=collection,
                     monitor_stats=monitor_stats,
                     track_failures=track_failures,
-                    preserve_expiry=preserve_expiry)
+                    preserve_expiry=preserve_expiry,
+                    sdk_retry_strategy=sdk_retry_strategy)
             else:
                 majority_value = (bucket.replicaNumber + 1) / 2 + 1
 
@@ -192,7 +194,8 @@ class ServerTasks(object):
                     timeout_secs=timeout_secs, compression=compression,
                     process_concurrency=process_concurrency, retries=retries,
                     durability=durability, majority_value=majority_value,
-                    check_persistence=check_persistence)
+                    check_persistence=check_persistence,
+                    sdk_retry_strategy=sdk_retry_strategy)
         else:
             for _ in range(process_concurrency):
                 client = None
@@ -216,7 +219,8 @@ class ServerTasks(object):
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,
                 track_failures=track_failures,
-                sdk_client_pool=sdk_client_pool)
+                sdk_client_pool=sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task
@@ -235,7 +239,8 @@ class ServerTasks(object):
                                 sdk_client_pool=None,
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection,
-                                preserve_expiry=None):
+                                preserve_expiry=None,
+                                sdk_retry_strategy=None):
         self.log.debug("Loading sub documents to {}".format(bucket.name))
         if not isinstance(generator, SubdocDocumentGenerator):
             raise Exception("Document generator needs to be of "
@@ -276,7 +281,8 @@ class ServerTasks(object):
             print_ops_rate=print_ops_rate,
             durability=durability,
             task_identifier=task_identifier,
-            preserve_expiry=preserve_expiry)
+            preserve_expiry=preserve_expiry,
+            sdk_retry_strategy=sdk_retry_strategy)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task
@@ -290,7 +296,8 @@ class ServerTasks(object):
                                  process_concurrency=4,
                                  scope=CbServer.default_scope,
                                  collection=CbServer.default_collection,
-                                 sdk_client_pool=None):
+                                 sdk_client_pool=None,
+                                 sdk_retry_strategy=None):
         clients = list()
         for _ in range(process_concurrency):
             if sdk_client_pool is None:
@@ -307,7 +314,8 @@ class ServerTasks(object):
             batch_size=batch_size,
             timeout_secs=timeout_secs,
             process_concurrency=process_concurrency,
-            sdk_client_pool=sdk_client_pool)
+            sdk_client_pool=sdk_client_pool,
+            sdk_retry_strategy=sdk_retry_strategy)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -365,7 +373,7 @@ class ServerTasks(object):
                              batch_size=10, process_concurrency=4,
                              persist_to=None, replicate_to=None,
                              durability="", sdk_timeout=5,
-                             doc_type="json"):
+                             doc_type="json", sdk_retry_strategy=None):
         rest = BucketHelper(cluster.master)
         bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                      cluster.master)
@@ -386,7 +394,8 @@ class ServerTasks(object):
                 durability=durability,
                 timeout_secs=sdk_timeout,
                 task_identifier=bucket.name,
-                print_ops_rate=False)
+                print_ops_rate=False,
+                sdk_retry_strategy=sdk_retry_strategy)
             self.jython_task_manager.get_task_result(task)
             bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                          cluster.master)
@@ -638,7 +647,8 @@ class ServerTasks(object):
                       suppress_error_table=True,
                       dgm_batch=5000,
                       scope=CbServer.default_scope,
-                      collection=CbServer.default_collection):
+                      collection=CbServer.default_collection,
+                      sdk_retry_strategy=None):
         _task = self.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp,
             flag=flag, persist_to=persist_to, replicate_to=replicate_to,
@@ -655,7 +665,8 @@ class ServerTasks(object):
             suppress_error_table=suppress_error_table,
             dgm_batch=dgm_batch,
             scope=scope,
-            collection=collection)
+            collection=collection,
+            sdk_retry_strategy=sdk_retry_strategy)
         self.jython_task_manager.get_task_result(_task)
         return _task
 
