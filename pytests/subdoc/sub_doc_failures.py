@@ -223,18 +223,20 @@ class SubDocTimeouts(DurabilityTestsBase):
                             % (vb_id,
                                vb_info["init"][node.ip][vb_id],
                                vb_info["post_timeout"][node.ip][vb_id]))
-                elif int(vb_id) in target_nodes_vbuckets["active"]:
+                elif int(vb_id) \
+                        in target_nodes_vbuckets[Bucket.vBucket.ACTIVE]:
                     if vb_id in vb_info["init"][node.ip].keys() \
                             and vb_info["init"][node.ip][vb_id] \
                             != vb_info["post_timeout"][node.ip][vb_id]:
                         self.log.warning(
                             err_msg
                             % (node.ip,
-                               "active",
+                               Bucket.vBucket.ACTIVE,
                                vb_id,
                                vb_info["init"][node.ip][vb_id],
                                vb_info["post_timeout"][node.ip][vb_id]))
-                elif int(vb_id) in target_nodes_vbuckets["replica"]:
+                elif int(vb_id) \
+                        in target_nodes_vbuckets[Bucket.vBucket.REPLICA]:
                     if vb_id in vb_info["init"][node.ip].keys() \
                             and vb_info["init"][node.ip][vb_id] \
                             == vb_info["post_timeout"][node.ip][vb_id]:
@@ -242,7 +244,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                         self.log.warning(
                             err_msg
                             % (node.ip,
-                               "replica",
+                               Bucket.vBucket.REPLICA,
                                vb_id,
                                vb_info["init"][node.ip][vb_id],
                                vb_info["post_timeout"][node.ip][vb_id]))
@@ -257,8 +259,8 @@ class SubDocTimeouts(DurabilityTestsBase):
         doc_gen = dict()
         affected_vbs = list()
 
-        target_nodes_vbuckets["active"] = []
-        target_nodes_vbuckets["replica"] = []
+        target_nodes_vbuckets[Bucket.vBucket.ACTIVE] = list()
+        target_nodes_vbuckets[Bucket.vBucket.REPLICA] = list()
         vb_info["init"] = dict()
         vb_info["post_timeout"] = dict()
         vb_info["afterCrud"] = dict()
@@ -270,12 +272,12 @@ class SubDocTimeouts(DurabilityTestsBase):
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
-            target_nodes_vbuckets["active"] += \
-                cbstat_obj[node.ip].vbucket_list(self.bucket.name,
-                                                 vbucket_type="active")
-            target_nodes_vbuckets["replica"] += \
-                cbstat_obj[node.ip].vbucket_list(self.bucket.name,
-                                                 vbucket_type="replica")
+            target_nodes_vbuckets[Bucket.vBucket.ACTIVE] += \
+                cbstat_obj[node.ip].vbucket_list(
+                    self.bucket.name, vbucket_type=Bucket.vBucket.ACTIVE)
+            target_nodes_vbuckets[Bucket.vBucket.REPLICA] += \
+                cbstat_obj[node.ip].vbucket_list(
+                    self.bucket.name, vbucket_type=Bucket.vBucket.REPLICA)
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
@@ -283,12 +285,12 @@ class SubDocTimeouts(DurabilityTestsBase):
         curr_time = int(time.time())
         expected_timeout = curr_time + self.sdk_timeout
 
-        target_vbs = target_nodes_vbuckets["active"]
+        target_vbs = target_nodes_vbuckets[Bucket.vBucket.ACTIVE]
         if self.nodes_init == 1:
             pass
         elif self.durability_level \
                 == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
-            target_vbs = target_nodes_vbuckets["replica"]
+            target_vbs = target_nodes_vbuckets[Bucket.vBucket.REPLICA]
 
         # Create required doc_generators
         doc_gen["insert"] = sub_doc_generator(
@@ -343,7 +345,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             self.task.jython_task_manager.get_task_result(tasks[op_type])
 
             # Validate task failures
-            if op_type == "read":
+            if op_type == DocLoading.Bucket.DocOps.READ:
                 # Validation for read task
                 if len(tasks[op_type].fail.keys()) != 0:
                     self.log_failure("Read failed for few docs: %s"
@@ -369,7 +371,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             self.log_failure("Timed-out before expected time")
 
         for op_type in doc_gen.keys():
-            if op_type == "read":
+            if op_type == DocLoading.Bucket.DocOps.READ:
                 continue
             while doc_gen[op_type].has_next():
                 doc_id, _ = doc_gen[op_type].next()
@@ -403,7 +405,8 @@ class SubDocTimeouts(DurabilityTestsBase):
         if self.nodes_init == self.num_replicas+1:
             read_gen = doc_generator(self.key, 0, self.num_items)
             read_task = self.task.async_load_gen_docs(
-                self.cluster, self.bucket, read_gen, "read", 0,
+                self.cluster, self.bucket, read_gen,
+                DocLoading.Bucket.DocOps.READ, 0,
                 batch_size=500, process_concurrency=1,
                 timeout_secs=self.sdk_timeout)
             self.task_manager.get_task_result(read_task)

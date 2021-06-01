@@ -174,6 +174,9 @@ class Bucket(object):
         ENABLED = 1
 
     class vBucket:
+        ACTIVE = "active"
+        REPLICA = "replica"
+
         def __init__(self):
             self.master = ''
             self.replica = []
