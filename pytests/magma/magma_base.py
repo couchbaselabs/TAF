@@ -429,15 +429,6 @@ class MagmaBaseTest(BaseTestCase):
                 time.sleep(1)
         super(MagmaBaseTest, self).tearDown()
 
-    def run_compaction(self, compaction_iterations=5):
-        for _ in range(compaction_iterations):
-            compaction_tasks = list()
-            for bucket in self.bucket_util.buckets:
-                compaction_tasks.append(self.task.async_compact_bucket(
-                    self.cluster.master, bucket))
-            for task in compaction_tasks:
-                self.task_manager.get_task_result(task)
-
     def validate_seq_itr(self):
         if self.dcp_services and self.num_collections == 1:
             index_build_q = "SELECT state FROM system:indexes WHERE name='{}';"
