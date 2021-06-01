@@ -8,11 +8,16 @@ cb_cluster:
 
   settings:
     - name: "memory_quota"
-      memoryQuota: 2048
-      indexMemoryQuota: 4096
-      ftsMemoryQuota: 4096
-      cbasMemoryQuota: 2048
-      eventingMemoryQuota: 2048
+      indexMemoryQuota: 2048
+      ftsMemoryQuota: 512
+      cbasMemoryQuota: 1024
+      eventingMemoryQuota: 512
+      # Use in case of Vol. testing
+      # memoryQuota: 2048
+      # indexMemoryQuota: 4096
+      # ftsMemoryQuota: 4096
+      # cbasMemoryQuota: 2048
+      # eventingMemoryQuota: 2048
 
   rbac_users:
     - user_name: "cluster_admin"
