@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
-from membase.api.exception import RebalanceFailedException, \
+from custom_exceptions.exception import RebalanceFailedException, \
     ServerUnavailableException
 from membase.api.rest_client import RestConnection
 

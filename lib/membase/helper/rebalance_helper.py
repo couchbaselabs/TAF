@@ -5,7 +5,7 @@ from BucketLib.bucket import Bucket
 from Cb_constants import constants
 from common_lib import sleep
 from global_vars import logger
-from membase.api.exception import StatsUnavailableException, \
+from custom_exceptions.exception import StatsUnavailableException, \
     ServerAlreadyJoinedException, RebalanceFailedException, \
     InvalidArgumentException, ServerSelfJoinException, \
     AddNodeException

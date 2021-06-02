@@ -52,7 +52,7 @@ from couchbase_helper.durability_helper import BucketDurability
 from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 
-from membase.api.exception import StatsUnavailableException
+from custom_exceptions.exception import StatsUnavailableException
 from membase.api.rest_client import Node, RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
 from membase.helper.rebalance_helper import RebalanceHelper

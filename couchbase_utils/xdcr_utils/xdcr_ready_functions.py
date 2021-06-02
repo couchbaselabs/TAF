@@ -2,7 +2,7 @@ import re
 
 from common_lib import sleep
 from global_vars import logger
-from membase.api.exception import XDCRException
+from custom_exceptions.exception import XDCRException
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.documentgenerator import doc_generator

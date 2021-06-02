@@ -1,6 +1,6 @@
 import json
 from basetestcase import BaseTestCase
-from membase.api.exception import BucketCreationException
+from custom_exceptions.exception import BucketCreationException
 from membase.api.rest_client import RestConnection
 from BucketLib.bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection

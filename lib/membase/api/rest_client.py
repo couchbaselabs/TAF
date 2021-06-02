@@ -17,11 +17,11 @@ from common_lib import sleep
 from global_vars import logger
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
 from testconstants import COUCHBASE_FROM_VERSION_4, IS_CONTAINER
-from exception import \
+from custom_exceptions.exception import \
     InvalidArgumentException, \
     ServerAlreadyJoinedException, \
     ServerUnavailableException
-from membase.api.exception import \
+from custom_exceptions.exception import \
     AddNodeException, \
     BucketFlushFailed, \
     CBRecoveryFailedException, \

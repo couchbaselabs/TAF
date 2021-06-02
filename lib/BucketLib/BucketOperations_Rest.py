@@ -10,7 +10,7 @@ import urllib
 
 from bucket import Bucket
 from common_lib import sleep
-from membase.api.exception import \
+from custom_exceptions.exception import \
     BucketCreationException, GetBucketInfoFailed, \
     BucketCompactionException
 from Rest_Connection import RestConnection

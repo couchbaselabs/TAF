@@ -5,7 +5,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from rebalance_base import RebalanceBaseTest
 from membase.api.rest_client import RestConnection, RestHelper
 from membase.helper.rebalance_helper import RebalanceHelper
-from membase.api.exception import RebalanceFailedException
+from custom_exceptions.exception import RebalanceFailedException
 from remote.remote_util import RemoteMachineShellConnection
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException

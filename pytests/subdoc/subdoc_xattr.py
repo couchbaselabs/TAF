@@ -10,7 +10,7 @@ from couchbase_helper.documentgenerator import \
     doc_generator, \
     sub_doc_generator
 from error_simulation.cb_error import CouchbaseError
-from membase.api.exception import DesignDocCreationException
+from custom_exceptions.exception import DesignDocCreationException
 from couchbase_helper.document import View
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection

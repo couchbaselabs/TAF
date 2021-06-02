@@ -1,6 +1,6 @@
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View, DesignDocument
-from membase.api.exception import ReadDocumentException
+from custom_exceptions.exception import ReadDocumentException
 from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import DocumentGenerator
 

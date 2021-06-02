@@ -7,7 +7,7 @@ import testconstants
 from common_lib import sleep
 from couchbase_helper.tuq_generators import TuqGenerators
 from couchbase_helper.tuq_generators import JsonGenerator
-from membase.api.exception import CBQError
+from custom_exceptions.exception import CBQError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from n1ql_exceptions import N1qlException

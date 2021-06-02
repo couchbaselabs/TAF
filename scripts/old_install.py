@@ -20,7 +20,7 @@ import testconstants
 import time
 from builds.build_query import BuildQuery
 import logging.config
-from membase.api.exception import ServerUnavailableException
+from custom_exceptions.exception import ServerUnavailableException
 from membase.api.rest_client import RestConnection, RestHelper
 from platform_utils.remote.remote_util import \
     RemoteMachineShellConnection, \

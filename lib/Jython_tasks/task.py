@@ -36,7 +36,7 @@ from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     SubdocDocumentGenerator
 from global_vars import logger
-from membase.api.exception import \
+from custom_exceptions.exception import \
     N1QLQueryException, DropIndexException, CreateIndexException, \
     DesignDocCreationException, QueryViewException, ReadDocumentException, \
     RebalanceFailedException, ServerUnavailableException, \

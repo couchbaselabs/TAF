@@ -22,7 +22,7 @@ from memcached.helper.data_helper import MemcachedClientHelper
 from cb_tools.cbstats import Cbstats
 import threading
 import time
-from membase.api.exception import RebalanceFailedException
+from custom_exceptions.exception import RebalanceFailedException
 import math
 import subprocess
 from math import ceil

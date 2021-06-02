@@ -2,7 +2,7 @@
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import DiskAutoFailoverBasetest
-from membase.api.exception import \
+from custom_exceptions.exception import \
     RebalanceFailedException, \
     ServerUnavailableException
 

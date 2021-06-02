@@ -1,18 +1,18 @@
 #!/usr/bin/env python
 
-import sys
-
-sys.path = [".", "lib", "platform_utils", "scripts"] + sys.path
-import threading
 import Queue
+import logging.config
+import sys
+import threading
 import time
 import traceback
-import logging.config
 
-import install_utils
+from custom_exceptions.exception import InstallException
 import install_constants
-from custom_exceptions.install_exceptions import InstallException
+import install_utils
 
+
+sys.path = [".", "lib", "platform_utils", "scripts"] + sys.path
 logging.config.fileConfig("scripts.logging.conf")
 log = logging.getLogger()
 
