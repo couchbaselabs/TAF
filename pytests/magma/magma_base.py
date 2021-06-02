@@ -20,6 +20,7 @@ class MagmaBaseTest(BaseTestCase):
     def setUp(self):
         super(MagmaBaseTest, self).setUp()
         self.rest = RestConnection(self.cluster.master)
+        self.data_path = self.fetch_data_path()
 
         # Bucket Params
         self.vbuckets = self.input.param("vbuckets", self.cluster_util.vbuckets)
@@ -781,16 +782,16 @@ class MagmaBaseTest(BaseTestCase):
         for server in servers:
             shell = RemoteMachineShellConnection(server)
             kvstore += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
+            " % os.path.join(self.data_path,
                              bucket.name, "magma.*/kv*"))[0][0].split('\n')[0])
             wal += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
+            " % os.path.join(self.data_path,
                              bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
             keyTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
+            " % os.path.join(self.data_path,
                              bucket.name, "magma.*/kv*/rev*/key*"))[0][0].split('\n')[0])
             seqTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(RestConnection(server).get_data_path(),
+            " % os.path.join(self.data_path,
                              bucket.name, "magma.*/kv*/rev*/seq*"))[0][0].split('\n')[0])
             shell.disconnect()
         self.log.info("Disk usage stats for bucekt {} is below".format(bucket.name))
@@ -1015,7 +1016,7 @@ class MagmaBaseTest(BaseTestCase):
 
         shell = RemoteMachineShellConnection(server)
 
-        magma_path = os.path.join(RestConnection(server).get_data_path(),
+        magma_path = os.path.join(self.data_path,
                                   bucket.name, "magma.0")
         kv_path = shell.execute_command("ls %s | grep kv | head -1" %
                                         magma_path)[0][0].split('\n')[0]
@@ -1030,29 +1031,25 @@ class MagmaBaseTest(BaseTestCase):
 
     def get_random_keyIndex(self):
         shell = RemoteMachineShellConnection(self.cluster.master)
-        data_path = RestConnection(self.cluster.master).get_data_path()
-        keyIndex, _ = shell.execute_command("find {} -name keyIndex".format(data_path))
+        keyIndex, _ = shell.execute_command("find {} -name keyIndex".format(self.data_path))
         shell.disconnect()
         return random.choice(keyIndex)
 
     def get_random_seqIndex(self):
         shell = RemoteMachineShellConnection(self.cluster.master)
-        data_path = RestConnection(self.cluster.master).get_data_path()
-        seqIndex, _ = shell.execute_command("find {} -name seqIndex".format(data_path))
+        seqIndex, _ = shell.execute_command("find {} -name seqIndex".format(self.data_path))
         shell.disconnect()
         return random.choice(seqIndex)
 
     def get_random_wal(self):
         shell = RemoteMachineShellConnection(self.cluster.master)
-        data_path = RestConnection(self.cluster.master).get_data_path()
-        keyIndex, _ = shell.execute_command("find {} -name wal".format(data_path))
+        keyIndex, _ = shell.execute_command("find {} -name wal".format(self.data_path))
         shell.disconnect()
         return random.choice(keyIndex)
 
     def get_random_kvstore(self):
         shell = RemoteMachineShellConnection(self.cluster.master)
-        data_path = RestConnection(self.cluster.master).get_data_path()
-        keyIndex, _ = shell.execute_command("find {} -name kvstore-*".format(data_path))
+        keyIndex, _ = shell.execute_command("find {} -name kvstore-*".format(self.data_path))
         shell.disconnect()
         return random.choice(keyIndex)
 
@@ -1083,9 +1080,8 @@ class MagmaBaseTest(BaseTestCase):
         result = 0
         result_str = ""
         for server in servers:
-            data_path = RestConnection(server).get_data_path()
             bucket = self.bucket_util.buckets[0]
-            magma_path = os.path.join(data_path, bucket.name, "magma.{}")
+            magma_path = os.path.join(self.data_path, bucket.name, "magma.{}")
 
             shell = RemoteMachineShellConnection(server)
             shards = shell.execute_command(
@@ -1156,3 +1152,10 @@ class MagmaBaseTest(BaseTestCase):
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up "
                               "within expected time")
+
+    def fetch_data_path(self):
+        data_path = self.rest.get_data_path()
+        if "c:/Program Files" in data_path:
+            data_path = data_path.replace("c:/Program Files",
+                                           "/cygdrive/c/Program\ Files")
+        return data_path
