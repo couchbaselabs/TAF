@@ -14,8 +14,8 @@ from TestInput import TestInputSingleton
 from common_lib import sleep
 from global_vars import logger
 from membase.api import httplib2
-from membase.api.exception import ServerUnavailableException
 import requests
+from custom_exceptions.exception import ServerUnavailableException
 
 
 class RestConnection(object):
