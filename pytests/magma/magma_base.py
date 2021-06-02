@@ -235,15 +235,16 @@ class MagmaBaseTest(BaseTestCase):
         self.disk_usage = dict()
 
         # Creating clients in SDK client pool
-        if self.sdk_client_pool:
-            self.log.info("Creating SDK clients for client_pool")
-            max_clients = min(self.task_manager.number_of_threads, 20)
-            clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
-            for bucket in self.bucket_util.buckets:
-                self.sdk_client_pool.create_clients(
-                    bucket, [self.cluster.master],
-                    clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+        self.sdk_client_pool = True
+        self.init_sdk_pool_object()
+        self.log.info("Creating SDK clients for client_pool")
+        max_clients = min(self.task_manager.number_of_threads, 20)
+        clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
+        for bucket in self.bucket_util.buckets:
+            self.sdk_client_pool.create_clients(
+                bucket, [self.cluster.master],
+                clients_per_bucket,
+                compression_settings=self.sdk_compression)
 
         # Initial Data Load
         self.loader_dict = None
@@ -428,6 +429,7 @@ class MagmaBaseTest(BaseTestCase):
                 self.log.debug("Fetching vb_active_resident_items_ratio(dgm) failed...retying")
                 timeout -= 1
                 time.sleep(1)
+
         super(MagmaBaseTest, self).tearDown()
 
     def validate_seq_itr(self):
@@ -647,7 +649,8 @@ class MagmaBaseTest(BaseTestCase):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
         if "create" in doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -665,7 +668,8 @@ class MagmaBaseTest(BaseTestCase):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "expiry" in doc_ops and self.gen_expiry is not None and self.maxttl:
@@ -685,7 +689,8 @@ class MagmaBaseTest(BaseTestCase):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
         if "read" in doc_ops and self.gen_read is not None:
@@ -698,7 +703,8 @@ class MagmaBaseTest(BaseTestCase):
                retry_exceptions=retry_exceptions,
                ignore_exceptions=ignore_exceptions,
                scope=scope,
-               collection=collection)
+               collection=collection,
+               sdk_client_pool=self.sdk_client_pool)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -716,7 +722,8 @@ class MagmaBaseTest(BaseTestCase):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
