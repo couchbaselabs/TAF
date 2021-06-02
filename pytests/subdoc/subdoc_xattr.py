@@ -5,7 +5,7 @@ from random import choice
 
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer, DocLoading
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import \
@@ -20,22 +20,12 @@ from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 
 
-class SubdocBaseTest(BaseTestCase):
+class SubdocBaseTest(ClusterSetup):
     def setUp(self):
         super(SubdocBaseTest, self).setUp()
 
-        # Initialize cluster using given nodes
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-
-        # Create default bucket and add rbac user
-        self.bucket_util.create_default_bucket(
-            replica=self.num_replicas, compression_mode=self.compression_mode,
-            bucket_type=self.bucket_type, storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
-        self.bucket_util.add_rbac_user()
+        # Create default bucket
+        self.create_bucket()
 
         # Create required scope/collection for testing
         if self.collection_name != CbServer.default_collection:

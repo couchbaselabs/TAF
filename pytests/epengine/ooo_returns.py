@@ -3,7 +3,7 @@ from threading import Thread, Lock
 
 from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
@@ -15,34 +15,25 @@ from com.couchbase.test.transactions import SimpleTransaction as Transaction
 from reactor.util.function import Tuples
 
 
-class OutOfOrderReturns(BaseTestCase):
+class OutOfOrderReturns(ClusterSetup):
     def setUp(self):
         super(OutOfOrderReturns, self).setUp()
+
+        # Create default bucket
+        self.create_bucket()
 
         self.ooo_order = 0
         self.test_lock = Lock()
         self.doc_ops = self.input.param("doc_ops", "update;update").split(";")
-
-        # Initialize cluster using given nodes
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
 
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        # Create default bucket and add rbac user
-        self.bucket_util.create_default_bucket(
-            bucket_type=self.bucket_type, storage=self.bucket_storage,
-            ram_quota=self.bucket_size, replica=self.num_replicas,
-            compression_mode=self.compression_mode,
-            eviction_policy=self.bucket_eviction_policy)
-
         self.cluster.nodes_in_cluster.extend([self.cluster.master])
         self.bucket = self.bucket_util.buckets[0]
+
         # Create sdk_clients for pool
         if self.sdk_client_pool:
             self.log.info("Creating SDK client pool")

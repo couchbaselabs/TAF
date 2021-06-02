@@ -5,7 +5,7 @@ Basic test cases with commit,rollback scenarios
 import threading
 
 from BucketLib.bucket import Bucket
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import DocumentGenerator
 from sdk_client3 import SDKClient
 
@@ -14,18 +14,13 @@ from com.couchbase.test.transactions import SimpleTransaction as Transaction
 from reactor.util.function import Tuples
 
 
-class basic_ops(BaseTestCase):
+class basic_ops(ClusterSetup):
     def setUp(self):
         super(basic_ops, self).setUp()
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        self.bucket_util.add_rbac_user()
         if self.default_bucket:
-            self.bucket_util.create_default_bucket(
-                replica=self.num_replicas,
-                compression_mode=self.compression_mode, ram_quota=100)
+            # Over-ride bucket ram quota=100MB
+            self.bucket_size = 100
+            self.create_bucket()
 
         self.sleep(10, "Wait for bucket to become ready for ops")
 

@@ -1,5 +1,5 @@
 from Cb_constants import DocLoading
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
 from couchbase_helper.tuq_generators import JsonGenerator
 from remote.remote_util import RemoteMachineShellConnection
@@ -12,22 +12,9 @@ Basic test cases with commit,rollback scenarios
 """
 
 
-class basic_ops(BaseTestCase):
+class basic_ops(ClusterSetup):
     def setUp(self):
         super(basic_ops, self).setUp()
-
-        services = None
-        if self.services_init:
-            services = list()
-            for service in self.services_init.split("-"):
-                services.append(service.replace(":", ","))
-
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [],
-                            services=services)
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        self.bucket_util.add_rbac_user()
 
         if self.num_buckets:
             self.bucket_util.create_multiple_buckets(
@@ -39,13 +26,7 @@ class basic_ops(BaseTestCase):
                 storage=self.bucket_storage,
                 eviction_policy=self.bucket_eviction_policy)
         else:
-            self.bucket_util.create_default_bucket(
-                replica=self.num_replicas,
-                ram_quota=self.bucket_size,
-                bucket_type=self.bucket_type,
-                storage=self.bucket_storage,
-                eviction_policy=self.bucket_eviction_policy,
-                compression_mode=self.compression_mode)
+            self.create_bucket()
 
         self.sleep(10, "Wait for bucket to become ready for ops")
 

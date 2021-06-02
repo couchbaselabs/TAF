@@ -1,25 +1,15 @@
 # -*- coding: utf-8 -*-
 
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from couchbase_helper.document import View
 
 
-class DocumentKeysTests(BaseTestCase):
+class DocumentKeysTests(ClusterSetup):
     def setUp(self):
         super(DocumentKeysTests, self).setUp()
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        self.bucket_util.create_default_bucket(
-            bucket_type=self.bucket_type,
-            replica=self.num_replicas,
-            storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
-        self.bucket_util.add_rbac_user()
-        self.cluster_util.print_cluster_stats()
+        self.create_bucket()
         self.bucket_util.print_bucket_stats()
         self.log.info("====== DocumentKeysTests setUp complete ======")
 

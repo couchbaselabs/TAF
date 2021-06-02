@@ -1,20 +1,16 @@
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 
 
-class basic_ops(BaseTestCase):
+class basic_ops(ClusterSetup):
     def setUp(self):
         super(basic_ops, self).setUp()
-        self.log.info("==========Started Load_Delete base setup========")
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
-        if nodes_init:
-            self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
-        self.bucket_util.add_rbac_user()
-        self.bucket_util.create_default_bucket(replica=self.num_replicas)
+        self.create_bucket()
+
+        self.log_setup_status("basic_ops", "start", "setup")
         self.sleep(20)
         self.delete_items = 500
-        self.log.info("==========Finished Load_Delete base setup========")
+        self.log_setup_status("basic_ops", "complete", "setup")
 
     def tearDown(self):
         super(basic_ops, self).tearDown()
@@ -26,15 +22,16 @@ class basic_ops(BaseTestCase):
                                         doc_type=self.doc_type,
                                         target_vbucket=self.target_vbucket,
                                         vbuckets=self.cluster_util.vbuckets)
-        self.rebalance_in = self.input.param("rabalance_in",True)
+        self.rebalance_in = self.input.param("rabalance_in", True)
 
         # Loading of 1M docs through normal loader
         self.log.info("Going to load 1M docs through normal load")
         self.buckets = self.bucket_util.get_all_buckets(self.cluster.master)
         for bucket in self.buckets:
             task = self.task.async_load_gen_docs(
-                self.cluster,bucket,self.gen_create, "create", 0,
-                batch_size=20,persist_to=self.persist_to, replicate_to=self.replicate_to)
+                self.cluster, bucket, self.gen_create, "create", 0,
+                batch_size=20, persist_to=self.persist_to,
+                replicate_to=self.replicate_to)
             self.task.jython_task_manager.get_task_result(task)
         self.log.info("Loading of 1M documents complete")
         self.sleep(40, "Bringing the bucket state to stable")
@@ -67,7 +64,8 @@ class basic_ops(BaseTestCase):
                 persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
                 retries=self.sdk_retries, update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
-                commit=self.transaction_commit, durability=self.durability_level))
+                commit=self.transaction_commit,
+                durability=self.durability_level))
 
         if "create" in self.op_type:
             tasks.append(self.task.async_load_gen_docs_atomicity(
@@ -78,32 +76,35 @@ class basic_ops(BaseTestCase):
                 process_concurrency=8,
                 replicate_to=self.replicate_to,
                 persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                retries=self.sdk_retries,update_count=self.update_count, transaction_timeout=self.transaction_timeout, 
-                commit=self.transaction_commit,durability=self.durability_level))
+                retries=self.sdk_retries, update_count=self.update_count,
+                transaction_timeout=self.transaction_timeout,
+                commit=self.transaction_commit,
+                durability=self.durability_level))
         if "delete" in self.op_type:
-            tasks.append(self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
-                                             self.gen_delete, "rebalance_delete" , exp=0,
-                                             batch_size=10,
-                                             process_concurrency=8,
-                                             replicate_to=self.replicate_to,
-                                             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                             retries=self.sdk_retries,update_count=self.update_count, transaction_timeout=self.transaction_timeout, 
-                                             commit=self.transaction_commit,durability=self.durability_level))
-        
+            tasks.append(self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.bucket_util.buckets,
+                self.gen_delete, "rebalance_delete", exp=0,
+                batch_size=10,
+                process_concurrency=8,
+                replicate_to=self.replicate_to,
+                persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
+                retries=self.sdk_retries, update_count=self.update_count,
+                transaction_timeout=self.transaction_timeout,
+                commit=self.transaction_commit,
+                durability=self.durability_level))
+
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.log.info("Transaction Operation Complete")
-        
+
         if self.rebalance_in:
             servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
             rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [])
             self.task.jython_task_manager.get_task_result(rebalance)
             self.sleep(60)
-            
+
         if not self.rebalance_in:
             servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
             rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], servs_out)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.sleep(60)
-            
-        

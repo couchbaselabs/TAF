@@ -2,7 +2,7 @@ from copy import deepcopy
 from random import randint, choice
 
 from BucketLib.bucket import Bucket
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import \
@@ -14,9 +14,12 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
 
-class DurabilityTestsBase(BaseTestCase):
+class DurabilityTestsBase(ClusterSetup):
     def setUp(self):
         super(DurabilityTestsBase, self).setUp()
+
+        # Create default bucket
+        self.create_bucket()
 
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
@@ -36,26 +39,11 @@ class DurabilityTestsBase(BaseTestCase):
             self.log, len(self.cluster.nodes_in_cluster),
             self.durability_level)
 
-        # Initialize cluster using given nodes
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        # Create default bucket and add rbac user
-        self.bucket_util.create_default_bucket(
-            ram_quota=self.bucket_size,
-            replica=self.num_replicas, compression_mode=self.compression_mode,
-            bucket_type=self.bucket_type, storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
-        self.bucket_util.add_rbac_user()
-
-        self.cluster_util.print_cluster_stats()
         self.bucket = self.bucket_util.buckets[0]
 
         # Create sdk_clients for pool
@@ -124,24 +112,17 @@ class DurabilityTestsBase(BaseTestCase):
         return node_list
 
 
-class BucketDurabilityBase(BaseTestCase):
+class BucketDurabilityBase(ClusterSetup):
     def setUp(self):
         super(BucketDurabilityBase, self).setUp()
 
         if len(self.cluster.servers) < self.nodes_init:
             self.fail("Not enough nodes for rebalance")
 
-        # Rebalance-in required nodes for testing
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
-        self.bucket_util.add_rbac_user()
 
         self.durability_helper = DurabilityHelper(
             self.log,
@@ -163,9 +144,6 @@ class BucketDurabilityBase(BaseTestCase):
         # These two params will be set during each iteration
         self.bucket_template[Bucket.bucketType] = None
         self.bucket_template[Bucket.durabilityMinLevel] = None
-
-        # Print cluster stats
-        self.cluster_util.print_cluster_stats()
 
         self.bucket_types_to_test = [Bucket.Type.MEMBASE,
                                      Bucket.Type.EPHEMERAL,

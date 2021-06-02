@@ -4,8 +4,8 @@ from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
-from basetestcase import BaseTestCase
 from Cb_constants import constants, CbServer, DocLoading
+from basetestcase import ClusterSetup
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from cb_tools.mc_stat import McStat
@@ -32,9 +32,11 @@ These may be parameterized by:
 """
 
 
-class basic_ops(BaseTestCase):
+class basic_ops(ClusterSetup):
     def setUp(self):
         super(basic_ops, self).setUp()
+
+        self.create_bucket()
 
         self.doc_ops = self.input.param("doc_ops", "").split(";")
         self.observe_test = self.input.param("observe_test", False)
@@ -42,19 +44,6 @@ class basic_ops(BaseTestCase):
         self.scope_name = self.input.param("scope", CbServer.default_scope)
         self.collection_name = self.input.param("collection",
                                                 CbServer.default_collection)
-
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        if nodes_init:
-            self.task.rebalance([self.cluster.master], nodes_init, [])
-            self.cluster.nodes_in_cluster.extend([self.cluster.master]
-                                                 + nodes_init)
-        self.bucket_util.create_default_bucket(
-            replica=self.num_replicas, compression_mode=self.compression_mode,
-            bucket_type=self.bucket_type, storage=self.bucket_storage,
-            ram_quota=self.bucket_size,
-            eviction_policy=self.bucket_eviction_policy)
-        self.bucket_util.add_rbac_user()
 
         # Create Scope/Collection with random names if not equal to default
         if self.scope_name != CbServer.default_scope:
@@ -93,7 +82,6 @@ class basic_ops(BaseTestCase):
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
 
-        self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
         self.log.info("==========Finished Basic_ops base setup========")
 

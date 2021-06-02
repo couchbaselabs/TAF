@@ -1,7 +1,7 @@
 import json
 from threading import Thread
 
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_client3 import SDKClient
 
@@ -11,33 +11,18 @@ from reactor.util.function import Tuples
 from sdk_exceptions import SDKException
 
 
-class IsolationDocTest(BaseTestCase):
+class IsolationDocTest(ClusterSetup):
     def setUp(self):
         super(IsolationDocTest, self).setUp()
+
+        # Create default bucket
+        self.bucket_size = 100
+        self.create_bucket()
 
         self.doc_op = self.input.param("doc_op", "create")
         self.operation = self.input.param("operation", "afterAtrPending")
         self.transaction_fail_count = self.input.param("fail_count", 99999)
         self.transaction_fail = self.input.param("fail", True)
-
-        services = list()
-        for service in self.services_init.split("-"):
-            services.append(service.replace(":", ","))
-
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [],
-                            services=services)
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        self.bucket_util.add_rbac_user()
-
-        self.bucket_util.create_default_bucket(
-            replica=self.num_replicas,
-            ram_quota=100,
-            bucket_type=self.bucket_type,
-            storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy,
-            compression_mode=self.compression_mode)
 
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()

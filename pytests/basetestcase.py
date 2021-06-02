@@ -61,6 +61,7 @@ class BaseTestCase(unittest.TestCase):
         # Bucket specific params
         self.bucket_type = self.input.param("bucket_type",
                                             Bucket.Type.MEMBASE)
+        self.bucket_ttl = self.input.param("bucket_ttl", 0)
         self.bucket_size = self.input.param("bucket_size", None)
         self.bucket_conflict_resolution_type = \
             self.input.param("bucket_conflict_resolution",
@@ -859,7 +860,7 @@ class BaseTestCase(unittest.TestCase):
                 if not tar_file_copied:
                     self.log.error("Failed to copy Tar file")
 
-                _ = shell.execute_command("rm -rf %s.tar.gz" % (filepath))
+                _ = shell.execute_command("rm -rf %s.tar.gz" % filepath)
 
         copy_path_msg_format = "Copying data, Server :: %s, Path :: %s"
         '''
@@ -915,3 +916,55 @@ class BaseTestCase(unittest.TestCase):
                 self.log.info(copy_path_msg_format % (server.ip, copy_to_path))
                 get_tar(remote_path, file_path, file_name,
                         server, todir=copy_to_path)
+
+
+class ClusterSetup(BaseTestCase):
+    def setUp(self):
+        super(ClusterSetup, self).setUp()
+
+        services = None
+        if self.services_init:
+            services = list()
+            for service in self.services_init.split("-"):
+                services.append(service.replace(":", ","))
+
+        self.log_setup_status("ClusterSetup", "started", "setup")
+        # Rebalance-in nodes_init servers
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
+        if nodes_init:
+            self.task.rebalance([self.cluster.master], nodes_init, [],
+                                services=services)
+            self.cluster.nodes_in_cluster.extend([self.cluster.master]
+                                                 + nodes_init)
+
+        # Add basic RBAC users
+        self.bucket_util.add_rbac_user()
+
+        # Print cluster stats
+        self.cluster_util.print_cluster_stats()
+
+        self.log_setup_status("ClusterSetup", "complete", "setup")
+
+    def tearDown(self):
+        super(ClusterSetup, self).tearDown()
+
+    def create_bucket(self, bucket_name="default"):
+        self.bucket_util.create_default_bucket(
+            bucket_type=self.bucket_type,
+            ram_quota=self.bucket_size,
+            replica=self.num_replicas,
+            maxTTL=self.bucket_ttl,
+            compression_mode=self.compression_mode,
+            wait_for_warmup=True,
+            conflict_resolution=Bucket.ConflictResolution.SEQ_NO,
+            replica_index=self.bucket_replica_index,
+            storage=self.bucket_storage,
+            eviction_policy=self.bucket_eviction_policy,
+            flush_enabled=self.flush_enabled,
+            bucket_durability=self.bucket_durability_level,
+            purge_interval=self.bucket_purge_interval,
+            autoCompactionDefined="false",
+            fragmentation_percentage=50,
+            bucket_name=bucket_name)
+

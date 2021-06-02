@@ -2,33 +2,25 @@ from random import randint
 
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from BucketLib.BucketOperations import BucketHelper
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
 
 
-class ExpiryMaxTTL(BaseTestCase):
+class ExpiryMaxTTL(ClusterSetup):
     def setUp(self):
         super(ExpiryMaxTTL, self).setUp()
+
+        # Create default bucket
+        self.create_bucket()
+
         self.key = 'test_ttl_docs'.rjust(self.key_size, '0')
 
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]
 
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        self.bucket_util.create_default_bucket(
-            bucket_type=self.bucket_type,
-            maxTTL=self.maxttl,
-            storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy,
-            replica=self.num_replicas,
-            compression_mode=self.compression_mode)
-        self.bucket_util.add_rbac_user()
         self.bucket_util.get_all_buckets()
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
         self.cluster_util.print_cluster_stats()
