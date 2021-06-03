@@ -495,8 +495,8 @@ class GenericLoadingTask(Task):
                     self.log.debug(
                         "Sleep before reading the doc for verification")
                     Thread.sleep(self.timeout)
-                    self.test_log.debug("Reading values {0} after failure"
-                                        .format(fail.keys()))
+#                     self.test_log.debug("Reading values {0} after failure"
+#                                         .format(fail.keys()))
                     read_map, _ = self.batch_read(fail.keys())
                     for key, value in fail.items():
                         if key in read_map and read_map[key]["cas"] != 0:

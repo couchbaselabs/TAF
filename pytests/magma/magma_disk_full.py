@@ -61,6 +61,7 @@ class MagmaDiskFull(MagmaBaseTest):
         if error:
             self.log.error(error)
         remote_client.disconnect()
+        self.sleep(10, "Wait for files to clean up from the disk")
 
     def test_simple_disk_full(self):
         self.doc_ops = "create"
@@ -101,6 +102,7 @@ class MagmaDiskFull(MagmaBaseTest):
             self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         self.free_disk(self.cluster.master)
+        self.bucket_util._wait_for_stats_all_buckets()
         self.doc_ops = "update"
         tasks_info = dict()
         for collection in self.collections:
@@ -110,12 +112,13 @@ class MagmaDiskFull(MagmaBaseTest):
                                                self.ignore_exceptions,
                                                scope=CbServer.default_scope,
                                                collection=collection,
+                                               suppress_error_table=True,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
 
-        for task in tasks_info:
-            self.assertTrue(len(task.fail) == 0,
-                            "Doc ops failed for task: {}".format(task.thread_name))
+        for task, task_info in tasks_info.items():
+            self.assertFalse(task_info["ops_failed"],
+                             "Doc ops failed for task: {}".format(task.thread_name))
 
     def test_crash_recovery_disk_full(self):
         self.crash_on_disk_full = True
@@ -124,7 +127,7 @@ class MagmaDiskFull(MagmaBaseTest):
     def test_reads_on_disk_full(self):
         self.doc_ops = "create"
         self.create_start = self.init_items_per_collection
-        self.create_end = self.init_items_per_collection*2
+        self.create_end = self.init_items_per_collection + 1000000
         self.generate_docs()
 
         ep_data_write_failed = dict()
@@ -133,7 +136,7 @@ class MagmaDiskFull(MagmaBaseTest):
             ep_data_write_failed.update({node: 0})
             t = threading.Thread(target=self.fill_disk,
                                  kwargs=dict(server=node,
-                                             free=200))
+                                             free=0))
             t.start()
             th.append(t)
         for t in th:
@@ -159,6 +162,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                             cbstat_cmd="all",
                                             stat_name="ep_data_write_failed",
                                             stat_cond=">", timeout=300)
+
         self.read_start = 0
         self.read_end = self.init_items_per_collection
         self.doc_ops = "read"
@@ -169,6 +173,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                                self.ignore_exceptions,
                                                scope=CbServer.default_scope,
                                                collection=collection,
+                                               suppress_error_table=True,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
 

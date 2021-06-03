@@ -704,6 +704,7 @@ class MagmaBaseTest(BaseTestCase):
                ignore_exceptions=ignore_exceptions,
                scope=scope,
                collection=collection,
+               suppress_error_table=suppress_error_table,
                sdk_client_pool=self.sdk_client_pool)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:

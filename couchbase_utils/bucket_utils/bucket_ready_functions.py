@@ -498,10 +498,6 @@ class DocLoaderUtils(object):
             op_data["retried"]["success"] = dict()
 
             if failed_keys:
-                DocLoaderUtils.log.warning(
-                    "%s:%s:%s %s failed keys from task: %s"
-                    % (bucket.name, scope_name, collection_name,
-                       op_type, failed_keys))
                 for key, failed_doc in op_data["fail"].items():
                     is_key_to_ignore = False
                     exception = failed_doc["error"]
@@ -587,14 +583,13 @@ class DocLoaderUtils(object):
                             exception_pattern, str(result["error"])).group(1)
                         tbl_row = [initial_exception, key, retry_exception]
                     target_tbl.add_row(tbl_row)
-
                 gen_str = "%s:%s:%s - %s" \
                           % (bucket.name, scope_name, collection_name,
                              op_type)
-                ignored_keys_table.display(
-                    "%s keys ignored from retry" % gen_str)
-                retry_succeeded_table.display(
-                    "%s keys succeeded after expected retry" % gen_str)
+#                 ignored_keys_table.display(
+#                     "%s keys ignored from retry" % gen_str)
+#                 retry_succeeded_table.display(
+#                     "%s keys succeeded after expected retry" % gen_str)
                 retry_failed_table.display(
                     "%s keys failed after expected retry" % gen_str)
                 unwanted_retry_succeeded_table.display(
@@ -2328,7 +2323,8 @@ class BucketUtils(ScopeUtils):
 
         :param tasks_info: dictionary updated with retried/unwanted docs
         """
-        for _, task_info in tasks_info.items():
+        for task, task_info in tasks_info.items():
+            task.result = True
             op_type = task_info["op_type"]
             ignored_keys = task_info["ignored"].keys()
             retried_success_keys = task_info["retried"]["success"].keys()
@@ -2351,6 +2347,7 @@ class BucketUtils(ScopeUtils):
             # Failure cases
             if len(retried_failed_keys) > 0:
                 task_info["ops_failed"] = True
+                task.result = False
                 self.log.error("Docs failed after expected retry "
                                "for '{0}' ({1}): {2}"
                                .format(op_type, len(retried_failed_keys),
@@ -2360,6 +2357,7 @@ class BucketUtils(ScopeUtils):
 
             if len(unwanted_success_keys) > 0:
                 task_info["ops_failed"] = True
+                task.result = False
                 self.log.error("Unexpected exceptions, succeeded "
                                "after retry for '{0}' ({1}): {2}"
                                .format(op_type, len(unwanted_success_keys),
@@ -2367,6 +2365,7 @@ class BucketUtils(ScopeUtils):
 
             if len(unwanted_failed_keys) > 0:
                 task_info["ops_failed"] = True
+                task.result = False
                 self.log.error("Unexpected exceptions, failed even "
                                "after retry for '{0}' ({1}): {2}"
                                .format(op_type, len(unwanted_failed_keys),
