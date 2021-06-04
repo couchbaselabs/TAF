@@ -348,7 +348,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                 value=self.meta_purge_interval, buckets=self.buckets)
             self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
             tomb-stones from storage")
-            self.bucket_util._run_compaction(number_of_times=2)
+            self.bucket_util._run_compaction(number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
@@ -488,7 +488,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
             # Check for tombs-tones removed
-            self.bucket_util._run_compaction(number_of_times=2)
+            self.bucket_util._run_compaction(number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after bucket compaction: {}".format(ts))
 
