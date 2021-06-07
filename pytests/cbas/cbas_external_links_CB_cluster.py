@@ -475,7 +475,7 @@ class CBASExternalLinks(CBASBaseTest):
                 rbac_users_created)
             for testcase in rbac_testcases:
                 if testcase["validate_error_msg"]:
-                    testcase["expected_error"] = "Unauthorized user"
+                    testcase["expected_error"] = "Access denied: user lacks necessary permission(s) to access resource"
 
             testcases = testcases + rbac_testcases
 
@@ -704,7 +704,7 @@ class CBASExternalLinks(CBASBaseTest):
                         testcase["validate_error_msg"] = False
                     if testcase["validate_error_msg"]:
                         testcase["expected_hits"] = 0
-                        testcase["expected_error"] = "Unauthorized user"
+                        testcase["expected_error"] = "Access denied: user lacks necessary permission(s) to access resource"
                     else:
                         testcase["expected_hits"] = 1
 
@@ -998,7 +998,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Changing credentials to a user which has less than minimum role required",
                 "new_user": "analytics_reader",
                 "validate_connect_error": True,
-                "expected_connect_error": "Invalid credentials for link"
+                "expected_connect_error": "Access denied: user lacks necessary permission(s) to access resource"
             },
             {
                 "description": "Changing encryption type to half",
@@ -1070,7 +1070,7 @@ class CBASExternalLinks(CBASBaseTest):
         for testcase in rbac_testcases:
             testcase["encryption"] = "half"
             if testcase["validate_error_msg"]:
-                testcase["expected_error"] = "Unauthorized user"
+                testcase["expected_error"] = "Access denied: user lacks necessary permission(s) to access resource"
 
         testcases = testcases + rbac_testcases
         failed_testcases = list()
