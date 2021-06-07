@@ -100,6 +100,13 @@ class CBASUDF(CBASBaseTest):
         def get_entity(dataverse, skip_dataverses=[]):
             if not consider_default_dataverse:
                 skip_dataverses.append("Default")
+            
+            if dataverse.name in skip_dataverses:
+                new_dataverse = random.choice(self.cbas_util_v2.dataverses.values())
+                while new_dataverse.name == dataverse.name or new_dataverse.name in skip_dataverses:
+                    new_dataverse = random.choice(self.cbas_util_v2.dataverses.values())
+                dataverse = new_dataverse
+            
             entity = None
             while not entity:
                 if body_type == "dataset" and dataverse.datasets:
