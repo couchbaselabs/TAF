@@ -99,6 +99,7 @@ class GsiHelper(RestConnection):
                 result[bucket_name][index_name]['id'] = val['id']
         return result
 
+
     def get_index_id_map(self, timeout=120):
         api = self.baseUrl + 'indexStatus'
         index_map = dict()
@@ -307,14 +308,17 @@ class GsiHelper(RestConnection):
             self.log.error("Failure during get_index_status: %s" % content)
         return result
 
-    def get_index_stats(self):
+    def get_index_stats(self, URL=None):
         """
         Fetches index stats using localhost:9102/stats api
 
         :return result: Dictionary of stats in format,
                         result[bucket_name][index_name][stat_name] = value
         """
-        api = "{0}stats".format(self.indexUrl)
+        if URL is None:
+            api = "{0}stats".format(self.indexUrl)
+        else:
+            api = "{0}stats".format(URL)
         status, content, _ = self._http_request(api)
         result = dict()
         if status:
