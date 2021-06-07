@@ -235,6 +235,7 @@ class MagmaBaseTest(BaseTestCase):
         self.disk_usage = dict()
 
         # Creating clients in SDK client pool
+        self.sdk_timeout = self.input.param("sdk_timeout", 60)
         self.sdk_client_pool = True
         self.init_sdk_pool_object()
         self.log.info("Creating SDK clients for client_pool")
@@ -267,8 +268,8 @@ class MagmaBaseTest(BaseTestCase):
                          "skip_read_on_error": self.skip_read_on_error,
                          "track_failures": self.track_failures,
                          "ignore_exceptions": self.ignore_exceptions,
-                         "sdk_timeout_unit": "seconds",
-                         "sdk_timeout": 60,
+                         "sdk_timeout_unit": self.time_unit,
+                         "sdk_timeout": self.sdk_timeout,
                          "doc_ttl": 0,
                          "doc_gen_type": "default"}
         for bucket in self.bucket_util.buckets:
@@ -325,8 +326,9 @@ class MagmaBaseTest(BaseTestCase):
     def wait_for_doc_load_completion(self, task, wait_for_stats=True):
         self.task_manager.get_task_result(task)
         self.bucket_util.validate_doc_loading_results(task)
-        self.assertTrue(task.result,
-                        "Doc ops failed for task: {}".format(task.thread_name))
+        if not task.result:
+            self.assertTrue(task.result,
+                            "Doc ops failed for task: {}".format(task.thread_name))
 
         if wait_for_stats:
             try:
@@ -345,7 +347,7 @@ class MagmaBaseTest(BaseTestCase):
 
         self.log.debug("initial_items_in_each_collection {}".format(self.init_items_per_collection))
         task = self.data_load()
-        self.wait_for_doc_load_completion(task, True)
+        self.wait_for_doc_load_completion(task)
 
         if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
             for bucket in self.bucket_util.get_all_buckets():

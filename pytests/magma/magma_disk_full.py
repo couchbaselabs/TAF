@@ -16,6 +16,7 @@ from remote.remote_util import RemoteMachineShellConnection
 
 
 class MagmaDiskFull(MagmaBaseTest):
+
     def setUp(self):
         super(MagmaDiskFull, self).setUp()
         self.free_disk(self.cluster.master)
