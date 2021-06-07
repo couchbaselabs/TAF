@@ -64,6 +64,7 @@ class BasicReadTests(BasicCrudTests):
                     ignore_exceptions=self.ignore_exceptions)
                 tasks_info.update(read_task_info.items())
                 count += 1
+            self.sleep(1,"Ensures all main read tasks will have unique names")
 
         for task in tasks_info:
                 self.task_manager.get_task_result(task)
