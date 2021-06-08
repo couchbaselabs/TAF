@@ -1,6 +1,7 @@
 import copy
 import json
 import sys
+from random import choice
 
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer, DocLoading
@@ -246,7 +247,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             [key, value],
             durability=self.durability_level,
             timeout=self.sdk_timeout,
-            time_unit="seconds",
+            time_unit=SDKConstants.TimeUnit.SECONDS,
             create_path=True,
             xattr=self.xattr)
         self.assertFalse(failed_items, "Subdoc Xattr insert failed")
@@ -386,7 +387,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             ["f" * 16, 2],
             durability=self.durability_level,
             timeout=self.sdk_timeout,
-            time_unit="seconds",
+            time_unit=SDKConstants.TimeUnit.SECONDS,
             create_path=True,
             xattr=True)
         self.assertTrue(failed_items, "Subdoc Xattr insert with 16 chars")
@@ -696,7 +697,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             ["my.inner", {'value_inner': 2}],
             durability=self.durability_level,
             timeout=self.sdk_timeout,
-            time_unit="seconds",
+            time_unit=SDKConstants.TimeUnit.SECONDS,
             create_path=True,
             xattr=self.xattr,
             cas=initial_cas)
@@ -708,7 +709,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             ["my.inner", {'value_inner': 2}],
             durability=self.durability_level,
             timeout=self.sdk_timeout,
-            time_unit="seconds",
+            time_unit=SDKConstants.TimeUnit.SECONDS,
             create_path=True,
             xattr=self.xattr,
             cas=updated_cas_1)
@@ -1692,7 +1693,11 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             self.sleep(5, "Wait for doc_op task to start")
 
             for sw_test_op in basic_ops + [DocLoading.Bucket.DocOps.REPLACE]:
-                self.log.info("Testing %s over %s" % (sw_test_op, op_type))
+                sdk_retry_strategy = choice(
+                    [SDKConstants.RetryStrategy.FAIL_FAST,
+                     SDKConstants.RetryStrategy.BEST_EFFORT])
+                self.log.info("Testing %s over %s, sdk_retry_strategy=%s"
+                              % (sw_test_op, op_type, sdk_retry_strategy))
                 value = "test_val"
                 if sw_test_op not in doc_tasks:
                     value = ["exists_path", "0"]
@@ -1704,18 +1709,23 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 result = self.client.crud(
                     sw_test_op, doc_key, value,
                     durability=self.durability_level,
-                    timeout=3, time_unit="seconds",
+                    timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS,
                     create_path=True,
                     xattr=self.xattr,
-                    sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
+                    sdk_retry_strategy=sdk_retry_strategy)
                 if sw_test_op not in doc_tasks:
                     result = result[1][doc_key]
 
                 sdk_exception = str(result["error"])
                 expected_exception = \
-                    SDKException.RequestCanceledException
-                retry_reason = SDKException.RetryReason \
-                    .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
+                    SDKException.AmbiguousTimeoutException
+                retry_reason = \
+                    SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
+                if sdk_retry_strategy == SDKConstants.RetryStrategy.FAIL_FAST:
+                    expected_exception = \
+                        SDKException.RequestCanceledException
+                    retry_reason = SDKException.RetryReason \
+                        .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
                 if op_type == DocLoading.Bucket.DocOps.CREATE:
                     if sw_test_op in [DocLoading.Bucket.DocOps.DELETE,
                                       DocLoading.Bucket.DocOps.REPLACE] \
@@ -1723,11 +1733,6 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                         expected_exception = \
                             SDKException.DocumentNotFoundException
                         retry_reason = None
-                elif sw_test_op not in doc_tasks:
-                    expected_exception = \
-                        SDKException.AmbiguousTimeoutException
-                    retry_reason = \
-                        SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
                 if expected_exception not in sdk_exception:
                     self.log_failure("Invalid exception: %s" % result)
                 elif retry_reason is not None \
@@ -1743,12 +1748,11 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             error_sim.revert(CouchbaseError.STOP_MEMCACHED)
             self.task_manager.get_task_result(sync_write_task)
             if op_type != DocLoading.Bucket.DocOps.DELETE:
-                self.client.crud("subdoc_insert",
-                                 doc_key, ["exists_path", 1],
-                                 durability=self.durability_level,
-                                 timeout=3, time_unit="seconds",
-                                 create_path=True,
-                                 xattr=self.xattr)
+                self.client.crud(
+                    "subdoc_insert", doc_key, ["exists_path", 1],
+                    durability=self.durability_level,
+                    timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS,
+                    create_path=True, xattr=self.xattr)
 
         # Closing the shell connection
         shell.disconnect()
@@ -1774,11 +1778,11 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         error_sim = CouchbaseError(self.log, shell)
 
         self.client.crud(DocLoading.Bucket.DocOps.CREATE, doc_key, "{}",
-                         timeout=3, time_unit="seconds")
+                         timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS)
         self.client.crud("subdoc_insert",
                          doc_key, ["exists_path", 1],
                          durability=self.durability_level,
-                         timeout=3, time_unit="seconds",
+                         timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS,
                          create_path=True,
                          xattr=self.xattr)
 
@@ -1823,12 +1827,11 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             self.task_manager.add_new_task(sync_write_task)
             self.sleep(5, "Wait for doc_op task to start")
 
-            _, failed_item = self.client.crud(sub_doc_op_dict[op_type],
-                                              doc_key, value,
-                                              durability=self.durability_level,
-                                              timeout=3, time_unit="seconds",
-                                              create_path=True,
-                                              xattr=self.xattr)
+            _, failed_item = self.client.crud(
+                sub_doc_op_dict[op_type], doc_key, value,
+                durability=self.durability_level,
+                timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS,
+                create_path=True, xattr=self.xattr)
             sdk_exception = str(failed_item[doc_key]["error"])
             if SDKException.AmbiguousTimeoutException not in sdk_exception:
                 self.log_failure("Invalid exception: %s" % failed_item)
