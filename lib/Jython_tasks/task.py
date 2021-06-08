@@ -2156,6 +2156,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                  timeout_secs=30, time_unit="seconds",
                  compression=None, check_replica=False,
                  sdk_client_pool=None,
+                 sdk_retry_strategy=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  is_sub_doc=False,
@@ -2164,7 +2165,9 @@ class ValidateDocumentsTask(GenericLoadingTask):
             cluster, bucket, client, batch_size=batch_size,
             pause_secs=pause_secs, timeout_secs=timeout_secs,
             time_unit=time_unit,
-            compression=compression, sdk_client_pool=sdk_client_pool,
+            compression=compression,
+            sdk_client_pool=sdk_client_pool,
+            sdk_retry_strategy=sdk_retry_strategy,
             scope=scope, collection=collection)
         self.thread_name = "ValidateDocumentsTask-%s_%s_%s_%s_%s_%s_%s" % (
             bucket.name,
@@ -2386,6 +2389,7 @@ class DocumentsValidatorTask(Task):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  sdk_client_pool=None,
+                 sdk_retry_strategy=None,
                  is_sub_doc=False,
                  suppress_error_table=False):
         super(DocumentsValidatorTask, self).__init__(
@@ -2402,6 +2406,7 @@ class DocumentsValidatorTask(Task):
         self.process_concurrency = process_concurrency
         self.clients = clients
         self.sdk_client_pool = sdk_client_pool
+        self.sdk_retry_strategy = sdk_retry_strategy
         self.task_manager = task_manager
         self.batch_size = batch_size
         self.generators = generators
@@ -2504,6 +2509,7 @@ class DocumentsValidatorTask(Task):
                 compression=self.compression, check_replica=self.check_replica,
                 scope=self.scope, collection=self.collection,
                 sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=self.sdk_retry_strategy,
                 is_sub_doc=self.is_sub_doc,
                 suppress_error_table=self.suppress_error_table)
             tasks.append(task)

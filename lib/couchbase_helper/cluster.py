@@ -426,7 +426,8 @@ class ServerTasks(object):
                             scope=CbServer.default_scope,
                             collection=CbServer.default_collection,
                             sdk_client_pool=None, is_sub_doc=False,
-                            suppress_error_table=True):
+                            suppress_error_table=True,
+                            sdk_retry_strategy=None):
         clients = list()
         gen_start = int(generator.start)
         gen_end = int(generator.end)
@@ -448,6 +449,7 @@ class ServerTasks(object):
             check_replica=check_replica,
             scope=scope, collection=collection,
             sdk_client_pool=sdk_client_pool,
+            sdk_retry_strategy=sdk_retry_strategy,
             is_sub_doc=is_sub_doc,
             suppress_error_table=suppress_error_table)
         self.jython_task_manager.add_new_task(_task)

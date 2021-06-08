@@ -2474,7 +2474,8 @@ class BucketUtils(ScopeUtils):
                           collection=CbServer.default_collection,
                           monitor_stats=["doc_ops"],
                           track_failures=True,
-                          sdk_client_pool=None):
+                          sdk_client_pool=None,
+                          sdk_retry_strategy=None):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type,
             exp=exp, random_exp=random_exp,
@@ -2491,7 +2492,8 @@ class BucketUtils(ScopeUtils):
             scope=scope, collection=collection,
             monitor_stats=monitor_stats,
             track_failures=track_failures,
-            sdk_client_pool=sdk_client_pool)
+            sdk_client_pool=sdk_client_pool,
+            sdk_retry_strategy=sdk_retry_strategy)
 
     def load_docs_to_all_collections(self, start, end, cluster,
                                      key="test_docs",
@@ -2548,7 +2550,8 @@ class BucketUtils(ScopeUtils):
                                 collection=CbServer.default_collection,
                                 monitor_stats=["doc_ops"],
                                 track_failures=True,
-                                sdk_client_pool=None):
+                                sdk_client_pool=None,
+                                sdk_retry_strategy=None):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -2578,7 +2581,8 @@ class BucketUtils(ScopeUtils):
                 scope=scope, collection=collection,
                 monitor_stats=monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=sdk_client_pool)
+                sdk_client_pool=sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,
@@ -2600,7 +2604,8 @@ class BucketUtils(ScopeUtils):
                              scope=CbServer.default_scope,
                              collection=CbServer.default_collection,
                              suppress_error_table=False,
-                             sdk_client_pool=None):
+                             sdk_client_pool=None,
+                             sdk_retry_strategy=None):
         task_info = dict()
         for bucket in self.buckets:
             gen = copy.deepcopy(kv_gen)
@@ -2610,7 +2615,8 @@ class BucketUtils(ScopeUtils):
                 process_concurrency, check_replica,
                 scope, collection,
                 suppress_error_table=suppress_error_table,
-                sdk_client_pool=sdk_client_pool)
+                sdk_client_pool=sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
             task_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,
