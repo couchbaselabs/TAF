@@ -4,10 +4,7 @@ Created on Dec 12, 2019
 @author: riteshagarwal
 '''
 
-import copy
-import threading
-
-from Cb_constants.CBServer import CbServer
+from constants.sdk_constants.java_client import SDKConstants.RetryStrategy
 from couchbase_helper.documentgenerator import doc_generator
 import json as Json
 from magma_base import MagmaBaseTest
@@ -103,7 +100,8 @@ class MagmaCrashTests(MagmaBaseTest):
                 skip_read_on_error=True,
                 _sync=False,
                 doc_ops=self.doc_ops,
-                track_failures=False)
+                track_failures=False,
+                sdk_retry_strategy=RetryStrategy.FAIL_FAST)
             tasks_info.update(tem_tasks_info.items())
 
         self.crash_th = threading.Thread(target=self.crash,
@@ -133,7 +131,8 @@ class MagmaCrashTests(MagmaBaseTest):
                 skip_read_on_error=True,
                 _sync=False,
                 doc_ops=self.doc_ops,
-                track_failures=False)
+                track_failures=False,
+                sdk_retry_strategy=RetryStrategy.FAIL_FAST)
             tasks_info.update(tem_tasks_info.items())
 
         self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
@@ -340,7 +339,8 @@ class MagmaCrashTests(MagmaBaseTest):
                 suppress_error_table=True,
                 skip_read_on_error=True,
                 _sync=False,
-                track_failures=False)
+                track_failures=False,
+                sdk_retry_strategy=RetryStrategy.FAIL_FAST)
             tasks_info.update(update_task_info.items())
             count += 1
             self.sleep(5)
@@ -466,7 +466,8 @@ class MagmaCrashTests(MagmaBaseTest):
                                   suppress_error_table=True,
                                   skip_read_on_error=True,
                                   _sync=True,
-                                  track_failures=False)
+                                  track_failures=False,
+                                  sdk_retry_strategy=RetryStrategy.FAIL_FAST)
             self.bucket_util._wait_for_stats_all_buckets()
 
             self.generate_docs(doc_ops="update")
@@ -475,7 +476,8 @@ class MagmaCrashTests(MagmaBaseTest):
                                   suppress_error_table=True,
                                   skip_read_on_error=True,
                                   _sync=True,
-                                  track_failures=False)
+                                  track_failures=False,
+                                  sdk_retry_strategy=RetryStrategy.FAIL_FAST)
             self.bucket_util._wait_for_stats_all_buckets()
 
             count += 1

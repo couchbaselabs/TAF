@@ -625,7 +625,8 @@ class MagmaBaseTest(BaseTestCase):
                      collection=CbServer.default_collection,
                      _sync=True,
                      track_failures=True,
-                     doc_ops=None):
+                     doc_ops=None,
+                     sdk_retry_strategy=None):
         doc_ops = doc_ops or self.doc_ops
 
         tasks_info = dict()
@@ -652,7 +653,8 @@ class MagmaBaseTest(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
         if "create" in doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -671,7 +673,8 @@ class MagmaBaseTest(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "expiry" in doc_ops and self.gen_expiry is not None and self.maxttl:
@@ -692,7 +695,8 @@ class MagmaBaseTest(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
         if "read" in doc_ops and self.gen_read is not None:
@@ -707,7 +711,8 @@ class MagmaBaseTest(BaseTestCase):
                scope=scope,
                collection=collection,
                suppress_error_table=suppress_error_table,
-               sdk_client_pool=self.sdk_client_pool)
+               sdk_client_pool=self.sdk_client_pool,
+               sdk_retry_strategy=sdk_retry_strategy)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -726,7 +731,8 @@ class MagmaBaseTest(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
