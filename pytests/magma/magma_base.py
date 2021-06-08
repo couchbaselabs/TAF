@@ -82,6 +82,7 @@ class MagmaBaseTest(BaseTestCase):
                 replica=self.num_replicas,
                 storage=self.bucket_storage,
                 eviction_policy=self.bucket_eviction_policy,
+                flush_enabled=self.flush_enabled,
                 autoCompactionDefined=self.autoCompactionDefined,
                 fragmentation_percentage=self.fragmentation)
         else:
@@ -93,6 +94,7 @@ class MagmaBaseTest(BaseTestCase):
                 storage={"couchstore": self.standard_buckets - self.magma_buckets,
                          "magma": self.magma_buckets},
                 eviction_policy=self.bucket_eviction_policy,
+                flush_enabled=self.flush_enabled,
                 bucket_name=self.bucket_name,
                 fragmentation_percentage=self.fragmentation)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
