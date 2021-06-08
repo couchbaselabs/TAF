@@ -2063,12 +2063,15 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         """
         Returns a tuple of (active_rr, replica_rr)
         """
-        active_resident_items_ratio = self.rest_client.fetch_bucket_stats(
-            bucket.name)["op"]["samples"][
-            "vb_active_resident_items_ratio"][-1]
-        replica_resident_items_ratio = self.rest_client.fetch_bucket_stats(
-            bucket.name)["op"]["samples"][
-            "vb_replica_resident_items_ratio"][-1]
+        try:
+            active_resident_items_ratio = self.rest_client.fetch_bucket_stats(
+                bucket.name)["op"]["samples"][
+                "vb_active_resident_items_ratio"][-1]
+            replica_resident_items_ratio = self.rest_client.fetch_bucket_stats(
+                bucket.name)["op"]["samples"][
+                "vb_replica_resident_items_ratio"][-1]
+        except KeyError:
+            active_resident_items_ratio = replica_resident_items_ratio = 100
         return active_resident_items_ratio, replica_resident_items_ratio
 
     def _load_next_batch_of_docs(self, bucket):
