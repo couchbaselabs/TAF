@@ -30,6 +30,49 @@ class MagmaDiskFull(MagmaBaseTest):
             self.free_disk(node)
         MagmaBaseTest.tearDown(self)
 
+    def simulate_persistence_failure(self, servers=None):
+        servers = servers or [self.cluster.master]
+        ep_data_write_failed = dict()
+        for server in servers:
+            ep_data_write_failed.update({server: 0})
+        self.create_start = self.init_items_per_collection
+        self.create_end = self.create_start
+        iterations = 10
+        while iterations > 0:
+            tasks_info = dict()
+            self.doc_ops = "create"
+            self.create_start = self.create_end
+            self.create_end = self.create_start + 1000000
+            self.generate_docs()
+            for collection in self.collections:
+                tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
+                                                   self.ignore_exceptions,
+                                                   scope=CbServer.default_scope,
+                                                   collection=collection,
+                                                   suppress_error_table=True,
+                                                   skip_read_on_error=True,
+                                                   _sync=False,
+                                                   doc_ops=self.doc_ops,
+                                                   track_failures=False,
+                                                   sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
+                tasks_info.update(tem_tasks_info.items())
+
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+
+            for bucket in self.bucket_util.buckets:
+                try:
+                    self.bucket_util._wait_for_stat(bucket, ep_data_write_failed,
+                                                    cbstat_cmd="all",
+                                                    stat_name="ep_data_write_failed",
+                                                    stat_cond=">", timeout=60)
+                    self.get_bucket_dgm(bucket)
+                    return
+                except:
+                    pass
+            iterations -= 1
+        raise Exception("Could not hit Write Commit Failures: ep_data_write_failed>0")
+
     def fill_disk(self, server, chunk=1024, free=50):
         def _get_disk_usage_in_MB(remote_client, path):
             disk_info = remote_client.get_disk_info(in_MB=True, path=path)
@@ -66,36 +109,8 @@ class MagmaDiskFull(MagmaBaseTest):
         self.sleep(10, "Wait for files to clean up from the disk")
 
     def test_simple_disk_full(self):
-        self.doc_ops = "create"
-        self.create_start = self.init_items_per_collection
-        self.create_end = self.init_items_per_collection*2
-        self.generate_docs()
-
         self.fill_disk(self.cluster.master, free=100)
-        tasks_info = dict()
-        for collection in self.collections:
-            tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
-                                               self.ignore_exceptions,
-                                               scope=CbServer.default_scope,
-                                               collection=collection,
-                                               suppress_error_table=True,
-                                               skip_read_on_error=True,
-                                               _sync=False,
-                                               doc_ops=self.doc_ops,
-                                               track_failures=False,
-                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
-            tasks_info.update(tem_tasks_info.items())
-
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
-
-        ep_data_write_failed = {self.cluster.master: 0}
-
-        for bucket in self.bucket_util.buckets:
-            self.bucket_util._wait_for_stat(bucket, ep_data_write_failed,
-                                            cbstat_cmd="all",
-                                            stat_name="ep_data_write_failed",
-                                            stat_cond=">", timeout=300)
+        self.simulate_persistence_failure()
         if self.crash_on_disk_full:
             th = threading.Thread(target=self.crash)
             th.start()
@@ -128,15 +143,8 @@ class MagmaDiskFull(MagmaBaseTest):
         self.test_simple_disk_full()
 
     def test_reads_on_disk_full(self):
-        self.doc_ops = "create"
-        self.create_start = self.init_items_per_collection
-        self.create_end = self.init_items_per_collection + 1000000
-        self.generate_docs()
-
-        ep_data_write_failed = dict()
         th = list()
         for node in self.cluster.nodes_in_cluster:
-            ep_data_write_failed.update({node: 0})
             t = threading.Thread(target=self.fill_disk,
                                  kwargs=dict(server=node,
                                              free=0))
@@ -144,29 +152,7 @@ class MagmaDiskFull(MagmaBaseTest):
             th.append(t)
         for t in th:
             t.join()
-        tasks_info = dict()
-        for collection in self.collections:
-            tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
-                                               self.ignore_exceptions,
-                                               scope=CbServer.default_scope,
-                                               collection=collection,
-                                               suppress_error_table=True,
-                                               skip_read_on_error=True,
-                                               _sync=False,
-                                               doc_ops=self.doc_ops,
-                                               track_failures=False,
-                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
-            tasks_info.update(tem_tasks_info.items())
-
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
-
-        for bucket in self.bucket_util.buckets:
-            self.bucket_util._wait_for_stat(bucket, ep_data_write_failed,
-                                            cbstat_cmd="all",
-                                            stat_name="ep_data_write_failed",
-                                            stat_cond=">", timeout=300)
-
+        self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
         self.read_start = 0
         self.read_end = self.init_items_per_collection
         self.doc_ops = "read"
@@ -489,10 +475,8 @@ class MagmaDiskFull(MagmaBaseTest):
         self.generate_docs()
         self.gen_update = copy.deepcopy(self.gen_create)
 
-        ep_data_write_failed = dict()
         th = list()
         for node in self.cluster.nodes_in_cluster:
-            ep_data_write_failed.update({node: 0})
             t = threading.Thread(target=self.fill_disk,
                                  kwargs=dict(server=node,
                                              free=200))
@@ -500,28 +484,8 @@ class MagmaDiskFull(MagmaBaseTest):
             th.append(t)
         for t in th:
             t.join()
-        tasks_info = dict()
-        for collection in self.collections:
-            tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
-                                               self.ignore_exceptions,
-                                               scope=CbServer.default_scope,
-                                               collection=collection,
-                                               suppress_error_table=True,
-                                               skip_read_on_error=True,
-                                               _sync=False,
-                                               doc_ops=self.doc_ops,
-                                               track_failures=False,
-                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
-            tasks_info.update(tem_tasks_info.items())
 
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
-
-        for bucket in self.bucket_util.buckets:
-            self.bucket_util._wait_for_stat(bucket, ep_data_write_failed,
-                                            cbstat_cmd="all",
-                                            stat_name="ep_data_write_failed",
-                                            stat_cond=">", timeout=300)
+        self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
         data_validation = self.task.async_validate_docs(
             self.cluster, self.bucket_util.buckets[0],
             self.gen_read, "create", 0,
@@ -536,6 +500,7 @@ class MagmaDiskFull(MagmaBaseTest):
         self.assertTrue(rebalance_result)
 
         # check further doc ops go in well
+        tasks_info = dict()
         self.doc_ops = "update"
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
@@ -625,10 +590,8 @@ class MagmaDiskFull(MagmaBaseTest):
         for task in tasks_info:
             self.task_manager.get_task_result(task)
 
-        ep_data_write_failed = dict()
         th = list()
         for node in self.cluster.nodes_in_cluster:
-            ep_data_write_failed.update({node: 0})
             t = threading.Thread(target=self.fill_disk,
                                  kwargs=dict(server=node,
                                              free=200))
@@ -637,32 +600,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for t in th:
             t.join()
 
-        self.create_start = self.init_items_per_collection
-        self.create_end = self.init_items_per_collection*2
-        self.doc_ops = "create"
-        self.generate_docs()
-        tasks_info = dict()
-        for collection in self.collections:
-            tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
-                                               self.ignore_exceptions,
-                                               scope=CbServer.default_scope,
-                                               collection=collection,
-                                               suppress_error_table=True,
-                                               skip_read_on_error=True,
-                                               _sync=False,
-                                               doc_ops=self.doc_ops,
-                                               track_failures=False,
-                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
-            tasks_info.update(tem_tasks_info.items())
-
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
-
-        for bucket in self.bucket_util.buckets:
-            self.bucket_util._wait_for_stat(bucket, ep_data_write_failed,
-                                            cbstat_cmd="all",
-                                            stat_name="ep_data_write_failed",
-                                            stat_cond=">", timeout=300)
+        self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
         self.doc_ops = "delete"
         tasks_info = dict()
         for collection in self.collections:
@@ -830,10 +768,8 @@ class MagmaDiskFull(MagmaBaseTest):
         self.generate_docs()
         self.gen_update = copy.deepcopy(self.gen_create)
 
-        ep_data_write_failed = dict()
         th = list()
         for node in self.cluster.nodes_in_cluster:
-            ep_data_write_failed.update({node: 0})
             t = threading.Thread(target=self.fill_disk,
                                  kwargs=dict(server=node,
                                              free=200))
@@ -843,29 +779,7 @@ class MagmaDiskFull(MagmaBaseTest):
             t.join()
 
         # Insert items so that disk gets full
-        tasks_info = dict()
-        for collection in self.collections:
-            tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
-                                               self.ignore_exceptions,
-                                               scope=CbServer.default_scope,
-                                               collection=collection,
-                                               suppress_error_table=True,
-                                               skip_read_on_error=True,
-                                               _sync=False,
-                                               doc_ops=self.doc_ops,
-                                               track_failures=False,
-                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
-            tasks_info.update(tem_tasks_info.items())
-
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
-
-        # Check for data write failures due to disk full
-        for bucket in self.bucket_util.buckets:
-            self.bucket_util._wait_for_stat(bucket, ep_data_write_failed,
-                                            cbstat_cmd="all",
-                                            stat_name="ep_data_write_failed",
-                                            stat_cond=">", timeout=300)
+        self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
 
         # Add a node to add disk to the cluster
         rebalance_result = self.task.rebalance(
@@ -875,6 +789,7 @@ class MagmaDiskFull(MagmaBaseTest):
 
         # Retry previous create failed after adding a node
         tasks_info = dict()
+        self.doc_ops = "update"
         for collection in self.collections:
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
