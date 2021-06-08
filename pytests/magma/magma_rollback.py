@@ -18,11 +18,6 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
 
-retry_exceptions = [SDKException.TimeoutException,
-                    SDKException.AmbiguousTimeoutException,
-                    SDKException.RequestCanceledException,
-                    SDKException.UnambiguousTimeoutException]
-
 
 class MagmaRollbackTests(MagmaBaseTest):
 
@@ -120,7 +115,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                                       self.target_vbucket)
 
             self.loadgen_docs(_sync=True,
-                              retry_exceptions=retry_exceptions)
+                              retry_exceptions=self.retry_exceptions)
             start = self.gen_create.key_counter
 
             ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
@@ -250,7 +245,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                    target_vbucket=self.target_vbucket)
 
                 self.loadgen_docs(_sync=True,
-                                  retry_exceptions=retry_exceptions)
+                                  retry_exceptions=self.retry_exceptions)
 
                 if self.gen_create is not None:
                     self.create_start = self.gen_create.key_counter
@@ -406,7 +401,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.generate_docs(doc_ops=self.doc_ops,
                                    target_vbucket=self.target_vbucket)
                 self.loadgen_docs(_sync=True,
-                                  retry_exceptions=retry_exceptions)
+                                  retry_exceptions=self.retry_exceptions)
                 if self.gen_create is not None:
                     self.create_start = self.gen_create.key_counter
                 if self.gen_update is not None:
@@ -594,7 +589,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_create = self.genrate_docs_basic(start, mem_only_items,
                                                            self.target_vbucket)
                 self.loadgen_docs(_sync=True,
-                                  retry_exceptions=retry_exceptions)
+                                  retry_exceptions=self.retry_exceptions)
 
                 start = self.gen_create.key_counter
 
@@ -836,7 +831,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                        target_vbucket=self.target_vbucket)
 
                     self.loadgen_docs(_sync=True,
-                                      retry_exceptions=retry_exceptions)
+                                      retry_exceptions=self.retry_exceptions)
                     if self.gen_create is not None:
                         self.create_start = self.gen_create.key_counter
                     if self.gen_update is not None:
@@ -1030,7 +1025,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.generate_docs(doc_ops=self.doc_ops,
                                        target_vbucket=self.target_vbucket)
                     self.loadgen_docs(_sync=True,
-                                      retry_exceptions=retry_exceptions)
+                                      retry_exceptions=self.retry_exceptions)
                     if self.gen_create is not None:
                         self.create_start = self.gen_create.key_counter
                     if self.gen_update is not None:
@@ -1275,7 +1270,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                        target_vbucket=self.target_vbucket)
                     tasks_in = dict()
                     for collection in collections:
-                        tem_tasks_in = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                        tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
                                                            ignore_exceptions=self.ignore_exceptions,
                                                            scope=scope_name,
                                                            collection=collection,
@@ -1532,7 +1527,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.generate_docs(doc_ops=self.doc_ops,
                                    target_vbucket=target_vbs_active)
                 tem_tasks_info = self.loadgen_docs(
-                    retry_exceptions=retry_exceptions,
+                    retry_exceptions=self.retry_exceptions,
                     scope=scope_name,
                     collection=collection,
                     _sync=False)
@@ -1596,7 +1591,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.gen_expiry = None
                     self.generate_docs(doc_ops="create:expiry:update",
                                        target_vbucket=target_vbs_replica)
-                    tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                    tem_tasks_info = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
                                                        scope=scope_name,
                                                        collection=collection,
                                                        _sync=False)
@@ -1820,7 +1815,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_expiry = None
                 self.generate_docs(doc_ops=self.doc_ops,
                                    target_vbucket=self.target_vbucket)
-                tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                   scope=scope_name,
                                   collection=collection,
                                   _sync=False)
@@ -1863,7 +1858,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_expiry = None
                 self.generate_docs(doc_ops="create:expiry:update",
                                    target_vbucket=target_vbs_replicas)
-                tem_tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
+                tem_tasks_info = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
                                                    scope=scope_name,
                                                    collection=collection,
                                                    _sync=False)
@@ -2015,7 +2010,7 @@ class MagmaSpaceAmplification(MagmaBaseTest):
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
             self.loadgen_docs(_sync=True,
-                              retry_exceptions=retry_exceptions)
+                              retry_exceptions=self.retry_exceptions)
 
             self.bucket_util._wait_for_stats_all_buckets(timeout=self.wait_timeout*20)
             self.bucket_util.print_bucket_stats()

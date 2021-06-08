@@ -17,12 +17,6 @@ from sdk_constants.java_client import SDKConstants
 from sdk_exceptions import SDKException
 
 
-retry_exceptions = [SDKException.TimeoutException,
-                    SDKException.AmbiguousTimeoutException,
-                    SDKException.RequestCanceledException,
-                    SDKException.UnambiguousTimeoutException]
-
-
 class MagmaCrashTests(MagmaBaseTest):
 
     def setUp(self):
