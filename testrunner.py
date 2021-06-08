@@ -23,7 +23,7 @@ from threading import Thread, Event
 from java.lang import System
 
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
-            "platform_utils", "connections"] + sys.path
+            "platform_utils", "connections", "constants"] + sys.path
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 from TestInput import TestInputParser, TestInputSingleton

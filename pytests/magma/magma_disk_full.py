@@ -3,10 +3,17 @@ Created on 16-Feb-2021
 
 @author: riteshagarwal
 '''
-from constants.sdk_constants.java_client import SDKConstants.RetryStrategy
+import copy
+import os
+import threading
+import time
+
+from Cb_constants.CBServer import CbServer
+from cb_tools.cbstats import Cbstats
 from magma.magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_constants.java_client import SDKConstants
 
 
 class MagmaDiskFull(MagmaBaseTest):
@@ -76,7 +83,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                                _sync=False,
                                                doc_ops=self.doc_ops,
                                                track_failures=False,
-                                               sdk_retry_strategy=RetryStrategy.FAIL_FAST)
+                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
             tasks_info.update(tem_tasks_info.items())
 
         for task in tasks_info:
@@ -148,7 +155,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                                _sync=False,
                                                doc_ops=self.doc_ops,
                                                track_failures=False,
-                                               sdk_retry_strategy=RetryStrategy.FAIL_FAST)
+                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
             tasks_info.update(tem_tasks_info.items())
 
         for task in tasks_info:
@@ -504,7 +511,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                                _sync=False,
                                                doc_ops=self.doc_ops,
                                                track_failures=False,
-                                               sdk_retry_strategy=RetryStrategy.FAIL_FAST)
+                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
             tasks_info.update(tem_tasks_info.items())
 
         for task in tasks_info:
@@ -645,7 +652,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                                _sync=False,
                                                doc_ops=self.doc_ops,
                                                track_failures=False,
-                                               sdk_retry_strategy=RetryStrategy.FAIL_FAST)
+                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
             tasks_info.update(tem_tasks_info.items())
 
         for task in tasks_info:
@@ -750,7 +757,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                                _sync=False,
                                                doc_ops=self.doc_ops,
                                                track_failures=False,
-                                               sdk_retry_strategy=RetryStrategy.FAIL_FAST)
+                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
             tasks_info.update(tem_tasks_info.items())
 
         for task in tasks_info:
@@ -798,7 +805,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                                _sync=False,
                                                doc_ops=self.doc_ops,
                                                track_failures=False,
-                                               sdk_retry_strategy=RetryStrategy.FAIL_FAST)
+                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
             tasks_info.update(tem_tasks_info.items())
 
         for task in tasks_info:
@@ -847,7 +854,7 @@ class MagmaDiskFull(MagmaBaseTest):
                                                _sync=False,
                                                doc_ops=self.doc_ops,
                                                track_failures=False,
-                                               sdk_retry_strategy=RetryStrategy.FAIL_FAST)
+                                               sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
             tasks_info.update(tem_tasks_info.items())
 
         for task in tasks_info:
