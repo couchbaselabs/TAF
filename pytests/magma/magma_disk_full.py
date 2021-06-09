@@ -109,8 +109,17 @@ class MagmaDiskFull(MagmaBaseTest):
         self.sleep(10, "Wait for files to clean up from the disk")
 
     def test_simple_disk_full(self):
-        self.fill_disk(self.cluster.master, free=100)
-        self.simulate_persistence_failure()
+        th = list()
+        for node in self.cluster.nodes_in_cluster:
+            t = threading.Thread(target=self.fill_disk,
+                                 kwargs=dict(server=node,
+                                             free=0))
+            t.start()
+            th.append(t)
+        for t in th:
+            t.join()
+        self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
+
         if self.crash_on_disk_full:
             th = threading.Thread(target=self.crash)
             th.start()
@@ -119,13 +128,15 @@ class MagmaDiskFull(MagmaBaseTest):
             th.join()
             self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
-        self.free_disk(self.cluster.master)
+        for node in self.cluster.nodes_in_cluster:
+            self.free_disk(node)
+
         self.bucket_util._wait_for_stats_all_buckets()
         self.doc_ops = "update"
+        self.generate_docs(update_start=self.create_start,
+                           update_end=self.create_end)
         tasks_info = dict()
         for collection in self.collections:
-            self.generate_docs(update_start=self.create_start,
-                               update_end=self.create_end)
             tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
                                                self.ignore_exceptions,
                                                scope=CbServer.default_scope,
