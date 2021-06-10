@@ -1,6 +1,5 @@
 import random
 from threading import Thread
-
 from pytests.N1qlTransaction.N1qlBase import N1qlBase
 """
 Basic test cases with commit,rollback scenarios
@@ -16,6 +15,7 @@ class N1ql_txn_negative(N1qlBase):
 
     def test_negative_txn(self):
         keyspace = self.n1ql_helper.get_collections()
+        doc_gen_list = self.n1ql_helper.get_doc_gen_list(keyspace)
         queries = []
         self.n1ql_helper.create_index(keyspace[0])
         query_params = self.n1ql_helper.create_txn()
@@ -56,12 +56,12 @@ class N1ql_txn_negative(N1qlBase):
                 result = self.n1ql_helper.run_cbq_query(stmt, query_params=query_params)
                 if result:
                     self.fail("stmt should fail %s" % stmt)
-            except:
-                pass
+            except Exception as e:
+                self.log.info("Expected exception: %s" % e)
         self.n1ql_helper.end_txn(query_params, self.commit)
-        self.process_value_for_verification_with_savepoint(bucket_col,
-                                                           doc_gen_list,
-                                                           "")
+        self.process_value_for_verification(keyspace,
+                                            doc_gen_list,
+                                            "")
 
     def recreate_collection(self, doc_gen, bucket, scope, collection):
         self.sleep(10) # wait for queries to execute
@@ -137,10 +137,12 @@ class N1ql_txn_negative(N1qlBase):
         bucket_col = self.n1ql_helper.get_collections()
         stmt = self.n1ql_helper.get_stmt(bucket_col)
         query_params = self.n1ql_helper.create_txn(1)
-        self.execute_query(stmt, query_params, 200)
-        #retry the transaction
-        self.execute_query_and_validate_results(stmt,
-                                            bucket_col)
+        try:
+            self.execute_query(stmt, query_params, 200)
+        except Exception as e:
+            self.log.info(e)
+            self.log.info("Retry transaction")
+            self.execute_query_and_validate_results(stmt, bucket_col)
 
     def test_txn_duplicate_key_error(self):
         collections = self.n1ql_helper.get_collections()
