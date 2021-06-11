@@ -14,7 +14,6 @@ from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_constants.java_client import SDKConstants
-from sdk_exceptions import SDKException
 
 
 class MagmaCrashTests(MagmaBaseTest):

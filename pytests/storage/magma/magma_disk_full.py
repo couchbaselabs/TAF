@@ -10,7 +10,7 @@ import time
 
 from Cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
-from magma.magma_base import MagmaBaseTest
+from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_constants.java_client import SDKConstants
