@@ -13,7 +13,7 @@ class IndexUtils:
     def __init__(self, cluster, server_task, n1ql_node):
         self.cluster = cluster
         self.task = server_task
-        self.task_manager = self.task_manager
+        self.task_manager = self.task.jython_task_manager
         self.n1ql_node = n1ql_node
         self.log = logger.get("test")
 
