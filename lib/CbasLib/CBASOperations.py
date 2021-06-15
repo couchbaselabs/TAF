@@ -40,7 +40,7 @@ class CBASHelper(CbasLib):
         full_name = list()
         for name in args:
             for _ in name.split("."):
-                _ = _.strip("`")
+                _ = _.replace("`","")
                 full_name.append(_)
         return '.'.join(full_name)
     
