@@ -419,7 +419,7 @@ class RebalanceTask(Task):
 
 
 class GenericLoadingTask(Task):
-    def __init__(self, cluster, bucket, client, batch_size=1, pause_secs=1,
+    def __init__(self, cluster, bucket, client, batch_size=1,
                  timeout_secs=5, time_unit="seconds", compression=None,
                  retries=5,
                  suppress_error_table=False, sdk_client_pool=None,
@@ -430,7 +430,6 @@ class GenericLoadingTask(Task):
                                                  % (bucket, scope, collection,
                                                     time.time()))
         self.batch_size = batch_size
-        self.pause = pause_secs
         self.timeout = timeout_secs
         self.time_unit = time_unit
         self.cluster = cluster
@@ -791,7 +790,7 @@ class LoadDocumentsTask(GenericLoadingTask):
     def __init__(self, cluster, bucket, client, generator, op_type,
                  exp, random_exp=False, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
-                 proxy_client=None, batch_size=1, pause_secs=1, timeout_secs=5,
+                 proxy_client=None, batch_size=1, timeout_secs=5,
                  compression=None, retries=5,
                  durability="", task_identifier="", skip_read_on_error=False,
                  suppress_error_table=False, sdk_client_pool=None,
@@ -803,7 +802,7 @@ class LoadDocumentsTask(GenericLoadingTask):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
-            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            timeout_secs=timeout_secs,
             time_unit=time_unit,
             compression=compression,
             retries=retries, suppress_error_table=suppress_error_table,
@@ -927,7 +926,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  xattr=False,
                  exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
-                 batch_size=1, pause_secs=1, timeout_secs=5,
+                 batch_size=1, timeout_secs=5,
                  compression=None, retries=5,
                  durability="", task_identifier="",
                  sdk_client_pool=None,
@@ -937,7 +936,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  sdk_retry_strategy=None):
         super(LoadSubDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
-            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            timeout_secs=timeout_secs,
             time_unit=time_unit, compression=compression,
             sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection,
@@ -1033,7 +1032,7 @@ class Durability(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generator,
                  op_type, exp, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
-                 only_store_hash=True, batch_size=1, pause_secs=1,
+                 batch_size=1,
                  timeout_secs=5, compression=None, process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
                  majority_value=0, check_persistence=False,
@@ -1060,8 +1059,6 @@ class Durability(Task):
         self.persist_to = persist_to
         self.replicate_to = replicate_to
         self.time_unit = time_unit
-        self.only_store_hash = only_store_hash
-        self.pause_secs = pause_secs
         self.timeout_secs = timeout_secs
         self.compression = compression
         self.process_concurrency = process_concurrency
@@ -1110,7 +1107,7 @@ class Durability(Task):
                 majority_value=self.majority_value,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 time_unit=self.time_unit, batch_size=self.batch_size,
-                pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                timeout_secs=self.timeout_secs,
                 compression=self.compression,
                 instance_num=i, durability=self.durability,
                 check_persistence=self.check_persistence,
@@ -1157,7 +1154,7 @@ class Durability(Task):
                      exp, exp_unit,
                      flag=0, majority_value=0, persist_to=0, replicate_to=0,
                      time_unit="seconds",
-                     batch_size=1, pause_secs=1, timeout_secs=5,
+                     batch_size=1, timeout_secs=5,
                      compression=None, retries=5,
                      instance_num=0, durability="", check_persistence=False,
                      sdk_client_pool=None,
@@ -1166,7 +1163,7 @@ class Durability(Task):
                      sdk_retry_strategy=None):
             super(Durability.Loader, self).__init__(
                 cluster, bucket, client, batch_size=batch_size,
-                pause_secs=pause_secs, timeout_secs=timeout_secs,
+                timeout_secs=timeout_secs,
                 compression=compression,
                 sdk_client_pool=sdk_client_pool,
                 scope=scope, collection=collection,
@@ -1527,7 +1524,7 @@ class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generators,
                  op_type, exp, exp_unit="seconds", random_exp=False, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
-                 only_store_hash=True, batch_size=1, pause_secs=1,
+                 batch_size=1,
                  timeout_secs=5, compression=None, process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
                  task_identifier="", skip_read_on_error=False,
@@ -1550,8 +1547,6 @@ class LoadDocumentsGeneratorsTask(Task):
         self.persist_to = persist_to
         self.replicate_to = replicate_to
         self.time_unit = time_unit
-        self.only_store_hash = only_store_hash
-        self.pause_secs = pause_secs
         self.timeout_secs = timeout_secs
         self.compression = compression
         self.process_concurrency = process_concurrency
@@ -1699,7 +1694,7 @@ class LoadDocumentsGeneratorsTask(Task):
                 self.flag,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 time_unit=self.time_unit, batch_size=self.batch_size,
-                pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                timeout_secs=self.timeout_secs,
                 compression=self.compression,
                 durability=self.durability,
                 task_identifier=self.thread_name,
@@ -1720,7 +1715,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  op_type, exp, create_paths=False,
                  xattr=False, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
-                 only_store_hash=True, batch_size=1, pause_secs=1,
+                 batch_size=1,
                  timeout_secs=5, compression=None,
                  process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
@@ -1745,8 +1740,6 @@ class LoadSubDocumentsGeneratorsTask(Task):
         self.persist_to = persist_to
         self.replicate_to = replicate_to
         self.time_unit = time_unit
-        self.only_store_hash = only_store_hash
-        self.pause_secs = pause_secs
         self.timeout_secs = timeout_secs
         self.compression = compression
         self.process_concurrency = process_concurrency
@@ -1882,7 +1875,6 @@ class LoadSubDocumentsGeneratorsTask(Task):
                 replicate_to=self.replicate_to,
                 time_unit=self.time_unit,
                 batch_size=self.batch_size,
-                pause_secs=self.pause_secs,
                 timeout_secs=self.timeout_secs,
                 compression=self.compression,
                 retries=self.retries,
@@ -1900,8 +1892,8 @@ class ContinuousDocOpsTask(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generator,
                  op_type="update", exp=0, flag=0, persist_to=0, replicate_to=0,
                  durability="", time_unit="seconds",
-                 only_store_hash=True, batch_size=1,
-                 pause_secs=1, timeout_secs=5, compression=None,
+                 batch_size=1,
+                 timeout_secs=5, compression=None,
                  process_concurrency=4,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
@@ -1916,8 +1908,6 @@ class ContinuousDocOpsTask(Task):
         self.replicate_to = replicate_to
         self.durability = durability
         self.time_unit = time_unit
-        self.only_store_hash = only_store_hash
-        self.pause_secs = pause_secs
         self.timeout_secs = timeout_secs
         self.compression = compression
         self.process_concurrency = process_concurrency
@@ -2155,7 +2145,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
 
 class ValidateDocumentsTask(GenericLoadingTask):
     def __init__(self, cluster, bucket, client, generator, op_type, exp,
-                 flag=0, proxy_client=None, batch_size=1, pause_secs=1,
+                 flag=0, proxy_client=None, batch_size=1,
                  timeout_secs=30, time_unit="seconds",
                  compression=None, check_replica=False,
                  sdk_client_pool=None,
@@ -2166,7 +2156,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                  suppress_error_table=False):
         super(ValidateDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
-            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            timeout_secs=timeout_secs,
             time_unit=time_unit,
             compression=compression,
             sdk_client_pool=sdk_client_pool,
@@ -2385,8 +2375,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
 
 class DocumentsValidatorTask(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generators,
-                 op_type, exp, flag=0, only_store_hash=True, batch_size=1,
-                 pause_secs=1, timeout_secs=60, time_unit="seconds",
+                 op_type, exp, flag=0, batch_size=1,
+                 timeout_secs=60, time_unit="seconds",
                  compression=None,
                  process_concurrency=4, check_replica=False,
                  scope=CbServer.default_scope,
@@ -2401,8 +2391,6 @@ class DocumentsValidatorTask(Task):
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
-        self.only_store_hash = only_store_hash
-        self.pause_secs = pause_secs
         self.timeout_secs = timeout_secs
         self.time_unit = time_unit
         self.compression = compression
@@ -2507,7 +2495,7 @@ class DocumentsValidatorTask(Task):
             task = ValidateDocumentsTask(
                 self.cluster, self.bucket, self.clients[i], generators[i],
                 self.op_type, self.exp, self.flag, batch_size=self.batch_size,
-                pause_secs=self.pause_secs, timeout_secs=self.timeout_secs,
+                timeout_secs=self.timeout_secs,
                 time_unit=self.time_unit,
                 compression=self.compression, check_replica=self.check_replica,
                 scope=self.scope, collection=self.collection,
@@ -3977,8 +3965,7 @@ class ValidateDocsFromSpecTask(Task):
     def __init__(self, cluster, task_manager, loader_spec,
                  sdk_client_pool, check_replica=False,
                  batch_size=500,
-                 process_concurrency=1,
-                 pause_secs=1):
+                 process_concurrency=1):
         super(ValidateDocsFromSpecTask, self).__init__(
             "ValidateDocsFromSpecTask_%s" % time.time())
         self.cluster = cluster
@@ -3987,7 +3974,6 @@ class ValidateDocsFromSpecTask(Task):
         self.process_concurrency = process_concurrency
         self.batch_size = batch_size
         self.check_replica = check_replica
-        self.pause_secs = pause_secs
 
         self.result = True
         self.validate_data_tasks = list()
@@ -4073,7 +4059,7 @@ class ValidateDocsFromSpecTask(Task):
                         self.cluster, bucket, None, doc_gen,
                         op_type, op_data["doc_ttl"],
                         None, batch_size=self.batch_size,
-                        pause_secs=self.pause_secs, timeout_secs=op_data["sdk_timeout"],
+                        timeout_secs=op_data["sdk_timeout"],
                         compression=None, check_replica=self.check_replica,
                         scope=scope_name, collection=col_name,
                         sdk_client_pool=self.sdk_client_pool,
@@ -4789,7 +4775,7 @@ class Atomicity(Task):
     def __init__(self, cluster, task_manager, bucket, clients,
                  generator, op_type, exp, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
-                 only_store_hash=True, batch_size=1, pause_secs=1,
+                 batch_size=1,
                  timeout_secs=5, compression=None,
                  process_concurrency=8, print_ops_rate=True, retries=5,
                  update_count=1, transaction_timeout=5,
@@ -4811,8 +4797,6 @@ class Atomicity(Task):
         self.persist_to = persist_to
         self.replicate_to = replicate_to
         self.time_unit = time_unit
-        self.only_store_hash = only_store_hash
-        self.pause_secs = pause_secs
         self.timeout_secs = timeout_secs
         self.transaction_timeout = transaction_timeout
         self.compression = compression
@@ -4913,7 +4897,6 @@ class Atomicity(Task):
                                replicate_to=self.replicate_to,
                                time_unit=self.time_unit,
                                batch_size=self.batch_size,
-                               pause_secs=self.pause_secs,
                                timeout_secs=self.timeout_secs,
                                compression=self.compression,
                                instance_num=1,
@@ -4936,7 +4919,7 @@ class Atomicity(Task):
                      generator, op_type, exp,
                      num_docs, update_count, defer, sync, record_fail,
                      flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
-                     batch_size=1, pause_secs=1, timeout_secs=5,
+                     batch_size=1, timeout_secs=5,
                      compression=None, retries=5, instance_num=0,
                      transaction_app=None, transaction=None, commit=True,
                      sdk_client_pool=None,
@@ -4945,7 +4928,6 @@ class Atomicity(Task):
             super(Atomicity.Loader, self).__init__(
                 cluster, bucket, clients[0][0],
                 batch_size=batch_size,
-                pause_secs=pause_secs,
                 timeout_secs=timeout_secs, compression=compression,
                 retries=retries,
                 sdk_client_pool=sdk_client_pool,
@@ -4963,7 +4945,6 @@ class Atomicity(Task):
             self.persist_to = persist_to
             self.replicate_to = replicate_to
             self.compression = compression
-            self.pause_secs = pause_secs
             self.timeout_secs = timeout_secs
             self.time_unit = time_unit
             self.instance = instance_num

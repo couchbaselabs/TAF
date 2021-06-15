@@ -422,11 +422,11 @@ class RebalanceInOutTests(RebalanceBaseTest):
         for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0,
-                pause_secs=5, batch_size=1, timeout_secs=60,
+                batch_size=1, timeout_secs=60,
                 sdk_client_pool=self.sdk_client_pool)
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, gen_delete, "delete", 0,
-                pause_secs=5, batch_size=1, timeout_secs=60,
+                batch_size=1, timeout_secs=60,
                 sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.copy())
 

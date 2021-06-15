@@ -28,7 +28,7 @@ class BasicCrudTests(MagmaBaseTest):
                self.cluster, self.gen_delete, "delete", 0,
                batch_size=self.batch_size,
                process_concurrency=self.process_concurrency,
-               pause_secs=5, timeout_secs=self.sdk_timeout,
+               timeout_secs=self.sdk_timeout,
                retry_exceptions=self.retry_exceptions,
                ignore_exceptions=self.ignore_exceptions)
 

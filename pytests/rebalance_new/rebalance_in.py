@@ -243,7 +243,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
-                pause_secs=5, timeout_secs=self.sdk_timeout,
+                timeout_secs=self.sdk_timeout,
                 retries=self.sdk_retries,
                 sdk_client_pool=self.sdk_client_pool))
         for task in tasks:
@@ -393,7 +393,7 @@ class RebalanceInTests(RebalanceBaseTest):
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, self.gen_update, "update", 0,
                 batch_size=20, persist_to=self.persist_to,
-                replicate_to=self.replicate_to, pause_secs=5,
+                replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
                 retries=self.sdk_retries,
@@ -541,15 +541,15 @@ class RebalanceInTests(RebalanceBaseTest):
             if "update" in self.doc_ops:
                 self._load_all_buckets(
                     self.gen_update, "update", 0, 4294967295, True,
-                    batch_size=20, pause_secs=5, timeout_secs=180)
+                    batch_size=20, timeout_secs=180)
             if "create" in self.doc_ops:
                 self._load_all_buckets(
                     self.gen_create, "create", 0, 4294967295, True,
-                    batch_size=20, pause_secs=5, timeout_secs=180)
+                    batch_size=20, timeout_secs=180)
             if "delete" in self.doc_ops:
                 self._load_all_buckets(
                     self.gen_delete, "delete", 0, 4294967295, True,
-                    batch_size=20, pause_secs=5, timeout_secs=180)
+                    batch_size=20, timeout_secs=180)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.cluster.nodes_in_cluster.extend(servs_in)
@@ -659,7 +659,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         task = self.task.async_load_gen_docs(
                             self.cluster, bucket, self.gen_update, "update", 0,
                             batch_size=20, persist_to=self.persist_to,
-                            replicate_to=self.replicate_to, pause_secs=5,
+                            replicate_to=self.replicate_to,
                             durability=self.durability_level,
                             timeout_secs=self.sdk_timeout,
                             retries=self.sdk_retries,
@@ -686,7 +686,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         task = self.task.async_load_gen_docs(
                             self.cluster, bucket, self.gen_create, "create", 0,
                             batch_size=20, persist_to=self.persist_to,
-                            replicate_to=self.replicate_to, pause_secs=5,
+                            replicate_to=self.replicate_to,
                             durability=self.durability_level,
                             timeout_secs=self.sdk_timeout,
                             retries=self.sdk_retries,
@@ -717,7 +717,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         task = self.task.async_load_gen_docs(
                             self.cluster, bucket, self.gen_delete, "delete", 0,
                             batch_size=20, persist_to=self.persist_to,
-                            replicate_to=self.replicate_to, pause_secs=5,
+                            replicate_to=self.replicate_to,
                             durability=self.durability_level,
                             timeout_secs=self.sdk_timeout,
                             retries=self.sdk_retries,

@@ -237,7 +237,7 @@ class MagmaDiskFull(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         shell.disconnect()
@@ -272,7 +272,7 @@ class MagmaDiskFull(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         for task in tasks_info:
@@ -331,7 +331,7 @@ class MagmaDiskFull(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         for task in tasks_info:
@@ -390,7 +390,7 @@ class MagmaDiskFull(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         for task in tasks_info:
@@ -449,7 +449,7 @@ class MagmaDiskFull(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         for task in tasks_info:
@@ -502,7 +502,7 @@ class MagmaDiskFull(MagmaBaseTest):
             self.gen_read, "create", 0,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
-            pause_secs=5, timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         self.bucket_util.update_all_bucket_replicas(replicas=1)
@@ -550,7 +550,7 @@ class MagmaDiskFull(MagmaBaseTest):
             self.gen_read, "create", 0,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
-            pause_secs=5, timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         self.bucket_util.update_all_bucket_replicas(replicas=1)

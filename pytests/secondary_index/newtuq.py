@@ -288,7 +288,6 @@ class QueryTests(BaseTestCase):
                                              self.n1ql_helper.full_docs_list)
 
     def load(self, generators_load, buckets=None, exp=0, flag=0,
-             only_store_hash=True, pause_secs=1,
              op_type='create', start_items=0,
              verify_data=True):
         if not buckets:
@@ -319,7 +318,7 @@ class QueryTests(BaseTestCase):
                     tasks.append(self.task.async_load_gen_docs(
                         self.cluster, bucket, gen, op_type, exp,
                         flag, self.persist_to, self.replicate_to,
-                        only_store_hash, self.batch_size, pause_secs,
+                        self.batch_size,
                         self.sdk_timeout, self.sdk_compression,
                         print_ops_rate=False,
                         retries=self.sdk_retries))
@@ -327,7 +326,7 @@ class QueryTests(BaseTestCase):
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, bucket, gens_load[bucket.name], op_type, exp,
                     flag, self.persist_to, self.replicate_to,
-                    only_store_hash, self.batch_size, pause_secs,
+                    self.batch_size,
                     self.sdk_timeout, self.sdk_compression,
                     print_ops_rate=False,
                     retries=self.sdk_retries))

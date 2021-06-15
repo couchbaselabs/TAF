@@ -59,7 +59,7 @@ class BasicReadTests(BasicCrudTests):
                     self.cluster, g_read, "read", 0,
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
-                    pause_secs=5, timeout_secs=self.sdk_timeout,
+                    timeout_secs=self.sdk_timeout,
                     retry_exceptions=self.retry_exceptions,
                     ignore_exceptions=self.ignore_exceptions)
                 tasks_info.update(read_task_info.items())

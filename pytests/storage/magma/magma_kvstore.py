@@ -1,13 +1,10 @@
-import time
 import threading
-import random
 
 from Cb_constants.CBServer import CbServer
-from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
-from BucketLib.bucket import Bucket
+
 
 class KVStoreTests(MagmaBaseTest):
     def setUp(self):
@@ -71,7 +68,7 @@ class KVStoreTests(MagmaBaseTest):
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level, pause_secs=5,
+                durability=self.durability_level,
                 sdk_timeout=self.sdk_timeout, retries=self.sdk_retries,
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,
@@ -96,7 +93,7 @@ class KVStoreTests(MagmaBaseTest):
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level, pause_secs=5,
+                durability=self.durability_level,
                 sdk_timeout=self.sdk_timeout, retries=self.sdk_retries,
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,
@@ -122,7 +119,7 @@ class KVStoreTests(MagmaBaseTest):
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level, pause_secs=5,
+                durability=self.durability_level,
                 sdk_timeout=self.sdk_timeout, retries=self.sdk_retries,
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,
@@ -147,7 +144,7 @@ class KVStoreTests(MagmaBaseTest):
                self.cluster, bucket, self.gen_read, "read", 0,
                batch_size=self.batch_size,
                process_concurrency=self.process_concurrency,
-               pause_secs=5, timeout_secs=self.sdk_timeout,
+               timeout_secs=self.sdk_timeout,
                retry_exceptions=retry_exceptions,
                ignore_exceptions=ignore_exceptions,
                scope=scope,
@@ -159,7 +156,7 @@ class KVStoreTests(MagmaBaseTest):
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level, pause_secs=5,
+                durability=self.durability_level,
                 sdk_timeout=self.sdk_timeout, retries=self.sdk_retries,
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,

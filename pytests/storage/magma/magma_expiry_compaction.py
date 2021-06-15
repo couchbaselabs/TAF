@@ -60,7 +60,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
-                    durability=self.durability_level, pause_secs=5,
+                    durability=self.durability_level,
                     timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                     retry_exceptions=self.retry_exceptions,
                     ignore_exceptions=self.ignore_exceptions,
@@ -91,7 +91,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                 batch_size=10,
                 process_concurrency=1,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level, pause_secs=5,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 )
         self.task.jython_task_manager.get_task_result(tasks_info.keys()[0])
@@ -729,7 +729,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         #        self.gen_read, "delete", 0,
         #        batch_size=self.batch_size,
         #        process_concurrency=self.process_concurrency,
-        #        pause_secs=5, timeout_secs=self.sdk_timeout)
+        #        timeout_secs=self.sdk_timeout)
         #self.task.jython_task_manager.get_task_result(data_validation)
 
         # All docs converted to tomb-stone
@@ -865,7 +865,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                 self.cluster, self.gen_delete, "delete", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout,
+                timeout_secs=self.sdk_timeout,
                 scope=CbServer.default_scope,
                 collection=collection,
                 retry_exceptions=self.retry_exceptions,

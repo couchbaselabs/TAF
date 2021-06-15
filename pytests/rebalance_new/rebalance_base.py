@@ -329,7 +329,7 @@ class RebalanceBaseTest(BaseTestCase):
                              mix_key_size=self.mix_key_size)
 
     def _load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
-                          only_store_hash=True, batch_size=1000, pause_secs=1,
+                          batch_size=1000,
                           timeout_secs=30, compression=True):
         retry_exceptions_local = retry_exceptions \
                                  + [SDKException.RequestCanceledException]
@@ -338,8 +338,8 @@ class RebalanceBaseTest(BaseTestCase):
             cluster, kv_gen, op_type, exp, flag,
             persist_to=self.persist_to, replicate_to=self.replicate_to,
             durability=self.durability_level, timeout_secs=timeout_secs,
-            only_store_hash=only_store_hash, batch_size=batch_size,
-            pause_secs=pause_secs, sdk_compression=compression,
+            batch_size=batch_size,
+            sdk_compression=compression,
             process_concurrency=self.process_concurrency,
             retry_exceptions=retry_exceptions_local,
             active_resident_threshold=self.active_resident_threshold,
@@ -424,7 +424,7 @@ class RebalanceBaseTest(BaseTestCase):
                 batch_size=self.batch_size,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 process_concurrency=self.process_concurrency,
-                durability=self.durability_level, pause_secs=5,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
@@ -437,7 +437,7 @@ class RebalanceBaseTest(BaseTestCase):
                 batch_size=self.batch_size,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 process_concurrency=self.process_concurrency,
-                durability=self.durability_level, pause_secs=5,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
@@ -456,7 +456,7 @@ class RebalanceBaseTest(BaseTestCase):
                 batch_size=self.batch_size,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 process_concurrency=self.process_concurrency,
-                durability=self.durability_level, pause_secs=5,
+                durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,

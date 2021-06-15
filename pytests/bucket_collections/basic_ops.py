@@ -46,7 +46,7 @@ class BasicOps(CollectionBase):
                         persist_to=self.persist_to,
                         replicate_to=self.replicate_to,
                         durability=self.durability_level,
-                        pause_secs=5, timeout_secs=self.sdk_timeout,
+                        timeout_secs=self.sdk_timeout,
                         retries=self.sdk_retries,
                         scope=scope.name,
                         collection=collection.name)

@@ -156,7 +156,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         shell.disconnect()
@@ -312,7 +312,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
         #######################################################################
         shell.disconnect()
@@ -927,7 +927,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                pause_secs=5, timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
         #######################################################################
 

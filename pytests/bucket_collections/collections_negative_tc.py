@@ -170,7 +170,7 @@ class CollectionsNegativeTc(CollectionBase):
             persist_to=self.persist_to,
             replicate_to=self.replicate_to,
             durability=self.durability_level,
-            pause_secs=5, timeout_secs=self.sdk_timeout,
+            timeout_secs=self.sdk_timeout,
             retries=self.sdk_retries,
             collection=self.collection_name)
         self.task.jython_task_manager.get_task_result(task)

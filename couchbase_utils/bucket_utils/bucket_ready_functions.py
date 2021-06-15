@@ -2466,7 +2466,7 @@ class BucketUtils(ScopeUtils):
                           exp=0, random_exp=False,
                           flag=0, persist_to=0, replicate_to=0,
                           durability="", sdk_timeout=5, time_unit="seconds",
-                          only_store_hash=True, batch_size=10, pause_secs=1,
+                          batch_size=10,
                           compression=True, process_concurrency=8, retries=5,
                           active_resident_threshold=100,
                           ryow=False, check_persistence=False,
@@ -2483,8 +2483,8 @@ class BucketUtils(ScopeUtils):
             exp=exp, random_exp=random_exp,
             flag=flag, persist_to=persist_to, replicate_to=replicate_to,
             durability=durability, timeout_secs=sdk_timeout, time_unit=time_unit,
-            only_store_hash=only_store_hash, batch_size=batch_size,
-            pause_secs=pause_secs, compression=compression,
+            batch_size=batch_size,
+            compression=compression,
             process_concurrency=process_concurrency, retries=retries,
             active_resident_threshold=active_resident_threshold,
             ryow=ryow, check_persistence=check_persistence,
@@ -2502,7 +2502,7 @@ class BucketUtils(ScopeUtils):
                                      op_type=DocLoading.Bucket.DocOps.CREATE,
                                      mutate=0, process_concurrency=8,
                                      persist_to=0, replicate_to=0,
-                                     batch_size=10, pause_secs=5,
+                                     batch_size=10,
                                      timeout_secs=10):
         """
         Loads documents to all the collections available in bucket_util sequentially
@@ -2523,7 +2523,6 @@ class BucketUtils(ScopeUtils):
                         cluster, bucket,
                         generator, op_type,
                         batch_size=batch_size,
-                        pause_secs=pause_secs,
                         scope=scope.name,
                         collection=collection.name,
                         sdk_client_pool=DocLoaderUtils.sdk_client_pool,
@@ -2539,8 +2538,8 @@ class BucketUtils(ScopeUtils):
     def _async_load_all_buckets(self, cluster, kv_gen, op_type,
                                 exp, random_exp=False,
                                 flag=0, persist_to=0, replicate_to=0,
-                                only_store_hash=True, batch_size=1,
-                                pause_secs=1, timeout_secs=30, time_unit="seconds",
+                                batch_size=1,
+                                timeout_secs=30, time_unit="seconds",
                                 sdk_compression=True, process_concurrency=8,
                                 retries=5, durability="",
                                 ignore_exceptions=[], retry_exceptions=[],
@@ -2573,7 +2572,7 @@ class BucketUtils(ScopeUtils):
                 cluster, bucket, kv_gen, op_type, exp, random_exp,
                 flag, persist_to,
                 replicate_to, durability, timeout_secs, time_unit,
-                only_store_hash, batch_size, pause_secs,
+                batch_size,
                 sdk_compression, process_concurrency, retries,
                 active_resident_threshold=active_resident_threshold,
                 ryow=ryow, check_persistence=check_persistence,
@@ -2598,8 +2597,8 @@ class BucketUtils(ScopeUtils):
         return tasks_info
 
     def _async_validate_docs(self, cluster, kv_gen, op_type, exp,
-                             flag=0, only_store_hash=True, batch_size=1,
-                             pause_secs=1, timeout_secs=5, time_unit="seconds",
+                             flag=0, batch_size=1,
+                             timeout_secs=5, time_unit="seconds",
                              compression=True,
                              process_concurrency=4, check_replica=False,
                              ignore_exceptions=[], retry_exceptions=[],
@@ -2612,8 +2611,8 @@ class BucketUtils(ScopeUtils):
         for bucket in self.buckets:
             gen = copy.deepcopy(kv_gen)
             task = self.task.async_validate_docs(
-                cluster, bucket, gen, op_type, exp, flag, only_store_hash,
-                batch_size, pause_secs, timeout_secs, time_unit, compression,
+                cluster, bucket, gen, op_type, exp, flag,
+                batch_size, timeout_secs, time_unit, compression,
                 process_concurrency, check_replica,
                 scope, collection,
                 suppress_error_table=suppress_error_table,
@@ -2630,8 +2629,8 @@ class BucketUtils(ScopeUtils):
 
     def sync_load_all_buckets(self, cluster, kv_gen, op_type, exp, flag=0,
                               persist_to=0, replicate_to=0,
-                              only_store_hash=True, batch_size=1,
-                              pause_secs=1, timeout_secs=30,
+                              batch_size=1,
+                              timeout_secs=30,
                               sdk_compression=True, process_concurrency=8,
                               retries=5, durability="",
                               ignore_exceptions=list(),

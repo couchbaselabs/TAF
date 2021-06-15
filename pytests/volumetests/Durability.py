@@ -133,7 +133,6 @@ class volume(BaseTestCase):
                                                             persist_to = self.persist_to,
                                                             replicate_to=self.replicate_to,
                                                             batch_size= 10,
-                                                            pause_secs = 5,
                                                             timeout_secs=30,
                                                             durability=self.durability_level,
                                                             process_concurrency = self.process_concurrency,
@@ -233,7 +232,7 @@ class volume(BaseTestCase):
         tasks_info = self.bucket_util._async_load_all_buckets(self.cluster, kv_gen,
                                                               op_type, 0, batch_size=20,
                                                               persist_to=self.persist_to, replicate_to=self.replicate_to,
-                                                              durability=self.durability_level, pause_secs=5,
+                                                              durability=self.durability_level,
                                                               timeout_secs=30, process_concurrency=process_concurrency,
                                                               retries=self.sdk_retries,
                                                               retry_exceptions=retry_exceptions)
