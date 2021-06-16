@@ -70,6 +70,9 @@ class MagmaBaseTest(StorageBase):
         if self.init_loading:
             if self.active_resident_threshold < 100:
                 self.check_temporary_failure_exception = True
+                self.create_start = 0
+                self.create_end = self.init_items_per_collection
+                self.generate_docs(doc_ops="create")
                 self.load_buckets_in_dgm(self.gen_create, "create", 0)
             else:
                 self.initial_load()

@@ -153,6 +153,7 @@ class BaseTestCase(unittest.TestCase):
         # Doc Loader Params
         self.process_concurrency = self.input.param("process_concurrency", 20)
         self.batch_size = self.input.param("batch_size", 2000)
+        self.dgm_batch = self.input.param("dgm_batch", 5000)
         self.ryow = self.input.param("ryow", False)
         self.check_persistence = self.input.param("check_persistence", False)
         # End of client specific parameters

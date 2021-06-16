@@ -301,7 +301,7 @@ class StorageBase(BaseTestCase):
 
     def load_buckets_in_dgm(self, kv_gen, op_type, exp, flag=0,
                             batch_size=1000,
-                            timeout_secs=30, compression=True, dgm_batch=10,
+                            timeout_secs=30, compression=True,
                             skip_read_on_error=False,
                             suppress_error_table=False,
                             track_failures=False):
@@ -326,7 +326,7 @@ class StorageBase(BaseTestCase):
                     active_resident_threshold=self.active_resident_threshold,
                     skip_read_on_error=skip_read_on_error,
                     suppress_error_table=suppress_error_table,
-                    dgm_batch=dgm_batch,
+                    dgm_batch=self.dgm_batch,
                     scope=scope,
                     collection=collection,
                     monitor_stats=self.monitor_stats,
