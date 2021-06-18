@@ -157,6 +157,9 @@ class BucketDurabilityBase(BaseTestCase):
         self.bucket_template[Bucket.name] = "default"
         self.bucket_template[Bucket.ramQuotaMB] = 100
         self.bucket_template[Bucket.replicaNumber] = self.num_replicas
+        if self.bucket_type == Bucket.Type.MEMBASE:
+            self.bucket_template[Bucket.storageBackend] = self.bucket_storage
+
         # These two params will be set during each iteration
         self.bucket_template[Bucket.bucketType] = None
         self.bucket_template[Bucket.durabilityMinLevel] = None
