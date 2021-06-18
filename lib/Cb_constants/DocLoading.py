@@ -20,7 +20,7 @@ class Bucket(object):
                DocOps.REPLACE,
                DocOps.READ,
                DocOps.TOUCH]
-    SUB_DOC_OPS = [SubDocOps.INSERT,
-                   SubDocOps.UPSERT,
-                   SubDocOps.REMOVE,
-                   SubDocOps.LOOKUP]
+    SUB_DOC_OPS = [SubDocOps.REMOVE,
+                   SubDocOps.LOOKUP,
+                   SubDocOps.INSERT,
+                   SubDocOps.UPSERT]

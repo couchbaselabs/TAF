@@ -125,8 +125,7 @@ def sub_doc_generator_for_edit(key, start, end, template_index=0,
         template = list()
         template.append('{{ "full_name.last": "LastNameUpdate", \
                             "addr.city": "CityUpdate", \
-                            "addr.pincode": "TypeChange", \
-                            "todo.morning": [\"get\", \"up\"] }}')
+                            "addr.pincode": "TypeChange" }}')
         template.append('{{ "full_name.first": "FirstNameUpdate", \
                             "addr.state": "NewState", \
                             "todo.night": [1, \"nothing\", 3] }}')

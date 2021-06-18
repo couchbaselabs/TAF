@@ -90,14 +90,20 @@ class DocLoaderUtils(object):
     sdk_client_pool = None
 
     @staticmethod
-    def __get_required_num_from_percentage(collection_obj, target_percent):
+    def __get_required_num_from_percentage(collection_obj, target_percent, op_type):
         """
         To calculate the num_items for mutation for given collection_obj
         :param collection_obj: Object of Bucket.scope.collection
         :param target_percent: Percentage as given in spec
+        :param: op_type: type of subdoc/doc crud operation
         :return: num_items (int) value derived using percentage value
         """
-        return int((collection_obj.num_items * target_percent) / 100)
+        if op_type in [DocLoading.Bucket.SubDocOps.REMOVE,
+                       DocLoading.Bucket.SubDocOps.LOOKUP]:
+            sub_doc_num_items = collection_obj.sub_doc_index[1] - collection_obj.sub_doc_index[0]
+            return int((sub_doc_num_items * target_percent) / 100)
+        else:
+            return int((collection_obj.num_items * target_percent) / 100)
 
     @staticmethod
     def rewind_doc_index(collection_obj, op_type, doc_gen,
@@ -159,6 +165,13 @@ class DocLoaderUtils(object):
             end = start + num_items
             collection_obj.doc_index = (end, collection_obj.doc_index[1])
             collection_obj.num_items -= (end - start)
+            # if document is deleted, then it's corresponding subdoc start index must
+            # also be changed
+            if collection_obj.sub_doc_index[0] < collection_obj.doc_index[0]:
+                collection_obj.sub_doc_index[0] = collection_obj.doc_index[0]
+                if collection_obj.sub_doc_index[1] < collection_obj.sub_doc_index[0]:
+                    # no subdocs present
+                    collection_obj.sub_doc_index[1] = collection_obj.sub_doc_index[0]
         else:
             start = collection_obj.doc_index[0]
             end = start + num_items
@@ -194,6 +207,10 @@ class DocLoaderUtils(object):
         if op_type == DocLoading.Bucket.SubDocOps.INSERT:
             start = collection_obj.sub_doc_index[1]
             end = start + num_items
+            if end > collection_obj.doc_index[1]:
+                # subdoc' end cannot be greater than last index of doc
+                # otherwise it will result in docNotFound exceptions
+                end = collection_obj.doc_index[1]
             collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
                                             end)
             if target_vbuckets is not None:
@@ -209,7 +226,10 @@ class DocLoaderUtils(object):
         else:
             start = collection_obj.sub_doc_index[0]
             end = start + num_items
-            subdoc_gen_template_num = choice([0, 1])
+            if op_type == DocLoading.Bucket.SubDocOps.LOOKUP:
+                subdoc_gen_template_num = 0
+            else:
+                subdoc_gen_template_num = choice([0, 1])
 
         if target_vbuckets is not None:
             end -= start
@@ -303,13 +323,15 @@ class DocLoaderUtils(object):
                                     DocLoaderUtils \
                                         .__get_required_num_from_percentage(
                                         collection,
-                                        100)
+                                        100,
+                                        op_type)
                             else:
                                 num_items = \
                                     DocLoaderUtils \
                                         .__get_required_num_from_percentage(
                                         collection,
-                                        spec_percent_data[op_type])
+                                        spec_percent_data[op_type],
+                                        op_type)
 
                             if num_items == 0:
                                 continue
@@ -586,10 +608,10 @@ class DocLoaderUtils(object):
                 gen_str = "%s:%s:%s - %s" \
                           % (bucket.name, scope_name, collection_name,
                              op_type)
-#                 ignored_keys_table.display(
-#                     "%s keys ignored from retry" % gen_str)
-#                 retry_succeeded_table.display(
-#                     "%s keys succeeded after expected retry" % gen_str)
+                #                 ignored_keys_table.display(
+                #                     "%s keys ignored from retry" % gen_str)
+                #                 retry_succeeded_table.display(
+                #                     "%s keys succeeded after expected retry" % gen_str)
                 retry_failed_table.display(
                     "%s keys failed after expected retry" % gen_str)
                 unwanted_retry_succeeded_table.display(
@@ -4769,7 +4791,7 @@ class BucketUtils(ScopeUtils):
         metric_name = "kv_collection_item_count"
         label_values = {"bucket": bucket_name, "scope": scope_name, "collection": collection_name,
                         "nodesAggregation": "sum", "start": start_time, "end": end_time}
-        content = StatsHelper(self.cluster.master).\
+        content = StatsHelper(self.cluster.master). \
             get_range_api_metrics(metric_name, label_values=label_values)
         item_count = content["data"][0]["values"][-1][-1]
         return int(item_count)
