@@ -1,27 +1,15 @@
-from BucketLib.bucket import Bucket
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
-from couchbase_helper.durability_helper import DurabilityHelper
 
 
-class BucketParamTest(BaseTestCase):
+class BucketParamTest(ClusterSetup):
     def setUp(self):
         super(BucketParamTest, self).setUp()
+        self.create_bucket()
+
         self.new_replica = self.input.param("new_replica", 1)
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend(
-            [self.cluster.master] + nodes_init)
-        self.bucket_util.create_default_bucket(
-            compression_mode=self.compression_mode,
-            bucket_type=self.bucket_type,
-            replica=self.num_replicas,
-            storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
-        self.bucket_util.add_rbac_user()
         self.src_bucket = self.bucket_util.get_all_buckets()
 
         # Reset active_resident_threshold to avoid further data load as DGM

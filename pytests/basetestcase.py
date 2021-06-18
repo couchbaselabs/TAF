@@ -922,19 +922,29 @@ class ClusterSetup(BaseTestCase):
     def setUp(self):
         super(ClusterSetup, self).setUp()
 
+        self.log_setup_status("ClusterSetup", "started", "setup")
+
         services = None
         if self.services_init:
             services = list()
             for service in self.services_init.split("-"):
                 services.append(service.replace(":", ","))
+        services = services[1:] \
+            if services is not None and len(services) > 1 else None
 
-        self.log_setup_status("ClusterSetup", "started", "setup")
         # Rebalance-in nodes_init servers
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         if nodes_init:
-            self.task.rebalance([self.cluster.master], nodes_init, [],
-                                services=services)
+            result = self.task.rebalance([self.cluster.master], nodes_init, [],
+                                         services=services)
+            if result is False:
+                # Need this block since cb-collect won't be collected
+                # in BaseTest if failure happens during setup() stage
+                if self.get_cbcollect_info:
+                    self.fetch_cb_collect_logs()
+                self.fail("Initial rebalance failed")
+
             self.cluster.nodes_in_cluster.extend([self.cluster.master]
                                                  + nodes_init)
 

@@ -1,7 +1,7 @@
 from math import ceil
 
 from Cb_constants import CbServer, DocLoading
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
@@ -14,7 +14,7 @@ from cb_tools.cbstats import Cbstats
 from java.lang import Exception as Java_base_exception
 
 
-class CollectionBase(BaseTestCase):
+class CollectionBase(ClusterSetup):
     def setUp(self):
         super(CollectionBase, self).setUp()
         self.log_setup_status("CollectionBase", "started")
@@ -52,28 +52,6 @@ class CollectionBase(BaseTestCase):
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.nodes_in_cluster),
             self.durability_level)
-
-        services = None
-        if self.services_init:
-            services = list()
-            for service in self.services_init.split("-"):
-                services.append(service.replace(":", ","))
-            services = services[1:] if len(services) > 1 else None
-
-        # Initialize cluster using given nodes
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        if nodes_init:
-            result = self.task.rebalance([self.cluster.master], nodes_init, [],
-                                         services=services)
-            if result is False:
-                # Need this block since cb-collect won't be collected
-                # in BaseTest if failure happens during setup() stage
-                if self.get_cbcollect_info:
-                    self.fetch_cb_collect_logs()
-                self.fail("Initial rebalance failed")
-
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
 
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \

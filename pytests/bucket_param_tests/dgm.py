@@ -1,7 +1,7 @@
 from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
@@ -9,18 +9,10 @@ from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
 
 
-class Bucket_DGM_Tests(BaseTestCase):
+class Bucket_DGM_Tests(ClusterSetup):
     def setUp(self):
         super(Bucket_DGM_Tests, self).setUp()
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend(
-            [self.cluster.master] + nodes_init)
-        self.bucket_util.create_default_bucket(
-            ram_quota=self.bucket_size, replica=self.num_replicas,
-            maxTTL=self.maxttl, compression_mode=self.compression_mode)
-        self.bucket_util.add_rbac_user()
+        self.create_bucket()
 
         self.cluster_util.print_cluster_stats()
         doc_create = doc_generator(
