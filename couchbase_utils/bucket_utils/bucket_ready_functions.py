@@ -14,13 +14,11 @@ from random import sample, choice
 import requests
 import concurrent.futures
 
-import crc32
 import exceptions
 import json
 import random
 import string
 import time
-import uuid
 import zlib
 from subprocess import call
 from collections import defaultdict
@@ -1256,9 +1254,6 @@ class BucketUtils(ScopeUtils):
                    + spl_chars
         if invalid_name:
             char_set += invalid_chars
-
-        # TODO: Remove once MB-43994 is fixed
-        max_length = 30
 
         rand_name = ""
         now = datetime.datetime.now()
