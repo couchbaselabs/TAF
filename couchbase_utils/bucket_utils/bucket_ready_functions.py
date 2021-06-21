@@ -166,10 +166,12 @@ class DocLoaderUtils(object):
             # if document is deleted, then it's corresponding subdoc start index must
             # also be changed
             if collection_obj.sub_doc_index[0] < collection_obj.doc_index[0]:
-                collection_obj.sub_doc_index[0] = collection_obj.doc_index[0]
+                collection_obj.sub_doc_index = (collection_obj.doc_index[0],
+                                                collection_obj.sub_doc_index[1])
                 if collection_obj.sub_doc_index[1] < collection_obj.sub_doc_index[0]:
                     # no subdocs present
-                    collection_obj.sub_doc_index[1] = collection_obj.sub_doc_index[0]
+                    collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
+                                                    collection_obj.sub_doc_index[0])
         else:
             start = collection_obj.doc_index[0]
             end = start + num_items
