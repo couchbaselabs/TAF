@@ -4968,7 +4968,7 @@ class RemoteMachineShellConnection:
 class RemoteUtilHelper(object):
 
     @staticmethod
-    def enable_firewall(server, bidirectional=False, xdcr=False, action_on_packet="REJECT", 
+    def enable_firewall(server, bidirectional=False, xdcr=False, action_on_packet="REJECT",
                         block_ips=[], all_interface=False, interface_names=["eth0"]):
         """ Check if user is root or non root in unix """
         shell = RemoteMachineShellConnection(server)

@@ -1,8 +1,8 @@
 from math import floor
 
 from BucketLib.BucketOperations import BucketHelper
-from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.durability_helper import DurabilityHelper
 from rebalance_base import RebalanceBaseTest
 from rebalance_new import rebalance_base
 
@@ -188,10 +188,6 @@ class RebalanceDurability(RebalanceBaseTest):
 
         durability_will_fail = False
         def_bucket = self.bucket_util.buckets[0]
-
-        if (self.durability_level.lower() != "none") \
-                or (self.bucket_durability_level != "none"):
-            self.bucket_util.get_supported_durability_levels()
 
         nodes_in_cluster = self.nodes_init
         nodes_required_for_durability = int(floor((self.num_replicas+1)/2)+1)
@@ -465,6 +461,7 @@ class RebalanceDurability(RebalanceBaseTest):
             # Delete the rebalance test condition to recover from the error
             self.delete_rebalance_test_condition(test_failure_condition)
             self.sleep(sleep_time)
+            self.update_count += 1
             # start update of all keys
             task_update = self.loadgen_docs()
             self.check_retry_rebalance_succeeded()

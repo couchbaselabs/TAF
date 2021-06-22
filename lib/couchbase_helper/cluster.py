@@ -281,8 +281,9 @@ class ServerTasks(object):
         bucket_list = list()
         client_list = list()
         gen_start = int(generator.start)
-        gen_end = max(int(generator.end), 1)
-        gen_range = max(int((generator.end-generator.start) / process_concurrency), 1)
+        gen_end = int(generator.end)
+        gen_range = max(int((generator.end - generator.start)
+                            / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
             temp_bucket_list = list()
             temp_client_list = list()
@@ -297,9 +298,9 @@ class ServerTasks(object):
             cluster, self.jython_task_manager, bucket_list,
             client_list, [generator], op_type, exp,
             flag=flag, persist_to=persist_to,
-            replicate_to=replicate_to, only_store_hash=only_store_hash,
+            replicate_to=replicate_to,
             batch_size=batch_size,
-            pause_secs=pause_secs, timeout_secs=timeout_secs,
+            timeout_secs=timeout_secs,
             compression=compression,
             process_concurrency=process_concurrency, retries=retries,
             update_count=update_count,

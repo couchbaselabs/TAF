@@ -499,6 +499,16 @@ class IsolationDocTest(BaseTestCase):
         self.validate_test_failure()
 
     def test_transaction_with_rebalance(self):
+        def fetch_new_master(out_nodes):
+            for node in self.cluster.servers:
+                for out_node in out_nodes:
+                    if node.ip != out_node.ip:
+                        self.new_master = node
+                        break
+                if self.new_master is not None:
+                    break
+
+        self.new_master = None
         rebalance_type = self.input.param("rebalance_type", "in")
         nodes_to_add = list()
         nodes_to_remove = list()
@@ -513,12 +523,14 @@ class IsolationDocTest(BaseTestCase):
             nodes_to_remove = \
                 [self.cluster.servers[len(self.cluster.nodes_in_cluster)-i-1]
                  for i in range(self.nodes_out)]
+            fetch_new_master(nodes_to_remove)
         elif rebalance_type == "swap":
             nodes_to_remove = \
                 [self.cluster.servers[len(self.cluster.nodes_in_cluster)-i-1]
                  for i in range(self.nodes_out)]
             nodes_to_add = [self.cluster.servers[self.nodes_init+i]
                             for i in range(self.nodes_in)]
+            fetch_new_master(nodes_to_remove)
         else:
             self.fail("Invalid value rebalance_type: %s" % rebalance_type)
 
@@ -567,7 +579,7 @@ class IsolationDocTest(BaseTestCase):
             commit=True,
             durability=self.durability_level,
             sync=self.sync, defer=self.defer,
-            retries=0)
+            retries=1)
         # Rollback transaction
         trans_task_2 = self.task.async_load_gen_docs_atomicity(
             self.cluster, self.bucket_util.buckets,
@@ -589,9 +601,18 @@ class IsolationDocTest(BaseTestCase):
             nodes_to_add, nodes_to_remove)
 
         # Wait for transactions and rebalance task to complete
-        self.task_manager.get_task_result(trans_task_1)
-        self.task_manager.get_task_result(trans_task_2)
+        # Wait for transactions and rebalance task to complete
+        try:
+            self.task_manager.get_task_result(trans_task_1)
+        except BaseException as e:
+            self.task_manager.get_task_result(trans_task_2)
+            raise e
         self.task_manager.get_task_result(rebalance_task)
+
+        self.cluster.master = self.new_master if self.new_master is not None \
+            else self.cluster.master
+
+        self.log.info("Master - %s" % self.cluster.master)
 
         if rebalance_task.result is False:
             self.log_failure("Rebalance failure")

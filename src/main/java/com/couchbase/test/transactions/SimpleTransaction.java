@@ -89,6 +89,7 @@ public class SimpleTransaction {
 			}
 		}
 
+        config = config.cleanupWindow(Duration.of(60, ChronoUnit.SECONDS));
 		return config.expirationTime(Duration.of(expiryTimeout, ChronoUnit.SECONDS)).build();
 	}
 	public List<Tuple2<String, JsonObject>> ReadTransaction(Transactions transaction, List<Collection> collections, List<String> Readkeys) {
@@ -456,22 +457,37 @@ public class SimpleTransaction {
 		});
 	}
 
+    public static long get_cleanup_timeout(Transactions transaction, long start_time) {
+        long elapsed_time, cleanup_timeout;
+        // Curr_time - start_time
+        elapsed_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS) - start_time;
+        // Trans_expiry_time - Elapsed_trans_time
+        cleanup_timeout = transaction.config().transactionExpirationTime().getSeconds() - elapsed_time;
+        // (Trans_expiry_time - Elapsed_trans_time) + cleanupWindow
+        cleanup_timeout += transaction.config().cleanupWindow().getSeconds();
+        // Extra time buffer for cleanup to trigger
+        cleanup_timeout += 15;
+        return cleanup_timeout;
+    }
+
 	public void waitForTransactionCleanupEvent(Cluster cluster, List<TransactionAttempt> attempts,
-											   Set<String> attemptIds) {
+											   Set<String> attemptIds, long trans_timeout) {
 		Iterator<TransactionAttempt> it = attempts.iterator();
-		long end_time = (TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS)) + 60;
-		long curr_time;
+		long curr_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
+		long end_time = curr_time + trans_timeout;
+		System.out.println("Cleanup timeout " + trans_timeout + " seconds");
 		while(it.hasNext()) {
 			String id_to_check = (it.next()).attemptId();
-			System.out.println("Waiting for cleanup event for: " + id_to_check);
-			while (true) {
+			System.out.println(curr_time + " Waiting for cleanup event for: " + id_to_check);
+			while (curr_time <= end_time) {
 				if (attemptIds.contains(id_to_check)) {
+                    System.out.println(curr_time + " TransactionCleanupAttempt success: " + id_to_check);
 					break;
 				}
 				// Check for timeout case
 				curr_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
 				if (curr_time > end_time) {
-					System.out.println("Timeout waiting for attemptId: " + id_to_check);
+					System.out.println(curr_time + " Timeout waiting for attemptId: " + id_to_check);
 					break;
 				}
 			}
@@ -479,10 +495,11 @@ public class SimpleTransaction {
 	}
 
 	public List<LogDefer> RunTransaction(Cluster cluster, Transactions transaction, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
-										 List<String> Deletekeys, Boolean commit, boolean sync, int updatecount) {
+										 List<String> Deletekeys, Boolean commit, Boolean sync, int updatecount) {
 		List<LogDefer> res = new ArrayList<LogDefer>();
   		// synchronous API - transactions
 		if (sync) {
+            long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
 			Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 			EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
 			try {
@@ -537,20 +554,23 @@ public class SimpleTransaction {
 				});
 
 				if (commit && !result.unstagingComplete()) {
-					this.waitForTransactionCleanupEvent(cluster, result.attempts(), attempt_ids);
+                    long cleanup_timeout = this.get_cleanup_timeout(transaction, start_time);
+					this.waitForTransactionCleanupEvent(cluster, result.attempts(), attempt_ids, cleanup_timeout);
 				}
-//				result.log().logs().forEach(System.err::println);
 			}
 			catch (TransactionFailed err) {
 				res = err.result().log().logs();
 				if (res.toString().contains("DurabilityImpossibleException")) {
-					System.out.println("DurabilityImpossibleException seen"); }
+					System.out.println("DurabilityImpossibleException seen");
+				}
 				else {
 					for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
 						System.out.println(e);
 			        }
 				}
-				this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids);
+                long cleanup_timeout = this.get_cleanup_timeout(transaction, start_time);
+				this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids,
+					                                cleanup_timeout);
 			}
 			finally {
 				cleanup_es.unsubscribe();
@@ -581,6 +601,7 @@ public class SimpleTransaction {
 		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
 
+        long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
 		List<LogDefer> result = transaction.reactive((ctx) -> {
 			if (commit)
 			{
@@ -634,7 +655,9 @@ public class SimpleTransaction {
 						System.out.println(e);
 					}
 				}
-				this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids);
+                long cleanup_timeout = this.get_cleanup_timeout(transaction, start_time);
+				this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids,
+					                                cleanup_timeout);
 				return Mono.just(res);
 		}).block();
 		cleanup_es.unsubscribe();
@@ -650,6 +673,8 @@ public class SimpleTransaction {
 
 		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
+
+        long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
 
 		List<LogDefer> result = transaction.reactive((ctx) -> {
 			if (commit) {
@@ -687,7 +712,9 @@ public class SimpleTransaction {
 					System.out.println(e);
 				}
 			}
-			this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids);
+            long cleanup_timeout = this.get_cleanup_timeout(transaction, start_time);
+			this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids,
+					                            cleanup_timeout);
 			return Mono.just(res);
 		}).block();
 		cleanup_es.unsubscribe();
@@ -704,6 +731,7 @@ public class SimpleTransaction {
 		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
 
+        long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
 		List<LogDefer> result = transaction.reactive((ctx) -> {
 			if (commit)
 			{
@@ -741,7 +769,9 @@ public class SimpleTransaction {
 					System.out.println(e);
 				}
 			}
-			this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids);
+            long cleanup_timeout = this.get_cleanup_timeout(transaction, start_time);
+			this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids,
+					                            cleanup_timeout);
 			return Mono.just(res);
 		}).block();
 		cleanup_es.unsubscribe();
@@ -756,6 +786,7 @@ public class SimpleTransaction {
 
 		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
+		long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
 		try {
 			TransactionResult result = transaction.run(ctx -> {
 				for (Collection bucket:collections) {
@@ -811,7 +842,9 @@ public class SimpleTransaction {
 			res = err.result().log().logs();
 			if (res.toString().contains("DurabilityImpossibleException")) {
 				System.out.println("DurabilityImpossibleException seen");
-				this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids);
+                long cleanup_timeout = this.get_cleanup_timeout(transaction, start_time);
+				this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids,
+					                                cleanup_timeout);
 			}
 			else {
 				for (LogDefer e : ((TransactionFailed) err).result().log().logs()) {
@@ -832,6 +865,7 @@ public class SimpleTransaction {
 
 		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
+        long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
 		try {
 			if (commit) {
 				TransactionResult result = transaction.commit(serialized);
@@ -849,7 +883,9 @@ public class SimpleTransaction {
 					System.out.println(e);
 		        }
 			}
-			this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids);
+            long cleanup_timeout = this.get_cleanup_timeout(transaction, start_time);
+			this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids,
+					                            cleanup_timeout);
 		} finally {
 			cleanup_es.unsubscribe();
 		}
