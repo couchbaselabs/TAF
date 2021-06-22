@@ -163,18 +163,22 @@ class DocLoaderUtils(object):
             end = start + num_items
             collection_obj.doc_index = (end, collection_obj.doc_index[1])
             collection_obj.num_items -= (end - start)
-            # if document is deleted, then it's corresponding subdoc start index must
-            # also be changed
-            if collection_obj.sub_doc_index[0] < collection_obj.doc_index[0]:
-                collection_obj.sub_doc_index = (collection_obj.doc_index[0],
+        else:
+            start = collection_obj.doc_index[0]
+            end = start + num_items
+
+        if op_type in [DocLoading.Bucket.DocOps.DELETE,
+                       DocLoading.Bucket.DocOps.UPDATE,
+                       DocLoading.Bucket.DocOps.REPLACE]:
+            # if document is deleted/updated/replaced, then it's corresponding subdoc
+            # start index must also be changed
+            if collection_obj.sub_doc_index[0] < end:
+                collection_obj.sub_doc_index = (end,
                                                 collection_obj.sub_doc_index[1])
                 if collection_obj.sub_doc_index[1] < collection_obj.sub_doc_index[0]:
                     # no subdocs present
                     collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
                                                     collection_obj.sub_doc_index[0])
-        else:
-            start = collection_obj.doc_index[0]
-            end = start + num_items
 
         if target_vbuckets == "all":
             target_vbuckets = None
@@ -230,6 +234,13 @@ class DocLoaderUtils(object):
                 subdoc_gen_template_num = 0
             else:
                 subdoc_gen_template_num = choice([0, 1])
+                if op_type == DocLoading.Bucket.SubDocOps.UPSERT:
+                    # subdoc' end cannot be greater than last index of doc
+                    # otherwise it will result in docNotFound exceptions
+                    if end > collection_obj.doc_index[1]:
+                        end = collection_obj.doc_index[1]
+                        collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
+                                                        end)
 
         if target_vbuckets is not None:
             end -= start

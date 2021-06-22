@@ -3839,10 +3839,11 @@ class MutateDocsFromSpecTask(Task):
                         self.result = False
                     else:
                         target_log = self.test_log.debug
-                    target_log("Failed to load %d docs from %d to %d"
+                    target_log("Failed to load %d docs from %d to %d of thread_name %s"
                                % (task.fail.__len__(),
                                   task.generator._doc_gen.start,
-                                  task.generator._doc_gen.end))
+                                  task.generator._doc_gen.end,
+                                  task.thread_name))
         except Exception as e:
             self.test_log.error(e)
             self.set_exception(e)
