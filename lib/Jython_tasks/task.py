@@ -932,6 +932,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
+                 skip_read_success_results=False,
                  preserve_expiry=None,
                  sdk_retry_strategy=None):
         super(LoadSubDocumentsTask, self).__init__(
@@ -963,6 +964,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         self.durability = durability
         self.fail = dict()
         self.success = dict()
+        self.skip_read_success_results = skip_read_success_results
 
     def has_next(self):
         return self.generator.has_next()
@@ -1016,7 +1018,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         elif self.op_type in ['read', 'lookup']:
             success, fail = self.batch_sub_doc_read(key_value)
             self.fail.update(fail)
-            self.success.update(success)
+            if not self.skip_read_success_results:
+                self.success.update(success)
         else:
             self.set_exception(Exception("Bad operation type: %s"
                                          % self.op_type))
@@ -3948,7 +3951,9 @@ class MutateDocsFromSpecTask(Task):
                         batch_size=self.batch_size,
                         durability=op_data["durability_level"],
                         timeout_secs=op_data["sdk_timeout"],
-                        time_unit=op_data["sdk_timeout_unit"])
+                        time_unit=op_data["sdk_timeout_unit"],
+                        skip_read_success_results=op_data[
+                            "skip_read_success_results"])
                     self.load_subdoc_gen_tasks.append(subdoc_load_task)
 
     def get_tasks(self):
