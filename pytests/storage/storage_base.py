@@ -82,7 +82,8 @@ class StorageBase(BaseTestCase):
                 storage=self.bucket_storage,
                 eviction_policy=self.bucket_eviction_policy,
                 autoCompactionDefined=self.autoCompactionDefined,
-                fragmentation_percentage=self.fragmentation)
+                fragmentation_percentage=self.fragmentation,
+                flush_enabled=self.flush_enabled)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster.master,
@@ -93,7 +94,8 @@ class StorageBase(BaseTestCase):
                          "magma": self.magma_buckets},
                 eviction_policy=self.bucket_eviction_policy,
                 bucket_name=self.bucket_name,
-                fragmentation_percentage=self.fragmentation)
+                fragmentation_percentage=self.fragmentation,
+                flush_enabled=self.flush_enabled)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         self.buckets = self.bucket_util.buckets
