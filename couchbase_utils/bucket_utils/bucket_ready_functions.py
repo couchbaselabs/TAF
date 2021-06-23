@@ -222,10 +222,10 @@ class DocLoaderUtils(object):
             return sub_doc_generator(generic_key, start, end,
                                      target_vbucket=target_vbuckets, xattr_test=xattr_test)
         elif op_type == DocLoading.Bucket.SubDocOps.REMOVE:
-            start = collection_obj.sub_doc_index[0]
-            end = start + num_items
-            collection_obj.sub_doc_index = (end,
-                                            collection_obj.sub_doc_index[1])
+            start = collection_obj.sub_doc_index[1] - num_items
+            end = collection_obj.sub_doc_index[1]
+            collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
+                                            start)
             subdoc_gen_template_num = 2
         else:
             start = collection_obj.sub_doc_index[0]
