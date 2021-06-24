@@ -911,7 +911,7 @@ class RemoteMachineShellConnection:
                    "        This server {0} \n"\
                    "        failed to install ntp service.\n"\
                    "===============\n".format(self.ip)
-            self.stop_current_python_running(mesg)
+            self.log.info(mesg)
 
     def download_build(self, build):
         return self.download_binary(build.url, build.deliverable_type, build.name,
