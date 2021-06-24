@@ -37,7 +37,7 @@ def connection(server):
         session = jsch.getSession("root", server, 22)
         session.setPassword("couchbase")
         session.setConfig("StrictHostKeyChecking", "no")
-        session.connect(5000)
+        session.connect(10000)
         return session
     except:
         failed.append(server)
@@ -48,7 +48,7 @@ def scan_all_slaves():
                     "172.23.120.104","172.23.123.184","172.23.120.105","172.23.120.106","172.23.120.85",
                     "172.23.107.117", ]
 
-    all_slaves = ["172.23.107.117","172.23.107.116","172.23.107.120","172.23.106.136","172.23.121.65",
+    all_slaves = ["172.23.123.80","172.23.107.117","172.23.107.116","172.23.107.120","172.23.106.136","172.23.121.65",
                   "172.23.105.66","172.23.108.94","172.23.104.254",
                   "172.23.120.172","172.23.100.195","172.23.109.166","172.23.122.36","172.23.122.37",
                   "172.23.122.38","172.23.99.156","172.23.120.106","172.23.123.184","172.23.120.84",
@@ -66,7 +66,7 @@ def scan_all_slaves():
                   "172.23.107.238","172.23.106.205","172.23.105.131","172.23.105.131","172.23.105.115",
                   "172.23.123.88","172.23.123.91","172.23.123.69","172.23.123.69","172.23.123.71",
                   "172.23.123.72","172.23.123.75","172.23.123.73","172.23.123.74","172.23.123.70",
-                  "172.23.123.77","172.23.123.80","172.23.123.76","172.23.123.78","172.23.123.80",
+                  "172.23.123.77","172.23.123.76","172.23.123.78","172.23.123.80",
                   "172.23.123.79","172.23.97.128","172.23.99.156","172.23.104.136","172.23.97.128",
                   "172.23.99.156","172.23.97.101","172.23.107.216","172.23.104.34"
                   ]
@@ -78,27 +78,30 @@ def scan_all_slaves():
         if session is None:
             continue
 
-        cmd = "find /data/workspace/ -iname '*collect*2020*.zip'"
+        cmds = ["find /data/workspace/ -iname '*collect*2021*.zip'", "find /data/workspace/ -iname '*2021*diag*.zip'"]
         if len(sys.argv) > 1:
-            cmd = "find /data/workspace/ -iname '*collect*{}*.zip'".format(sys.argv[1])
+            cmds = ["find /data/workspace/ -iname '*collect*{}*.zip'".format(sys.argv[1]),
+                   "find /data/workspace/ -iname '*{}*diag*.zip'".format(sys.argv[1].replace("-", ""))]
 
-        output, error = run(cmd, session)
-        try:
-            for cbcollect_zips in output:
-                log_files, error = run("zipinfo -1 {}".format(cbcollect_zips), session)
-                for file in log_files:
-                    if file.rstrip().endswith("dmp"):
-                        print cbcollect_zips.rstrip()
-                        print file.rstrip()
-                        run("rm -rf /root/cbcollect*", session)[0]
-                        run("unzip {}".format(cbcollect_zips), session)[0]
-                        exclude = "'Rollback point not found\|No space left on device'"
-                        memcached = "/root/cbcollect*/memcached.log*"
-                        print "".join(run("grep CRITICAL {} | grep -v {}".format(memcached, exclude), session)[0])
-                        print "#######################"
-                        break
-        except:
-            pass
+        for cmd in cmds:
+            output, error = run(cmd, session)
+            try:
+                for cbcollect_zips in output:
+                    print "checking: %s" % cbcollect_zips
+#                     log_files, error = run("zipinfo -1 {}".format(cbcollect_zips), session)
+#                     for file in log_files:
+#                         if file.rstrip().endswith("dmp"):
+#                             print cbcollect_zips.rstrip()
+#                             print file.rstrip()
+                    run("rm -rf /root/cbcollect*", session)[0]
+                    run("unzip {}".format(cbcollect_zips), session)[0]
+                    exclude = "'Rollback point not found\|No space left on device'"
+                    memcached = "/root/cbcollect*/memcached.log*"
+                    print "".join(run("grep CRITICAL {} | grep -v {}".format(memcached, exclude), session)[0])
+                    print "#######################"
+#                             break
+            except:
+                pass
         session.disconnect()
 
 
