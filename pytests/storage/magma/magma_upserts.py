@@ -802,3 +802,57 @@ class BasicUpsertTests(BasicCrudTests):
             count += 1
         self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)
         self.log.info("====test_parallel_create_update ends====")
+
+    def test_upsert_docs_n_times_with_intermittent_compaction(self):
+        """
+        Test Focus: Update items n times and
+                    during update keep triggering full
+                    compaction
+
+        STEPS:
+          -- Update items n times
+          -- Keep triggering full compaction
+          -- After all iterations validate the data
+        """
+
+        self.log.info("=====test_upsert_docs_n_times_with_intermittent_compaction starts=====")
+        self.mutate = 0
+        count = 0
+        self.doc_ops = "update"
+        self.update_start = 0
+        self.update_end = self.init_items_per_collection
+
+        def full_compaction():
+            self.stop_compaction = False
+            loop_itr = 1
+            while not self.stop_compaction:
+                self.bucket_util._run_compaction(number_of_times=1)
+                self.sleep(5, "Done with Compaction Iteration == {}, sleep before next compaction".
+                           format(loop_itr))
+                loop_itr += 1
+
+        self.compaction_th = threading.Thread(target=full_compaction)
+        self.compaction_th.start()
+
+        while count < self.test_itr:
+            self.log.info("Iteration == {}".format(count+1))
+            #######################################################################
+            '''
+            STEP - 1, Update Items
+
+            '''
+            self.generate_docs(doc_ops="update")
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            count += 1
+        self.stop_compaction = True
+        self.compaction_th.join()
+
+        '''
+        STEP - 2, Data Validation
+
+        '''
+        self.validate_data("update", self.gen_update)
+
+        self.log.info("=====test_upsert_docs_n_times_with_intermittent_compaction ends=====")
