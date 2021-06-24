@@ -26,6 +26,8 @@ class MagmaCrashTests(MagmaBaseTest):
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
         self.crash_th = None
+        self.sdk_retry_strategy = self.input.param("sdk_retry_strategy",
+                                                   SDKConstants.RetryStrategy.FAIL_FAST)
 
     def tearDown(self):
         self.stop_crash = True
@@ -98,7 +100,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 _sync=False,
                 doc_ops=self.doc_ops,
                 track_failures=False,
-                sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
+                sdk_retry_strategy=self.sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
 
         self.crash_th = threading.Thread(target=self.crash,
@@ -129,7 +131,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 _sync=False,
                 doc_ops=self.doc_ops,
                 track_failures=False,
-                sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
+                sdk_retry_strategy=self.sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
 
         self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
@@ -337,7 +339,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 skip_read_on_error=True,
                 _sync=False,
                 track_failures=False,
-                sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
+                sdk_retry_strategy=self.sdk_retry_strategy)
             tasks_info.update(update_task_info.items())
             count += 1
             self.sleep(5)
@@ -464,7 +466,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                   skip_read_on_error=True,
                                   _sync=True,
                                   track_failures=False,
-                                  sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
+                                  sdk_retry_strategy=self.sdk_retry_strategy)
             self.bucket_util._wait_for_stats_all_buckets()
 
             self.generate_docs(doc_ops="update")
@@ -474,7 +476,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                   skip_read_on_error=True,
                                   _sync=True,
                                   track_failures=False,
-                                  sdk_retry_strategy=SDKConstants.RetryStrategy.FAIL_FAST)
+                                  sdk_retry_strategy=self.sdk_retry_strategy)
             self.bucket_util._wait_for_stats_all_buckets()
 
             count += 1
