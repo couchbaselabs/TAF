@@ -1,10 +1,11 @@
 from com.jcraft.jsch import JSchException
 from com.jcraft.jsch import JSch
 from org.python.core.util import FileUtil
-import os
 import sys
 
 failed = []
+
+
 def run(command, session):
     output = []
     error = []
@@ -31,6 +32,7 @@ def run(command, session):
         print("JSch exception on %s: %s" % (server, str(e)))
     return output, error
 
+
 def connection(server):
     try:
         jsch = JSch()
@@ -43,11 +45,8 @@ def connection(server):
         failed.append(server)
         return None
 
-def scan_all_slaves():
-    magma_slaves = ["172.23.123.170","172.23.120.26","172.23.120.223","172.23.120.103","172.23.120.84",
-                    "172.23.120.104","172.23.123.184","172.23.120.105","172.23.120.106","172.23.120.85",
-                    "172.23.107.117", ]
 
+def scan_all_slaves():
     all_slaves = ["172.23.123.80","172.23.107.117","172.23.107.116","172.23.107.120","172.23.106.136","172.23.121.65",
                   "172.23.105.66","172.23.108.94","172.23.104.254",
                   "172.23.120.172","172.23.100.195","172.23.109.166","172.23.122.36","172.23.122.37",
@@ -81,25 +80,26 @@ def scan_all_slaves():
         cmds = ["find /data/workspace/ -iname '*collect*2021*.zip'", "find /data/workspace/ -iname '*2021*diag*.zip'"]
         if len(sys.argv) > 1:
             cmds = ["find /data/workspace/ -iname '*collect*{}*.zip'".format(sys.argv[1]),
-                   "find /data/workspace/ -iname '*{}*diag*.zip'".format(sys.argv[1].replace("-", ""))]
+                    "find /data/workspace/ -iname '*{}*diag*.zip'".format(sys.argv[1].replace("-", ""))]
 
         for cmd in cmds:
-            output, error = run(cmd, session)
+            output, _ = run(cmd, session)
             try:
                 for cbcollect_zips in output:
-                    print("checking: %s" % cbcollect_zips)
-#                     log_files, error = run("zipinfo -1 {}".format(cbcollect_zips), session)
-#                     for file in log_files:
-#                         if file.rstrip().endswith("dmp"):
-#                             print cbcollect_zips.rstrip()
-#                             print file.rstrip()
+                    print "checking: %s" % cbcollect_zips.rstrip()
+                    log_files, _ = run("zipinfo -1 {}".format(cbcollect_zips), session)
+                    for file in log_files:
+                        if file.rstrip().endswith("dmp"):
+                            print file.rstrip()
+                            break
                     run("rm -rf /root/cbcollect*", session)[0]
                     run("unzip {}".format(cbcollect_zips), session)[0]
-                    exclude = "'Rollback point not found\|No space left on device'"
+                    exclude = "'Rollback point not found\|No space left on device\|Permission denied'"
                     memcached = "/root/cbcollect*/memcached.log*"
-                    print("".join(run("grep CRITICAL {} | grep -v {}".format(memcached, exclude), session)[0]))
-                    print("#######################")
-#                             break
+                    o, _ = run("grep 'CRITICAL\| ERROR ' {} | grep -v {}".format(memcached, exclude), session)[0]
+                    if o:
+                        print "".join(o)
+                    print "#######################"
             except:
                 pass
         session.disconnect()
@@ -108,11 +108,7 @@ def scan_all_slaves():
 def check_coredump_exist(server):
     binCb = "/opt/couchbase/bin/"
     libCb = "/opt/couchbase/var/lib/couchbase/"
-    crashDir = "/opt/couchbase/var/lib/couchbase/"
-    crashDirWin = "c://CrashDumps"
-    result = False
     dmpmsg = ""
-    streammsg = ""
     session = connection(server)
 
     if session is None:
@@ -157,8 +153,8 @@ def check_coredump_exist(server):
     logsDir = libCb + "logs/"
     logFiles = run("ls " + logsDir + "memcached.log.*", session)[0]
     for logFile in logFiles:
-        exclude = "'Rollback point not found\|No space left on device'"
-        criticalMessages = run("grep -r 'CRITICAL' {} | grep -v {}".format(logFile.strip("\n"), exclude), session)[0]
+        exclude = "'Rollback point not found\|No space left on device\|Permission denied'"
+        criticalMessages = run("grep -r 'CRITICAL\| ERROR ' {} | grep -v {}".format(logFile.strip("\n"), exclude), session)[0]
         index = findIndexOf(criticalMessages, "Fatal error encountered during exception handling")
         criticalMessages = criticalMessages[:index]
         if (criticalMessages):
@@ -167,6 +163,7 @@ def check_coredump_exist(server):
             break
 
     session.disconnect()
+
 
 def scan_all_servers():
     from java.time import Duration
