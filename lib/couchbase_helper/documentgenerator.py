@@ -123,11 +123,16 @@ def sub_doc_generator_for_edit(key, start, end, template_index=0,
 
     else:
         template = list()
-        template.append('{{ "full_name.last": "LastNameUpdate", \
+        template.append('{{ "full_name.first": "FirstNameUpdate", \
+                            "full_name.last": "LastNameUpdate", \
                             "addr.city": "CityUpdate", \
+                            "addr.state": "StateUpdate", \
                             "addr.pincode": "TypeChange" }}')
         template.append('{{ "full_name.first": "FirstNameUpdate", \
+                            "full_name.last": "LastNameUpdate", \
+                            "addr.city": "CityUpdate", \
                             "addr.state": "NewState", \
+                            "addr.pincode": "TypeChange", \
                             "todo.night": [1, \"nothing\", 3] }}')
         template.append('{{ "full_name.first": "", \
                             "addr": "", \

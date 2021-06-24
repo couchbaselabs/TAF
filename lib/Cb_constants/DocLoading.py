@@ -15,12 +15,12 @@ class Bucket(object):
         COUNTER = "counter"
 
     DOC_OPS = [DocOps.DELETE,
-               DocOps.CREATE,
+               DocOps.READ,
+               DocOps.TOUCH,
                DocOps.UPDATE,
                DocOps.REPLACE,
-               DocOps.READ,
-               DocOps.TOUCH]
+               DocOps.CREATE]
     SUB_DOC_OPS = [SubDocOps.REMOVE,
                    SubDocOps.LOOKUP,
-                   SubDocOps.INSERT,
-                   SubDocOps.UPSERT]
+                   SubDocOps.UPSERT,
+                   SubDocOps.INSERT]
