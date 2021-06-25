@@ -771,14 +771,15 @@ class GenericLoadingTask(Task):
                                .format(error))
         return success, fail
 
-    def batch_sub_doc_read(self, key_value):
+    def batch_sub_doc_read(self, key_value, xattr=False):
         success = dict()
         fail = dict()
         try:
             success, fail = self.client.sub_doc_read_multi(
                 key_value,
                 timeout=self.timeout,
-                time_unit=self.time_unit)
+                time_unit=self.time_unit,
+                xattr=xattr)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc read: {0}"
@@ -1015,7 +1016,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type in ['read', 'lookup']:
-            success, fail = self.batch_sub_doc_read(key_value)
+            success, fail = self.batch_sub_doc_read(key_value,
+                                                    xattr=self.xattr)
             self.fail.update(fail)
             if not self.skip_read_success_results:
                 self.success.update(success)

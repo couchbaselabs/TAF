@@ -57,6 +57,7 @@ from Cb_constants import ClusterRun, CbServer, DocLoading
 from constants.sdk_constants.java_client import SDKConstants
 from global_vars import logger
 from sdk_utils.java_sdk import SDKOptions
+from sdk_exceptions import SDKException
 
 
 class SDKClientPool(object):
@@ -416,9 +417,37 @@ class SDKClient(object):
                                                        result['error'])
         return success, fail
 
+    @staticmethod
+    def __translate_get_multi_sub_doc_result(data, path_val=None):
+        success = dict()
+        fail = dict()
+        if data is None:
+            return success, fail
+        for result in data:
+            key = result['id']
+            if not result['status'] or \
+                    (SDKException.LookUpPathNotFoundException in result['content']):
+                fail[key] = dict()
+                fail[key]['cas'] = result['cas']
+                fail[key]['value'] = dict()
+                if not result['status']:
+                    fail[key]['error'] = str(result['error'].getClass().getName() +
+                                             " | " + result['error'].getMessage())
+                    SDKClient.populate_crud_failure_reason(fail[key],
+                                                           result['error'])
+                else:
+                    fail[key]['error'] = SDKException.PathNotFoundException
+                if path_val:
+                    fail[key]['path_val'] = path_val[key]  # list of (path, val)
+            elif result['status']:
+                success[key] = dict()
+                success[key]['value'] = result['content']
+                success[key]['cas'] = result['cas']
+        return success, fail
+
     # Translate APIs for sub-document operations
     @staticmethod
-    def __translate_upsert_multi_sub_doc_result(data):
+    def __translate_upsert_multi_sub_doc_result(data, path_val=None):
         success = dict()
         fail = dict()
         if data is None:
@@ -434,8 +463,13 @@ class SDKClient(object):
             else:
                 fail[key] = dict()
                 fail[key]['value'] = json_object
-                fail[key]['error'] = item['error']
+                fail[key]['error'] = str(item['error'].getClass().getName() +
+                                         " | " + item['error'].getMessage())
+                SDKClient.populate_crud_failure_reason(fail[key],
+                                                       item['error'])
                 fail[key]['cas'] = 0
+                if path_val:
+                    fail[key]['path_val'] = path_val[key]  # list of (path, val)
         return success, fail
 
     # Scope/Collection APIs
@@ -854,6 +888,8 @@ class SDKClient(object):
                 sdk_retry_strategy=sdk_retry_strategy)
         elif op_type in [DocLoading.Bucket.SubDocOps.INSERT, "subdoc_insert"]:
             sub_key, value = value[0], value[1]
+            path_val = dict()
+            path_val[key] = [(sub_key, value)]
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getInsertMutateInSpec(
                 sub_key, value, create_path, xattr))
@@ -873,9 +909,11 @@ class SDKClient(object):
 
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
-            return self.__translate_upsert_multi_sub_doc_result(result)
+            return self.__translate_upsert_multi_sub_doc_result(result, path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.UPSERT, "subdoc_upsert"]:
             sub_key, value = value[0], value[1]
+            path_val = dict()
+            path_val[key] = [(sub_key, value)]
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getUpsertMutateInSpec(
                 sub_key, value, create_path, xattr))
@@ -894,9 +932,11 @@ class SDKClient(object):
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
-            return self.__translate_upsert_multi_sub_doc_result(result)
+            return self.__translate_upsert_multi_sub_doc_result(result, path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.REMOVE, "subdoc_delete"]:
             mutate_in_specs = list()
+            path_val = dict()
+            path_val[key] = [(value, '')]
             mutate_in_specs.append(SDKClient.sub_doc_op.getRemoveMutateInSpec(
                 value, xattr))
             if not xattr:
@@ -914,9 +954,11 @@ class SDKClient(object):
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
-            result = self.__translate_upsert_multi_sub_doc_result(result)
+            result = self.__translate_upsert_multi_sub_doc_result(result, path_val)
         elif op_type == "subdoc_replace":
             sub_key, value = value[0], value[1]
+            path_val = dict()
+            path_val[key] = [(sub_key, value)]
             mutate_in_specs = list()
             mutate_in_specs.append(SDKClient.sub_doc_op.getReplaceMutateInSpec(
                 sub_key, value, xattr))
@@ -935,15 +977,17 @@ class SDKClient(object):
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
                 self.collection, [content], options)
-            result = self.__translate_upsert_multi_sub_doc_result(result)
+            result = self.__translate_upsert_multi_sub_doc_result(result, path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.LOOKUP, "subdoc_read"]:
             mutate_in_specs = list()
+            path_val = dict()
+            path_val[key] = [(value, '')]
             mutate_in_specs.append(
                 SDKClient.sub_doc_op.getLookUpInSpec(value, xattr))
             content = Tuples.of(key, mutate_in_specs)
             result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
                 self.collection, [content])
-            result = self.__translate_get_multi_results(result)
+            result = self.__translate_get_multi_sub_doc_result(result, path_val)
         elif op_type == DocLoading.Bucket.SubDocOps.COUNTER:
             sub_key, step_value = value[0], value[1]
             mutate_in_specs = list()
@@ -1096,10 +1140,12 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
+        path_val = dict()
         for item in keys:
             key = item.getT1()
             value = item.getT2()
             mutate_in_spec = []
+            path_val[key] = value
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
@@ -1123,7 +1169,7 @@ class SDKClient(object):
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, options)
-        return self.__translate_upsert_multi_sub_doc_result(result)
+        return self.__translate_upsert_multi_sub_doc_result(result, path_val)
 
     def sub_doc_upsert_multi(self, keys, exp=0,
                              exp_unit=SDKConstants.TimeUnit.SECONDS,
@@ -1157,10 +1203,12 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
+        path_val = dict()
         for kv in keys:
             key = kv.getT1()
             value = kv.getT2()
             mutate_in_spec = []
+            path_val[key] = value
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
@@ -1184,7 +1232,7 @@ class SDKClient(object):
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, options)
-        return self.__translate_upsert_multi_sub_doc_result(result)
+        return self.__translate_upsert_multi_sub_doc_result(result, path_val)
 
     def sub_doc_read_multi(self, keys, timeout=5,
                            time_unit=SDKConstants.TimeUnit.SECONDS,
@@ -1197,12 +1245,15 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
+        path_val = dict()
         for kv in keys:
             key = kv.getT1()
             value = kv.getT2()
+            path_val[key] = list()
             mutate_in_spec = []
             for _tuple in value:
                 _path = _tuple[0]
+                path_val[key].append((_path, ''))
                 _mutate_in_spec = SDKClient.sub_doc_op.getLookUpInSpec(
                     _path,
                     xattr)
@@ -1212,7 +1263,7 @@ class SDKClient(object):
         result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
             # timeout, time_unit,
             self.collection, mutate_in_specs)
-        return self.__translate_get_multi_results(result)
+        return self.__translate_get_multi_sub_doc_result(result, path_val)
 
     def sub_doc_remove_multi(self, keys, exp=0,
                              exp_unit=SDKConstants.TimeUnit.SECONDS,
@@ -1244,13 +1295,16 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
+        path_val = dict()
         for kv in keys:
             mutate_in_spec = []
             key = kv.getT1()
             value = kv.getT2()
+            path_val[key] = list()
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
+                path_val[key].append((_path, ''))
                 _mutate_in_spec = SDKClient.sub_doc_op.getRemoveMutateInSpec(
                     _path, xattr)
                 mutate_in_spec.append(_mutate_in_spec)
@@ -1271,7 +1325,7 @@ class SDKClient(object):
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, options)
-        return self.__translate_upsert_multi_sub_doc_result(result)
+        return self.__translate_upsert_multi_sub_doc_result(result, path_val)
 
     def sub_doc_replace_multi(self, keys, exp=0,
                               exp_unit=SDKConstants.TimeUnit.SECONDS,
@@ -1303,10 +1357,12 @@ class SDKClient(object):
         :return:
         """
         mutate_in_specs = []
+        path_val = dict()
         for kv in keys:
             mutate_in_spec = []
             key = kv.getT1()
             value = kv.getT2()
+            path_val[key] = value
             for _tuple in value:
                 _path = _tuple[0]
                 _val = _tuple[1]
@@ -1330,7 +1386,7 @@ class SDKClient(object):
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
             self.collection, mutate_in_specs, options)
-        return self.__translate_upsert_multi_sub_doc_result(result)
+        return self.__translate_upsert_multi_sub_doc_result(result, path_val)
 
     def insert_binary_document(self, keys, sdk_retry_strategy=None):
         options = \

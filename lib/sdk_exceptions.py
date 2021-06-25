@@ -33,6 +33,10 @@ class SDKException(object):
 
     PathNotFoundException = \
         "com.couchbase.client.core.error.subdoc.PathNotFoundException"
+    LookUpPathNotFoundException = \
+        "PATH_NOT_FOUND"
+    PathExistsException = \
+        "com.couchbase.client.java.error.subdoc.PathExistsException"
     RequestCanceledException = \
         "com.couchbase.client.core.error.RequestCanceledException"
     TemporaryFailureException = \
