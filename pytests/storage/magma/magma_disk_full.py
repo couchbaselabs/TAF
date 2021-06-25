@@ -73,27 +73,27 @@ class MagmaDiskFull(MagmaBaseTest):
             iterations -= 1
         raise Exception("Could not hit Write Commit Failures: ep_data_write_failed>0")
 
-    def fill_disk(self, server, chunk=1024, free=50):
+    def fill_disk(self, server, free=100):
         def _get_disk_usage_in_MB(remote_client, path):
             disk_info = remote_client.get_disk_info(in_MB=True, path=path)
             disk_space = disk_info[1].split()[-3][:-1]
             return disk_space
 
-        # Fill up the disk
         remote_client = RemoteMachineShellConnection(server)
         du = int(_get_disk_usage_in_MB(remote_client, server.data_path)) - free
         _file = os.path.join(self.cluster.master.data_path, "full_disk_")
-        while int(du) > 0:
-            cmd = "dd if=/dev/zero of={0}{1} bs={2}M count=1"
-            cmd = cmd.format(_file, str(du) + "MB_" + str(time.time()), chunk)
-            self.log.debug(cmd)
-            _, error = remote_client.execute_command(cmd,
-                                                     use_channel=True)
-            if error:
-                self.log.error("".join(error))
-            du -= chunk
-            if du < chunk:
-                chunk = du
+
+        cmd = "fallocate -l {0}M {1}"
+        cmd = cmd.format(du, _file + str(du) + "MB_" + str(time.time()))
+        self.log.debug(cmd)
+        _, error = remote_client.execute_command(cmd,
+                                                 use_channel=True)
+        if error:
+            self.log.error("".join(error))
+
+        du = int(_get_disk_usage_in_MB(remote_client, server.data_path))
+        self.log.info("disk usage after disk full {}".format(du))
+
         remote_client.disconnect()
 
     def free_disk(self, server):
@@ -113,7 +113,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             t = threading.Thread(target=self.fill_disk,
                                  kwargs=dict(server=node,
-                                             free=0))
+                                             free=100))
             t.start()
             th.append(t)
         for t in th:
@@ -158,7 +158,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             t = threading.Thread(target=self.fill_disk,
                                  kwargs=dict(server=node,
-                                             free=0))
+                                             free=100))
             t.start()
             th.append(t)
         for t in th:
