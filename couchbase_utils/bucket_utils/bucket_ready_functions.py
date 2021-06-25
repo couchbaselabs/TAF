@@ -1367,7 +1367,8 @@ class BucketUtils(ScopeUtils):
                                                    scope))
 
         if req_num == "all" or req_num >= len(available_scopes):
-            selected_scopes = available_scopes
+            selected_scopes = list(set(available_scopes)
+                                   - set(exclude_scopes))
         else:
             available_scopes = list(set(available_scopes)
                                     - set(exclude_scopes))
@@ -1436,7 +1437,8 @@ class BucketUtils(ScopeUtils):
                                                     collection))
 
         if req_num == "all" or req_num >= len(available_collections):
-            selected_collections = available_collections
+            selected_collections = list(set(available_collections)
+                                        - set(exclude_collections))
         else:
             available_collections = list(set(available_collections)
                                          - set(exclude_collections))
