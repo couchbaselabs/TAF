@@ -8,7 +8,7 @@ Basic test cases with commit,rollback scenarios
 class N1ql_txn_negative(N1qlBase):
     def setUp(self):
         super(N1ql_txn_negative, self).setUp()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
     def tearDown(self):
         super(N1ql_txn_negative, self).tearDown()

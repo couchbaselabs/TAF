@@ -105,12 +105,12 @@ class FailoverTests(FailoverBaseTest):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
-                    self.bucket_util.buckets[0].name, "replica")
+                    self.cluster.buckets[0].name, "replica")
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
                     ssh_shell, [load_gen],
-                    self.bucket_util.buckets[0],
+                    self.cluster.buckets[0],
                     self.durability_level,
                     "update", "all_aborts")
                 if not success:
@@ -130,12 +130,12 @@ class FailoverTests(FailoverBaseTest):
         record_static_data_set = {}
         if not self.withMutationOps:
             record_static_data_set = self.bucket_util.get_data_set_all(
-                self.cluster.servers, self.bucket_util.buckets, path=None)
+                self.cluster.servers, self.cluster.buckets, path=None)
 
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
-            self.servers[:self.nodes_init], self.bucket_util.buckets)
+            self.servers[:self.nodes_init], self.cluster.buckets)
         prev_failover_stats = self.bucket_util.get_failovers_logs(
-            self.servers[:self.nodes_init], self.bucket_util.buckets)
+            self.servers[:self.nodes_init], self.cluster.buckets)
 
         # Perform Operations related to failover
         if self.withMutationOps or self.withViewsOps or self.compact:
@@ -158,7 +158,7 @@ class FailoverTests(FailoverBaseTest):
                     shell_conn = RemoteMachineShellConnection(server)
                     cb_stats = Cbstats(shell_conn)
                     vbuckets = cb_stats.vbucket_list(
-                        self.bucket_util.buckets[0].name,
+                        self.cluster.buckets[0].name,
                         self.target_vbucket_type)
                     shell_conn.disconnect()
                     vbucket_list += vbuckets
@@ -323,10 +323,10 @@ class FailoverTests(FailoverBaseTest):
         if self.graceful and not self.atomicity:
             new_failover_stats = self.bucket_util.compare_failovers_logs(
                 prev_failover_stats, self.cluster_util.get_kv_nodes(),
-                self.bucket_util.buckets)
+                self.cluster.buckets)
             new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
                 prev_vbucket_stats, self.cluster_util.get_kv_nodes(),
-                self.bucket_util.buckets)
+                self.cluster.buckets)
             self.bucket_util.compare_vbucketseq_failoverlogs(
                     new_vbucket_stats, new_failover_stats)
         # Verify Active and Replica Bucket Count
@@ -484,7 +484,7 @@ class FailoverTests(FailoverBaseTest):
 
         # Verify recovery Type succeeded if we added-back nodes
         self.verify_for_recovery_type(chosen, self.server_map,
-                                      self.bucket_util.buckets,
+                                      self.cluster.buckets,
                                       recoveryTypeMap,
                                       fileMapsForVerification,
                                       self.deltaRecoveryBuckets)
@@ -494,7 +494,7 @@ class FailoverTests(FailoverBaseTest):
             self.sleep(60)
             self.bucket_util.data_analysis_all(
                 record_static_data_set,
-                self.servers, self.bucket_util.buckets,
+                self.servers, self.cluster.buckets,
                 path=None, addedItems=None)
 
         # Verify if vbucket sequence numbers and failover logs are as expected
@@ -502,10 +502,10 @@ class FailoverTests(FailoverBaseTest):
         if self.graceful and not self.atomicity and not self.durability_level:
             new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
                 prev_vbucket_stats, self.cluster_util.get_kv_nodes(),
-                self.bucket_util.buckets)
+                self.cluster.buckets)
             new_failover_stats = self.bucket_util.compare_failovers_logs(
                 prev_failover_stats, self.cluster_util.get_kv_nodes(),
-                self.bucket_util.buckets)
+                self.cluster.buckets)
             self.bucket_util.compare_vbucketseq_failoverlogs(
                     new_vbucket_stats, new_failover_stats)
 
@@ -513,7 +513,7 @@ class FailoverTests(FailoverBaseTest):
         if self.num_replicas > 0:
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
+                servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 total_vbuckets=self.total_vbuckets, std=20.0)
 
@@ -714,7 +714,7 @@ class FailoverTests(FailoverBaseTest):
     def load_all_buckets(self, gen, op):
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets, gen, op,
+                self.cluster, self.cluster.buckets, gen, op,
                 exp=0,
                 batch_size=10,
                 process_concurrency=1,
@@ -727,7 +727,7 @@ class FailoverTests(FailoverBaseTest):
             self.task.jython_task_manager.get_task_result(task)
         else:
             tasks = []
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, bucket, gen, op, 0,
                     active_resident_threshold=self.active_resident_threshold,
@@ -744,7 +744,7 @@ class FailoverTests(FailoverBaseTest):
         # Load All Buckets if num_items > 0
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 self.gen_initial_create, "create",
                 exp=0,
                 batch_size=10,

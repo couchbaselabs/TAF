@@ -35,7 +35,7 @@ class MultiBucketTests(BaseTestCase):
 
         # Load all buckets with initial load of docs
         tasks = list()
-        for index, bucket in enumerate(self.bucket_util.buckets):
+        for index, bucket in enumerate(self.cluster.buckets):
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, self.load_gen, "create", 0,
                 batch_size=10,
@@ -65,10 +65,10 @@ class MultiBucketTests(BaseTestCase):
 
         tasks = list()
         doc_ops_dict = dict()
-        bucket_1 = self.bucket_util.buckets[0]
-        bucket_2 = self.bucket_util.buckets[1]
-        bucket_3 = self.bucket_util.buckets[2]
-        bucket_4 = self.bucket_util.buckets[3]
+        bucket_1 = self.cluster.buckets[0]
+        bucket_2 = self.cluster.buckets[1]
+        bucket_3 = self.cluster.buckets[2]
+        bucket_4 = self.cluster.buckets[3]
 
         self.log.info("Creating create doc_generator")
         # Generator for loading new docs
@@ -115,10 +115,10 @@ class MultiBucketTests(BaseTestCase):
             doc_ops_dict[bucket_obj]["doc_gen"] = doc_gen
 
         doc_ops_dict = dict()
-        bucket_1 = self.bucket_util.buckets[0]
-        bucket_2 = self.bucket_util.buckets[1]
-        bucket_3 = self.bucket_util.buckets[2]
-        bucket_4 = self.bucket_util.buckets[3]
+        bucket_1 = self.cluster.buckets[0]
+        bucket_2 = self.cluster.buckets[1]
+        bucket_3 = self.cluster.buckets[2]
+        bucket_4 = self.cluster.buckets[3]
 
         update_dict(bucket_1, "create", None, 80, self.num_items)
         update_dict(bucket_2, "create", None, 50, self.num_items)

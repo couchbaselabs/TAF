@@ -868,7 +868,7 @@ class OpsChangeCasTests(CasBaseTest):
 
         # Do the backup on the bucket
         self.shell = RemoteMachineShellConnection(self.cluster.master)
-        self.buckets = self.bucket_util.buckets
+        self.buckets = self.cluster.buckets
         self.couchbase_login_info = "%s:%s" % (self.input.membase_settings.rest_username,
                                                self.input.membase_settings.rest_password)
         self.backup_location = "/tmp/backup"

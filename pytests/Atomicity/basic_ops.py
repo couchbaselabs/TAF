@@ -91,7 +91,7 @@ class basic_ops(ClusterSetup):
 
         self.log.info("Loading docs using AtomicityTask")
         task = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets,
+            self.cluster, self.cluster.buckets,
             gen_create, self.op_type, exp=0,
             batch_size=10,
             process_concurrency=self.process_concurrency,
@@ -107,7 +107,7 @@ class basic_ops(ClusterSetup):
         if self.op_type == "time_out":
             self.sleep(90, "Wait for staged docs to get cleared")
             task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 gen_create, "create", exp=0,
                 batch_size=10,
                 process_concurrency=self.process_concurrency,
@@ -125,7 +125,7 @@ class basic_ops(ClusterSetup):
                                                 document_size=self.doc_size)
         self.log.info("going to create a task")
         task = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets,
+            self.cluster, self.cluster.buckets,
             gen_create, "create", exp=0,
             batch_size=10,
             process_concurrency=self.process_concurrency,
@@ -149,15 +149,15 @@ class basic_ops(ClusterSetup):
         doc_gen.reset()
 
         # Open SDK client connection
-        client = SDKClient([self.cluster.master], self.bucket_util.buckets[0])
+        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
 
         query = list()
         query.append("CREATE PRIMARY INDEX index_0 on %s USING GSI"
-                     % self.bucket_util.buckets[0].name)
+                     % self.cluster.buckets[0].name)
         if num_index == 2:
             query.append("CREATE INDEX index_1 on %s(name,age) "
                          "WHERE mutated=0 USING GSI"
-                         % self.bucket_util.buckets[0].name)
+                         % self.cluster.buckets[0].name)
         # Create primary index on the bucket
         for q in query:
             client.cluster.query(q)
@@ -179,7 +179,7 @@ class basic_ops(ClusterSetup):
 
         # Start transaction to create the doc
         trans_task = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets,
+            self.cluster, self.cluster.buckets,
             doc_gen, DocLoading.Bucket.DocOps.CREATE)
         self.task_manager.get_task_result(trans_task)
 
@@ -200,7 +200,7 @@ class basic_ops(ClusterSetup):
             self.log.info("Document deleted")
             # Re-insert same doc through transaction
             trans_task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 doc_gen, DocLoading.Bucket.DocOps.CREATE)
             self.task_manager.get_task_result(trans_task)
 

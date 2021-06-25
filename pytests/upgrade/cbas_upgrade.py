@@ -102,7 +102,7 @@ class UpgradeTests(UpgradeBase):
         kv_quota = \
             cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
         bucket_size = kv_quota // (self.input.param("num_buckets", 1) + 1)
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.bucket_util.update_bucket_property(bucket,bucket_size)
 
         validation_results = {}
@@ -143,7 +143,7 @@ class UpgradeTests(UpgradeBase):
         validation_results["pre_upgrade"] = all(results)
 
         self.log.info("Loading docs in default collection of existing buckets")
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             gen_load = doc_generator(
                 self.key, self.num_items, self.num_items*2,
                 randomize_doc_size=True, randomize_value=True, randomize=True)
@@ -184,7 +184,7 @@ class UpgradeTests(UpgradeBase):
             validation_results["post_upgrade_data_load"] = True
 
         self.log.info("Deleting all the data from default collection of buckets created before upgrade")
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             gen_load = doc_generator(
                 self.key, 0, self.num_items*2,
                 randomize_doc_size=True, randomize_value=True, randomize=True)
@@ -307,10 +307,10 @@ class UpgradeTests(UpgradeBase):
         # Create clients in SDK client pool
         if self.sdk_client_pool:
             self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(self.bucket_util.buckets)
+            bucket_count = len(self.cluster.buckets)
             max_clients = self.task_manager.number_of_threads
             clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket, [self.cluster.master], clients_per_bucket,
                     compression_settings=self.sdk_compression)
@@ -323,7 +323,7 @@ class UpgradeTests(UpgradeBase):
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
             SDKException.CollectionNotFoundException)
         doc_loading_task = self.bucket_util.run_scenario_from_spec(
-            self.task, self.cluster, self.bucket_util.buckets,
+            self.task, self.cluster, self.cluster.buckets,
             doc_loading_spec, mutation_num=0, batch_size=self.batch_size)
         if doc_loading_task.result is False:
             self.fail("Initial reloading failed")

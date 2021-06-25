@@ -9,7 +9,7 @@ class BucketWarmup(CollectionBase):
         super(BucketWarmup, self).setUp()
         self.load_spec = self.input.param("load_spec",
                                         "def_load_random_collection")
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
     def create_scope(self):
         self.bucket_util.create_scope(self.cluster.master,
@@ -41,7 +41,7 @@ class BucketWarmup(CollectionBase):
             self.bucket_util.get_crud_template_from_package(self.load_spec)
         self.bucket_util.run_scenario_from_spec(self.task,
                                             self.cluster,
-                                            self.bucket_util.buckets,
+                                            self.cluster.buckets,
                                             doc_loading_spec,
                                             mutation_num=0,
                                             batch_size=self.batch_size)
@@ -62,7 +62,7 @@ class BucketWarmup(CollectionBase):
             retry =5
             while retry > 0:
                 scope_dict = self.bucket_util.get_random_scopes(
-                                    self.bucket_util.buckets, 1, 1)
+                                    self.cluster.buckets, 1, 1)
                 self.scope_name = scope_dict[self.bucket.name]["scopes"].keys()[0]
                 if self.scope_name != "_default":
                     break
@@ -77,7 +77,7 @@ class BucketWarmup(CollectionBase):
 
         elif during_warmup == "drop_collection":
             collections = self.bucket_util.get_random_collections(
-                                    self.bucket_util.buckets, 1, 1, 1)
+                                    self.cluster.buckets, 1, 1, 1)
             scope_dict = collections[self.bucket.name]["scopes"]
             self.scope_name = scope_dict.keys()[0]
             self.collection_name = scope_dict[self.scope_name]["collections"].keys()[0]

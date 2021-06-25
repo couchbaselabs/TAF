@@ -53,13 +53,13 @@ class PlasmaBaseTest(BaseTestCase):
                 fragmentation_percentage=self.fragmentation)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
-        self.buckets = self.bucket_util.buckets
+        self.buckets = self.cluster.buckets
         self.num_collections = self.input.param("num_collections", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
 
         # Creation of scopes of num_scopes is > 1
         scope_prefix = "Scope"
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             for i in range(1, self.num_scopes):
                 scope_name = scope_prefix + str(i)
                 self.log.info("Creating bucket::scope {} {}\
@@ -73,7 +73,7 @@ class PlasmaBaseTest(BaseTestCase):
 
         collection_prefix = "FunctionCollection"
         # Creation of collection of num_collections is > 1
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             for scope_name in self.scopes:
                 for i in range(1, self.num_collections):
                     collection_name = collection_prefix + str(i)

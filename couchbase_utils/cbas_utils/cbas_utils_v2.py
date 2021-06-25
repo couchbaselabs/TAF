@@ -4521,7 +4521,7 @@ class CBASRebalanceUtil(object):
         queries = ["SELECT COUNT (*) FROM {0};"]
         if run_kv_queries:
             n1ql_helper = N1QLHelper(use_rest=True,
-                                     buckets=self.bucket_util.buckets,
+                                     buckets=self.cluster.buckets,
                                      n1ql_port=self.cluster.master.n1ql_port,
                                      log=self.log,
                                      server=self.cluster.master)
@@ -4603,7 +4603,7 @@ class CBASRebalanceUtil(object):
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = \
             percentage_per_collection
         task = self.bucket_util.run_scenario_from_spec(
-            self.task, self.cluster, self.bucket_util.buckets,
+            self.task, self.cluster, self.cluster.buckets,
             doc_loading_spec, mutation_num=0, async_load=async_load)
         if not async_load:
             if not skip_validations:
@@ -4633,7 +4633,7 @@ class CBASRebalanceUtil(object):
             time.sleep(400)
             items = 0
             self.bucket_util._wait_for_stats_all_buckets()
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 items = items + self.bucket_helper_obj.get_active_key_count(
                     bucket)
             if items != 0:

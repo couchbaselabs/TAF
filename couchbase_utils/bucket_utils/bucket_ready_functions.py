@@ -1229,7 +1229,6 @@ class BucketUtils(ScopeUtils):
         self.task = server_task
         self.task_manager = self.task.jython_task_manager
         self.cluster_util = cluster_util
-        self.buckets = list()
         self.input = TestInputSingleton.input
         self.enable_time_sync = self.input.param("enable_time_sync", False)
         self.sdk_compression = self.input.param("sdk_compression", True)
@@ -1467,7 +1466,7 @@ class BucketUtils(ScopeUtils):
         for bucket in buckets:
             if bucket.name == sample_bucket.name:
                 # Append loaded sample bucket into buckets object list
-                self.buckets.append(bucket)
+                self.cluster.buckets.append(bucket)
                 break
         if status is True:
             warmed_up = self._wait_warmup_completed(
@@ -1516,7 +1515,7 @@ class BucketUtils(ScopeUtils):
                 raise_exception = "Bucket not warmed up"
 
         if task.result:
-            self.buckets.append(bucket)
+            self.cluster.buckets.append(bucket)
 
         self.task_manager.stop_task(task)
         if raise_exception:
@@ -1540,10 +1539,10 @@ class BucketUtils(ScopeUtils):
                     self.log.error("Unable to get timings for bucket: {0}"
                                    .format(ex))
             else:
-                # Pop bucket object from self.buckets
-                for index, t_bucket in enumerate(self.buckets):
+                # Pop bucket object from self.cluster.buckets
+                for index, t_bucket in enumerate(self.cluster.buckets):
                     if t_bucket.name == bucket.name:
-                        self.buckets.pop(index)
+                        self.cluster.buckets.pop(index)
 
             self.log.debug('Deleted bucket: {0} from {1}'
                            .format(bucket, serverInfo.ip))
@@ -1842,9 +1841,9 @@ class BucketUtils(ScopeUtils):
                 self.log.error("Failure in bucket creation task: %s"
                                % task.thread_name)
             else:
-                self.buckets.append(task.bucket_obj)
+                self.cluster.buckets.append(task.bucket_obj)
 
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             for scope_name, scope_spec \
                     in buckets_spec[bucket.name]["scopes"].items():
                 if type(scope_spec) is not dict:
@@ -1872,7 +1871,7 @@ class BucketUtils(ScopeUtils):
         return bucket_obj
 
     def get_vbuckets(self, bucket='default'):
-        b = self.get_bucket_obj(self.buckets, bucket)
+        b = self.get_bucket_obj(self.cluster.buckets, bucket)
         return None if not b else b.vbuckets
 
     def print_bucket_stats(self):
@@ -2009,12 +2008,12 @@ class BucketUtils(ScopeUtils):
             for bucket, task in tasks.items():
                 self.task_manager.get_task_result(task)
                 if task.result:
-                    self.buckets.append(bucket)
+                    self.cluster.buckets.append(bucket)
                 else:
                     raise_exception = "Create bucket %s failed" % bucket.name
 
             # Check for warm_up
-            for bucket in self.buckets:
+            for bucket in self.cluster.buckets:
                 warmed_up = self._wait_warmup_completed(
                     self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
                 if not warmed_up:
@@ -2049,8 +2048,8 @@ class BucketUtils(ScopeUtils):
     def flush_all_buckets(self, kv_node, skip_resetting_num_items=False):
         status = dict()
         self.log.debug("Flushing existing buckets '%s'"
-                       % [bucket.name for bucket in self.buckets])
-        for bucket in self.buckets:
+                       % [bucket.name for bucket in self.cluster.buckets])
+        for bucket in self.cluster.buckets:
             status[bucket] = self.flush_bucket(kv_node, bucket, skip_resetting_num_items=skip_resetting_num_items)
         return status
 
@@ -2067,13 +2066,13 @@ class BucketUtils(ScopeUtils):
             bucket_durability=bucket_durability)
 
     def update_all_bucket_maxTTL(self, maxttl=0):
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             self.log.debug("Updating maxTTL for bucket %s to %ss"
                            % (bucket.name, maxttl))
             self.update_bucket_property(bucket, max_ttl=maxttl)
 
     def update_all_bucket_replicas(self, replicas=1):
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             self.log.debug("Updating replica for bucket %s to %ss"
                            % (bucket.name, replicas))
             self.update_bucket_property(bucket, replica_number=replicas)
@@ -2111,7 +2110,7 @@ class BucketUtils(ScopeUtils):
                                               timeout=(timeout or 120))
             if verify_total_items:
                 verified = True
-                for bucket in self.buckets:
+                for bucket in self.cluster.buckets:
                     verified &= self.wait_till_total_numbers_match(
                         master, bucket, timeout_in_seconds=(timeout or 500))
                 if not verified:
@@ -2177,9 +2176,9 @@ class BucketUtils(ScopeUtils):
     def verify_stats_all_buckets(self, items, timeout=500):
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(),
-            self.buckets,
+            self.cluster.buckets,
             skip_consistency=True)
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             self.verify_stats_for_bucket(bucket, items, timeout=timeout)
             # Validate seq_no snap_start/stop values with initial load
             result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
@@ -2241,7 +2240,7 @@ class BucketUtils(ScopeUtils):
         """
         tasks = list()
         for server in self.cluster_util.get_kv_nodes():
-            for bucket in self.buckets:
+            for bucket in self.cluster.buckets:
                 if bucket.bucketType == 'memcached':
                     continue
                 if check_ep_items_remaining:
@@ -2291,7 +2290,7 @@ class BucketUtils(ScopeUtils):
     def wait_for_collection_creation_to_complete(self, timeout=60):
         self.log.info("Waiting for all collections to be created")
         bucket_helper = BucketHelper(self.cluster.master)
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             start_time = time.time()
             stop_time = start_time + timeout
             count_matched = False
@@ -2602,7 +2601,7 @@ class BucketUtils(ScopeUtils):
             task_info - dict of dict populated using get_doc_op_info_dict()
         """
         tasks_info = dict()
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             task = self.async_load_bucket(
                 cluster, bucket, kv_gen, op_type, exp, random_exp,
                 flag, persist_to,
@@ -2643,7 +2642,7 @@ class BucketUtils(ScopeUtils):
                              sdk_client_pool=None,
                              sdk_retry_strategy=None):
         task_info = dict()
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             gen = copy.deepcopy(kv_gen)
             task = self.task.async_validate_docs(
                 cluster, bucket, gen, op_type, exp, flag,
@@ -2860,7 +2859,7 @@ class BucketUtils(ScopeUtils):
         """
         servers = self.cluster_util.get_kv_nodes()
         dcp_stat_map = self.data_collector.collect_compare_dcp_stats(
-            self.buckets, servers, filter_list=filter_list)
+            self.cluster.buckets, servers, filter_list=filter_list)
         for bucket in dcp_stat_map.keys():
             if dcp_stat_map[bucket]:
                 self.log.critical("Bucket {0} has unacked bytes != 0: {1}"
@@ -3335,7 +3334,7 @@ class BucketUtils(ScopeUtils):
         for node in self.cluster_util.get_kv_nodes():
             shell_conn = RemoteMachineShellConnection(node)
             cbepctl_obj = Cbepctl(shell_conn)
-            for bucket in self.buckets:
+            for bucket in self.cluster.buckets:
                 cbepctl_obj.set(bucket.name,
                                 "flush_param",
                                 "exp_pager_stime",
@@ -3349,7 +3348,7 @@ class BucketUtils(ScopeUtils):
     def _run_compaction(self, number_of_times=100):
         for _ in range(number_of_times):
             compaction_tasks = list()
-            for bucket in self.buckets:
+            for bucket in self.cluster.buckets:
                 compaction_tasks.append(self.task.async_compact_bucket(
                     self.cluster.master, bucket))
             for task in compaction_tasks:
@@ -3374,7 +3373,7 @@ class BucketUtils(ScopeUtils):
             name = "key_" + str(i) + str((random.randint(1, 10000))) + \
                    str((random.randint(1, 10000)))
             data_map[name] = {"name": "none_the_less"}
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             try:
                 self._load_data_in_buckets_using_mc_bin_client(
                     bucket, data_map, max_expiry_range)
@@ -3395,7 +3394,7 @@ class BucketUtils(ScopeUtils):
         return BucketHelper(cluster.master).get_buckets_itemCount()
 
     def expire_pager(self, servers, val=10):
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             for server in servers:
                 ClusterOperationHelper.flushctl_set(server, "exp_pager_stime",
                                                     val, bucket)
@@ -3702,7 +3701,7 @@ class BucketUtils(ScopeUtils):
 
     def get_fragmentation_kv(self, bucket=None, server=None):
         if bucket is None:
-            bucket = self.buckets[0]
+            bucket = self.cluster.buckets[0]
         if server is None:
             server = self.cluster.master
         bucket_helper = BucketHelper(server)
@@ -3712,7 +3711,7 @@ class BucketUtils(ScopeUtils):
 
     def parse_get_bucket_json(self, parsed):
         bucket = None
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             if bucket.name == parsed['name']:
                 break
 
@@ -4242,7 +4241,7 @@ class BucketUtils(ScopeUtils):
         self.log.info("Changing the bucket properties by changing {0} to {1}".
                       format(command, value))
         if not buckets:
-            buckets = self.buckets
+            buckets = self.cluster.buckets
         if node is None:
             node = self.cluster.master
         rest = RestConnection(node)
@@ -4276,7 +4275,7 @@ class BucketUtils(ScopeUtils):
                       format("persistent_metadata_purge_age", value))
 
         if not buckets:
-            buckets = self.buckets
+            buckets = self.cluster.buckets
 
         for node in self.cluster_util.get_kv_nodes():
             shell_conn = RemoteMachineShellConnection(node)
@@ -4293,7 +4292,7 @@ class BucketUtils(ScopeUtils):
         self.log.info("Changing the bucket properties by changing {0} to {1}".
                       format("purge_interval", value))
         if not buckets:
-            buckets = self.buckets
+            buckets = self.cluster.buckets
         if node is None:
             node = self.cluster.master
         rest = RestConnection(node)
@@ -4447,11 +4446,11 @@ class BucketUtils(ScopeUtils):
         self.log.info("Validating collection stats and item counts")
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(),
-            self.buckets,
+            self.cluster.buckets,
             skip_consistency=True)
 
         # Validate total expected doc_count matches with the overall bucket
-        for bucket in self.buckets:
+        for bucket in self.cluster.buckets:
             expected_num_items = self.get_expected_total_num_items(bucket)
             self.verify_stats_for_bucket(bucket, expected_num_items,
                                          timeout=timeout)

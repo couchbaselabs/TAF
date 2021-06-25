@@ -188,7 +188,7 @@ class RebalanceDurability(RebalanceBaseTest):
                         "Need at-least one replica to run this test")
 
         durability_will_fail = False
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
 
         nodes_in_cluster = self.nodes_init
         nodes_required_for_durability = int(floor((self.num_replicas+1)/2)+1)
@@ -216,7 +216,7 @@ class RebalanceDurability(RebalanceBaseTest):
                                        self.num_items+num_of_docs_to_insert)
             if self.atomicity:
                 tasks.append(self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, gen_create,
+                    self.cluster, self.cluster.buckets, gen_create,
                     "rebalance_update", exp=0,
                     batch_size=10,
                     process_concurrency=self.process_concurrency,
@@ -306,7 +306,7 @@ class RebalanceDurability(RebalanceBaseTest):
                                    self.num_items+num_of_docs_to_insert)
         if self.atomicity:
             tasks.append(self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets, gen_create,
+                self.cluster, self.cluster.buckets, gen_create,
                 "rebalance_update", exp=0,
                 batch_size=10, process_concurrency=self.process_concurrency,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -395,7 +395,7 @@ class RebalanceDurability(RebalanceBaseTest):
                         "Doc ops failed for task: %s" % task.thread_name)
 
         self.assertTrue(self.replica_to_update is not None)
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         servers_in = [self.cluster.servers[self.nodes_init + i]
                       for i in range(self.nodes_in)]
         servers_out = [self.cluster.servers[self.nodes_init - i - 1]

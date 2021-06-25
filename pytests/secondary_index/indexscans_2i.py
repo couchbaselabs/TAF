@@ -25,7 +25,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
                                index_nodes=None):
         refer_index = []
         if buckets is None:
-            buckets = self.bucket_util.buckets
+            buckets = self.cluster.buckets
         if query_definitions is None:
             query_definitions = self.query_definitions
         if not self.run_async:
@@ -101,7 +101,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
         for m_type in index_item_count.keys():
             if m_type == "#primary":
                 result = self.n1ql_helper.get_index_count_using_primary_index(
-                    self.bucket_util.buckets)
+                    self.cluster.buckets)
                 if result[bucket.name] != index_item_count[m_type]:
                     self.log_failure("Mismatch in primary num_indexed "
                                      "items: %s, expected: %s"
@@ -178,7 +178,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
         """
 
         crud_batch_size = 50
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         kv_nodes = self.cluster_util.get_kv_nodes()
         replica_vbs = dict()
         verification_dict = dict()

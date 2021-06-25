@@ -17,7 +17,7 @@ from com.couchbase.client.core.error import CouchbaseException
 class BasicOps(CollectionBase):
     def setUp(self):
         super(BasicOps, self).setUp()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         # To override default num_items to '0'
         self.num_items = self.input.param("num_items", 10000)
 
@@ -386,7 +386,7 @@ class BasicOps(CollectionBase):
 
         shell_conn = RemoteMachineShellConnection(self.cluster.master)
         cbstats = Cbstats(shell_conn)
-        cbstats.get_collections(self.bucket_util.buckets[0])
+        cbstats.get_collections(self.cluster.buckets[0])
 
         self.log.info("Validating the documents in default collection")
         self.bucket_util._wait_for_stats_all_buckets()
@@ -653,10 +653,10 @@ class BasicOps(CollectionBase):
 
     def test_create_delete_recreate_collection(self):
         collections = BucketUtils.get_random_collections(
-            self.bucket_util.buckets, 10, 10, 1)
+            self.cluster.buckets, 10, 10, 1)
         # delete collection
         for bucket_name, scope_dict in collections.iteritems():
-            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+            bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                                 bucket_name)
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
@@ -667,7 +667,7 @@ class BasicOps(CollectionBase):
                                                 scope_name, c_name)
         # recreate collection
         for bucket_name, scope_dict in collections.iteritems():
-            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+            bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                                 bucket_name)
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
@@ -689,10 +689,10 @@ class BasicOps(CollectionBase):
     def test_create_delete_recreate_scope(self):
         scope_drop_fails = False
         bucket_dict = BucketUtils.get_random_scopes(
-            self.bucket_util.buckets, "all", 1)
+            self.cluster.buckets, "all", 1)
         # Delete scopes
         for bucket_name, scope_dict in bucket_dict.items():
-            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+            bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                                 bucket_name)
             for scope_name, _ in scope_dict["scopes"].items():
                 if scope_name == CbServer.default_scope:
@@ -711,7 +711,7 @@ class BasicOps(CollectionBase):
 
         # Recreate scopes
         for bucket_name, scope_dict in bucket_dict.items():
-            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+            bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                                 bucket_name)
             for scope_name, _ in scope_dict["scopes"].items():
                 # Cannot create a _default scope
@@ -725,10 +725,10 @@ class BasicOps(CollectionBase):
 
     def test_drop_collection_compaction(self):
         collections = BucketUtils.get_random_collections(
-            self.bucket_util.buckets, 10, 10, 1)
+            self.cluster.buckets, 10, 10, 1)
         # Delete collection
         for self.bucket_name, scope_dict in collections.iteritems():
-            bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+            bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                                 self.bucket_name)
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
@@ -758,7 +758,7 @@ class BasicOps(CollectionBase):
                     "def_add_collection")
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
-                                                    self.bucket_util.buckets,
+                                                    self.cluster.buckets,
                                                     doc_loading_spec,
                                                     mutation_num=0,
                                                     batch_size=self.batch_size)
@@ -772,7 +772,7 @@ class BasicOps(CollectionBase):
                     "def_drop_collection")
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
-                                                    self.bucket_util.buckets,
+                                                    self.cluster.buckets,
                                                     doc_loading_spec,
                                                     mutation_num=0,
                                                     batch_size=self.batch_size)
@@ -817,7 +817,7 @@ class BasicOps(CollectionBase):
                 self.bucket_util.get_crud_template_from_package("initial_load")
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
-                                                    self.bucket_util.buckets,
+                                                    self.cluster.buckets,
                                                     doc_loading_spec,
                                                     mutation_num=0,
                                                     batch_size=self.batch_size)
@@ -832,7 +832,7 @@ class BasicOps(CollectionBase):
         self.task_manager.get_task_result(task)
 
         if self.delete_default_collection:
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 BucketUtils.drop_collection(self.cluster.master, bucket)
 
         # Validate doc count as per bucket collections
@@ -880,7 +880,7 @@ class BasicOps(CollectionBase):
 
         self.bucket_util.run_scenario_from_spec(self.task,
                                                 self.cluster,
-                                                self.bucket_util.buckets,
+                                                self.cluster.buckets,
                                                 doc_loading_spec,
                                                 mutation_num=0,
                                                 batch_size=self.batch_size)
@@ -963,7 +963,7 @@ class BasicOps(CollectionBase):
         self.validate_test_failure()
 
     def test_item_count_collections(self):
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         # verify items count for each collection
         for _, scope in bucket.scopes.items():
             for _, collection in scope.collections.items():

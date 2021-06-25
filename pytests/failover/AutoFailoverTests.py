@@ -56,7 +56,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         tasks = self.bucket_util.run_scenario_from_spec(
             self.task,
             self.cluster,
-            self.bucket_util.buckets,
+            self.cluster.buckets,
             doc_loading_spec,
             mutation_num=0,
             async_load=async_load,

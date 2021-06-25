@@ -179,7 +179,7 @@ class volume(AutoFailoverBaseTest):
         self.over_ride_doc_loading_template_params(doc_loading_spec)
         task = self.bucket_util.run_scenario_from_spec(self.task,
                                                        self.cluster,
-                                                       self.bucket_util.buckets,
+                                                       self.cluster.buckets,
                                                        doc_loading_spec,
                                                        mutation_num=0,
                                                        async_load=async_load)
@@ -265,7 +265,7 @@ class volume(AutoFailoverBaseTest):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)

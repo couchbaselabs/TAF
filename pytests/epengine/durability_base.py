@@ -44,7 +44,7 @@ class DurabilityTestsBase(ClusterSetup):
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
         # Create sdk_clients for pool
         if self.sdk_client_pool:
@@ -346,7 +346,7 @@ class BucketDurabilityBase(ClusterSetup):
 
     def cb_stat_verify(self, verification_dict):
         failed = self.durability_helper.verify_vbucket_details_stats(
-            self.bucket_util.buckets[0],
+            self.cluster.buckets[0],
             self.kv_nodes,
             vbuckets=self.cluster_util.vbuckets,
             expected_val=verification_dict)

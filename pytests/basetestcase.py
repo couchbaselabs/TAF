@@ -285,7 +285,7 @@ class BaseTestCase(unittest.TestCase):
 
         try:
             if self.skip_setup_cleanup:
-                self.bucket_util.buckets = self.bucket_util.get_all_buckets()
+                self.cluster.buckets = self.bucket_util.get_all_buckets()
                 return
             self.services_map = None
 
@@ -842,8 +842,8 @@ class BaseTestCase(unittest.TestCase):
         if type(servers) is not list:
             servers = [servers]
         remote_path = RestConnection(servers[0]).get_data_path()
-        file_path = os.path.join(remote_path, self.bucket_util.buckets[0].name)
-        file_name = self.bucket_util.buckets[0].name + ".tar.gz"
+        file_path = os.path.join(remote_path, self.cluster.buckets[0].name)
+        file_name = self.cluster.buckets[0].name + ".tar.gz"
 
         def get_tar(remotepath, filepath, filename, servers, todir="."):
             if type(servers) is not list:

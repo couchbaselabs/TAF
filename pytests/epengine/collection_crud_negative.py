@@ -16,7 +16,7 @@ from sdk_exceptions import SDKException
 class CollectionDurabilityTests(CollectionBase):
     def setUp(self):
         super(CollectionDurabilityTests, self).setUp()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         self.with_non_sync_writes = self.input.param("with_non_sync_writes",
                                                      False)
         self.num_nodes_affected = 1
@@ -132,7 +132,7 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket_util.run_scenario_from_spec(
                     self.task,
                     self.cluster,
-                    self.bucket_util.buckets,
+                    self.cluster.buckets,
                     doc_load_spec)
             if collection_crud_task.result is False:
                 self.log_failure("Collection MutationTask failed")
@@ -195,7 +195,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_load_spec)
         if collection_crud_task.result is False:
             self.log_failure("CRUDs with async_writes failed")
@@ -276,17 +276,17 @@ class CollectionDurabilityTests(CollectionBase):
             doc_load_spec[MetaCrudParams.SUPPRESS_ERROR_TABLE] = True
 
             cb_err.create(self.simulate_error,
-                          self.bucket_util.buckets[0].name)
+                          self.cluster.buckets[0].name)
             load_task[server] = \
                 self.bucket_util.run_scenario_from_spec(
                     self.task,
                     self.cluster,
-                    self.bucket_util.buckets,
+                    self.cluster.buckets,
                     doc_load_spec,
                     batch_size=1,
                     validate_task=False)
             cb_err.revert(self.simulate_error,
-                          self.bucket_util.buckets[0].name)
+                          self.cluster.buckets[0].name)
             ssh_shell.disconnect()
         self.validate_test_failure()
 
@@ -415,7 +415,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_load_spec,
                 async_load=True)
 
@@ -571,7 +571,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_load_spec,
                 async_load=True)
 
@@ -773,7 +773,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_load_spec,
                 mutation_num=2,
                 batch_size=1,

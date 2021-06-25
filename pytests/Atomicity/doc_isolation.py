@@ -32,7 +32,7 @@ class IsolationDocTest(ClusterSetup):
 
         # Create SDK client for each bucket
         self.sdk_clients = dict()
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.sdk_clients[bucket.name] = SDKClient([self.cluster.master],
                                                       bucket)
 
@@ -47,7 +47,7 @@ class IsolationDocTest(ClusterSetup):
 
     def tearDown(self):
         # Close sdk_clients created in init()
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.sdk_clients[bucket.name].close()
 
         super(IsolationDocTest, self).tearDown()
@@ -130,7 +130,7 @@ class IsolationDocTest(ClusterSetup):
     def __create_transaction_docs(self):
         self.value = {'value': 'value1'}
         self.content = \
-            self.sdk_clients[self.bucket_util.buckets[0].name] \
+            self.sdk_clients[self.cluster.buckets[0].name] \
             .translate_to_json_object(self.value)
         for i in range(self.num_items):
             key = "test_docs-" + str(i)
@@ -173,7 +173,7 @@ class IsolationDocTest(ClusterSetup):
     def test_staged_doc_read(self):
         self.verify = self.input.param("verify", True)
 
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         expected_exception = SDKException.DocumentNotFoundException
 
         # Create SDK client for transactions
@@ -240,9 +240,9 @@ class IsolationDocTest(ClusterSetup):
         # Close SDK client
         client.close()
 
-        if self.read_failed[self.bucket_util.buckets[0]] is True:
+        if self.read_failed[self.cluster.buckets[0]] is True:
             self.log_failure("Failure in read thread for bucket: %s"
-                             % self.bucket_util.buckets[0].name)
+                             % self.cluster.buckets[0].name)
 
         self.validate_test_failure()
 
@@ -250,7 +250,7 @@ class IsolationDocTest(ClusterSetup):
         self.verify = self.input.param("verify", True)
 
         expected_val = dict()
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
 
         # Create SDK client for transactions
         client = SDKClient([self.cluster.master], bucket)
@@ -267,7 +267,7 @@ class IsolationDocTest(ClusterSetup):
                 expected_val[doc.getT1()] = json.loads(str(doc.getT2()))
 
         # Create primary Index on all buckets
-        for t_bucket in self.bucket_util.buckets:
+        for t_bucket in self.cluster.buckets:
             q_result = client.cluster.query("CREATE PRIMARY INDEX ON `%s`"
                                             % t_bucket.name)
             if q_result.metaData().status().toString() != "SUCCESS":
@@ -325,16 +325,16 @@ class IsolationDocTest(ClusterSetup):
         # Close SDK client
         client.close()
 
-        if self.read_failed[self.bucket_util.buckets[0]] is True:
+        if self.read_failed[self.cluster.buckets[0]] is True:
             self.log_failure("Failure in read thread for bucket: %s"
-                             % self.bucket_util.buckets[0].name)
+                             % self.cluster.buckets[0].name)
         self.validate_test_failure()
 
     def test_run_purger_during_transaction(self):
         def perform_create_deletes():
             index = 0
             client = SDKClient([self.cluster.master],
-                               self.bucket_util.buckets[0])
+                               self.cluster.buckets[0])
             self.log.info("Starting ops to create tomb_stones")
             while not self.stop_thread:
                 key = "temp_key--%s" % index
@@ -362,7 +362,7 @@ class IsolationDocTest(ClusterSetup):
 
         gen_create = doc_generator(self.key, 0, self.num_items)
         trans_task = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets,
+            self.cluster, self.cluster.buckets,
             gen_create, "create", exp=self.maxttl,
             batch_size=50,
             process_concurrency=4,
@@ -387,7 +387,7 @@ class IsolationDocTest(ClusterSetup):
 
         # Create docs which are going to be created by Tranx Task
         create_task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket_util.buckets[0], load_gen, "create",
+            self.cluster, self.cluster.buckets[0], load_gen, "create",
             exp=self.maxttl,
             compression=self.sdk_compression,
             timeout_secs=60,
@@ -398,7 +398,7 @@ class IsolationDocTest(ClusterSetup):
         # Perform delete of docs / wait for docs to expire
         if self.maxttl == 0:
             delete_task = self.task.async_load_gen_docs(
-                self.cluster, self.bucket_util.buckets[0], load_gen, "delete",
+                self.cluster, self.cluster.buckets[0], load_gen, "delete",
                 exp=self.maxttl,
                 compression=self.sdk_compression,
                 timeout_secs=60,
@@ -410,7 +410,7 @@ class IsolationDocTest(ClusterSetup):
 
         # Start Transaction load
         trans_task = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets,
+            self.cluster, self.cluster.buckets,
             load_gen, "create", exp=self.maxttl,
             batch_size=50,
             process_concurrency=3,
@@ -438,7 +438,7 @@ class IsolationDocTest(ClusterSetup):
 
         if self.doc_op != "create":
             trans_task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 load_gen, "create", exp=self.maxttl,
                 batch_size=50,
                 process_concurrency=8,
@@ -453,7 +453,7 @@ class IsolationDocTest(ClusterSetup):
 
         # Start reader thread for validation
         read_thread = Thread(target=self.__perform_read_on_doc_keys,
-                             args=(self.bucket_util.buckets[0], self.keys),
+                             args=(self.cluster.buckets[0], self.keys),
                              kwargs=dict(expected_exception=expected_exception)
                              )
         read_thread.start()
@@ -464,7 +464,7 @@ class IsolationDocTest(ClusterSetup):
         for index in range(1, 11):
             self.log.info("Running rollback transaction: %s" % index)
             trans_task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 load_gen, self.doc_op, exp=self.maxttl,
                 batch_size=50,
                 process_concurrency=3,
@@ -481,7 +481,7 @@ class IsolationDocTest(ClusterSetup):
         self.stop_thread = True
         read_thread.join()
 
-        if self.read_failed[self.bucket_util.buckets[0]]:
+        if self.read_failed[self.cluster.buckets[0]]:
             self.log_failure("Reader thread failed")
 
         self.validate_test_failure()
@@ -513,7 +513,7 @@ class IsolationDocTest(ClusterSetup):
         # Create docs for update/delete operation
         if self.doc_op != "create":
             trans_task_1 = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 load_gen_1, "create", exp=self.maxttl,
                 batch_size=50,
                 process_concurrency=4,
@@ -525,7 +525,7 @@ class IsolationDocTest(ClusterSetup):
                 sync=self.sync, defer=self.defer,
                 retries=0)
             trans_task_2 = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 load_gen_2, "create", exp=self.maxttl,
                 batch_size=50,
                 process_concurrency=4,
@@ -545,7 +545,7 @@ class IsolationDocTest(ClusterSetup):
         # Start transaction tasks with success & rollback for shadow docs test
         # Successful transaction
         trans_task_1 = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets,
+            self.cluster, self.cluster.buckets,
             load_gen_1, self.doc_op, exp=self.maxttl,
             batch_size=50,
             process_concurrency=3,
@@ -558,7 +558,7 @@ class IsolationDocTest(ClusterSetup):
             retries=1)
         # Rollback transaction
         trans_task_2 = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets,
+            self.cluster, self.cluster.buckets,
             load_gen_2, self.doc_op, exp=self.maxttl,
             batch_size=50,
             process_concurrency=3,

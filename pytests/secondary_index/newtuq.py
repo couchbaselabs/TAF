@@ -93,7 +93,7 @@ class QueryTests(BaseTestCase):
         self.n1ql_helper = N1QLHelper(
             version=self.version, shell=self.shell,
             use_rest=self.use_rest, max_verify=self.max_verify,
-            buckets=self.bucket_util.buckets, item_flag=self.item_flag,
+            buckets=self.cluster.buckets, item_flag=self.item_flag,
             n1ql_port=self.n1ql_port, full_docs_list=self.full_docs_list,
             log=self.log, input=self.input, master=self.cluster.master)
         self.n1ql_node = self.cluster_util.get_nodes_from_services_map(
@@ -291,7 +291,7 @@ class QueryTests(BaseTestCase):
              op_type='create', start_items=0,
              verify_data=True):
         if not buckets:
-            buckets = self.bucket_util.buckets
+            buckets = self.cluster.buckets
         gens_load = dict()
         for bucket in buckets:
             tmp_gen = list()

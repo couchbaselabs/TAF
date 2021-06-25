@@ -8,7 +8,7 @@ class CollectionsTTL(CollectionBase):
     def setUp(self):
         super(CollectionsTTL, self).setUp()
         self.load_gen = doc_generator(self.key, 0, self.num_items)
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         self.bucket_util._expiry_pager()
         self.remaining_docs = self.input.param("remaining_docs", 0)
 
@@ -267,7 +267,7 @@ class CollectionsTTL(CollectionBase):
             self.fail("update of the docs to had no effect on collections_ttl. Num docs : {0}".format(items))
 
     def test_collections_ttl_max_possible_values(self):
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         self.bucket_util.create_collection(self.cluster.master,
                                       self.bucket,
                                       "scope1",
@@ -292,7 +292,7 @@ class CollectionsTTL(CollectionBase):
             self.fail("collection creation did not fail even when maxTTL was < 0")
 
     def test_collections_ttl_delete_recreate_collections(self):
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         for scope in ["scope1", "scope2"]:
             for collection in ["collection_1","collection_2"]:
                 self.bucket_util.drop_collection(self.cluster.master,

@@ -59,7 +59,7 @@ class AppBase(BaseTestCase):
 
         if self.bucket_conf is not None:
             self.__setup_buckets()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
         if self.rbac_conf is not None:
             for rbac_roles in self.rbac_conf["rbac_roles"]:
@@ -116,12 +116,12 @@ class AppBase(BaseTestCase):
             self.cluster_conf["cb_cluster"]["rbac_users"])
 
     def __setup_buckets(self):
-        self.bucket_util.buckets = self.bucket_util.get_all_buckets()
+        self.cluster.buckets = self.bucket_util.get_all_buckets()
         for bucket in self.bucket_conf["buckets"]:
             bucket_obj = None
             # Skip bucket creation if already exists in cluster
             # Note: Useful while running instances for multi-tenant case
-            for existing_bucket in self.bucket_util.buckets:
+            for existing_bucket in self.cluster.buckets:
                 if existing_bucket.name == bucket["name"]:
                     bucket_obj = existing_bucket
                     break
@@ -141,7 +141,7 @@ class AppBase(BaseTestCase):
                         self.fail("Failed to load sample bucket")
                     if Bucket.ramQuotaMB in bucket:
                         BucketHelper(self.cluster.master).change_bucket_props(
-                            self.bucket_util.buckets[-1],
+                            self.cluster.buckets[-1],
                             ramQuotaMB=bucket[Bucket.ramQuotaMB])
                 else:
                     self.bucket_util.create_default_bucket(
@@ -161,7 +161,7 @@ class AppBase(BaseTestCase):
                             Bucket.durabilityMinLevel,
                             Bucket.DurabilityLevel.NONE))
 
-                bucket_obj = self.bucket_util.buckets[-1]
+                bucket_obj = self.cluster.buckets[-1]
 
             self.map_collection_data(bucket_obj)
             self.__print_step("Creating required scope/collections")

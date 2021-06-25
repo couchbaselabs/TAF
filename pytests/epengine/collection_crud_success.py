@@ -15,7 +15,7 @@ from remote.remote_util import RemoteMachineShellConnection
 class CollectionsSuccessTests(CollectionBase):
     def setUp(self):
         super(CollectionsSuccessTests, self).setUp()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
     def tearDown(self):
         super(CollectionsSuccessTests, self).tearDown()
@@ -39,7 +39,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 collection_crud_spec,
                 mutation_num=mutation_num)
         if collection_crud_task.result is False:
@@ -95,7 +95,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 load_spec,
                 mutation_num=2,
                 async_load=True)
@@ -209,7 +209,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 load_spec,
                 mutation_num=1,
                 async_load=True)
@@ -332,7 +332,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 load_spec,
                 mutation_num=1,
                 async_load=True)
@@ -490,7 +490,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 async_write_crud_spec,
                 mutation_num=1,
                 async_load=True)
@@ -498,7 +498,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 sync_write_crud_spec,
                 mutation_num=2,
                 async_load=True)
@@ -539,7 +539,7 @@ class CollectionsSuccessTests(CollectionBase):
 
         # Create transaction task
         atomicity_task = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets, gen_create,
+            self.cluster, self.cluster.buckets, gen_create,
             DocLoading.Bucket.DocOps.CREATE, 0, batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -559,7 +559,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 load_spec,
                 mutation_num=1,
                 async_load=True)
@@ -630,7 +630,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 load_spec,
                 mutation_num=1,
                 async_load=True)
@@ -668,7 +668,7 @@ class CollectionsSuccessTests(CollectionBase):
         doc_loading_task = self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 load_spec,
                 mutation_num=2,
                 async_load=True)
@@ -749,7 +749,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 async_write_crud_spec,
                 mutation_num=1,
                 async_load=True)
@@ -757,7 +757,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 sync_write_crud_spec,
                 mutation_num=1,
                 async_load=True)
@@ -803,7 +803,7 @@ class CollectionsSuccessTests(CollectionBase):
         failover_info["afterCrud"] = dict()
         vb_info_info["init"] = dict()
         vb_info_info["afterCrud"] = dict()
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
 
         load_spec = dict()
         load_spec["doc_crud"] = dict()
@@ -853,7 +853,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 load_spec,
                 mutation_num=0,
                 async_load=True)
@@ -927,7 +927,7 @@ class CollectionsSuccessTests(CollectionBase):
         failover_info["afterCrud"] = dict()
         vb_info_info["init"] = dict()
         vb_info_info["afterCrud"] = dict()
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
 
         self.load_data_for_sub_doc_ops()
 
@@ -971,7 +971,7 @@ class CollectionsSuccessTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 load_spec,
                 mutation_num=1,
                 async_load=True)

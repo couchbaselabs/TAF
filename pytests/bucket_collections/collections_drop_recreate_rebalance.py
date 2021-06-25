@@ -35,7 +35,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
                                  get_all_nodes=True)
             self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
                                               use_rest=True,
-                                              buckets = self.bucket_util.buckets,
+                                              buckets = self.cluster.buckets,
                                               log=self.log,
                                               scan_consistency='REQUEST_PLUS',
                                               num_collection=3,
@@ -69,7 +69,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
-        ephemeral_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "ephemeral"]
+        ephemeral_buckets = [bucket for bucket in self.cluster.buckets if bucket.bucketType == "ephemeral"]
         for ephemeral_bucket in ephemeral_buckets:
             rest = RestConnection(self.cluster.master)
             status, content = rest.set_ephemeral_purge_age_and_interval(bucket=ephemeral_bucket.name,
@@ -168,7 +168,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             doc_loading_spec = self.spec_for_drop_recreate()
             try:
                 _ = BucketUtils.perform_tasks_from_spec(self.cluster,
-                                                             self.bucket_util.buckets,
+                                                             self.cluster.buckets,
                                                              doc_loading_spec)
             except Exception as e:
                 self.data_load_exception = e

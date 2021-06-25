@@ -234,7 +234,7 @@ class volume(CollectionBase):
         indexes_to_build = dict()
         count = 0
         # ToDO create indexes on ephemeral buckets too using MOI storage
-        couchbase_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "couchbase"]
+        couchbase_buckets = [bucket for bucket in self.cluster.buckets if bucket.bucketType == "couchbase"]
         for bucket in couchbase_buckets:
             indexes_to_build[bucket.name] = dict()
             for _, scope in bucket.scopes.items():
@@ -280,7 +280,7 @@ class volume(CollectionBase):
         """
         self.log.info("Starting to poll UI stats queries")
         while self.ui_stats_thread_flag:
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 _ = StatsHelper(self.cluster.master).post_range_api_metrics(bucket.name)
                 self.sleep(10)
 
@@ -341,7 +341,7 @@ class volume(CollectionBase):
         fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
             service_type=CbServer.Services.FTS,
             get_all_nodes=False))
-        couchbase_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "couchbase"]
+        couchbase_buckets = [bucket for bucket in self.cluster.buckets if bucket.bucketType == "couchbase"]
         created_count = 0
         fts_indexes = dict()
         for bucket in couchbase_buckets:
@@ -531,7 +531,7 @@ class volume(CollectionBase):
         doc_loading_spec[MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = skip_read_success_results
         task = self.bucket_util.run_scenario_from_spec(self.task,
                                                        self.cluster,
-                                                       self.bucket_util.buckets,
+                                                       self.cluster.buckets,
                                                        doc_loading_spec,
                                                        mutation_num=0,
                                                        async_load=async_load)
@@ -549,7 +549,7 @@ class volume(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)
@@ -593,7 +593,7 @@ class volume(CollectionBase):
             self.sleep(400, "wait for doc/collection maxttl to finish")
             items = 0
             self.bucket_util._wait_for_stats_all_buckets()
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 items = items + self.bucket_helper_obj.get_active_key_count(bucket)
             if items != 0:
                 self.fail("doc count!=0, TTL + rebalance failed")
@@ -698,9 +698,9 @@ class volume(CollectionBase):
             ########################################################################################################################
             self.log.info("Step 9: Updating the bucket replica to 2 and rebalance-in")
             bucket_helper = BucketHelper(self.cluster.master)
-            for i in range(len(self.bucket_util.buckets)):
+            for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=2)
+                    self.cluster.buckets[i], replicaNumber=2)
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)
@@ -751,13 +751,13 @@ class volume(CollectionBase):
                     kv_nodes = self.cluster_util.get_kv_nodes()
                     self.log.info("Collecting pre_failover_stats. KV nodes are {0}".format(kv_nodes))
                     prev_failover_stats = self.bucket_util.get_failovers_logs(kv_nodes,
-                                                                              self.bucket_util.buckets)
+                                                                              self.cluster.buckets)
                     prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(kv_nodes,
-                                                                             self.bucket_util.buckets)
+                                                                             self.cluster.buckets)
                     self.sleep(10)
 
                     disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-                        kv_nodes, self.bucket_util.buckets, path=None)
+                        kv_nodes, self.cluster.buckets, path=None)
 
                     # Pick node(s) for failover
                     failover_nodes = list()
@@ -823,15 +823,15 @@ class volume(CollectionBase):
                     kv_nodes = self.cluster_util.get_kv_nodes()
                     self.log.info("Collecting post_failover_stats. KV nodes are {0}".format(kv_nodes))
                     self.bucket_util.compare_failovers_logs(prev_failover_stats, kv_nodes,
-                                                            self.bucket_util.buckets)
+                                                            self.cluster.buckets)
                     self.sleep(10)
 
                     self.bucket_util.data_analysis_active_replica_all(
                         disk_active_dataset, disk_replica_dataset,
                         kv_nodes,
-                        self.bucket_util.buckets, path=None)
+                        self.cluster.buckets, path=None)
                     self.bucket_util.vb_distribution_analysis(
-                        servers=kv_nodes, buckets=self.bucket_util.buckets,
+                        servers=kv_nodes, buckets=self.cluster.buckets,
                         num_replicas=2,
                         std=std, total_vbuckets=self.cluster_util.vbuckets)
                     self.sleep(10)
@@ -850,9 +850,9 @@ class volume(CollectionBase):
             ########################################################################################################################
             self.log.info("Step 18: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
-            for i in range(len(self.bucket_util.buckets)):
+            for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=1)
+                    self.cluster.buckets[i], replicaNumber=1)
             rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [], retry_get_process_num=self.retry_get_process_num)
             task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)

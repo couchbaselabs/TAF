@@ -118,7 +118,7 @@ class volume(BaseTestCase):
 
     def initial_data_load(self, initial_load):
         if self.atomicity:
-            task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
+            task = self.task.async_load_gen_docs_atomicity(self.cluster, self.cluster.buckets,
                                                             initial_load, "create" , exp=0,
                                                             batch_size=10,
                                                             process_concurrency=self.process_concurrency,
@@ -177,7 +177,7 @@ class volume(BaseTestCase):
         #     if "update" not in self.doc_ops:
         #         self.update_perc = 0
         #     process_concurrency = (self.delete_perc*process_concurrency)/(self.create_perc + self.delete_perc + self.update_perc)
-        task = self.task.async_load_gen_docs_atomicity(self.cluster, self.bucket_util.buckets,
+        task = self.task.async_load_gen_docs_atomicity(self.cluster, self.cluster.buckets,
                                                        kv_gen, op_type, exp=0,
                                                        batch_size=10,
                                                        process_concurrency=process_concurrency,
@@ -298,7 +298,7 @@ class volume(BaseTestCase):
         else:
             self.check_replica = True
 
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             tasks = list()
             if self.gen_update_users is not None:
                 tasks.append(self.task.async_validate_docs(
@@ -488,9 +488,9 @@ class volume(BaseTestCase):
             ########################################################################################################################
             self.log.info("Step 9: Updating the bucket replica to 2")
             bucket_helper = BucketHelper(self.cluster.master)
-            for i in range(len(self.bucket_util.buckets)):
+            for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=2)
+                    self.cluster.buckets[i], replicaNumber=2)
             self.generate_docs()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
@@ -538,12 +538,12 @@ class volume(BaseTestCase):
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
-            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster, self.cluster.buckets)
+            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster, self.cluster.buckets)
             self.sleep(10)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-                self.cluster.nodes_in_cluster, self.bucket_util.buckets, path=None)
+                self.cluster.nodes_in_cluster, self.cluster.buckets, path=None)
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
@@ -570,16 +570,16 @@ class volume(BaseTestCase):
 
             self.data_validation_mode(tasks_info)
 
-            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.cluster.buckets)
             self.sleep(10)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
                 self.cluster.servers[:self.nodes_in + self.nodes_init],
-                self.bucket_util.buckets, path=None)
+                self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
+                servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
             self.sleep(10)
@@ -598,12 +598,12 @@ class volume(BaseTestCase):
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
-            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster, self.cluster.buckets)
+            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster, self.cluster.buckets)
             self.sleep(10)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-                self.cluster.nodes_in_cluster, self.bucket_util.buckets, path=None)
+                self.cluster.nodes_in_cluster, self.cluster.buckets, path=None)
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
@@ -637,16 +637,16 @@ class volume(BaseTestCase):
 
             self.data_validation_mode(tasks_info)
 
-            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.cluster.buckets)
             self.sleep(10)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
                 self.cluster.servers[:self.nodes_in + self.nodes_init],
-                self.bucket_util.buckets, path=None)
+                self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
+                servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
             self.sleep(10)
@@ -660,12 +660,12 @@ class volume(BaseTestCase):
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
-            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
-            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.nodes_in_cluster, self.cluster.buckets)
+            prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.nodes_in_cluster, self.cluster.buckets)
             self.sleep(10)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-                self.cluster.nodes_in_cluster, self.bucket_util.buckets, path=None)
+                self.cluster.nodes_in_cluster, self.cluster.buckets, path=None)
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
@@ -696,16 +696,16 @@ class volume(BaseTestCase):
 
             self.data_validation_mode(tasks_info)
 
-            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+            self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.nodes_in_cluster, self.cluster.buckets)
             self.sleep(10)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
                 self.cluster.servers[:self.nodes_in + self.nodes_init],
-                self.bucket_util.buckets, path=None)
+                self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
+                servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
             self.bucket_util.print_bucket_stats()
@@ -714,9 +714,9 @@ class volume(BaseTestCase):
         ########################################################################################################################
             self.log.info("Step 14: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
-            for i in range(len(self.bucket_util.buckets)):
+            for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=1)
+                    self.cluster.buckets[i], replicaNumber=1)
             self.generate_docs()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,

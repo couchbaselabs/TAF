@@ -11,7 +11,7 @@ from remote.remote_util import RemoteMachineShellConnection
 class FlushTests(CollectionBase):
     def setUp(self):
         super(FlushTests, self).setUp()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
     def tearDown(self):
         super(FlushTests, self).tearDown()
@@ -81,7 +81,7 @@ class FlushTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 mutate_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)
@@ -120,7 +120,7 @@ class FlushTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)
@@ -233,7 +233,7 @@ class FlushTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 mutate_spec,
                 mutation_num=0,
                 async_load=True,
@@ -294,7 +294,7 @@ class FlushTests(CollectionBase):
             mutate_task = self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 mutate_spec,
                 mutation_num=mutate_num,
                 batch_size=self.batch_size)

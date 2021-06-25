@@ -10,7 +10,7 @@ class SDKCompression(CollectionBase):
         super(SDKCompression, self).setUp()
 
         self.key =  self.input.param("key","test-compression")
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
         self.diff_client_for_validation = \
             self.input.param("diff_client_for_valiation", False)
@@ -62,7 +62,7 @@ class SDKCompression(CollectionBase):
         s_name = None
         c_name = None
         bucket_dict = BucketUtils.get_random_collections(
-            self.bucket_util.buckets,
+            self.cluster.buckets,
             req_num=1,
             consider_scopes="all", consider_buckets="all")
         for bucket_name, scope_dict in bucket_dict.items():
@@ -156,7 +156,7 @@ class SDKCompression(CollectionBase):
         self.batch_size = 30
 
         bucket_dict = BucketUtils.get_random_collections(
-            self.bucket_util.buckets,
+            self.cluster.buckets,
             req_num=1,
             consider_scopes="all", consider_buckets="all")
         for bucket_name, scope_dict in bucket_dict.items():

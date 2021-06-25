@@ -72,7 +72,7 @@ class CollectionBase(ClusterSetup):
     def tearDown(self):
         shell = RemoteMachineShellConnection(self.cluster.master)
         cbstat_obj = Cbstats(shell)
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             if bucket.bucketType != Bucket.Type.MEMCACHED:
                 result = cbstat_obj.all_stats(bucket.name)
                 self.log.info("Bucket: %s, Active Resident ratio(DGM): %s%%"
@@ -154,7 +154,7 @@ class CollectionBase(ClusterSetup):
         self.log.info("Creating required SDK clients for client_pool")
         self.create_sdk_clients(self.task_manager.number_of_threads,
                                 self.cluster.master,
-                                self.bucket_util.buckets,
+                                self.cluster.buckets,
                                 self.sdk_client_pool,
                                 self.sdk_compression)
 
@@ -162,7 +162,7 @@ class CollectionBase(ClusterSetup):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)
@@ -232,7 +232,7 @@ class CollectionBase(ClusterSetup):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 new_data_load_template,
                 mutation_num=0,
                 batch_size=self.batch_size)

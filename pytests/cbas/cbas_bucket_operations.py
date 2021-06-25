@@ -51,13 +51,13 @@ class CBASBucketOperations(CBASBaseTest):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
-                    self.bucket_util.buckets[0].name,
+                    self.cluster.buckets[0].name,
                     "replica")
                 load_gen = doc_generator("test_abort_key", 0, self.num_items,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
                     ssh_shell, [load_gen],
-                    self.bucket_util.buckets[0],
+                    self.cluster.buckets[0],
                     self.durability_level,
                     "update", "all_aborts")
                 if not success:
@@ -77,13 +77,13 @@ class CBASBucketOperations(CBASBaseTest):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
-                    self.bucket_util.buckets[0].name,
+                    self.cluster.buckets[0].name,
                     "replica")
                 load_gen = doc_generator("test_abort_key", 0, self.num_items,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
                     ssh_shell, [load_gen],
-                    self.bucket_util.buckets[0],
+                    self.cluster.buckets[0],
                     self.durability_level,
                     "update", "all_aborts")
                 if not success:
@@ -122,13 +122,13 @@ class CBASBucketOperations(CBASBaseTest):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
-                    self.bucket_util.buckets[0].name,
+                    self.cluster.buckets[0].name,
                     "replica")
                 load_gen = doc_generator("test_abort_key", 0, self.num_items,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
                     ssh_shell, [load_gen],
-                    self.bucket_util.buckets[0],
+                    self.cluster.buckets[0],
                     self.durability_level,
                     "update", "all_aborts")
                 if not success:
@@ -164,7 +164,7 @@ class CBASBucketOperations(CBASBaseTest):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
-                    self.bucket_util.buckets[0].name,
+                    self.cluster.buckets[0].name,
                     "replica")
                 load_gen = doc_generator("test_abort_key",
                                          self.num_items,
@@ -172,7 +172,7 @@ class CBASBucketOperations(CBASBaseTest):
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
                     ssh_shell, [load_gen],
-                    self.bucket_util.buckets[0],
+                    self.cluster.buckets[0],
                     self.durability_level,
                     "update", "all_aborts")
                 if not success:
@@ -732,7 +732,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.log.info("Fetch current document count")
         target_bucket = None
         self.bucket_util.get_all_buckets()
-        for tem_bucket in self.bucket_util.buckets:
+        for tem_bucket in self.cluster.buckets:
             if tem_bucket.name == self.cb_bucket_name:
                 target_bucket = tem_bucket
                 break
@@ -762,7 +762,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.log.info("Fetch item count")
         target_bucket = None
         self.bucket_util.get_all_buckets()
-        for tem_bucket in self.bucket_util.buckets:
+        for tem_bucket in self.cluster.buckets:
             if tem_bucket.name == self.cb_bucket_name:
                 target_bucket = tem_bucket
                 break
@@ -800,7 +800,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.log.info("Fetch current document count")
         target_bucket = None
         self.bucket_util.get_all_buckets()
-        for tem_bucket in self.bucket_util.buckets:
+        for tem_bucket in self.cluster.buckets:
             if tem_bucket.name == self.cb_bucket_name:
                 target_bucket = tem_bucket
                 break

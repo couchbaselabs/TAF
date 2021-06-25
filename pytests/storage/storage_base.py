@@ -98,7 +98,7 @@ class StorageBase(BaseTestCase):
                 flush_enabled=self.flush_enabled)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
-        self.buckets = self.bucket_util.buckets
+        self.buckets = self.cluster.buckets
 
         # sel.num_collections=1 signifies only default collection
         self.num_collections = self.input.param("num_collections", 1)
@@ -106,7 +106,7 @@ class StorageBase(BaseTestCase):
 
         # Creation of scopes of num_scopes is > 1
         scope_prefix = "Scope"
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             for i in range(1, self.num_scopes):
                 scope_name = scope_prefix + str(i)
                 self.log.info("Creating bucket::scope {} {}\
@@ -120,7 +120,7 @@ class StorageBase(BaseTestCase):
 
         collection_prefix = "FunctionCollection"
         # Creation of collection of num_collections is > 1
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             for scope_name in self.scopes:
                 for i in range(1, self.num_collections):
                     collection_name = collection_prefix + str(i)
@@ -211,7 +211,7 @@ class StorageBase(BaseTestCase):
                          "sdk_timeout": self.sdk_timeout,
                          "doc_ttl": 0,
                          "doc_gen_type": "default"}
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             loader_dict.update({bucket: dict()})
             loader_dict[bucket].update({"scopes": dict()})
             for scope in bucket.scopes.keys():
@@ -732,7 +732,7 @@ class StorageBase(BaseTestCase):
             shell.disconnect()
         self.assertTrue(self.bucket_util._wait_warmup_completed(
             [self.cluster_util.cluster.master],
-            self.bucket_util.buckets[0],
+            self.cluster.buckets[0],
             wait_time=self.wait_timeout * 20))
 
     def get_memory_footprint(self):
@@ -788,7 +788,7 @@ class StorageBase(BaseTestCase):
                     if "kv" in node.services:
                         result = self.bucket_util._wait_warmup_completed(
                                     [node],
-                                    self.bucket_util.buckets[0],
+                                    self.cluster.buckets[0],
                                     wait_time=self.wait_timeout * 5)
                         if not result:
                             msg = "warm-up couldn't complete in %s seconds" %\

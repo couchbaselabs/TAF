@@ -18,7 +18,7 @@ class OpsChangeCasTests(CasBaseTest):
         super(OpsChangeCasTests, self).tearDown()
 
     def _load_all_buckets(self, generator, op_type):
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, generator, op_type, 0,
                 flag=self.item_flag,
@@ -45,7 +45,7 @@ class OpsChangeCasTests(CasBaseTest):
         can not mutate it because it is expired already.
         """
 
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             client = SDKClient([self.cluster.master], bucket)
             gen = generator
             while gen.has_next():
@@ -245,7 +245,7 @@ class OpsChangeCasTests(CasBaseTest):
         dgm_gen = doc_generator(
             self.key, self.num_items, self.num_items+1)
         dgm_task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket_util.buckets[0], dgm_gen, "create", 0,
+            self.cluster, self.cluster.buckets[0], dgm_gen, "create", 0,
             persist_to=self.persist_to,
             replicate_to=self.replicate_to,
             durability=self.durability_level,
@@ -258,7 +258,7 @@ class OpsChangeCasTests(CasBaseTest):
         self.log.info("3. Touch intial self.num_items docs which are "
                       "residing on disk due to DGM")
         client = SDKClient([self.cluster.master],
-                           self.bucket_util.buckets[0])
+                           self.cluster.buckets[0])
         while load_gen.has_next():
             key, _ = load_gen.next()
             result = client.crud("touch", key,

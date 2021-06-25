@@ -14,7 +14,7 @@ class MagmaRebalance(MagmaBaseTest):
     def setUp(self):
         super(MagmaRebalance, self).setUp()
         self.bucket_util._expiry_pager()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         self.data_load_stage = self.input.param("data_load_stage", "before")
         self.num_collections_to_drop = self.input.param("num_collections_to_drop", 0)
         self.nodes_swap = self.input.param("nodes_swap", 1)
@@ -43,10 +43,10 @@ class MagmaRebalance(MagmaBaseTest):
 
         # Create clients in SDK client pool
         self.log.info("Creating required SDK clients for client_pool")
-        bucket_count = len(self.bucket_util.buckets)
+        bucket_count = len(self.cluster.buckets)
         max_clients = self.task_manager.number_of_threads
         clients_per_bucket = int(ceil(max_clients / bucket_count))
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.sdk_client_pool.create_clients(
                 bucket,
                 [self.cluster.master],
@@ -65,7 +65,7 @@ class MagmaRebalance(MagmaBaseTest):
     def compact_all_buckets(self):
         self.sleep(10, "wait for rebalance to start")
         self.log.info("Starting compaction for each bucket")
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
 
@@ -104,7 +104,7 @@ class MagmaRebalance(MagmaBaseTest):
 
     def load_to_dgm(self, threshold=100):
         # load data until resident % goes below 100
-        bucket_name = self.bucket_util.buckets[0].name
+        bucket_name = self.cluster.buckets[0].name
         curr_active = self.get_active_resident_threshold(bucket_name)
         while curr_active >= threshold:
             self.subsequent_data_load(data_load_spec="dgm_load")
@@ -176,7 +176,7 @@ class MagmaRebalance(MagmaBaseTest):
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
-                        for bucket in self.bucket_util.buckets:
+                        for bucket in self.cluster.buckets:
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
@@ -227,7 +227,7 @@ class MagmaRebalance(MagmaBaseTest):
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
-                        for bucket in self.bucket_util.buckets:
+                        for bucket in self.cluster.buckets:
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
@@ -282,7 +282,7 @@ class MagmaRebalance(MagmaBaseTest):
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
-                        for bucket in self.bucket_util.buckets:
+                        for bucket in self.cluster.buckets:
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
@@ -343,7 +343,7 @@ class MagmaRebalance(MagmaBaseTest):
                 self.task.jython_task_manager.get_task_result(operation)
                 if not operation.result:
                     self.log.info("rebalance was failed as expected")
-                    for bucket in self.bucket_util.buckets:
+                    for bucket in self.cluster.buckets:
                         self.assertTrue(self.bucket_util._wait_warmup_completed(
                             [node], bucket))
                     self.log.info("second attempt to rebalance")
@@ -584,7 +584,7 @@ class MagmaRebalance(MagmaBaseTest):
             doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
-                                                        self.bucket_util.buckets,
+                                                        self.cluster.buckets,
                                                         doc_loading_spec,
                                                         mutation_num=0,
                                                         async_load=async_load,
@@ -617,7 +617,7 @@ class MagmaRebalance(MagmaBaseTest):
         self.task.jython_task_manager.get_task_result(task)
         if self.dgm_test and (not task.result):
             fail_flag = True
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 result = self.get_active_resident_threshold(bucket.name)
                 if result < 20:
                     fail_flag = False
@@ -638,7 +638,7 @@ class MagmaRebalance(MagmaBaseTest):
                 self.sleep(400, "wait for maxttl to finish")
                 items = 0
                 self.bucket_util._wait_for_stats_all_buckets()
-                for bucket in self.bucket_util.buckets:
+                for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
                     self.fail("TTL + rebalance failed")
@@ -688,11 +688,11 @@ class MagmaRebalance(MagmaBaseTest):
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
                     self.log.info("Collection to be dropped {}".format(collection))
-                    for bucket in self.bucket_util.buckets:
+                    for bucket in self.cluster.buckets:
                         self.bucket_util.drop_collection(self.cluster.master, bucket,
                                                      scope_name=scope_name,
                                                      collection_name=collection)
-                        self.bucket_util.buckets[self.bucket_util.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
+                        self.cluster.buckets[self.cluster.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
                     self.collections.remove(collection)
                 #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
@@ -776,11 +776,11 @@ class MagmaRebalance(MagmaBaseTest):
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
                     self.log.info("Collection to be dropped {}".format(collection))
-                    for bucket in self.bucket_util.buckets:
+                    for bucket in self.cluster.buckets:
                         self.bucket_util.drop_collection(self.cluster.master, bucket,
                                                      scope_name=scope_name,
                                                      collection_name=collection)
-                        self.bucket_util.buckets[self.bucket_util.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
+                        self.cluster.buckets[self.cluster.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
                     self.collections.remove(collection)
                 #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
@@ -833,11 +833,11 @@ class MagmaRebalance(MagmaBaseTest):
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
                     self.log.info("Collection to be dropped {}".format(collection))
-                    for bucket in self.bucket_util.buckets:
+                    for bucket in self.cluster.buckets:
                         self.bucket_util.drop_collection(self.cluster.master, bucket,
                                                      scope_name=scope_name,
                                                      collection_name=collection)
-                        self.bucket_util.buckets[self.bucket_util.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
+                        self.cluster.buckets[self.cluster.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
                     self.collections.remove(collection)
                 #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))

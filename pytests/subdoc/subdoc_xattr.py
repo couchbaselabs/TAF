@@ -33,15 +33,15 @@ class SubdocBaseTest(ClusterSetup):
             if self.scope_name != CbServer.default_scope:
                 self.scope_name = self.bucket_util.get_random_name()
                 self.bucket_util.create_scope(self.cluster.master,
-                                              self.bucket_util.buckets[0],
+                                              self.cluster.buckets[0],
                                               {"name": self.scope_name})
             self.bucket_util.create_collection(
                 self.cluster.master,
-                self.bucket_util.buckets[0],
+                self.cluster.buckets[0],
                 scope_name=self.scope_name,
                 collection_spec={"name": self.collection_name})
 
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             testuser = [{'id': bucket.name,
                          'name': bucket.name,
                          'password': 'password'}]
@@ -215,7 +215,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
         self.client = SDKClient([self.cluster.master],
-                                self.bucket_util.buckets[0])
+                                self.cluster.buckets[0])
 
     def tearDown(self):
         # Delete the inserted doc
@@ -1596,7 +1596,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
         self.client = SDKClient([self.cluster.master],
-                                self.bucket_util.buckets[0],
+                                self.cluster.buckets[0],
                                 scope=self.scope_name,
                                 collection=self.collection_name,
                                 compression_settings=self.sdk_compression)
@@ -1649,7 +1649,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             shell = RemoteMachineShellConnection(node)
             cbstat_obj = Cbstats(shell)
             replica_vbs = cbstat_obj.vbucket_list(
-                self.bucket_util.buckets[0],
+                self.cluster.buckets[0],
                 "replica")
             if target_vb in replica_vbs:
                 break
@@ -1662,7 +1662,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                         DocLoading.Bucket.DocOps.UPDATE,
                         DocLoading.Bucket.DocOps.DELETE]:
             sync_write_task = self.task.async_load_gen_docs(
-                self.cluster, self.bucket_util.buckets[0],
+                self.cluster, self.cluster.buckets[0],
                 doc_gen["doc_crud"], op_type,
                 scope=self.scope_name,
                 collection=self.collection_name,
@@ -1756,7 +1756,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             shell = RemoteMachineShellConnection(node)
             cbstat_obj = Cbstats(shell)
             replica_vbs = cbstat_obj.vbucket_list(
-                self.bucket_util.buckets[0],
+                self.cluster.buckets[0],
                 "replica")
             if target_vb in replica_vbs:
                 break
@@ -1795,7 +1795,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 else:
                     value = ["exists_path", [0, 1]]
             sync_write_task = self.task.async_load_gen_sub_docs(
-                self.cluster, self.bucket_util.buckets[0],
+                self.cluster, self.cluster.buckets[0],
                 doc_gen[op_type], op_type,
                 scope=self.scope_name,
                 collection=self.collection_name,

@@ -62,7 +62,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.log.info("Updating replica count of bucket to {0}"
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
-                self.bucket_util.buckets[0],
+                self.cluster.buckets[0],
                 replicaNumber=self.replica_to_update)
         self.log.info("=== SwapRebalanceBase setup done for test #%s %s ==="
                       % (self.case_number, self._testMethodName))
@@ -98,7 +98,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
     def items_verification(self, test, master):
         # Verify items count across all node
         timeout = 600
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             verified = self.bucket_util.wait_till_total_numbers_match(
                 master, bucket, timeout_in_seconds=timeout)
             test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
@@ -108,7 +108,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.log.info("Validating docs")
         self.gen_create = self.get_doc_generator(0, self.num_items)
         tasks = []
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             tasks.append(self.task.async_validate_docs(
                 self.cluster, bucket, self.gen_create, "create", 0,
                 batch_size=self.batch_size,
@@ -164,12 +164,12 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
-                    self.bucket_util.buckets[0].name, "replica")
+                    self.cluster.buckets[0].name, "replica")
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
                     ssh_shell, [load_gen],
-                    self.bucket_util.buckets[0],
+                    self.cluster.buckets[0],
                     self.durability_level,
                     "update", "all_aborts")
                 if not success:
@@ -188,12 +188,12 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
-                    self.bucket_util.buckets[0].name, "replica")
+                    self.cluster.buckets[0].name, "replica")
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
                     ssh_shell, [load_gen],
-                    self.bucket_util.buckets[0],
+                    self.cluster.buckets[0],
                     self.durability_level,
                     "update", "all_aborts")
                 if not success:
@@ -307,7 +307,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.log.error('seems rebalance failed!')
             self.rest.print_UI_logs()
             self.fail("Rebalance failed even before killing memcached")
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         pid = None
         if self.swap_orchestrator and not self.cluster_run:
             # get PID via remote connection if master is a new node

@@ -27,7 +27,7 @@ class DCPBase(CollectionBase):
         self.delete_times = self.input.param("delete_times", False)
         self.manifest = self.input.param("manifest", None)
         self.timeout = self.input.param("timeout", True)
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         self.noop_interval = self.input.param("noop_interval", 0)
         self.opcode_dump = self.input.param("opcode_dump", False)
         self.enable_expiry = self.input.param("enable_expiry", False)

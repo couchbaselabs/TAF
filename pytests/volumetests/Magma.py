@@ -132,7 +132,7 @@ class volume(BaseTestCase):
         if update_bucket_props:
             self.bucket_util.update_bucket_props(
                     "backend", props,
-                    self.bucket_util.buckets)
+                    self.cluster.buckets)
             self.sleep(10, "Sleep for 10 seconds so that collections \
             can be created")
         else:
@@ -151,7 +151,7 @@ class volume(BaseTestCase):
         if self.num_scopes > 1:
             self.scope_prefix = self.input.param("scope_prefix",
                                                  "VolumeScope")
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 for i in range(self.num_scopes):
                     scope_name = self.scope_prefix + str(i)
                     self.log.info("Creating scope: %s"
@@ -161,7 +161,7 @@ class volume(BaseTestCase):
                                                   {"name": scope_name})
                     self.sleep(0.5)
             self.num_scopes += 1
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             for scope in bucket.scopes.keys():
                 if self.num_collections >= 1:
                     self.collection_prefix = self.input.param("collection_prefix",
@@ -183,7 +183,7 @@ class volume(BaseTestCase):
             max_clients = min(self.task_manager.number_of_threads,
                               20)
             clients_per_bucket = int(ceil(max_clients / self.num_buckets))
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket,
                     [self.cluster.master],
@@ -401,7 +401,7 @@ class volume(BaseTestCase):
                          "sdk_timeout": 60,
                          "doc_ttl": 0,
                          "doc_gen_type": "default"}
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             loader_dict.update({bucket: dict()})
             loader_dict[bucket].update({"scopes": dict()})
             for scope in bucket.scopes.keys():
@@ -590,7 +590,7 @@ class volume(BaseTestCase):
     def print_stats(self):
         self.bucket_util.print_bucket_stats()
         self.print_crud_stats()
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.get_bucket_dgm(bucket)
             if bucket.storageBackend == Bucket.StorageBackend.magma:
                 self.get_magma_disk_usage(bucket)
@@ -764,7 +764,7 @@ class volume(BaseTestCase):
                     result,
                     "CRASH | CRITICAL | WARN messages found in cb_logs")
             for shell in shells:
-                for bucket in self.bucket_util.buckets:
+                for bucket in self.cluster.buckets:
                     output = shell.execute_command(
                        '/opt/couchbase/bin/cbstats localhost:11210 memory \
                        -u Administrator -p password -b {} | grep -e \
@@ -785,11 +785,11 @@ class volume(BaseTestCase):
             shell.disconnect()
 
     def check_warmup_complete(self, server):
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             start_time = time.time()
             result = self.bucket_util._wait_warmup_completed(
                                 [server],
-                                self.bucket_util.buckets[0],
+                                self.cluster.buckets[0],
                                 wait_time=self.wait_timeout * 20)
             if not result:
                 self.stop_crash = True
@@ -815,12 +815,12 @@ class volume(BaseTestCase):
             node = self.cluster.nodes_in_cluster[0]
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
-                node, self.bucket_util.buckets[0])
+                node, self.cluster.buckets[0])
             mem_client.stop_persistence()
 
             shell = RemoteMachineShellConnection(node)
             cbstats = Cbstats(shell)
-            target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
+            target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                   name)
             shell.disconnect()
 
@@ -860,7 +860,7 @@ class volume(BaseTestCase):
                     ep_queue_size_map.update({server: 0})
                     vb_replica_queue_size_map.update({server: 0})
 
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
                                                 timeout=3600)
                 self.bucket_util._wait_for_stat(
@@ -1172,11 +1172,11 @@ class volume(BaseTestCase):
             std = self.std_vbucket_dist or 1.0
 
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+                self.cluster.nodes_in_cluster, self.cluster.buckets)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.\
                 get_and_compare_active_replica_data_set_all(
-                    self.cluster.nodes_in_cluster, self.bucket_util.buckets,
+                    self.cluster.nodes_in_cluster, self.cluster.buckets,
                     path=None)
 
             self.rest = RestConnection(self.cluster.master)
@@ -1213,15 +1213,15 @@ class volume(BaseTestCase):
             self.bucket_util.compare_failovers_logs(
                 prev_failover_stats,
                 self.cluster.nodes_in_cluster,
-                self.bucket_util.buckets)
+                self.cluster.buckets)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
                 self.cluster.servers[:self.nodes_in + self.nodes_init],
-                self.bucket_util.buckets, path=None)
+                self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
+                servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
 
@@ -1247,12 +1247,12 @@ class volume(BaseTestCase):
             std = self.std_vbucket_dist or 1.0
 
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+                self.cluster.nodes_in_cluster, self.cluster.buckets)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.\
                 get_and_compare_active_replica_data_set_all(
                     self.cluster.nodes_in_cluster,
-                    self.bucket_util.buckets,
+                    self.cluster.buckets,
                     path=None)
 
             self.rest = RestConnection(self.cluster.master)
@@ -1283,15 +1283,15 @@ class volume(BaseTestCase):
             self.bucket_util.compare_failovers_logs(
                 prev_failover_stats,
                 self.cluster.nodes_in_cluster,
-                self.bucket_util.buckets)
+                self.cluster.buckets)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
                 self.cluster.servers[:self.nodes_in + self.nodes_init],
-                self.bucket_util.buckets, path=None)
+                self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
+                servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
 
@@ -1317,12 +1317,12 @@ class volume(BaseTestCase):
             std = self.std_vbucket_dist or 1.0
 
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.cluster.nodes_in_cluster, self.bucket_util.buckets)
+                self.cluster.nodes_in_cluster, self.cluster.buckets)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.\
                 get_and_compare_active_replica_data_set_all(
                     self.cluster.nodes_in_cluster,
-                    self.bucket_util.buckets,
+                    self.cluster.buckets,
                     path=None)
 
             self.rest = RestConnection(self.cluster.master)
@@ -1357,15 +1357,15 @@ class volume(BaseTestCase):
             self.bucket_util.compare_failovers_logs(
                 prev_failover_stats,
                 self.cluster.nodes_in_cluster,
-                self.bucket_util.buckets)
+                self.cluster.buckets)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
                 self.cluster.servers[:self.nodes_in + self.nodes_init],
-                self.bucket_util.buckets, path=None)
+                self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
-                servers=nodes, buckets=self.bucket_util.buckets,
+                servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
 
@@ -1387,9 +1387,9 @@ class volume(BaseTestCase):
             self.PrintStep("Step 13: Updating the bucket replica to 2")
 
             bucket_helper = BucketHelper(self.cluster.master)
-            for i in range(len(self.bucket_util.buckets)):
+            for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=2)
+                    self.cluster.buckets[i], replicaNumber=2)
 
             self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
@@ -1416,9 +1416,9 @@ class volume(BaseTestCase):
             '''
             self.PrintStep("Step 14: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
-            for i in range(len(self.bucket_util.buckets)):
+            for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=1)
+                    self.cluster.buckets[i], replicaNumber=1)
             self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
             self.set_num_writer_and_reader_threads(
                 num_writer_threads=self.new_num_writer_threads,
@@ -1477,7 +1477,7 @@ class volume(BaseTestCase):
         check_dump_th.start()
 
         self.doc_ops = "create"
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.PrintStep("Step 1: Create %s items" % self.num_items)
             dgm = self.get_bucket_dgm(bucket)
             while self.dgm and dgm > self.dgm:
@@ -1705,7 +1705,7 @@ class volume(BaseTestCase):
             total_collections = self.num_collections
             total_scopes = self.num_scopes
             drop = 0
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
                     drop = 0
                     for i in range(1, total_collections, 2):
@@ -1806,7 +1806,7 @@ class volume(BaseTestCase):
                 if self.end_step == 17:
                     exit(17)
             #######################################################################
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
                     for i in range(1, total_collections, 2):
                         collection = self.collection_prefix + str(i)
@@ -2047,9 +2047,9 @@ class volume(BaseTestCase):
             self.PrintStep("Step 12: Updating the bucket replica to 2")
 
             bucket_helper = BucketHelper(self.cluster.master)
-            for i in range(len(self.bucket_util.buckets)):
+            for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=2)
+                    self.cluster.buckets[i], replicaNumber=2)
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
 
@@ -2071,9 +2071,9 @@ class volume(BaseTestCase):
             ###################################################################
             self.PrintStep("Step 13: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
-            for i in range(len(self.bucket_util.buckets)):
+            for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.bucket_util.buckets[i], replicaNumber=1)
+                    self.cluster.buckets[i], replicaNumber=1)
 
             rebalance_task = self.task.async_rebalance(
                 self.cluster.nodes_in_cluster, [], [],
@@ -2148,7 +2148,7 @@ class volume(BaseTestCase):
                            update_end=self.num_items*3
                            )
         self.perform_load(wait_for_load=False)
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             dgm = self.get_bucket_dgm(bucket)
             while self.dgm and dgm > self.dgm:
                 self.sleep(300)

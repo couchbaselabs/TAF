@@ -71,7 +71,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         tasks = self.bucket_util.run_scenario_from_spec(
             self.task,
             self.cluster,
-            self.bucket_util.buckets,
+            self.cluster.buckets,
             doc_loading_spec,
             mutation_num=0,
             async_load=True)
@@ -271,7 +271,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             if post_failure_operation == "change_replica_count":
                 # change replica count
                 self.log.info("Changing replica count of buckets")
-                for bucket in self.bucket_util.buckets:
+                for bucket in self.cluster.buckets:
                     self.bucket_util.update_bucket_property(bucket,
                                                             replica_number=2)
             elif post_failure_operation == "change_server_group":

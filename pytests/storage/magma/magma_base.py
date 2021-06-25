@@ -32,7 +32,7 @@ class MagmaBaseTest(StorageBase):
         if update_bucket_props:
             self.bucket_util.update_bucket_props(
                     "backend", props,
-                    self.bucket_util.buckets)
+                    self.cluster.buckets)
 
         # Monitor Stats Params
         self.ep_queue_stats = self.input.param("ep_queue_stats", True)
@@ -58,7 +58,7 @@ class MagmaBaseTest(StorageBase):
         self.log.info("Creating SDK clients for client_pool")
         max_clients = min(self.task_manager.number_of_threads, 20)
         clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.sdk_client_pool.create_clients(
                 bucket, [self.cluster.master],
                 clients_per_bucket,
@@ -310,7 +310,7 @@ class MagmaBaseTest(StorageBase):
         result = 0
         result_str = ""
         for server in servers:
-            bucket = self.bucket_util.buckets[0]
+            bucket = self.cluster.buckets[0]
             magma_path = os.path.join(self.data_path, bucket.name, "magma.{}")
 
             shell = RemoteMachineShellConnection(server)

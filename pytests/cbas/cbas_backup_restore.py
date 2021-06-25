@@ -269,7 +269,7 @@ class BackupRestoreTest(CBASBaseTest):
         ds_before_backup = self.cbas_util_v2.get_datasets(fields=self.ds_fields)
         syn_before_backup = self.cbas_util_v2.get_synonyms()
         idx_before_backup = self.cbas_util_v2.get_indexes()
-        bucket = random.choice(self.bucket_util.buckets)
+        bucket = random.choice(self.cluster.buckets)
         scope = random.choice(self.bucket_util.get_active_scopes(bucket))
         collection = random.choice(self.bucket_util.get_active_collections(
             bucket, scope.name))
@@ -335,7 +335,7 @@ class BackupRestoreTest(CBASBaseTest):
         ds_before_backup = self.cbas_util_v2.get_datasets(fields=self.ds_fields)
         syn_before_backup = self.cbas_util_v2.get_synonyms()
         idx_before_backup = self.cbas_util_v2.get_indexes()
-        original_bucket = random.choice(self.bucket_util.buckets)
+        original_bucket = random.choice(self.cluster.buckets)
         # remap collections
         original_scope = random.choice(
             self.bucket_util.get_active_scopes(original_bucket))
@@ -348,7 +348,7 @@ class BackupRestoreTest(CBASBaseTest):
                     filter(
                         lambda b:
                         b.name != original_bucket.name,
-                        self.bucket_util.buckets)))
+                        self.cluster.buckets)))
         else:
             remap_bucket = original_bucket
         remap_scope = random.choice(
@@ -417,7 +417,7 @@ class BackupRestoreTest(CBASBaseTest):
         ds_before_backup = self.cbas_util_v2.get_datasets()
         syn_before_backup = self.cbas_util_v2.get_synonyms()
         idx_before_backup = self.cbas_util_v2.get_indexes()
-        bucket = random.choice(self.bucket_util.buckets)
+        bucket = random.choice(self.cluster.buckets)
         scope = random.choice(self.bucket_util.get_active_scopes(bucket))
         collection = random.choice(self.bucket_util.get_active_collections(
             bucket, scope.name))
@@ -484,7 +484,7 @@ class BackupRestoreTest(CBASBaseTest):
         ds_before_backup = self.cbas_util_v2.get_datasets(fields=self.ds_fields)
         syn_before_backup = self.cbas_util_v2.get_synonyms()
         idx_before_backup = self.cbas_util_v2.get_indexes()
-        original_bucket = random.choice(self.bucket_util.buckets)
+        original_bucket = random.choice(self.cluster.buckets)
         # remap collections
         original_scope = random.choice(
             self.bucket_util.get_active_scopes(original_bucket))
@@ -497,7 +497,7 @@ class BackupRestoreTest(CBASBaseTest):
                     filter(
                         lambda b:
                         b.name != original_bucket.name,
-                        self.bucket_util.buckets)))
+                        self.cluster.buckets)))
         else:
             remap_bucket = original_bucket
         remap_scope = random.choice(

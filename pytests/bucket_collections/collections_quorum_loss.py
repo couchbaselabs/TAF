@@ -102,7 +102,7 @@ class CollectionsQuorumLoss(CollectionBase):
         self.set_ignore_exceptions(doc_loading_spec)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
-                                                        self.bucket_util.buckets,
+                                                        self.cluster.buckets,
                                                         doc_loading_spec,
                                                         mutation_num=0,
                                                         async_load=async_load,
@@ -225,7 +225,7 @@ class CollectionsQuorumLoss(CollectionBase):
         {bucket_name:{"uid":uid, "cid":cid, "sid":sid}, ..}
         """
         uids = dict()
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             scope_name = "custom_scope-" + base_name
             collection_name = "custom_collection" + base_name
             BucketUtils.create_scope(self.cluster.master, bucket,
@@ -250,7 +250,7 @@ class CollectionsQuorumLoss(CollectionBase):
         """
         self.log.info("Validating UIDs after QF")
         uid_keys = ["uid", "sid", "cid"]
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             for uid_key in uid_keys:
                 int_uid_diff = int(post_qf_ids[bucket.name][uid_key], 16) - \
                                int(pre_qf_ids[bucket.name][uid_key], 16)

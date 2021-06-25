@@ -52,7 +52,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] \
                 = doc_load_percent
         return self.bucket_util.run_scenario_from_spec(
-            self.task, self.cluster, self.bucket_util.buckets, loading_spec,
+            self.task, self.cluster, self.cluster.buckets, loading_spec,
             mutation_num=0, async_load=True)
 
     def tasks_result(self, mutation_task):
@@ -273,11 +273,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.sleep(20)
 
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
-            self.servers[:self.nodes_init], self.bucket_util.buckets)
+            self.servers[:self.nodes_init], self.cluster.buckets)
         prev_failover_stats = self.bucket_util.get_failovers_logs(
-            self.servers[:self.nodes_init], self.bucket_util.buckets)
+            self.servers[:self.nodes_init], self.cluster.buckets)
         _, _ = self.bucket_util.get_and_compare_active_replica_data_set_all(
-            self.servers[:self.nodes_init], self.bucket_util.buckets,
+            self.servers[:self.nodes_init], self.cluster.buckets,
             path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats,
                                                          prev_failover_stats)

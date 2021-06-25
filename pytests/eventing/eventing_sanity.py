@@ -430,7 +430,7 @@ class EventingSanity(EventingBaseTest):
         self.restServer = self.cluster_util.get_nodes_from_services_map(service_type="fts")
         self.rest = RestConnection(self.restServer)
         crud_batch_size = 1000
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         kv_nodes = self.cluster_util.get_kv_nodes()
         replica_vbs = dict()
         verification_dict = dict()

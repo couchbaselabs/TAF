@@ -304,7 +304,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.data_load_task = \
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
-                                                    self.bucket_util.buckets,
+                                                    self.cluster.buckets,
                                                     collection_load_spec,
                                                     mutation_num=mutation_num,
                                                     batch_size=batch_size,
@@ -560,7 +560,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         jobs = Queue()
         results = list()
         if self.input.param('create_dataverse', False):
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 for scope in self.bucket_util.get_active_scopes(bucket):
                     dataverse_name = bucket.name + "." + scope.name
                     dataverse_obj = self.cbas_util_v2.get_dataverse_obj(
@@ -1229,7 +1229,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size,
@@ -1259,7 +1259,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 remote_datasets=False):
             self.fail("Error while creating datasets")
         dataset_objs = self.cbas_util_v2.list_all_dataset_objs()
-        bucket = random.choice(self.bucket_util.buckets)
+        bucket = random.choice(self.cluster.buckets)
         self.bucket_flush_and_validate(bucket)
         for dataset_obj in dataset_objs:
             self.log.info("Validating item count")
@@ -1698,7 +1698,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.log.info("Test started")
         dataset_names = list()
         bucket_helper = BucketHelper(self.cluster.master)
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             # Create datasets on KV collections in every scope in the bucket.
             status, content = bucket_helper.list_collections(bucket.name)
             if not status:

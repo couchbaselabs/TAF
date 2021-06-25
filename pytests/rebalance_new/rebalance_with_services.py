@@ -209,23 +209,23 @@ class ServiceRebalanceTests(RebalanceBaseTest):
         }'
 
         # Open SDK for connection for running n1ql queries
-        client = SDKClient([self.cluster.master], self.bucket_util.buckets[0])
+        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
 
-        for bucket in self.bucket_util.buckets[:4]:
+        for bucket in self.cluster.buckets[:4]:
             self.log.info("Creating GSI indexes %d::%d for %s"
                           % (0, self.num_gsi_index, bucket.name))
             for index in range(0, self.num_gsi_index):
                 create_gsi_index(bucket.name, index)
             self.log.info("Done creating GSI indexes for %s" % bucket.name)
 
-        for bucket in self.bucket_util.buckets[:3]:
+        for bucket in self.cluster.buckets[:3]:
             self.log.info("Creating FTS indexes %d::%d for %s"
                           % (0, self.num_fts_index, bucket.name))
             for index in range(0, self.num_fts_index):
                 create_fts_index(bucket.name, index)
             self.log.info("Done creating FTS indexes for %s" % bucket.name)
 
-        for bucket in self.bucket_util.buckets[:4]:
+        for bucket in self.cluster.buckets[:4]:
             self.log.info("Create and drop %s GSI indexes on %s"
                           % (self.gsi_indexes_to_create_drop, bucket.name))
             for index in range(self.num_gsi_index,
@@ -234,7 +234,7 @@ class ServiceRebalanceTests(RebalanceBaseTest):
                 create_gsi_index(bucket.name, index)
                 drop_gsi_index(bucket.name, index)
 
-        for bucket in self.bucket_util.buckets[:3]:
+        for bucket in self.cluster.buckets[:3]:
             self.log.info("Create and drop %s FTS indexes on %s"
                           % (self.fts_indexes_to_create_drop, bucket.name))
             for index in range(self.num_fts_index,

@@ -49,12 +49,12 @@ class basic_ops(ClusterSetup):
         if self.scope_name != CbServer.default_scope:
             self.scope_name = self.bucket_util.get_random_name()
             self.bucket_util.create_scope(self.cluster.master,
-                                          self.bucket_util.buckets[0],
+                                          self.cluster.buckets[0],
                                           {"name": self.scope_name})
         if self.collection_name != CbServer.default_collection:
             self.collection_name = self.bucket_util.get_random_name()
             self.bucket_util.create_collection(self.cluster.master,
-                                               self.bucket_util.buckets[0],
+                                               self.cluster.buckets[0],
                                                self.scope_name,
                                                {"name": self.collection_name,
                                                 "num_items": self.num_items})
@@ -62,7 +62,7 @@ class basic_ops(ClusterSetup):
                           % (self.scope_name, self.collection_name))
 
         # Update required num_items under default collection
-        self.bucket_util.buckets[0] \
+        self.cluster.buckets[0] \
             .scopes[self.scope_name] \
             .collections[self.collection_name] \
             .num_items = self.num_items
@@ -77,7 +77,7 @@ class basic_ops(ClusterSetup):
         if self.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.sdk_client_pool.create_clients(
-                self.bucket_util.buckets[0],
+                self.cluster.buckets[0],
                 [self.cluster.master],
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
@@ -192,7 +192,7 @@ class basic_ops(ClusterSetup):
         Basic tests for document CRUD operations using JSON docs
         """
         doc_op = self.input.param("doc_op", None)
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         ignore_exceptions = list()
         retry_exceptions = list()
         supported_d_levels = self.bucket_util.get_supported_durability_levels()
@@ -399,7 +399,7 @@ class basic_ops(ClusterSetup):
         self.doc_size *= 1024*1024
         gens_load = self.generate_docs_bigdata(
             docs_per_day=self.num_items, document_size=self.doc_size)
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gens_load,
                 DocLoading.Bucket.DocOps.CREATE, 0,
@@ -422,7 +422,7 @@ class basic_ops(ClusterSetup):
         val_error = SDKException.ValueTooLargeException
         gens_load = self.generate_docs_bigdata(
             docs_per_day=1, document_size=(self.doc_size * 1024000))
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gens_load,
                 DocLoading.Bucket.DocOps.CREATE, 0,
@@ -444,7 +444,7 @@ class basic_ops(ClusterSetup):
                 if len(task.fail.keys()) != 0:
                     self.log_failure("Failures during large doc insert")
 
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             if self.doc_size > 20:
                 # failed with error "Data Too Big" when document size > 20MB
                 self.bucket_util.verify_stats_all_buckets(0)
@@ -492,7 +492,7 @@ class basic_ops(ClusterSetup):
         initial_load = doc_generator(self.key, 0, self.num_items,
                                      doc_size=self.doc_size)
         task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket_util.buckets[0], initial_load,
+            self.cluster, self.cluster.buckets[0], initial_load,
             DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=100, process_concurrency=8,
             compression=self.sdk_compression,
@@ -536,7 +536,7 @@ class basic_ops(ClusterSetup):
                 doc_size=self.doc_size,
                 mutation_type=doc_op)
             data_op_dict[dict_key]["task"] = self.task.async_load_gen_docs(
-                self.cluster, self.bucket_util.buckets[0],
+                self.cluster, self.cluster.buckets[0],
                 data_op_dict[dict_key]["doc_gen"], doc_op,
                 exp=doc_ttl,
                 compression=self.sdk_compression,
@@ -573,7 +573,7 @@ class basic_ops(ClusterSetup):
                 self.log.info("Validating %s results" % doc_op)
                 # Read all the values to validate doc_operation values
                 task = self.task.async_validate_docs(
-                    self.cluster, self.bucket_util.buckets[0],
+                    self.cluster, self.cluster.buckets[0],
                     data_op_dict[dict_key]["doc_gen"], doc_op, 0,
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
@@ -646,7 +646,7 @@ class basic_ops(ClusterSetup):
         """
         total_gets = 0
         max_gets = 2500000000
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         doc_gen = doc_generator(self.key, 0, self.num_items,
                                 doc_size=1)
         create_task = self.task.async_load_gen_docs(
@@ -751,7 +751,7 @@ class basic_ops(ClusterSetup):
         total_gets = 0
         max_gets = 50000000
         stop_thread = False
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         cb_stat_obj = dict()
         kv_nodes = self.cluster_util.get_kv_nodes()
         for node in self.cluster_util.get_kv_nodes():
@@ -833,7 +833,7 @@ class basic_ops(ClusterSetup):
         max_keys_to_del = 250
         self.active_resident_threshold = \
             int(self.input.param("active_resident_threshold", 99))
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
 
         for node in self.cluster_util.get_kv_nodes():
             nodes_data[node] = dict()
@@ -941,7 +941,7 @@ class basic_ops(ClusterSetup):
 
         on_disk_deletes = 0
         bloom_filter_size = None
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         target_vb = choice(range(self.cluster_util.vbuckets))
         vb_str = str(target_vb)
         doc_gen = doc_generator(self.key, 0, self.num_items,
@@ -1091,7 +1091,7 @@ class basic_ops(ClusterSetup):
         low_wm_reached = False
         high_wm_reached = False
         wm_tbl = TableView(self.log.info)
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
 
         wm_tbl.set_headers(["Stat", "Memory Val", "Percent"])
         kv_nodes = self.cluster_util.get_kv_nodes()
@@ -1203,7 +1203,7 @@ class basic_ops(ClusterSetup):
         """
 
         doc_val = {"field": "val"}
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         shell = RemoteMachineShellConnection(self.cluster.master)
         cb_err = CouchbaseError(self.log, shell)
 
@@ -1272,7 +1272,7 @@ class basic_ops(ClusterSetup):
         5. Kill memcached again such that kill happens before warmup completes
         6. Validate high_seqno and uuid
         """
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         target_node = choice(self.cluster_util.get_kv_nodes())
         self.log.info("Target node %s" % target_node.ip)
         shell = RemoteMachineShellConnection(target_node)
@@ -1444,7 +1444,7 @@ class basic_ops(ClusterSetup):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
 
         remote = RemoteMachineShellConnection(self.cluster.master)
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             # change compression mode to off
             output, _ = remote.execute_couchbase_cli(
                 cli_command='bucket-edit', cluster_host="localhost:8091",
@@ -1479,7 +1479,7 @@ class basic_ops(ClusterSetup):
                             services=["n1ql,index"])
         self.log.info("Creating SDK client connection")
         client = SDKClient([self.cluster.master],
-                           self.bucket_util.buckets[0],
+                           self.cluster.buckets[0],
                            compression_settings=self.sdk_compression)
 
         self.log.info("Stopping memcached on: %s" % node_to_stop)

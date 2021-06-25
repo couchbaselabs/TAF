@@ -97,7 +97,7 @@ class DcpTestCase(DCPBase):
         retry = 5
         while retry > 0:
             scope_dict = self.bucket_util.get_random_scopes(
-                self.bucket_util.buckets, 1, 1)
+                self.cluster.buckets, 1, 1)
             scope_name = scope_dict[self.bucket.name]["scopes"].keys()[0]
             if scope_name != CbServer.default_scope:
                 break
@@ -156,7 +156,7 @@ class DcpTestCase(DCPBase):
         elif self.operation == "recreate_collection":
             self.scope_name, self.collection_name = self.drop_collection()
             self.bucket_util.create_collection(self.cluster.master,
-                                               self.bucket_util.buckets[0],
+                                               self.cluster.buckets[0],
                                                self.scope_name,
                                                {"name": self.collection_name})
 
@@ -166,7 +166,7 @@ class DcpTestCase(DCPBase):
 
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
-                                                    self.bucket_util.buckets,
+                                                    self.cluster.buckets,
                                                     doc_loading_spec,
                                                     mutation_num=0)
 
@@ -266,7 +266,7 @@ class DcpTestCase(DCPBase):
         scope_dict = collections[self.bucket.name]["scopes"]
         scope_name = scope_dict.keys()[0]
         collection_name = scope_dict[scope_name]["collections"].keys()[0]
-        bucket = self.bucket_util.get_bucket_obj(self.bucket_util.buckets,
+        bucket = self.bucket_util.get_bucket_obj(self.cluster.buckets,
                                                  self.bucket.name)
         bucket.scopes[scope_name] \
             .collections[collection_name].num_items \
@@ -309,7 +309,7 @@ class DcpTestCase(DCPBase):
         self.create_collection = self.input.param("create_collection", False)
         # get a random scope
         scope_dict = self.bucket_util.get_random_scopes(
-            self.bucket_util.buckets, 1, 1)
+            self.cluster.buckets, 1, 1)
         scope_name = scope_dict[self.bucket.name]["scopes"].keys()[0]
 
         if self.create_collection:
@@ -345,7 +345,7 @@ class DcpTestCase(DCPBase):
         list_uid = []
         total_items = 0
         for self.bucket_name, scope_dict in collections.iteritems():
-            bucket = self.bucket_util.get_bucket_obj(self.bucket_util.buckets,
+            bucket = self.bucket_util.get_bucket_obj(self.cluster.buckets,
                                                      self.bucket_name)
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
@@ -432,7 +432,7 @@ class DcpTestCase(DCPBase):
                 len(list(filter(lambda x: "CMD_DELETION" in x, output_string)))
 
         if self.doc_expiry == 0:
-            bucket = self.bucket_util.get_bucket_obj(self.bucket_util.buckets,
+            bucket = self.bucket_util.get_bucket_obj(self.cluster.buckets,
                                                      self.bucket.name)
             self.num_items += bucket.scopes[scope_name] \
                 .collections[collection_name].num_items

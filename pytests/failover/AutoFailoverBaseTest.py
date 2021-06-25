@@ -62,7 +62,7 @@ class AutoFailoverBaseTest(BaseTestCase):
 
             if self.sdk_client_pool:
                 self.log.info("Creating SDK clients for client_pool")
-                for bucket in self.bucket_util.buckets:
+                for bucket in self.cluster.buckets:
                     self.sdk_client_pool.create_clients(
                         bucket,
                         [self.cluster.master],
@@ -150,10 +150,10 @@ class AutoFailoverBaseTest(BaseTestCase):
         # Create clients in SDK client pool
         if self.sdk_client_pool:
             self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(self.bucket_util.buckets)
+            bucket_count = len(self.cluster.buckets)
             max_clients = self.task_manager.number_of_threads
             clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket,
                     [self.orchestrator],
@@ -164,7 +164,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0)
         if doc_loading_task.result is False:
@@ -293,9 +293,9 @@ class AutoFailoverBaseTest(BaseTestCase):
         Fetch active/replica vbucket list from the
         nodes which are going to be failed over
         """
-        if not len(self.bucket_util.buckets):
+        if not len(self.cluster.buckets):
             return
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         # Reset the values
         self.active_vb_in_failover_nodes = list()
         self.replica_vb_in_failover_nodes = list()
@@ -314,7 +314,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                                          batch_size=20):
 
         task = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets, kv_gen, op_type, exp,
+            self.cluster, self.cluster.buckets, kv_gen, op_type, exp,
             batch_size=batch_size, process_concurrency=8,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
             transaction_timeout=self.transaction_timeout,
@@ -327,7 +327,7 @@ class AutoFailoverBaseTest(BaseTestCase):
 
     def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
         tasks = []
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, kv_gen, op_type, exp,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -915,7 +915,7 @@ class AutoFailoverBaseTest(BaseTestCase):
 
         # Validate the doc_errors only if durability is set
         if self.durability_level:
-            for b_index, bucket_obj in enumerate(self.bucket_util.buckets):
+            for b_index, bucket_obj in enumerate(self.cluster.buckets):
                 validate_durability_for_bucket(b_index, bucket_obj)
 
     def data_load_after_autofailover(self):
@@ -925,10 +925,10 @@ class AutoFailoverBaseTest(BaseTestCase):
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
                                    vbuckets=self.cluster_util.vbuckets)
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 gen_create, "create", 0,
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to,
@@ -1019,10 +1019,10 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         # Create clients in SDK client pool
         if self.sdk_client_pool:
             self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(self.bucket_util.buckets)
+            bucket_count = len(self.cluster.buckets)
             max_clients = self.task_manager.number_of_threads
             clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket,
                     [self.cluster.master],
@@ -1033,7 +1033,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0)
         if doc_loading_task.result is False:

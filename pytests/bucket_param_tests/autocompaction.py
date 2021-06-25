@@ -32,7 +32,7 @@ class AutoCompactionTests(CollectionBase):
                                         doc_type=self.doc_type,
                                         mutation_type="update")
         self.stop_loading_thread = False
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         self.log.info("======= Finished Autocompaction base setup =========")
 
     def tearDown(self):
@@ -64,7 +64,7 @@ class AutoCompactionTests(CollectionBase):
                 return
             # update docs to create fragmentation
             try:
-                for bucket in self.bucket_util.buckets:
+                for bucket in self.cluster.buckets:
                     for _, scope in bucket.scopes.items():
                         for _, collection in scope.collections.items():
                             task = self.task.async_load_gen_docs(
@@ -85,7 +85,7 @@ class AutoCompactionTests(CollectionBase):
 
     def _load_all_buckets(self, generator, op_type, batch_size=10,
                           process_concurrency=8, items=0):
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             for _, scope in bucket.scopes.items():
                 for _, collection in scope.collections.items():
                     task = self.task.async_load_gen_docs(
@@ -152,7 +152,7 @@ class AutoCompactionTests(CollectionBase):
                 self.bucket_util.run_scenario_from_spec(
                     self.task,
                     self.cluster,
-                    self.bucket_util.buckets,
+                    self.cluster.buckets,
                     doc_loading_spec,
                     mutation_num=0)
             shell_conn = RemoteMachineShellConnection(self.cluster.master)
@@ -259,7 +259,7 @@ class AutoCompactionTests(CollectionBase):
                                                              self.bucket)
         self._monitor_DB_fragmentation(self.bucket)
         bucket_obj = self.bucket_util.get_bucket_obj(
-            self.bucket_util.buckets, self.bucket.name)
+            self.cluster.buckets, self.bucket.name)
         collections = self.bucket_util.get_random_collections(
             [bucket_obj], 1, 1, 1)
         scope_dict = collections[self.bucket.name]["scopes"]
@@ -394,7 +394,7 @@ class AutoCompactionTests(CollectionBase):
                                                              self.bucket)
         self._monitor_DB_fragmentation(self.bucket)
         bucket_obj = self.bucket_util.get_bucket_obj(
-            self.bucket_util.buckets, self.bucket.name)
+            self.cluster.buckets, self.bucket.name)
         collections = self.bucket_util.get_random_collections(
             [bucket_obj], 1, 1, 1)
         scope_dict = collections[self.bucket.name]["scopes"]
@@ -682,7 +682,7 @@ class AutoCompactionTests(CollectionBase):
     def test_auto_compaction_with_multiple_buckets(self):
         remote_client = RemoteMachineShellConnection(self.cluster.master)
         rest = RestConnection(self.cluster.master)
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             if bucket.name == "default":
                 self.bucket_util.disable_compaction(bucket=bucket.name)
             else:
@@ -694,7 +694,7 @@ class AutoCompactionTests(CollectionBase):
         # Load bucket with docs with updated compaction value
         self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         end_time = time.time() + self.wait_timeout * 30
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.cluster_util._monitor_DB_fragmentation(bucket)
             monitor_fragm = self.task.async_monitor_db_fragmentation(
                 self.cluster.master, bucket.name, self.autocompaction_value)
@@ -722,7 +722,7 @@ class AutoCompactionTests(CollectionBase):
         end_time = time.time() + self.wait_timeout * 30
         failure_msg = None
         bucket_obj = self.bucket_util.get_bucket_obj(
-                    self.bucket_util.buckets, bucket.name)
+                    self.cluster.buckets, bucket.name)
         collections = self.bucket_util.get_random_collections(
                                 [bucket_obj], 1, 1, 1)
         scope_dict = collections[self.bucket.name]["scopes"]

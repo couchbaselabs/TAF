@@ -51,7 +51,7 @@ class CrashTest(BaseTestCase):
 
         if self.sdk_client_pool:
             self.log.info("Creating SDK clients for client_pool")
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket,
                     [self.cluster.master],
@@ -77,7 +77,7 @@ class CrashTest(BaseTestCase):
             vbuckets=self.cluster_util.vbuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets, gen_create, "create",
+                self.cluster, self.cluster.buckets, gen_create, "create",
                 exp=0,
                 batch_size=10,
                 process_concurrency=self.process_concurrency,
@@ -91,7 +91,7 @@ class CrashTest(BaseTestCase):
                 sync=self.sync)
             self.task.jython_task_manager.get_task_result(task)
         else:
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 task = self.task.async_load_gen_docs(
                     self.cluster, bucket, gen_create,
                     DocLoading.Bucket.DocOps.CREATE, self.maxttl,
@@ -139,7 +139,7 @@ class CrashTest(BaseTestCase):
         4. Validate the docs for durability
         """
         error_to_simulate = self.input.param("simulate_error", None)
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
         error_sim = CouchbaseError(self.log, remote)
@@ -162,7 +162,7 @@ class CrashTest(BaseTestCase):
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets, gen_load, "create",
+                self.cluster, self.cluster.buckets, gen_load, "create",
                 exp=0,
                 batch_size=10,
                 process_concurrency=self.process_concurrency,
@@ -244,7 +244,7 @@ class CrashTest(BaseTestCase):
         3. Wait for load bucket task to complete
         4. Validate the docs for durability
         """
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
         target_vbuckets = range(0, self.cluster_util.vbuckets)
@@ -273,7 +273,7 @@ class CrashTest(BaseTestCase):
             vbuckets=self.cluster_util.vbuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets, gen_load, "create",
+                self.cluster, self.cluster.buckets, gen_load, "create",
                 exp=0,
                 batch_size=10,
                 process_concurrency=self.process_concurrency,
@@ -362,7 +362,7 @@ class CrashTest(BaseTestCase):
         """
         tasks = list()
         node_data = dict()
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         revert_errors = [CouchbaseError.STOP_MEMCACHED,
                          CouchbaseError.STOP_SERVER,
                          CouchbaseError.STOP_BEAMSMP,

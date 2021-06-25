@@ -181,7 +181,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.get_dataset_parameters()
 
         self.shell = RemoteMachineShellConnection(self.cluster.master)
-        self.n1ql_helper = N1QLHelper(shell=self.shell, buckets=self.bucket_util.buckets,
+        self.n1ql_helper = N1QLHelper(shell=self.shell, buckets=self.cluster.buckets,
                                       item_flag=0, n1ql_port=8093, log=self.log,
                                       input=self.input, server=self.cluster.master,
                                       use_rest=True)
@@ -581,7 +581,7 @@ class CBASExternalLinks(CBASBaseTest):
             header=False,
             null_key="",
             operation="create",
-            bucket=self.bucket_util.buckets[0],
+            bucket=self.cluster.buckets[0],
             no_of_docs=10,
             randomize_header=False,
             large_file=False,
@@ -1103,7 +1103,7 @@ class CBASExternalLinks(CBASBaseTest):
                 header=self.convert_string_to_bool(self.input.test_params.get("header_s3_file", False)),
                 null_key=self.input.test_params.get("null_s3_file", ""),
                 operation="create",
-                bucket=self.bucket_util.buckets[0],
+                bucket=self.cluster.buckets[0],
                 no_of_docs=int(self.input.test_params.get("no_of_docs", 100)),
                 randomize_header=self.convert_string_to_bool(self.input.test_params.get("randomize_header", False)),
                 large_file=self.convert_string_to_bool(self.input.test_params.get("large_file", False)),
@@ -1133,7 +1133,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Failed to create dataset")
         self.dataset_created = True
 
-        n1ql_result = self.rest.query_tool(n1ql_query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
+        n1ql_result = self.rest.query_tool(n1ql_query.format(self.cluster.buckets[0].name))["results"][0]["$1"]
         status, metrics, errors, cbas_result, handle = self.cbas_util.execute_statement_on_cbas_util(
             cbas_query.format(self.dataset_params["cbas_dataset_name"]), timeout=120, analytics_timeout=120)
 
@@ -1170,13 +1170,13 @@ class CBASExternalLinks(CBASBaseTest):
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
             aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
             no_of_files=5, file_formats=["json"], no_of_folders=0, max_folder_depth=0,
-            header=False, null_key="", operation="create", bucket=self.bucket_util.buckets[0],
+            header=False, null_key="", operation="create", bucket=self.cluster.buckets[0],
             no_of_docs=100, randomize_header=False, large_file=False, missing_field=[False])
         if result:
             self.fail("Error while uploading files to S3")
 
         # run query on dataset and on bucket that was used to generate AWS data.
-        n1ql_query = "Select count(*) from {0};".format(self.bucket_util.buckets[0].name)
+        n1ql_query = "Select count(*) from {0};".format(self.cluster.buckets[0].name)
         n1ql_result = self.rest.query_tool(n1ql_query)["results"][0]["$1"]
         if not self.cbas_util.validate_cbas_dataset_items_count(self.dataset_params["cbas_dataset_name"], n1ql_result):
             self.fail("Expected data does not match actual data")
@@ -1195,7 +1195,7 @@ class CBASExternalLinks(CBASBaseTest):
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
             aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
             no_of_files=5, file_formats=["json"], no_of_folders=0, max_folder_depth=0,
-            header=False, null_key="", operation="create", bucket=self.bucket_util.buckets[0],
+            header=False, null_key="", operation="create", bucket=self.cluster.buckets[0],
             no_of_docs=10000, randomize_header=False, large_file=False, missing_field=[False])
         if result:
             self.fail("Error while uploading files to S3")
@@ -1234,12 +1234,12 @@ class CBASExternalLinks(CBASBaseTest):
             aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key, no_of_files=1500,
             file_formats=["json"], no_of_folders=0, max_folder_depth=0,
             header=False, null_key="", operation="create",
-            bucket=self.bucket_util.buckets[0], no_of_docs=100000,
+            bucket=self.cluster.buckets[0], no_of_docs=100000,
             randomize_header=False, large_file=False, missing_field=[False])
         if result:
             self.fail("Error while uploading files to S3")
 
-        n1ql_query = "Select count(*) from {0};".format(self.bucket_util.buckets[0].name)
+        n1ql_query = "Select count(*) from {0};".format(self.cluster.buckets[0].name)
         n1ql_result = self.rest.query_tool(n1ql_query)["results"][0]["$1"]
         if not self.cbas_util.validate_cbas_dataset_items_count(self.dataset_params["cbas_dataset_name"], n1ql_result,
                                                                 timeout=3600, analytics_timeout=3600):
@@ -1401,7 +1401,7 @@ class CBASExternalLinks(CBASBaseTest):
             max_folder_depth=0,
             header=False,
             null_key="",
-            operation="create", bucket=self.bucket_util.buckets[0],
+            operation="create", bucket=self.cluster.buckets[0],
             no_of_docs=self.num_items,
             randomize_header=False,
             large_file=False,
@@ -1411,7 +1411,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Error while uploading files to S3")
 
         query = "Select count(*) from `{0}`;"
-        n1ql_result = self.rest.query_tool(query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
+        n1ql_result = self.rest.query_tool(query.format(self.cluster.buckets[0].name))["results"][0]["$1"]
 
         rebalanceServers = self.get_rebalance_server()
 
@@ -1465,7 +1465,7 @@ class CBASExternalLinks(CBASBaseTest):
             max_folder_depth=0,
             header=False,
             null_key="",
-            operation="create", bucket=self.bucket_util.buckets[0],
+            operation="create", bucket=self.cluster.buckets[0],
             no_of_docs=self.num_items,
             randomize_header=False,
             large_file=False,
@@ -1475,7 +1475,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Error while uploading files to S3")
 
         query = "Select count(*) from `{0}`;"
-        n1ql_result = self.rest.query_tool(query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
+        n1ql_result = self.rest.query_tool(query.format(self.cluster.buckets[0].name))["results"][0]["$1"]
 
         result = list()
         threads = list()
@@ -1533,7 +1533,7 @@ class CBASExternalLinks(CBASBaseTest):
             max_folder_depth=0,
             header=False,
             null_key="",
-            operation="create", bucket=self.bucket_util.buckets[0],
+            operation="create", bucket=self.cluster.buckets[0],
             no_of_docs=self.num_items,
             randomize_header=False,
             large_file=False,
@@ -1543,7 +1543,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Error while uploading files to S3")
 
         query = "Select count(*) from `{0}`;"
-        n1ql_result = self.rest.query_tool(query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
+        n1ql_result = self.rest.query_tool(query.format(self.cluster.buckets[0].name))["results"][0]["$1"]
 
         result = list()
         threads = list()
@@ -1717,7 +1717,7 @@ class CBASExternalLinks(CBASBaseTest):
             key=self.key, no_of_files=5,
             file_formats=json.loads(self.input.test_params.get("file_format_for_upload", "[\"json\"]")),
             no_of_folders=0, max_folder_depth=0, header=False, null_key="", operation="create",
-            bucket=self.bucket_util.buckets[0],
+            bucket=self.cluster.buckets[0],
             no_of_docs=int(self.input.test_params.get("no_of_docs", 100)),
             randomize_header=False, large_file=False, missing_field=missing_field)
         if result:
@@ -1731,7 +1731,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Failed to create dataset")
         self.dataset_created = True
 
-        n1ql_result = self.rest.query_tool(n1ql_query.format(self.bucket_util.buckets[0].name))["results"][0]["$1"]
+        n1ql_result = self.rest.query_tool(n1ql_query.format(self.cluster.buckets[0].name))["results"][0]["$1"]
         if not self.cbas_util.validate_cbas_dataset_items_count(
             ".".join([self.dataset_params["links_dataverse"], self.dataset_params["cbas_dataset_name"]]),
             n1ql_result, timeout=300, analytics_timeout=300):

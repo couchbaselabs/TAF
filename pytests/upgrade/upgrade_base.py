@@ -113,14 +113,14 @@ class UpgradeBase(BaseTestCase):
             eviction_policy=self.bucket_eviction_policy,
             bucket_durability=self.bucket_durability_level)
         self.bucket_util.add_rbac_user()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
         # Create clients in SDK client pool
         if self.sdk_client_pool is not None:
             clients_per_bucket = \
-                int(self.thread_to_use / len(self.bucket_util.buckets))
+                int(self.thread_to_use / len(self.cluster.buckets))
             self.log.info("Creating %s SDK clients / bucket for client_pool")
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket, [self.cluster.master], clients_per_bucket,
                     compression_settings=self.sdk_compression)

@@ -46,7 +46,7 @@ class CBASDCPState(CBASBaseTest):
         """
         self.log.info("Delete KV bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.bucket_util.buckets[0].name),
+            self.cluster.master, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         self.log.info("Check DCP state")
@@ -87,7 +87,7 @@ class CBASDCPState(CBASBaseTest):
         """
         self.log.info("Delete KV bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.bucket_util.buckets[0].name),
+            self.cluster.master, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         self.log.info("Disconnect from CBAS bucket")
@@ -122,7 +122,7 @@ class CBASDCPState(CBASBaseTest):
         """
         self.log.info("Delete KV bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.bucket_util.buckets[0].name),
+            self.cluster.master, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         self.log.info("Disconnect from CBAS bucket")

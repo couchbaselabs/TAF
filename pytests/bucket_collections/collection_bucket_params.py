@@ -4,7 +4,7 @@ from bucket_collections.collections_base import CollectionBase
 class BucketParams(CollectionBase):
     def setUp(self):
         super(BucketParams, self).setUp()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         # To override default num_items to '0'
         self.num_items = self.input.param("num_items", 10000)
         load_spec = \
@@ -12,7 +12,7 @@ class BucketParams(CollectionBase):
         self.doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(load_spec)
         self.replica_count = self.input.param("replica_count", 4)
-        self.buckets = self.bucket_util.buckets
+        self.buckets = self.cluster.buckets
 
     def test_update_replica(self):
         """ load documents, update replica, verify docs"""

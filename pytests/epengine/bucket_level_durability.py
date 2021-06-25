@@ -66,7 +66,7 @@ class CreateBucketTests(BucketDurabilityBase):
                     pass
 
             self.get_vbucket_type_mapping(bucket_obj.name)
-            self.bucket_util.buckets = [bucket_obj]
+            self.cluster.buckets = [bucket_obj]
             self.bucket_util.print_bucket_stats()
             self.summary.add_step(test_step)
 

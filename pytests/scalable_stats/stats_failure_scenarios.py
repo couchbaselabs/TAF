@@ -89,7 +89,7 @@ class StatsFailureScenarios(CollectionBase):
             pass
 
     def get_range_api_metrics(self, metric_name):
-        label_values = {"bucket": self.bucket_util.buckets[0].name, "nodes": self.cluster.master.ip}
+        label_values = {"bucket": self.cluster.buckets[0].name, "nodes": self.cluster.master.ip}
         content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
         self.log.info(content)
 

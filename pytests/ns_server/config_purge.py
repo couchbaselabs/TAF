@@ -283,7 +283,7 @@ class ConfigPurging(CollectionBase):
                                                       "dummy_val")
             else:
                 self.__fts_index(self.op_create, key,
-                                 self.bucket_util.buckets[0],
+                                 self.cluster.buckets[0],
                                  CbServer.default_scope,
                                  CbServer.default_collection)
         self.log.info("Done creating indexes")
@@ -299,7 +299,7 @@ class ConfigPurging(CollectionBase):
                 self.__perform_meta_kv_op_on_rand_key(self.op_create, key)
             else:
                 self.__fts_index(self.op_remove, key,
-                                 self.bucket_util.buckets[0],
+                                 self.cluster.buckets[0],
                                  CbServer.default_scope,
                                  CbServer.default_collection)
         self.log.info("Done creating tombstones")
@@ -352,11 +352,11 @@ class ConfigPurging(CollectionBase):
                     self.op_remove, index_name)
             elif key_type == CbServer.Services.FTS:
                 self.__fts_index(self.op_create, index_name,
-                                 self.bucket_util.buckets[0],
+                                 self.cluster.buckets[0],
                                  CbServer.default_scope,
                                  CbServer.default_collection)
                 self.__fts_index(self.op_remove, index_name,
-                                 self.bucket_util.buckets[0],
+                                 self.cluster.buckets[0],
                                  CbServer.default_scope,
                                  CbServer.default_collection)
             created_keys.append(index_name)
@@ -396,7 +396,7 @@ class ConfigPurging(CollectionBase):
         for index in range(self.num_index):
             fts_name = t_fts_name % index
             self.__fts_index(self.op_create, fts_name,
-                             self.bucket_util.buckets[0],
+                             self.cluster.buckets[0],
                              CbServer.default_scope,
                              CbServer.default_collection)
 
@@ -405,7 +405,7 @@ class ConfigPurging(CollectionBase):
         for index in range(self.num_index):
             fts_name = t_fts_name % index
             self.__fts_index(self.op_remove, fts_name,
-                             self.bucket_util.buckets[0],
+                             self.cluster.buckets[0],
                              CbServer.default_scope,
                              CbServer.default_collection)
 
@@ -604,11 +604,11 @@ class ConfigPurging(CollectionBase):
         for index in range(self.num_index):
             key = t_key % index
             self.__fts_index(self.op_create, key,
-                             self.bucket_util.buckets[0],
+                             self.cluster.buckets[0],
                              CbServer.default_scope,
                              CbServer.default_collection)
             self.__fts_index(self.op_remove, key,
-                             self.bucket_util.buckets[0],
+                             self.cluster.buckets[0],
                              CbServer.default_scope,
                              CbServer.default_collection)
 
@@ -678,7 +678,7 @@ class ConfigPurging(CollectionBase):
 
         # Creating meta_kv keys
         self.__fts_index(self.op_create, fts_key,
-                         self.bucket_util.buckets[0],
+                         self.cluster.buckets[0],
                          CbServer.default_scope,
                          CbServer.default_collection)
         self.__perform_meta_kv_op_on_rand_key(self.op_create,
@@ -699,7 +699,7 @@ class ConfigPurging(CollectionBase):
 
         # Removing meta_kv keys when one of the node is down
         self.__fts_index(self.op_remove, fts_key,
-                         self.bucket_util.buckets[0],
+                         self.cluster.buckets[0],
                          CbServer.default_scope,
                          CbServer.default_collection)
         self.__perform_meta_kv_op_on_rand_key(self.op_remove,
@@ -793,7 +793,7 @@ class ConfigPurging(CollectionBase):
 
         # Creating meta_kv keys
         self.__fts_index(self.op_create, fts_key,
-                         self.bucket_util.buckets[0],
+                         self.cluster.buckets[0],
                          CbServer.default_scope,
                          CbServer.default_collection)
         self.__perform_meta_kv_op_on_rand_key(self.op_create,
@@ -801,7 +801,7 @@ class ConfigPurging(CollectionBase):
 
         # Remove meta_kv keys for tombstone creation
         self.__fts_index(self.op_remove, fts_key,
-                         self.bucket_util.buckets[0],
+                         self.cluster.buckets[0],
                          CbServer.default_scope,
                          CbServer.default_collection)
         self.__perform_meta_kv_op_on_rand_key(self.op_remove,
@@ -911,10 +911,10 @@ class ConfigPurging(CollectionBase):
 
         # Open SDK for connection for running n1ql queries
         self.client = self.sdk_client_pool.get_client_for_bucket(
-            self.bucket_util.buckets[0])
+            self.cluster.buckets[0])
 
         # Create required GSI indexes
-        for bucket in self.bucket_util.buckets[:2]:
+        for bucket in self.cluster.buckets[:2]:
             for _, scope in bucket.scopes.items():
                 for c_name, _ in scope.collections.items():
                     for index in range(0, self.num_gsi_index):
@@ -923,7 +923,7 @@ class ConfigPurging(CollectionBase):
             self.log.info("Done creating GSI indexes for %s" % bucket.name)
 
         # Create required FTS indexes
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         for _, scope in bucket.scopes.items():
             for c_name, _ in scope.collections.items():
                 for index in range(0, self.num_fts_index):
@@ -934,7 +934,7 @@ class ConfigPurging(CollectionBase):
         self.log.info("Done creating FTS indexes for %s" % bucket.name)
 
         # Create GSI tombstones
-        for bucket in self.bucket_util.buckets[:2]:
+        for bucket in self.cluster.buckets[:2]:
             self.log.info("Create and drop %s GSI indexes on %s"
                           % (self.gsi_indexes_to_create_drop, bucket.name))
             for _, scope in bucket.scopes.items():
@@ -948,7 +948,7 @@ class ConfigPurging(CollectionBase):
                                          scope.name, c_name, index)
 
         # Create FTS tombstones
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         for _, scope in bucket.scopes.items():
             for c_name, _ in scope.collections.items():
                 for index in range(self.num_fts_index,

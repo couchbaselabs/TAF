@@ -524,7 +524,7 @@ class BasicUpsertTests(BasicCrudTests):
         self.doc_ops = "update"
 
         self.client = SDKClient([self.cluster.master],
-                                self.bucket_util.buckets[0],
+                                self.cluster.buckets[0],
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection)
 
@@ -538,7 +538,7 @@ class BasicUpsertTests(BasicCrudTests):
             self.assertTrue(
                 self.bucket_util._wait_warmup_completed(
                     [self.cluster_util.cluster.master],
-                    self.bucket_util.buckets[0],
+                    self.cluster.buckets[0],
                     wait_time=self.wait_timeout * 10))
 
         def upsert_doc(start_num, end_num, key_obj, val_obj):
@@ -646,7 +646,7 @@ class BasicUpsertTests(BasicCrudTests):
                 shell.disconnect()
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
                                 [self.cluster_util.cluster.master],
-                                self.bucket_util.buckets[0],
+                                self.cluster.buckets[0],
                                 wait_time=self.wait_timeout * 10))
             #######################################################################
             '''

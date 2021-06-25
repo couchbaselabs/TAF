@@ -176,7 +176,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_to_stop:
             self.node_data[node]["cb_error"].revert(CouchbaseError.STOP_SERVER)
 
-        self.bucket_util.is_warmup_complete(self.bucket_util.buckets)
+        self.bucket_util.is_warmup_complete(self.cluster.buckets)
         self.validate_test_failure()
 
     def test_with_process_crash(self):
@@ -230,11 +230,11 @@ class CbCollectInfoTests(CollectionBase):
         2. Make sure the cb_collect logs does not crosses 'max_size_threshold'
         """
         total_index_to_create = 20
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         load_gen = doc_generator(self.key, 0, 50000)
         nodes_in_cluster = self.__get_server_nodes()
 
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.sdk_client_pool.create_clients(bucket, [self.cluster.master])
 
         # Value in MB
@@ -266,7 +266,7 @@ class CbCollectInfoTests(CollectionBase):
         self.sdk_client_pool.release_client(client)
 
         doc_load_tasks = list()
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             task = self.task.async_continuous_doc_ops(
                 self.cluster, bucket, load_gen,
                 op_type="update",

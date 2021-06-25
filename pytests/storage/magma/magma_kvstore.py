@@ -253,7 +253,7 @@ class KVStoreTests(MagmaBaseTest):
         Sorting bucket list
         '''
         bucket_lst = []
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             bucket_lst.append((bucket, bucket.name))
         bucket_lst = sorted(bucket_lst, key = lambda x : x[-1])
         self.log.debug ("bucket list is {} ".format(bucket_lst))
@@ -328,7 +328,7 @@ class KVStoreTests(MagmaBaseTest):
 
             if self.gen_create is not None or self.gen_update is not None:
                 tasks_in = dict()
-                for bucket in self.bucket_util.buckets:
+                for bucket in self.cluster.buckets:
                     self.log.debug("Iteration=={}, Loading earlier deleted/expirted items in bucket=={}"
                                    .format(count+1, bucket.name))
                     for collection in self.collections:
@@ -383,7 +383,7 @@ class KVStoreTests(MagmaBaseTest):
 
             if self.crash_th and self.crash_th.is_alive():
                 self.crash_th.join()
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 ready = self.bucket_util.wait_for_memcached(
                     self.cluster.master,
                     bucket)
@@ -391,7 +391,7 @@ class KVStoreTests(MagmaBaseTest):
 
             task_info = dict()
             bucket_lst = []
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 bucket_lst.append((bucket, bucket.name))
                 bucket_lst = sorted(bucket_lst, key = lambda x : x[-1])
             self.log.debug("Iteration=={}, Bucket list after recreation of bucket =={} ".

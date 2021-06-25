@@ -17,7 +17,7 @@ class CollectionsDgmSteady(CollectionBase):
         self.creates = self.input.param("creates", False)
 
         self.bucket_util._expiry_pager()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
     def tearDown(self):
         super(CollectionsDgmSteady, self).tearDown()
@@ -148,7 +148,7 @@ class CollectionsDgmSteady(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)
@@ -161,7 +161,7 @@ class CollectionsDgmSteady(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)
@@ -175,7 +175,7 @@ class CollectionsDgmSteady(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)
@@ -189,7 +189,7 @@ class CollectionsDgmSteady(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)

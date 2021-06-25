@@ -76,7 +76,7 @@ class MultiDurabilityTests(BaseTestCase):
                     raise_exception = "Bucket %s not warmed up" % bucket.name
 
             if task.result:
-                self.bucket_util.buckets.append(bucket)
+                self.cluster.buckets.append(bucket)
             self.task_manager.stop_task(task)
 
         if raise_exception:
@@ -152,7 +152,7 @@ class MultiDurabilityTests(BaseTestCase):
                                    doc_type=self.doc_type,
                                    vbuckets=self.cluster_util.vbuckets)
         doc_loading_tasks = list()
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             doc_loading_tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_create, "create", 0,
                 batch_size=10, process_concurrency=1,

@@ -58,7 +58,7 @@ class LuksUpgrade(UpgradeBase):
                     self.num_items,
                     self.num_items+create_batch_size)
                 sync_write_task = self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets,
+                    self.cluster, self.cluster.buckets,
                     create_gen, "create",
                     process_concurrency=1,
                     transaction_timeout=self.transaction_timeout,

@@ -155,7 +155,7 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("Delete KV bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.bucket_util.buckets[0].name),
+            self.cluster.master, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         self.log.info("Execute query and validate error response")
@@ -313,7 +313,7 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("Delete KV bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.bucket_util.buckets[0].name),
+            self.cluster.master, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         self.log.info("Recreate KV bucket")
@@ -366,7 +366,7 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("Delete KV bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.bucket_util.buckets[0].name),
+            self.cluster.master, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])

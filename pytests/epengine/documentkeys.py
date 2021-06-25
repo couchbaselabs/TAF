@@ -27,7 +27,7 @@ class DocumentKeysTests(ClusterSetup):
     """Helper function to verify the data using view query"""
     def _verify_with_views(self, expected_rows):
 
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             default_map_func = 'function (doc, meta) { emit(meta.id, null);}'
             default_view = View("View", default_map_func, None, False)
             ddoc_name = "key_ddoc"

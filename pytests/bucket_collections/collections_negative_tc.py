@@ -10,7 +10,7 @@ class CollectionsNegativeTc(CollectionBase):
         super(CollectionsNegativeTc, self).setUp()
         self.use_default_collection = \
             self.input.param("use_default_collection", False)
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         self.invalid = ["_a", "%%", "a~", "a`", "a!", "a@", "a#", "a$", "a^",
                         "a&", "a*", "a(", "a)", "a=", "a+", "a{", "a}", "a|",
                         "a:", "a;", "a'", "a,", "a<", "a.", "a>", "a?", "a/",

@@ -37,7 +37,7 @@ class CasBaseTest(BaseTestCase):
             conflict_resolution=self.bucket_conflict_resolution_type)
         self.cluster_util.print_cluster_stats()
         self.bucket_util.print_bucket_stats()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
         # Create sdk_clients for pool
         if self.sdk_client_pool:

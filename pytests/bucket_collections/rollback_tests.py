@@ -16,7 +16,7 @@ class RollbackTests(CollectionBase):
         self.collection_ops_type = self.input.param("collection_ops", None)
         self.rollback_with_multiple_mutation = self.input.param(
             "rollback_with_multiple_mutation", False)
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
         # Disable auto-fail_over to avoid fail_over of nodes
         status = RestConnection(self.cluster.master) \
@@ -121,7 +121,7 @@ class RollbackTests(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 load_spec,
                 mutation_num=mutation_num)
         if doc_loading_task.result is False:
@@ -182,7 +182,7 @@ class RollbackTests(CollectionBase):
                 vb_replica_queue_size_map.update({node: 0})
 
             self.log.info("Validating stats")
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
                                                 timeout=self.wait_timeout)
                 self.bucket_util._wait_for_stat(
@@ -222,7 +222,7 @@ class RollbackTests(CollectionBase):
 
         # Set values to num_items to support loading through
         # collection loading task
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             for _, scope in bucket.scopes.items():
                 for _, collection in scope.collections.items():
                     collection.num_items = self.num_items
@@ -253,7 +253,7 @@ class RollbackTests(CollectionBase):
                         expected_val *= 2
                 stat_map.update({node: expected_val})
 
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.bucket_util._wait_for_stat(bucket, stat_map,
                                                 timeout=self.wait_timeout)
 
@@ -274,7 +274,7 @@ class RollbackTests(CollectionBase):
                                                keys_to_verify)
 
         # Reset expected values to '0' for validation
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             for _, scope in bucket.scopes.items():
                 for _, collection in scope.collections.items():
                     collection.num_items = 0

@@ -24,7 +24,7 @@ class DcpTestCase(DCPBase):
         self.dcp_client.sasl_auth_plain("cbadminbucket","password")
         self.dcp_client.bucket_select(bucket_name)
 
-        self.mcd_client = MemcachedClientHelper.direct_client(self.cluster.master, self.bucket_util.buckets[0])
+        self.mcd_client = MemcachedClientHelper.direct_client(self.cluster.master, self.cluster.buckets[0])
 
     def tearDown(self):
         self.dcp_client.close()

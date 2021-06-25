@@ -43,7 +43,7 @@ class CrashTest(CollectionBase):
 
         verification_dict = dict()
         verification_dict["ops_create"] = \
-            self.bucket_util.buckets[0].scopes[
+            self.cluster.buckets[0].scopes[
                 CbServer.default_scope].collections[
                 CbServer.default_collection].num_items
         verification_dict["sync_write_aborted_count"] = 0
@@ -70,7 +70,7 @@ class CrashTest(CollectionBase):
             vbuckets=self.cluster_util.vbuckets)
         if self.atomicity:
             transaction_task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 transaction_gen_create, DocLoading.Bucket.DocOps.CREATE,
                 exp=0,
                 batch_size=10,
@@ -84,7 +84,7 @@ class CrashTest(CollectionBase):
                 commit=True,
                 sync=self.sync)
             self.task.jython_task_manager.get_task_result(transaction_task)
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_create,
                 DocLoading.Bucket.DocOps.CREATE, self.maxttl,
@@ -95,7 +95,7 @@ class CrashTest(CollectionBase):
             self.task.jython_task_manager.get_task_result(task)
             self.bucket_util._wait_for_stats_all_buckets()
 
-            self.bucket_util.buckets[0].scopes[
+            self.cluster.buckets[0].scopes[
                 CbServer.default_scope].collections[
                 CbServer.default_collection].num_items += self.num_items
             verification_dict["ops_create"] += self.num_items
@@ -112,17 +112,17 @@ class CrashTest(CollectionBase):
                 if stats_failed:
                     self.fail("Cbstats verification failed")
                 self.bucket_util.verify_stats_all_buckets(
-                    self.bucket_util.buckets[0].scopes[
+                    self.cluster.buckets[0].scopes[
                         CbServer.default_scope].collections[
                         CbServer.default_collection].num_items)
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         if self.N1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
                                 service_type="n1ql",
                                 get_all_nodes=True)
             self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
                                           use_rest=True,
-                                          buckets=self.bucket_util.buckets,
+                                          buckets=self.cluster.buckets,
                                           log=self.log,
                                           scan_consistency='REQUEST_PLUS',
                                           num_collection=3,
@@ -165,7 +165,7 @@ class CrashTest(CollectionBase):
         if self.atomicity:
             self.transaction_load_task = \
                 self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets,
+                    self.cluster, self.cluster.buckets,
                     transaction_gen_load, DocLoading.Bucket.DocOps.CREATE,
                     exp=0,
                     batch_size=10,
@@ -433,12 +433,12 @@ class CrashTest(CollectionBase):
             remote, self.bucket.name, self.target_node)
 
         bucket_dict = BucketUtils.get_random_collections(
-            self.bucket_util.buckets,
+            self.cluster.buckets,
             req_num=1,
             consider_scopes="all",
             consider_buckets="all")
 
-        bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+        bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                             bucket_dict.keys()[0])
         scope_name = bucket_dict[bucket.name]["scopes"].keys()[0]
         collection_name = bucket_dict[bucket.name][
@@ -514,7 +514,7 @@ class CrashTest(CollectionBase):
         3. Wait for load bucket task to complete
         4. Validate the docs for durability
         """
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
         target_vbuckets = range(0, self.cluster_util.vbuckets)
@@ -536,12 +536,12 @@ class CrashTest(CollectionBase):
             return
 
         bucket_dict = BucketUtils.get_random_collections(
-            self.bucket_util.buckets,
+            self.cluster.buckets,
             req_num=1,
             consider_scopes="all",
             consider_buckets="all")
 
-        bucket = BucketUtils.get_bucket_obj(self.bucket_util.buckets,
+        bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                             bucket_dict.keys()[0])
         scope_name = bucket_dict[bucket.name]["scopes"].keys()[0]
         collection_name = bucket_dict[bucket.name][

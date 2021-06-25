@@ -24,7 +24,7 @@ class BucketParamTest(ClusterSetup):
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets, doc_create,
+                self.cluster, self.cluster.buckets, doc_create,
                 "create", 0, batch_size=20, process_concurrency=8,
                 replicate_to=self.replicate_to,
                 persist_to=self.persist_to,
@@ -35,7 +35,7 @@ class BucketParamTest(ClusterSetup):
                 sync=self.sync)
             self.task.jython_task_manager.get_task_result(task)
         else:
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 task = self.task.async_load_gen_docs(
                     self.cluster, bucket, doc_create, "create", 0,
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
@@ -62,7 +62,7 @@ class BucketParamTest(ClusterSetup):
         if "update" in doc_ops:
             tasks.append(
                 self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, doc_update,
+                    self.cluster, self.cluster.buckets, doc_update,
                     "rebalance_only_update", 0, batch_size=20,
                     process_concurrency=8,
                     replicate_to=self.replicate_to,
@@ -77,7 +77,7 @@ class BucketParamTest(ClusterSetup):
         if "create" in doc_ops:
             tasks.append(
                 self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, doc_create,
+                    self.cluster, self.cluster.buckets, doc_create,
                     "create", 0, batch_size=20,
                     process_concurrency=8,
                     replicate_to=self.replicate_to,
@@ -92,7 +92,7 @@ class BucketParamTest(ClusterSetup):
         if "delete" in doc_ops:
             tasks.append(
                 self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, doc_delete,
+                    self.cluster, self.cluster.buckets, doc_delete,
                     "rebalance_delete", 0, batch_size=20,
                     process_concurrency=8,
                     replicate_to=self.replicate_to,

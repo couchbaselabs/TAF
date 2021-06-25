@@ -56,7 +56,7 @@ class E2EUpgrade(UpgradeBase, BaseSecondaryIndexingTests):
         for m_type in index_item_count.keys():
             if m_type == "#primary":
                 result = self.n1ql_helper.get_index_count_using_primary_index(
-                    self.bucket_util.buckets)
+                    self.cluster.buckets)
                 if result[bucket.name] != index_item_count[m_type]:
                     self.log_failure("Mismatch in primary num_indexed "
                                      "items: %s, expected: %s"
@@ -105,7 +105,7 @@ class E2EUpgrade(UpgradeBase, BaseSecondaryIndexingTests):
         """
 
         crud_batch_size = 50
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         kv_nodes = self.cluster_util.get_kv_nodes()
         replica_vbs = dict()
         verification_dict = dict()

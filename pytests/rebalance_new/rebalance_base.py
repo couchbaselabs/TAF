@@ -82,7 +82,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.create_buckets(self.bucket_size)
 
             # Create Scope/Collection based on inputs given
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 if self.scope_name != CbServer.default_scope:
                     self.scope_name = BucketUtils.get_random_name()
                     BucketUtils.create_scope(self.cluster.master,
@@ -109,14 +109,14 @@ class RebalanceBaseTest(BaseTestCase):
                 self.bucket_util.set_flusher_total_batch_limit(
                     self.cluster.master,
                     self.flusher_total_batch_limit,
-                    self.bucket_util.buckets)
+                    self.cluster.buckets)
 
             self.gen_create = self.get_doc_generator(0, self.num_items)
             if self.active_resident_threshold < 100:
                 self.check_temporary_failure_exception = True
                 # Reset num_items=0 since the num_items will be populated
                 # by the DGM load task
-                for bucket in self.bucket_util.buckets:
+                for bucket in self.cluster.buckets:
                     bucket.scopes[self.scope_name] \
                         .collections[self.collection_name] \
                         .num_items = 0
@@ -124,7 +124,7 @@ class RebalanceBaseTest(BaseTestCase):
             # Create clients in SDK client pool
             if self.sdk_client_pool:
                 self.log.info("Creating SDK clients for client_pool")
-                for bucket in self.bucket_util.buckets:
+                for bucket in self.cluster.buckets:
                     self.sdk_client_pool.create_clients(
                         bucket,
                         [self.cluster.master],
@@ -185,7 +185,7 @@ class RebalanceBaseTest(BaseTestCase):
             bucket_durability=self.bucket_durability_level)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 self.cluster_util.get_kv_nodes(), bucket))
 
@@ -217,10 +217,10 @@ class RebalanceBaseTest(BaseTestCase):
         # Create clients in SDK client pool
         if self.sdk_client_pool:
             self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(self.bucket_util.buckets)
+            bucket_count = len(self.cluster.buckets)
             max_clients = self.task_manager.number_of_threads
             clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket,
                     [self.cluster.master],
@@ -231,7 +231,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0)
         if doc_loading_task.result is False:
@@ -355,7 +355,7 @@ class RebalanceBaseTest(BaseTestCase):
 
     def _load_all_buckets_atomicty(self, kv_gen, op_type):
         task = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets, kv_gen, op_type, 0,
+            self.cluster, self.cluster.buckets, kv_gen, op_type, 0,
             batch_size=10,
             process_concurrency=8,
             replicate_to=self.replicate_to,
@@ -374,7 +374,7 @@ class RebalanceBaseTest(BaseTestCase):
         if "update" in self.doc_ops:
             tasks_info.update(
                 {self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, self.gen_update,
+                    self.cluster, self.cluster.buckets, self.gen_update,
                     "rebalance_only_update", 0, batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -387,7 +387,7 @@ class RebalanceBaseTest(BaseTestCase):
         if "create" in self.doc_ops:
             tasks_info.update(
                 {self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, self.gen_create,
+                    self.cluster, self.cluster.buckets, self.gen_create,
                     "create", 0, batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -399,7 +399,7 @@ class RebalanceBaseTest(BaseTestCase):
         if "delete" in self.doc_ops:
             tasks_info.update(
                 {self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, self.gen_delete,
+                    self.cluster, self.cluster.buckets, self.gen_delete,
                     "rebalance_delete", 0, batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -445,7 +445,7 @@ class RebalanceBaseTest(BaseTestCase):
                 sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 bucket \
                     .scopes[self.scope_name] \
                     .collections[self.collection_name] \
@@ -463,7 +463,7 @@ class RebalanceBaseTest(BaseTestCase):
                 scope=self.scope_name, collection=self.collection_name,
                 sdk_client_pool=self.sdk_client_pool)
             tasks_info.update(tem_tasks_info.items())
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 bucket \
                     .scopes[self.scope_name] \
                     .collections[self.collection_name] \

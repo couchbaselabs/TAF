@@ -633,7 +633,7 @@ class N1qlBase(CollectionBase):
             if buckets:
                 self.buckets = buckets
             else:
-                self.buckets = self.bucket_util.buckets
+                self.buckets = self.cluster.buckets
             bucket = BucketUtils.get_bucket_obj(self.buckets,
                                                 bucket_collection[0])
             client = \

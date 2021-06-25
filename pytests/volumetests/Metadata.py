@@ -174,7 +174,7 @@ class volume(CollectionBase):
         self.log.info("Creating indexes with defer build")
         indexes_to_build = dict()
         count = 0
-        couchbase_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "couchbase"]
+        couchbase_buckets = [bucket for bucket in self.cluster.buckets if bucket.bucketType == "couchbase"]
         for bucket in couchbase_buckets:
             indexes_to_build[bucket.name] = dict()
             for _, scope in bucket.scopes.items():
@@ -294,7 +294,7 @@ class volume(CollectionBase):
         """
         self.log.debug("Creating {} fts indexes ".format(count))
         fts_helper = FtsHelper(self.fts_nodes[0])
-        couchbase_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "couchbase"]
+        couchbase_buckets = [bucket for bucket in self.cluster.buckets if bucket.bucketType == "couchbase"]
         created_count = 0
         fts_indexes = dict()
         for bucket in couchbase_buckets:
@@ -483,7 +483,7 @@ class volume(CollectionBase):
             self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=self.batch_size)

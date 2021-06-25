@@ -5950,7 +5950,7 @@ class CreateDatasetsTask(Task):
     def call(self):
         self.start_task()
         try:
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 if self.kv_name_cardinality > 1:
                     for scope in self.bucket_util.get_active_scopes(bucket):
                         for collection in \

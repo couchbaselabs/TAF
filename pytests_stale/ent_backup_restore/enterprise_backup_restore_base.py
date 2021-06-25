@@ -311,7 +311,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
 
     def store_vbucket_seqno(self):
         vseqno = self.bucket_util.get_vbucket_seqnos(self.cluster_to_backup,
-                                         self.bucket_util.buckets,
+                                         self.cluster.buckets,
                                          self.skip_consistency, self.per_node)
         self.vbucket_seqno.append(vseqno)
 

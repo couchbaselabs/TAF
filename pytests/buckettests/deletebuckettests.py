@@ -90,7 +90,7 @@ class DeleteBucketTests(BaseTestCase):
         jsonValue = json.loads(contentValue[0][0])
         self.assertEqual(jsonValue["bucket_name"], bucketNameValue, "Value are not equal")
 
-        self.bucket_util.delete_bucket(self.cluster.master, self.bucket_util.buckets[0])
+        self.bucket_util.delete_bucket(self.cluster.master, self.cluster.buckets[0])
 
         contentValue = self.remote_shell.execute_command(
             "cat " + logfilePath + " | grep 'Bucket was deleted'")

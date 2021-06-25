@@ -367,7 +367,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.change_swap_space(self.cluster.nodes_in_cluster)
 
         self.client = SDKClient([self.cluster.master],
-                                self.bucket_util.buckets[0],
+                                self.cluster.buckets[0],
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection)
 

@@ -58,8 +58,8 @@ class UpgradeTests(UpgradeBase):
         DocLoaderUtils.sdk_client_pool = SDKClientPool()
         self.log.info("Creating required SDK clients for client_pool")
         clients_per_bucket = \
-            int(self.thread_to_use / len(self.bucket_util.buckets))
-        for bucket in self.bucket_util.buckets:
+            int(self.thread_to_use / len(self.cluster.buckets))
+        for bucket in self.cluster.buckets:
             DocLoaderUtils.sdk_client_pool.create_clients(
                 bucket, [self.cluster.master], clients_per_bucket,
                 compression_settings=self.sdk_compression)
@@ -101,7 +101,7 @@ class UpgradeTests(UpgradeBase):
         collection_task = \
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
-                                                    self.bucket_util.buckets,
+                                                    self.cluster.buckets,
                                                     collection_load_spec,
                                                     mutation_num=1,
                                                     batch_size=500)
@@ -123,7 +123,7 @@ class UpgradeTests(UpgradeBase):
         collection_task = \
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
-                                                    self.bucket_util.buckets,
+                                                    self.cluster.buckets,
                                                     collection_load_spec,
                                                     mutation_num=1,
                                                     batch_size=500)
@@ -176,7 +176,7 @@ class UpgradeTests(UpgradeBase):
                     self.num_items,
                     self.num_items+create_batch_size)
                 sync_write_task = self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets,
+                    self.cluster, self.cluster.buckets,
                     create_gen, DocLoading.Bucket.DocOps.CREATE,
                     process_concurrency=1,
                     transaction_timeout=self.transaction_timeout,
@@ -307,7 +307,7 @@ class UpgradeTests(UpgradeBase):
             # Validate sync_write results after upgrade
             if self.atomicity:
                 sync_write_task = self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets,
+                    self.cluster, self.cluster.buckets,
                     create_gen, DocLoading.Bucket.DocOps.CREATE,
                     process_concurrency=1,
                     transaction_timeout=self.transaction_timeout,
@@ -354,7 +354,7 @@ class UpgradeTests(UpgradeBase):
 
         # Cb_stats vb-details validation
         failed = self.durability_helper.verify_vbucket_details_stats(
-            self.bucket_util.buckets[0],
+            self.cluster.buckets[0],
             self.cluster_util.get_kv_nodes(),
             vbuckets=self.cluster_util.vbuckets,
             expected_val=self.verification_dict)
@@ -378,11 +378,11 @@ class UpgradeTests(UpgradeBase):
 
         # Perform bucket_durability update
         key, value = doc_generator("b_durability_doc", 0, 1).next()
-        client = SDKClient([self.cluster.master], self.bucket_util.buckets[0])
+        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
         for index, d_level in enumerate(possible_d_levels[self.bucket_type]):
             self.log.info("Updating bucket_durability=%s" % d_level)
             self.bucket_util.update_bucket_property(
-                self.bucket_util.buckets[0],
+                self.cluster.buckets[0],
                 bucket_durability=BucketDurability[d_level])
             self.bucket_util.print_bucket_stats()
 
@@ -415,7 +415,7 @@ class UpgradeTests(UpgradeBase):
 
         # Cb_stats vb-details validation
         failed = self.durability_helper.verify_vbucket_details_stats(
-            self.bucket_util.buckets[0],
+            self.cluster.buckets[0],
             self.cluster_util.get_kv_nodes(),
             vbuckets=self.cluster_util.vbuckets,
             expected_val=self.verification_dict)
@@ -430,7 +430,7 @@ class UpgradeTests(UpgradeBase):
             while not stop_thread:
                 commit_trans = choice([True, False])
                 trans_update_task = self.task.async_load_gen_docs_atomicity(
-                    self.cluster, self.bucket_util.buckets, self.gen_load,
+                    self.cluster, self.cluster.buckets, self.gen_load,
                     DocLoading.Bucket.DocOps.UPDATE,
                     exp=self.maxttl,
                     batch_size=50,
@@ -496,7 +496,7 @@ class UpgradeTests(UpgradeBase):
                                    self.num_items*2)
         # Start transaction load after node upgrade
         trans_task = self.task.async_load_gen_docs_atomicity(
-            self.cluster, self.bucket_util.buckets,
+            self.cluster, self.cluster.buckets,
             create_gen, DocLoading.Bucket.DocOps.CREATE, exp=self.maxttl,
             batch_size=50,
             process_concurrency=8,
@@ -605,7 +605,7 @@ class UpgradeTests(UpgradeBase):
             pass
 
     def get_range_api_metrics(self, metric_name):
-        label_values = {"bucket": self.bucket_util.buckets[0].name,
+        label_values = {"bucket": self.cluster.buckets[0].name,
                         "nodes": self.cluster.master.ip}
         content = StatsHelper(self.cluster.master).get_range_api_metrics(
             metric_name, label_values=label_values)

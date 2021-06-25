@@ -28,7 +28,7 @@ from com.couchbase.client.core.error import \
 class SDKExceptionTests(CollectionBase):
     def setUp(self):
         super(SDKExceptionTests, self).setUp()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         self.subdoc_test = self.input.param("subdoc_test", False)
         self.log_setup_status("TimeoutTests", "complete")
 
@@ -410,7 +410,7 @@ class SDKExceptionTests(CollectionBase):
                 self.bucket_util.run_scenario_from_spec(
                     self.task,
                     self.cluster,
-                    self.bucket_util.buckets,
+                    self.cluster.buckets,
                     curr_spec,
                     mutation_num=1,
                     async_load=True,

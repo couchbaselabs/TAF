@@ -68,7 +68,7 @@ class CBASBacklogIngestion(CBASBaseTest):
         self.bucket_util._async_load_all_buckets(self.cluster, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
 
         self.log.info("Create primary index")
-        query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.bucket_util.buckets[0].name)
+        query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.cluster.buckets[0].name)
         self.rest.query_tool(query)
 
         self.log.info("Create a connection")
@@ -172,7 +172,7 @@ class CBASBacklogIngestion(CBASBaseTest):
         self.bucket_util._async_load_all_buckets(self.cluster, kv_gen=load_gen, op_type="create", exp=0, batch_size=batch_size)
 
         self.log.info("Create primary index")
-        query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.bucket_util.buckets[0].name)
+        query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.cluster.buckets[0].name)
         self.rest.query_tool(query)
 
         self.log.info("Create connection")
@@ -348,7 +348,7 @@ class BucketOperations(CBASBaseTest):
 
         self.log.info("Delete CB bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.bucket_util.buckets[0].name),
+            self.cluster.master, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         self.log.info("Verify count on dataset")
@@ -592,7 +592,7 @@ class CBASDataOperations(CBASBaseTest):
         self.fetch_test_case_arguments()
 
         self.log.info("Create reference to SDK client")
-        client = SDKClient(hosts=[self.cluster.master.ip], bucket=self.bucket_util.buckets[0],
+        client = SDKClient(hosts=[self.cluster.master.ip], bucket=self.cluster.buckets[0],
                            password=self.cluster.master.rest_password)
 
         self.log.info("Insert custom data into default bucket")

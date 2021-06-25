@@ -26,7 +26,7 @@ class BasicOps(DurabilityTestsBase):
         Basic test for Sub-doc CRUD operations
         """
         doc_op = self.input.param("op_type", None)
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         supported_d_levels = self.bucket_util.get_supported_durability_levels()
 
         # Stat validation reference variables
@@ -224,7 +224,7 @@ class BasicOps(DurabilityTestsBase):
 
         doc_ops = self.input.param("op_type", "create")
         tasks = list()
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -386,7 +386,7 @@ class BasicOps(DurabilityTestsBase):
         tasks = list()
         insert_end_index = self.num_items/3
         upsert_end_index = (self.num_items/3) * 2
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -541,7 +541,7 @@ class BasicOps(DurabilityTestsBase):
         failover_info["afterCrud"] = dict()
         vb_info_info["init"] = dict()
         vb_info_info["afterCrud"] = dict()
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         insert_end_index = self.num_items / 3
         upsert_end_index = (self.num_items / 3) * 2
 
@@ -708,7 +708,7 @@ class BasicOps(DurabilityTestsBase):
         failover_info["afterCrud"] = dict()
         vb_info_info["init"] = dict()
         vb_info_info["afterCrud"] = dict()
-        def_bucket = self.bucket_util.buckets[0]
+        def_bucket = self.cluster.buckets[0]
         insert_end_index = self.num_items / 3
         upsert_end_index = (self.num_items / 3) * 2
 

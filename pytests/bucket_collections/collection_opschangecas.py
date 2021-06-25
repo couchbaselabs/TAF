@@ -12,7 +12,7 @@ from cb_tools.cbstats import Cbstats
 class OpsChangeCasTests(CollectionBase):
     def setUp(self):
         super(OpsChangeCasTests, self).setUp()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         # To override default num_items to '0'
         self.num_items = self.input.param("num_items", 10)
         self.key = "test_collections"
@@ -214,9 +214,9 @@ class OpsChangeCasTests(CollectionBase):
                 self.cb_stat[node.ip].vbucket_list(self.bucket.name, "replica")
 
         collections = BucketUtils.get_random_collections(
-                                    self.bucket_util.buckets, 2, 2, 1)
+                                    self.cluster.buckets, 2, 2, 1)
         for bucket_name, scope_dict in collections.iteritems():
-            bucket = self.bucket_util.get_bucket_obj(self.bucket_util.buckets,
+            bucket = self.bucket_util.get_bucket_obj(self.cluster.buckets,
                                                      bucket_name)
             for scope_name, collection_dict in scope_dict["scopes"].items():
                 for c_name, c_data in collection_dict["collections"].items():
@@ -358,7 +358,7 @@ class OpsChangeCasTests(CollectionBase):
         threads = list()
         for bucket_name, scope_dict in collections.iteritems():
             bucket_obj = self.bucket_util.get_bucket_obj(
-                self.bucket_util.buckets, bucket_name)
+                self.cluster.buckets, bucket_name)
             for scope_name, collection_dict in scope_dict["scopes"].items():
                 for c_name, c_data in collection_dict["collections"].items():
                     thread = Thread(target=run_test,

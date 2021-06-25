@@ -56,7 +56,7 @@ class basic_ops(ClusterSetup):
         tasks = []
         if "update" in self.op_type:
             tasks.append(self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 self.gen_delete, "rebalance_only_update", exp=0,
                 batch_size=10,
                 process_concurrency=8,
@@ -70,7 +70,7 @@ class basic_ops(ClusterSetup):
         if "create" in self.op_type:
             tasks.append(self.task.async_load_gen_docs_atomicity(
                 self.cluster,
-                self.bucket_util.buckets,
+                self.cluster.buckets,
                 self.gen_create, "create", exp=0,
                 batch_size=10,
                 process_concurrency=8,
@@ -82,7 +82,7 @@ class basic_ops(ClusterSetup):
                 durability=self.durability_level))
         if "delete" in self.op_type:
             tasks.append(self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.bucket_util.buckets,
+                self.cluster, self.cluster.buckets,
                 self.gen_delete, "rebalance_delete", exp=0,
                 batch_size=10,
                 process_concurrency=8,

@@ -60,7 +60,7 @@ class MagmaDiskFull(MagmaBaseTest):
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
 
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 try:
                     self.bucket_util._wait_for_stat(bucket, ep_data_write_failed,
                                                     cbstat_cmd="all",
@@ -193,10 +193,10 @@ class MagmaDiskFull(MagmaBaseTest):
         # Stopping persistence on NodeA
         shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
         cbstats = Cbstats(shell)
-        self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].
+        self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
         mem_client = MemcachedClientHelper.direct_client(
-            self.cluster_util.cluster.master, self.bucket_util.buckets[0])
+            self.cluster_util.cluster.master, self.cluster.buckets[0])
         mem_client.stop_persistence()
         self.gen_create = self.genrate_docs_basic(start, mem_only_items,
                                                   self.target_vbucket)
@@ -208,7 +208,7 @@ class MagmaDiskFull(MagmaBaseTest):
                              mem_only_items}
         ep_data_write_failed = {self.cluster.nodes_in_cluster[-1]: 0}
 
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
             self.bucket_util._wait_for_stat(
                 bucket,
@@ -227,13 +227,13 @@ class MagmaDiskFull(MagmaBaseTest):
         self.free_disk(self.cluster.nodes_in_cluster[-1])
         self.assertTrue(self.bucket_util._wait_warmup_completed(
             self.cluster.nodes_in_cluster,
-            self.bucket_util.buckets[0],
+            self.cluster.buckets[0],
             wait_time=self.wait_timeout * 10))
         self.sleep(10, "Not Required, but waiting for 10s after warm up")
         self.bucket_util.verify_stats_all_buckets(items, timeout=300)
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
+                self.cluster, self.cluster.buckets[0],
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
@@ -268,7 +268,7 @@ class MagmaDiskFull(MagmaBaseTest):
             tasks_info.update(tem_tasks_info.items())
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
+                self.cluster, self.cluster.buckets[0],
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
@@ -327,7 +327,7 @@ class MagmaDiskFull(MagmaBaseTest):
             tasks_info.update(tem_tasks_info.items())
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
+                self.cluster, self.cluster.buckets[0],
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
@@ -386,7 +386,7 @@ class MagmaDiskFull(MagmaBaseTest):
             tasks_info.update(tem_tasks_info.items())
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
+                self.cluster, self.cluster.buckets[0],
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
@@ -445,7 +445,7 @@ class MagmaDiskFull(MagmaBaseTest):
             tasks_info.update(tem_tasks_info.items())
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.bucket_util.buckets[0],
+                self.cluster, self.cluster.buckets[0],
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
@@ -498,7 +498,7 @@ class MagmaDiskFull(MagmaBaseTest):
 
         self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
         data_validation = self.task.async_validate_docs(
-            self.cluster, self.bucket_util.buckets[0],
+            self.cluster, self.cluster.buckets[0],
             self.gen_read, "create", 0,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
@@ -546,7 +546,7 @@ class MagmaDiskFull(MagmaBaseTest):
         self.rest.stop_rebalance(wait_timeout=300)
 
         data_validation = self.task.async_validate_docs(
-            self.cluster, self.bucket_util.buckets[0],
+            self.cluster, self.cluster.buckets[0],
             self.gen_read, "create", 0,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
@@ -640,7 +640,7 @@ class MagmaDiskFull(MagmaBaseTest):
         # Insert items so that disk gets full
         self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
 
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             result = self.bucket_util.delete_bucket(self.cluster.master, bucket)
             self.assertTrue(result, "Bucket deletion failed: %s" % bucket.name)
 
@@ -685,7 +685,7 @@ class MagmaDiskFull(MagmaBaseTest):
         self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
 
         # Check for data write failures due to disk full
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.assertTrue(self.bucket_util.flush_bucket(self.cluster.master,
                                                           bucket))
 

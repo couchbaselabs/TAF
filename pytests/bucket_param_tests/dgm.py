@@ -19,7 +19,7 @@ class Bucket_DGM_Tests(ClusterSetup):
             self.key, 0, self.num_items,
             key_size=self.key_size, doc_size=self.doc_size,
             doc_type=self.doc_type, vbuckets=self.cluster_util.vbuckets)
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_create, "create", 0,
                 persist_to=self.persist_to,
@@ -99,7 +99,7 @@ class Bucket_DGM_Tests(ClusterSetup):
                 self.task.jython_task_manager.get_task_result(task)
         else:
             task = self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, gen_create,
+                          self.cluster, self.cluster.buckets, gen_create,
                           "create", 0, batch_size=20,
                           process_concurrency=8,
                           replicate_to=self.replicate_to,
@@ -112,7 +112,7 @@ class Bucket_DGM_Tests(ClusterSetup):
                           sync=self.sync)
             self.task.jython_task_manager.get_task_result(task)
             task = self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, gen_create,
+                          self.cluster, self.cluster.buckets, gen_create,
                           "update", 0, batch_size=20,
                           process_concurrency=8,
                           replicate_to=self.replicate_to,
@@ -126,7 +126,7 @@ class Bucket_DGM_Tests(ClusterSetup):
                           sync=self.sync)
             self.task.jython_task_manager.get_task_result(task)
             task = self.task.async_load_gen_docs_atomicity(
-                          self.cluster, self.bucket_util.buckets, gen_delete,
+                          self.cluster, self.cluster.buckets, gen_delete,
                           "rebalance_delete", 0, batch_size=20,
                           process_concurrency=8,
                           replicate_to=self.replicate_to,
@@ -187,7 +187,7 @@ class Bucket_DGM_Tests(ClusterSetup):
                         self.log_failure("%s: (active_rr) %s < %s (replica_rr)"
                                          % (kv_node.ip, active_rr, replica_rr))
 
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         node_data = dict()
         kv_nodes = self.cluster_util.get_kv_nodes()
         for node in kv_nodes:

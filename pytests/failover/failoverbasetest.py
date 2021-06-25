@@ -109,7 +109,7 @@ class FailoverBaseTest(BaseTestCase):
 
         if self.sdk_client_pool:
             self.log.info("Creating SDK clients for client_pool")
-            for bucket in self.bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket,
                     [self.cluster.master],
@@ -158,7 +158,7 @@ class FailoverBaseTest(BaseTestCase):
 
     def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
         tasks = []
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, kv_gen, op_type, exp,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,

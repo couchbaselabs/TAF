@@ -126,18 +126,18 @@ class StatsBasicOps(CollectionBase):
         """
         # Example 1
         metric_name = "kv_curr_items"
-        label_values = {"bucket": self.bucket_util.buckets[0].name, "nodes": self.cluster.master.ip}
+        label_values = {"bucket": self.cluster.buckets[0].name, "nodes": self.cluster.master.ip}
         content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
         print(content)
 
         # Example 2
         metric_name = "kv_curr_items"
-        label_values = {"bucket": self.bucket_util.buckets[0].name, "aggregationFunction": "max"}
+        label_values = {"bucket": self.cluster.buckets[0].name, "aggregationFunction": "max"}
         content = StatsHelper(self.cluster.master).get_range_api_metrics(metric_name, label_values=label_values)
         print(content)
 
         # Example 3
-        content = StatsHelper(self.cluster.master).post_range_api_metrics(self.bucket_util.buckets[0].name)
+        content = StatsHelper(self.cluster.master).post_range_api_metrics(self.cluster.buckets[0].name)
         print(content)
 
     def test_instant_api_metrics(self):

@@ -97,7 +97,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.task.jython_task_manager.get_task_result(tasks_info.keys()[0])
         self.sleep(20)
         self.client = SDKClient([self.cluster.master],
-                                self.bucket_util.buckets[0],
+                                self.cluster.buckets[0],
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection)
         for i in range(10):
@@ -725,7 +725,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.task_manager.get_task_result(task)
         self.sleep(600, "wait after get ops")
         #data_validation = self.task.async_validate_docs(
-        #        self.cluster, self.bucket_util.buckets[0],
+        #        self.cluster, self.cluster.buckets[0],
         #        self.gen_read, "delete", 0,
         #        batch_size=self.batch_size,
         #        process_concurrency=self.process_concurrency,
@@ -920,7 +920,7 @@ class MagmaExpiryTests(MagmaBaseTest):
 
         shell_conn = RemoteMachineShellConnection(self.cluster.nodes_in_cluster[-1])
         cbstats = Cbstats(shell_conn)
-        self.target_vbucket = cbstats.vbucket_list(self.bucket_util.buckets[0].name)
+        self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
 
         self.generate_docs(target_vbucket=self.target_vbucket)
 

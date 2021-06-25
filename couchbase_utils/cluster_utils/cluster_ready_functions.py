@@ -43,6 +43,7 @@ class CBCluster:
         self.backup_nodes = list()
         self.nodes_in_cluster = list()
         self.xdcr_remote_clusters = list()
+        self.buckets = list()
 
     def __str__(self):
         return "Couchbase Cluster: %s, Nodes: %s" % (

@@ -22,7 +22,7 @@ class CollectionsRebalance(CollectionBase):
         super(CollectionsRebalance, self).setUp()
         self.bucket_util._expiry_pager()
         self.load_gen = doc_generator(self.key, 0, self.num_items)
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
         self.rest = RestConnection(self.cluster.master)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
         self.data_load_stage = self.input.param("data_load_stage", "before")
@@ -96,7 +96,7 @@ class CollectionsRebalance(CollectionBase):
                                 get_all_nodes=True)
         self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
                                           use_rest=True,
-                                          buckets = self.bucket_util.buckets,
+                                          buckets = self.cluster.buckets,
                                           log=self.log,
                                           scan_consistency='REQUEST_PLUS',
                                           num_collection=self.num_collection,
@@ -200,7 +200,7 @@ class CollectionsRebalance(CollectionBase):
           "sourceParams": {} \
         }'
 
-        bucket = self.bucket_util.buckets[0]
+        bucket = self.cluster.buckets[0]
         for index in range(0, self.fts_indexes_to_create_drop):
             random_scope_collection = \
                 self.bucket_util.get_random_collections([bucket], 1, 1, 1)[bucket.name]["scopes"]
@@ -222,7 +222,7 @@ class CollectionsRebalance(CollectionBase):
             self.log.info("queries ran are %s" % self.queries)
             self.n1ql_fun.process_value_for_verification(self.bucket_col,
                                  doc_gen_list, results,
-                                 buckets = self.bucket_util.buckets)
+                                 buckets = self.cluster.buckets)
         else:
             self.fail(self.collection_savepoint)
 
@@ -235,7 +235,7 @@ class CollectionsRebalance(CollectionBase):
     def compact_all_buckets(self):
         self.sleep(10, "wait for rebalance to start")
         self.log.info("Starting compaction for each bucket")
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
 
@@ -256,7 +256,7 @@ class CollectionsRebalance(CollectionBase):
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
-        ephemeral_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "ephemeral"]
+        ephemeral_buckets = [bucket for bucket in self.cluster.buckets if bucket.bucketType == "ephemeral"]
         for ephemeral_bucket in ephemeral_buckets:
             status, content = self.rest.set_ephemeral_purge_age_and_interval(bucket=ephemeral_bucket.name,
                                                                              ephemeral_metadata_purge_age=ephemeral_metadata_purge_age,
@@ -397,7 +397,7 @@ class CollectionsRebalance(CollectionBase):
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
-                        for bucket in self.bucket_util.buckets:
+                        for bucket in self.cluster.buckets:
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
@@ -446,7 +446,7 @@ class CollectionsRebalance(CollectionBase):
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
-                        for bucket in self.bucket_util.buckets:
+                        for bucket in self.cluster.buckets:
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
@@ -499,7 +499,7 @@ class CollectionsRebalance(CollectionBase):
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
-                        for bucket in self.bucket_util.buckets:
+                        for bucket in self.cluster.buckets:
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
                                 [node], bucket))
                         self.log.info("second attempt to rebalance")
@@ -558,7 +558,7 @@ class CollectionsRebalance(CollectionBase):
                 self.task.jython_task_manager.get_task_result(operation)
                 if not operation.result:
                     self.log.info("rebalance was failed as expected")
-                    for bucket in self.bucket_util.buckets:
+                    for bucket in self.cluster.buckets:
                         self.assertTrue(self.bucket_util._wait_warmup_completed(
                             [node], bucket))
                     self.log.info("second attempt to rebalance")
@@ -804,7 +804,7 @@ class CollectionsRebalance(CollectionBase):
             doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
-                                                        self.bucket_util.buckets,
+                                                        self.cluster.buckets,
                                                         doc_loading_spec,
                                                         mutation_num=0,
                                                         async_load=async_load,
@@ -891,7 +891,7 @@ class CollectionsRebalance(CollectionBase):
                 self.sleep(60, "wait after compaction")
                 items = 0
                 self.bucket_util._wait_for_stats_all_buckets()
-                for bucket in self.bucket_util.buckets:
+                for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
                     self.fail("Items did not go to 0")

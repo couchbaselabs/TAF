@@ -9,7 +9,7 @@ Basic test cases with commit,rollback scenarios
 class BasicOps(N1qlBase):
     def setUp(self):
         super(BasicOps, self).setUp()
-        self.bucket = self.bucket_util.buckets[0]
+        self.bucket = self.cluster.buckets[0]
 
     def tearDown(self):
         super(BasicOps, self).tearDown()
@@ -82,7 +82,7 @@ class BasicOps(N1qlBase):
                                           2, "all")
         collection = self.bucket_util.get_random_name()
         for bucket_name, scope_dict in scope_considered.items():
-            bucket = self.bucket_util.get_bucket_obj(self.bucket_util.buckets,
+            bucket = self.bucket_util.get_bucket_obj(self.cluster.buckets,
                                                 bucket_name)
             for scope in scope_dict["scopes"].keys():
                 self.bucket_util.create_collection(self.cluster.master,
@@ -118,7 +118,7 @@ class BasicOps(N1qlBase):
                                           2000, type="employee")
         scope = self.bucket_util.get_random_name()
         collection = self.bucket_util.get_random_name()
-        for bucket in self.bucket_util.buckets:
+        for bucket in self.cluster.buckets:
             self.bucket_util.create_scope(self.cluster.master,
                                       bucket,
                                       {"name": scope})
