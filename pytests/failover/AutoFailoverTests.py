@@ -340,6 +340,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init] if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
         self.cluster.master = self.cluster.nodes_in_cluster[0]
+        self.bring_back_failed_nodes_up()
         if self.durability_level:
             self.data_load_after_autofailover()
         if self.auto_reprovision:
