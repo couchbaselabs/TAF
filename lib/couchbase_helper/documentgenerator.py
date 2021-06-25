@@ -937,14 +937,14 @@ class WikiJSONGenerator(KVGenerator):
             except IOError:
                 lang = self.lang.lower()
                 wiki = eval("{0}WIKI".format(self.lang))
-                print ("Unable to find file lib/couchbase_helper/wiki/"
-                       "{0}wiki.txt.gz. Downloading from {1}...".
-                       format(lang, wiki))
+                print("Unable to find file lib/couchbase_helper/wiki/"
+                      "{0}wiki.txt.gz. Downloading from {1}...".
+                      format(lang, wiki))
                 import urllib
                 urllib.URLopener().retrieve(
                     wiki,
                     "lib/couchbase_helper/wiki/{0}wiki.txt.gz".format(lang))
-                print "Download complete!"
+                print("Download complete!")
 
     def next(self):
         if self.itr >= self.end:

@@ -85,5 +85,4 @@ class RbacUtil:
 
     def check_user_permission(self, user, password, user_per_list, rest):
         response = rest.check_user_permission(user, password, user_per_list)
-        print response
         return response

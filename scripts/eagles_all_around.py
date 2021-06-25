@@ -72,7 +72,7 @@ def scan_all_slaves():
                   ]
     count = 1
     for server in all_slaves:
-        print "--+--+--+--+-- {}. CHECKING ON SLAVE: {} --+--+--+--+--".format(count, server)
+        print("--+--+--+--+-- %s. CHECKING ON SLAVE: %s --+--+--+--+--" % (count, server))
         count += 1
         session = connection(server)
         if session is None:
@@ -87,7 +87,7 @@ def scan_all_slaves():
             output, error = run(cmd, session)
             try:
                 for cbcollect_zips in output:
-                    print "checking: %s" % cbcollect_zips
+                    print("checking: %s" % cbcollect_zips)
 #                     log_files, error = run("zipinfo -1 {}".format(cbcollect_zips), session)
 #                     for file in log_files:
 #                         if file.rstrip().endswith("dmp"):
@@ -97,8 +97,8 @@ def scan_all_slaves():
                     run("unzip {}".format(cbcollect_zips), session)[0]
                     exclude = "'Rollback point not found\|No space left on device'"
                     memcached = "/root/cbcollect*/memcached.log*"
-                    print "".join(run("grep CRITICAL {} | grep -v {}".format(memcached, exclude), session)[0])
-                    print "#######################"
+                    print("".join(run("grep CRITICAL {} | grep -v {}".format(memcached, exclude), session)[0]))
+                    print("#######################")
 #                             break
             except:
                 pass
@@ -114,7 +114,7 @@ def check_coredump_exist(server):
     dmpmsg = ""
     streammsg = ""
     session = connection(server)
-    
+
     if session is None:
         return
 
@@ -144,7 +144,7 @@ def check_coredump_exist(server):
     dmpFiles = [f.split()[-1] for f in dmpFiles if ".core" not in f]
     dmpFiles = [f.strip("\n") for f in dmpFiles]
     if dmpFiles:
-        print run("cat /opt/couchbase/VERSION.txt", session)[0]
+        print(run("cat /opt/couchbase/VERSION.txt", session)[0])
         msg = "Node %s - Core dump seen: %s" % (server, str(len(dmpFiles)))
         dmpmsg += msg + "\n"
         print(msg)
@@ -152,7 +152,7 @@ def check_coredump_exist(server):
         print(get_gdb(crashDir, dmpFiles[-1]))
     else:
         print(server + " : No crash files found")
-        
+
     print(server + " : Looking for CRITICAL messages in log")
     logsDir = libCb + "logs/"
     logFiles = run("ls " + logsDir + "memcached.log.*", session)[0]
@@ -181,9 +181,11 @@ def scan_all_servers():
 
     count = 1
     for server in result.rowsAsObject():
-        print "--+--+--+--+-- {}. CHECKING ON SERVER: {} --+--+--+--+--".format(count, server.get("id"))
+        print("--+--+--+--+-- %s. CHECKING ON SERVER: %s --+--+--+--+--"
+              % (count, server.get("id")))
         count += 1
         check_coredump_exist(server.get("id"))
+
 
 if __name__ == "__main__":
     scan_all_slaves()
@@ -191,4 +193,4 @@ if __name__ == "__main__":
 
     if failed:
         for server in failed:
-            print "ssh failed: %s" % server
+            print("ssh failed: %s" % server)

@@ -113,7 +113,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                                        "value": getReplicaResult.contentAsObject(),
                                        "cas": getReplicaResult.cas()})
                     except Exception as e:
-                        print str(e)
+                        self.log.error(str(e))
             except DocumentUnretrievableException as e:
                 pass
             if len(self.client.get_from_all_replicas(key)) > 0:

@@ -374,7 +374,7 @@ class ClusterUtils:
                 try:
                     rest = RestConnection(server)
                     rest.force_eject_node()
-                except BaseException, e:
+                except BaseException as e:
                     self.log.error(e)
 
     def set_upr_flow_control(self, flow=True, servers=[]):
@@ -505,7 +505,7 @@ class ClusterUtils:
                 shell.disconnect()
             # Wait after reset of cluster nodes
             sleep(10)
-        except Exception, ex:
+        except Exception as ex:
             self.log.error(ex)
 
     def update_cluster_nodes_service_list(self, cluster):

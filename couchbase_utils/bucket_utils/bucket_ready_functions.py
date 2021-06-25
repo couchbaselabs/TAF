@@ -3376,7 +3376,7 @@ class BucketUtils(ScopeUtils):
             try:
                 self._load_data_in_buckets_using_mc_bin_client(
                     bucket, data_map, max_expiry_range)
-            except Exception, ex:
+            except Exception as ex:
                 self.log.error(ex)
 
     def get_item_count_mc(self, server, bucket):

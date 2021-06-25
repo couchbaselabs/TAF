@@ -914,7 +914,7 @@ class DataCollector(object):
                     dump_output = [x.strip(' ') for x in dump_output]
                     """ remove '--' element """
                     dump_output = [x for x in dump_output if not "--" in x]
-                    print "Start extracting data from database file"
+                    print("Start extracting data from database file")
                     key_ids = [x.split(":")[1].strip(' ') for x in dump_output[0::9]]
                     key_partition = [x.split(":")[1].strip(' ') for x in dump_output[1::9]]
                     key_status = [x.split(":")[-1].strip(' ') for x in dump_output[6::9]]
@@ -929,10 +929,10 @@ class DataCollector(object):
                                {"KV store name": key_partition[idx],
                                 "Status": key_status[idx],
                                 "Value": key_value[idx]}
-                    print "Done get data from backup file"
+                    print("Done get data from backup file")
                     status = True
                 else:
-                    print "Data base is empty"
+                    print("Data base is empty")
                     return backup_data, status
             else:
                 raise Exception("Could not find file shard_0.fdb at %s"

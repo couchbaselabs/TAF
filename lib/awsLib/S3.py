@@ -13,7 +13,7 @@ class S3():
         self.create_session(access_key, secret_key, session_token)
         self.s3_client = self.create_service_client(service_name="s3")
         self.s3_resource = self.create_service_resource(resource_name="s3")
-    
+
     def create_session(self, access_key, secret_key, session_token=None):
         """
         Create a session to AWS using the credentials provided.
@@ -33,7 +33,7 @@ class S3():
                                                  aws_secret_access_key=secret_key)
         except Exception as e:
             self.logger.error(e)
-    
+
     def create_service_client(self, service_name, region=None):
         """
         Create a low level client for the service specified.
@@ -48,7 +48,7 @@ class S3():
                 return self.aws_session.client(service_name, region_name=region)
         except ClientError as e:
             self.logger.error(e)
-    
+
     def create_service_resource(self, resource_name):
         """
         Create a service resource object, to access resources related to service.
@@ -117,7 +117,7 @@ class S3():
         :param file_path: path of the file, relative to S3 bucket
         :param version_id: to delete a specific version of an object.
         """
-        try:            
+        try:
             s3_object = self.s3_resource.Object(bucket_name, file_path)
             if version_id:
                 response = s3_object.delete(VersionId=version_id)
@@ -258,12 +258,12 @@ class S3():
 
 def main():
     parser = argparse.ArgumentParser()
-    
+
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--new_bucket", help="create new bucket with name")
     group.add_argument("--existing_bucket", help="use existing bucket with name")
     group.add_argument("--get_regions", help="fetches all the regions", action="store_true")
-    
+
     parser.add_argument("access_key", help="access key for aws")
     parser.add_argument("secret_key", help="secret key for aws")
     parser.add_argument("session_token", help="session token for aws")
@@ -274,42 +274,42 @@ def main():
     parser.add_argument("--download_file", nargs=2, help="specify path on aws and dest file path")
     parser.add_argument("--delete_file", help="specify path on aws and dest file path")
     parser.add_argument("--empty_bucket", help="to be used with --existing_bucket flag", action="store_true")
-    
+
     args = parser.parse_args()
-    
+
     if args.session_token:
         s3_obj = S3(args.access_key, args.secret_key, args.session_token)
     else:
         s3_obj = S3(args.access_key, args.secret_key)
-    
+
     if args.new_bucket:
         result = {"result": s3_obj.create_bucket(args.new_bucket, args.region)}
-        print json.dumps(result)
+        print(json.dumps(result))
     elif args.existing_bucket:
         if args.upload_file:
             result = {"result": s3_obj.upload_file(args.existing_bucket, args.upload_file[0], args.upload_file[1])}
-            print json.dumps(result)
+            print(json.dumps(result))
         elif args.upload_large_file:
-            result = {"result": s3_obj.upload_large_file(args.existing_bucket, 
+            result = {"result": s3_obj.upload_large_file(args.existing_bucket,
                                                          args.upload_large_file[0], args.upload_large_file[1])}
-            print json.dumps(result)
+            print(json.dumps(result))
         elif args.delete_bucket:
             result = {"result": s3_obj.delete_bucket(args.existing_bucket)}
-            print json.dumps(result)
+            print(json.dumps(result))
         elif args.download_file:
             result = {"result": s3_obj.download_file(args.existing_bucket,
                                                      args.download_file[0], args.download_file[1])}
-            print json.dumps(result)
+            print(json.dumps(result))
         elif args.delete_file:
             result = {"result": s3_obj.delete_file(args.existing_bucket, args.delete_file)}
-            print json.dumps(result)
+            print(json.dumps(result))
         elif args.empty_bucket:
             result = {"result": s3_obj.empty_bucket(args.existing_bucket)}
-            print json.dumps(result)
+            print(json.dumps(result))
     elif args.get_regions:
         result = {"result": s3_obj.get_region_list()}
-        print json.dumps(result)
-            
-        
+        print(json.dumps(result))
+
+
 if __name__ == "__main__":
     main()

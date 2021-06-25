@@ -295,8 +295,8 @@ def _entry_disposition(response_headers, request_headers):
     This lets us ignore 's-maxage'. We can also ignore
     'proxy-invalidate' since we aren't a proxy.
     We will never return a stale document as
-    fresh as a design decision, and thus the non-implementation 
-    of 'max-stale'. This also lets us safely ignore 'must-revalidate' 
+    fresh as a design decision, and thus the non-implementation
+    of 'max-stale'. This also lets us safely ignore 'must-revalidate'
     since we operate as if every server has sent 'must-revalidate'.
     Since we are private we get to ignore both 'public' and
     'private' parameters. We also ignore 'no-transform' since
@@ -411,10 +411,10 @@ def _wsse_username_token(cnonce, iso_now, password):
     return base64.encodestring(sha.new("%s%s%s" % (cnonce, iso_now, password)).digest()).strip()
 
 
-# For credentials we need two things, first 
+# For credentials we need two things, first
 # a pool of credential to try (not necesarily tied to BAsic, Digest, etc.)
 # Then we also need a list of URIs that have already demanded authentication
-# That list is tricky since sub-URIs can take the same auth, or the 
+# That list is tricky since sub-URIs can take the same auth, or the
 # auth scheme may change as you descend the tree.
 # So we also need each Auth instance to be able to tell us
 # how close to the 'top' it is.
@@ -766,11 +766,11 @@ class HTTPConnectionWithTimeout(httplib.HTTPConnection):
                     self.sock.settimeout(self.timeout)
                     # End of difference from httplib.
                 if self.debuglevel > 0:
-                    print "connect: (%s, %s)" % (self.host, self.port)
+                    print("connect: (%s, %s)" % (self.host, self.port))
                 self.sock.connect(sa)
-            except socket.error, msg:
+            except socket.error as msg:
                 if self.debuglevel > 0:
-                    print 'connect fail:', (self.host, self.port)
+                    print('connect fail:', (self.host, self.port))
                 if self.sock:
                     self.sock.close()
                 self.sock = None
@@ -891,7 +891,7 @@ the same interface as FileCache."""
             except socket.gaierror:
                 conn.close()
                 raise ServerNotFoundError("Unable to find the server at %s" % conn.host)
-            except httplib.HTTPException, e:
+            except httplib.HTTPException as e:
                 if not i:
                     conn.close()
                     conn.connect()
@@ -1102,7 +1102,7 @@ a string that contains the response entity body.
 
                 if response.status == 304 and method == "GET":
                     # Rewrite the cache entry with the new end-to-end headers
-                    # Take all headers that are in response 
+                    # Take all headers that are in response
                     # and overwrite their values in info.
                     # unless they are hop-by-hop, or are listed in the connection header.
 
@@ -1124,7 +1124,7 @@ a string that contains the response entity body.
             else:
                 (response, content) = self._request(conn, authority, uri, request_uri, method, body, headers,
                                                     redirections, cachekey)
-        except Exception, e:
+        except Exception as e:
             if self.force_exception_to_status_code:
                 if isinstance(e, HttpLib2ErrorWithResponse):
                     response = e.response

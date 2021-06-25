@@ -1056,10 +1056,10 @@ class DcpTestCase(DCPBase):
         if len(pauses) > 0:
             if len(pauses) < 20:  # keep the output manageable
                 for i in pauses:
-                    print i
+                    print(i)
             else:
                 for i in range(20):
-                    print pauses[i]
+                    print(pauses[i])
 
             assert False, 'There were pauses greater than 10 seconds in receiving stream contents'
 
@@ -1142,7 +1142,7 @@ class DcpTestCase(DCPBase):
         assert stream.status == SUCCESS
         responses = stream.run()
 
-        print 'responses', responses
+        print('responses', responses)
 
         mutations = \
             len(filter(lambda r: r['opcode'] == CMD_MUTATION, responses))
@@ -1783,7 +1783,7 @@ class DcpTestCase(DCPBase):
         assert acked == 0
 
         if unacked != sent:
-            print "test_flow_control_stats unacked %d sent %d" % (unacked, sent)
+            print("test_flow_control_stats unacked %d sent %d" % (unacked, sent))
             self.log.info("test_flow_control_stats unacked %d sent %d" % (unacked, sent))
 
         assert unacked == sent

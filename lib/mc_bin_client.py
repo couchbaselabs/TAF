@@ -45,7 +45,7 @@ class MemcachedError(exceptions.Exception):
 
     def __init__(self, status, msg):
         error_msg = error_to_str(status)
-        supermsg = 'Memcached error #' + `status` + ' ' + `error_msg`
+        supermsg = 'Memcached error #' + status + ' ' + error_msg
         if msg: supermsg += ":  " + msg
         exceptions.Exception.__init__(self, supermsg)
 
@@ -524,7 +524,7 @@ class MemcachedClient(object):
         challenge = None
         try:
             self.sasl_auth_start('CRAM-MD5', '')
-        except MemcachedError, e:
+        except MemcachedError as e:
             if e.status != memcacheConstants.ERR_AUTH_CONTINUE:
                 raise
             challenge = e.msg.split(' ')[0]
@@ -540,11 +540,11 @@ class MemcachedClient(object):
         return self._doCmd(memcacheConstants.CMD_START_PERSISTENCE, '', '')
 
     def set_flush_param(self, key, val):
-        print "setting flush param:", key, val
+        print("setting flush param:", key, val)
         return self._doCmd(memcacheConstants.CMD_SET_FLUSH_PARAM, key, val)
 
     def set_param(self, key, val, type):
-        print "setting param:", key, val
+        print("setting param:", key, val)
         type = struct.pack(memcacheConstants.GET_RES_FMT, type)
         return self._doCmd(memcacheConstants.CMD_SET_FLUSH_PARAM, key, val, type)
 
@@ -558,7 +558,7 @@ class MemcachedClient(object):
         return self._doCmd(memcacheConstants.CMD_REVERT_ONLINEUPDATE, '', '')
 
     def set_tap_param(self, key, val):
-        print "setting tap param:", key, val
+        print("setting tap param:", key, val)
         return self._doCmd(memcacheConstants.CMD_SET_TAP_PARAM, key, val)
 
     def set_vbucket_state(self, vbucket, stateName):
@@ -647,7 +647,7 @@ class MemcachedClient(object):
                 try:
                     opaque, cas, data = self._handleSingleResponse(None)
                     done = opaque == terminal
-                except MemcachedError, e:
+                except MemcachedError as e:
                     failed.append(e)
 
         return failed
@@ -686,37 +686,37 @@ class MemcachedClient(object):
     def sync_persistence(self, keyspecs):
         payload = self._build_sync_payload(0x8, keyspecs)
 
-        print "sending sync for persistence command for the following keyspecs:", keyspecs
+        print("sending sync for persistence command for the following keyspecs:", keyspecs)
         (opaque, cas, data) = self._doCmd(memcacheConstants.CMD_SYNC, "", payload)
         return (opaque, cas, self._parse_sync_response(data))
 
     def sync_mutation(self, keyspecs):
         payload = self._build_sync_payload(0x4, keyspecs)
 
-        print "sending sync for mutation command for the following keyspecs:", keyspecs
+        print("sending sync for mutation command for the following keyspecs:", keyspecs)
         (opaque, cas, data) = self._doCmd(memcacheConstants.CMD_SYNC, "", payload)
         return (opaque, cas, self._parse_sync_response(data))
 
     def sync_replication(self, keyspecs, numReplicas=1):
         payload = self._build_sync_payload((numReplicas & 0x0f) << 4, keyspecs)
 
-        print "sending sync for replication command for the following keyspecs:", keyspecs
+        print("sending sync for replication command for the following keyspecs:", keyspecs)
         (opaque, cas, data) = self._doCmd(memcacheConstants.CMD_SYNC, "", payload)
         return (opaque, cas, self._parse_sync_response(data))
 
     def sync_replication_or_persistence(self, keyspecs, numReplicas=1):
         payload = self._build_sync_payload(((numReplicas & 0x0f) << 4) | 0x8, keyspecs)
 
-        print "sending sync for replication or persistence command for the " \
-            "following keyspecs:", keyspecs
+        print("sending sync for replication or persistence command for the "
+              "following keyspecs:", keyspecs)
         (opaque, cas, data) = self._doCmd(memcacheConstants.CMD_SYNC, "", payload)
         return (opaque, cas, self._parse_sync_response(data))
 
     def sync_replication_and_persistence(self, keyspecs, numReplicas=1):
         payload = self._build_sync_payload(((numReplicas & 0x0f) << 4) | 0xA, keyspecs)
 
-        print "sending sync for replication and persistence command for the " \
-            "following keyspecs:", keyspecs
+        print("sending sync for replication and persistence command for the "
+              "following keyspecs:", keyspecs)
         (opaque, cas, data) = self._doCmd(memcacheConstants.CMD_SYNC, "", payload)
         return (opaque, cas, self._parse_sync_response(data))
 
@@ -806,8 +806,8 @@ class MemcachedClient(object):
         def new_func(*args, **kwargs):
             try:
                 return fn(*args, **kwargs)
-            except Exception, ex:
-                raise
+            except Exception as ex:
+                raise ex
         return new_func
 
     @sd_function

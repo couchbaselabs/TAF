@@ -1184,7 +1184,6 @@ class JsonGenerator:
         command += " -o {0}".format(dest_path)
         if pod_path is not None:
             command += " {0}".format(pod_path)
-        print "Will run the following command: {0}".format(command)
         # run command and generate temp file
         os.system(command)
         # read file and generate list

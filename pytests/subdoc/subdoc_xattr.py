@@ -439,7 +439,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                 self.log.error("xattr %s value: %s" % (key, rv[key]))
                 self.fail("key must not contain a character: " + ch)
             except Exception as e:
-                print e.message
+                print(e.message)
                 self.assertTrue(e.message in ['Subcommand failure',
                                               'key must not contain a character: ;'])
 
@@ -1023,17 +1023,15 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                 self.log.info("using key %s" % key)
                 rv = self.client.mutate_in(k, SD.upsert(key, 1,
                                                         xattr=True))
-                print rv
                 self.assertTrue(rv.success)
                 rv = self.client.lookup_in(k, SD.get(key, xattr=True))
-                print rv
                 self.assertTrue(rv.exists(key))
                 self.assertEqual(1, rv[key])
                 self.log.info("successfully set xattr with key %s" % key)
             except Exception as e:
                 ok = False
                 self.log.info("unable to set xattr with key %s" % key)
-                print e
+                self.log.error(e)
         self.assertTrue(ok, "unable to set xattr with some name. See logs above")
 
     def test_upsert_nums(self):

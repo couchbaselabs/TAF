@@ -77,7 +77,7 @@ class x509main:
         shell = RemoteMachineShellConnection(self.slave_host)
         shell.execute_command("rm -rf " + x509main.CACERTFILEPATH)
         shell.execute_command("mkdir " + x509main.CACERTFILEPATH)
-        
+
         if type == 'go':
             files = []
             cert_file = x509main.SECURITY_UTIL_PATH + x509main.GOCERTGENFILE
@@ -122,42 +122,42 @@ class x509main:
                 else:
                     fin.write("\nIP.0 = {0}".format(server.ip.replace('[', '').replace(']', '')))
                 fin.close()
-                    
+
                 import fileinput
                 import sys
                 for line in fileinput.input(x509main.SECURITY_UTIL_PATH + "clientconf3.conf", inplace=1):
                     if "ip_address" in line:
                         line = line.replace("ip_address",server.ip)
                     sys.stdout.write(line)
-                        
-    
+
+
                 # print file contents for easy debugging
                 fout = open(x509main.SECURITY_UTIL_PATH + "clientconf3.conf", "r")
-                print fout.read()
+                print(fout.read())
                 fout.close()
-                
-                
+
+
                 output, error = shell.execute_command("openssl genrsa " + encryption + " -out " + x509main.CACERTFILEPATH +server.ip + ".key " + str(key_length))
                 log.info ('Output message is {0} and error message is {1}'.format(output,error))
-                
+
                 output, error= shell.execute_command("openssl req -new -key " + x509main.CACERTFILEPATH + server.ip + ".key -out " + x509main.CACERTFILEPATH + server.ip + ".csr -config " + x509main.SECURITY_UTIL_PATH + "clientconf3.conf")
                 log.info ('Output message is {0} and error message is {1}'.format(output,error))
                 output, error = shell.execute_command("openssl x509 -req -in "+ x509main.CACERTFILEPATH + server.ip + ".csr -CA " + x509main.CACERTFILEPATH + "int.pem -CAkey " + \
                                 x509main.CACERTFILEPATH + "int.key -CAcreateserial -CAserial " + x509main.CACERTFILEPATH + "intermediateCA.srl -out " + x509main.CACERTFILEPATH + server.ip + ".pem -days 365 -sha256 -extfile " + x509main.SECURITY_UTIL_PATH + "clientconf3.conf -extensions req_ext")
-                
+
                 log.info ('Output message is {0} and error message is {1}'.format(output, error))
                 output, error = shell.execute_command("cat " + x509main.CACERTFILEPATH + server.ip + ".pem " + x509main.CACERTFILEPATH + "int.pem " + x509main.CACERTFILEPATH + "ca.pem > " + x509main.CACERTFILEPATH + "long_chain"+server.ip+".pem")
                 log.info ('Output message is {0} and error message is {1}'.format(output,error))
 
             output, error = shell.execute_command("cp " + x509main.CACERTFILEPATH + "ca.pem " + x509main.CACERTFILEPATH + "root.crt")
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
-            
+
             os.remove(x509main.SECURITY_UTIL_PATH + "clientconf3.conf")
             #Check if client_ip is ipv6, remove []
-            
+
             if "[" in client_ip:
                 client_ip = client_ip.replace("[", "").replace("]", "")
-            
+
             from shutil import copyfile
             copyfile(x509main.SECURITY_UTIL_PATH + "clientconf.conf", x509main.SECURITY_UTIL_PATH + "clientconf2.conf")
             fin = open(x509main.SECURITY_UTIL_PATH + "clientconf2.conf", "a+")
@@ -179,9 +179,9 @@ class x509main:
 
             # print file contents for easy debugging
             fout = open(x509main.SECURITY_UTIL_PATH + "clientconf2.conf", "r")
-            print fout.read()
+            print(fout.read())
             fout.close()
-            
+
             #Generate Certificate for the client
             output, error = shell.execute_command("openssl genrsa " + encryption + " -out " + x509main.CACERTFILEPATH +client_ip + ".key " + str(key_length))
             log.info ('Output message is {0} and error message is {1}'.format(output,error))
@@ -201,7 +201,7 @@ class x509main:
         #For each server in cluster, setup a node certificates, create inbox folders and copy + chain cert
         for server in copy_servers:
             x509main(server)._setup_node_certificates(reload_cert=reload_cert,host=server)
-    
+
     #Create inbox folder and copy node cert and chain cert
     def _setup_node_certificates(self,chain_cert=True,node_key=True,reload_cert=True,host=None):
         if host == None:
@@ -221,7 +221,7 @@ class x509main:
         if reload_cert:
             status, content = self._reload_node_certificate(host)
             return status, content
-    
+
     #Reload cert for self signed certificate
     def _reload_node_certificate(self,host):
         rest = RestConnection(host)
@@ -276,7 +276,7 @@ class x509main:
         return {'Content-Type': 'application/json',
             'Authorization': 'Basic %s' % authorization,
             'Accept': '*/*'}
-    
+
     #Function that will upload file via rest
     def _rest_upload_file(self,URL,file_path_name,username=None,password=None,curl=False,data_json=None):
         data  =  open(file_path_name, 'rb').read()
@@ -299,7 +299,7 @@ class x509main:
         url = "controller/uploadClusterCA"
         api = rest.baseUrl + url
         self._rest_upload_file(api,x509main.CACERTFILEPATH + "/" + x509main.CACERTFILE,"Administrator",'password')
-    
+
     #Upload security setting for client cert
     def _upload_cluster_ca_settings(self,username,password,data=None):
         temp = self.host
@@ -320,7 +320,7 @@ class x509main:
     4. Return text of the response to the calling function
     Capture any exception in the code and return error
     '''
-   
+
     def _validate_ssl_login(self, final_url=None, header=None, client_cert=False, verb='GET', data='', plain_curl=False, username='Administrator', password='password', host=None):
         if verb == 'GET' and plain_curl:
             r = requests.get(final_url, data=data)
@@ -347,7 +347,7 @@ class x509main:
                 r = requests.get("https://"+str(self.host.ip)+":18091",verify=x509main.CERT_FILE)
                 if r.status_code == 200:
                     header = {'Content-type': 'application/x-www-form-urlencoded'}
-                    params = urllib.urlencode({'user':'{0}'.format(username), 'password':'{0}'.format(password)})               
+                    params = urllib.urlencode({'user':'{0}'.format(username), 'password':'{0}'.format(password)})
                     r = requests.post("https://"+str(self.host.ip)+":18091/uilogin",data=params,headers=header,verify=x509main.CERT_FILE)
                     return r.status_code
             except Exception, ex:
@@ -367,21 +367,21 @@ class x509main:
     retun the output of the curl command
     '''
     def _validate_curl(self,final_url=None,headers=None,client_cert=False,verb='GET',data='',plain_curl=False,username='Administrator',password='password'):
-        
+
         if verb == 'GET':
             final_verb = 'curl -v'
         elif verb == 'POST':
             final_verb = 'curl -v -X POST'
         elif verb == 'DELETE':
             final_verb = 'curl -v -X DELETE'
-        
+
         if plain_curl:
             main_url = final_verb
         elif client_cert:
             main_url = final_verb + " --cacert " + x509main.SRC_CHAIN_FILE + " --cert-type PEM --cert " + x509main.CLIENT_CERT_PEM + " --key-type PEM --key " + x509main.CLIENT_CERT_KEY
         else:
             main_url = final_verb + " --cacert " + x509main.CERT_FILE
-         
+
         cmd = str(main_url) + " " + str(headers) + " " + str(final_url)
         if data is not None:
             cmd = cmd + " -d " + data
@@ -400,26 +400,26 @@ class x509main:
                                     plain_curl=False, username='Administrator',password='password'):
         if host is None:
             host = self.host.ip
-        
+
         if plain_curl:
             final_url = "http://" + str(host) + ":" + str(port) + str(url)
         else:
             final_url = "https://" + str(host) + ":" + str(port) + str(url)
-        
+
         if curl:
             result = self._validate_curl(final_url, headers, client_cert, verb, data, plain_curl, username, password)
             return result
         else:
             status, result = self._validate_ssl_login(final_url, headers, client_cert, verb, data, plain_curl, username, password)
             return status, result
-    
+
     #Get current root cert from the cluster
     def _get_cluster_ca_cert(self):
         rest = RestConnection(self.host)
         api = rest.baseUrl + "pools/default/certificate?extended=true"
         status, content, header = rest._http_request(api, 'GET')
         return status, content, header
-    
+
     #Setup master node
     # 1. Upload Cluster cert i.e
     # 2. Setup other nodes for certificates
@@ -432,7 +432,7 @@ class x509main:
         if state is not None:
             client_cert_json = self.write_client_cert_json_new(state, paths, prefixs, delimeters)
             x509main(copy_host)._upload_cluster_ca_settings(user,password,client_cert_json)
-        
+
     #write a new config json file based on state, paths, perfixes and delimeters
     def write_client_cert_json_new(self, state, paths, prefixs, delimeters):
         template_path = x509main.SECURITY_UTIL_PATH + x509main.CLIENT_CERT_AUTH_TEMPLATE
@@ -449,7 +449,7 @@ class x509main:
                 client_cert = client_cert + temp_client_cert
         client_cert = client_cert.replace("'",'"')
         client_cert = client_cert.rstrip(',')
-        client_cert = client_cert + " ]}" 
+        client_cert = client_cert + " ]}"
         log.info ("-- Log current config json file ---{0}".format(client_cert))
         target_file.write(client_cert)
         return client_cert

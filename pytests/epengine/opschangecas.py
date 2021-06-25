@@ -753,7 +753,7 @@ class OpsChangeCasTests(CasBaseTest):
         # verify the CAS is good
         mc_active = client.memcached(key)
         active_CAS = mc_active.getMeta(key)[4]
-        print 'active cas {0}'.format(active_CAS)
+        print('active cas {0}'.format(active_CAS))
 
         self.assertTrue(replica_CAS == active_CAS, 'cas mismatch active: {0} replica {1}'.format(active_CAS,replica_CAS))
         #self.assertTrue( get_meta_resp[5] == 1, msg='Metadata indicate conflict resolution is not set')
@@ -844,27 +844,20 @@ class OpsChangeCasTests(CasBaseTest):
 
         vbucket_ids = self.client._get_vBucket_ids(all_keys)
 
-        print 'bucket_ids'
-        for v in vbucket_ids:
-            print v
-
-        print 'done'
-
-        i=1111
+        i = 1111
         if i not in vbucket_ids and i <= 1023:
-            vb_non_existing=i
-        elif i>1023:
-            i +=1
+            vb_non_existing = i
+        elif i > 1023:
+            i += 1
         else:
             self.log.info('ERROR generating empty vbucket id')
 
-        vb_non_existing=vbucket_ids.pop()
-        print 'nominated vb_nonexisting is {0}'.format(vb_non_existing)
+        vb_non_existing = vbucket_ids.pop()
+        print('nominated vb_nonexisting is %s' % vb_non_existing)
         mc_active = self.client.memcached(all_keys[0]) #Taking a temp connection to the mc.
         #max_cas = int( mc_active.stats('vbucket-details')['vb_' + str(vb_non_existing) + ':max_cas'] )
-        max_cas = int( mc_active.stats('vbucket-details')['vb_' + str(self.client._get_vBucket_id(all_keys[0])) + ':max_cas'] )
-        self.assertTrue( max_cas != 0, msg='[ERROR] Max cas is non-zero')
-
+        max_cas = int(mc_active.stats('vbucket-details')['vb_' + str(self.client._get_vBucket_id(all_keys[0])) + ':max_cas'] )
+        self.assertTrue(max_cas != 0, msg='[ERROR] Max cas is non-zero')
 
     def test_meta_backup(self):
         """

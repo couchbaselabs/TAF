@@ -126,7 +126,7 @@ def get_document(collection, doc_id):
     :rtype: (bool, dict)
     """
     try:
-        print ("reading from %s" % doc_id)
+        print("reading from %s" % doc_id)
         document = collection.get(doc_id)
         content = document.contentAsObject()
         doc = json.loads(str(content))

@@ -74,6 +74,6 @@ class GetCheckpointsHelper(object):
                                 % (vb,
                                    checkpoint_attributes["num_checkpoints"]))
             for alarm in alarms:
-                print alarm
+                print(alarm)
             # Wait before next Queue check
             sleep(interval, log_type="infra")

@@ -853,7 +853,6 @@ class LoadDocumentsTask(GenericLoadingTask):
         key_value = doc_gen.next_batch(self.skip_doc_gen_value)
         if self.random_exp:
             self.exp = random.randint(self.abs_exp / 2, self.abs_exp)
-            print "EXPIRY SET TO %s" % self.exp
         if self.sdk_client_pool is not None:
             self.client = \
                 self.sdk_client_pool.get_client_for_bucket(self.bucket,
@@ -3258,7 +3257,6 @@ class N1QLTxnQueryTask(Task):
                 result = self.n1ql_helper.run_cbq_query(query,
                                                         query_params=self.query_params)
                 sleep(2)
-                print result
             self.n1ql_helper.end_txn(self.query_params, self.commit)
             self.test_log.debug(" <<<<< Done Executing N1ql Transaction >>>>>>")
             self.test_log.info("Expected Query to fail but passed")
@@ -4273,7 +4271,7 @@ class MonitorDBFragmentationTask(Task):
                                        % new_frag_value)
                     self.set_result(True)
                     break
-            except Exception, ex:
+            except Exception as ex:
                 self.set_result(False)
                 self.set_exception(ex)
             self.test_log.debug("Wait for expected fragmentation level")
@@ -5262,7 +5260,6 @@ class MonitorViewFragmentationTask(Task):
     def call(self):
         self.start_task()
         # sanity check of fragmentation value
-        print "self.fragmentation_value: %s" % self.fragmentation_value
         if self.fragmentation_value < 0 or self.fragmentation_value > 100:
             err_msg = "Invalid value for fragmentation %d" % self.fragmentation_value
             self.set_exception(Exception(err_msg))

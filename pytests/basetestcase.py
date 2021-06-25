@@ -370,7 +370,7 @@ class BaseTestCase(unittest.TestCase):
 
             if not self.skip_init_check_cbserver:
                 self.__log("started")
-        except Exception, e:
+        except Exception as e:
             traceback.print_exc()
             self.task.shutdown(force=True)
             self.fail(e)
@@ -689,7 +689,7 @@ class BaseTestCase(unittest.TestCase):
             thread_dump = gdb_shell.execute_command(cmd)[0]
             index = find_index_of(
                 thread_dump, "Thread debugging using libthread_db enabled")
-            print " ".join(thread_dump[index:])
+            print(" ".join(thread_dump[index:]))
 
         def check_if_new_messages(grep_output_list):
             """

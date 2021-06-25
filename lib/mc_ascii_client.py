@@ -103,7 +103,6 @@ class MemcachedAsciiClient(object):
         error = ""
         while msg.split(" ")[0] == "STAT" or \
                 msg.split(" ")[0] == "VERSION":
-            print "msg:",msg
             kind = msg.split(" ")[0]
             key = msg.split(" ")[1]
             if kind == "VERSION":

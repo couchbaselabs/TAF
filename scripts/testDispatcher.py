@@ -219,7 +219,7 @@ def main():
                     if 'jenkins' in data:
                         # then this is sort of a special case,
                         # launch the old style Jenkins job not implemented yet
-                        print 'Old style Jenkins', data['jenkins']
+                        print('Old style Jenkins', data['jenkins'])
                     else:
                         if 'initNodes' in data:
                             init_nodes = data['initNodes'].lower() == 'true'
@@ -340,7 +340,7 @@ def main():
                       'invalid server response', content)
                 time.sleep(POLL_INTERVAL)
             elif int(content) == 0:
-                print time.asctime(time.localtime(time.time())), 'no VMs'
+                print(time.asctime(time.localtime(time.time())), 'no VMs')
                 time.sleep(POLL_INTERVAL)
             else:
                 # see if we can match a test
@@ -534,8 +534,8 @@ def main():
                                       + '&addPoolServers=' \
                                       + urllib.quote(add_pool_servers)
 
-                        print (time.asctime(time.localtime(time.time())),
-                               'Launching:', url)
+                        print(time.asctime(time.localtime(time.time())),
+                              'Launching:', url)
 
                         if options.noLaunch:
                             # free the VMs
@@ -548,7 +548,7 @@ def main():
                                     .request('http://' + SERVER_MANAGER +
                                              '/releaseservers/' + descriptor +
                                              '/available', 'GET')
-                                print 'the release response', response, content
+                                print('the release response', response, content)
                         else:
                             response, content = \
                                 httplib2.Http(timeout=60).request(url, 'GET')

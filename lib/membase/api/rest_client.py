@@ -194,7 +194,7 @@ class RestHelper(object):
                     self.test_log.debug('Index for ddoc %s is running, server %s'
                                         % (ddoc_name, server.ip))
                     self._wait_for_task_pid(old_pid, end_time, ddoc_name)
-            except Exception, ex:
+            except Exception as ex:
                 self.test_log.error(
                     "Unable to check index on server %s because of %s"
                     % (server.ip, str(ex)))
@@ -317,7 +317,7 @@ class RestConnection(object):
         try:
             httplib2.Http(timeout=timeout).request(api, 'GET', '',
                                                    headers=self._create_capi_headers())
-        except Exception, ex:
+        except Exception as ex:
             self.test_log.warn('Exception while streaming: %s' % str(ex))
 
     def open_sasl_streaming_connection(self, bucket, timeout=1000):
@@ -397,7 +397,7 @@ class RestConnection(object):
             if content is not None:
                 print("{0}: {1}".format(api, content))
             else:
-                print e
+                print(e)
             return content, False
 
     def rename_node(self, hostname, username='Administrator',
@@ -907,7 +907,6 @@ class RestConnection(object):
                   .format(server.ip, self.index_port) + 'listRebalanceTokens'
         else:
             api = self.baseUrl + 'listRebalanceTokens'
-        print api
         status, content, _ = self._http_request(api, 'GET')
         if status:
             return content
@@ -1126,7 +1125,7 @@ class RestConnection(object):
                 wanted_node = deepcopy(self)
                 wanted_node.ip = remoteIp
                 wanted_node.print_UI_logs()
-            except Exception, ex:
+            except Exception as ex:
                 self.test_log.error(ex)
             if content.find('Prepare join failed. Node is already part of cluster') >= 0:
                 raise ServerAlreadyJoinedException(nodeIp=self.ip,
@@ -1177,7 +1176,7 @@ class RestConnection(object):
                 wanted_node = deepcopy(self)
                 wanted_node.ip = remoteIp
                 wanted_node.print_UI_logs()
-            except Exception, ex:
+            except Exception as ex:
                 self.test_log.error(ex)
             if content.find('Prepare join failed. Node is already part of cluster') >= 0:
                 raise ServerAlreadyJoinedException(nodeIp=self.ip,
@@ -3024,7 +3023,6 @@ class RestConnection(object):
                     for node in tmp:
                         node["hostname"] = node["hostname"].split(":")
                         node["hostname"] = node["hostname"][0]
-                        print node["hostname"][0]
                         nodes.append(node["hostname"])
                     zones[zone_info["groups"][i]["name"]] = nodes
         return zones

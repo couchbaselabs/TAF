@@ -492,7 +492,8 @@ class RebalanceInTests(RebalanceBaseTest):
                 except:
                     pass
             self.fail("Rebalance Failed")
-        print "Rebalance fisihed successfully in testcase: %s" % rebalance_task.result
+        self.log.info("Rebalance finished successfully")
+
         for task in compaction_tasks:
             self.task_manager.get_task_result(task)
             if not task.result:

@@ -204,16 +204,16 @@ class BaseUtil(object):
         Creates a name based on name_cadinality.
         :param name_cardinality: int, accepted values are -
             0 - Creates string 'Default'
-            1 - Creates a string of random letters and digits of format 
+            1 - Creates a string of random letters and digits of format
             "exampleString"
-            2 - Creates a string of random letters and digits of format 
+            2 - Creates a string of random letters and digits of format
             "exampleString.exampleString"
-            3 - Creates a string of random letters and digits of format 
+            3 - Creates a string of random letters and digits of format
             "exampleString.exampleString.exampleString"
             4 - Creates string 'Metadata'
         :param max_length: int, number of characters in the name.
         :param fixed_length: bool, If True, creates a name with length equals to no_of_char
-        specified, otherwise creates a name with length upto no_of_char specified.  
+        specified, otherwise creates a name with length upto no_of_char specified.
         :param name_key str, if specified, it will generate name with the name_key
         """
         random.seed(time.time())
@@ -378,7 +378,7 @@ class Dataverse_Util(BaseUtil):
         :param dataverse_name: str, Name of the dataverse which has to be created.
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -427,7 +427,7 @@ class Dataverse_Util(BaseUtil):
         :param dataverse_name: str, Name of the dataverse which has to be dropped.
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -483,7 +483,7 @@ class Dataverse_Util(BaseUtil):
         :param cbas_scope_name: str, Name of the cbas_scope which has to be created.
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -508,7 +508,7 @@ class Dataverse_Util(BaseUtil):
         :param cbas_scope_name: str, Name of the cbas_scope which has to be dropped.
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -526,7 +526,7 @@ class Dataverse_Util(BaseUtil):
 
     def get_dataverse_obj(self, dataverse_name):
         """
-        Return Dataverse/CBAS_scope object if dataverse with the required 
+        Return Dataverse/CBAS_scope object if dataverse with the required
         name already exists.
         :param dataverse_name str, fully qualified dataverse_name
         """
@@ -636,7 +636,7 @@ class Link_Util(Dataverse_Util):
         :param link_type: str, type of link, valid values are Local, s3 or couchbase
         :param username : str
         :param password : str
-        :param is_active : bool, verifies whether the link is active or not, valid only for 
+        :param is_active : bool, verifies whether the link is active or not, valid only for
         Local and couchbase links
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
@@ -673,11 +673,11 @@ class Link_Util(Dataverse_Util):
                        username=None, password=None, timeout=120,
                        analytics_timeout=120):
         """
-        Validates whether a link is active or not. Valid only for 
+        Validates whether a link is active or not. Valid only for
         Local and couchbase links
         :param link_name: str, Name of the link whose status has to be checked.
         :param dataverse_name: str, dataverse name where the link is present
-        :param link_type: str, type of link, valid values are Local, s3 or couchbase 
+        :param link_type: str, type of link, valid values are Local, s3 or couchbase
         :param username : str
         :param password : str
         :param timeout int, REST API timeout
@@ -694,7 +694,7 @@ class Link_Util(Dataverse_Util):
                             analytics_timeout=120):
         """
         This method will fail in all the scenarios. It is only
-        there to test negative scenario. 
+        there to test negative scenario.
         """
         cmd = "create link {0};"
 
@@ -725,30 +725,30 @@ class Link_Util(Dataverse_Util):
         <Required> name : name of the link to be created.
         <Required> scope : name of the dataverse under which the link has to be created.
         <Required> type : s3/couchbase
-        
+
         For links to external couchbase cluster.
         <Required> hostname : The hostname of the link
-        <Optional> username : The username for host authentication. Required if encryption is set to 
+        <Optional> username : The username for host authentication. Required if encryption is set to
         "none" or "half. Optional if encryption is set to "full".
-        <Optional> password : The password for host authentication. Required if encryption is set to 
+        <Optional> password : The password for host authentication. Required if encryption is set to
         "none" or "half. Optional if encryption is set to "full".
         <Required> encryption : The link secure connection type ('none', 'full' or 'half')
-        <Optional> certificate : The root certificate of target cluster for authentication. 
+        <Optional> certificate : The root certificate of target cluster for authentication.
         Required only if encryption is set to "full"
-        <Optional> clientCertificate : The user certificate for authentication. 
+        <Optional> clientCertificate : The user certificate for authentication.
         Required only if encryption is set to "full" and username and password is not used.
         <Optional> clientKey : The client key for user authentication.
         Required only if encryption is set to "full" and username and password is not used.
-        
+
         For links to AWS S3
         <Required> accessKeyId : The access key of the link
         <Required> secretAccessKey : The secret key of the link
         <Required> region : The region of the link
         <Optional> serviceEndpoint : The service endpoint of the link.
-        Note - please use the exact key names as provided above in link properties dict. 
+        Note - please use the exact key names as provided above in link properties dict.
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -774,7 +774,7 @@ class Link_Util(Dataverse_Util):
                     if_not_exists=True, timeout=timeout,
                     analytics_timeout=analytics_timeout):
                 return False
-            
+
             link_prop = copy.deepcopy(link_properties)
             params = dict()
             uri = ""
@@ -790,7 +790,7 @@ class Link_Util(Dataverse_Util):
                 uri += "/{0}".format(urllib.quote(
                     CBASHelper.unformat_name(link_prop["name"]), safe=""))
                 del link_prop["name"]
-            
+
             for key, value in link_prop.iteritems():
                 if value:
                     if isinstance(value, unicode):
@@ -818,7 +818,7 @@ class Link_Util(Dataverse_Util):
         :param link_name: str, Name of the link to be dropped.
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -850,12 +850,12 @@ class Link_Util(Dataverse_Util):
                       expected_error_code=None):
         """
         Fetch the list of links based on parameters passed.
-        :param dataverse (optional) Dataverse name where the links reside. 
+        :param dataverse (optional) Dataverse name where the links reside.
         If not specified, all the links from all the dataverses will be retrieved.
-        :param link_name (optional) The name of the link to be retrieved instead of 
-        retrieving all links. If this parameter is specified, the dataverse name 
+        :param link_name (optional) The name of the link to be retrieved instead of
+        retrieving all links. If this parameter is specified, the dataverse name
         has to be specified as well.
-        :param link_type (optional) Link type (e.g. S3) to be retrieved, 
+        :param link_type (optional) Link type (e.g. S3) to be retrieved,
         if not specified, links of all types will be retrieved (excluding the Local link)
         :param username : used for authentication while calling API.
         :param password : used for authentication while calling API.
@@ -915,7 +915,7 @@ class Link_Util(Dataverse_Util):
             uri += "/{0}".format(urllib.quote(
                 CBASHelper.unformat_name(link_prop["name"]), safe=""))
             del link_prop["name"]
-        
+
         for key, value in link_prop.iteritems():
             if value:
                 if isinstance(value, unicode):
@@ -942,7 +942,7 @@ class Link_Util(Dataverse_Util):
         :param with_force: bool, use force flag while connecting a link
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -993,7 +993,7 @@ class Link_Util(Dataverse_Util):
         :param disconnect_if_connected: bool, use force flag while connecting a link
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -1232,19 +1232,19 @@ class Dataset_Util(Link_Util):
         """
         Creates a dataset/analytics collection on a KV bucket.
         :param dataset_name str, fully qualified dataset name.
-        :param kv_entity str, fully qualified KV entity name, can be only bucket name or 
+        :param kv_entity str, fully qualified KV entity name, can be only bucket name or
         bucket.scope.collection.
         :param dataverse_name str, Dataverse where dataset is to be created.
         :param if_not_exists bool, if this flag is set then, if a dataset with same name is present
         in the same dataverse, then the create statement will pass without creating a new dataset.
         :param compress_dataset bool, use to set compression policy for dataset.
-        :param with_clause str, use to set other conditions apart from compress dataset, can be of format 
+        :param with_clause str, use to set other conditions apart from compress dataset, can be of format
         { "merge-policy": {"name": <>, "parameters": {"max-mergable-component-size": <>,"max-tolerance-component-count": <>}}}
         :param link_name str, used only while creating dataset on remote cluster, specifies link to be used to ingest data.
         :param where_clause str, used to filter content while ingesting docs from KV, format - `field_name`="field_value"
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param timeout int, REST API timeout
@@ -1311,19 +1311,19 @@ class Dataset_Util(Link_Util):
         """
         Creates a analytics collection which is syntactic sugar for creating datasets.
         :param dataset_name str, fully qualified dataset name.
-        :param kv_entity str, fully qualified KV entity name, can be only bucket name or 
+        :param kv_entity str, fully qualified KV entity name, can be only bucket name or
         bucket.scope.collection.
         :param dataverse_name str, Dataverse where dataset is to be created.
         :param if_not_exists bool, if this flag is set then, if a dataset with same name is present
         in the same dataverse, then the create statement will pass without creating a new dataset.
         :param compress_dataset bool, use to set compression policy for dataset.
-        :param with_clause str, use to set other conditions apart from compress dataset, can be of format 
+        :param with_clause str, use to set other conditions apart from compress dataset, can be of format
         { "merge-policy": {"name": <>, "parameters": {"max-mergable-component-size": <>,"max-tolerance-component-count": <>}}}
         :param link_name str, used only while creating dataset on remote cluster, specifies link to be used to ingest data.
         :param where_clause str, used to filter content while ingesting docs from KV, format - `field_name`="field_value"
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param timeout int, REST API timeout
@@ -1347,21 +1347,21 @@ class Dataset_Util(Link_Util):
             password=None, expected_error=None, expected_error_code=None,
             timeout=120, analytics_timeout=120):
         """
-        Creates a dataset for an external resource like AWS S3 bucket. 
+        Creates a dataset for an external resource like AWS S3 bucket.
         Note - No shadow dataset is created for this type of external datasets.
         :param dataset_name (str) : Name for the dataset to be created.
-        :param aws_bucket_name (str): AWS S3 bucket to which this dataset is to be linked. S3 bucket should be in 
+        :param aws_bucket_name (str): AWS S3 bucket to which this dataset is to be linked. S3 bucket should be in
         the same region as the link, that is used to create this dataset.
         :param dataverse_name str, Dataverse where dataset is to be created.
         :param if_not_exists bool, if this flag is set then, if a dataset with same name is present
         in the same dataverse, then the create statement will pass without creating a new dataset.
         :param link_name (str): external link to AWS S3
-        :param object_construction_def (str): It defines how the data read will be parsed. 
+        :param object_construction_def (str): It defines how the data read will be parsed.
         Required only for csv and tsv formats.
         :param path_on_aws_bucket (str): Relative path in S3 bucket, from where the files will be read.
         :param file_format (str): Type of files to read. Valid values - json, csv and tsv
         :param redact_warning (bool): internal information like e.g. filenames are redacted from warning messages.
-        :param header (bool): True means every csv, tsv file has a header record at the top and 
+        :param header (bool): True means every csv, tsv file has a header record at the top and
         the expected behaviour is that the first record (the header) is skipped.
         False means every csv, tsv file does not have a header.
         :param null_string (str): a string that represents the NULL value if the field accepts NULLs.
@@ -1375,7 +1375,7 @@ class Dataset_Util(Link_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         :return True/False
-        
+
         """
         if dataverse_name and not self.create_dataverse(
                 dataverse_name=dataverse_name, username=username,
@@ -1445,7 +1445,7 @@ class Dataset_Util(Link_Util):
         :param dataset_name: str, dataset to be droppped
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -1489,7 +1489,7 @@ class Dataset_Util(Link_Util):
         :param dataset_name: str, dataset to be droppped
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised 
+        :param validate_error_msg: boolean, if set to true, then validate error raised
         with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -1513,7 +1513,7 @@ class Dataset_Util(Link_Util):
         """
         Enables analytics directly from KV.
         :param kv_entity_name: string, can be fully quantified collection name
-        (bucket.scope.collection) or a bucket name. 
+        (bucket.scope.collection) or a bucket name.
         :param compress_cbas_collection: boolean, to enable compression on created dataset.
         :param validate_error_msg: boolean,
         :param expected_error: string,
@@ -1548,7 +1548,7 @@ class Dataset_Util(Link_Util):
         """
         Disables analytics directly from KV.
         :param kv_entity_name: string, can be fully quantified collection name
-        (bucket.scope.collection) or a bucket name. 
+        (bucket.scope.collection) or a bucket name.
         :param validate_error_msg: boolean,
         :param expected_error: string,
         :param username: string,
@@ -2126,8 +2126,8 @@ class Dataset_Util(Link_Util):
         """
         Create datasets on every collection across all the buckets and scopes.
         :param bucket_util obj, bucket_util obj to perform operations on KV bucket.
-        :param cbas_name_cardinality int, no of parts in dataset name. valid value 1,2,3 
-        :param kv_name_cardinality int, no of parts in KV entity name. Valid values 1 or 3. 
+        :param cbas_name_cardinality int, no of parts in dataset name. valid value 1,2,3
+        :param kv_name_cardinality int, no of parts in KV entity name. Valid values 1 or 3.
         :param remote_datasets bool, if True create remote datasets using remote links.
         :param creation_methods list, support values are "cbas_collection","cbas_dataset","enable_cbas_from_kv"
         """
@@ -2313,7 +2313,7 @@ class Dataset_Util(Link_Util):
                 dataset_source="internal", dataset_properties={},
                 bucket=bucket, scope=scope, collection=collection,
                 enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
-            
+
             self.log.info("Adding Dataset object for - {0}".format(
                 dataset_obj.full_name))
 
@@ -2356,7 +2356,7 @@ class Dataset_Util(Link_Util):
                 break
 
     def validate_docs_in_all_datasets(self, local_bucket_util,
-                                      remote_bucket_util=None, 
+                                      remote_bucket_util=None,
                                       timeout=600):
         self.refresh_dataset_item_count(local_bucket_util, remote_bucket_util)
         datasets = self.list_all_dataset_objs()
@@ -2442,7 +2442,7 @@ class Synonym_Util(Dataset_Util):
         :param synonym_name : str, Synonym which has to be validated.
         :param synonym_dataverse_name : str, dataverse where the synonym is present
         :param cbas_entity_name : str, name of the cbas object on which the synonym is based.
-        :param cbas_entity_dataverse_name : str, name of the dataverse where the cbas object on 
+        :param cbas_entity_dataverse_name : str, name of the dataverse where the cbas object on
         which the synonym is based.
         :param username : str
         :param password : str
@@ -2477,7 +2477,7 @@ class Synonym_Util(Dataset_Util):
         """
         Creates an analytics synonym on a dataset.
         :param synonym_full_name : str, Fully qualified Synonym which has to be created.
-        :param cbas_entity_full_name : str, Fully qualified name of the cbas object for 
+        :param cbas_entity_full_name : str, Fully qualified name of the cbas object for
         which the synonym is to be created.
         :param validate_error_msg : boolean, validate error while creating synonym
         :param expected_error : str, error msg
@@ -2551,7 +2551,7 @@ class Synonym_Util(Dataset_Util):
         """
         Validate that doc count in synonym is same as the dataset on which it was created.
         :param synonym_full_name : str, Fully qualified Synonym name whose count needs to be validated.
-        :param cbas_entity_full_name : str, Fully qualified name of the cbas object for 
+        :param cbas_entity_full_name : str, Fully qualified name of the cbas object for
         which the synonym was created.
         :param validate_error_msg : boolean, validate error while creating synonym
         :param expected_error : str, error msg
@@ -2601,7 +2601,7 @@ class Synonym_Util(Dataset_Util):
                         cbas_entity_name=None, cbas_entity_dataverse=None):
         """
         Return Synonym object if the synonym with the required name already exists.
-        If synonym_dataverse or cbas_entity_name or cbas_entity_dataverse is not mentioned 
+        If synonym_dataverse or cbas_entity_name or cbas_entity_dataverse is not mentioned
         then it will return first synonym found with the synonym_name.
         :param synonym_name str, name of the synonym whose object has to returned.
         :param synonym_dataverse str, name of the dataverse where the synonym is present
@@ -2734,28 +2734,28 @@ class Synonym_Util(Dataset_Util):
             sleep(12, "Wait for atleast one synonym to be created")
             retries -= 1
         return synonyms_created
-    
+
     def get_dataset_obj_for_synonym(
-            self, synonym_name, synonym_dataverse=None, 
+            self, synonym_name, synonym_dataverse=None,
             cbas_entity_name=None, cbas_entity_dataverse=None):
-        
+
         def inner_func(
-                synonym_name, synonym_dataverse, 
+                synonym_name, synonym_dataverse,
                 cbas_entity_name, cbas_entity_dataverse):
             syn_obj = self.get_synonym_obj(
-                synonym_name, synonym_dataverse, 
+                synonym_name, synonym_dataverse,
                 cbas_entity_name, cbas_entity_dataverse)
             while syn_obj.synonym_on_synonym:
                 syn_obj = inner_func(
                     syn_obj.cbas_entity_name, syn_obj.cbas_entity_dataverse,
                     None, None)
             return syn_obj
-        
+
         final_obj = inner_func(
-            synonym_name, synonym_dataverse, 
+            synonym_name, synonym_dataverse,
             cbas_entity_name, cbas_entity_dataverse)
         return self.get_dataset_obj(
-                final_obj.cbas_entity_name, final_obj.cbas_entity_dataverse)            
+                final_obj.cbas_entity_name, final_obj.cbas_entity_dataverse)
 
 
 class Index_Util(Synonym_Util):
@@ -2941,10 +2941,10 @@ class Index_Util(Synonym_Util):
                       dataset_dataverse=None):
         """
         Return CBAS_index object if the index with the required name already exists.
-        If dataset_name or dataset_dataverse is not mentioned then it will return 
+        If dataset_name or dataset_dataverse is not mentioned then it will return
         first index found with the index_name.
         :param index_name str, name of the index whose object has to returned.
-        :param dataset_dataverse str, name of the dataverse where the dataset on which 
+        :param dataset_dataverse str, name of the dataverse where the dataset on which
         the index was created is present
         :param dataset_name str, name of the dataset on which the index was created.
         """
@@ -3580,7 +3580,6 @@ class CbasUtil(UDFUtil):
             elif mode == "async":
                 if status == "running" and handle:
                     self.log.debug("--- Thread %s: success ---", name)
-                    print handle
                     self.handles.append(handle)
                     self.success_count += 1
                 else:
@@ -3697,7 +3696,7 @@ class CbasUtil(UDFUtil):
             nodes = response['nodes']
             for node in nodes:
                 if only_cc_node_url and node["nodeId"] == cc_node_id:
-                    # node['apiBase'] will not be present in pre-6.5.0 clusters, 
+                    # node['apiBase'] will not be present in pre-6.5.0 clusters,
                     # hence the check
                     if 'apiBase' in node:
                         cc_node_config_url = node['apiBase'] + response[

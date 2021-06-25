@@ -70,7 +70,7 @@ class TaskManager:
                 self.log.debug("TaskManager shutdown forcefully")
                 if not self.pool.awaitTermination(timeout, TimeUnit.SECONDS):
                     self.log.error("Pool did not terminate")
-        except InterruptedException, ex:
+        except InterruptedException as ex:
             self.log.error(ex)
             # (Re-)Cancel if current thread also interrupted
             self.pool.shutdownNow()

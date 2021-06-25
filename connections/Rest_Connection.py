@@ -151,7 +151,7 @@ class RestConnection(object):
             if content is not None:
                 print("{0}: {1}".format(api, content))
             else:
-                print e
+                print(e)
             return content, False
 
     def _create_capi_headers(self, username=None, password=None):

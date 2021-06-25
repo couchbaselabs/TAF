@@ -60,13 +60,13 @@ def execute(cmd="free -m"):
     count = 1
     for server in result.rowsAsObject():
         server = server.get("id")
-        print "--+--+--+--+-- {}. SERVER: {} --+--+--+--+--".format(count, server)
+        print("--+--+--+--+-- %s. SERVER: %s --+--+--+--+--" % (count, server))
         count += 1
         output, error = run(cmd, server)
         if output:
-            print output
+            print(output)
         if error:
-            print error
+            print(error)
 try:
     param = sys.argv[1]
     if "thp" in param.lower():
@@ -82,4 +82,4 @@ except:
 
 if failed:
     for server in failed:
-        print "ssh failed: %s" % server
+        print("ssh failed: %s" % server)

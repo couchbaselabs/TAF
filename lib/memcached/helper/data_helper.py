@@ -853,7 +853,7 @@ class VBucketAwareMemcached(object):
                     vb_error += 1
                 else:
                     raise error
-            except (EOFError, socket.error), error:
+            except (EOFError, socket.error) as error:
                 if "Got empty data (remote died?)" in error.message or \
                    "Timeout waiting for socket" in error.message or \
                    "Broken pipe" in error.message or \
@@ -948,7 +948,7 @@ class VBucketAwareMemcached(object):
                     vb_error += 1
                 else:
                     raise error
-            except (EOFError, socket.error), error:
+            except (EOFError, socket.error) as error:
                 if "Got empty data (remote died?)" in error.message \
                    or "Timeout waiting for socket" in error.message \
                    or "Broken pipe" in error.message \
@@ -980,7 +980,7 @@ class VBucketAwareMemcached(object):
                     vb_error += 1
                 else:
                     raise error
-            except (EOFError, socket.error), error:
+            except (EOFError, socket.error) as error:
                 if "Got empty data (remote died?)" in error.message \
                    or "Timeout waiting for socket" in error.message \
                    or "Broken pipe" in error.message \
@@ -1010,7 +1010,7 @@ class VBucketAwareMemcached(object):
                     vb_error += 1
                 else:
                     raise error
-            except (EOFError, socket.error), error:
+            except (EOFError, socket.error) as error:
                 if "Got empty data (remote died?)" in error.message \
                    or "Timeout waiting for socket" in error.message \
                    or "Broken pipe" in error.message \
@@ -1085,7 +1085,7 @@ class VBucketAwareMemcached(object):
                 self.reset_vbuckets(self.rest, self._get_vBucket_ids(keyval.keys()))
                 rec_caller_fn(exp, flags, keyval, pause, timeout - pause)  # Start all over again for these key vals.
                 return []  # Note: If used for async,too many recursive threads could get spawn here.
-        except (EOFError, socket.error), error:
+        except (EOFError, socket.error) as error:
             try:
                 if "Got empty data (remote died?)" in error.strerror \
                    or "Timeout waiting for socket" in error.strerror \
@@ -1164,7 +1164,7 @@ class VBucketAwareMemcached(object):
     def _getMulti_from_mc(self, memcached_client, keys, pause, timeout, rec_caller_fn):
         try:
             return memcached_client.getMulti(keys)
-        except (EOFError, socket.error), error:
+        except (EOFError, socket.error) as error:
             if "Got empty data (remote died?)" in error.message \
                or "Timeout waiting for socket" in error.message \
                or "Broken pipe" in error.message \
@@ -1222,7 +1222,7 @@ class VBucketAwareMemcached(object):
                     vb_error += 1
                 else:
                     raise error
-            except (EOFError, socket.error), error:
+            except (EOFError, socket.error) as error:
                 if "Got empty data (remote died?)" in error.message \
                    or "Timeout waiting for socket" in error.message \
                    or "Broken pipe" in error.message \
@@ -1251,7 +1251,7 @@ class VBucketAwareMemcached(object):
                     backoff *= 2
                 else:
                     raise error
-            except (EOFError, IOError, socket.error), error:
+            except (EOFError, IOError, socket.error) as error:
                 raise MemcachedError(ERR_NOT_MY_VBUCKET,
                                      "Connection reset with error: %s" % error)
 

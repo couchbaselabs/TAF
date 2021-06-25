@@ -728,11 +728,11 @@ def main():
                 clear_old_core_dumps(TestInputSingleton.input, logs_folder)
         try:
             suite = unittest.TestLoader().loadTestsFromName(name)
-        except AttributeError, e:
+        except AttributeError as e:
             print("Test %s was not found: %s" % (name, e))
             result = unittest.TextTestRunner(verbosity=2)._makeResult()
             result.errors = [(name, e.message)]
-        except SyntaxError, e:
+        except SyntaxError as e:
             print("SyntaxError in %s: %s" % (name, e))
             result = unittest.TextTestRunner(verbosity=2)._makeResult()
             result.errors = [(name, e.message)]

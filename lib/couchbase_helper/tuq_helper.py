@@ -152,7 +152,6 @@ class N1QLHelper:
                     .execute_statement_on_cbas(query, "immediate")
                 try:
                     result = json.loads(result1)
-                    print result
                 except Exception as ex:
                     self.log.error("CANNOT LOAD QUERY RESULT IN JSON: %s"
                                    % ex.message)
@@ -184,7 +183,6 @@ class N1QLHelper:
                         cmd = "%scbq  -engine=http://%s:%s/ -q -u %s -p %s" % (
                             self.path, server.ip, server.port,
                             username, password)
-                    print cmd
 
                     output = self.shell.execute_commands_inside(
                         cmd, query, "", "", "", "", "")
@@ -486,8 +484,8 @@ class N1QLHelper:
                                 x['char_field1'] != y['char_field1'] or \
                                 x['int_field1'] != y['int_field1'] or \
                                 x['bool_field1'] != y['bool_field1']:
-                    print "actual_result is %s" % actual_result
-                    print "expected result is %s" % expected_result
+                    print("actual_result is %s" % actual_result)
+                    print("expected result is %s" % expected_result)
                     extra_msg = self._get_failure_message(expected_result, actual_result)
                     raise Exception(msg+"\n "+extra_msg)
         else:
@@ -682,7 +680,7 @@ class N1QLHelper:
                 couchbase_path = testconstants.WIN_COUCHBASE_BIN_PATH
             if self.input.tuq_client and "sherlock_path" in self.input.tuq_client:
                 couchbase_path = "%s/bin" % self.input.tuq_client["sherlock_path"]
-                print "PATH TO SHERLOCK: %s" % couchbase_path
+                print("PATH TO SHERLOCK: %s" % couchbase_path)
             if os == 'windows':
                 cmd = "cd %s; " % (couchbase_path) +\
                 "./cbq-engine.exe -datastore http://%s:%s/ >/dev/null 2>&1 &" % (server.ip, server.port)
@@ -1133,10 +1131,10 @@ class N1QLHelper:
             index_distribution_map_after_rebalance[node] = index_distribution_map_after_rebalance.get(node, 0) + 1
         self.log.info("Distribution of indexes before rebalance")
         for k, v in index_distribution_map_before_rebalance.iteritems():
-            print k, v
+            print(k, v)
         self.log.info("Distribution of indexes after rebalance")
         for k, v in index_distribution_map_after_rebalance.iteritems():
-            print k, v
+            print(k, v)
 
     def verify_replica_indexes(self, index_names, index_map, num_replicas, expected_nodes=None):
         # 1. Validate count of no_of_indexes

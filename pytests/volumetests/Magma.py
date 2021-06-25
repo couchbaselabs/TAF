@@ -67,8 +67,8 @@ class volume(BaseTestCase):
         self.thread_to_use = min(64, doc_tasks)
         self.input.test_params.update({"threads_to_use":
                                        self.thread_to_use})
-        print "Total Doc-Tasks workers = {}".format(self.thread_to_use)
-        print "Total Doc-Tasks = {}".format(doc_tasks)
+        self.log.critical("Total Doc-Tasks workers = %s" % self.thread_to_use)
+        self.log.critical("Total Doc-Tasks = %s" % doc_tasks)
         self.doc_loading_tm = TaskManager(number_of_threads=self.thread_to_use)
         self.process_concurrency = self.input.param("pc", process_concurrency)
 
@@ -459,8 +459,8 @@ class volume(BaseTestCase):
         for node in self.cluster.nodes_in_cluster:
             gdb_shell = RemoteMachineShellConnection(node)
             gdb_out = gdb_shell.execute_command('gdb -p `(pidof memcached)` -ex "thread apply all bt" -ex detach -ex quit')[0]
-            print node.ip
-            print gdb_out
+            self.log.critical("GDB bt logs from node: %s\n %s"
+                              % (node.ip, gdb_out))
             gdb_shell.disconnect()
 
     def data_validation(self):
@@ -951,13 +951,13 @@ class volume(BaseTestCase):
         return rebalance_task
 
     def PrintStep(self, msg=None):
-        print "\n"
-        print "\t", "#"*60
-        print "\t", "#"
-        print "\t", "#  %s" % msg
-        print "\t", "#"
-        print "\t", "#"*60
-        print "\n"
+        print("\n")
+        print("\t", "#"*60)
+        print("\t", "#")
+        print("\t", "#  %s" % msg)
+        print("\t", "#")
+        print("\t", "#"*60)
+        print("\n")
 
     def ClusterOpsVolume(self):
         #######################################################################
