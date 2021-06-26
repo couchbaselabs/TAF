@@ -96,7 +96,7 @@ def scan_all_slaves():
                     run("unzip {}".format(cbcollect_zips), session)[0]
                     exclude = "'Rollback point not found\|No space left on device\|Permission denied'"
                     memcached = "/root/cbcollect*/memcached.log*"
-                    o, _ = run("grep 'CRITICAL\| ERROR ' {} | grep -v {}".format(memcached, exclude), session)[0]
+                    o, _ = run("grep 'CRITICAL\| ERROR ' {} | grep -v {}".format(memcached, exclude), session)
                     if o:
                         print "".join(o)
                     print "#######################"
