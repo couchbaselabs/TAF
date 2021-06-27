@@ -20,8 +20,8 @@ class MagmaCrashTests(MagmaBaseTest):
 
     def setUp(self):
         super(MagmaCrashTests, self).setUp()
-        self.sdk_timeout = self.input.param("sdk_timeout", 100)
-        self.time_unit = "milliseconds"
+        self.sdk_timeout = self.input.param("sdk_timeout", 10)
+        self.time_unit = "seconds"
         self.graceful = self.input.param("graceful", False)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
