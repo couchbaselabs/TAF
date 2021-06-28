@@ -11,6 +11,7 @@ class KVStoreTests(MagmaBaseTest):
         super(KVStoreTests, self).setUp()
         self.crash_memcached = self.input.param("crash_memcached", False)
         self.graceful = self.input.param("graceful", False)
+        self.crash_th = None
 
     def tearDown(self):
         super(KVStoreTests, self).tearDown()
@@ -366,9 +367,10 @@ class KVStoreTests(MagmaBaseTest):
                 self.stop_crash = True
                 self.crash_th.join()
 
+            if self.crash_th and self.crash_th.is_alive():
+                self.crash_th.join()
+
             if not buckets_created:
-                if self.crash_th and self.crash_th.is_alive():
-                    self.crash_th.join()
                 buckets_created = self.bucket_util.create_multiple_buckets(
                     self.cluster.master, self.num_replicas,
                     bucket_count=self.num_delete_buckets,
@@ -381,8 +383,6 @@ class KVStoreTests(MagmaBaseTest):
 
             self.assertTrue(buckets_created, "Unable to create multiple buckets after bucket deletion")
 
-            if self.crash_th and self.crash_th.is_alive():
-                self.crash_th.join()
             for bucket in self.cluster.buckets:
                 ready = self.bucket_util.wait_for_memcached(
                     self.cluster.master,
