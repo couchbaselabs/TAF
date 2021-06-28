@@ -36,7 +36,7 @@ class BasicOps(CollectionBase):
                                  vbuckets=self.cluster_util.vbuckets,
                                  target_vbucket=target_vb)
 
-        bucket = self.bucket_util.get_all_buckets()[0]
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         for op_type in ["create", "update", "delete"]:
             for _, scope in bucket.scopes.items():
                 for _, collection in scope.collections.items():
@@ -60,11 +60,13 @@ class BasicOps(CollectionBase):
                             .collections[collection.name].num_items \
                             -= self.num_items
                     # Doc count validation
-                    self.bucket_util._wait_for_stats_all_buckets()
+                    self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster.buckets)
                     # Prints bucket stats after doc_ops
-                    self.bucket_util.print_bucket_stats()
+                    self.bucket_util.print_bucket_stats(self.cluster)
                     self.bucket_util \
-                        .validate_docs_per_collections_all_buckets()
+                        .validate_docs_per_collections_all_buckets(
+                            self.cluster)
 
     def __validate_cas_for_key(self, key, crud_result, known_cas):
         vb = self.bucket_util.get_vbucket_num_for_key(key)
@@ -121,9 +123,9 @@ class BasicOps(CollectionBase):
                                  % task.fail.keys())
 
         # Data validation
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
 
         # Drop collection phase
@@ -155,9 +157,9 @@ class BasicOps(CollectionBase):
             if task.fail:
                 self.log.info("Doc loading failed for keys: %s" % task.fail)
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         # Validate drop collection using cbstats
         for node in self.cluster_util.get_kv_nodes():
             shell_conn = RemoteMachineShellConnection(node)
@@ -195,9 +197,9 @@ class BasicOps(CollectionBase):
             self.log.info(e)
 
         # Validate the bucket doc count is '0' after drop collection
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
         self.validate_test_failure()
 
@@ -247,9 +249,9 @@ class BasicOps(CollectionBase):
             .num_items += self.num_items
 
         # Doc count validation
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
 
         # Perform update mutation
@@ -343,9 +345,9 @@ class BasicOps(CollectionBase):
         self.task_manager.get_task_result(task)
 
         # Doc count validation
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
         self.validate_test_failure()
 
@@ -389,10 +391,10 @@ class BasicOps(CollectionBase):
         cbstats.get_collections(self.cluster.buckets[0])
 
         self.log.info("Validating the documents in default collection")
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.print_bucket_stats(self.cluster)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.log.info("Load documents into the created collection")
         sdk_client = SDKClient([self.cluster.master],
@@ -417,10 +419,11 @@ class BasicOps(CollectionBase):
             .collections[collection_name] \
             .num_items += self.num_items
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
-        self.bucket_util.verify_stats_all_buckets(self.num_items * 2)
+        self.bucket_util.print_bucket_stats(self.cluster)
+        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                  self.num_items * 2)
 
         task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_set, "update", 0,
@@ -433,10 +436,11 @@ class BasicOps(CollectionBase):
             collection=collection_name)
         self.task_manager.get_task_result(task)
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
-        self.bucket_util.verify_stats_all_buckets(self.num_items * 2)
+        self.bucket_util.print_bucket_stats(self.cluster)
+        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                  self.num_items * 2)
         self.validate_test_failure()
 
     def test_similar_keys_in_all_collections(self):
@@ -480,7 +484,8 @@ class BasicOps(CollectionBase):
         client.close()
 
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_dockey_whitespace_data_ops(self):
@@ -552,7 +557,8 @@ class BasicOps(CollectionBase):
         client.close()
 
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_doc_size(self):
@@ -608,7 +614,8 @@ class BasicOps(CollectionBase):
         client.close()
 
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_sub_doc_size(self):
@@ -683,7 +690,8 @@ class BasicOps(CollectionBase):
                                                   scope_name,
                                                   col_obj.get_dict_object())
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_create_delete_recreate_scope(self):
@@ -720,7 +728,8 @@ class BasicOps(CollectionBase):
                 BucketUtils.create_scope(self.cluster.master, bucket,
                                          {"name": scope_name})
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_drop_collection_compaction(self):
@@ -744,7 +753,8 @@ class BasicOps(CollectionBase):
             timeout_in_seconds=(self.wait_timeout * 10))
         remote_client.disconnect()
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_create_delete_collection_same_order(self):
@@ -763,7 +773,8 @@ class BasicOps(CollectionBase):
                                                     mutation_num=0,
                                                     batch_size=self.batch_size)
             collection_count = cb_stat.get_collections(self.bucket)["count"]
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
         # Delete collections
         while collection_count > 1:
@@ -779,7 +790,8 @@ class BasicOps(CollectionBase):
             collection_count = cb_stat.get_collections(self.bucket)["count"]
 
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_load_default_collection(self):
@@ -823,9 +835,9 @@ class BasicOps(CollectionBase):
                                                     batch_size=self.batch_size)
         self.task_manager.get_task_result(task)
         # Data validation
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         task = self.task.async_validate_docs(
             self.cluster, self.bucket, load_gen, "create", self.maxttl,
             batch_size=10, process_concurrency=2)
@@ -836,7 +848,8 @@ class BasicOps(CollectionBase):
                 BucketUtils.drop_collection(self.cluster.master, bucket)
 
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_invalid_name_collection(self):
@@ -867,7 +880,8 @@ class BasicOps(CollectionBase):
                 self.log.debug(e)
 
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_load_collection(self):
@@ -894,7 +908,8 @@ class BasicOps(CollectionBase):
             #     self.fail("compaction failed")
 
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_delete_collection_during_load(self):
@@ -940,7 +955,7 @@ class BasicOps(CollectionBase):
             print_ops_rate=True, retries=0)
 
         self.sleep(5)
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         if delete_scope:
             # Attempt deleting scope only if it is NOT default scope
@@ -959,7 +974,8 @@ class BasicOps(CollectionBase):
         self.task_manager.get_task_result(task)
 
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_item_count_collections(self):
@@ -968,8 +984,9 @@ class BasicOps(CollectionBase):
         for _, scope in bucket.scopes.items():
             for _, collection in scope.collections.items():
                 expected_item_count = collection.num_items
-                actual_item_count = self.bucket_util.get_total_items_count_in_a_collection\
-                    (bucket.name, scope.name, collection.name)
+                actual_item_count = \
+                    self.bucket_util.get_total_items_count_in_a_collection(
+                        self.cluster, bucket.name, scope.name, collection.name)
                 if actual_item_count != expected_item_count:
                     fail_msg = "For bucket: %s scope: %s collections: %s , " \
                                "Expected item count: %d actual item count: %d" %\
@@ -978,13 +995,14 @@ class BasicOps(CollectionBase):
                     self.log_failure(fail_msg)
 
         # Flush bucket and verify items count of each coll goes to 0
-        self.bucket_util.flush_bucket(self.cluster.master, bucket)
+        self.bucket_util.flush_bucket(self.cluster, bucket)
         self.sleep(30)
         for _, scope in bucket.scopes.items():
             for _, collection in scope.collections.items():
                 expected_item_count = 0
-                actual_item_count = self.bucket_util.get_total_items_count_in_a_collection\
-                    (bucket.name, scope.name, collection.name)
+                actual_item_count = \
+                    self.bucket_util.get_total_items_count_in_a_collection(
+                        self.cluster, bucket.name, scope.name, collection.name)
                 if actual_item_count != expected_item_count:
                     fail_msg = "For bucket: %s scope: %s collections: %s , " \
                                "Expected item count: %d actual item count: %d" %\

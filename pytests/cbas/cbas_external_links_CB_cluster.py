@@ -265,7 +265,8 @@ class CBASExternalLinks(CBASBaseTest):
         self.link_created = True
 
         self.log.info("Loading sample bucket")
-        if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
+        if not to_cluster.bucket_util.load_sample_bucket(self.cluster,
+                                                         self.sample_bucket):
             self.fail(
                 "Error while loading {0} bucket in remote cluster".format(
                     self.sample_bucket.name))
@@ -1102,6 +1103,7 @@ class CBASExternalLinks(CBASBaseTest):
 
                 if testcase.get("load_sample_bucket", False):
                     if not self.to_clusters[0].bucket_util.load_sample_bucket(
+                            self.cluster,
                             self.sample_bucket):
                         raise Exception(
                             "Error while loading {0} bucket in remote cluster".format(
@@ -1117,7 +1119,7 @@ class CBASExternalLinks(CBASBaseTest):
                                 username=self.analytics_username):
                             raise Exception("Dataverse creation failed")
                     testcase["expected_error"] = testcase["expected_error"].format(
-                        link_properties["dataverse"], self.link_info["name"]) 
+                        link_properties["dataverse"], self.link_info["name"])
                 elif testcase.get("new_user", None):
                     link_properties["username"] = testcase["new_user"].replace(
                         "[*]", "")
@@ -1184,18 +1186,19 @@ class CBASExternalLinks(CBASBaseTest):
                 if testcase.get("new_user", None):
                     to_cluster.rbac_util._drop_user(
                         testcase["new_user"].replace("[*]", ""))
-                
-                if testcase.get("load_sample_bucket", False) and not self.to_clusters[0].bucket_util.delete_bucket(
-                    self.to_clusters[0].master, self.sample_bucket):
+
+                if testcase.get("load_sample_bucket", False) \
+                        and not self.to_clusters[0].bucket_util.delete_bucket(
+                        self.to_clusters[0], self.sample_bucket):
                     raise Exception("Error while deleting {0} bucket in remote cluster".format(
                         self.sample_bucket.name))
 
                 self.log.info("Test Passed")
             except Exception as err:
                 self.log.error(str(err))
-                if testcase.get("load_sample_bucket", False) and \
-                not self.to_clusters[0].bucket_util.delete_bucket(
-                    self.to_clusters[0].master, self.sample_bucket):
+                if testcase.get("load_sample_bucket", False) \
+                    and not self.to_clusters[0].bucket_util.delete_bucket(
+                        self.to_clusters[0], self.sample_bucket):
                     raise Exception(
                         "Error while deleting {0} bucket in remote cluster".format(
                             self.sample_bucket.name))
@@ -1322,7 +1325,8 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("link creation failed")
         self.link_created = True
 
-        if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
+        if not to_cluster.bucket_util.load_sample_bucket(self.cluster,
+                                                         self.sample_bucket):
             self.fail(
                 "Error while loading {0} bucket in remote cluster".format(
                     self.sample_bucket))
@@ -1679,7 +1683,8 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("link cration failed")
         self.link_created = True
 
-        if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
+        if not to_cluster.bucket_util.load_sample_bucket(self.cluster,
+                                                         self.sample_bucket):
             self.fail(
                 "Error while loading {0} bucket in remote cluster".format(
                     self.sample_bucket.name))
@@ -1687,7 +1692,7 @@ class CBASExternalLinks(CBASBaseTest):
         RemoteUtilHelper.enable_firewall(
             server=to_cluster.master,
             all_interface=True, action_on_packet="DROP")
-        
+
         self.sleep(10, "Waiting after applying firewall rule")
 
         def sleep_and_bring_network_up():
@@ -1839,9 +1844,8 @@ class CBASExternalLinks(CBASBaseTest):
     def test_dataset_behaviour_on_remote_bucket_deletion(self):
         to_cluster = self.setup_datasets()
 
-        if not to_cluster.bucket_util.delete_bucket(
-                serverInfo=to_cluster.master,
-                bucket=self.sample_bucket):
+        if not to_cluster.bucket_util.delete_bucket(cluster=to_cluster,
+                                                    bucket=self.sample_bucket):
             self.fail("Deletion of bucket failed")
 
         # Wait for link to get disconnected
@@ -1850,7 +1854,7 @@ class CBASExternalLinks(CBASBaseTest):
             retry += 1
             status, content, response = self.analytics_cluster.cbas_util.fetch_bucket_state_on_cbas()
             if status and json.loads(content)["buckets"][0][
-                "state"] != "connected":
+                    "state"] != "connected":
                 break
             self.sleep(10)
 
@@ -1867,9 +1871,8 @@ class CBASExternalLinks(CBASBaseTest):
         to_cluster = self.perform_setup_and_add_new_docs(10,
                                                          wait_for_ingestion=True)
 
-        if not to_cluster.bucket_util.delete_bucket(
-                serverInfo=to_cluster.master,
-                bucket=self.sample_bucket):
+        if not to_cluster.bucket_util.delete_bucket(cluster=to_cluster,
+                                                    bucket=self.sample_bucket):
             self.fail("Deletion of bucket failed")
 
         # Wait for link to get disconnected
@@ -1882,7 +1885,8 @@ class CBASExternalLinks(CBASBaseTest):
                 break
             self.sleep(10)
 
-        if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
+        if not to_cluster.bucket_util.load_sample_bucket(self.cluster,
+                                                         self.sample_bucket):
             self.fail(
                 "Error while loading {0} bucket in remote cluster".format(
                     self.sample_bucket.name))

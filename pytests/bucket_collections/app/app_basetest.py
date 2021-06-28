@@ -116,7 +116,7 @@ class AppBase(BaseTestCase):
             self.cluster_conf["cb_cluster"]["rbac_users"])
 
     def __setup_buckets(self):
-        self.cluster.buckets = self.bucket_util.get_all_buckets()
+        self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
         for bucket in self.bucket_conf["buckets"]:
             bucket_obj = None
             # Skip bucket creation if already exists in cluster
@@ -137,7 +137,8 @@ class AppBase(BaseTestCase):
                         self.fail("Invalid sample bucket '%s'"
                                   % bucket["name"])
 
-                    if self.bucket_util.load_sample_bucket(s_bucket) is False:
+                    if self.bucket_util.load_sample_bucket(
+                            self.cluster, s_bucket) is False:
                         self.fail("Failed to load sample bucket")
                     if Bucket.ramQuotaMB in bucket:
                         BucketHelper(self.cluster.master).change_bucket_props(
@@ -145,6 +146,7 @@ class AppBase(BaseTestCase):
                             ramQuotaMB=bucket[Bucket.ramQuotaMB])
                 else:
                     self.bucket_util.create_default_bucket(
+                        cluster=self.cluster,
                         bucket_name=bucket["name"],
                         bucket_type=bucket.get(Bucket.bucketType,
                                                Bucket.Type.MEMBASE),

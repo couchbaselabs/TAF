@@ -139,7 +139,7 @@ class DcpTestCase(DCPBase):
         elif self.operation == "replica_update":
             self.rebalance_in()
             self.sleep(10)
-            self.bucket_util.update_all_bucket_replicas(1)
+            self.bucket_util.update_all_bucket_replicas(self.cluster, 1)
 
         elif self.operation == "drop_scope":
             self.scope_name = self.drop_scope()
@@ -247,7 +247,7 @@ class DcpTestCase(DCPBase):
         self.validate_test_failure()
 
     def test_stream_drop_default_collection(self):
-        # drop default collection 
+        # drop default collection
         self.bucket_util.drop_collection(self.cluster.master,
                                          self.bucket,
                                          CbServer.default_scope,
@@ -396,8 +396,10 @@ class DcpTestCase(DCPBase):
         proc2.join()
         proc1.join()
 
-        expected_item_count = sum(self.bucket_util.get_buckets_itemCount().values())
-        self.verify_operation(self.operation, expected_item_count, verify=False)
+        expected_item_count = \
+            sum(self.bucket_util.get_buckets_itemCount(self.cluster).values())
+        self.verify_operation(self.operation, expected_item_count,
+                              verify=False)
         self.validate_test_failure()
 
     def test_stream_expired_doc(self):
@@ -422,7 +424,7 @@ class DcpTestCase(DCPBase):
 
         self.sleep(200, "wait for maxTTL/doc to expire")
 
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         output_string = self.get_dcp_event()
         if self.enable_expiry:
             actual_item_count = \

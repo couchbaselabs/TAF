@@ -90,7 +90,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.replica_vb_in_failover_nodes = list()
             self.get_vbucket_info_from_failover_nodes()
             self.cluster_util.print_cluster_stats()
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
 
     def collectionSetUp(self):
         self.auto_reprovision = self.input.param("auto_reprovision", False)
@@ -126,7 +126,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.get_vbucket_info_from_failover_nodes()
 
         # Create bucket(s) and add rbac user
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
         doc_loading_spec = \
@@ -140,8 +140,9 @@ class AutoFailoverBaseTest(BaseTestCase):
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
             SDKException.CollectionNotFoundException)
 
-        self.bucket_util.create_buckets_using_json_data(buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete()
+        self.bucket_util.create_buckets_using_json_data(self.cluster,
+                                                        buckets_spec)
+        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
 
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
@@ -173,10 +174,11 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.cluster_util.print_cluster_stats()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_helper_obj = BucketHelper(self.orchestrator)
 
     def over_ride_bucket_template_params(self, bucket_spec):
@@ -281,11 +283,13 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         if self.auto_reprovision:
             self.bucket_util.create_default_bucket(
+                self.cluster,
                 replica=self.num_replicas,
                 bucket_type=Bucket.Type.EPHEMERAL)
         else:
-            self.bucket_util.create_default_bucket(replica=self.num_replicas)
-        self.bucket_util.add_rbac_user()
+            self.bucket_util.create_default_bucket(self.cluster,
+                                                   replica=self.num_replicas)
+        self.bucket_util.add_rbac_user(self.cluster.master)
         self.sleep(10)
 
     def get_vbucket_info_from_failover_nodes(self):
@@ -750,7 +754,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         the nodes from any cluster that has been formed.
         :return:
         """
-        self.bucket_util.delete_all_buckets(self.cluster.servers)
+        self.bucket_util.delete_all_buckets(self.cluster)
 
     def reset_cluster(self):
         try:
@@ -981,12 +985,13 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                             self.cluster.servers[1:self.nodes_init],
                             [], services=self.services)
         self.auto_reprovision = self.input.param("auto_reprovision", False)
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
 
         if self.spec_name is None:
             if self.read_loadgen:
                 self.bucket_size = 100
-            self.bucket_util.create_default_bucket(ram_quota=self.bucket_size,
+            self.bucket_util.create_default_bucket(self.cluster,
+                                                   ram_quota=self.bucket_size,
                                                    replica=self.num_replicas)
             self.load_all_buckets(self.initial_load_gen, "create", 0)
         else:
@@ -1009,8 +1014,9 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
-        self.bucket_util.create_buckets_using_json_data(buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete()
+        self.bucket_util.create_buckets_using_json_data(self.cluster,
+                                                        buckets_spec)
+        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
 
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
@@ -1042,10 +1048,11 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.cluster_util.print_cluster_stats()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
     def tearDown(self):

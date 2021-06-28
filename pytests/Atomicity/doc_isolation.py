@@ -17,7 +17,7 @@ class IsolationDocTest(ClusterSetup):
 
         # Create default bucket
         self.bucket_size = 100
-        self.create_bucket()
+        self.create_bucket(self.cluster)
 
         self.doc_op = self.input.param("doc_op", "create")
         self.operation = self.input.param("operation", "afterAtrPending")
@@ -25,7 +25,7 @@ class IsolationDocTest(ClusterSetup):
         self.transaction_fail = self.input.param("fail", True)
 
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
@@ -355,7 +355,7 @@ class IsolationDocTest(ClusterSetup):
         pager_val = self.transaction_timeout+1
 
         self.log.info("Setting expiry pager value to %d" % pager_val)
-        self.bucket_util._expiry_pager(pager_val)
+        self.bucket_util._expiry_pager(self.cluster, pager_val)
 
         tombstone_creater = Thread(target=perform_create_deletes)
         tombstone_creater.start()
@@ -373,7 +373,7 @@ class IsolationDocTest(ClusterSetup):
             durability=self.durability_level,
             sync=self.sync, defer=self.defer)
 
-        self.bucket_util._run_compaction(number_of_times=20)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=20)
 
         # Wait for transaction task to complete
         self.task_manager.get_task_result(trans_task)

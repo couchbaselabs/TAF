@@ -370,4 +370,5 @@ class OpsChangeCasTests(CollectionBase):
 
         self.validate_test_failure()
         # Validate doc count as per bucket collections
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)

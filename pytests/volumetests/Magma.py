@@ -132,7 +132,7 @@ class volume(BaseTestCase):
         if update_bucket_props:
             self.bucket_util.update_bucket_props(
                     "backend", props,
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
             self.sleep(10, "Sleep for 10 seconds so that collections \
             can be created")
         else:
@@ -229,7 +229,7 @@ class volume(BaseTestCase):
                  Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
                  Bucket.compressionMode: self.compression_mode[i],
                  Bucket.fragmentationPercentage: self.fragmentation})
-            self.bucket_util.create_bucket(bucket)
+            self.bucket_util.create_bucket(self.cluster, bucket)
 
         # rebalance the new buckets across all nodes.
         self.log.info("Rebalance Starts")
@@ -450,7 +450,8 @@ class volume(BaseTestCase):
 
         if wait_for_stats:
             try:
-                self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets, timeout=1200)
             except Exception as e:
                 self.get_gdb()
                 raise e
@@ -588,7 +589,7 @@ class volume(BaseTestCase):
                 self.assertFalse(result)
 
     def print_stats(self):
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.print_crud_stats()
         for bucket in self.cluster.buckets:
             self.get_bucket_dgm(bucket)
@@ -605,7 +606,7 @@ class volume(BaseTestCase):
             servers = [servers]
         for server in servers:
             frag_val = self.bucket_util.get_fragmentation_kv(
-                bucket, server)
+                self.cluster, bucket, server)
             self.log.debug("Current Fragmentation for node {} is {} \
             ".format(server.ip, frag_val))
             result.update({server.ip: frag_val})
@@ -871,7 +872,8 @@ class volume(BaseTestCase):
 
             self.kill_memcached(num_kills=kill_rollback)
 
-            self.bucket_util.verify_stats_all_buckets(self.final_items,
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.final_items,
                                                       timeout=3600)
 
             self.print_stats()
@@ -1221,6 +1223,7 @@ class volume(BaseTestCase):
                 self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
+                self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
@@ -1291,6 +1294,7 @@ class volume(BaseTestCase):
                 self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
+                self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
@@ -1365,6 +1369,7 @@ class volume(BaseTestCase):
                 self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
+                self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
@@ -1438,7 +1443,7 @@ class volume(BaseTestCase):
             self.loop += 1
             if self.loop < self.iterations:
                 # Flush the bucket
-                result = self.bucket_util.flush_all_buckets(self.cluster.master)
+                result = self.bucket_util.flush_all_buckets(self.cluster)
                 self.assertTrue(result, "Flush bucket failed!")
                 self.sleep(600)
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
@@ -1679,7 +1684,8 @@ class volume(BaseTestCase):
                 self.generate_docs(doc_ops="update")
                 self.perform_load(crash=True, validate_data=True)
                 _iter += 1
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=1200)
             if self.end_step == 10:
                 exit(10)
             #######################################################################
@@ -1717,11 +1723,12 @@ class volume(BaseTestCase):
                         bucket.scopes[scope].collections.pop(collection)
                         drop += 1
             self.num_collections = self.num_collections - drop
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
             self.final_items = self.final_items * (self.num_collections)/total_collections
             self.log.info("Expected items after dropping collections: {}".
                           format(self.final_items))
-            self.bucket_util.verify_stats_all_buckets(self.final_items,
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.final_items,
                                                       timeout=3600)
             if self.end_step == 13:
                 exit(13)
@@ -1815,7 +1822,7 @@ class volume(BaseTestCase):
                                                            scope,
                                                            {"name": collection})
                     self.sleep(0.5)
-            self.bucket_util.flush_all_buckets(self.cluster.master)
+            self.bucket_util.flush_all_buckets(self.cluster)
             self.init_doc_params()
             self.sleep(600, "Iteration %s completed successfully !!!" % self.loop)
             self.loop += 1

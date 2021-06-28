@@ -29,14 +29,15 @@ class CasBaseTest(BaseTestCase):
         nodes_init = self.cluster.servers[1:self.nodes_init]
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket_util.create_default_bucket(
+            self.cluster,
             ram_quota=self.bucket_size,
             replica=self.num_replicas,
             storage=self.bucket_storage,
             conflict_resolution=self.bucket_conflict_resolution_type)
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket = self.cluster.buckets[0]
 
         # Create sdk_clients for pool
@@ -121,7 +122,7 @@ class CasBaseTest(BaseTestCase):
             self.shell.execute_cluster_backup(self.couchbase_login_info, self.backup_location, self.command_options)
 
             self.sleep(5, "Wait after cluster_backup")
-            self.bucket_util.create_bucket(name="new_bucket")
+            self.bucket_util.create_bucket(self.cluster, name="new_bucket")
             self.buckets = RestConnection(self.master).get_buckets()
             shell.restore_backupFile(self.couchbase_login_info,
                                      self.backup_location,

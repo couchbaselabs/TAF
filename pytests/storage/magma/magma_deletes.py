@@ -23,7 +23,7 @@ class BasicDeleteTests(BasicCrudTests):
         self.generate_docs(doc_ops="delete")
         count = 0
         while count < self.test_itr:
-            #######################################################################
+            ##################################################################
             '''
             STEP - 1, Delete all the items
 
@@ -33,10 +33,12 @@ class BasicDeleteTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=3600)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
-            ######################################################################
+            ##################################################################
             '''
             STEP - 2
               -- Space Amplification check after
@@ -69,7 +71,7 @@ class BasicDeleteTests(BasicCrudTests):
                 self.disk_usage.keys()[0]], False,
                 msg.format(disk_usage[0], 1,
                            self.disk_usage[self.disk_usage.keys()[0]]))
-            self.bucket_util._run_compaction(number_of_times=1)
+            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
             self.log.info("Iterations == {}, Actual tomb stone count == {},\
@@ -100,13 +102,13 @@ class BasicDeleteTests(BasicCrudTests):
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
                                       _sync=True)
-                self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
-                self.bucket_util.verify_stats_all_buckets(self.num_items)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets, timeout=3600)
+                self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                          self.num_items)
             count += 1
 
-            ######################################################################
         self.log.info("====test_basic_create_delete ends====")
-
 
     def test_parallel_creates_deletes(self):
         """
@@ -142,8 +144,10 @@ class BasicDeleteTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=3600)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
             self.delete_start = (count+1) * init_items
             self.delete_end = self.delete_start + init_items
@@ -185,7 +189,7 @@ class BasicDeleteTests(BasicCrudTests):
             self.log.info("Iterations - {}, Actual tomb stone count == {} expected_ts_count == {}"
                           .format(count+1, ts, expected_ts_count))
 
-            self.bucket_util._run_compaction(number_of_times=1)
+            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
             self.sleep(300, "sleep after triggering full compaction")
             disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)[0]

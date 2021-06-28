@@ -17,7 +17,7 @@ class DcpTestCase(DCPBase):
         # Create default bucket and add rbac user
         self.bucket_util.create_default_bucket()
         bucket_name = "default"
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
         self.sleep(30)
 
         self.dcp_client = DcpClient(host=self.cluster.master.ip)

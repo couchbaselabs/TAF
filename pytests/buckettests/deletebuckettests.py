@@ -19,7 +19,7 @@ class DeleteBucketTests(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.append(self.cluster.master)
         # self.bucket_util.create_default_bucket()
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
 
     def tearDown(self):
         super(DeleteBucketTests, self).tearDown()
@@ -58,12 +58,18 @@ class DeleteBucketTests(BaseTestCase):
         remote = RemoteMachineShellConnection(self.cluster.master)
         for replicaNumber in replicas:
             bucket = Bucket({"name": name, "replicaNumber": replicaNumber})
-            self.bucket_util.create_bucket(bucket)
+            self.bucket_util.create_bucket(self.cluster, bucket)
             msg = 'create_bucket succeeded but bucket {0} does not exist'.format(name)
-            self.assertTrue(self.bucket_util.wait_for_bucket_creation(bucket), msg)
-            self.bucket_util.delete_bucket(self.cluster.master, bucket.name)
+            self.assertTrue(
+                self.bucket_util.wait_for_bucket_creation(self.cluster,
+                                                          bucket),
+                msg)
+            self.bucket_util.delete_bucket(self.cluster, bucket.name)
             msg = 'bucket "{0}" was not deleted even after waiting for two minutes'.format(name)
-            self.assertTrue(self.bucket_util.wait_for_bucket_deletion(bucket), msg)
+            self.assertTrue(
+                self.bucket_util.wait_for_bucket_deletion(self.cluster,
+                                                          bucket),
+                msg)
             msg = 'bucket {0} data files are not deleted after bucket deleted from membase'.format(name)
             self.assertTrue(
                 self.wait_for_data_files_deletion(name,
@@ -77,6 +83,7 @@ class DeleteBucketTests(BaseTestCase):
         self.remote_shell = RemoteMachineShellConnection(self.cluster.master)
         bucketNameValue = self.bucket_util.get_random_name()
         self.bucket_util.create_default_bucket(
+            self.cluster,
             bucket_type=self.bucket_type,
             replica=self.num_replicas,
             storage=self.bucket_storage,
@@ -90,7 +97,7 @@ class DeleteBucketTests(BaseTestCase):
         jsonValue = json.loads(contentValue[0][0])
         self.assertEqual(jsonValue["bucket_name"], bucketNameValue, "Value are not equal")
 
-        self.bucket_util.delete_bucket(self.cluster.master, self.cluster.buckets[0])
+        self.bucket_util.delete_bucket(self.cluster, self.cluster.buckets[0])
 
         contentValue = self.remote_shell.execute_command(
             "cat " + logfilePath + " | grep 'Bucket was deleted'")

@@ -23,7 +23,8 @@ class BucketParams(CollectionBase):
         for new_replica in range(1, min(self.replica_count, self.nodes_init)):
             # Change replica and perform doc loading
             self.log.info("new replica is %s" % new_replica)
-            self.bucket_util.update_all_bucket_replicas(new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        new_replica)
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec)
             self.validate_docs(self.buckets)
@@ -31,7 +32,8 @@ class BucketParams(CollectionBase):
         for new_replica in range(min(self.replica_count,
                                      self.nodes_init) - 1, -1, -1):
             self.log.info("new replica is %s" % new_replica)
-            self.bucket_util.update_all_bucket_replicas(new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        new_replica)
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec)
             self.validate_docs(self.buckets)
@@ -43,7 +45,8 @@ class BucketParams(CollectionBase):
         for new_replica in range(1, self.replica_count):
             # Change replica and perform doc loading
             self.log.info("Setting replica = %s" % new_replica)
-            self.bucket_util.update_all_bucket_replicas(new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        new_replica)
             servs_in = [self.cluster.servers[count + self.nodes_init]]
             rebalance_task = self.task.async_rebalance(
                 known_nodes, servs_in, [], retry_get_process_num=self.retry_get_process_num)
@@ -59,7 +62,8 @@ class BucketParams(CollectionBase):
 
         for new_replica in range(self.replica_count - 1, 0, -1):
             self.log.info("Setting replica = %s" % new_replica)
-            self.bucket_util.update_all_bucket_replicas(new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        new_replica)
             servs_out = [known_nodes[-1]]
             rebalance_task = self.task.async_rebalance(
                 known_nodes, [], servs_out, retry_get_process_num=self.retry_get_process_num)
@@ -81,6 +85,6 @@ class BucketParams(CollectionBase):
 
     def validate_docs(self, buckets):
         # Validate doc count as per bucket collections
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.bucket_util.validate_doc_count_as_per_collections(buckets[0])
         self.validate_test_failure()

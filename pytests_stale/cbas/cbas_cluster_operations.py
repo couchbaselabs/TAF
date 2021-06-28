@@ -20,7 +20,8 @@ class CBASClusterOperations(CBASBaseTest):
         self.wait_for_rebalance=True
         super(CBASClusterOperations, self).setUp()
         self.num_items = self.input.param("items", 1000)
-        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               storage=self.bucket_storage)
 #         self.cbas_util.createConn("default")
         if 'nodeType' in self.input.test_params:
             self.nodeType = self.input.test_params['nodeType']
@@ -733,7 +734,7 @@ class CBASClusterOperations(CBASBaseTest):
         finally:
             body = {"enabled": "false"}
             rest.set_retry_rebalance_settings(body)
-    
+
     '''
     test_rebalance_on_nodes_running_multiple_services,cb_bucket_name=default,cbas_bucket_name=default_bucket,cbas_dataset_name=default_ds,items=10,nodeType=KV,num_queries=10,rebalance_type=in
     test_rebalance_on_nodes_running_multiple_services,cb_bucket_name=default,cbas_bucket_name=default_bucket,cbas_dataset_name=default_ds,items=10,nodeType=KV,num_queries=10,rebalance_type=out
@@ -936,7 +937,7 @@ class MultiNodeFailOver(CBASBaseTest):
             self.log.info(self.task_manager.get_task_result(task))
 
         self.log.info("Validate dataset count")
-        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items + self.num_items/4), msg="Document count mismatch")      
+        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.cbas_dataset_name, self.num_items + self.num_items/4), msg="Document count mismatch")
 
     def tearDown(self):
         super(MultiNodeFailOver, self).tearDown()

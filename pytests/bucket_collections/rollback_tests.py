@@ -200,13 +200,15 @@ class RollbackTests(CollectionBase):
                 [target_node],
                 self.bucket,
                 wait_time=300))
-            self.bucket_util.verify_stats_all_buckets(expected_num_items,
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      expected_num_items,
                                                       timeout=120)
 
             self.get_vb_details_cbstats_for_all_nodes("post_rollback")
             self.validate_seq_no_post_rollback("pre_rollback", "post_rollback",
                                                keys_to_verify)
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
         self.validate_test_failure()
 
@@ -278,5 +280,6 @@ class RollbackTests(CollectionBase):
             for _, scope in bucket.scopes.items():
                 for _, collection in scope.collections.items():
                     collection.num_items = 0
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()

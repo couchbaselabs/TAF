@@ -32,7 +32,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
     def tearDown(self):
         self.log.info("Printing bucket stats before teardown")
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         super(AutoFailoverTests, self).tearDown()
 
     def set_retry_exceptions(self, doc_loading_spec):
@@ -66,8 +66,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
     def data_validation_collection(self):
         if not self.skip_validations:
             if self.durability_level:
-                self.bucket_util._wait_for_stats_all_buckets()
-                self.bucket_util.validate_docs_per_collections_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
+                self.bucket_util.validate_docs_per_collections_all_buckets(
+                    self.cluster)
             else:
                 # No data validation for doc loading without durability level
                 pass
@@ -291,7 +293,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         # Update replica before rebalance due to failover
         if self.replica_update_during == "before_rebalance":
-            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        self.new_replica)
 
         for node in self.servers_to_add:
             self.rest.add_node(user=self.orchestrator.rest_username,
@@ -311,7 +314,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         # Update replica after rebalance due to failover
         if self.replica_update_during == "after_rebalance":
-            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        self.new_replica)
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
                 .format(self.num_replicas, self.new_replica)
@@ -378,7 +382,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         # Update replica before rebalance due to failover
         if self.replica_update_during == "before_rebalance":
-            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        self.new_replica)
 
         self.bring_back_failed_nodes_up()
         self.sleep(30)
@@ -396,7 +401,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         # Update replica after rebalance due to failover
         if self.replica_update_during == "after_rebalance":
-            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        self.new_replica)
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
                 .format(self.num_replicas, self.new_replica)
@@ -462,7 +468,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         # Update replica before rebalance due to failover
         if self.replica_update_during == "before_rebalance":
-            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        self.new_replica)
 
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
         msg = "rebalance failed while removing failover nodes {0}".format(
@@ -471,7 +478,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         # Update replica after rebalance due to failover
         if self.replica_update_during == "after_rebalance":
-            self.bucket_util.update_all_bucket_replicas(self.new_replica)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        self.new_replica)
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
                 .format(self.num_replicas, self.new_replica)

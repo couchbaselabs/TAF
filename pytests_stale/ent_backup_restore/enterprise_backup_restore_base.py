@@ -1,5 +1,5 @@
 import copy
-import os, shutil, ast, re, subprocess
+import os, shutil, re, subprocess
 import json
 import urllib
 
@@ -10,13 +10,10 @@ from membase.helper.rebalance_helper import RebalanceHelper
 from couchbase_helper.documentgenerator import BlobGenerator,DocumentGenerator
 from ent_backup_restore.validation_helpers.backup_restore_validations \
                                                  import BackupRestoreValidations
-from membase.helper.cluster_helper import ClusterOperationHelper
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.document import View
-from testconstants import LINUX_COUCHBASE_BIN_PATH,\
-                          COUCHBASE_DATA_PATH, WIN_COUCHBASE_DATA_PATH_RAW,\
-                          WIN_COUCHBASE_BIN_PATH_RAW, WIN_COUCHBASE_BIN_PATH, WIN_TMP_PATH_RAW,\
-                          MAC_COUCHBASE_BIN_PATH, LINUX_ROOT_PATH, WIN_ROOT_PATH,\
+from testconstants import COUCHBASE_DATA_PATH, WIN_COUCHBASE_DATA_PATH_RAW,\
+                          WIN_TMP_PATH_RAW, LINUX_ROOT_PATH, WIN_ROOT_PATH,\
                           WIN_TMP_PATH, STANDARD_BUCKET_PORT, WIN_CYGWIN_BIN_PATH
 from testconstants import INDEX_QUOTA, FTS_QUOTA
 from membase.api.rest_client import RestConnection
@@ -305,7 +302,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
             return numprocs[0]
 
     def backup_reset_clusters(self, servers):
-        self.bucket_util.delete_all_buckets(servers)
+        self.bucket_util.delete_all_buckets(self.cluster, servers)
         self.cluster_util.cleanup_cluster(master=servers[0])
         self.cluster_util.wait_for_ns_servers_or_assert(servers)
 
@@ -563,7 +560,8 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
                 replicas = self.new_replicas
             for bucket in self.buckets:
                 bucket_name = bucket.name
-                if not self.bucket_util.bucket_exists(bucket_name):
+                if not self.bucket_util.bucket_exists(self.cluster,
+                                                      bucket_name):
                     if self.backupset.map_buckets is None:
                         self.log.info("Creating bucket {0} in restore host {1}"
                                             .format(bucket_name,
@@ -798,7 +796,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
         output, error = remote_client.execute_command(command)
         remote_client.log_command_output(output, error)
         remote_client.disconnect()
-        self.verify_cluster_stats()
+        self.bucket_util.verify_cluster_stats(self.cluster, self.num_items)
         if error:
             return False, error, "Removing backup failed."
         else:
@@ -2293,6 +2291,7 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
             task.result(self.wait_timeout * 10)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets(
+                self.cluster,
                 ['bucket' + str(i) for i in range(
                     self.new_buckets)])
         for bucket in standard_buckets:
@@ -2344,6 +2343,7 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
             task.result(self.wait_timeout * 10)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets(
+                self.cluster,
                 ['bucket' + str(i) for i in range(
                     self.new_buckets)])
         for task in ops_tasks:
@@ -2467,7 +2467,7 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
         Compact all the buckets in the cluster
         :return: Nothing
         """
-        self._run_compaction(number_of_times=1)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
 
     def compact_buckets_with_ops(self):
         """
@@ -2475,7 +2475,7 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
         :return: Nothing
         """
         ops_tasks = self.async_ops_on_buckets()
-        self._run_compaction(number_of_times=1)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
         for task in ops_tasks:
             task.result()
 
@@ -2565,7 +2565,7 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
             bucket_size = self._get_bucket_size(ram_size, self.total_buckets)
             for bucket in self.buckets:
                 bucket_name = bucket.name
-                if not rest_helper.bucket_exists(bucket_name):
+                if not rest_helper.bucket_exists(self.cluster, bucket_name):
                     self.log.info("Creating bucket {0} in restore host {1}"
                                               .format(bucket_name,
                                               self.backupset.restore_cluster_host.ip))

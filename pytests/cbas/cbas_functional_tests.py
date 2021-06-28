@@ -8,7 +8,7 @@ class CBASFunctionalTests(CBASBaseTest):
         self.input = TestInputSingleton.input
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket": False})
-            
+
         if "set_cbas_memory_from_available_free_memory" not in \
                 self.input.test_params:
             self.input.test_params.update(
@@ -29,7 +29,8 @@ class CBASFunctionalTests(CBASBaseTest):
         NOTE: Cases pending where there are nodes which are running only cbas.
               For that service check on nodes is needed.
         '''
-        result = self.bucket_util.load_sample_bucket(sample_bucket)
+        result = self.bucket_util.load_sample_bucket(self.cluster,
+                                                     sample_bucket)
         self.assertTrue(result, msg="Failed to load '%s'" % sample_bucket)
 
     def test_create_dataset_on_bucket(self):

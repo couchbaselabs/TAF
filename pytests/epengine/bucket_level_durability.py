@@ -67,7 +67,7 @@ class CreateBucketTests(BucketDurabilityBase):
 
             self.get_vbucket_type_mapping(bucket_obj.name)
             self.cluster.buckets = [bucket_obj]
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.summary.add_step(test_step)
 
             # Perform CRUDs to validate bucket_creation with durability
@@ -100,7 +100,7 @@ class CreateBucketTests(BucketDurabilityBase):
             bucket_obj = Bucket(bucket_dict)
 
             try:
-                self.bucket_util.create_bucket(bucket_obj,
+                self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                                wait_for_warmup=True)
                 self.get_vbucket_type_mapping(bucket_obj.name)
                 if self.num_replicas == Bucket.ReplicaNum.THREE:
@@ -114,7 +114,7 @@ class CreateBucketTests(BucketDurabilityBase):
                 create_failed = True
                 self.log.debug(rest_exception)
 
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.summary.add_step(test_step)
 
             # Perform CRUDs to validate bucket_creation with durability
@@ -128,7 +128,7 @@ class CreateBucketTests(BucketDurabilityBase):
                 # Cbstats vbucket-details validation
                 self.cb_stat_verify(verification_dict)
 
-            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Bucket deletion")
 
 
@@ -155,7 +155,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         self.log.info(create_desc)
         # Object to support performing CRUDs and create Bucket
         bucket_obj = Bucket(bucket_dict)
-        self.bucket_util.create_bucket(bucket_obj,
+        self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                        wait_for_warmup=True)
         self.get_vbucket_type_mapping(bucket_obj.name)
         self.summary.add_step(create_desc)
@@ -192,7 +192,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             # Object to support performing CRUDs and create Bucket
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             bucket_obj = Bucket(bucket_dict)
-            self.bucket_util.create_bucket(bucket_obj,
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
             self.summary.add_step(step_desc)
@@ -206,7 +206,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.cb_stat_verify(verification_dict)
 
             # Delete the bucket on server
-            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Delete %s bucket" % self.bucket_type)
 
     def test_sub_doc_op_with_bucket_level_durability(self):
@@ -231,7 +231,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             # Object to support performing CRUDs and create Bucket
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             bucket_obj = Bucket(bucket_dict)
-            self.bucket_util.create_bucket(bucket_obj,
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.summary.add_step(step_desc)
 
@@ -283,8 +283,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.summary.add_step("%s for key %s" % (sub_doc_op, key))
 
             # Validate doc_count
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(1)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster, 1)
 
             # Cbstats vbucket-details validation
             self.cb_stat_verify(verification_dict)
@@ -293,7 +293,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             client.close()
 
             # Delete the bucket on server
-            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Delete %s bucket" % self.bucket_type)
 
     def test_higher_durability_level_from_client(self):
@@ -312,7 +312,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
-            self.bucket_util.create_bucket(bucket_obj,
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
             self.summary.add_step(create_desc)
@@ -346,7 +346,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.cb_stat_verify(verification_dict)
 
             # Delete the bucket on server
-            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Delete %s bucket" % self.bucket_type)
 
     def test_lower_durability_level_from_client(self):
@@ -364,7 +364,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
-            self.bucket_util.create_bucket(bucket_obj,
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
             self.summary.add_step(create_desc)
@@ -392,7 +392,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.cb_stat_verify(verification_dict)
 
             # Delete the bucket on server
-            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Delete %s bucket" % self.bucket_type)
 
     def test_update_durability_level(self):
@@ -425,12 +425,12 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
-            self.bucket_util.create_bucket(bucket_obj,
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
             self.summary.add_step(create_desc)
 
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
 
             # Load basic docs to support other CRUDs
             self.log.info("Performing initial doc_load")
@@ -522,17 +522,18 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
                 # Update bucket durability
                 self.bucket_util.update_bucket_property(
+                    self.cluster.master,
                     bucket_obj,
                     bucket_durability=new_d_level)
 
-                buckets = self.bucket_util.get_all_buckets()
+                buckets = self.bucket_util.get_all_buckets(self.cluster)
                 if buckets[0].durability_level != new_d_level:
                     self.log_failure("Failed to update bucket_d_level to %s"
                                      % new_d_level)
                 self.summary.add_step("Set bucket-durability=%s"
                                       % new_d_level)
 
-                self.bucket_util.print_bucket_stats()
+                self.bucket_util.print_bucket_stats(self.cluster)
 
                 if update_during_ops:
                     self.task_manager.get_task_result(task)
@@ -544,7 +545,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                       % task.op_type)
 
             # Delete the bucket on server
-            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Delete %s bucket" % self.bucket_type)
 
     def test_update_durability_between_doc_op(self):
@@ -572,12 +573,12 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                            supported_d_levels[0])
         # Object to support performing CRUDs and create Bucket
         bucket_obj = Bucket(bucket_dict)
-        self.bucket_util.create_bucket(bucket_obj,
+        self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                        wait_for_warmup=True)
         self.get_vbucket_type_mapping(bucket_obj.name)
         self.summary.add_step(create_desc)
 
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         # Loop to update all other durability levels
         prev_d_level = supported_d_levels[0]
@@ -612,11 +613,12 @@ class BucketDurabilityTests(BucketDurabilityBase):
                           "durability=%s" % new_d_level)
 
             self.bucket_util.update_bucket_property(
+                self.cluster.master,
                 bucket_obj,
                 bucket_durability=new_d_level)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
 
-            buckets = self.bucket_util.get_all_buckets()
+            buckets = self.bucket_util.get_all_buckets(self.cluster)
             if buckets[0].durability_level != new_d_level:
                 self.log_failure("Failed to update bucket_d_level to %s"
                                  % new_d_level)
@@ -640,7 +642,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             prev_d_level = bucket_durability
 
         # Delete the bucket on server
-        self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+        self.bucket_util.delete_bucket(self.cluster, bucket_obj)
         self.summary.add_step("Delete %s bucket" % self.bucket_type)
 
     def test_sync_write_in_progress(self):
@@ -849,7 +851,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
-            self.bucket_util.create_bucket(bucket_obj,
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
             self.summary.add_step(create_desc)
@@ -863,7 +865,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.cb_stat_verify(verification_dict)
 
             # Bucket deletion
-            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Delete %s bucket" % self.bucket_type)
 
     def test_observe_scenario(self):
@@ -918,7 +920,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
-            self.bucket_util.create_bucket(bucket_obj, wait_for_warmup=True)
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
+                                           wait_for_warmup=True)
             self.summary.add_step(create_desc)
 
             verification_dict = self.get_cb_stat_verification_dict()
@@ -927,14 +930,14 @@ class BucketDurabilityTests(BucketDurabilityBase):
             perform_crud_ops()
 
             # Validate doc_count
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(0)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
 
             # Cbstats vbucket-details validation
             self.cb_stat_verify(verification_dict)
 
             # Delete the created bucket
-            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Delete bucket with d_level %s" % d_level)
 
     def test_durability_impossible(self):
@@ -954,7 +957,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
-            self.bucket_util.create_bucket(bucket_obj, wait_for_warmup=True)
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
+                                           wait_for_warmup=True)
             self.summary.add_step("Create bucket with durability %s"
                                   % d_level)
 
@@ -971,5 +975,5 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.cb_stat_verify(verification_dict)
 
             # Delete the created bucket
-            self.bucket_util.delete_bucket(self.cluster.master, bucket_obj)
+            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Delete bucket with d_level %s" % d_level)

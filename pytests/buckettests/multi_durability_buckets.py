@@ -18,7 +18,7 @@ class MultiDurabilityTests(BaseTestCase):
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
 
         rest = RestConnection(self.cluster.master)
         info = rest.get_nodes_self()
@@ -59,7 +59,8 @@ class MultiDurabilityTests(BaseTestCase):
                  Bucket.replicaNumber: self.bucket_dict[index]["replica"],
                  Bucket.compressionMode: "off",
                  Bucket.maxTTL: 0})
-            tasks[bucket] = self.bucket_util.async_create_bucket(bucket)
+            tasks[bucket] = self.bucket_util.async_create_bucket(self.cluster,
+                                                                 bucket)
 
             # Append bucket object into the bucket_info dict
             self.bucket_dict[index]["object"] = bucket
@@ -82,7 +83,7 @@ class MultiDurabilityTests(BaseTestCase):
         if raise_exception:
             raise Exception("Create bucket failed: %s" % raise_exception)
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("=== MultiDurabilityTests base setup done ===")
 
     def tearDown(self):
@@ -120,7 +121,7 @@ class MultiDurabilityTests(BaseTestCase):
                 self.task.jython_task_manager.get_task_result(task)
 
             # Verify doc load count
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
             for _, tem_bucket in bucket_info.items():
                 self.bucket_util.verify_stats_for_bucket(
                     tem_bucket["object"],
@@ -163,8 +164,8 @@ class MultiDurabilityTests(BaseTestCase):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         half_of_num_items = int(self.num_items/2)
 

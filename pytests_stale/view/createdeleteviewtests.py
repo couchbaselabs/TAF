@@ -30,8 +30,8 @@ class CreateDeleteViewTests(BaseTestCase):
             nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
             self.task.rebalance([self.cluster.master], nodes_init, [])
             self.cluster.nodes_in_cluster.append(self.cluster.master)
-            self.bucket_util.create_default_bucket()
-            self.bucket_util.add_rbac_user()
+            self.bucket_util.create_default_bucket(self.cluster)
+            self.bucket_util.add_rbac_user(self.cluster.master)
         except Exception as ex:
             self.input.test_params["stop-on-failure"] = True
             self.log.error("SETUP WAS FAILED. ALL TESTS WILL BE SKIPPED")
@@ -198,6 +198,6 @@ class CreateDeleteViewTests(BaseTestCase):
                 self._execute_ddoc_ops(self.ddoc_ops, self.test_with_view,
                                        self.num_ddocs / 2, self.num_views_per_ddoc / 2, bucket=bucket)
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self._verify_ddoc_ops_all_buckets()
         self._verify_ddoc_data_all_buckets()

@@ -4616,7 +4616,8 @@ class CBASRebalanceUtil(object):
         retry_count = 0
         while retry_count < 10:
             try:
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
             except:
                 retry_count = retry_count + 1
                 self.log.info(
@@ -4626,13 +4627,13 @@ class CBASRebalanceUtil(object):
                 break
         if retry_count == 10:
             self.log.info("Attempting last retry for ep-queue to drain")
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         if doc_and_collection_ttl:
-            self.bucket_util._expiry_pager(val=5)
+            self.bucket_util._expiry_pager(self.cluster, val=5)
             self.log.info("wait for doc/collection maxttl to finish")
             time.sleep(400)
             items = 0
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
             for bucket in self.cluster.buckets:
                 items = items + self.bucket_helper_obj.get_active_key_count(
                     bucket)
@@ -4640,7 +4641,8 @@ class CBASRebalanceUtil(object):
                 raise Exception("doc count!=0, TTL + rebalance failed")
         else:
             if not skip_validations:
-                self.bucket_util.validate_docs_per_collections_all_buckets()
+                self.bucket_util.validate_docs_per_collections_all_buckets(
+                    self.cluster)
 
     def get_failover_count(self):
         cluster_status = self.rest.cluster_status()

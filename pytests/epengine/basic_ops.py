@@ -36,7 +36,7 @@ class basic_ops(ClusterSetup):
     def setUp(self):
         super(basic_ops, self).setUp()
 
-        self.create_bucket()
+        self.create_bucket(self.cluster)
 
         self.doc_ops = self.input.param("doc_ops", "").split(";")
         self.observe_test = self.input.param("observe_test", False)
@@ -82,7 +82,7 @@ class basic_ops(ClusterSetup):
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
 
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("==========Finished Basic_ops base setup========")
 
     def tearDown(self):
@@ -93,7 +93,7 @@ class basic_ops(ClusterSetup):
         KEY_NAME2 = 'key2'
         self.log.info('Starting basic ops')
 
-        default_bucket = self.bucket_util.get_all_buckets()[0]
+        default_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         sdk_client = SDKClient([self.cluster.master],
                                default_bucket,
                                compression_settings=self.sdk_compression)
@@ -258,7 +258,7 @@ class basic_ops(ClusterSetup):
                       .format(doc_op_info_dict[task]["unwanted"]["fail"]))
 
         self.log.info("Wait for ep_all_items_remaining to become '0'")
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         # Update ref_val
         verification_dict["ops_create"] += \
@@ -379,7 +379,7 @@ class basic_ops(ClusterSetup):
             self.log.warning("Unsupported doc_operation")
 
         self.log.info("Wait for ep_all_items_remaining to become '0'")
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
@@ -412,7 +412,7 @@ class basic_ops(ClusterSetup):
             self.task.jython_task_manager.get_task_result(task)
 
         # check if all the documents(250) are loaded with default timeout
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     def test_large_doc_20MB(self):
         # test reproducer for MB-29258,
@@ -447,9 +447,9 @@ class basic_ops(ClusterSetup):
         for bucket in self.cluster.buckets:
             if self.doc_size > 20:
                 # failed with error "Data Too Big" when document size > 20MB
-                self.bucket_util.verify_stats_all_buckets(0)
+                self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
             else:
-                self.bucket_util.verify_stats_all_buckets(1)
+                self.bucket_util.verify_stats_all_buckets(self.cluster, 1)
                 gens_update = self.generate_docs_bigdata(
                     docs_per_day=1, document_size=(21 * 1024000))
                 task = self.task.async_load_gen_docs(
@@ -478,7 +478,7 @@ class basic_ops(ClusterSetup):
                     if val_error not in str(doc_result["error"]):
                         self.log_failure("Invalid exception for key %s: %s"
                                          % (doc_id, doc_result))
-                self.bucket_util.verify_stats_all_buckets(1)
+                self.bucket_util.verify_stats_all_buckets(self.cluster, 1)
         self.validate_test_failure()
 
     def test_parallel_cruds(self):
@@ -864,7 +864,7 @@ class basic_ops(ClusterSetup):
         self.log.info("Loaded %s documents" % self.num_items)
 
         # Wait for ep_engine_queue size to become '0'
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         # Fetch evicted keys
         self.log.info("Fetching keys evicted from replica vbs")
@@ -903,10 +903,10 @@ class basic_ops(ClusterSetup):
         self.task_manager.get_task_result(rebalance_out)
 
         # Wait for ep_engine_queue size to become '0'
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         # Trigger compaction
-        self.bucket_util._run_compaction(number_of_times=1)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
 
         # Read all deleted keys (include replica read) to validate
         for key in non_resident_keys:
@@ -922,8 +922,9 @@ class basic_ops(ClusterSetup):
 
         self.assertTrue(rebalance_out.result, "Rebalance_out failed")
 
-        self.bucket_util.verify_stats_all_buckets(self.num_items
-                                                  - non_resident_keys_len)
+        self.bucket_util.verify_stats_all_buckets(
+            self.cluster,
+            self.num_items - non_resident_keys_len)
         self.validate_test_failure()
 
     def test_MB_41405(self):
@@ -974,7 +975,7 @@ class basic_ops(ClusterSetup):
             on_disk_deletes += 1
 
             # Wait for ep_queue_size to become zero
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
             dcp_vb_takeover_stats = nodes_data[target_node][
                 "cbstats"].dcp_vbtakeover(bucket.name, vb_for_key, key)
@@ -993,7 +994,8 @@ class basic_ops(ClusterSetup):
                 self.log.info("Bloom filter size before compaction: %s"
                               % bloom_filter_size)
 
-                self.bucket_util._run_compaction(number_of_times=1)
+                self.bucket_util._run_compaction(self.cluster,
+                                                 number_of_times=1)
 
                 vb_details_stats = nodes_data[target_node][
                     "cbstats"].vbucket_details(bucket.name)
@@ -1013,7 +1015,7 @@ class basic_ops(ClusterSetup):
             client.crud(DocLoading.Bucket.DocOps.DELETE, key, val)
             # self.bucket_util._wait_for_stats_all_buckets()
 
-        self.bucket_util._run_compaction(number_of_times=1)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
         self.sleep(5, "Compaction complete")
         vb_details_stats = nodes_data[target_node][
             "cbstats"].vbucket_details(bucket.name)
@@ -1061,7 +1063,7 @@ class basic_ops(ClusterSetup):
                 process_concurrency=8,
                 sdk_client_pool=self.sdk_client_pool)
             self.task_manager.get_task_result(doc_op_task)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
             if op_type == DocLoading.Bucket.DocOps.CREATE:
                 self.num_items += load_batch
             elif op_type == DocLoading.Bucket.DocOps.DELETE:
@@ -1212,15 +1214,15 @@ class basic_ops(ClusterSetup):
 
         # Perform create-delete to populate bloom-filter
         client_1.crud(DocLoading.Bucket.DocOps.CREATE, self.key, doc_val)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         client_1.crud(DocLoading.Bucket.DocOps.DELETE, self.key)
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(0)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
 
         # Create the document using async-write
         client_1.crud(DocLoading.Bucket.DocOps.CREATE, self.key, doc_val)
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(1)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, 1)
 
         # Stop persistence and delete te document
         cb_err.create(CouchbaseError.STOP_PERSISTENCE, bucket.name)
@@ -1294,7 +1296,7 @@ class basic_ops(ClusterSetup):
             sdk_client_pool=self.sdk_client_pool,
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         self.durability_level = Bucket.DurabilityLevel.MAJORITY
         active_vbs = cb_stat.vbucket_list(bucket.name,
@@ -1429,7 +1431,7 @@ class basic_ops(ClusterSetup):
                                     vbuckets=self.cluster_util.vbuckets,
                                     randomize_doc_size=self.randomize_doc_size,
                                     randomize_value=self.randomize_value)
-        def_bucket = self.bucket_util.get_all_buckets()[0]
+        def_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_create,
             DocLoading.Bucket.DocOps.CREATE, 0,
@@ -1440,8 +1442,8 @@ class basic_ops(ClusterSetup):
             timeout_secs=self.sdk_timeout,
             sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         remote = RemoteMachineShellConnection(self.cluster.master)
         for bucket in self.cluster.buckets:
@@ -1469,8 +1471,9 @@ class basic_ops(ClusterSetup):
             timeout_secs=self.sdk_timeout,
             sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                  self.num_items*2)
 
     def MB36948(self):
         node_to_stop = self.servers[0]
@@ -1504,8 +1507,8 @@ class basic_ops(ClusterSetup):
         self.log.info("Resuming memcached on: %s" % node_to_stop)
         err_sim.revert(CouchbaseError.STOP_MEMCACHED)
 
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(1)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, 1)
 
         self.log.info("Closing ssh & SDK connections")
         ssh_conn.disconnect()

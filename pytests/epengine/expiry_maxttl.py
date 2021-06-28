@@ -14,17 +14,17 @@ class ExpiryMaxTTL(ClusterSetup):
         super(ExpiryMaxTTL, self).setUp()
 
         # Create default bucket
-        self.create_bucket()
+        self.create_bucket(self.cluster)
 
         self.key = 'test_ttl_docs'.rjust(self.key_size, '0')
 
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]
 
-        self.bucket_util.get_all_buckets()
+        self.bucket_util.get_all_buckets(self.cluster)
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         # Create sdk_clients for pool
         if self.sdk_client_pool:
@@ -70,8 +70,8 @@ class ExpiryMaxTTL(ClusterSetup):
             compression=self.sdk_compression,
             sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         return
 
     def load_docs_in_parallel(self, bucket,
@@ -129,7 +129,7 @@ class ExpiryMaxTTL(ClusterSetup):
         for bucket in self.cluster.buckets:
             self._load_json(bucket, self.num_items, exp=self.maxttl)
         self.sleep(self.maxttl, "Waiting for docs to expire as per maxTTL")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.log.info("Calling compaction after expiry pager call")
         compact_tasks = []
         for bucket in self.cluster.buckets:
@@ -163,7 +163,7 @@ class ExpiryMaxTTL(ClusterSetup):
         for bucket in self.cluster.buckets:
             self._load_json(bucket, self.num_items, exp=int(self.maxttl)-100)
         self.sleep(self.maxttl-100, "Waiting for docs to expire as per maxTTL")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.sleep(20, "Waiting for item count to come down...")
         for bucket in self.cluster.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
@@ -197,10 +197,11 @@ class ExpiryMaxTTL(ClusterSetup):
         self._load_json(def_bucket, self.num_items, exp=doc_ttl)
 
         self.log.info("Updating bucket ttl=%s" % bucket_ttl)
-        self.bucket_util.update_all_bucket_maxTTL(maxttl=bucket_ttl)
+        self.bucket_util.update_all_bucket_maxTTL(self.cluster,
+                                                  maxttl=bucket_ttl)
 
         self.sleep(bucket_ttl, "Wait for bucket_ttl expiry time")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.sleep(20, "Waiting for items to get purged")
 
         items = self.bucket_helper_obj.get_active_key_count(def_bucket.name)
@@ -211,7 +212,7 @@ class ExpiryMaxTTL(ClusterSetup):
                         % (bucket_ttl, self.num_items, items))
 
         self.sleep(doc_ttl-bucket_ttl, "Wait for doc_ttl-bucket_ttl time")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.sleep(20, "Waiting for items to get purged")
 
         items = self.bucket_helper_obj.get_active_key_count(def_bucket.name)
@@ -226,7 +227,7 @@ class ExpiryMaxTTL(ClusterSetup):
             self._load_json(def_bucket, self.num_items, exp=doc_ttl)
 
         self.sleep(bucket_ttl, "Wait only till bucket_ttl time")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.sleep(20, "Waiting for items to get purged")
 
         items = self.bucket_helper_obj.get_active_key_count(def_bucket.name)
@@ -244,7 +245,7 @@ class ExpiryMaxTTL(ClusterSetup):
         4. negative values, date, string
         """
         # default
-        default_bucket = self.bucket_util.get_all_buckets()[0]
+        default_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         if default_bucket.maxTTL != 0:
             self.fail("FAIL: default maxTTL if left unset must be 0 but is {0}"
                       .format(default_bucket.maxTTL))
@@ -253,11 +254,13 @@ class ExpiryMaxTTL(ClusterSetup):
 
         # max value
         try:
-            self.bucket_util.update_all_bucket_maxTTL(maxttl=2147483648)
+            self.bucket_util.update_all_bucket_maxTTL(self.cluster,
+                                                      maxttl=2147483648)
         except Exception as e:
             self.log.info("Expected exception : {0}".format(e))
             try:
-                self.bucket_util.update_all_bucket_maxTTL(maxttl=2147483647)
+                self.bucket_util.update_all_bucket_maxTTL(self.cluster,
+                                                          maxttl=2147483647)
             except Exception as e:
                 self.fail("Unable to set max value for maxTTL=2147483647: {0}"
                           .format(e))
@@ -268,7 +271,8 @@ class ExpiryMaxTTL(ClusterSetup):
 
         # min value
         try:
-            self.bucket_util.update_all_bucket_maxTTL(maxttl=0)
+            self.bucket_util.update_all_bucket_maxTTL(self.cluster,
+                                                      maxttl=0)
         except Exception as e:
             self.fail("Unable to set maxTTL=0, the min permitted value: {0}"
                       .format(e))
@@ -277,7 +281,8 @@ class ExpiryMaxTTL(ClusterSetup):
 
         # negative value
         try:
-            self.bucket_util.update_all_bucket_maxTTL(maxttl=-60)
+            self.bucket_util.update_all_bucket_maxTTL(self.cluster,
+                                                      maxttl=-60)
         except Exception as e:
             self.log.info("Verified: negative values denied, exception: {0}"
                           .format(e))
@@ -286,7 +291,8 @@ class ExpiryMaxTTL(ClusterSetup):
 
         # date/string
         try:
-            self.bucket_util.update_all_bucket_maxTTL(maxttl="12/23/2016")
+            self.bucket_util.update_all_bucket_maxTTL(self.cluster,
+                                                      maxttl="12/23/2016")
         except Exception as e:
             self.log.info("Verified: string not permitted, exception : {0}"
                           .format(e))
@@ -305,10 +311,11 @@ class ExpiryMaxTTL(ClusterSetup):
         """
         for bucket in self.cluster.buckets:
             self._load_json(bucket, self.num_items, exp=100)
-        self.bucket_util.update_all_bucket_maxTTL(maxttl=40)
+        self.bucket_util.update_all_bucket_maxTTL(self.cluster,
+                                                  maxttl=40)
 
         self.sleep(40, "waiting before running expiry pager...")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.sleep(20, "waiting for item count to come down...")
         for bucket in self.cluster.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
@@ -320,7 +327,7 @@ class ExpiryMaxTTL(ClusterSetup):
                           "before updation!")
 
         self.sleep(60, "waiting before running expiry pager...")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.sleep(20, "waiting for item count to come down...")
         for bucket in self.cluster.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
@@ -349,7 +356,7 @@ class ExpiryMaxTTL(ClusterSetup):
                             exp=self.maxttl, op_type="update")
 
         self.sleep(self.maxttl-20, "waiting before running expiry pager...")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         for bucket in self.cluster.buckets:
             items = self.bucket_helper_obj.get_active_key_count(bucket.name)
             self.log.info("Items: {0}".format(items))
@@ -357,7 +364,7 @@ class ExpiryMaxTTL(ClusterSetup):
                 self.fail("FAIL: Docs with updated expiry deleted")
 
         self.sleep(20, "waiting before running expiry pager...")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
 
         self.sleep(20, "waiting for item count to come down...")
         for bucket in self.cluster.buckets:
@@ -420,11 +427,12 @@ class ExpiryMaxTTL(ClusterSetup):
                                    non_ttl_gen_create, ttl_gen_create,
                                    non_ttl_task_property, ttl_task_property)
         # Validate doc_count before expiry of docs
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                  self.num_items*2)
 
         self.sleep(self.maxttl, "Sleep for maxTTL time")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.sleep(25, "Waiting for items to be purged")
 
         # Read all expired docs to validate EONENT status
@@ -453,8 +461,8 @@ class ExpiryMaxTTL(ClusterSetup):
             self.fail("Seen invalid document exception")
 
         # Validate doc_count after doc_expiry
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Document mutations after doc_expiry
         non_ttl_task_property["op_type"] = "update"
@@ -462,8 +470,9 @@ class ExpiryMaxTTL(ClusterSetup):
                                    non_ttl_gen_create, ttl_gen_create,
                                    non_ttl_task_property, ttl_task_property)
         # Validate doc_count before expiry of docs
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                  self.num_items*2)
 
     def test_maxttl_with_timeout(self):
         """
@@ -520,7 +529,7 @@ class ExpiryMaxTTL(ClusterSetup):
         self.log.info("5. Waiting for doc_ops to complete")
         self.task.jython_task_manager.get_task_result(doc_op_task)
 
-        self.bucket_util._expiry_pager(val=1)
+        self.bucket_util._expiry_pager(self.cluster, val=1)
         self.sleep(10, "6. Waiting for items to be purged")
 
         # Read all expired docs to validate all keys present
@@ -575,5 +584,5 @@ class ExpiryMaxTTL(ClusterSetup):
                       % doc_op_task.fail.keys())
 
         # Final doc_count validation
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)

@@ -26,10 +26,11 @@ class CBASBucketOperations(CBASBaseTest):
         '''
 
         if self.bucket_time_sync:
-            self.bucket_util._set_time_sync_on_buckets(["default"])
+            self.bucket_util._set_time_sync_on_buckets(self.cluster,
+                                                       ["default"])
 
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def tearDown(self):
         self.cleanup_cbas()
@@ -43,7 +44,8 @@ class CBASBucketOperations(CBASBaseTest):
                 0,
                 self.num_items,
                 durability=self.durability_level)
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write aborts before dataset creation")
@@ -156,7 +158,8 @@ class CBASBucketOperations(CBASBaseTest):
             "create",
             self.num_items,
             self.num_items * 2)
-        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
+        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                  self.num_items*2)
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write aborts after dataset connect")
@@ -196,7 +199,7 @@ class CBASBucketOperations(CBASBaseTest):
             "create",
             0,
             self.num_items)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         # Validate no. of items in CBAS dataset
         if not self.cbas_util.validate_cbas_dataset_items_count(
                 self.cbas_dataset_name,
@@ -281,7 +284,8 @@ class CBASBucketOperations(CBASBaseTest):
             "create",
             self.num_items,
             self.num_items * 2)
-        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
+        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                  self.num_items*2)
         self.perform_doc_ops_in_all_cb_buckets(
             "update",
             0,
@@ -666,6 +670,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.log.info("Create Ephemeral bucket")
         self.bucket_ram = self.input.param("bucket_size", 100)
         self.bucket_util.create_default_bucket(
+            self.cluster,
             bucket_type=self.bucket_type,
             ram_quota=self.bucket_size,
             replica=self.num_replicas,
@@ -675,7 +680,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
             eviction_policy=self.bucket_eviction_policy)
 
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("Fetch RAM document load percentage")
         self.document_ram_percentage = \
             self.input.param("document_ram_percentage", 0.90)
@@ -731,7 +736,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
 
         self.log.info("Fetch current document count")
         target_bucket = None
-        self.bucket_util.get_all_buckets()
+        self.bucket_util.get_all_buckets(self.cluster)
         for tem_bucket in self.cluster.buckets:
             if tem_bucket.name == self.cb_bucket_name:
                 target_bucket = tem_bucket
@@ -761,7 +766,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
 
         self.log.info("Fetch item count")
         target_bucket = None
-        self.bucket_util.get_all_buckets()
+        self.bucket_util.get_all_buckets(self.cluster)
         for tem_bucket in self.cluster.buckets:
             if tem_bucket.name == self.cb_bucket_name:
                 target_bucket = tem_bucket
@@ -799,7 +804,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
 
         self.log.info("Fetch current document count")
         target_bucket = None
-        self.bucket_util.get_all_buckets()
+        self.bucket_util.get_all_buckets(self.cluster)
         for tem_bucket in self.cluster.buckets:
             if tem_bucket.name == self.cb_bucket_name:
                 target_bucket = tem_bucket

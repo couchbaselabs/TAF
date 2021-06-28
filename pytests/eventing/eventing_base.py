@@ -15,8 +15,8 @@ from testconstants import INDEX_QUOTA, EVENTING_QUOTA
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator
 
-class EventingBaseTest(BaseTestCase):
 
+class EventingBaseTest(BaseTestCase):
     def setUp(self):
         super(EventingBaseTest, self).setUp()
         self.bucket_helper = BucketHelper(self.cluster.master)

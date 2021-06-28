@@ -262,11 +262,11 @@ class BaseTestCase(unittest.TestCase):
         self.cluster = self.cb_clusters[cluster_name_format
                                         % default_cluster_index]
         self.cluster_util = ClusterUtils(self.cluster, self.task_manager)
-        self.bucket_util = BucketUtils(self.cluster, self.cluster_util,
-                                       self.task)
+        self.bucket_util = BucketUtils(self.cluster_util, self.task)
 
         if self.standard_buckets > 10:
-            self.bucket_util.change_max_buckets(self.standard_buckets)
+            self.bucket_util.change_max_buckets(self.cluster.master,
+                                                self.standard_buckets)
 
         for cluster_name, cluster in self.cb_clusters.items():
             shell = RemoteMachineShellConnection(cluster.master)
@@ -285,7 +285,8 @@ class BaseTestCase(unittest.TestCase):
 
         try:
             if self.skip_setup_cleanup:
-                self.cluster.buckets = self.bucket_util.get_all_buckets()
+                self.cluster.buckets = self.bucket_util.get_all_buckets(
+                    self.cluster)
                 return
             self.services_map = None
 
@@ -295,8 +296,7 @@ class BaseTestCase(unittest.TestCase):
                         and not self.skip_init_check_cbserver:
                     self.log.debug("Cleaning up cluster")
                     cluster_util = ClusterUtils(cluster, self.task_manager)
-                    bucket_util = BucketUtils(cluster, cluster_util,
-                                              self.task)
+                    bucket_util = BucketUtils(cluster_util, self.task)
                     cluster_util.cluster_cleanup(bucket_util)
 
             # Avoid cluster operations in setup for new upgrade / upgradeXDCR
@@ -461,8 +461,7 @@ class BaseTestCase(unittest.TestCase):
             return
         for _, cluster in self.cb_clusters.items():
             cluster_util = ClusterUtils(cluster, self.task_manager)
-            bucket_util = BucketUtils(cluster, cluster_util,
-                                      self.task)
+            bucket_util = BucketUtils(cluster_util, self.task)
             try:
                 if self.skip_buckets_handle:
                     return
@@ -949,7 +948,7 @@ class ClusterSetup(BaseTestCase):
                                                  + nodes_init)
 
         # Add basic RBAC users
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
 
         # Print cluster stats
         self.cluster_util.print_cluster_stats()
@@ -959,8 +958,9 @@ class ClusterSetup(BaseTestCase):
     def tearDown(self):
         super(ClusterSetup, self).tearDown()
 
-    def create_bucket(self, bucket_name="default"):
+    def create_bucket(self, cluster, bucket_name="default"):
         self.bucket_util.create_default_bucket(
+            cluster,
             bucket_type=self.bucket_type,
             ram_quota=self.bucket_size,
             replica=self.num_replicas,

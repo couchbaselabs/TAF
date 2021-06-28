@@ -100,12 +100,13 @@ class FailoverBaseTest(BaseTestCase):
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.append(self.cluster.master)
         self.bucket_util.create_default_bucket(
+            self.cluster,
             bucket_type=self.bucket_type,
             ram_quota=self.bucket_size,
             replica=self.num_replicas,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
 
         if self.sdk_client_pool:
             self.log.info("Creating SDK clients for client_pool")
@@ -117,8 +118,8 @@ class FailoverBaseTest(BaseTestCase):
                     compression_settings=self.sdk_compression)
 
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
-        self.buckets = self.bucket_util.get_all_buckets()
+        self.bucket_util.print_bucket_stats(self.cluster)
+        self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         self.log.info("== FailoverBaseTest setup finished for test #{0} {1} =="
                       .format(self.case_number, self._testMethodName))
 

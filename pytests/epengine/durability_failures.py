@@ -74,8 +74,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                     cbstat_obj[node.ip].vbucket_seqno(self.bucket.name))
 
             # Verify initial doc load count
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(0)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
             self.assertTrue(len(d_create_task.fail.keys()) == self.num_items,
                             msg=err_msg)
             if vb_info["init"] != vb_info["failure_stat"]:
@@ -98,8 +98,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(async_create_task)
 
         # Verify doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch vbucket seq_no status from vb_seqno command after async CREATEs
         for node in nodes_in_cluster:
@@ -136,8 +136,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.log_failure("Unexpected exception type")
 
         # Verify doc count is unchanged due to durability failures
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Reset failure_stat dictionary for reuse
         vb_info["failure_stat"] = dict()
@@ -348,8 +348,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         client.close()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
     def test_sync_write_in_progress_for_persist_active(self):
@@ -455,8 +455,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
     def test_durability_with_persistence(self):
@@ -618,8 +618,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.log_failure(msg.format("update"))
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
     def test_bulk_sync_write_in_progress(self):
@@ -776,8 +776,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                      % (key, doc_info))
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
     def test_bulk_sync_write_in_progress_for_persist_active(self):
@@ -893,8 +893,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         client.close()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
     def test_durability_abort(self):
@@ -1103,8 +1103,8 @@ class TimeoutTests(DurabilityTestsBase):
         client.close()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
     def test_timeout_with_successful_crud_for_persist_active(self):
@@ -1218,8 +1218,8 @@ class TimeoutTests(DurabilityTestsBase):
         client.close()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch latest stats and validate the values are updated
         vb_info["afterCrud"] = cbstat_obj.vbucket_seqno(self.bucket.name)
@@ -1467,8 +1467,8 @@ class TimeoutTests(DurabilityTestsBase):
         sdk_client.close()
 
         # Verify doc count after expected CRUD failure
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch latest stats and validate the values are updated
         for node in target_nodes:

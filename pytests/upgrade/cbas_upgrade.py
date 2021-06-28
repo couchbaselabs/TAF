@@ -103,7 +103,8 @@ class UpgradeTests(UpgradeBase):
             cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
         bucket_size = kv_quota // (self.input.param("num_buckets", 1) + 1)
         for bucket in self.cluster.buckets:
-            self.bucket_util.update_bucket_property(bucket,bucket_size)
+            self.bucket_util.update_bucket_property(self.cluster.master,
+                                                    bucket, bucket_size)
 
         validation_results = {}
         cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
@@ -165,7 +166,7 @@ class UpgradeTests(UpgradeBase):
                 CbServer.default_collection].num_items = self.num_items * 2
 
             # Verify doc load count
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
             self.sleep(30, "Wait for num_items to get reflected")
             current_items = self.bucket_util.get_bucket_current_item_count(
                 self.cluster, bucket)
@@ -176,7 +177,7 @@ class UpgradeTests(UpgradeBase):
                     "Mismatch in doc_count. Actual: %s, Expected: %s"
                     % (current_items, self.num_items*2))
                 validation_results["post_upgrade_data_load"] = False
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         if not self.cbas_util.wait_for_ingestion_all_datasets(self.bucket_util):
             validation_results["post_upgrade_data_load"] = False
             self.log.error("Data ingestion did not happen in the datasets")
@@ -199,7 +200,7 @@ class UpgradeTests(UpgradeBase):
             self.task_manager.get_task_result(async_load_task)
 
             # Verify doc load count
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
             while True:
                 current_items = self.bucket_util.get_bucket_current_item_count(
                     self.cluster, bucket)
@@ -236,6 +237,7 @@ class UpgradeTests(UpgradeBase):
         self.log.info("Creating new buckets with scopes and collections")
         for i in range(1, self.input.param("num_buckets", 1)+1):
             self.bucket_util.create_default_bucket(
+                self.cluster,
                 replica=self.num_replicas,
                 compression_mode=self.compression_mode,
                 ram_quota=bucket_size,
@@ -269,7 +271,7 @@ class UpgradeTests(UpgradeBase):
 
         self.log.info("Delete the bucket created before upgrade")
         if self.bucket_util.delete_bucket(
-                self.cluster.master, self.bucket, wait_for_bucket_deletion=True):
+                self.cluster, self.bucket, wait_for_bucket_deletion=True):
             validation_results["bucket_delete"] = True
         else:
             validation_results["bucket_delete"] = False
@@ -287,7 +289,7 @@ class UpgradeTests(UpgradeBase):
                     else:
                         results.append(False)
             validation_results["bucket_delete"] = all(results)
-        
+
         for scenario in validation_results:
             if validation_results[scenario]:
                 self.log.info("{0} : Passed".format(scenario))
@@ -329,8 +331,9 @@ class UpgradeTests(UpgradeBase):
             self.fail("Initial reloading failed")
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:

@@ -19,7 +19,7 @@ class DurabilityTestsBase(ClusterSetup):
         super(DurabilityTestsBase, self).setUp()
 
         # Create default bucket
-        self.create_bucket()
+        self.create_bucket(self.cluster)
 
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
@@ -82,10 +82,11 @@ class DurabilityTestsBase(ClusterSetup):
             self.task.jython_task_manager.get_task_result(task)
 
             # Verify initial doc load count
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("=== DurabilityBaseTests setup complete ===")
 
     def tearDown(self):

@@ -156,8 +156,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Update num_items value accordingly to the CRUD performed
         self.num_items += self.crud_batch_size - int(self.num_items/3)
 
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Create a SDK client connection to retry operation
         client = SDKClient([self.cluster.master], self.bucket)
@@ -204,8 +204,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         # Verify doc count
         self.log.info("Validating doc count")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
     def test_with_process_crash(self):
@@ -358,11 +358,12 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
                 self.assertTrue(result, "Rebalance failed")
 
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                     cbstat_cmd="all",
                                                      stat_name="ep_queue_size",
                                                      timeout=60)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Create a SDK client connection to retry operation
         client = SDKClient([self.cluster.master], self.bucket)
@@ -421,8 +422,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         # Verify doc count
         self.log.info("Validating doc count")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
     def test_non_overlapping_similar_crud(self):
@@ -492,8 +493,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     def test_non_overlapping_parallel_cruds(self):
         """
@@ -554,8 +555,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     def test_buffer_ack_during_dcp_commit(self):
         """
@@ -579,7 +580,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.sleep(5, "Wait for dcp")
         for node in self.cluster_util.get_kv_nodes():
             shell = RemoteMachineShellConnection(node)

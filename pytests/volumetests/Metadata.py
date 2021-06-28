@@ -20,7 +20,7 @@ class volume(CollectionBase):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket": False})
         super(volume, self).setUp()
-        self.bucket_util._expiry_pager(val=5)
+        self.bucket_util._expiry_pager(self.cluster, val=5)
         self.rest = RestConnection(self.servers[0])
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
@@ -48,7 +48,8 @@ class volume(CollectionBase):
         self.max_2i_count = self.input.param("max_2i_count", 10000)
         # Below is the total num of indexes to drop after each rebalance (and recreate them)
         self.num_indexes_to_drop = self.input.param("num_indexes_to_drop", 500)
-        self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
+        self.bucket_util.flush_all_buckets(self.cluster,
+                                           skip_resetting_num_items=True)
         self.set_memory_quota(services=["kv", "index"])
         self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
                                                                         get_all_nodes=True,
@@ -84,7 +85,7 @@ class volume(CollectionBase):
 
     def tearDown(self):
         self.log.info("Printing bucket stats before teardown")
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         if self.collect_pcaps:
             self.start_fetch_pcaps()
         if not self.skip_check_logs:
@@ -495,12 +496,13 @@ class volume(CollectionBase):
             "volume_templates.buckets_for_volume_tests_with_ttl"]
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         if self.spec_name not in ttl_buckets:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def test_volume_taf(self):
         """

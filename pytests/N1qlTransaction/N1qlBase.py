@@ -3,25 +3,18 @@ import copy
 import json
 import random
 import string
-import re
 import testconstants
 from threading import Thread
 
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
-from collections_helper.collections_spec_constants import MetaCrudParams
-from couchbase_helper.tuq_generators import JsonGenerator
-from couchbase_helper.tuq_generators import TuqGenerators
-from membase.api.rest_client import RestConnection
 from n1ql_exceptions import N1qlException
-from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.random_query_template import WhereClause
 from sdk_exceptions import SDKException
 from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
 from Cb_constants import CbServer
-from couchbase_helper.documentgenerator import doc_generator
 
 
 class N1qlBase(CollectionBase):
@@ -57,14 +50,13 @@ class N1qlBase(CollectionBase):
         self.prepare = self.input.param("prepare_stmt", False)
         self.num_txn = self.input.param("num_txn", 3)
         self.clause = WhereClause()
-        self.buckets = self.bucket_util.get_all_buckets()
+        self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         self.collection_map = {}
         self.txtimeout = self.input.param("txntimeout", 0)
         self.atrcollection = self.input.param("atrcollection", False)
-        load_spec = self.input.param("load_spec", self.data_spec_name)
         self.num_commit = self.input.param("num_commit", 3)
         self.num_rollback_to_savepoint = \
-        self.input.param("num_rollback_to_savepoint", 0)
+            self.input.param("num_rollback_to_savepoint", 0)
         self.num_conflict = self.input.param("num_conflict", 0)
         self.write_conflict = self.input.param("write_conflict", False)
         self.Kvtimeout = self.input.param("Kvtimeout", None)
@@ -73,7 +65,7 @@ class N1qlBase(CollectionBase):
                                                                          get_all_nodes=True)
         self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
                                       use_rest=True,
-                                      buckets = self.buckets,
+                                      buckets=self.buckets,
                                       log=self.log,
                                       scan_consistency='REQUEST_PLUS',
                                       num_collection=self.num_collection,
@@ -82,13 +74,13 @@ class N1qlBase(CollectionBase):
                                       override_savepoint=self.override_savepoint,
                                       num_stmt=self.num_stmt_txn,
                                       load_spec=self.data_spec_name)
-        self.num_insert,self.num_update,self.num_delete,self.num_merge = \
-                        self.n1ql_helper.get_random_number_stmt(self.num_stmt_txn)
+        self.num_insert, self.num_update, self.num_delete, self.num_merge = \
+            self.n1ql_helper.get_random_number_stmt(self.num_stmt_txn)
 
     def tearDown(self):
         self.n1ql_helper.drop_index()
         super(N1qlBase, self).tearDown()
-#
+
     def runTest(self):
         pass
 

@@ -51,7 +51,7 @@ class QueryTests(BaseTestCase):
         self.create_primary_index = self.input.param("create_primary_index", True)
         self.use_rest = self.input.param("use_rest", True)
         self.max_verify = self.input.param("max_verify", None)
-        self.buckets = self.bucket_util.get_all_buckets(self.cluster.master)
+        self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         self.docs_per_day = self.input.param("doc-per-day", 49)
         self.item_flag = self.input.param("item_flag", 4042322160)
         self.n1ql_port = self.input.param("n1ql_port", 8093)
@@ -334,7 +334,7 @@ class QueryTests(BaseTestCase):
             self.task.jython_task_manager.get_task_result(task)
         self.num_items = items + start_items
         if verify_data:
-            self.bucket_util.verify_cluster_stats(self.num_items)
+            self.bucket_util.verify_cluster_stats(self.cluster, self.num_items)
 
     def check_gsi_logs_for_panic(self):
         """ Checks if a string 'str' is present in goxdcr.log on server

@@ -25,7 +25,7 @@ class SubdocBaseTest(ClusterSetup):
         super(SubdocBaseTest, self).setUp()
 
         # Create default bucket
-        self.create_bucket()
+        self.create_bucket(self.cluster)
 
         # Create required scope/collection for testing
         if self.collection_name != CbServer.default_collection:
@@ -48,10 +48,11 @@ class SubdocBaseTest(ClusterSetup):
             rolelist = [{'id': bucket.name,
                          'name': bucket.name,
                          'roles': 'admin'}]
-            self.bucket_util.add_rbac_user(testuser=testuser,
+            self.bucket_util.add_rbac_user(self.cluster.master,
+                                           testuser=testuser,
                                            rolelist=rolelist)
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def tearDown(self):
         super(SubdocBaseTest, self).tearDown()

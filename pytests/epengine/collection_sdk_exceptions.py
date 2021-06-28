@@ -77,7 +77,8 @@ class SDKExceptionTests(CollectionBase):
                 expected_val=verification_dict)
             if failed:
                 self.log_failure("vBucket_details validation failed")
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
         num_cols_in_bucket = 0
         for _, scope in self.bucket.scopes.items():
@@ -445,8 +446,9 @@ class SDKExceptionTests(CollectionBase):
             shell_conn[node.ip].disconnect()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_timeout_with_crud_failures(self):
@@ -790,8 +792,9 @@ class SDKExceptionTests(CollectionBase):
         self.sdk_client_pool.release_client(sdk_client)
 
         # Verify doc count after expected CRUD failure
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
         # Fetch latest stats and validate the values are updated
         for node in target_nodes:

@@ -18,9 +18,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
 
-
 class MagmaRollbackTests(MagmaBaseTest):
-
     def setUp(self):
         super(MagmaRollbackTests, self).setUp()
         self.graceful = self.input.param("graceful", False)
@@ -147,7 +145,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 wait_time=self.wait_timeout * 10))
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
 
-            self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+            self.bucket_util.verify_stats_all_buckets(self.cluster, items,
+                                                      timeout=300)
             for bucket in self.cluster.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
 
@@ -299,7 +298,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                           format(i, self.get_state_files(self.buckets[0])))
 
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
-            self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+            self.bucket_util.verify_stats_all_buckets(self.cluster, items,
+                                                      timeout=300)
             for bucket in self.cluster.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
         #######################################################################
@@ -486,7 +486,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                                           self.ignore_exceptions,
                                           _sync=True,
                                           doc_ops="create")
-                    self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+                    self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster.buckets, timeout=1200)
                     if time.time() < time_start + 60:
                         self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
                 items = items + items // divisor
@@ -638,7 +639,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.log.debug("Iteration == {}, State files after killing memcached on master node == {}".
                           format(i, self.get_state_files(self.buckets[0])))
 
-            self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+            self.bucket_util.verify_stats_all_buckets(self.cluster, items,
+                                                      timeout=300)
             for bucket in self.cluster.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
 
@@ -1127,7 +1129,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions, _sync=True,
                                   doc_ops="create")
-                self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets, timeout=1200)
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
             items = items + items // divisor
@@ -1201,8 +1204,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
@@ -1336,7 +1339,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
                                format(i, x+1, self.get_state_files(self.buckets[0])))
 
-                self.bucket_util.verify_stats_all_buckets(items,
+                self.bucket_util.verify_stats_all_buckets(self.cluster, items,
                                                           timeout=300)
                 for bucket in self.cluster.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
@@ -1454,8 +1457,10 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
-        self.bucket_util.verify_stats_all_buckets(self.num_items, timeout=600)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                     timeout=1200)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items,
+                                                  timeout=600)
 
         shell_conn = list()
         for node in self.cluster.nodes_in_cluster:
@@ -1658,7 +1663,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=1200)
 
             if time.time() < time_start + 60:
                 self.sleep(time_start + 60 - time.time(),
@@ -1735,10 +1741,11 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
-        #self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                     timeout=1200)
+        # self.bucket_util.verify_stats_all_buckets(self.num_items)
 
-        #######################################################################
+        ######################################################################
         '''
         STEP - 1, Ensures creation of at least one snapshot
 
@@ -1926,7 +1933,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
             if time.time() < time_start + 60:
                 self.sleep(time_start + 60 - time.time(),
@@ -1982,8 +1989,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             for shell in shell_conn:
                 shell.disconnect()
 
-class MagmaSpaceAmplification(MagmaBaseTest):
 
+class MagmaSpaceAmplification(MagmaBaseTest):
     def test_space_amplification(self):
         self.num_updates = self.input.param("num_updates", 50)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
@@ -2012,8 +2019,9 @@ class MagmaSpaceAmplification(MagmaBaseTest):
             self.loadgen_docs(_sync=True,
                               retry_exceptions=self.retry_exceptions)
 
-            self.bucket_util._wait_for_stats_all_buckets(timeout=self.wait_timeout*20)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster.buckets, timeout=self.wait_timeout*20)
+            self.bucket_util.print_bucket_stats(self.cluster)
 
             disk_size = self.get_disk_usage(bucket)[0]
             self.assertTrue(
@@ -2022,8 +2030,10 @@ class MagmaSpaceAmplification(MagmaBaseTest):
                 Actual Size {} \n\
                 Max Expected Size {}".format(exact_size, disk_size, max_size)
                 )
-            self.bucket_util.verify_stats_all_buckets(self.num_items,
-                                                      timeout=self.wait_timeout*20)
+            self.bucket_util.verify_stats_all_buckets(
+                self.cluster,
+                self.num_items,
+                timeout=self.wait_timeout*20)
         data_validation = self.task.async_validate_docs(
             self.cluster, self.cluster.buckets[0],
             self.gen_update, "update", 0, batch_size=self.batch_size,

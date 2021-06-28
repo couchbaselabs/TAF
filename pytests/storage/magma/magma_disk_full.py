@@ -131,7 +131,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             self.free_disk(node)
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.doc_ops = "update"
         self.generate_docs(update_start=self.create_start,
                            update_end=self.create_end)
@@ -230,7 +230,8 @@ class MagmaDiskFull(MagmaBaseTest):
             self.cluster.buckets[0],
             wait_time=self.wait_timeout * 10))
         self.sleep(10, "Not Required, but waiting for 10s after warm up")
-        self.bucket_util.verify_stats_all_buckets(items, timeout=300)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, items,
+                                                  timeout=300)
 
         data_validation = self.task.async_validate_docs(
                 self.cluster, self.cluster.buckets[0],
@@ -505,7 +506,7 @@ class MagmaDiskFull(MagmaBaseTest):
             timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
-        self.bucket_util.update_all_bucket_replicas(replicas=1)
+        self.bucket_util.update_all_bucket_replicas(self.cluster, replicas=1)
         rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
                                                [], [])
         self.assertTrue(rebalance_result)
@@ -539,7 +540,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for t in th:
             t.join()
 
-        self.bucket_util.update_all_bucket_replicas(replicas=2)
+        self.bucket_util.update_all_bucket_replicas(self.cluster, replicas=2)
         rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
                                                [], [])
         self.assertFalse(rebalance_result)
@@ -553,7 +554,7 @@ class MagmaDiskFull(MagmaBaseTest):
             timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
-        self.bucket_util.update_all_bucket_replicas(replicas=1)
+        self.bucket_util.update_all_bucket_replicas(self.cluster, replicas=1)
         rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
                                                [], [])
         self.assertTrue(rebalance_result)
@@ -641,7 +642,7 @@ class MagmaDiskFull(MagmaBaseTest):
         self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
 
         for bucket in self.cluster.buckets:
-            result = self.bucket_util.delete_bucket(self.cluster.master, bucket)
+            result = self.bucket_util.delete_bucket(self.cluster, bucket)
             self.assertTrue(result, "Bucket deletion failed: %s" % bucket.name)
 
     def test_disk_full_insert_ts(self):
@@ -686,7 +687,7 @@ class MagmaDiskFull(MagmaBaseTest):
 
         # Check for data write failures due to disk full
         for bucket in self.cluster.buckets:
-            self.assertTrue(self.bucket_util.flush_bucket(self.cluster.master,
+            self.assertTrue(self.bucket_util.flush_bucket(self.cluster,
                                                           bucket))
 
     def test_unmount_mount_partition(self):

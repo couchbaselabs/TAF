@@ -26,7 +26,8 @@ class MetadataReplication(CBASBaseTest):
             self.nc_otpNodes = self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes[:self.input.param("nc_nodes_to_add")])
         self.otpNodes += self.nc_otpNodes
 
-        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               storage=self.bucket_storage)
         self.cbas_util.createConn("default")
         self.shell = RemoteMachineShellConnection(self.cluster.master)
 
@@ -297,7 +298,7 @@ class MetadataReplication(CBASBaseTest):
             self.cbas_util.createConn("default")
             self.cbas_node = self.cluster.cbas_nodes[0]
         else:
-            out_nodes = [self.otpNodes[1]]    
+            out_nodes = [self.otpNodes[1]]
 
         self.cluster_util.remove_node(out_nodes, wait_for_rebalance=False)
         self.sleep(5, "Wait for sometime after rebalance started.")

@@ -27,7 +27,7 @@ class CBASErrorValidator(CBASBaseTest):
     def create_dataset_connect_link(self):
         self.log.info("Create dataset on the CBAS")
         self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name, self.cbas_dataset_name)
-        
+
         self.log.info("Connect to Local link")
         self.cbas_util.connect_link()
 
@@ -83,17 +83,17 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("Create dataset and connect link")
         self.create_dataset_connect_link()
-        
+
         self.log.info("Disconnect Local link")
         self.assertTrue(self.cbas_util.disconnect_from_bucket(), msg="Failed to disconnect connected bucket")
-        
+
         self.log.info("Create a secondary index")
         self.assertTrue(self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"]), msg="Failed to create secondary index")
 
         self.log.info("Execute query and validate error response")
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
-    
+
     """
     test_error_response_index_on_meta_fields,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=index_on_meta_id
     test_error_response_index_on_meta_fields,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=index_on_meta_cas
@@ -103,25 +103,25 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("Create dataset and connect link")
         self.create_dataset_connect_link()
-        
+
         self.log.info("Disconnect Local link")
         self.assertTrue(self.cbas_util.disconnect_from_bucket(), msg="Failed to disconnect connected bucket")
-        
+
         self.log.info("Create a secondary index")
         self.assertTrue(self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"]), msg="Failed to create secondary index")
 
         self.log.info("Execute query and validate error response")
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
-    
+
     """
     test_error_response_user_permission,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=user_permission
     """
     def test_error_response_user_permission(self):
-        
+
         self.log.info("Create dataset and connect link")
         self.create_dataset_connect_link()
-        
+
         self.log.info("Create a user with analytics reader role")
         rbac_util = RbacUtils(self.cluster.master)
         rbac_util._create_user_and_grant_role("reader_admin", "analytics_reader")
@@ -129,22 +129,22 @@ class CBASErrorValidator(CBASBaseTest):
         self.log.info("Execute query and validate error response")
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"], username="reader_admin", password="password")
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
-    
+
     """
     test_error_response_user_unauthorized,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=user_unauthorized
     """
     def test_error_response_user_unauthorized(self):
-        
+
         self.log.info("Create dataset and connect link")
         self.create_dataset_connect_link()
-        
+
         self.log.info("Create remote connection and execute cbas query using curl")
         output, _ = self.shell.execute_command("curl -X POST {0} -u {1}:{2}".format(self.cbas_url, "Administrator", "pass"))
 
         self.log.info("Execute query and validate error response")
         self.assertTrue(self.error_response["msg"] in str(output), msg="Error message mismatch")
         self.assertTrue(str(self.error_response["code"]) in str(output), msg="Error code mismatch")
-    
+
     """
     test_error_response_connect_link_failed,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=connect_link_fail
     """
@@ -155,7 +155,7 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("Delete KV bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.cluster.buckets[0].name),
+            self.cluster, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         self.log.info("Execute query and validate error response")
@@ -181,7 +181,7 @@ class CBASErrorValidator(CBASBaseTest):
         self.log.info("Execute query and validate error response")
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
-    
+
     """
     test_analytics_service_tmp_unavailable,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=service_unavailable
     """
@@ -213,7 +213,7 @@ class CBASErrorValidator(CBASBaseTest):
         self.assertTrue(service_unavailable, msg="Failed to get into the state analytics service is unavailable")
         self.assertTrue(self.error_response["msg"] in str(output), msg="Error message mismatch")
         self.assertTrue(str(self.error_response["code"]) in str(output), msg="Error code mismatch")
-    
+
     """
     test_error_response_rebalance_in_progress,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=rebalance_in_progress,items=10000
     """
@@ -236,20 +236,20 @@ class CBASErrorValidator(CBASBaseTest):
         while time.time() < start_time + 120:
             status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
             if errors is not None:
-               break 
+               break
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
 
     """
     test_error_response_using_curl,default_bucket=True,cb_bucket_name=default,cbas_bucket_name=cbas,cbas_dataset_name=ds,error_id=job_requirement
-    """    
+    """
     def test_error_response_using_curl(self):
-        
+
         self.log.info("Create dataset and connect link")
         self.create_dataset_connect_link()
-        
+
         self.log.info("Execute query using CURL")
         output, _ = self.shell.execute_command("curl -X POST {0} -u {1}:{2} -d 'statement={3}'".format(self.cbas_url, "Administrator", "password", self.error_response["query"]))
-            
+
         self.assertTrue(self.error_response["msg"] in str(output), msg="Error message mismatch")
         self.assertTrue(str(self.error_response["code"]) in str(output), msg="Error code mismatch")
 
@@ -313,11 +313,12 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("Delete KV bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.cluster.buckets[0].name),
+            self.cluster, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         self.log.info("Recreate KV bucket")
-        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               storage=self.bucket_storage)
 
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])
         self.validate_error_response(status, errors, self.error_response["msg"], self.error_response["code"])
@@ -366,7 +367,7 @@ class CBASErrorValidator(CBASBaseTest):
 
         self.log.info("Delete KV bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.cluster.buckets[0].name),
+            self.cluster, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         status, _, errors, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.error_response["query"])

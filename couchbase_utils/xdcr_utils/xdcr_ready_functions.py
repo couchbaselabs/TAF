@@ -183,8 +183,7 @@ class XDCRUtils:
         self.task_manager = taskmgr
         for cluster in self.__cb_clusters:
             cluster.cluster_util = ClusterUtils(cluster, self.task_manager)
-            cluster.bucket_util = BucketUtils(cluster, cluster.cluster_util,
-                                              self.task)
+            cluster.bucket_util = BucketUtils(cluster.cluster_util, self.task)
         self.input = TestInputSingleton.input
         self.init_parameters()
         self.create_buckets()
@@ -288,7 +287,8 @@ class XDCRUtils:
 
     def create_buckets(self):
         for cluster in self.__cb_clusters:
-            cluster.bucket_util.create_multiple_buckets(cluster.master, self._num_replicas)
+            cluster.bucket_util.create_multiple_buckets(cluster,
+                                                        self._num_replicas)
 
     def get_goxdcr_log_dir(self, node):
         """Gets couchbase log directory, even for cluster_run
@@ -542,7 +542,8 @@ class XDCRUtils:
         """
         for cb_cluster in self.__cb_clusters:
             for remote_cluster in cb_cluster.xdcr_remote_clusters:
-                buckets = remote_cluster.get_src_cluster().bucket_util.get_all_buckets()
+                buckets = remote_cluster.get_src_cluster()\
+                    .bucket_util.get_all_buckets(cb_cluster)
                 for src_bucket in buckets:
                     remote_cluster.create_replication(
                         src_bucket,
@@ -557,7 +558,8 @@ class XDCRUtils:
                 if remote_cluster_ref.get_src_cluster().name != cluster_name and remote_cluster_ref.get_dest_cluster().name != cluster_name:
                     continue
                 remote_cluster_ref.clear_all_replications()
-                buckets = remote_cluster_ref.get_src_cluster().bucket_util.get_all_buckets()
+                buckets = remote_cluster_ref.get_src_cluster() \
+                    .bucket_util.get_all_buckets(cb_cluster)
                 for src_bucket in remote_cluster_ref.get_src_cluster().get_buckets():
                     remote_cluster_ref.create_replication(
                         src_bucket,

@@ -40,13 +40,14 @@ class BasicCreateTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
             self.generate_docs(doc_ops="read")
             # Check for doc size < 32 , not required
             #if self.doc_size <= 32:
-            #    for bucket in self.bucket_util.get_all_buckets():
+            #    for bucket in self.bucket_util.get_all_buckets(self.cluster):
             #        disk_usage = self.get_disk_usage(
             #            bucket, self.cluster.nodes_in_cluster)
             #        msg = "Bucket={},Iteration= {},\

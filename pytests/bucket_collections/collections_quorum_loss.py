@@ -93,8 +93,9 @@ class CollectionsQuorumLoss(CollectionBase):
             self.fail("Doc_loading failed")
 
     def data_validation_collection(self):
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def data_load(self, async_load=True):
         doc_loading_spec = self.get_common_spec()

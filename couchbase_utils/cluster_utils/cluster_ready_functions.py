@@ -138,7 +138,7 @@ class ClusterUtils:
             stopped = rest.stop_rebalance()
             if not stopped:
                 raise Exception("Unable to stop rebalance")
-        bucket_util.delete_all_buckets(self.cluster.servers)
+        bucket_util.delete_all_buckets(self.cluster)
         self.cleanup_cluster(self.cluster.servers, master=self.cluster.master)
         self.wait_for_ns_servers_or_assert(self.cluster.servers)
 

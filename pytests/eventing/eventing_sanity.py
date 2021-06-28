@@ -18,13 +18,16 @@ class EventingSanity(EventingBaseTest):
             self.bucket_size = 200
             self.log.info(self.bucket_size)
             bucket_params_src = Bucket({"name": self.src_bucket_name, "replicaNumber": self.num_replicas})
-            src_bucket = self.bucket_util.create_bucket(bucket_params_src)
-            self.src_bucket = self.bucket_util.get_all_buckets(self.cluster.master)[0]
+            src_bucket = self.bucket_util.create_bucket(self.cluster,
+                                                        bucket_params_src)
+            self.src_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
             bucket_params_dst = Bucket({"name": self.dst_bucket_name, "replicaNumber": self.num_replicas})
             bucket_params_meta = Bucket({"name": self.metadata_bucket_name, "replicaNumber": self.num_replicas})
-            bucket_dst = self.bucket_util.create_bucket(bucket_params_dst)
-            bucket_meta = self.bucket_util.create_bucket(bucket_params_meta)
-            self.buckets = self.bucket_util.get_all_buckets(self.cluster.master)
+            bucket_dst = self.bucket_util.create_bucket(self.cluster,
+                                                        bucket_params_dst)
+            bucket_meta = self.bucket_util.create_bucket(self.cluster,
+                                                         bucket_params_meta)
+            self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         self.gens_load = self.generate_docs(self.docs_per_day)
         self.expiry = 3
 
@@ -278,7 +281,7 @@ class EventingSanity(EventingBaseTest):
         curr_items = self.bucket_util.get_bucket_current_item_count(
             self.cluster, def_bucket)
         if self.sync_write_abort_pattern in ["all_aborts", "initial_aborts"]:
-            self.bucket_util.flush_bucket(kv_nodes[0], def_bucket)
+            self.bucket_util.flush_bucket(self.cluster, def_bucket)
             self.num_items = 0
         else:
             self.num_items = curr_items
@@ -453,7 +456,7 @@ class EventingSanity(EventingBaseTest):
         curr_items = self.bucket_util.get_bucket_current_item_count(
             self.cluster, def_bucket)
         if self.sync_write_abort_pattern in ["all_aborts", "initial_aborts"]:
-            self.bucket_util.flush_bucket(kv_nodes[0], def_bucket)
+            self.bucket_util.flush_bucket(self.cluster, def_bucket)
             self.num_items = 0
         else:
             self.num_items = curr_items

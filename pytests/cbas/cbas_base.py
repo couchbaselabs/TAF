@@ -1,8 +1,6 @@
 import random
 import traceback
 
-from math import ceil
-
 from BucketLib.bucket import TravelSample, BeerSample, Bucket
 from Cb_constants import CbServer
 from basetestcase import BaseTestCase
@@ -215,6 +213,7 @@ class CBASBaseTest(BaseTestCase):
             else:
                 if self.default_bucket:
                     self.bucket_util.create_default_bucket(
+                        self.cluster,
                         bucket_type=self.bucket_type,
                         ram_quota=self.bucket_size,
                         replica=self.num_replicas,
@@ -230,10 +229,8 @@ class CBASBaseTest(BaseTestCase):
         elif len(self._cb_cluster) > 1:
             # Multi Cluster Support
             for cluster in self._cb_cluster:
-
                 cluster.cluster_util = ClusterUtils(cluster, self.task_manager)
-                cluster.bucket_util = BucketUtils(cluster,
-                                                  cluster.cluster_util,
+                cluster.bucket_util = BucketUtils(cluster.cluster_util,
                                                   self.task)
 
                 for server in cluster.servers:
@@ -318,6 +315,7 @@ class CBASBaseTest(BaseTestCase):
                 else:
                     if self.default_bucket:
                         cluster.bucket_util.create_default_bucket(
+                            self.cluster,
                             bucket_type=self.bucket_type,
                             ram_quota=self.bucket_size,
                             replica=self.num_replicas,
@@ -330,7 +328,7 @@ class CBASBaseTest(BaseTestCase):
                         self.sample_bucket = self.sample_bucket_dict[
                             self.cb_bucket_name]
 
-                cluster.bucket_util.add_rbac_user()
+                cluster.bucket_util.add_rbac_user(self.cluster.master)
 
         else:
             self.fail("No cluster is available")
@@ -678,7 +676,7 @@ class CBASBaseTest(BaseTestCase):
             "remove_default_collection", False)
 
         # Create bucket(s) and add rbac user
-        bucket_util.add_rbac_user()
+        bucket_util.add_rbac_user(self.cluster.master)
         if not buckets_spec:
             buckets_spec = bucket_util.get_bucket_template_from_package(
                 self.bucket_spec)
@@ -686,11 +684,11 @@ class CBASBaseTest(BaseTestCase):
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
 
-        bucket_util.create_buckets_using_json_data(buckets_spec)
-        bucket_util.wait_for_collection_creation_to_complete()
+        bucket_util.create_buckets_using_json_data(self.cluster, buckets_spec)
+        bucket_util.wait_for_collection_creation_to_complete(self.cluster)
 
         # Prints bucket stats before doc_ops
-        bucket_util.print_bucket_stats()
+        bucket_util.print_bucket_stats(self.cluster)
 
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
@@ -729,9 +727,10 @@ class CBASBaseTest(BaseTestCase):
             "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
             "volume_templates.buckets_for_volume_tests_with_ttl"]
         # Verify initial doc load count
-        bucket_util._wait_for_stats_all_buckets()
+        bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         if self.bucket_spec not in ttl_buckets:
-            bucket_util.validate_docs_per_collections_all_buckets()
+            bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
     def over_ride_bucket_template_params(self, bucket_spec):
         for over_ride_param in self.over_ride_spec_params:

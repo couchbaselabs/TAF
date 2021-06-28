@@ -17,11 +17,11 @@ class basic_ops(ClusterSetup):
 
         if self.default_bucket:
             self.bucket_size = 100
-            self.create_bucket()
+            self.create_bucket(self.cluster)
 
         self.sleep(10, "Wait for bucket to become ready for ops")
 
-        self.def_bucket = self.bucket_util.get_all_buckets()
+        self.def_bucket = self.bucket_util.get_all_buckets(self.cluster)
         self.client = SDKClient(RestConnection(self.cluster.master),
                                 self.def_bucket[0])
         self.__durability_level()

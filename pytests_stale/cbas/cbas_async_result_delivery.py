@@ -19,7 +19,7 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
         super(CBASAsyncResultDeliveryTests, self).tearDown()
 
     def setupForTest(self):
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         self.cbas_util.createConn(self.sample_bucket.name)
 
         # Create dataset on the CBAS bucket
@@ -161,7 +161,7 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
         # Load CB bucket
         self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Wait while ingestion is completed
         total_items, _ = self.cbas_util.get_num_items_in_cbas_dataset(
@@ -175,7 +175,7 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
                 self.sleep(5)
                 total_items, _ = self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name)
                 timeout -= 5
-                
+
         # Execute query (with sleep induced) and use the handle immediately to fetch the results
         statement = "select sleep(count(*),{0}) from {1} where mutated=0;".format(
             delay, self.cbas_dataset_name)
@@ -237,7 +237,7 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
         # Load CB bucket
         self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Wait while ingestion is completed
         total_items, _ = self.cbas_util.get_num_items_in_cbas_dataset(
@@ -301,7 +301,7 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
         # Load CB bucket
         self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Wait while ingestion is completed
         total_items, _ = self.cbas_util.get_num_items_in_cbas_dataset(
@@ -348,7 +348,7 @@ class CBASAsyncResultDeliveryTests(CBASBaseTest):
         # Load CB bucket
         self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         if not self.cbas_util.validate_cbas_dataset_items_count(
                 self.cbas_dataset_name,

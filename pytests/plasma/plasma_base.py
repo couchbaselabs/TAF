@@ -33,16 +33,18 @@ class PlasmaBaseTest(BaseTestCase):
 
         # Add bucket storage
         if self.standard_buckets > 10:
-            self.bucket_util.change_max_buckets(self.standard_buckets)
+            self.bucket_util.change_max_buckets(self.cluster.master,
+                                                self.standard_buckets)
         if self.standard_buckets == 1:
             self.bucket_util.create_default_bucket(
+                self.cluster,
                 bucket_type=self.bucket_type,
                 replica=self.num_replicas,
                 storage=self.bucket_storage,
                 eviction_policy=self.bucket_eviction_policy)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
-                self.cluster.master,
+                self.cluster,
                 self.num_replicas,
                 bucket_count=self.standard_buckets,
                 bucket_type=self.bucket_type,
@@ -91,7 +93,7 @@ class PlasmaBaseTest(BaseTestCase):
         self._load_all_buckets(self.cluster, self.gen_create,
                                "create", 0,
                                batch_size=self.batch_size)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
     def _doc_generator(self, start, end):
         return doc_generator(self.key, start, end,

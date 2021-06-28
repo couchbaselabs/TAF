@@ -67,7 +67,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.check_replica = self.input.param("check_replica", False)
         self.spec_name = self.input.param("bucket_spec", None)
 
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
         # Buckets creation and initial data load done by bucket_spec
         if self.spec_name is not None:
             try:
@@ -78,7 +78,8 @@ class RebalanceBaseTest(BaseTestCase):
                 self.handle_setup_exception(exception)
         else:
             if self.standard_buckets > 10:
-                self.bucket_util.change_max_buckets(self.standard_buckets)
+                self.bucket_util.change_max_buckets(self.cluster.master,
+                                                    self.standard_buckets)
             self.create_buckets(self.bucket_size)
 
             # Create Scope/Collection based on inputs given
@@ -136,8 +137,10 @@ class RebalanceBaseTest(BaseTestCase):
                                            "create", 0,
                                            batch_size=self.batch_size)
                 self.log.info("Verifying num_items counts after doc_ops")
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
+                    self.cluster,
                     timeout=self.wait_timeout)
             else:
                 self.transaction_commit = True
@@ -155,7 +158,7 @@ class RebalanceBaseTest(BaseTestCase):
                 durability=self.durability_level,
                 replicate_to=self.replicate_to, persist_to=self.persist_to)
             self.cluster_util.print_cluster_stats()
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
         self.log_setup_status("RebalanceBase", "complete")
 
     def _create_default_bucket(self, bucket_size):
@@ -167,6 +170,7 @@ class RebalanceBaseTest(BaseTestCase):
         elif available_ram < 100 or self.active_resident_threshold < 100:
             available_ram = 100
         self.bucket_util.create_default_bucket(
+            self.cluster,
             ram_quota=available_ram,
             bucket_type=self.bucket_type,
             replica=self.num_replicas,
@@ -176,7 +180,7 @@ class RebalanceBaseTest(BaseTestCase):
 
     def _create_multiple_buckets(self):
         buckets_created = self.bucket_util.create_multiple_buckets(
-            self.cluster.master,
+            self.cluster,
             self.num_replicas,
             bucket_count=self.standard_buckets,
             bucket_type=self.bucket_type,
@@ -207,8 +211,9 @@ class RebalanceBaseTest(BaseTestCase):
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
 
-        self.bucket_util.create_buckets_using_json_data(buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete()
+        self.bucket_util.create_buckets_using_json_data(self.cluster,
+                                                        buckets_spec)
+        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
 
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
@@ -240,12 +245,13 @@ class RebalanceBaseTest(BaseTestCase):
         self.cluster_util.print_cluster_stats()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster,
             timeout=self.wait_timeout)
 
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
     def shuffle_nodes_between_zones_and_rebalance(self, to_remove=None):

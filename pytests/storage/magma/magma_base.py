@@ -32,7 +32,7 @@ class MagmaBaseTest(StorageBase):
         if update_bucket_props:
             self.bucket_util.update_bucket_props(
                     "backend", props,
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
 
         # Monitor Stats Params
         self.ep_queue_stats = self.input.param("ep_queue_stats", True)

@@ -10,8 +10,8 @@ from threading import Thread
 
 def perform_S3_operation(**kwargs):
     """
-    This function performs multiple S3 operations by launching a python script as a subprocess, 
-    because boto3 requires multiprocessing which is not supported in jython. 
+    This function performs multiple S3 operations by launching a python script as a subprocess,
+    because boto3 requires multiprocessing which is not supported in jython.
     """
     aws_util_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "S3.py"))
     arguements = ["python", aws_util_file_path, kwargs.get("aws_access_key"), kwargs.get("aws_secret_key"),
@@ -191,9 +191,9 @@ class S3DataHelper():
         self.bucket = bucket
         self.filenames = sorted(S3DataHelper.generate_filenames(no_of_files, formats=file_formats))
         self.folders = S3DataHelper.generate_folder(no_of_folders, max_folder_depth)
-        
+
         self.n1ql_helper.create_primary_index()
-        
+
         tasks = self.load_data_in_bucket(folders=self.folders, filenames=self.filenames,
                                          missing_field=missing_field,
                                          operation=operation,
@@ -203,7 +203,7 @@ class S3DataHelper():
                                          exp=exp, durability=durability,
                                          mutation_num=mutation_num, key=key)
         result = self.task.jython_task_manager.get_task_result(tasks)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         item_list = [(folder, filename) for folder in self.folders for filename in self.filenames]
         threads = list()

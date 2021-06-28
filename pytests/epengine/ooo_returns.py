@@ -20,7 +20,7 @@ class OutOfOrderReturns(ClusterSetup):
         super(OutOfOrderReturns, self).setUp()
 
         # Create default bucket
-        self.create_bucket()
+        self.create_bucket(self.cluster)
 
         self.ooo_order = 0
         self.test_lock = Lock()
@@ -59,7 +59,7 @@ class OutOfOrderReturns(ClusterSetup):
 
         # Print cluster & bucket stats
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def tearDown(self):
         # Close all opened remote_shell connection

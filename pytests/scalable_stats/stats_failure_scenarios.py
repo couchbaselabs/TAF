@@ -27,7 +27,7 @@ class StatsFailureScenarios(CollectionBase):
         Run all metrics before and after failure scenarios and validate
         both ns_server and prometheus stats
         """
-        self.bucket_util.load_sample_bucket(TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
         target_node = self.servers[0]
         remote = RemoteMachineShellConnection(target_node)
         error_sim = CouchbaseError(self.log, remote)
@@ -50,7 +50,7 @@ class StatsFailureScenarios(CollectionBase):
         Run all metrics before and after crash and validate
         both ns_server and prometheus stats
         """
-        self.bucket_util.load_sample_bucket(TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
         target_node = self.servers[0]
         remote = RemoteMachineShellConnection(target_node)
         error_sim = CouchbaseError(self.log, remote)

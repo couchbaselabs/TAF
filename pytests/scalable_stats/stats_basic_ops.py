@@ -35,10 +35,11 @@ class StatsBasicOps(CollectionBase):
         component = self.input.param("component", "ns_server")
         parse = self.input.param("parse", False)
 
-        self.bucket_util.load_sample_bucket(TravelSample())
-        self.bucket_util.load_sample_bucket(BeerSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
         for server in self.cluster.servers[:self.nodes_init]:
-            content = StatsHelper(server).get_prometheus_metrics(component=component, parse=parse)
+            content = StatsHelper(server).get_prometheus_metrics(
+                component=component, parse=parse)
             if not parse:
                 StatsHelper(server)._validate_metrics(content)
         for line in content:
@@ -53,8 +54,8 @@ class StatsBasicOps(CollectionBase):
         component = self.input.param("component", "kv")
         parse = self.input.param("parse", False)
 
-        self.bucket_util.load_sample_bucket(TravelSample())
-        self.bucket_util.load_sample_bucket(BeerSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
         for server in self.cluster.servers[:self.nodes_init]:
             content = StatsHelper(server).get_prometheus_metrics_high(component=component, parse=parse)
             if not parse:
@@ -112,8 +113,8 @@ class StatsBasicOps(CollectionBase):
         """
         Test /metrics endpoint. Validate for duplicity and prefix
         """
-        self.bucket_util.load_sample_bucket(TravelSample())
-        self.bucket_util.load_sample_bucket(BeerSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
         for server in self.cluster.servers[:self.nodes_init]:
             content = StatsHelper(server).get_all_metrics()
             StatsHelper(server)._validate_metrics(content)
@@ -151,8 +152,8 @@ class StatsBasicOps(CollectionBase):
         Disable Prometheus from scraping high cardinality metrics
         Validate by querying Prometheus directly for its active targets
         """
-        self.bucket_util.load_sample_bucket(TravelSample())
-        self.bucket_util.load_sample_bucket(BeerSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
 
         self.log.info("Disabling high cardinality metrics of all services")
         metrics_data = '{"services":{"analytics":{"highCardEnabled":false}, "clusterManager":{"highCardEnabled":false},\
@@ -183,8 +184,8 @@ class StatsBasicOps(CollectionBase):
         /metrics endpoint ie; check if
         total number low cardinality metrics = total number of metrics at /metrics endpoint
         """
-        self.bucket_util.load_sample_bucket(TravelSample())
-        self.bucket_util.load_sample_bucket(BeerSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
 
         self.log.info("Disabling external prometheus high cardinality metrics of all services")
         metrics_data = '{"statsExport":{"analytics":{"highCardEnabled":false}, "clusterManager":{"highCardEnabled":false},\
@@ -234,8 +235,8 @@ class StatsBasicOps(CollectionBase):
         scrape_interval = self.input.param("scrape_interval", 15)
         query = "status/config"
         yaml = YAML()
-        self.bucket_util.load_sample_bucket(TravelSample())
-        self.bucket_util.load_sample_bucket(BeerSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
 
         self.log.info("Changing scrape interval to {0} via diag_eval".format(scrape_interval))
         StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_interval",
@@ -272,8 +273,8 @@ class StatsBasicOps(CollectionBase):
         scrape_timeout = self.input.param("scrape_timeout", 5)
         query = "status/config"
         yaml = YAML()
-        self.bucket_util.load_sample_bucket(TravelSample())
-        self.bucket_util.load_sample_bucket(BeerSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
 
         self.log.info("Changing scrape timeout to {0} via diag_eval".format(scrape_timeout))
         StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("scrape_timeout",

@@ -21,8 +21,8 @@ class BasicCrudTests(MagmaBaseTest):
         _ = self.loadgen_docs(self.retry_exceptions,
                               self.ignore_exceptions)
         self.log.info("Verifying doc counts after create doc_ops")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         tasks_info = self.bucket_util._async_validate_docs(
                self.cluster, self.gen_delete, "delete", 0,
@@ -101,8 +101,8 @@ class BasicCrudTests(MagmaBaseTest):
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.log.info("Verifying num_items counts after doc_ops")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # # # # Initial Disk Usage # # # #
         disk_usage = self.get_disk_usage(
@@ -139,7 +139,7 @@ class BasicCrudTests(MagmaBaseTest):
                                   collection=collections[-1],
                                   _sync=True)
             self.log.info("Waiting for ep-queues to get drained")
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
             count += 1
 
         # # # # Drop a collection # # # #
@@ -249,8 +249,8 @@ class BasicCrudTests(MagmaBaseTest):
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.log.info("Verifying num_items counts after doc_ops")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # # # # Initial Disk Usage # # # #
         disk_usage = self.get_disk_usage(
@@ -297,7 +297,7 @@ class BasicCrudTests(MagmaBaseTest):
                               collection=collections[-1],
                               _sync=True)
         self.log.info("Waiting for ep-queues to get drained")
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         # # # # Drop a collection # # # #
         self.log.info("Collection to be dropped {}\

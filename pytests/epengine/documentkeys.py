@@ -9,8 +9,8 @@ from couchbase_helper.document import View
 class DocumentKeysTests(ClusterSetup):
     def setUp(self):
         super(DocumentKeysTests, self).setUp()
-        self.create_bucket()
-        self.bucket_util.print_bucket_stats()
+        self.create_bucket(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("====== DocumentKeysTests setUp complete ======")
 
     def tearDown(self):
@@ -21,8 +21,8 @@ class DocumentKeysTests(ClusterSetup):
         Helper function to wait for persistence and
         then verify data/stats on all buckets
         """
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     """Helper function to verify the data using view query"""
     def _verify_with_views(self, expected_rows):
@@ -53,7 +53,7 @@ class DocumentKeysTests(ClusterSetup):
                                  vbuckets=self.cluster_util.vbuckets,
                                  target_vbucket=target_vb)
 
-        bucket = self.bucket_util.get_all_buckets()[0]
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         for op_type in ["create", "update", "delete"]:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_load, op_type, 0, batch_size=20,
@@ -73,7 +73,7 @@ class DocumentKeysTests(ClusterSetup):
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
                                  vbuckets=self.cluster_util.vbuckets)
-        bucket = self.bucket_util.get_all_buckets()[0]
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         task = self.task.async_load_gen_docs(self.cluster, bucket,
                                              gen_load, "create", 0,
                                              batch_size=20,
@@ -97,7 +97,7 @@ class DocumentKeysTests(ClusterSetup):
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
                                  vbuckets=self.cluster_util.vbuckets)
-        bucket = self.bucket_util.get_all_buckets()[0]
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         task = self.task.async_load_gen_docs(self.cluster, bucket,
                                              gen_load, "create", 0,
                                              batch_size=20,

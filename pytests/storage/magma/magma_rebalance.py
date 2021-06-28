@@ -13,7 +13,7 @@ from sdk_exceptions import SDKException
 class MagmaRebalance(MagmaBaseTest):
     def setUp(self):
         super(MagmaRebalance, self).setUp()
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.bucket = self.cluster.buckets[0]
         self.data_load_stage = self.input.param("data_load_stage", "before")
         self.num_collections_to_drop = self.input.param("num_collections_to_drop", 0)
@@ -57,10 +57,11 @@ class MagmaRebalance(MagmaBaseTest):
         super(MagmaRebalance, self).tearDown()
 
     def disable_auto_compaction(self):
-        buckets = self.bucket_util.get_all_buckets()
+        buckets = self.bucket_util.get_all_buckets(self.cluster)
         for bucket in buckets:
             if bucket.bucketType == "couchbase":
-                self.bucket_util.disable_compaction(bucket=str(bucket.name))
+                self.bucket_util.disable_compaction(self.cluster,
+                                                    bucket=bucket.name)
 
     def compact_all_buckets(self):
         self.sleep(10, "wait for rebalance to start")
@@ -110,14 +111,14 @@ class MagmaRebalance(MagmaBaseTest):
             self.subsequent_data_load(data_load_spec="dgm_load")
             curr_active = self.get_active_resident_threshold(bucket_name)
             self.log.info("curr_active resident {0} %".format(curr_active))
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.log.info("Initial dgm load done. Resident {0} %".format(curr_active))
 
     def data_load_after_failover(self):
         self.log.info("Starting a sync data load after failover")
         self.subsequent_data_load()  # sync data load
         # Until we recover/rebalance-out, we can't call - self.bucket_util.validate_docs_per_collections_all_buckets()
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
     def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
         time_start = time.time()
@@ -150,7 +151,8 @@ class MagmaRebalance(MagmaBaseTest):
 
     def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
+        self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                    self.updated_num_replicas)
         failover_count = 0
         for failover_node in failover_nodes:
             failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
@@ -188,8 +190,9 @@ class MagmaRebalance(MagmaBaseTest):
                 else:
                     if self.update_replica:
                         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-                        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
-                        self.bucket_util.print_bucket_stats()
+                        self.bucket_util.update_all_bucket_replicas(
+                            self.cluster, self.updated_num_replicas)
+                        self.bucket_util.print_bucket_stats(self.cluster)
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
                                                           retry_get_process_num=120)
@@ -239,8 +242,9 @@ class MagmaRebalance(MagmaBaseTest):
                 else:
                     if self.update_replica:
                         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-                        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
-                        self.bucket_util.print_bucket_stats()
+                        self.bucket_util.update_all_bucket_replicas(
+                            self.cluster, self.updated_num_replicas)
+                        self.bucket_util.print_bucket_stats(self.cluster)
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [],
                                                           retry_get_process_num=120)
@@ -294,8 +298,9 @@ class MagmaRebalance(MagmaBaseTest):
                 else:
                     if self.update_replica:
                         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-                        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
-                        self.bucket_util.print_bucket_stats()
+                        self.bucket_util.update_all_bucket_replicas(
+                            self.cluster, self.updated_num_replicas)
+                        self.bucket_util.print_bucket_stats(self.cluster)
                     for node in add_nodes:
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                            node.ip, self.cluster.servers[self.nodes_init].port)
@@ -355,8 +360,9 @@ class MagmaRebalance(MagmaBaseTest):
             else:
                 if self.update_replica:
                     self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-                    self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
-                    self.bucket_util.print_bucket_stats()
+                    self.bucket_util.update_all_bucket_replicas(
+                        self.cluster, self.updated_num_replicas)
+                    self.bucket_util.print_bucket_stats(self.cluster)
                 for node in add_nodes:
                     self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                        node.ip, self.cluster.servers[self.nodes_init].port)
@@ -634,10 +640,11 @@ class MagmaRebalance(MagmaBaseTest):
             self.log.info("entering validation")
             #if self.data_load_spec == "ttl_load" or self.data_load_spec == "ttl_load1":
             if "expriy" in self.doc_ops:
-                self.bucket_util._expiry_pager()
+                self.bucket_util._expiry_pager(self.cluster)
                 self.sleep(400, "wait for maxttl to finish")
                 items = 0
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
                 for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
@@ -645,8 +652,10 @@ class MagmaRebalance(MagmaBaseTest):
             elif self.forced_hard_failover:
                 pass
             else:
-                self.bucket_util._wait_for_stats_all_buckets()
-                self.bucket_util.validate_docs_per_collections_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
+                self.bucket_util.validate_docs_per_collections_all_buckets(
+                    self.cluster)
 
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None

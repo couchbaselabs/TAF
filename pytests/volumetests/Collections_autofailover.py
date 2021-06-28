@@ -17,7 +17,7 @@ class volume(AutoFailoverBaseTest):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket": False})
         super(volume, self).setUp()
-        self.bucket_util._expiry_pager(val=5)
+        self.bucket_util._expiry_pager(self.cluster, val=5)
         self.rest = RestConnection(self.servers[0])
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
@@ -32,7 +32,7 @@ class volume(AutoFailoverBaseTest):
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
         self.log.info("Printing bucket stats before teardown")
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         if self.collect_pcaps:
             self.start_fetch_pcaps()
         result = self.check_coredump_exist(self.servers, force_collect=True)
@@ -196,7 +196,8 @@ class volume(AutoFailoverBaseTest):
         retry_count = 0
         while retry_count < 10:
             try:
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
             except:
                 retry_count = retry_count + 1
                 self.log.info("ep-queue hasn't drained yet. Retry count: {0}".format(retry_count))
@@ -204,9 +205,10 @@ class volume(AutoFailoverBaseTest):
                 break
         if retry_count == 10:
             self.log.info("Attempting last retry for ep-queue to drain")
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         if not self.skip_validations:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
         else:
             pass
 
@@ -234,23 +236,24 @@ class volume(AutoFailoverBaseTest):
                                                                         self.subsequent_action))
             self.server_to_fail = self.servers_to_fail()
             self.rebalance_after_autofailover()
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
         #########################################################################################################################
         step_count = step_count + 1
         self.log.info("Step {0}: Deleting all buckets".format(step_count))
-        self.bucket_util.delete_all_buckets()
+        self.bucket_util.delete_all_buckets(self.cluster)
         #########################################################################################################################
         step_count = step_count + 1
         self.log.info("Step {0}: Creating ephemeral buckets".format(step_count))
         # Create bucket(s) and add rbac user
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.spec_name_eph)
-        self.bucket_util.create_buckets_using_json_data(buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete()
+        self.bucket_util.create_buckets_using_json_data(self.cluster,
+                                                        buckets_spec)
+        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
         # Prints bucket stats before doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         #########################################################################################################################
         step_count = step_count + 1
         self.log.info("Step {0}: Initial data data load into ephemeral buckets".format(step_count))
@@ -275,11 +278,12 @@ class volume(AutoFailoverBaseTest):
         self.cluster_util.print_cluster_stats()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         #########################################################################################################################
         self.auto_reprovision = True
         failure_conditions = ["restart_machine", "stop_server", "restart_server", "firewall", "restart_network",
@@ -299,6 +303,6 @@ class volume(AutoFailoverBaseTest):
             self.log.info("Step {0}: {1} -> Autoreprovision -> Rebalance".format(step_count, self.failover_action))
             self.server_to_fail = self.servers_to_fail()
             self.rebalance_after_autofailover()
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
         self.log.info("Volume test run complete!")

@@ -226,6 +226,7 @@ class FailoverTests(FailoverBaseTest):
         # Will verify_unacked_bytes only if the durability is not going to fail
         if self.during_ops is None and not durability_will_fail:
             self.bucket_util.verify_unacked_bytes_all_buckets(
+                self.cluster,
                 filter_list=self.filter_list)
 
     def run_rebalance_after_failover_and_verify(self, chosen,
@@ -238,6 +239,7 @@ class FailoverTests(FailoverBaseTest):
         _servers_ = self.filter_servers(self.servers[:self.nodes_init], chosen)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster.buckets,
                 check_ep_items_remaining=False)
         self.sleep(5, "after failover before invoking rebalance...")
         if not self.atomicity:
@@ -306,7 +308,7 @@ class FailoverTests(FailoverBaseTest):
         self.log.info("Begin VERIFICATION for Rebalance after Failover Only")
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(
-                self.num_items * 2, self.master,
+                self.cluster, self.num_items * 2,
                 check_bucket_stats=True,
                 check_ep_items_remaining=False)
         # Verify all data set with meta data if failover happens after failover
@@ -333,6 +335,7 @@ class FailoverTests(FailoverBaseTest):
         if self.num_replicas > 0:
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
+                self.cluster,
                 servers=nodes, buckets=self.buckets,
                 num_replicas=self.num_replicas,
                 total_vbuckets=self.total_vbuckets, std=20.0)
@@ -352,6 +355,7 @@ class FailoverTests(FailoverBaseTest):
         _servers_ = self.filter_servers(self.servers[:self.nodes_init], chosen)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster.buckets,
                 check_ep_items_remaining=False)
         recoveryTypeMap = self.define_maps_during_failover(self.recoveryType)
         fileMapsForVerification = self.create_file(chosen, self.buckets,
@@ -471,6 +475,7 @@ class FailoverTests(FailoverBaseTest):
         # Drain ep_queue & make sure that intra-cluster replication is complete
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster.buckets,
                 check_ep_items_remaining=False)
 
         self.log.info("Begin VERIFICATION for Add-back and rebalance")
@@ -478,7 +483,7 @@ class FailoverTests(FailoverBaseTest):
         # Verify Stats of cluster and Data is max_verify > 0
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(
-                self.num_items * 2, self.master,
+                self.cluster, self.num_items * 2,
                 check_bucket_stats=True,
                 check_ep_items_remaining=False)
 
@@ -513,6 +518,7 @@ class FailoverTests(FailoverBaseTest):
         if self.num_replicas > 0:
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
+                self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 total_vbuckets=self.total_vbuckets, std=20.0)
@@ -635,6 +641,7 @@ class FailoverTests(FailoverBaseTest):
         if self.num_replicas > 0:
             nodes = self.filter_servers(self.servers, chosen)
             self.bucket_util.vb_distribution_analysis(
+                self.cluster,
                 servers=nodes, buckets=self.buckets, std=20.0,
                 num_replicas=self.num_replicas,
                 total_vbuckets=self.total_vbuckets, type="failover",
@@ -760,6 +767,7 @@ class FailoverTests(FailoverBaseTest):
         else:
             self.load_all_buckets(self.gen_initial_create, "create")
             self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster.buckets,
                 check_ep_items_remaining=False)
         # self.bucket_util._verify_stats_all_buckets(self.servers, timeout=120)
 
@@ -893,8 +901,9 @@ class FailoverTests(FailoverBaseTest):
         query["stale"] = "false"
         for bucket in self.buckets:
             self.bucket_util.perform_verify_queries(
-                num_views, prefix, ddoc_name, self.default_view_name, query,
-                bucket=bucket, wait_time=timeout, expected_rows=expected_rows)
+                self.cluster.master, num_views, prefix, ddoc_name,
+                self.default_view_name, query, expected_rows,
+                bucket=bucket, wait_time=timeout)
 
     def create_file(self, chosen, buckets, serverMap):
         """

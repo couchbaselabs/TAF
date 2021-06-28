@@ -69,7 +69,8 @@ class RebalanceDurability(RebalanceBaseTest):
         for replicas in [1, 2]:
             self.log.info("Updating the bucket replicas to %s" % replicas)
             tasks_info = self.__load_docs_in_all_buckets()
-            self.bucket_util.update_all_bucket_replicas(replicas=replicas)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        replicas=replicas)
             rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
             self.assertTrue(rebalance_result)
@@ -88,7 +89,8 @@ class RebalanceDurability(RebalanceBaseTest):
         for replicas in [1, 0]:
             self.log.info("Updating the bucket replicas to %s" % replicas)
             tasks_info = self.__load_docs_in_all_buckets()
-            self.bucket_util.update_all_bucket_replicas(replicas=replicas)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        replicas=replicas)
             rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [], [])
             self.assertTrue(rebalance_result)
@@ -106,8 +108,9 @@ class RebalanceDurability(RebalanceBaseTest):
 
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
     def test_replica_update_with_durability_with_adding_removing_nodes(self):
         tasks_info = self.__load_docs_in_all_buckets()
@@ -133,7 +136,8 @@ class RebalanceDurability(RebalanceBaseTest):
             tasks_info = self.__load_docs_in_all_buckets()
             self.log.info("Increasing the bucket replicas to {0}"
                           .format(replicas))
-            self.bucket_util.update_all_bucket_replicas(replicas=replicas)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        replicas=replicas)
             rebalance_result = self.task.rebalance(
                 self.cluster.nodes_in_cluster,
                 [self.cluster.servers[replicas]],
@@ -160,7 +164,8 @@ class RebalanceDurability(RebalanceBaseTest):
             self.log.info("Reducing the bucket replicas to %s" % replicas)
             # Start document CRUDs
             tasks_info = self.__load_docs_in_all_buckets()
-            self.bucket_util.update_all_bucket_replicas(replicas=replicas)
+            self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                        replicas=replicas)
             rebalance_result = self.task.rebalance(
                 self.cluster.servers[:self.nodes_init], [],
                 [self.cluster.servers[replicas+1]])
@@ -180,8 +185,9 @@ class RebalanceDurability(RebalanceBaseTest):
 
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
     def test_rebalance_out_durabilitybreaks_rebalance_in(self):
         self.assertTrue(self.num_replicas >= 1,
@@ -367,8 +373,9 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.task.jython_task_manager.get_task_result(task)
 
             # Verify doc load count to match the overall CRUDs
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
     def test_multiple_scenarios(self):
         """
@@ -445,8 +452,9 @@ class RebalanceDurability(RebalanceBaseTest):
 
         # Doc count verification
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
     def test_auto_retry_of_failed_rebalance_with_rebalance_test_conditions(self):
         sleep_time = self.input.param("sleep_time", 15)
@@ -499,5 +507,6 @@ class RebalanceDurability(RebalanceBaseTest):
             self.delete_rebalance_test_condition(test_failure_condition)
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)

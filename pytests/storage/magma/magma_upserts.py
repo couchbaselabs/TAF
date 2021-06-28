@@ -29,7 +29,7 @@ class BasicUpsertTests(BasicCrudTests):
 
         while count < self.test_itr:
             self.log.info("Iteration == {}".format(count+1))
-            #######################################################################
+            #################################################################
             '''
             STEP - 1, Update Items
 
@@ -48,9 +48,10 @@ class BasicUpsertTests(BasicCrudTests):
                                       self.ignore_exceptions,
                                       _sync=True)
                 self.log.info("Waiting for ep-queues to get drained")
-                self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets, timeout=3600)
 
-            #######################################################################
+            #################################################################
             '''
             STEP - 2, Space Amplification Check
 
@@ -144,7 +145,8 @@ class BasicUpsertTests(BasicCrudTests):
                                       _sync=True)
 
                 self.log.info("Waiting for ep-queues to get drained")
-                self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets, timeout=3600)
 
                 ###################################################################
                 '''
@@ -203,8 +205,10 @@ class BasicUpsertTests(BasicCrudTests):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=3600)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
             ###################################################################
             '''
@@ -234,7 +238,7 @@ class BasicUpsertTests(BasicCrudTests):
                 False, msg.format(
                     "delete", i+1, _res,
                     self.disk_usage[self.disk_usage.keys()[0]]))
-            self.bucket_util._run_compaction(number_of_times=1)
+            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             expected_ts_count = (self.items // 2)*(self.num_replicas+1)*(count+1)
             self.log.info("Iterations - {}, Actual tombstones == {} expected_ts_count == {}".format(i+1,  ts, expected_ts_count))
@@ -263,8 +267,10 @@ class BasicUpsertTests(BasicCrudTests):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=3600)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
             ###################################################################
             '''
@@ -377,7 +383,8 @@ class BasicUpsertTests(BasicCrudTests):
                     mutated += 1
 
                 self.log.info("Waiting for ep-queues to get drained")
-                self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets, timeout=3600)
                 ###################################################################
                 '''
                 STEP - 2
@@ -426,8 +433,10 @@ class BasicUpsertTests(BasicCrudTests):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=3600)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
             ###################################################################
             '''
@@ -469,8 +478,10 @@ class BasicUpsertTests(BasicCrudTests):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=3600)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
             ###################################################################
             '''
@@ -560,7 +571,8 @@ class BasicUpsertTests(BasicCrudTests):
         for th in threads:
             th.join()
 
-        self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                     timeout=3600)
 
         # Space amplification check
         msg_stats = "Fragmentation value for {} stats exceeds\
@@ -664,7 +676,8 @@ class BasicUpsertTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=3600)
 
             if upsert_size > 32:
                 seqTree_update = (self.get_disk_usage(
@@ -691,7 +704,8 @@ class BasicUpsertTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=3600)
 
             #######################################################################
             '''
@@ -768,8 +782,10 @@ class BasicUpsertTests(BasicCrudTests):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=3600)
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=3600)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
             if count == self.test_itr - 1:
                 self.validate_data("update", self.gen_update)
             self.update_start = self.num_items
@@ -826,7 +842,8 @@ class BasicUpsertTests(BasicCrudTests):
             self.stop_compaction = False
             loop_itr = 1
             while not self.stop_compaction:
-                self.bucket_util._run_compaction(number_of_times=1)
+                self.bucket_util._run_compaction(self.cluster,
+                                                 number_of_times=1)
                 self.sleep(5, "Done with Compaction Iteration == {}, sleep before next compaction".
                            format(loop_itr))
                 loop_itr += 1

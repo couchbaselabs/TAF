@@ -94,7 +94,8 @@ class BucketWarmup(CollectionBase):
                 self.random_load()
 
         self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_create_scope_during_warmup(self):

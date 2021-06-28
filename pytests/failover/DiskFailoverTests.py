@@ -51,8 +51,9 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
 
     def data_validation_collection(self):
         if not self.skip_validations:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)

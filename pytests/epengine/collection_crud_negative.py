@@ -150,7 +150,8 @@ class CollectionDurabilityTests(CollectionBase):
                 self.log_failure("Few mutation went in. "
                                  "Docs expected: %s, actual: %s"
                                  % (num_items_before_d_load, curr_num_items))
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
             if vb_info["create_stat"] != vb_info["failure_stat"]:
                 self.log_failure(
@@ -201,7 +202,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.log_failure("CRUDs with async_writes failed")
 
         # Wait for ep_queue to drain
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         # Reset failure_stat dictionary for reuse
         vb_info["failure_stat"] = dict()
@@ -231,7 +232,8 @@ class CollectionDurabilityTests(CollectionBase):
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed ")
         self.validate_test_failure()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_durability_abort(self):
         """
@@ -652,7 +654,8 @@ class CollectionDurabilityTests(CollectionBase):
 
         # Validate doc_count per collection
         self.validate_test_failure()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_sub_doc_sync_write_in_progress(self):
         """
@@ -859,6 +862,7 @@ class CollectionDurabilityTests(CollectionBase):
         self.sdk_client_pool.release_client(client)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()

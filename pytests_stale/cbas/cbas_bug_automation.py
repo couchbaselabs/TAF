@@ -36,7 +36,8 @@ class CBASBugAutomation(CBASBaseTest):
         '''
 
         self.log.info("Load sample bucket")
-        result = self.bucket_util.load_sample_bucket(self.sample_bucket)
+        result = self.bucket_util.load_sample_bucket(self.cluster,
+                                                     self.sample_bucket)
         self.assertTrue(result, "Failed to load sample bucket")
 
         self.log.info("Create connection")
@@ -186,7 +187,7 @@ class CBASBugAutomation(CBASBaseTest):
 
         self.log.info("Load data in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items, exp=0, batch_size=10)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.log.info("Create primary index")
         query = "CREATE PRIMARY INDEX ON {0} using gsi".format(self.cb_bucket_name)
@@ -237,7 +238,7 @@ class CBASBugAutomation(CBASBaseTest):
         self.log.info("Load data in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets("create", 0,
                                                self.num_items, exp=0)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         start_from = self.num_items
 
         self.log.info("Create connection")
@@ -305,7 +306,7 @@ class CBASBugAutomation(CBASBaseTest):
     def test_partial_rollback_via_memcached_restart_and_persistance_stopped(self):
         self.log.info("Load data in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items, exp=0)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
@@ -630,7 +631,8 @@ class CBASBugAutomation(CBASBaseTest):
 
         self.log.info("Load beer-sample bucket")
         self.sample_bucket = BeerSample()
-        result = self.bucket_util.load_sample_bucket(self.sample_bucket)
+        result = self.bucket_util.load_sample_bucket(self.cluster,
+                                                     self.sample_bucket)
         self.assertTrue(result, "Failed to load sample bucket")
 
         self.log.info("Create connection")

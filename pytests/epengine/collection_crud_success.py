@@ -111,8 +111,9 @@ class CollectionsSuccessTests(CollectionBase):
         self.validate_test_failure()
 
         self.log.info("Validating doc_count in buckets")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
         # Validate vbucket stats
         self.update_verification_dict_from_collection_task(verification_dict,
@@ -237,8 +238,9 @@ class CollectionsSuccessTests(CollectionBase):
             self.sleep(10, "Wait for node recovery to complete")
 
         # Doc count validation
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
         # Fetch latest failover stats and validate the values are updated
         self.log.info("Validating failover and seqno cbstats")
@@ -264,8 +266,9 @@ class CollectionsSuccessTests(CollectionBase):
         self.validate_test_failure()
 
         # Doc count validation
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_with_process_crash(self):
         """
@@ -419,7 +422,8 @@ class CollectionsSuccessTests(CollectionBase):
 
         # Doc count validation
         self.validate_test_failure()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_non_overlapping_similar_crud(self):
         """
@@ -517,8 +521,9 @@ class CollectionsSuccessTests(CollectionBase):
             self.log_failure("Doc_ops failed in sync_write_task")
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_crud_with_transaction(self):
         num_items_in_transaction = self.num_items
@@ -573,7 +578,7 @@ class CollectionsSuccessTests(CollectionBase):
         self.task_manager.get_task_result(atomicity_task)
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.validate_cruds_from_collection_mutation(doc_loading_task)
 
     def test_sub_doc_basic_ops(self):
@@ -644,8 +649,9 @@ class CollectionsSuccessTests(CollectionBase):
 
         # Verify initial doc load count
         self.log.info("Validating doc_count in buckets")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
         # Validate vbucket stats
         self.update_verification_dict_from_collection_task(verification_dict,
@@ -687,8 +693,9 @@ class CollectionsSuccessTests(CollectionBase):
         self.validate_test_failure()
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
         # Validate verification_dict and validate
         failed = self.durability_helper.verify_vbucket_details_stats(
@@ -776,8 +783,9 @@ class CollectionsSuccessTests(CollectionBase):
             self.log_failure("Doc_ops failed in sync_write_task")
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_sub_doc_with_persistence_issues(self):
         """
@@ -896,8 +904,9 @@ class CollectionsSuccessTests(CollectionBase):
             shell_conn[node.ip].disconnect()
 
         self.validate_test_failure()
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_sub_doc_with_process_crash(self):
         """
@@ -1026,5 +1035,6 @@ class CollectionsSuccessTests(CollectionBase):
 
         self.validate_test_failure()
         # Doc count validation
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)

@@ -30,12 +30,15 @@ class UpgradeTests(UpgradeBase):
 
     def __wait_for_persistence_and_validate(self):
         self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster.buckets,
             cbstat_cmd="checkpoint", stat_name="num_items_for_persistence",
             timeout=300)
         self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster.buckets,
             cbstat_cmd="all", stat_name="ep_queue_size",
             timeout=60)
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def __trigger_cbcollect(self, log_path):
         self.log.info("Triggering cb_collect_info")
@@ -247,7 +250,8 @@ class UpgradeTests(UpgradeBase):
                 break
 
         # Validate default num_items before collection tests
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
         # Play with collection if upgrade was successful
         if not self.test_failure:
@@ -382,11 +386,12 @@ class UpgradeTests(UpgradeBase):
         for index, d_level in enumerate(possible_d_levels[self.bucket_type]):
             self.log.info("Updating bucket_durability=%s" % d_level)
             self.bucket_util.update_bucket_property(
+                self.cluster.master,
                 self.cluster.buckets[0],
                 bucket_durability=BucketDurability[d_level])
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
 
-            buckets = self.bucket_util.get_all_buckets()
+            buckets = self.bucket_util.get_all_buckets(self.cluster)
             if buckets[0].durability_level != BucketDurability[d_level]:
                 self.log_failure("New bucket_durability not taken")
 
@@ -471,7 +476,7 @@ class UpgradeTests(UpgradeBase):
                 update_task.join()
 
             self.cluster_util.print_cluster_stats()
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
 
             self.summary.add_step("Upgrade %s" % node_to_upgrade.ip)
 
@@ -480,7 +485,7 @@ class UpgradeTests(UpgradeBase):
                 break
 
             node_to_upgrade = self.fetch_node_to_upgrade()
-            for bucket in self.bucket_util.get_all_buckets():
+            for bucket in self.bucket_util.get_all_buckets(self.cluster):
                 tombstone_doc_supported = \
                     "tombstonedUserXAttrs" in bucket.bucketCapabilities
                 if node_to_upgrade is None and not tombstone_doc_supported:

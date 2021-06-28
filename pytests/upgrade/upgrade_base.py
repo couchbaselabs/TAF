@@ -106,13 +106,14 @@ class UpgradeBase(BaseTestCase):
 
         # Create default bucket and add rbac user
         self.bucket_util.create_default_bucket(
+            self.cluster,
             replica=self.num_replicas,
             compression_mode=self.compression_mode,
             ram_quota=self.bucket_size,
             bucket_type=self.bucket_type, storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
             bucket_durability=self.bucket_durability_level)
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket = self.cluster.buckets[0]
 
         # Create clients in SDK client pool
@@ -148,14 +149,14 @@ class UpgradeBase(BaseTestCase):
             CbServer.default_collection].num_items = self.num_items
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.sleep(30, "Wait for num_items to get reflected")
         current_items = self.bucket_util.get_bucket_current_item_count(
             self.cluster, self.bucket)
         self.assertTrue(current_items == self.num_items,
                         "Mismatch in doc_count. Actual: %s, Expected: %s"
                         % (current_items, self.num_items))
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]
 
     def tearDown(self):

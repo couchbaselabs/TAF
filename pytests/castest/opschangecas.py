@@ -201,8 +201,8 @@ class OpsChangeCasTests(CasBaseTest):
                                    self.num_items,
                                    doc_size=self.doc_size)
         self._load_all_buckets(gen_load, "create")
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         # Create cbstat objects
         self.shell_conn = dict()
@@ -230,7 +230,7 @@ class OpsChangeCasTests(CasBaseTest):
             if "expire" in self.doc_ops:
                 self.verify_cas("expire", gen_expire)
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.validate_test_failure()
 
     def touch_test(self):
@@ -238,8 +238,8 @@ class OpsChangeCasTests(CasBaseTest):
         load_gen = doc_generator(self.key, 0, self.num_items,
                                  doc_size=self.doc_size)
         self._load_all_buckets(load_gen, "create")
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         self.log.info("2. Loading bucket into DGM")
         dgm_gen = doc_generator(

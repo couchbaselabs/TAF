@@ -117,8 +117,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.task.jython_task_manager.get_task_result(task)
 
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
     def _common_test_body_swap_rebalance(self, do_stop_start=False):
         self.loaders = super(SwapRebalanceBase, self).loadgen_docs(

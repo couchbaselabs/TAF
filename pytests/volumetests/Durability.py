@@ -83,12 +83,12 @@ class volume(BaseTestCase):
         if self.num_buckets == 1:
             bucket = Bucket({"name": "GleamBookUsers", "ramQuotaMB": ramQuota, "maxTTL": duration, "replicaNumber":self.num_replicas,
                             "evictionPolicy": eviction_policy[0], "bucketType":self.bucket_type[0], "compressionMode":compression_mode[0]})
-            self.bucket_util.create_bucket(bucket)
+            self.bucket_util.create_bucket(self.cluster, bucket)
         elif 1 < self.num_buckets == len(bucket_names):
             for i in range(self.num_buckets):
                 bucket = Bucket({"name": bucket_names[i], "ramQuotaMB": ramQuota/self.num_buckets, "maxTTL": duration, "replicaNumber":self.num_replicas,
                              "evictionPolicy": eviction_policy[i], "bucketType":self.bucket_type[i], "compressionMode":compression_mode[i]})
-                self.bucket_util.create_bucket(bucket)
+                self.bucket_util.create_bucket(self.cluster, bucket)
         else:
             self.fail("Number of bucket/Names not sufficient")
 
@@ -317,8 +317,11 @@ class volume(BaseTestCase):
             self.sleep(20)
 
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.end - self.initial_load_count*self.delete_perc/100*self._iter_count)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(
+                self.cluster,
+                self.end - self.initial_load_count
+                * self.delete_perc/100 * self._iter_count)
 
     def data_load(self):
         tasks_info = dict()
@@ -396,12 +399,12 @@ class volume(BaseTestCase):
         while self.loop<self.iterations:
             self.log.info("Step 4: Pre-Requisites for Loading of docs")
             self.start = 0
-            self.bucket_util.add_rbac_user()
+            self.bucket_util.add_rbac_user(self.cluster.master)
             self.end = self.initial_load_count = self.input.param("initial_load", 1000)
             initial_load = doc_generator("Users", self.start, self.start + self.initial_load_count, doc_size=self.doc_size)
             self.initial_data_load(initial_load)
             self.tasks = []
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.get_bucket_dgm(bucket)
             ########################################################################################################################
             self.log.info("Step 5: Rebalance in with Loading of docs")
@@ -422,7 +425,7 @@ class volume(BaseTestCase):
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)
             #########################################################################################################################
@@ -442,7 +445,7 @@ class volume(BaseTestCase):
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)
             #######################################################################################################################
@@ -462,7 +465,7 @@ class volume(BaseTestCase):
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)
             ########################################################################################################################
@@ -482,7 +485,7 @@ class volume(BaseTestCase):
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)
             ########################################################################################################################
@@ -506,7 +509,7 @@ class volume(BaseTestCase):
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)
             ########################################################################################################################
@@ -530,7 +533,7 @@ class volume(BaseTestCase):
                 self.stop_process()
                 self.data_validation_mode(tasks_info)
                 self.tasks = []
-                self.bucket_util.print_bucket_stats()
+                self.bucket_util.print_bucket_stats(self.cluster)
                 self.print_crud_stats()
                 self.get_bucket_dgm(bucket)
             ########################################################################################################################
@@ -579,6 +582,7 @@ class volume(BaseTestCase):
                 self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
+                self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
@@ -589,7 +593,7 @@ class volume(BaseTestCase):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)
             ########################################################################################################################
@@ -646,12 +650,13 @@ class volume(BaseTestCase):
                 self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
+                self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
             self.sleep(10)
             self.tasks = []
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)
             ########################################################################################################################
@@ -705,13 +710,14 @@ class volume(BaseTestCase):
                 self.cluster.buckets, path=None)
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
             self.bucket_util.vb_distribution_analysis(
+                self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=2,
                 std=std, total_vbuckets=self.cluster_util.vbuckets)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)
-        ########################################################################################################################
+            ################################################################
             self.log.info("Step 14: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.cluster.buckets)):
@@ -732,15 +738,15 @@ class volume(BaseTestCase):
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)
-        ########################################################################################################################
+            ################################################################
             self.log.info("Step 15: Flush the bucket and start the entire process again")
             self.loop += 1
             if self.loop < self.iterations:
                 # Flush the bucket
-                self.bucket_util.flush_all_buckets(self.cluster.master)
+                self.bucket_util.flush_all_buckets(self.cluster)
                 self.sleep(10)
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
                     self.nodes_cluster = self.cluster.nodes_in_cluster[:]

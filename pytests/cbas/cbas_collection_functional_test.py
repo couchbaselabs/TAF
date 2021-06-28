@@ -326,9 +326,12 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.task.jython_task_manager.get_task_result(self.data_load_task)
             if verify:
                 # Validate data loaded in parallel
-                DocLoaderUtils.validate_doc_loading_results(self.data_load_task)
-                self.bucket_util._wait_for_stats_all_buckets()
-                self.bucket_util.validate_docs_per_collections_all_buckets()
+                DocLoaderUtils.validate_doc_loading_results(
+                    self.data_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
+                self.bucket_util.validate_docs_per_collections_all_buckets(
+                    self.cluster)
             delattr(self, "data_load_task")
 
     def stop_query_task(self):
@@ -734,7 +737,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             synonym_name = dataset.get_fully_qualified_kv_entity_name(3)
         else:
             synonym_name = None
-            
+
         if synonym_name:
             if self.input.param('synonym_on_other_dataset', False):
                 cbas_entity_full_name = CBASHelper.format_name(dataset.dataverse_name, "other")
@@ -1116,7 +1119,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 self.fail("Error creating dataset {0}".format(dataset.name))
             if self.input.param('dangling_synonym', False):
                 break
-        
+
         if self.input.param('dangling_synonym', False):
             if not self.cbas_util_v2.wait_for_ingestion_complete(
                 [dataset_objs[0].full_name], dataset_objs[0].num_of_items):
@@ -1124,7 +1127,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         else:
             if not self.cbas_util_v2.wait_for_ingestion_all_datasets(self.bucket_util):
                 self.fail("Data ingestion failed")
-        
+
         syn_obj = Synonym(dataset_objs[0].name, dataset_objs[1].name,
                           dataset_objs[1].dataverse_name,
                           dataverse_name=dataset_objs[0].dataverse_name,
@@ -1205,12 +1208,13 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         :return: None
         """
         self.log.info("Flushing bucket: %s" % bucket_obj.name)
-        self.bucket_util.flush_bucket(self.cluster.master, bucket_obj)
+        self.bucket_util.flush_bucket(self.cluster, bucket_obj)
         self.log.info("Validating scope/collections mapping and doc_count")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         # Print bucket stats
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def load_initial_data(self, doc_loading_spec=None, async_load=False,
                           validate_task=True):
@@ -1238,10 +1242,11 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if doc_loading_task.result is False:
             self.fail("Post flush doc_creates failed")
         # Print bucket stats
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("Validating scope/collections mapping and doc_count")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_datasets_created_on_KV_collections_after_flushing_KV_bucket(self):
         """
@@ -1418,7 +1423,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if not self.cbas_util_v2.wait_for_ingestion_all_datasets(
                 self.bucket_util):
             self.fail("Ingestion failed")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         sleep_time = max(docTTL, collectionTTL, bucketTTL) + 30
         self.sleep(sleep_time, "waiting for maxTTL to complete")
         self.log.info("Validating item count")
@@ -1625,7 +1630,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         execute_function_in_parallel(self.cbas_util_v2.create_cbas_index)
         execute_function_in_parallel(self.cbas_util_v2.verify_index_used)
         if not self.bucket_util.delete_bucket(
-                self.cluster.master, dataset_objs[0].kv_bucket,
+                self.cluster, dataset_objs[0].kv_bucket,
                 wait_for_bucket_deletion=True):
             self.fail("Error while deleting bucket")
         self.cbas_util_v2.wait_for_ingestion_all_datasets(self.bucket_util)

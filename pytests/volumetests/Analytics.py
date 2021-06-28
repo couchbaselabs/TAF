@@ -125,8 +125,7 @@ class volume(BaseTestCase):
         for cluster in self.get_clusters():
             cluster.nodes_in_cluster = [cluster.master]
             cluster.cluster_util = ClusterUtils(cluster, self.task_manager)
-            cluster.bucket_util = BucketUtils(cluster,
-                                              cluster.cluster_util,
+            cluster.bucket_util = BucketUtils(cluster.cluster_util,
                                               self.task)
             cluster.rest = RestConnection(cluster.master)
             cluster.cbas_nodes = list()
@@ -194,7 +193,7 @@ class volume(BaseTestCase):
             except Exception as exception:
                 self.handle_collection_setup_exception(exception)
 
-            cluster.bucket_util._expiry_pager(val=5)
+            cluster.bucket_util._expiry_pager(self.cluster, val=5)
 
         CBASRebalanceUtil.exclude_nodes.append(self.local_cluster.cbas_nodes[0])
         self.local_cluster.cbas_util = CbasUtil(self.local_cluster.master, self.local_cluster.cbas_nodes[0], self.task)
@@ -259,7 +258,7 @@ class volume(BaseTestCase):
         for cluster in self.get_clusters():
             cluster.rebalance_util.stop_parallel_queries()
             self.log.info("Printing bucket stats before teardown")
-            cluster.bucket_util.print_bucket_stats()
+            cluster.bucket_util.print_bucket_stats(self.cluster)
 
         if self.collect_pcaps:
             self.start_fetch_pcaps()
@@ -300,7 +299,7 @@ class volume(BaseTestCase):
             "remove_default_collection", False)
 
         # Create bucket(s) and add rbac user
-        bucket_util.add_rbac_user()
+        bucket_util.add_rbac_user(self.cluster.master)
         buckets_spec = bucket_util.get_bucket_template_from_package(
             self.bucket_spec)
         doc_loading_spec = \
@@ -319,11 +318,11 @@ class volume(BaseTestCase):
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
             SDKException.CollectionNotFoundException)
 
-        bucket_util.create_buckets_using_json_data(buckets_spec)
-        bucket_util.wait_for_collection_creation_to_complete()
+        bucket_util.create_buckets_using_json_data(self.cluster, buckets_spec)
+        bucket_util.wait_for_collection_creation_to_complete(self.cluster)
 
         # Prints bucket stats before doc_ops
-        bucket_util.print_bucket_stats()
+        bucket_util.print_bucket_stats(self.cluster)
 
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
@@ -435,12 +434,13 @@ class volume(BaseTestCase):
             "volume_templates.buckets_for_volume_tests_with_ttl"]
 
         # Verify initial doc load count
-        cluster.bucket_util._wait_for_stats_all_buckets()
+        cluster.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         if self.bucket_spec not in ttl_buckets:
-            cluster.bucket_util.validate_docs_per_collections_all_buckets()
+            cluster.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
         # Prints bucket stats after doc_ops
-        cluster.bucket_util.print_bucket_stats()
+        cluster.bucket_util.print_bucket_stats(self.cluster)
 
     def validate_docs_in_datasets(self):
         if self.remote_cluster:
@@ -483,7 +483,7 @@ class volume(BaseTestCase):
                 cluster.rebalance_util.data_validation_collection(
                     self.skip_validations, self.doc_and_collection_ttl)
             elif operation == "print_bucket_stats":
-                cluster.bucket_util.print_bucket_stats()
+                cluster.bucket_util.print_bucket_stats(self.cluster)
             elif operation == "change_bucket_replica":
                 for i in range(len(cluster.bucket_util.buckets)):
                     cluster.bucket_helper_obj.change_bucket_props(
@@ -946,7 +946,8 @@ class volume(BaseTestCase):
                     cluster_init_dict[self.remote_cluster] = self.input.param("remote_init_nodes", 1)
                 # Flush buckets(s)
                 for cluster, init_node in cluster_init_dict.iteritems():
-                    cluster.bucket_util.flush_all_buckets(cluster.master, skip_resetting_num_items=True)
+                    cluster.bucket_util.flush_all_buckets(
+                        cluster, skip_resetting_num_items=True)
                     self.sleep(10)
                     if len(cluster.nodes_in_cluster) > init_node:
                         nodes_cluster = cluster.nodes_in_cluster

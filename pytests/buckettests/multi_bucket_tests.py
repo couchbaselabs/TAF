@@ -17,12 +17,12 @@ class MultiBucketTests(BaseTestCase):
 
         # Create  multiple buckets here
         buckets_created = self.bucket_util.create_multiple_buckets(
-            self.cluster.master, self.num_replicas,
+            self.cluster, self.num_replicas,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
             bucket_count=self.standard_buckets, bucket_type=self.bucket_type)
         self.assertTrue(buckets_created, "Multi-bucket creation failed")
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
 
         self.log.info("Creating doc_generator..")
         self.load_gen = doc_generator(
@@ -50,8 +50,8 @@ class MultiBucketTests(BaseTestCase):
             self.task_manager.get_task_result(task)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.log.info("====== MultiBucketTests base setup complete ======")
 
     def tearDown(self):
@@ -100,7 +100,7 @@ class MultiBucketTests(BaseTestCase):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify doc counts after bucket ops
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.bucket_util.verify_stats_for_bucket(bucket_1, self.num_items*2)
         for bucket in [bucket_2, bucket_4]:
             self.bucket_util.verify_stats_for_bucket(bucket, self.num_items)

@@ -294,7 +294,7 @@ class KVStoreTests(MagmaBaseTest):
 
             for bucket, _ in bucket_lst[:self.num_delete_buckets]:
                 self.log.info("Iteration=={}, Deleting bucket=={}".format(count+1, bucket.name))
-                self.bucket_util.delete_bucket(self.cluster.master, bucket)
+                self.bucket_util.delete_bucket(self.cluster, bucket)
                 self.sleep(30, "waiting for 30 seconds after deletion of bucket")
 
             if self.num_delete_buckets <  self.standard_buckets:
@@ -349,19 +349,20 @@ class KVStoreTests(MagmaBaseTest):
             '''
 
             if self.crash_memcached:
-                self.crash_th = threading.Thread(target=self.crash,
-                                                  kwargs=dict(graceful=self.graceful))
+                self.crash_th = \
+                    threading.Thread(target=self.crash,
+                                     kwargs=dict(graceful=self.graceful))
                 self.crash_th.start()
 
             buckets_created = self.bucket_util.create_multiple_buckets(
-            self.cluster.master, self.num_replicas,
-            bucket_count=self.num_delete_buckets,
-            bucket_type=self.bucket_type,
-            storage={"couchstore": 0,
-                     "magma": self.num_delete_buckets},
-            eviction_policy=self.bucket_eviction_policy,
-            ram_quota=bucket_ram_quota,
-            bucket_name=self.bucket_name)
+                self.cluster, self.num_replicas,
+                bucket_count=self.num_delete_buckets,
+                bucket_type=self.bucket_type,
+                storage={"couchstore": 0,
+                         "magma": self.num_delete_buckets},
+                eviction_policy=self.bucket_eviction_policy,
+                ram_quota=bucket_ram_quota,
+                bucket_name=self.bucket_name)
 
             if self.crash_memcached:
                 self.stop_crash = True
@@ -372,7 +373,7 @@ class KVStoreTests(MagmaBaseTest):
 
             if not buckets_created:
                 buckets_created = self.bucket_util.create_multiple_buckets(
-                    self.cluster.master, self.num_replicas,
+                    self.cluster, self.num_replicas,
                     bucket_count=self.num_delete_buckets,
                     bucket_type=self.bucket_type,
                     storage={"couchstore": 0,

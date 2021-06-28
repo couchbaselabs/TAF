@@ -1,11 +1,7 @@
-from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
-from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
-from couchbase_utils.cb_tools.cbstats import Cbstats
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
 
@@ -16,7 +12,7 @@ class CollectionsDgmSteady(CollectionBase):
         self.dgm = self.input.param("dgm", 40)
         self.creates = self.input.param("creates", False)
 
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.bucket = self.cluster.buckets[0]
 
     def tearDown(self):
@@ -124,7 +120,7 @@ class CollectionsDgmSteady(CollectionBase):
             self.task.jython_task_manager.get_task_result(task)
             if task.fail:
                 self.fail("preload dgm failed")
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def set_ignore_exceptions(self, doc_loading_spec):
         ignore_exceptions = list()
@@ -135,8 +131,9 @@ class CollectionsDgmSteady(CollectionBase):
     def data_validation(self, doc_loading_task):
         if doc_loading_task.result is False:
             self.fail("doc_loading failed while in DGM")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_crud_docs(self):
         self.custom_load()

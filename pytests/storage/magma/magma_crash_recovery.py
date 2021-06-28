@@ -175,7 +175,8 @@ class MagmaCrashTests(MagmaBaseTest):
                     _sync=True,
                     doc_ops="update")
 
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
 
             count += 1
 
@@ -207,7 +208,8 @@ class MagmaCrashTests(MagmaBaseTest):
                                       _sync=True,
                                       doc_ops="update")
 
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
 
                 count += 1
             self.update_itr += self.update_itr
@@ -230,8 +232,9 @@ class MagmaCrashTests(MagmaBaseTest):
                                   _sync=True,
                                   doc_ops="delete")
 
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
             self.log.debug("Step 3, Iteration= {}".format(i+1))
             self.sigkill_memcached()
@@ -244,8 +247,9 @@ class MagmaCrashTests(MagmaBaseTest):
                                   _sync=True,
                                   doc_ops="create")
 
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
         self.validate_data("create", self.gen_create)
         self.change_swap_space(self.cluster.nodes_in_cluster,
@@ -313,7 +317,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.stop_crash = True
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
@@ -354,7 +358,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
@@ -402,7 +406,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         success, _ = self.client.get_multi([key],
                                            self.wait_timeout)
@@ -467,7 +471,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                   _sync=True,
                                   track_failures=False,
                                   sdk_retry_strategy=self.sdk_retry_strategy)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
             self.generate_docs(doc_ops="update")
             _ = self.loadgen_docs(self.retry_exceptions,
@@ -477,7 +481,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                   _sync=True,
                                   track_failures=False,
                                   sdk_retry_strategy=self.sdk_retry_strategy)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
             count += 1
         self.stop_crash = True

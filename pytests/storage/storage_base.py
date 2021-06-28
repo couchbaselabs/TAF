@@ -29,7 +29,7 @@ class StorageBase(BaseTestCase):
                                                Bucket.StorageBackend.magma)
         self.bucket_eviction_policy = self.input.param("bucket_eviction_policy",
                                                        Bucket.EvictionPolicy.FULL_EVICTION)
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket_name = self.input.param("bucket_name", None)
         self.magma_buckets = self.input.param("magma_buckets", 0)
 
@@ -76,6 +76,7 @@ class StorageBase(BaseTestCase):
         # Create Buckets
         if self.standard_buckets == 1:
             self.bucket_util.create_default_bucket(
+                self.cluster,
                 bucket_type=self.bucket_type,
                 ram_quota=self.bucket_ram_quota,
                 replica=self.num_replicas,
@@ -86,7 +87,7 @@ class StorageBase(BaseTestCase):
                 flush_enabled=self.flush_enabled)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
-                self.cluster.master,
+                self.cluster,
                 self.num_replicas,
                 bucket_count=self.standard_buckets,
                 bucket_type=self.bucket_type,
@@ -271,7 +272,8 @@ class StorageBase(BaseTestCase):
 
         if wait_for_stats:
             try:
-                self.bucket_util._wait_for_stats_all_buckets(timeout=1800)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.bucket, stimeout=1800)
             except Exception as e:
                 raise e
 
@@ -289,7 +291,7 @@ class StorageBase(BaseTestCase):
         self.wait_for_doc_load_completion(task)
 
         if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
-            for bucket in self.bucket_util.get_all_buckets():
+            for bucket in self.bucket_util.get_all_buckets(self.cluster):
                 disk_usage = self.get_disk_usage(
                     bucket, self.cluster.nodes_in_cluster)
                 self.disk_usage[bucket.name] = disk_usage[0]
@@ -673,7 +675,7 @@ class StorageBase(BaseTestCase):
         while time.time() < time_end:
             for server in servers:
                 frag_val = self.bucket_util.get_fragmentation_kv(
-                    bucket, server)
+                    self.cluster, bucket, server)
                 self.log.debug("Current Fragmentation for node {} is {} \
                 ".format(server.ip, frag_val))
                 result.update({server.ip: frag_val})

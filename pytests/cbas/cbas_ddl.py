@@ -13,12 +13,12 @@ class CBASDDLTests(CBASBaseTest):
 
         if "default_bucket" not in self.input.test_params:
             self.input.test_params.update({"default_bucket": False})
-        
+
         if "set_cbas_memory_from_available_free_memory" not in \
                 self.input.test_params:
             self.input.test_params.update(
                 {"set_cbas_memory_from_available_free_memory": True})
-        
+
         super(CBASDDLTests, self).setUp(add_default_cbas_node)
 
         self.validate_error = False
@@ -35,7 +35,8 @@ class CBASDDLTests(CBASBaseTest):
               For that service check on nodes is needed.
         '''
         self.sample_bucket = TravelSample()
-        result = self.bucket_util.load_sample_bucket(self.sample_bucket)
+        result = self.bucket_util.load_sample_bucket(self.cluster,
+                                                     self.sample_bucket)
         self.assertTrue(result, msg="Load sample bucket failed")
 
     def test_create_link_Local(self):
@@ -185,7 +186,7 @@ class CBASDDLTests(CBASBaseTest):
 
     def test_drop_one_bucket(self):
         beer_sample = BeerSample()
-        result = self.bucket_util.load_sample_bucket(beer_sample)
+        result = self.bucket_util.load_sample_bucket(self.cluster, beer_sample)
         self.assertTrue(result, "Bucket Creation Failed.")
 
         result = self.cbas_util.create_dataset_on_bucket(
@@ -209,7 +210,7 @@ class CBASDDLTests(CBASBaseTest):
 
     def test_create_dataset_on_connected_link(self):
         beer_sample = BeerSample()
-        result = self.bucket_util.load_sample_bucket(beer_sample)
+        result = self.bucket_util.load_sample_bucket(self.cluster, beer_sample)
         self.assertTrue(result, "Bucket Creation Failed.")
 
         result = self.cbas_util.create_dataset_on_bucket(

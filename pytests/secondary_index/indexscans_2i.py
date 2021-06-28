@@ -201,7 +201,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
         curr_items = self.bucket_util.get_bucket_current_item_count(
             self.cluster, def_bucket)
         if self.sync_write_abort_pattern in ["all_aborts", "initial_aborts"]:
-            self.bucket_util.flush_bucket(kv_nodes[0], def_bucket)
+            self.bucket_util.flush_bucket(self.cluster, def_bucket)
             self.num_items = 0
         else:
             self.num_items = curr_items

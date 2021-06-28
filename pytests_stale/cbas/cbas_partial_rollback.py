@@ -30,7 +30,8 @@ class PartialRollback_CBAS(CBASBaseTest):
             self.otpNodes.extend(self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes))
 
         '''Create default bucket'''
-        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               storage=self.bucket_storage)
         self.cbas_util.createConn("default")
 
         self.merge_policy = self.input.param('merge_policy', None)
@@ -502,4 +503,3 @@ class PartialRollback_CBAS(CBASBaseTest):
 
         self.assertTrue(items_in_cb_bucket == items_in_cbas_bucket,
                         "After Rollback : # Items in CBAS bucket does not match that in the CB bucket")
-    

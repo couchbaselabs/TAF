@@ -20,7 +20,7 @@ from FtsLib.FtsOperations import FtsHelper
 class CollectionsRebalance(CollectionBase):
     def setUp(self):
         super(CollectionsRebalance, self).setUp()
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.load_gen = doc_generator(self.key, 0, self.num_items)
         self.bucket = self.cluster.buckets[0]
         self.rest = RestConnection(self.cluster.master)
@@ -227,10 +227,11 @@ class CollectionsRebalance(CollectionBase):
             self.fail(self.collection_savepoint)
 
     def disable_auto_compaction(self):
-        buckets = self.bucket_util.get_all_buckets()
+        buckets = self.bucket_util.get_all_buckets(self.cluster)
         for bucket in buckets:
             if bucket.bucketType == "couchbase":
-                self.bucket_util.disable_compaction(bucket=str(bucket.name))
+                self.bucket_util.disable_compaction(self.cluster,
+                                                    bucket=bucket.name)
 
     def compact_all_buckets(self):
         self.sleep(10, "wait for rebalance to start")
@@ -330,14 +331,14 @@ class CollectionsRebalance(CollectionBase):
             if task.fail:
                 self.fail("preload dgm failed")
 
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def data_load_after_failover(self):
         self.log.info("Starting a sync data load after failover")
         self.subsequent_data_load()  # sync data load
         # Until we recover/rebalance-out, we can't call - self.bucket_util.validate_docs_per_collections_all_buckets()
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
     def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
         time_start = time.time()
@@ -370,7 +371,8 @@ class CollectionsRebalance(CollectionBase):
 
     def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
+        self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                    self.updated_num_replicas)
         failover_count = 0
         self.log.info("failing over nodes {0}".format(failover_nodes))
         for failover_node in failover_nodes:
@@ -411,8 +413,9 @@ class CollectionsRebalance(CollectionBase):
                 else:
                     if self.update_replica:
                         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-                        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
-                        self.bucket_util.print_bucket_stats()
+                        self.bucket_util.update_all_bucket_replicas(
+                            self.cluster, self.updated_num_replicas)
+                        self.bucket_util.print_bucket_stats(self.cluster)
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
@@ -464,8 +467,9 @@ class CollectionsRebalance(CollectionBase):
                 else:
                     if self.update_replica:
                         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-                        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
-                        self.bucket_util.print_bucket_stats()
+                        self.bucket_util.update_all_bucket_replicas(
+                            self.cluster, self.updated_num_replicas)
+                        self.bucket_util.print_bucket_stats(self.cluster)
                     # all at once
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [],
                                                           retry_get_process_num=self.retry_get_process_num)
@@ -521,8 +525,9 @@ class CollectionsRebalance(CollectionBase):
                 else:
                     if self.update_replica:
                         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-                        self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
-                        self.bucket_util.print_bucket_stats()
+                        self.bucket_util.update_all_bucket_replicas(
+                            self.cluster, self.updated_num_replicas)
+                        self.bucket_util.print_bucket_stats(self.cluster)
                     for node in add_nodes:
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                            node.ip, self.cluster.servers[self.nodes_init].port)
@@ -584,8 +589,9 @@ class CollectionsRebalance(CollectionBase):
             else:
                 if self.update_replica:
                     self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
-                    self.bucket_util.update_all_bucket_replicas(self.updated_num_replicas)
-                    self.bucket_util.print_bucket_stats()
+                    self.bucket_util.update_all_bucket_replicas(
+                        self.cluster, self.updated_num_replicas)
+                    self.bucket_util.print_bucket_stats(self.cluster)
                 for node in add_nodes:
                     self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                        node.ip, self.cluster.servers[self.nodes_init].port)
@@ -907,14 +913,15 @@ class CollectionsRebalance(CollectionBase):
     def data_validation_collection(self):
         if not self.skip_validations:
             if self.data_load_spec == "ttl_load" or self.data_load_spec == "ttl_load1":
-                self.bucket_util._expiry_pager()
+                self.bucket_util._expiry_pager(self.cluster)
                 self.sleep(400, "wait for maxttl to finish")
                 # Compact buckets to delete non-resident expired items
                 self.compact_all_buckets()
                 self.wait_for_compaction_to_complete()
                 self.sleep(60, "wait after compaction")
                 items = 0
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
                 for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
@@ -922,8 +929,10 @@ class CollectionsRebalance(CollectionBase):
             elif self.forced_hard_failover:
                 pass
             else:
-                self.bucket_util._wait_for_stats_all_buckets()
-                self.bucket_util.validate_docs_per_collections_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
+                self.bucket_util.validate_docs_per_collections_all_buckets(
+                    self.cluster)
 
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None

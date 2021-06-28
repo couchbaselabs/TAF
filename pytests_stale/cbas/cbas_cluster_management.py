@@ -101,7 +101,7 @@ class CBASClusterManagement(CBASBaseTest):
             nodes = self.rest.get_nodes_data_from_cluster()
             for node in nodes:
                 if node["otpNode"] == otpNode.id:
-                    self.assertTrue(set(node["services"]) == set(service), "Service setting failed") 
+                    self.assertTrue(set(node["services"]) == set(service), "Service setting failed")
                     self.log.info("Successfully added %s to the cluster with services %s"%(otpNode.id,service))
 
     def test_add_delete_cbas_nodes_CLI(self):
@@ -137,7 +137,7 @@ class CBASClusterManagement(CBASBaseTest):
                     actual_services = set(node["services"])
                     expected_servcies = set(service_list[service])
                     self.log.info("Expected:%s Actual:%s"%(expected_servcies,actual_services))
-                    self.assertTrue(actual_services == expected_servcies, "Service setting failed") 
+                    self.assertTrue(actual_services == expected_servcies, "Service setting failed")
                     self.log.info("Successfully added %s to the cluster with services %s"%(node["otpNode"],service))
 
         to_remove = []
@@ -158,7 +158,8 @@ class CBASClusterManagement(CBASBaseTest):
         wait_for_rebalance = True
         test_docs = self.num_items
         docs_to_verify = test_docs
-        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               storage=self.bucket_storage)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, test_docs)
 
         if self.cbas_node.ip == self.cluster.master.ip:
@@ -177,7 +178,7 @@ class CBASClusterManagement(CBASBaseTest):
                 set_up_cbas = self.setup_cbas_bucket_dataset_connect("default", docs_to_verify)
                 wait_for_rebalance = False
 
-            # Run some queries while rebalance is in progress after adding further cbas nodes    
+            # Run some queries while rebalance is in progress after adding further cbas nodes
             self.assertTrue((self.cbas_util.get_num_items_in_cbas_dataset(self.cbas_dataset_name))[0] == docs_to_verify,
                             "Number of items in CBAS is different from CB after adding further cbas node.")
 
@@ -211,7 +212,8 @@ class CBASClusterManagement(CBASBaseTest):
         Author: Ritesh Agarwal
         '''
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
-        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               storage=self.bucket_storage)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
         self.cluster_util.add_node(node=self.cbas_node)
         self.setup_cbas_bucket_dataset_connect("default", self.num_items)
@@ -228,7 +230,8 @@ class CBASClusterManagement(CBASBaseTest):
         Author: Ritesh Agarwal
         '''
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
-        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               storage=self.bucket_storage)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
         self.cluster_util.add_node(node=self.cbas_node)
         self.cluster_util.add_node(node=self.cluster.kv_nodes[1],wait_for_rebalance_completion=False)
@@ -249,7 +252,8 @@ class CBASClusterManagement(CBASBaseTest):
         '''
         set_up_cbas = False
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
-        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               storage=self.bucket_storage)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
 
         if self.cbas_node.ip == self.cluster.master.ip:
@@ -264,7 +268,7 @@ class CBASClusterManagement(CBASBaseTest):
                 if not set_up_cbas:
                     set_up_cbas = self.setup_cbas_bucket_dataset_connect("default", self.num_items)
                 temp_cbas_util = CbasUtil(self.cluster.master, self.cbas_node, self.task)
-                temp_cbas_util.createConn("default")    
+                temp_cbas_util.createConn("default")
                 self.cbas_util._run_concurrent_queries(query,None,1000,self.cbas_util,batch_size=self.concurrent_batch_size)
                 temp_cbas_util.closeConn()
 
@@ -281,7 +285,7 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         self.cluster_util.add_node(self.cbas_node, services=["kv","cbas"],wait_for_rebalance_completion=False)
 
         if self.rest._rebalance_progress_status() == "running":
@@ -306,7 +310,7 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         self.cluster_util.add_node(self.cbas_node)
         self.setup_cbas_bucket_dataset_connect(self.cb_bucket_name, self.sample_bucket.stats.expected_item_count)
 
@@ -334,7 +338,7 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         self.cluster_util.add_node(self.cbas_node)
         self.setup_cbas_bucket_dataset_connect(self.cb_bucket_name,
                                                self.sample_bucket.stats.expected_item_count)
@@ -364,7 +368,7 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         self.cluster_util.add_node(self.cbas_node)
         self.setup_cbas_bucket_dataset_connect(self.cb_bucket_name,
                                                self.sample_bucket.stats.expected_item_count)
@@ -394,7 +398,7 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["kv","cbas"])
         self.setup_cbas_bucket_dataset_connect(self.cb_bucket_name,
                                                self.sample_bucket.stats.expected_item_count)
@@ -424,7 +428,7 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         self.cluster_util.add_node(self.cbas_node, services=["kv","cbas"])
         self.setup_cbas_bucket_dataset_connect(self.cb_bucket_name,
                                                self.sample_bucket.stats.expected_item_count)
@@ -456,7 +460,7 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"])
 
         remote_client = RemoteMachineShellConnection(self.cluster.cbas_nodes[0])
@@ -487,7 +491,7 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         otpNode = self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"])
         self.setup_cbas_bucket_dataset_connect(self.cb_bucket_name,
                                                self.sample_bucket.stats.expected_item_count)
@@ -519,7 +523,7 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         otpNode = self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"])
         self.setup_cbas_bucket_dataset_connect(self.cb_bucket_name,
                                                self.sample_bucket.stats.expected_item_count)
@@ -546,7 +550,7 @@ class CBASClusterManagement(CBASBaseTest):
         Author: Ritesh Agarwal
         '''
         cbas_otpnodes = []
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         cbas_otpnodes.append(self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"]))
         self.setup_cbas_bucket_dataset_connect(self.cb_bucket_name,
                                                self.sample_bucket.stats.expected_item_count)
@@ -563,7 +567,7 @@ class CBASClusterManagement(CBASBaseTest):
 
     def test_create_bucket_with_default_port(self):
         query = "create bucket " + self.cbas_bucket_name + " with {\"name\":\"" + self.cb_bucket_name + "\",\"nodes\":\"" + self.cluster.master.ip + ":" +"8091" +"\"};"
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
         self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"])
         self.cbas_util.createConn(self.cb_bucket_name)
         result = self.cbas_util.execute_statement_on_cbas_util(query, "immediate")[0]

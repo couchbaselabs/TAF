@@ -84,9 +84,10 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.fail("Doc_loading failed")
 
         self.cluster_util.print_cluster_stats()
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def test_auto_retry_of_failed_rebalance_where_failure_happens_before_rebalance(self):
         tasks = None
@@ -272,8 +273,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 # change replica count
                 self.log.info("Changing replica count of buckets")
                 for bucket in self.cluster.buckets:
-                    self.bucket_util.update_bucket_property(bucket,
-                                                            replica_number=2)
+                    self.bucket_util.update_bucket_property(
+                        self.cluster.master, bucket, replica_number=2)
             elif post_failure_operation == "change_server_group":
                 # change server group
                 self.log.info("Creating new zone " + zone_name)

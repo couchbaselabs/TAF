@@ -73,7 +73,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks)
-        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                     timeout=1200)
 
     def tearDown(self):
         super(MagmaExpiryTests, self).tearDown()
@@ -157,18 +158,21 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
             # exp_pager_stime
-            self.bucket_util._expiry_pager(self.exp_pager_stime)
+            self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
              to kickoff")
             self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
-                                                         stat_name="vb_replica_queue_size")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster.buckets,
+                cbstat_cmd="all",
+                stat_name="vb_replica_queue_size")
             expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
             # Check for tombstone count in Storage
             count = 0
@@ -193,7 +197,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             #                format(expected_ts_count, ts))
 
             self.log.info("Verifying doc counts after create doc_ops")
-            self.bucket_util.verify_stats_all_buckets(items=0)
+            self.bucket_util.verify_stats_all_buckets(self.cluster, items=0)
 
             # Metadata Purge Interval
             self.meta_purge_interval_in_days = self.meta_purge_interval / 86400.0
@@ -202,7 +206,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                 value=self.meta_purge_interval_in_days, buckets=self.buckets)
             self.sleep(self.meta_purge_interval, "sleeping after setting metadata purge interval using diag/eval")
             self.bucket_util.cbepctl_set_metadata_purge_interval(
-                value=self.meta_purge_interval, buckets=self.buckets)
+                self.cluster, self.buckets, value=self.meta_purge_interval)
     #         self.bucket_util.set_metadata_purge_interval(str(self.meta_purge_interval),
     #                                                      buckets=self.buckets)
     #         self.sleep(self.meta_purge_interval*60*60*2/0.04, "Wait for Metadata Purge Interval to drop \
@@ -213,7 +217,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
             #Check for tombs-tones removed
-            self.bucket_util._run_compaction(number_of_times=1)
+            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after bucket compaction: {}".format(ts))
             self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
@@ -262,7 +266,8 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=1200)
 
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
@@ -284,19 +289,22 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
 
             # exp_pager_stime
-            self.bucket_util._expiry_pager(self.exp_pager_stime)
+            self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
              to kickoff")
             self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
-                                                         stat_name="vb_replica_queue_size")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster.buckets,
+                cbstat_cmd="all",
+                stat_name="vb_replica_queue_size")
             # Check for tombstone count in Storage
             expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
             count = 0
@@ -345,10 +353,10 @@ class MagmaExpiryTests(MagmaBaseTest):
                 value=self.meta_purge_interval_in_days, buckets=self.buckets)
             self.sleep(180, "sleeping after setting metadata purge interval using diag/eval")
             self.bucket_util.cbepctl_set_metadata_purge_interval(
-                value=self.meta_purge_interval, buckets=self.buckets)
+                self.cluster, self.buckets, value=self.meta_purge_interval)
             self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
             tomb-stones from storage")
-            self.bucket_util._run_compaction(number_of_times=1)
+            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
@@ -402,7 +410,8 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=1200)
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
             self.log.debug("Disk usage after updates {}".format(disk_usage))
@@ -422,19 +431,22 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                         timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
 
             # exp_pager_stime
-            self.bucket_util._expiry_pager(self.exp_pager_stime)
+            self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
              to kickoff")
             self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
-                                                         stat_name="vb_replica_queue_size")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster.buckets,
+                cbstat_cmd="all",
+                stat_name="vb_replica_queue_size")
             # Check for tombstone count in Storage
             expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
             count = 0
@@ -461,7 +473,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             #                  format(expected_ts_count, ts))
 
             self.log.info("Verifying doc counts after create doc_ops")
-            self.bucket_util.verify_stats_all_buckets(items=0)
+            self.bucket_util.verify_stats_all_buckets(self.cluster, items=0)
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
             self.log.info("Disk usage after expiry {}".format(disk_usage))
@@ -479,7 +491,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                 value=self.meta_purge_interval_in_days, buckets=self.buckets)
             self.sleep(180, "sleeping after setting metadata purge interval using diag/eval")
             self.bucket_util.cbepctl_set_metadata_purge_interval(
-                value=self.meta_purge_interval, buckets=self.buckets)
+                self.cluster, self.buckets, value=self.meta_purge_interval)
 
             self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
             tomb-stones from storage")
@@ -488,7 +500,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
             # Check for tombs-tones removed
-            self.bucket_util._run_compaction(number_of_times=1)
+            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after bucket compaction: {}".format(ts))
 
@@ -516,7 +528,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         _ = self.loadgen_docs(self.retry_exceptions,
                               self.ignore_exceptions,
                               _sync=True)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
 
@@ -539,7 +551,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                 cmd = "dd if=/dev/zero of={0}{1} bs=" + str(du) + "M count=1"
 
         # exp_pager_stime
-        self.bucket_util._expiry_pager(self.exp_pager_stime)
+        self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
         self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
          to kickoff")
         self.sleep(self.exp_pager_stime*10, "Wait for KV purger to scan expired docs and add \
@@ -550,12 +562,12 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.log.info("Tombstones after exp_pager_stime: {}".format(ts))
 
         self.log.info("Verifying doc counts after create doc_ops")
-        self.bucket_util.verify_stats_all_buckets(items=0)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, items=0)
 
         # Metadata Purge Interval
         self.meta_purge_interval = 60
         self.bucket_util.cbepctl_set_metadata_purge_interval(
-            value=self.meta_purge_interval, buckets=self.buckets)
+            self.cluster, self.buckets, value=self.meta_purge_interval)
         self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
         tomb-stones from storage")
 
@@ -582,7 +594,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
         # Check for tombs-tones removed
-        self.bucket_util._run_compaction()
+        self.bucket_util._run_compaction(self.cluster)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after bucket compaction: {}".format(ts))
 
@@ -620,18 +632,20 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                     timeout=1200)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
 
         # exp_pager_stime
-        self.bucket_util._expiry_pager(self.exp_pager_stime)
+        self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
         self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
          to kickoff")
         self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
         tombstones.")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util._wait_for_stats_all_buckets(cbstat_cmd="all",
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                     cbstat_cmd="all",
                                                      stat_name="vb_replica_queue_size")
 
         # Check for tombstone count in Storage
@@ -655,7 +669,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         #                      Expected: {}, Found: {}".
         #                      format(expected_ts_count, ts))
         self.log.info("Verifying doc counts after create doc_ops")
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Metadata Purge Interval
         self.meta_purge_interval = 180
@@ -665,7 +679,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             value=self.meta_purge_interval_in_days, buckets=self.buckets)
         self.sleep(180, "sleeping after setting metadata purge interval using diag/eval")
         self.bucket_util.cbepctl_set_metadata_purge_interval(
-            value=self.meta_purge_interval, buckets=self.buckets)
+            self.cluster, self.buckets, value=self.meta_purge_interval)
 
         self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
         tomb-stones from storage")
@@ -674,7 +688,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
         # Check for tombs-tones removed
-        self.bucket_util._run_compaction(number_of_times=1)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after bucket compaction: {}".format(ts))
         self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
@@ -688,7 +702,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.doc_ops = "expiry"
         self.expiry_start = 0
         self.expiry_end = self.init_items_per_collection
-        self.bucket_util._expiry_pager(216000)
+        self.bucket_util._expiry_pager(self.cluster, 216000)
         self.generate_docs(doc_ops="expiry")
         tasks_info = dict()
         for collection in self.collections:
@@ -702,11 +716,12 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
              tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                     timeout=1200)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
         self.sigkill_memcached()
-        self.bucket_util._expiry_pager(216000)
+        self.bucket_util._expiry_pager(self.cluster, 216000)
         # Read all the docs to ensure they get converted to tombstones
         self.generate_docs(doc_ops="read",
                            read_start=self.expiry_start,
@@ -754,14 +769,14 @@ class MagmaExpiryTests(MagmaBaseTest):
             value=self.meta_purge_interval_in_days, buckets=self.buckets)
         self.sleep(180, "sleeping after setting metadata purge interval using diag/eval")
         self.bucket_util.cbepctl_set_metadata_purge_interval(
-            value=self.meta_purge_interval, buckets=self.buckets)
+            self.cluster, self.buckets, value=self.meta_purge_interval)
         self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
         tomb-stones from storage")
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after persistent_metadata_purge_age: {}".format(ts))
 
         #Check for tombs-tones removed
-        self.bucket_util._run_compaction(number_of_times=1)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after bucket compaction: {}".format(ts))
         self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
@@ -793,14 +808,15 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
              tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(timeout=1200)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+                                                     timeout=1200)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
 
         # exp_pager_stime
-        self.bucket_util._expiry_pager(21600)
+        self.bucket_util._expiry_pager(self.cluster, 21600)
         self.log.info("Starting compaction for each bucket to add tombstones")
-        self.bucket_util._run_compaction(number_of_times=1)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
 
         self.sleep(300, "sleep after triggering compaction")
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
@@ -823,12 +839,12 @@ class MagmaExpiryTests(MagmaBaseTest):
             value=self.meta_purge_interval_in_days, buckets=self.buckets)
         self.sleep(180, "sleeping after setting metadata purge interval using diag/eval")
         self.bucket_util.cbepctl_set_metadata_purge_interval(
-            value=self.meta_purge_interval, buckets=self.buckets)
+            self.cluster, self.buckets, value=self.meta_purge_interval)
         self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
         tomb-stones from storage")
 
         self.log.info("Starting compaction for each bucket")
-        self.bucket_util._run_compaction(number_of_times=1)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
         self.sleep(300, "sleep after triggering compaction, to drop tombstones")
 
         # All docs and tomb-stone should be dropped from the storage
@@ -896,7 +912,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                          collection=collection,
                          _sync=False))
         # exp_pager_stime
-        self.bucket_util._expiry_pager(self.exp_pager_stime)
+        self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
         self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
          to kickoff")
         for task in tasks:
@@ -927,10 +943,10 @@ class MagmaExpiryTests(MagmaBaseTest):
         _ = self.loadgen_docs(self.retry_exceptions,
                               self.ignore_exceptions,
                               _sync=True)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         # exp_pager_stime
-        self.bucket_util._expiry_pager(self.exp_pager_stime)
+        self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
         self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
          to kickoff")
         self.sleep(self.exp_pager_stime*10, "Wait for KV purger to scan expired docs and add \
@@ -948,12 +964,12 @@ class MagmaExpiryTests(MagmaBaseTest):
         # Metadata Purge Interval
         self.meta_purge_interval = 60
         self.bucket_util.cbepctl_set_metadata_purge_interval(
-            value=self.meta_purge_interval, buckets=self.buckets)
+            self.cluster, self.buckets, value=self.meta_purge_interval)
         self.sleep(self.meta_purge_interval*2, "Wait for Metadata Purge Interval to drop \
         tomb-stones from storage")
 
         self.log.info("Starting compaction for each bucket")
-        self.bucket_util._run_compaction()
+        self.bucket_util._run_compaction(self.cluster)
 
         # All docs and tomb-stone should be dropped from the storage
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
@@ -1002,12 +1018,12 @@ class MagmaExpiryTests(MagmaBaseTest):
         _ = self.loadgen_docs(self.retry_exceptions,
                               self.ignore_exceptions,
                               _sync=True)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
 
         self.log.info("Starting compaction for each bucket")
-        self.bucket_util._run_compaction()
+        self.bucket_util._run_compaction(self.cluster)
 
         # All docs and tomb-stone should be dropped from the storage
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)

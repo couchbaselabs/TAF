@@ -111,8 +111,8 @@ class AutoCompactionTests(CollectionBase):
         new_passwd = self.input.param("new_password", "new_pass")
         old_pass = self.cluster.master.rest_password
 
-        self.bucket_util.delete_all_buckets(self.cluster.servers)
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.delete_all_buckets(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         percent_threshold = self.autocompaction_value
         update_item_size = item_size * ((float(100 - percent_threshold)) / 100)
@@ -137,11 +137,11 @@ class AutoCompactionTests(CollectionBase):
                                   Bucket.ramQuotaMB: int(available_ram),
                                   Bucket.storageBackend: self.bucket_storage,
                                   Bucket.replicaNumber: self.num_replicas})
-            self.bucket_util.create_bucket(self.bucket)
+            self.bucket_util.create_bucket(self.cluster, self.bucket)
             self.bucket_util.wait_for_memcached(server_info, self.bucket)
             self.bucket_util.wait_for_vbuckets_ready_state(server_info,
                                                            self.bucket)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
 
             self.log.info("Start to load {0}K keys with {1} bytes/key"
                           .format(items, item_size))
@@ -229,11 +229,12 @@ class AutoCompactionTests(CollectionBase):
                 self.cluster_util.change_port(new_port='8091',
                                               current_port=new_port)
 
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(items*1000)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, items*1000)
 
     def rebalance_in_with_DB_compaction(self):
-        self.bucket_util.disable_compaction(bucket=str(self.bucket.name))
+        self.bucket_util.disable_compaction(self.cluster,
+                                            bucket=self.bucket.name)
         self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         self._monitor_DB_fragmentation(self.bucket)
         servs_in = self.servers[self.nodes_init:self.nodes_in + 1]
@@ -246,7 +247,8 @@ class AutoCompactionTests(CollectionBase):
         self.assertTrue(result, "Compaction didn't finished correctly. "
                                 "Please check diags")
         self.task.jython_task_manager.get_task_result(rebalance)
-        self.bucket_util.verify_cluster_stats(self.servers[:self.nodes_in + 1])
+        self.bucket_util.verify_cluster_stats(
+            self.cluster, self.servers[:self.nodes_in + 1])
 
     def rebalance_in_with_auto_DB_compaction(self):
         remote_client = RemoteMachineShellConnection(self.cluster.master)
@@ -287,17 +289,19 @@ class AutoCompactionTests(CollectionBase):
         self.task.jython_task_manager.get_task_result(monitor_fragm)
         doc_update_task.end_task()
         self.task_manager.get_task_result(doc_update_task)
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         remote_client.disconnect()
 
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def rebalance_out_with_DB_compaction(self):
         self.log.info("create a cluster of all the available servers")
         self.cluster.rebalance(self.servers[:self.num_servers],
                                self.servers[1:self.num_servers], [])
-        self.bucket_util.disable_compaction(bucket=self.bucket.name)
+        self.bucket_util.disable_compaction(self.cluster,
+                                            bucket=self.bucket.name)
         self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         self._monitor_DB_fragmentation(self.bucket)
         servs_out = [self.servers[self.num_servers - i - 1]
@@ -311,9 +315,10 @@ class AutoCompactionTests(CollectionBase):
                                 "Please check diags")
         self.task.jython_task_manager.get_task_result(rebalance)
         self.bucket_util.verify_cluster_stats(
-            self.servers[:self.num_servers - self.nodes_out])
+            self.cluster, self.servers[:self.num_servers - self.nodes_out])
 
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def rebalance_out_with_auto_DB_compaction(self):
@@ -347,9 +352,11 @@ class AutoCompactionTests(CollectionBase):
         else:
             self.fail("auto compaction does not run")
         self.bucket_util.verify_cluster_stats(
+            self.cluster,
             self.servers[:self.num_servers - self.nodes_out])
         remote_client.disconnect()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def rebalance_in_out_with_DB_compaction(self):
@@ -361,7 +368,8 @@ class AutoCompactionTests(CollectionBase):
         servs_out = [self.servers[self.nodes_init - i - 1]
                      for i in range(self.nodes_out)]
         result_nodes = set(servs_init + servs_in) - set(servs_out)
-        self.bucket_util.disable_compaction(bucket=self.bucket.name)
+        self.bucket_util.disable_compaction(self.cluster,
+                                            bucket=self.bucket.name)
         self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         rebalance = self.task.async_rebalance(servs_init, servs_in, servs_out)
         while rebalance.state != "FINISHED":
@@ -372,8 +380,9 @@ class AutoCompactionTests(CollectionBase):
             self.assertTrue(result, "Compaction didn't finished correctly. "
                                     "Please check diags")
         self.task.jython_task_manager.get_task_result(rebalance)
-        self.bucket_util.verify_cluster_stats(result_nodes)
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util.verify_cluster_stats(self.cluster, result_nodes)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def rebalance_in_out_with_auto_DB_compaction(self):
@@ -421,8 +430,9 @@ class AutoCompactionTests(CollectionBase):
         self.task.jython_task_manager.get_task_result(monitor_fragm)
         doc_update_task.end_task()
         self.task_manager.get_task_result(doc_update_task)
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
         self.validate_test_failure()
 
     def test_database_time_compaction(self):
@@ -559,7 +569,8 @@ class AutoCompactionTests(CollectionBase):
     def test_start_stop_DB_compaction(self):
         rest = RestConnection(self.cluster.master)
         self.log.info('Disabling auto-compaction')
-        self.bucket_util.disable_compaction(bucket=self.bucket.name)
+        self.bucket_util.disable_compaction(self.cluster,
+                                            bucket=self.bucket.name)
         self._monitor_DB_fragmentation(self.bucket)
         compaction_monitor_task = self.task.async_monitor_compaction(
             self.cluster, self.bucket)
@@ -599,7 +610,8 @@ class AutoCompactionTests(CollectionBase):
         remote_client = RemoteMachineShellConnection(self.cluster.master)
         remote_client.extract_remote_info()
 
-        self.bucket_util.disable_compaction(bucket=self.bucket.name)
+        self.bucket_util.disable_compaction(self.cluster,
+                                            bucket=self.bucket.name)
         self._monitor_DB_fragmentation(self.bucket)
 
         # Rename here and restart Couchbase server
@@ -684,7 +696,8 @@ class AutoCompactionTests(CollectionBase):
         rest = RestConnection(self.cluster.master)
         for bucket in self.cluster.buckets:
             if bucket.name == "default":
-                self.bucket_util.disable_compaction(bucket=bucket.name)
+                self.bucket_util.disable_compaction(self.cluster,
+                                                    bucket=bucket.name)
             else:
                 self.bucket_util.set_auto_compaction(
                     rest,

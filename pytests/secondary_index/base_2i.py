@@ -743,7 +743,7 @@ class BaseSecondaryIndexingTests(QueryTests):
                 self.assertTrue(index_name in index_map[bucket_name].keys(), msg1+" :: "+ msg)
 
     def _verify_primary_index_count(self):
-        bucket_map = self.bucket_util.get_buckets_itemCount()
+        bucket_map = self.bucket_util.get_buckets_itemCount(self.cluster)
         count = 0
         while not self._verify_items_count() and count < 15:
             self.log.debug("All Items Yet to be Indexed...")
@@ -796,7 +796,7 @@ class BaseSecondaryIndexingTests(QueryTests):
             count += 1
         if not self._verify_items_count():
             raise Exception("All Items didn't get Indexed...")
-        bucket_map = self.bucket_util.get_buckets_itemCount()
+        bucket_map = self.bucket_util.get_buckets_itemCount(self.cluster)
         for bucket in buckets:
             bucket_count = bucket_map[bucket.name]
             for query in query_definitions:

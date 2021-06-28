@@ -180,8 +180,8 @@ class SubDocTimeouts(DurabilityTestsBase):
                                  % (doc_key, crud_result))
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.validate_test_failure()
 
@@ -447,8 +447,8 @@ class SubDocTimeouts(DurabilityTestsBase):
                                  % (op_type, retry_task.fail))
 
         # Verify doc count after expected CRUD failure
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch latest stats and validate the values are updated
         for node in target_nodes:
@@ -525,8 +525,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(create_task)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         for node in nodes_in_cluster:
             shell_conn[node.ip] = \
@@ -587,8 +587,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         validate_doc_mutated_value(1)
 
         # Verify doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch vbucket seq_no status from vb_seqno command after async CREATEs
         for node in nodes_in_cluster:
@@ -626,8 +626,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.log_failure("Unexpected exception type")
 
         # Verify doc count is unchanged due to durability failures
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         validate_doc_mutated_value(1)
 
         # Reset failure_stat dictionary for reuse
@@ -872,6 +872,6 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                      % (key, doc_info))
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()

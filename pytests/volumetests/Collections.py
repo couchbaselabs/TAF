@@ -31,7 +31,7 @@ class volume(CollectionBase):
         if self.backup_service_test:
             self.backup_service = BackupServiceTest(self.input.servers)
         super(volume, self).setUp()
-        self.bucket_util._expiry_pager(val=5)
+        self.bucket_util._expiry_pager(self.cluster, val=5)
         self.rest = RestConnection(self.servers[0])
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.exclude_nodes = [self.cluster.master]
@@ -89,7 +89,8 @@ class volume(CollectionBase):
             self.flush_buckets_before_indexes_creation = \
                 self.input.param("flush_buckets_before_indexes_creation", True)
             if self.flush_buckets_before_indexes_creation:
-                self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
+                self.bucket_util.flush_all_buckets(
+                    self.cluster, skip_resetting_num_items=True)
             self.kv_mem_quota = self.input.param("kv_mem_quota", 10000)
             self.index_mem_quota = self.input.param("index_mem_quota", 11000)
             self.set_memory_quota(services=["kv", "index"])
@@ -130,7 +131,7 @@ class volume(CollectionBase):
         if self.backup_service_test:
             self.backup_service.clean()
         self.log.info("Printing bucket stats before teardown")
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         if self.collect_pcaps:
             self.start_fetch_pcaps()
         if not self.skip_check_logs:
@@ -561,12 +562,13 @@ class volume(CollectionBase):
             "volume_templates.buckets_for_volume_tests_with_ttl"]
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         if self.spec_name not in ttl_buckets:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
@@ -579,7 +581,8 @@ class volume(CollectionBase):
         retry_count = 0
         while retry_count < 10:
             try:
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
             except:
                 retry_count = retry_count + 1
                 self.log.info("ep-queue hasn't drained yet. Retry count: {0}".format(retry_count))
@@ -587,19 +590,20 @@ class volume(CollectionBase):
                 break
         if retry_count == 10:
             self.log.info("Attempting last retry for ep-queue to drain")
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         if self.doc_and_collection_ttl:
-            self.bucket_util._expiry_pager(val=5)
+            self.bucket_util._expiry_pager(self.cluster, val=5)
             self.sleep(400, "wait for doc/collection maxttl to finish")
             items = 0
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
             for bucket in self.cluster.buckets:
                 items = items + self.bucket_helper_obj.get_active_key_count(bucket)
             if items != 0:
                 self.fail("doc count!=0, TTL + rebalance failed")
         else:
             if not self.skip_validations:
-                self.bucket_util.validate_docs_per_collections_all_buckets()
+                self.bucket_util.validate_docs_per_collections_all_buckets(
+                    self.cluster)
             else:
                 pass
 
@@ -659,7 +663,7 @@ class volume(CollectionBase):
             self.data_validation_collection()
             if self.fts_indexes_to_recreate > 0:
                 self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
             #########################################################################################################################
             self.log.info("Step 6: Rebalance Out with Loading of docs")
@@ -670,7 +674,7 @@ class volume(CollectionBase):
             self.data_validation_collection()
             if self.fts_indexes_to_recreate > 0:
                 self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
             #######################################################################################################################
             self.log.info("Step 7: Rebalance In_Out with Loading of docs")
@@ -681,7 +685,7 @@ class volume(CollectionBase):
             self.data_validation_collection()
             if self.fts_indexes_to_recreate > 0:
                 self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
             ########################################################################################################################
             self.log.info("Step 8: Swap with Loading of docs")
@@ -693,7 +697,7 @@ class volume(CollectionBase):
             self.tasks = []
             if self.fts_indexes_to_recreate > 0:
                 self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
             ########################################################################################################################
             self.log.info("Step 9: Updating the bucket replica to 2 and rebalance-in")
@@ -708,7 +712,7 @@ class volume(CollectionBase):
             self.data_validation_collection()
             if self.fts_indexes_to_recreate > 0:
                 self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
             ########################################################################################################################
             self.log.info("Enabling autoreprovison before inducing failure to prevent data loss "
@@ -732,7 +736,7 @@ class volume(CollectionBase):
                 self.data_validation_collection()
                 if self.fts_indexes_to_recreate > 0:
                     self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
-                self.bucket_util.print_bucket_stats()
+                self.bucket_util.print_bucket_stats(self.cluster)
                 self.check_logs()
             self.durability_level = ""
             ########################################################################################################################
@@ -831,6 +835,7 @@ class volume(CollectionBase):
                         kv_nodes,
                         self.cluster.buckets, path=None)
                     self.bucket_util.vb_distribution_analysis(
+                        self.cluster,
                         servers=kv_nodes, buckets=self.cluster.buckets,
                         num_replicas=2,
                         std=std, total_vbuckets=self.cluster_util.vbuckets)
@@ -845,7 +850,7 @@ class volume(CollectionBase):
                         self.wait_for_rebalance_to_complete(rebalance_task)
                     if self.fts_indexes_to_recreate > 0:
                         self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
-                    self.bucket_util.print_bucket_stats()
+                    self.bucket_util.print_bucket_stats(self.cluster)
                     self.check_logs()
             ########################################################################################################################
             self.log.info("Step 18: Updating the bucket replica to 1")
@@ -861,7 +866,7 @@ class volume(CollectionBase):
             self.tasks = []
             if self.fts_indexes_to_recreate > 0:
                 self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
             ########################################################################################################################
             self.cluster.nodes_in_cluster = self.cluster.servers
@@ -896,14 +901,15 @@ class volume(CollectionBase):
                 self.wait_for_rebalance_to_complete(rebalance_task)
                 self.cluster.nodes_in_cluster = self.cluster.servers[:]
                 step_count = step_count + 1
-                self.bucket_util.print_bucket_stats()
+                self.bucket_util.print_bucket_stats(self.cluster)
                 self.check_logs()
-            ########################################################################################################################
+            #################################################################
             self.log.info("Step {0}: Flush bucket(s) and start the entire process again".format(step_count))
             self.loop += 1
             if self.loop < self.iterations:
                 # Flush bucket(s)
-                self.bucket_util.flush_all_buckets(self.cluster.master, skip_resetting_num_items=True)
+                self.bucket_util.flush_all_buckets(
+                    self.cluster, skip_resetting_num_items=True)
                 self.sleep(10)
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
                     self.nodes_cluster = self.cluster.nodes_in_cluster[:]

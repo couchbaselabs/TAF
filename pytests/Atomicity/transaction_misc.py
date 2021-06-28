@@ -5,7 +5,7 @@ from couchbase_helper.documentgenerator import doc_generator
 class basic_ops(ClusterSetup):
     def setUp(self):
         super(basic_ops, self).setUp()
-        self.create_bucket()
+        self.create_bucket(self.cluster)
 
         self.log_setup_status("basic_ops", "start", "setup")
         self.sleep(20)
@@ -26,7 +26,7 @@ class basic_ops(ClusterSetup):
 
         # Loading of 1M docs through normal loader
         self.log.info("Going to load 1M docs through normal load")
-        self.buckets = self.bucket_util.get_all_buckets(self.cluster.master)
+        self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         for bucket in self.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, self.gen_create, "create", 0,

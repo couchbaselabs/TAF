@@ -84,10 +84,12 @@ class CollectionBase(ClusterSetup):
                                  result["vb_replica_perc_mem_resident"]))
             if not self.skip_collections_cleanup \
                     and bucket.bucketType != Bucket.Type.MEMCACHED:
-                self.bucket_util.remove_scope_collections_for_bucket(bucket)
+                self.bucket_util.remove_scope_collections_for_bucket(
+                    self.cluster, bucket)
         shell.disconnect()
         if self.validate_docs_count_during_teardown:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
         super(CollectionBase, self).tearDown()
 
     @staticmethod
@@ -114,7 +116,7 @@ class CollectionBase(ClusterSetup):
                 compression_settings=sdk_compression)
 
     def collection_setup(self):
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
 
         # Create bucket(s) and add rbac user
         if self.bucket_storage == Bucket.StorageBackend.magma:
@@ -142,11 +144,12 @@ class CollectionBase(ClusterSetup):
         self.over_ride_bucket_template_params(buckets_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
 
-        self.bucket_util.create_buckets_using_json_data(buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete()
+        self.bucket_util.create_buckets_using_json_data(self.cluster,
+                                                        buckets_spec)
+        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
 
         # Prints bucket stats before doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
@@ -178,12 +181,13 @@ class CollectionBase(ClusterSetup):
             "volume_templates.buckets_for_volume_tests_with_ttl"]
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         if self.spec_name not in ttl_buckets:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def over_ride_bucket_template_params(self, bucket_spec):
         if self.bucket_storage == Bucket.StorageBackend.magma:

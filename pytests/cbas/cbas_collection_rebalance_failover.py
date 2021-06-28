@@ -97,7 +97,7 @@ class CBASRebalance(CBASBaseTest):
         self.rebalance_util.data_validation_collection(
             skip_validations=self.skip_validations,
             doc_and_collection_ttl=False)
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         if not self.cbas_util_v2.validate_docs_in_all_datasets(
                 self.bucket_util):
             self.fail("Doc count mismatch between KV and CBAS")
@@ -142,7 +142,7 @@ class CBASRebalance(CBASBaseTest):
             skip_validations=self.skip_validations,
             doc_and_collection_ttl=False)
 
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         if not self.cbas_util_v2.validate_docs_in_all_datasets(
                 self.bucket_util):
             self.fail("Doc count mismatch between KV and CBAS")

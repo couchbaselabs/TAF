@@ -43,11 +43,12 @@ class CrashTest(BaseTestCase):
                 replicate_to=self.replicate_to,
                 persist_to=self.persist_to)
         self.bucket_util.create_default_bucket(
+            cluster=self.cluster,
             bucket_type=self.bucket_type, ram_quota=self.bucket_size,
             replica=self.num_replicas, compression_mode="off",
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.add_rbac_user(self.cluster.master)
 
         if self.sdk_client_pool:
             self.log.info("Creating SDK clients for client_pool")
@@ -102,7 +103,8 @@ class CrashTest(BaseTestCase):
                     sdk_client_pool=self.sdk_client_pool)
                 self.task.jython_task_manager.get_task_result(task)
 
-                self.bucket_util._wait_for_stats_all_buckets()
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
                 # Verify cbstats vbucket-details
                 stats_failed = \
                     self.durability_helper.verify_vbucket_details_stats(
@@ -113,9 +115,10 @@ class CrashTest(BaseTestCase):
                 if stats_failed:
                     self.fail("Cbstats verification failed")
 
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("==========Finished CrashTest setup========")
 
     def tearDown(self):
@@ -231,8 +234,9 @@ class CrashTest(BaseTestCase):
 
         if not self.atomicity:
             # Validate doc count
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
         self.validate_test_failure()
 
@@ -341,8 +345,9 @@ class CrashTest(BaseTestCase):
 
         # Validate doc count
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
 
             if self.process_name != "memcached":
                 stats_failed = \

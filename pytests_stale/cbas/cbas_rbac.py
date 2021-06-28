@@ -19,7 +19,7 @@ class CBASRBACTests(CBASBaseTest):
         super(CBASRBACTests, self).tearDown()
 
     def test_cbas_rbac(self):
-        self.bucket_util.load_sample_bucket(self.sample_bucket)
+        self.bucket_util.load_sample_bucket(self.cluster, self.sample_bucket)
 
         users = [{"username": "analytics_manager1",
                   "roles": "bucket_full_access[travel-sample]:analytics_manager[travel-sample]"},
@@ -40,7 +40,7 @@ class CBASRBACTests(CBASBaseTest):
                  {"username": "cluster_admin", "roles": "cluster_admin"},
                  {"username": "admin", "roles": "admin"},
                  {"username": "analytics_reader", "roles": "analytics_reader"},
-                 {"username": "analytics_manager", "roles": "analytics_manager[*]"}  
+                 {"username": "analytics_manager", "roles": "analytics_manager[*]"}
                 ]
 
         operation_map = [
@@ -51,7 +51,7 @@ class CBASRBACTests(CBASBaseTest):
                                        ],
              "should_not_work_for_users": ["analytics_manager3",
                                            "analytics_manager2",
-                                           "analytics_reader1", 
+                                           "analytics_reader1",
                                            "analytics_reader2",
                                            "analytics_reader3",
                                            "analytics_reader4",
@@ -64,7 +64,7 @@ class CBASRBACTests(CBASBaseTest):
                                        ],
              "should_not_work_for_users": ["analytics_manager3",
                                            "analytics_manager2",
-                                           "analytics_reader1", 
+                                           "analytics_reader1",
                                            "analytics_reader2",
                                            "analytics_reader3",
                                            "analytics_reader4",
@@ -77,7 +77,7 @@ class CBASRBACTests(CBASBaseTest):
                                        ],
              "should_not_work_for_users": ["analytics_manager3",
                                            "analytics_manager2",
-                                           "analytics_reader1", 
+                                           "analytics_reader1",
                                            "analytics_reader2",
                                            "analytics_reader3",
                                            "analytics_reader4",
@@ -265,16 +265,16 @@ class CBASRBACTests(CBASBaseTest):
                 status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
                     query_statement, username=username)
                 self.cleanup_cbas()
-            
+
             elif operation == "create_dataverse":
                 status = self.cbas_util.create_dataverse_on_cbas(dataverse_name="Custom", username=username)
                 self.cleanup_cbas()
-            
+
             elif operation == "drop_dataverse":
                 self.cbas_util.create_dataverse_on_cbas(dataverse_name="Custom")
                 status = self.cbas_util.drop_dataverse_on_cbas(dataverse_name="Custom", username=username)
                 self.cleanup_cbas()
-                
+
         self.cbas_util.closeConn()
         return status
 
@@ -303,9 +303,8 @@ class CBASRBACTests(CBASBaseTest):
     def test_rest_api_authorization_cbas_cluster_info_api(self):
         validation_failed = False
 
-        self.bucket_util.load_sample_bucket(TravelSample())
-
-        self.bucket_util.load_sample_bucket(BeerSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
 
         api_authentication = [{
             "api_url": "http://{0}:8095/analytics/cluster".format(

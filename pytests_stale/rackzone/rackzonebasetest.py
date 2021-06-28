@@ -28,8 +28,8 @@ class RackzoneBaseTest(BaseTestCase):
             if self.nodes_init != 1 else []
         self.task.rebalance([self.cluster.master], nodes_init, [])
         self.cluster.nodes_in_cluster.append(self.cluster.master)
-        self.bucket_util.create_default_bucket()
-        self.bucket_util.add_rbac_user()
+        self.bucket_util.create_default_bucket(self.cluster)
+        self.bucket_util.add_rbac_user(self.cluster.master)
         # define the data that will be used to test
         self.blob_generator = self.input.param("blob_generator", False)
         server_info = self.servers[0]

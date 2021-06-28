@@ -7,14 +7,14 @@ from sdk_exceptions import SDKException
 class BucketParamTest(ClusterSetup):
     def setUp(self):
         super(BucketParamTest, self).setUp()
-        self.create_bucket()
+        self.create_bucket(self.cluster)
 
         self.new_replica = self.input.param("new_replica", 1)
-        self.src_bucket = self.bucket_util.get_all_buckets()
+        self.src_bucket = self.bucket_util.get_all_buckets(self.cluster)
 
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
-        self.def_bucket = self.bucket_util.get_all_buckets()[0]
+        self.def_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
 
         doc_create = doc_generator(self.key, 0, self.num_items,
                                    key_size=self.key_size,
@@ -45,12 +45,13 @@ class BucketParamTest(ClusterSetup):
                 self.task.jython_task_manager.get_task_result(task)
 
         self.cluster_util.print_cluster_stats()
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         # Verify initial doc load count
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
         self.log.info("==========Finished Bucket_param_test setup========")
 
     def tearDown(self):
@@ -211,7 +212,7 @@ class BucketParamTest(ClusterSetup):
 
             bucket_helper_obj.change_bucket_props(
                 self.def_bucket, replicaNumber=replica_num)
-            self.bucket_util.print_bucket_stats()
+            self.bucket_util.print_bucket_stats(self.cluster)
 
             d_impossible_exception = \
                 SDKException.DurabilityImpossibleException
@@ -318,8 +319,10 @@ class BucketParamTest(ClusterSetup):
 
             # Verify doc load count after each mutation cycle
             if not self.atomicity:
-                self.bucket_util._wait_for_stats_all_buckets()
-                self.bucket_util.verify_stats_all_buckets(doc_count)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster.buckets)
+                self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                          doc_count)
         return doc_count, start_doc_for_insert
 
     def test_replica_update(self):
@@ -371,7 +374,7 @@ class BucketParamTest(ClusterSetup):
         bucket_helper = BucketHelper(self.cluster.master)
         bucket_helper.change_bucket_props(
             self.def_bucket, replicaNumber=self.new_replica)
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         # Start rebalance task
         rebalance = self.task.async_rebalance(self.cluster.servers, [], [])

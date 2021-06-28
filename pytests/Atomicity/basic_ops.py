@@ -18,7 +18,7 @@ class basic_ops(ClusterSetup):
 
         if self.num_buckets:
             self.bucket_util.create_multiple_buckets(
-                self.cluster.master,
+                self.cluster,
                 self.num_replicas,
                 bucket_count=self.num_buckets,
                 bucket_type=self.bucket_type,
@@ -26,7 +26,7 @@ class basic_ops(ClusterSetup):
                 storage=self.bucket_storage,
                 eviction_policy=self.bucket_eviction_policy)
         else:
-            self.create_bucket()
+            self.create_bucket(self.cluster)
 
         self.sleep(10, "Wait for bucket to become ready for ops")
 

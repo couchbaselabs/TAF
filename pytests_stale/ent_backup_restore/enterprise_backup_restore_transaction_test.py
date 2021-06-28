@@ -1,19 +1,10 @@
-import re
-import copy
-import json
-from random import randrange, randint
+from random import randrange
 from threading import Thread
-from membase.api.rest_client import RestConnection, RestHelper
-from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
+from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.bucket import Bucket
-from BucketLib.BucketOperations import BucketHelper
-from bucket_utils.bucket_ready_functions import BucketUtils
-from cluster_utils.cluster_ready_functions import ClusterUtils
-from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
+from remote.remote_util import RemoteMachineShellConnection
 from enterprise_bkrs_basetest import EnterpriseBKRSNewBaseTest
-
-from java.util.concurrent import ExecutionException
 
 
 class EnterpriseBackupRestoreTransactionTest(EnterpriseBKRSNewBaseTest):
@@ -91,10 +82,13 @@ class EnterpriseBackupRestoreTransactionTest(EnterpriseBKRSNewBaseTest):
         self.bucket_name = 'default'
         bk_rest = RestConnection(self.bk_cluster.master)
         bucket = Bucket({"name": self.bucket_name, "replicaNumber": self.num_replicas})
-        self.bk_cluster.bucket_util.create_bucket(bucket)
+        self.bk_cluster.bucket_util.create_bucket(self.cluster, bucket)
         msg = 'create_bucket succeeded but bucket {0} does not exist'.format(self.bucket_name)
-        self.assertTrue(self.bk_cluster.bucket_util.wait_for_bucket_creation(bucket), msg)
-        self.bk_cluster.bucket_util.add_rbac_user()
+        self.assertTrue(
+            self.bk_cluster.bucket_util.wait_for_bucket_creation(
+                self.cluster, bucket),
+            msg)
+        self.bk_cluster.bucket_util.add_rbac_user(self.cluster.master)
         self.backup_create()
         self.sleep(5)
         self.log.info("*** start to load items to all buckets")
@@ -125,10 +119,13 @@ class EnterpriseBackupRestoreTransactionTest(EnterpriseBKRSNewBaseTest):
             self.log.info("Done reset cluster")
 
         """ Add built-in user cbadminbucket to restore cluster """
-        self.rs_cluster.bucket_util.add_rbac_user()
+        self.rs_cluster.bucket_util.add_rbac_user(self.cluster.master)
         rs_rest = RestConnection(self.rs_cluster.master)
-        self.rs_cluster.bucket_util.create_bucket(bucket)
-        self.assertTrue(self.rs_cluster.bucket_util.wait_for_bucket_creation(bucket), msg)
+        self.rs_cluster.bucket_util.create_bucket(self.cluster, bucket)
+        self.assertTrue(
+            self.rs_cluster.bucket_util.wait_for_bucket_creation(
+                self.cluster, bucket),
+            msg)
         self.backupset.start = start
         self.backupset.end = end
         self.backup_restore()
@@ -148,10 +145,13 @@ class EnterpriseBackupRestoreTransactionTest(EnterpriseBKRSNewBaseTest):
         self.bucket_name = 'default'
         bk_rest = RestConnection(self.bk_cluster.master)
         bucket = Bucket({"name": self.bucket_name, "replicaNumber": self.num_replicas})
-        self.bk_cluster.bucket_util.create_bucket(bucket)
+        self.bk_cluster.bucket_util.create_bucket(self.cluster, bucket)
         msg = 'create_bucket succeeded but bucket {0} does not exist'.format(self.bucket_name)
-        self.assertTrue(self.bk_cluster.bucket_util.wait_for_bucket_creation(bucket), msg)
-        self.bk_cluster.bucket_util.add_rbac_user()
+        self.assertTrue(
+            self.bk_cluster.bucket_util.wait_for_bucket_creation(
+                self.cluster, bucket),
+            msg)
+        self.bk_cluster.bucket_util.add_rbac_user(self.cluster.master)
         self.backup_create()
 
         self.kv_gen = self.key_generators(self.ops_type)

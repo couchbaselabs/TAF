@@ -93,7 +93,7 @@ class CrashTest(CollectionBase):
                 durability=self.durability_level,
                 batch_size=10, process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
-            self.bucket_util._wait_for_stats_all_buckets()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
             self.cluster.buckets[0].scopes[
                 CbServer.default_scope].collections[
@@ -112,6 +112,7 @@ class CrashTest(CollectionBase):
                 if stats_failed:
                     self.fail("Cbstats verification failed")
                 self.bucket_util.verify_stats_all_buckets(
+                    self.cluster,
                     self.cluster.buckets[0].scopes[
                         CbServer.default_scope].collections[
                         CbServer.default_collection].num_items)
@@ -301,7 +302,8 @@ class CrashTest(CollectionBase):
         # Close SSH and SDK connections
         shell.disconnect()
         if self.atomicity is False:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
         self.validate_test_failure()
 
     def test_create_remove_collection_with_node_crash(self):
@@ -414,7 +416,8 @@ class CrashTest(CollectionBase):
         # Close SSH and SDK connections
         shell.disconnect()
         if self.atomicity is False:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
         self.validate_test_failure()
 
     def test_stop_process(self):
@@ -501,10 +504,11 @@ class CrashTest(CollectionBase):
 
         self.validate_test_failure()
 
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         # Update self.num_items and validate docs per collection
         if not self.N1qltxn and self.atomicity is False:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
     def test_crash_process(self):
         """
@@ -608,4 +612,5 @@ class CrashTest(CollectionBase):
 
         # Doc count validation per collection
         if not self.N1qltxn and self.atomicity is False:
-            self.bucket_util.validate_docs_per_collections_all_buckets()
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)

@@ -4,7 +4,6 @@ from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
-from couchbase_helper.durability_helper import DurabilityHelper
 from remote.remote_util import RemoteMachineShellConnection
 
 
@@ -97,14 +96,15 @@ class FlushTests(CollectionBase):
         :return: None
         """
         self.log.info("Flushing bucket: %s" % bucket_obj.name)
-        self.bucket_util.flush_bucket(self.cluster.master, self.bucket)
+        self.bucket_util.flush_bucket(self.cluster, self.bucket)
 
         self.log.info("Validating scope/collections mapping and doc_count")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
         # Print bucket stats
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def load_initial_data(self):
         """
@@ -126,14 +126,15 @@ class FlushTests(CollectionBase):
                 batch_size=self.batch_size)
 
         # Print bucket stats
-        self.bucket_util.print_bucket_stats()
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         if doc_loading_task.result is False:
             self.fail("Post flush doc_creates failed")
 
         self.log.info("Validating scope/collections mapping and doc_count")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.validate_docs_per_collections_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster)
 
     def test_flush_bucket_without_mutations(self):
         """
@@ -243,8 +244,10 @@ class FlushTests(CollectionBase):
         self.sleep(5, "Wait for mutation task to start")
 
         self.log.info("Flushing bucket: %s" % self.bucket.name)
-        self.bucket_util.update_bucket_property(self.bucket, flush_enabled=1)
-        self.bucket_util.flush_bucket(self.cluster.master, self.bucket)
+        self.bucket_util.update_bucket_property(self.cluster.master,
+                                                self.bucket,
+                                                flush_enabled=1)
+        self.bucket_util.flush_bucket(self.cluster, self.bucket)
 
         # Wait for mutation task to complete
         self.task_manager.get_task_result(mutate_task)

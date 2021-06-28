@@ -12,7 +12,7 @@ from table_view import TableView
 class Bucket_DGM_Tests(ClusterSetup):
     def setUp(self):
         super(Bucket_DGM_Tests, self).setUp()
-        self.create_bucket()
+        self.create_bucket(self.cluster)
 
         self.cluster_util.print_cluster_stats()
         doc_create = doc_generator(
@@ -30,8 +30,9 @@ class Bucket_DGM_Tests(ClusterSetup):
                 process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
             # Verify initial doc load count
-            self.bucket_util._wait_for_stats_all_buckets()
-            self.bucket_util.verify_stats_all_buckets(self.num_items)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
         self.log.info("========= Finished Bucket_DGM_Tests setup =======")
 
     def tearDown(self):
@@ -39,7 +40,7 @@ class Bucket_DGM_Tests(ClusterSetup):
 
     def test_dgm_to_non_dgm(self):
         # Prepare DGM scenario
-        bucket = self.bucket_util.get_all_buckets()[0]
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         dgm_gen = doc_generator(
             self.key, self.num_items, self.num_items+1)
         dgm_task = self.task.async_load_gen_docs(

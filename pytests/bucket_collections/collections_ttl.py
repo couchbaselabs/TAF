@@ -9,7 +9,7 @@ class CollectionsTTL(CollectionBase):
         super(CollectionsTTL, self).setUp()
         self.load_gen = doc_generator(self.key, 0, self.num_items)
         self.bucket = self.cluster.buckets[0]
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.remaining_docs = self.input.param("remaining_docs", 0)
 
     def test_collections_ttl(self):
@@ -21,7 +21,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_1")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(200, "waiting for maxTTL to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
@@ -37,7 +37,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_1")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(100, "waiting for maxTTL to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
@@ -65,7 +65,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_1")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(120, "waiting for doc_expiry to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
@@ -73,7 +73,7 @@ class CollectionsTTL(CollectionBase):
             self.fail("collections_ttl value was considered instead of the doc_ttl. Num docs : {0}".format(items))
 
     def test_collections_ttl_greater_than_doc_expiry(self):
-        self.bucket_util._expiry_pager(val=1)
+        self.bucket_util._expiry_pager(self.cluster, val=1)
         self.task.load_gen_docs(
             self.cluster, self.bucket, self.load_gen, "create", exp=1,
             batch_size=10, process_concurrency=8,
@@ -98,7 +98,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_2")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(200, "waiting for maxTTL to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
@@ -114,7 +114,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_2")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(200, "waiting for bucket maxTTL to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
@@ -134,14 +134,14 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_2")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(120, "waiting for collection maxTTL to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
         if items != 0:
             self.fail("collection_ttl value was not considered, instead of the doc_expiry was considered."
                       " Num docs : {0}".format(items))
-            
+
     def test_docs_which_has_bucket_collection_ttl_and_doc_expiry_set(self):
         self.task.load_gen_docs(
             self.cluster, self.bucket, self.load_gen, "create", exp=2,
@@ -151,7 +151,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_2")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(20, "waiting for doc expiry to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
@@ -167,7 +167,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_2")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(200, "waiting for maxTTL to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
@@ -183,7 +183,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_1")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.sleep(60, "Sleep for sometime before we update")
         for i in xrange(1, 5):
             update_load_gen = copy.deepcopy(self.load_gen)
@@ -214,7 +214,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_1")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(120, "waiting for collections_ttl to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
@@ -222,7 +222,7 @@ class CollectionsTTL(CollectionBase):
             self.fail("bucket_ttl had priority than collection_ttl when it was larger. Num docs : {0}".format(items))
 
     def test_collections_ttl_with_few_defined_and_few_inherited_from_bucket_ttl(self):
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
         self.sleep(120, "waiting for collections_ttl to complete")
         items = self.bucket_helper_obj.get_active_key_count("default")
@@ -238,7 +238,7 @@ class CollectionsTTL(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope="scope1",
             collection="collection_1")
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         self.sleep(60, "Sleep for sometime before we update")
         for i in xrange(1, 5):
             update_load_gen = copy.deepcopy(self.load_gen)
@@ -332,9 +332,9 @@ class CollectionsTTL(CollectionBase):
         self.bucket.scopes[CbServer.default_scope] \
             .collections[CbServer.default_collection] \
             .num_items += self.num_items
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
         self.validate_test_failure()
 
@@ -351,8 +351,8 @@ class CollectionsTTL(CollectionBase):
         self.bucket.scopes[CbServer.default_scope] \
             .collections[CbServer.default_collection] \
             .num_items += self.num_items
-        self.bucket_util._expiry_pager()
+        self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
         self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
         self.validate_test_failure()

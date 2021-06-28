@@ -664,7 +664,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
             BucketOperationHelper.create_bucket(serverInfo=self.master, test_case=self)
         elif self.bucket_flush:
             self.log.info("Start to flush bucket")
-            self.flush_all_buckets()
+            self.bucket_util.flush_all_buckets(self.cluster)
         gen = BlobGenerator("ent-backup2_", "ent-backup-", self.value_size, end=self.num_items)
         self.log.info("Start to load bucket again with different key")
         self._load_all_buckets(self.master, gen, "create", 0)

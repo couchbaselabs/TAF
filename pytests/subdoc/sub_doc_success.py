@@ -72,7 +72,7 @@ class BasicOps(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(task)
 
         self.log.info("Wait for ep_all_items_remaining to become '0'")
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         # Update verification_dict and validate
         verification_dict["ops_update"] += self.num_items
@@ -87,7 +87,7 @@ class BasicOps(DurabilityTestsBase):
 
         # Verify initial doc load count
         self.log.info("Validating doc_count in buckets")
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.log.info("Creating doc_generator for doc_op")
         num_item_start_for_crud = int(self.num_items / 2)
@@ -198,7 +198,7 @@ class BasicOps(DurabilityTestsBase):
             self.log.warning("Unsupported doc_operation")
 
         self.log.info("Wait for ep_all_items_remaining to become '0'")
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
         # Validate verification_dict and validate
         failed = self.durability_helper.verify_vbucket_details_stats(
@@ -208,7 +208,7 @@ class BasicOps(DurabilityTestsBase):
             self.fail("Cbstat vbucket-details verification failed")
 
         self.log.info("Validating doc_count")
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     def test_non_overlapping_similar_crud(self):
         """
@@ -257,8 +257,8 @@ class BasicOps(DurabilityTestsBase):
             verification_dict["sync_write_committed_count"] = self.num_items
 
         self.log.info("Validating doc_count")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Create required doc_generators for CRUD ops
         doc_gen = dict()
@@ -358,12 +358,13 @@ class BasicOps(DurabilityTestsBase):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets,
+            expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -507,13 +508,14 @@ class BasicOps(DurabilityTestsBase):
                 self.num_items
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Verify vb-details cbstats
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster_util.vbuckets,
+            expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
 
@@ -675,8 +677,8 @@ class BasicOps(DurabilityTestsBase):
 
         # Verify doc count
         self.log.info("Validating doc count")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
     def test_with_process_crash(self):
@@ -887,6 +889,6 @@ class BasicOps(DurabilityTestsBase):
 
         # Verify doc count
         self.log.info("Validating doc count")
-        self.bucket_util._wait_for_stats_all_buckets()
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()

@@ -55,13 +55,14 @@ class CBASBacklogIngestion(CBASBaseTest):
         10. Verify the updated dataset count post expiry
         """
         self.log.info("Set expiry pager on default bucket")
-        self.bucket_util.expire_pager([self.cluster.master], val=1)
+        self.bucket_util.expire_pager(
+            [self.cluster.master], self.cluster.buckets, val=1)
 
         self.log.info("Load data in the default bucket")
         num_items = self.input.param("items", 10000)
         batch_size = self.input.param("batch_size", 10000)
         self.perform_doc_ops_in_all_cb_buckets("create", 0, num_items, exp=0, batch_size=batch_size)
-        self.bucket_util.verify_stats_all_buckets(num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, num_items)
 
         self.log.info("Load data in the default bucket, with documents containing profession teacher")
         load_gen = CBASBacklogIngestion.generate_documents(num_items, num_items * 2, role=['teacher'])
@@ -257,7 +258,7 @@ class BucketOperations(CBASBaseTest):
 
         self.log.info("Load data in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.log.info("Create reference to SDK client")
         client = SDKClient(hosts=[self.cluster.master.ip], bucket=self.cb_bucket_name,
@@ -326,7 +327,7 @@ class BucketOperations(CBASBaseTest):
 
         self.log.info("Load data in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.log.info("Create connection")
         self.cbas_util.createConn(self.cb_bucket_name)
@@ -348,14 +349,15 @@ class BucketOperations(CBASBaseTest):
 
         self.log.info("Delete CB bucket")
         self.assertTrue(self.bucket_util.delete_bucket(
-            self.cluster.master, self.cluster.buckets[0].name),
+            self.cluster, self.cluster.buckets[0].name),
             "Bucket deletion failed")
 
         self.log.info("Verify count on dataset")
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(self.dataset_name, self.num_items))
 
         self.log.info("Recreate CB bucket")
-        self.bucket_util.create_default_bucket(storage=self.bucket_storage)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               storage=self.bucket_storage)
 
         self.log.info("Wait for ingestion to complete and verify count")
         self.cbas_util.wait_for_ingestion_complete([self.dataset_name], self.num_items)
@@ -364,7 +366,8 @@ class BucketOperations(CBASBaseTest):
         self.log.info("Load back data in the default bucket")
         self.log.info("Now that the UUID of this new bucet is different hence cbas will not ingest anything from this bucket anymore.")
         self.perform_doc_ops_in_all_cb_buckets("create", self.num_items, self.num_items * 2)
-        self.bucket_util.verify_stats_all_buckets(self.num_items*2)
+        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                  self.num_items*2)
 
         self.log.info("Wait for ingestion to complete and verify count")
         self.cbas_util.wait_for_ingestion_complete([self.dataset_name], self.num_items)
@@ -410,7 +413,8 @@ class BucketOperations(CBASBaseTest):
         self.assertEqual(active_dataset, active_data_set_count, msg="Value in correct for active dataset count")
 
         self.log.info("Create {0} cb buckets".format(self.num_of_cb_buckets))
-        self.create_multiple_buckets(server=self.cluster.master, replica=1, howmany=self.num_of_cb_buckets)
+        self.create_multiple_buckets(cluster=self.cluster, replica=1,
+                                     howmany=self.num_of_cb_buckets)
         self.sleep(30, message="Wait for buckets to be ready")
 
         self.log.info("Check if buckets are created")
@@ -420,7 +424,7 @@ class BucketOperations(CBASBaseTest):
 
         self.log.info("Load data in the default bucket")
         self.perform_doc_ops_in_all_cb_buckets("create", 0, self.num_items)
-        self.bucket_util.verify_stats_all_buckets(self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.log.info("Create connection to all buckets")
         for bucket in kv_buckets:
