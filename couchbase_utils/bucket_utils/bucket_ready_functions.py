@@ -1876,8 +1876,8 @@ class BucketUtils(ScopeUtils):
 
     def print_bucket_stats(self):
         table = TableView(self.log.info)
-        table.set_headers(["Bucket", "Type", "Replicas", "Durability",
-                           "TTL", "Items", "RAM Quota",
+        table.set_headers(["Bucket", "Type", "Storage Backend", "Replicas",
+                           "Durability", "TTL", "Items", "RAM Quota",
                            "RAM Used", "Disk Used"])
         buckets = self.get_all_buckets()
         if len(buckets) == 0:
@@ -1886,6 +1886,7 @@ class BucketUtils(ScopeUtils):
             for bucket in buckets:
                 table.add_row(
                     [bucket.name, bucket.bucketType,
+                     bucket.storageBackend,
                      str(bucket.replicaNumber),
                      str(bucket.durability_level),
                      str(bucket.maxTTL),
