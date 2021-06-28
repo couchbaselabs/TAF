@@ -86,11 +86,15 @@ def scan_all_slaves():
             output, _ = run(cmd, session)
             try:
                 for cbcollect_zips in output:
-                    print "checking: %s" % cbcollect_zips.rstrip()
+                    flag = True
                     log_files, _ = run("zipinfo -1 {}".format(cbcollect_zips), session)
                     for file in log_files:
                         if file.rstrip().endswith("dmp"):
+                            print "#######################"
+                            print "checking: %s" % cbcollect_zips.rstrip()
+                            print "#######################"
                             print file.rstrip()
+                            flag = False
                             break
                     run("rm -rf /root/cbcollect*", session)[0]
                     run("unzip {}".format(cbcollect_zips), session)[0]
@@ -98,8 +102,11 @@ def scan_all_slaves():
                     memcached = "/root/cbcollect*/memcached.log*"
                     o, _ = run("grep 'CRITICAL\| ERROR ' {} | grep -v {}".format(memcached, exclude), session)
                     if o:
+                        if flag:
+                            print "#######################"
+                            print "checking: %s" % cbcollect_zips.rstrip()
+                            print "#######################"
                         print "".join(o)
-                    print "#######################"
             except:
                 pass
         session.disconnect()
