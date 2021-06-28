@@ -1884,9 +1884,12 @@ class BucketUtils(ScopeUtils):
             table.add_row(["No buckets", "", "", "", "", "", "", "", ""])
         else:
             for bucket in buckets:
+                storage_backend = "-"
+                if bucket.bucketType == Bucket.Type.MEMBASE:
+                    storage_backend = bucket.storageBackend
                 table.add_row(
                     [bucket.name, bucket.bucketType,
-                     bucket.storageBackend,
+                     storage_backend,
                      str(bucket.replicaNumber),
                      str(bucket.durability_level),
                      str(bucket.maxTTL),
