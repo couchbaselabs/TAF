@@ -46,7 +46,7 @@ class BucketParams(CollectionBase):
             self.bucket_util.update_all_bucket_replicas(new_replica)
             servs_in = [self.cluster.servers[count + self.nodes_init]]
             rebalance_task = self.task.async_rebalance(
-                known_nodes, servs_in, [])
+                known_nodes, servs_in, [], retry_get_process_num=self.retry_get_process_num)
             self.sleep(10, "wait for rebalance to start")
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec)
@@ -62,7 +62,7 @@ class BucketParams(CollectionBase):
             self.bucket_util.update_all_bucket_replicas(new_replica)
             servs_out = [known_nodes[-1]]
             rebalance_task = self.task.async_rebalance(
-                known_nodes, [], servs_out)
+                known_nodes, [], servs_out, retry_get_process_num=self.retry_get_process_num)
             self.sleep(10, "Wait for rebalance to start")
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec)
