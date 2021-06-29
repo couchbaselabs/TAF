@@ -340,46 +340,16 @@ class CollectionsRebalance(CollectionBase):
         # Until we recover/rebalance-out, we can't call - self.bucket_util.validate_docs_per_collections_all_buckets()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
-    def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
-        time_start = time.time()
-        time_max_end = time_start + timeout
-        actual_failover_count = 0
-        while time.time() < time_max_end:
-            actual_failover_count = self.get_failover_count()
-            if actual_failover_count == expected_failover_count:
-                break
-            time.sleep(20)
-        time_end = time.time()
-        if actual_failover_count != expected_failover_count:
-            self.log.info(self.rest.print_UI_logs())
-        self.assertTrue(actual_failover_count == expected_failover_count,
-                        "{0} nodes failed over, expected : {1}"
-                        .format(actual_failover_count,
-                                expected_failover_count))
-        self.log.info("{0} nodes failed over as expected in {1} seconds"
-                      .format(actual_failover_count, time_end - time_start))
-
-    def get_failover_count(self):
-        rest = RestConnection(self.cluster.master)
-        cluster_status = rest.cluster_status()
-        failover_count = 0
-        # check for inactiveFailed
-        for node in cluster_status['nodes']:
-            if node['clusterMembership'] == "inactiveFailed":
-                failover_count += 1
-        return failover_count
-
     def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
         self.bucket_util.update_all_bucket_replicas(self.cluster,
                                                     self.updated_num_replicas)
-        failover_count = 0
         self.log.info("failing over nodes {0}".format(failover_nodes))
         for failover_node in failover_nodes:
-            _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                                    graceful=False, wait_for_pending=wait_for_pending)
-            failover_count = failover_count + 1
-            self.wait_for_failover_or_assert(failover_count)
+            result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                        graceful=False, wait_for_pending=wait_for_pending)
+            self.assertTrue(result, "Failover of node {0} failed".
+                            format(failover_node.ip))
         operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
                                               retry_get_process_num=self.retry_get_process_num)
         self.execute_N1qltxn()
@@ -605,12 +575,11 @@ class CollectionsRebalance(CollectionBase):
         elif rebalance_operation == "graceful_failover_rebalance_out":
             if step_count == -1:
                 self.log.info("failing over nodes {0}".format(failover_nodes))
-                failover_count = 0
                 for failover_node in failover_nodes:
-                    _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                                            graceful=True, wait_for_pending=wait_for_pending)
-                    failover_count = failover_count + 1
-                    self.wait_for_failover_or_assert(failover_count)
+                    result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                graceful=True, wait_for_pending=wait_for_pending)
+                    self.assertTrue(result, "Failover of node {0} failed".
+                                    format(failover_node.ip))
                 if tasks is not None:
                     self.wait_for_async_data_load_to_complete(tasks)
                 if self.compaction:
@@ -633,13 +602,12 @@ class CollectionsRebalance(CollectionBase):
                 iter_count = 0
                 for new_failover_nodes in failover_list:
                     self.log.info("failing over nodes {0}".format(new_failover_nodes))
-                    failover_count = 0
                     self.execute_N1qltxn(new_failover_nodes[0])
                     for failover_node in new_failover_nodes:
-                        _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                                                graceful=True, wait_for_pending=wait_for_pending)
-                        failover_count = failover_count + 1
-                        self.wait_for_failover_or_assert(failover_count)
+                        result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                    graceful=True, wait_for_pending=wait_for_pending)
+                        self.assertTrue(result, "Failover of node {0} failed".
+                                        format(failover_node.ip))
                     if tasks is not None:
                         self.wait_for_async_data_load_to_complete(tasks)
                         tasks = None
@@ -654,12 +622,11 @@ class CollectionsRebalance(CollectionBase):
         elif rebalance_operation == "hard_failover_rebalance_out":
             if step_count == -1:
                 self.log.info("failing over nodes {0}".format(failover_nodes))
-                failover_count = 0
                 for failover_node in failover_nodes:
-                    _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                                            graceful=False, wait_for_pending=wait_for_pending)
-                    failover_count = failover_count + 1
-                    self.wait_for_failover_or_assert(failover_count)
+                    result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                graceful=False, wait_for_pending=wait_for_pending)
+                    self.assertTrue(result, "Failover of node {0} failed".
+                                    format(failover_node.ip))
                 if tasks is not None:
                     self.wait_for_async_data_load_to_complete(tasks)
                 if self.compaction:
@@ -682,12 +649,11 @@ class CollectionsRebalance(CollectionBase):
                 iter_count = 0
                 for new_failover_nodes in failover_list:
                     self.log.info("failing over nodes {0}".format(new_failover_nodes))
-                    failover_count = 0
                     for failover_node in new_failover_nodes:
-                        _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                                                graceful=False, wait_for_pending=wait_for_pending)
-                        failover_count = failover_count + 1
-                        self.wait_for_failover_or_assert(failover_count)
+                        result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                    graceful=False, wait_for_pending=wait_for_pending)
+                        self.assertTrue(result, "Failover of node {0} failed".
+                                        format(failover_node.ip))
                     if tasks is not None:
                         self.wait_for_async_data_load_to_complete(tasks)
                         tasks = None
@@ -703,12 +669,11 @@ class CollectionsRebalance(CollectionBase):
         elif rebalance_operation == "graceful_failover_recovery":
             if step_count == -1:
                 self.log.info("failing over nodes {0}".format(failover_nodes))
-                failover_count = 0
                 for failover_node in failover_nodes:
-                    _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                                            graceful=True, wait_for_pending=wait_for_pending)
-                    failover_count = failover_count + 1
-                    self.wait_for_failover_or_assert(failover_count)
+                    result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                graceful=True, wait_for_pending=wait_for_pending)
+                    self.assertTrue(result, "Failover of node {0} failed".
+                                    format(failover_node.ip))
                     self.execute_N1qltxn(failover_node)
                 if tasks is not None:
                     self.wait_for_async_data_load_to_complete(tasks)
@@ -735,13 +700,11 @@ class CollectionsRebalance(CollectionBase):
                 iter_count = 0
                 for new_failover_nodes in failover_list:
                     self.log.info("failing over nodes {0}".format(new_failover_nodes))
-                    failover_count = 0
                     for failover_node in new_failover_nodes:
-                        _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                                                graceful=True, wait_for_pending=wait_for_pending)
-
-                        failover_count = failover_count + 1
-                        self.wait_for_failover_or_assert(failover_count)
+                        result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                    graceful=True, wait_for_pending=wait_for_pending)
+                        self.assertTrue(result, "Failover of node {0} failed".
+                                        format(failover_node.ip))
                         self.execute_N1qltxn(failover_node)
                     if tasks is not None:
                         self.wait_for_async_data_load_to_complete(tasks)
@@ -760,12 +723,11 @@ class CollectionsRebalance(CollectionBase):
         elif rebalance_operation == "hard_failover_recovery":
             if step_count == -1:
                 self.log.info("failing over nodes {0}".format(failover_nodes))
-                failover_count = 0
                 for failover_node in failover_nodes:
-                    _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    result = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                             graceful=False, wait_for_pending=wait_for_pending)
-                    failover_count = failover_count + 1
-                    self.wait_for_failover_or_assert(failover_count)
+                    self.assertTrue(result, "Failover of node {0} failed".
+                                    format(failover_node.ip))
                     self.execute_N1qltxn(failover_node)
                 if tasks is not None:
                     self.wait_for_async_data_load_to_complete(tasks)
@@ -792,13 +754,11 @@ class CollectionsRebalance(CollectionBase):
                 iter_count = 0
                 for new_failover_nodes in failover_list:
                     self.log.info("failing over nodes {0}".format(new_failover_nodes))
-                    failover_count = 0
                     for failover_node in new_failover_nodes:
-                        _ = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                                                graceful=False, wait_for_pending=wait_for_pending)
-
-                        failover_count = failover_count + 1
-                        self.wait_for_failover_or_assert(failover_count)
+                        result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                                                    graceful=False, wait_for_pending=wait_for_pending)
+                        self.assertTrue(result, "Failover of node {0} failed".
+                                        format(failover_node.ip))
                         self.execute_N1qltxn(failover_node)
                     if tasks is not None:
                         self.wait_for_async_data_load_to_complete(tasks)
@@ -1100,7 +1060,7 @@ class CollectionsRebalance(CollectionBase):
                     break
 
             result = self.task.failover(self.cluster.servers, failover_nodes=failover_nodes,
-                                                    graceful=self.graceful)
+                                        graceful=self.graceful)
             self.assertTrue(result, "Hard Failover failed")
 
             rebalance_task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [],
