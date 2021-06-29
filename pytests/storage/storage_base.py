@@ -273,7 +273,7 @@ class StorageBase(BaseTestCase):
         if wait_for_stats:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.bucket, stimeout=1800)
+                    self.cluster.buckets, timeout=1800)
             except Exception as e:
                 raise e
 
