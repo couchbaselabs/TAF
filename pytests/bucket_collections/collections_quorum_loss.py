@@ -80,12 +80,6 @@ class CollectionsQuorumLoss(CollectionBase):
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
-    @staticmethod
-    def set_ignore_exceptions(doc_loading_spec):
-        ignore_exceptions = list()
-        ignore_exceptions.append(SDKException.DocumentNotFoundException)
-        doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
-
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util.validate_doc_loading_results(task)
@@ -100,7 +94,6 @@ class CollectionsQuorumLoss(CollectionBase):
     def data_load(self, async_load=True):
         doc_loading_spec = self.get_common_spec()
         self.set_retry_exceptions(doc_loading_spec)
-        self.set_ignore_exceptions(doc_loading_spec)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
                                                         self.cluster.buckets,

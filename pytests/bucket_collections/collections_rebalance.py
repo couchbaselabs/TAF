@@ -33,7 +33,6 @@ class CollectionsRebalance(CollectionBase):
                              "graceful_failover_recovery", "hard_failover_recovery"]
         self.step_count = self.input.param("step_count", -1)
         self.recovery_type = self.input.param("recovery_type", "full")
-        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
         self.compaction = self.input.param("compaction", False)
         if self.compaction:
             self.disable_auto_compaction()
@@ -52,21 +51,22 @@ class CollectionsRebalance(CollectionBase):
         self.compaction_tasks = list()
         self.dgm_ttl_test = self.input.param("dgm_ttl_test", False)  # if dgm with ttl
         self.dgm = self.input.param("dgm", "100")  # Initial dgm threshold, for dgm test; 100 means no dgm
-        self.N1ql_txn = self.input.param("N1ql_txn", False)
         self.scrape_interval = self.input.param("scrape_interval", None)
         if self.scrape_interval:
             self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
-            # scrape_timeout cannot be greater than scrape_interval, so for now we are setting scrape_timeout same as
-            # scrape_interval
+            # scrape_timeout cannot be greater than scrape_interval,
+            # so for now we are setting scrape_timeout same as scrape_interval
             StatsHelper(self.cluster.master).change_scrape_timeout(self.scrape_interval)
             StatsHelper(self.cluster.master).change_scrape_interval(self.scrape_interval)
 
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", None)
         if self.rebalance_moves_per_node:
             self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
+        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
             self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                    num_reader_threads="disk_io_optimized")
+        self.N1ql_txn = self.input.param("N1ql_txn", False)
         if self.N1ql_txn:
             self.num_stmt_txn = self.input.param("num_stmt_txn", 5)
             self.num_collection = self.input.param("num_collection", 1)
@@ -259,9 +259,10 @@ class CollectionsRebalance(CollectionBase):
         shell.disconnect()
         ephemeral_buckets = [bucket for bucket in self.cluster.buckets if bucket.bucketType == "ephemeral"]
         for ephemeral_bucket in ephemeral_buckets:
-            status, content = self.rest.set_ephemeral_purge_age_and_interval(bucket=ephemeral_bucket.name,
-                                                                             ephemeral_metadata_purge_age=ephemeral_metadata_purge_age,
-                                                                             ephemeral_metadata_purge_interval=ephemeral_metadata_purge_interval)
+            status, content = self.rest.set_ephemeral_purge_age_and_interval \
+                (bucket=ephemeral_bucket.name,
+                 ephemeral_metadata_purge_age=ephemeral_metadata_purge_age,
+                 ephemeral_metadata_purge_interval=ephemeral_metadata_purge_interval)
             if not status:
                 raise Exception(content)
 
@@ -283,25 +284,16 @@ class CollectionsRebalance(CollectionBase):
 
     def set_retry_exceptions(self, doc_loading_spec):
         retry_exceptions = list()
-        if self.data_load_stage == "during" or (self.data_load_stage == "before" and self.data_load_type == "async"):
+        if self.data_load_stage == "during" or \
+                (self.data_load_stage == "before" and self.data_load_type == "async"):
             retry_exceptions.append(SDKException.AmbiguousTimeoutException)
             retry_exceptions.append(SDKException.TimeoutException)
             retry_exceptions.append(SDKException.RequestCanceledException)
+            retry_exceptions.append(SDKException.DocumentNotFoundException)
             if self.durability_level:
                 retry_exceptions.append(SDKException.DurabilityAmbiguousException)
                 retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
-
-    @staticmethod
-    def set_ignore_exceptions(doc_loading_spec):
-        """
-        Exceptions to be ignored.
-        Ignoring DocumentNotFoundExceptions because there could be race conditons
-        eg: reads or deletes before creates
-        """
-        ignore_exceptions = list()
-        ignore_exceptions.append(SDKException.DocumentNotFoundException)
-        doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
 
     def load_to_dgm(self):
         if self.dgm_ttl_test:
@@ -315,7 +307,7 @@ class CollectionsRebalance(CollectionBase):
             .collections[CbServer.default_collection] \
             .num_items
         load_gen = doc_generator(self.key, start, start + 1)
-        tasks = []
+        tasks = list()
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, load_gen, "create", maxttl,
             batch_size=1000, process_concurrency=8,
@@ -337,7 +329,8 @@ class CollectionsRebalance(CollectionBase):
     def data_load_after_failover(self):
         self.log.info("Starting a sync data load after failover")
         self.subsequent_data_load()  # sync data load
-        # Until we recover/rebalance-out, we can't call - self.bucket_util.validate_docs_per_collections_all_buckets()
+        # Until we recover/rebalance-out, we can't call -
+        # self.bucket_util.validate_docs_per_collections_all_buckets()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
 
     def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
@@ -784,7 +777,6 @@ class CollectionsRebalance(CollectionBase):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
         self.set_retry_exceptions(doc_loading_spec)
-        self.set_ignore_exceptions(doc_loading_spec)
         if self.dgm < 100:
             # No new items are created during dgm + rebalance/failover tests
             doc_loading_spec["doc_crud"][MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
