@@ -92,28 +92,28 @@ class CollectionsRebalance(CollectionBase):
 
     def setup_N1ql_txn(self):
         self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
-                                service_type="n1ql",
-                                get_all_nodes=True)
+            service_type="n1ql",
+            get_all_nodes=True)
         self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
-                                          use_rest=True,
-                                          buckets = self.cluster.buckets,
-                                          log=self.log,
-                                          scan_consistency='REQUEST_PLUS',
-                                          num_collection=self.num_collection,
-                                          num_buckets=self.num_buckets,
-                                          num_savepoints=self.num_savepoints,
-                                          override_savepoint=self.override_savepoint,
-                                          num_stmt=self.num_stmt_txn,
-                                          load_spec=self.data_spec_name)
+                                      use_rest=True,
+                                      buckets=self.cluster.buckets,
+                                      log=self.log,
+                                      scan_consistency='REQUEST_PLUS',
+                                      num_collection=self.num_collection,
+                                      num_buckets=self.num_buckets,
+                                      num_savepoints=self.num_savepoints,
+                                      override_savepoint=self.override_savepoint,
+                                      num_stmt=self.num_stmt_txn,
+                                      load_spec=self.data_spec_name)
         self.bucket_col = self.n1ql_helper.get_collections()
         self.stmts = self.n1ql_helper.get_stmt(self.bucket_col)
 
     def execute_N1qltxn(self, server=None):
         if self.N1ql_txn:
             if self.services_init:
-                self.server=server
+                self.server = server
             else:
-                self.server=None
+                self.server = None
             self.retry_n1qltxn = False
             self.sleep(5, "wait for rebalance to start")
             self.n1ql_fun = N1qlBase()
@@ -121,12 +121,12 @@ class CollectionsRebalance(CollectionBase):
                 query_params = self.n1ql_helper.create_txn(server=self.server, txtimeout=2)
                 self.collection_savepoint, self.savepoints, self.queries, rerun = \
                     self.n1ql_fun.full_execute_query(self.stmts, True, query_params,
-                                        N1qlhelper=self.n1ql_helper, server=self.server)
+                                                     N1qlhelper=self.n1ql_helper, server=self.server)
                 if not isinstance(self.collection_savepoint, dict):
                     self.log.info("N1ql txn failed will be retried")
                     self.retry_n1qltxn = True
             except Exception as error:
-                self.log.info("error is %s"%error)
+                self.log.info("error is %s" % error)
                 self.retry_n1qltxn = True
 
     def load_metakv_entries_using_fts(self):
@@ -213,16 +213,16 @@ class CollectionsRebalance(CollectionBase):
     def validate_N1qltxn_data(self):
         if self.retry_n1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
-                                service_type="n1ql",
-                                get_all_nodes=True)
+                service_type="n1ql",
+                get_all_nodes=True)
             self.execute_N1qltxn(self.n1ql_server[0])
         doc_gen_list = self.n1ql_helper.get_doc_gen_list(self.bucket_col)
         if isinstance(self.collection_savepoint, dict):
             results = [[self.collection_savepoint, self.savepoints]]
             self.log.info("queries ran are %s" % self.queries)
             self.n1ql_fun.process_value_for_verification(self.bucket_col,
-                                 doc_gen_list, results,
-                                 buckets = self.cluster.buckets)
+                                                         doc_gen_list, results,
+                                                         buckets=self.cluster.buckets)
         else:
             self.fail(self.collection_savepoint)
 
@@ -725,7 +725,7 @@ class CollectionsRebalance(CollectionBase):
                 self.log.info("failing over nodes {0}".format(failover_nodes))
                 for failover_node in failover_nodes:
                     result = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                                            graceful=False, wait_for_pending=wait_for_pending)
+                                                graceful=False, wait_for_pending=wait_for_pending)
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
                     self.execute_N1qltxn(failover_node)
@@ -817,6 +817,7 @@ class CollectionsRebalance(CollectionBase):
         new scopes/collections are named 0,1,2 etc
         This is just for load, won't update any collection/scope objects of our libs
         """
+
         def create_collections_using_manifest_import():
             json_content = dict()
             json_content["scopes"] = list()
@@ -844,12 +845,11 @@ class CollectionsRebalance(CollectionBase):
 
         if wait_for_rebalance_to_start:
             end_time = time.time() + 60
-            while (self.rest._rebalance_progress_status()!= "running") and (time.time() < end_time):
+            while (self.rest._rebalance_progress_status() != "running") and (time.time() < end_time):
                 self.sleep(2, "wait for rebalance to start")
         create_collections_using_manifest_import()
         self.sleep(10, "wait before dropping collections using bulk api")
         delete_collections_using_manifest_import()
-
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
@@ -1050,46 +1050,39 @@ class CollectionsRebalance(CollectionBase):
         """
         self.graceful = self.input.param("graceful", False)
         self.cycles = self.input.param("cycles", 4)
+        self.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
         for cycle in range(self.cycles):
             self.log.info("Cycle {0}".format(cycle))
             orchestratorValue = self.cluster_util.find_orchestrator(self.cluster.master)
             orchestrator_node_ip = orchestratorValue[1].split("@")[1]
-            for server in self.servers:
+            failover_nodes = list()
+            for server in self.nodes_in_cluster:
                 if server.ip == orchestrator_node_ip:
-                    failover_nodes = [server]
+                    failover_nodes.append(server)
+                    self.nodes_in_cluster.remove(server)
                     break
-
-            result = self.task.failover(self.cluster.servers, failover_nodes=failover_nodes,
+            self.cluster.master = self.nodes_in_cluster[0]  # temp cluster.master
+            self.log.info("Failing over node(s): {0}".format(failover_nodes))
+            result = self.task.failover(self.nodes_in_cluster, failover_nodes=failover_nodes,
                                         graceful=self.graceful)
-            self.assertTrue(result, "Hard Failover failed")
+            self.assertTrue(result, "Failover failed")
 
-            rebalance_task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [],
-                                                   failover_nodes, retry_get_process_num=self.retry_get_process_num)
-            self.task.jython_task_manager.get_task_result(rebalance_task)
-            self.assertTrue(result, "Rebalance failed")
+            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [],
+                                                       [],
+                                                       retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(rebalance_task)
 
-            """
-            find first non-failover nodes and pass it to find_orchestrator function
-            """
-            for server in self.servers:
-                if server.ip != orchestrator_node_ip:
-                    node = server
-                    break
-            orchestratorValue = self.cluster_util.find_orchestrator(node)
+            # Set self.cluster.master to new orchestrator
+            orchestratorValue = self.cluster_util.find_orchestrator(self.cluster.master)
             orchestrator_node_ip = orchestratorValue[1].split("@")[1]
-            for server in self.servers:
+            for server in self.nodes_in_cluster:
                 if server.ip == orchestrator_node_ip:
                     self.cluster.master = server
                     break
 
-            """
-            Adding the failover node again and performing rebalance in
-            """
-            rest = RestConnection(self.cluster.master)
-            self.log.info("master node is: "+str(self.cluster.master.ip))
-            self.log.info("Added node is: "+str(failover_nodes[0].ip))
-            _ = rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                failover_nodes[0].ip, failover_nodes[0].port)
-            rebalance_task = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
+            # Rebalance-in back the node
+            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, failover_nodes, [],
                                                        retry_get_process_num=self.retry_get_process_num)
-            self.task.jython_task_manager.get_task_result(rebalance_task)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+            for node in failover_nodes:
+                self.nodes_in_cluster.append(node)
