@@ -5837,6 +5837,7 @@ class FailoverTask(Task):
         self.all_at_once = all_at_once
 
     def call(self):
+        self.start_task()
         try:
             self._failover_nodes()
             self.test_log.debug(
@@ -5844,11 +5845,10 @@ class FailoverTask(Task):
                     .format(self.wait_for_pending))
             sleep(self.wait_for_pending)
             self.set_result(True)
+            self.complete_task()
 
-        except FailoverFailedException as e:
-            self.set_exception(e)
-
-        except Exception as e:
+        except (FailoverFailedException, Exception) as e:
+            self.set_result(False)
             self.set_exception(e)
 
     def _failover_nodes(self):
@@ -5897,6 +5897,7 @@ class BucketFlushTask(Task):
         self.timeout = timeout
 
     def call(self):
+        self.start_task()
         try:
             rest = BucketHelper(self.server)
             if rest.flush_bucket(self.bucket):
@@ -5911,11 +5912,10 @@ class BucketFlushTask(Task):
                     self.set_result(False)
             else:
                 self.set_result(False)
+            self.complete_task()
 
-        except BucketFlushFailed as e:
-            self.set_exception(e)
-
-        except Exception as e:
+        except (BucketFlushFailed, Exception) as e:
+            self.set_result(False)
             self.set_exception(e)
 
 
