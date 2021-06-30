@@ -147,10 +147,17 @@ class StorageBase(BaseTestCase):
 
         # Doc controlling params
         self.key = 'test_docs'
+        self.key_size = self.input.param("key_size", 8)
         if self.random_key:
             self.key = "random_keys"
+            '''
+              With Small key size, when random.random() generate 0.0,
+              Key size becomes bigger than the 250 bytes
+              (L 259 in documentgenerator.py)
+            '''
+            self.key_size = self.input.param("key_size", 20)
+
         self.doc_ops = self.input.param("doc_ops", "create")
-        self.key_size = self.input.param("key_size", 8)
         self.doc_size = self.input.param("doc_size", 2048)
         self.gen_create = None
         self.gen_delete = None
