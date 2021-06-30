@@ -13,7 +13,6 @@ from TestInput import TestInputSingleton
 
 
 class PartialRollback_CBAS(CBASBaseTest):
-
     def setUp(self):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket":False})
@@ -24,10 +23,15 @@ class PartialRollback_CBAS(CBASBaseTest):
         1. There can be 1 KV and multiple cbas nodes(and tests wants to add all cbas into cluster.)
         2. There can be 1 KV and multiple cbas nodes(and tests wants only 1 cbas node)
         3. There can be only 1 node running KV,CBAS service.
-        NOTE: Cases pending where there are nodes which are running only cbas. For that service check on nodes is needed.
+        NOTE: Cases pending where there are nodes which are running only cbas.
+              For that service check on nodes is needed.
         '''
-        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 0:
-            self.otpNodes.extend(self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes))
+        if "add_all_cbas_nodes" in self.input.test_params \
+                and self.input.test_params["add_all_cbas_nodes"] \
+                and len(self.cluster.cbas_nodes) > 0:
+            self.otpNodes.extend(
+                self.cluster_util.add_all_nodes_then_rebalance(
+                    self.cluster, self.cluster.cbas_nodes))
 
         '''Create default bucket'''
         self.bucket_util.create_default_bucket(self.cluster,
@@ -446,12 +450,15 @@ class PartialRollback_CBAS(CBASBaseTest):
                         "Before Rollback : # Items in CBAS bucket does not match that in the CB bucket")
 
         if self.CC:
-            self.cluster_util.remove_node([self.otpNodes[0]],wait_for_rebalance=False)
+            self.cluster_util.remove_node(self.cluster, [self.otpNodes[0]],
+                                          wait_for_rebalance=False)
             self.cbas_util.closeConn()
-            self.cbas_util = CbasUtil(self.cluster.master, self.cluster.cbas_nodes[0])
+            self.cbas_util = CbasUtil(self.cluster.master,
+                                      self.cluster.cbas_nodes[0])
             self.cbas_util.createConn("default")
         else:
-            self.cluster_util.remove_node([self.otpNodes[1]],wait_for_rebalance=False)
+            self.cluster_util.remove_node(self.cluster, [self.otpNodes[1]],
+                                          wait_for_rebalance=False)
 
         # Kill memcached on Node A so that Node B becomes master
         self.log.info("Kill Memcached process on NodeA")

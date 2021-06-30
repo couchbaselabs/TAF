@@ -12,14 +12,17 @@ from cbas_utils.cbas_utils import CbasUtil
 
 
 class IngestionInterrupt_CBAS(CBASBaseTest):
-
     def setUp(self):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"default_bucket":False})
         super(IngestionInterrupt_CBAS, self).setUp()
 
-        if "add_all_cbas_nodes" in self.input.test_params and self.input.test_params["add_all_cbas_nodes"] and len(self.cluster.cbas_nodes) > 0:
-            self.otpNodes.extend(self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes))
+        if "add_all_cbas_nodes" in self.input.test_params \
+                and self.input.test_params["add_all_cbas_nodes"] \
+                and len(self.cluster.cbas_nodes) > 0:
+            self.otpNodes.extend(
+                self.cluster_util.add_all_nodes_then_rebalance(
+                    self.cluster, self.cluster.cbas_nodes))
 
         self.bucket_util.create_default_bucket(self.cluster,
                                                storage=self.bucket_storage)

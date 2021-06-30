@@ -83,8 +83,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         if tasks.result is False:
             self.fail("Doc_loading failed")
 
-        self.cluster_util.print_cluster_stats()
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -122,8 +123,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         finally:
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.cluster_util.start_server(self.servers[1])
-            self.cluster_util.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.cluster, self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.cluster,
+                                                    self.servers[1])
 
     def test_auto_retry_of_failed_rebalance_where_failure_happens_during_rebalance(self):
         tasks = None
@@ -161,8 +163,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         finally:
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.cluster_util.start_server(self.servers[1])
-            self.cluster_util.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.cluster, self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.cluster,
+                                                    self.servers[1])
 
     def test_auto_retry_of_failed_rebalance_does_not_get_triggered_when_rebalance_is_stopped(self):
         _ = self._rebalance_operation(self.rebalance_operation)
@@ -232,8 +235,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         finally:
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.cluster_util.start_server(self.servers[1])
-            self.cluster_util.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.cluster, self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.cluster,
+                                                    self.servers[1])
 
     def test_negative_auto_retry_of_failed_rebalance_where_rebalance_will_not_be_cancelled(self):
         during_rebalance_failure = self.input.param("during_rebalance_failure",
@@ -315,8 +319,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                     self.log.info("Errors in deleting zone")
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.cluster_util.start_server(self.servers[1])
-            self.cluster_util.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.cluster, self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.cluster,
+                                                    self.servers[1])
 
     def test_auto_retry_of_failed_rebalance_with_rebalance_test_conditions(self):
         tasks = None
@@ -391,8 +396,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         finally:
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self.cluster_util.start_server(self.servers[1])
-            self.cluster_util.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.start_server(self.cluster, self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.cluster,
+                                                    self.servers[1])
 
     def test_cbcollect_with_rebalance_delay_condition(self):
         test_failure_condition = self.input.param("test_failure_condition")
@@ -421,13 +427,13 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                       % rebalance_operation)
         if rebalance_operation == "rebalance_out":
             operation = self.task.async_rebalance(
-                self.cluster_util.get_nodes_in_cluster(self.cluster.master),
+                self.cluster_util.get_nodes_in_cluster(self.cluster),
                 [], self.cluster.servers[1:])
             self.__update_cbcollect_expected_node_failures(
                 self.cluster.servers[1:], "out_node")
         elif rebalance_operation == "rebalance_in":
             operation = self.task.async_rebalance(
-                self.cluster_util.get_nodes_in_cluster(self.cluster.master),
+                self.cluster_util.get_nodes_in_cluster(self.cluster),
                 [self.cluster.servers[self.nodes_init]], [])
             self.__update_cbcollect_expected_node_failures(
                 [self.cluster.servers[self.nodes_init]], "in_node")
@@ -437,7 +443,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                                self.cluster.servers[self.nodes_init].ip,
                                self.cluster.servers[self.nodes_init].port)
             operation = self.task.async_rebalance(
-                self.cluster_util.get_nodes_in_cluster(self.cluster.master),
+                self.cluster_util.get_nodes_in_cluster(self.cluster),
                 [], [self.cluster.servers[self.nodes_init - 1]])
             self.__update_cbcollect_expected_node_failures(
                 [self.cluster.servers[self.nodes_init]], "in_node")
@@ -455,12 +461,14 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         cb_collect_err_str = None
         if error_condition == "stop_server":
             cb_collect_err_str = "failed"
-            self.cluster_util.stop_server(self.servers[1])
+            self.cluster_util.stop_server(self.cluster, self.servers[1])
         elif error_condition == "enable_firewall":
             cb_collect_err_str = "failed"
-            self.cluster_util.start_firewall_on_node(self.servers[1])
+            self.cluster_util.start_firewall_on_node(self.cluster,
+                                                     self.servers[1])
         elif error_condition == "kill_memcached":
-            self.cluster_util.kill_server_memcached(self.servers[1])
+            self.cluster_util.kill_memcached(self.cluster,
+                                             node=self.servers[1])
         elif error_condition == "reboot_server":
             cb_collect_err_str = "failed"
             shell = RemoteMachineShellConnection(self.servers[1])
@@ -480,9 +488,10 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
     def _recover_from_error(self, error_condition):
         if error_condition == "stop_server" \
                 or error_condition == "kill_erlang":
-            self.cluster_util.start_server(self.servers[1])
+            self.cluster_util.start_server(self.cluster, self.servers[1])
         elif error_condition == "enable_firewall":
-            self.cluster_util.stop_firewall_on_node(self.servers[1])
+            self.cluster_util.stop_firewall_on_node(self.cluster,
+                                                    self.servers[1])
         elif error_condition == "reboot_server":
             self.sleep(self.sleep_time * 4)
             # wait till node is ready after warm-up

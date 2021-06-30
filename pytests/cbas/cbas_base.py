@@ -5,11 +5,9 @@ from BucketLib.bucket import TravelSample, BeerSample, Bucket
 from Cb_constants import CbServer
 from basetestcase import BaseTestCase
 from bucket_collections.collections_base import CollectionBase
-from bucket_utils.bucket_ready_functions import BucketUtils
 from cbas_utils.cbas_utils import CbasUtil
 # TODO: Need to removed once the old CbasUtil is deprecated.
 from cbas_utils.cbas_utils_v2 import CbasUtil as CbasUtilV2
-from cluster_utils.cluster_ready_functions import ClusterUtils
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.documentgenerator import DocumentGenerator
@@ -184,8 +182,7 @@ class CBASBaseTest(BaseTestCase):
                 if add_default_cbas_node:
                     if self.cluster.master.ip != self.cbas_node.ip:
                         self.otpNodes.append(
-                            ClusterUtils(self.cluster, self.task_manager)
-                                .add_node(self.cbas_node))
+                            self.cluster_util.add_node(self.cbas_node))
                         self.cluster.nodes_in_cluster.append(self.cbas_node)
                         if nodes_init:
                             idx = nodes_init.index(self.cbas_node)
@@ -229,14 +226,10 @@ class CBASBaseTest(BaseTestCase):
         elif len(self._cb_cluster) > 1:
             # Multi Cluster Support
             for cluster in self._cb_cluster:
-                cluster.cluster_util = ClusterUtils(cluster, self.task_manager)
-                cluster.bucket_util = BucketUtils(cluster.cluster_util,
-                                                  self.task)
-
                 for server in cluster.servers:
-                    if "cbas" in server.services:
+                    if CbServer.Services.CBAS in server.services:
                         cluster.cbas_nodes.append(server)
-                    if "kv" in server.services:
+                    if CbServer.Services.KV in server.services:
                         cluster.kv_nodes.append(server)
                     rest = RestConnection(server)
                     rest.set_data_path(data_path=server.data_path,
@@ -293,8 +286,8 @@ class CBASBaseTest(BaseTestCase):
                     if add_default_cbas_node:
                         if cluster.master.ip != cluster.cbas_node.ip:
                             cluster.otpNodes.append(
-                                cluster.cluster_util
-                                    .add_node(cluster.cbas_node))
+                                cluster.cluster_util.add_node(
+                                    cluster, cluster.cbas_node))
                         else:
                             cluster.otpNodes = cluster.rest.node_statuses()
                         """
@@ -484,7 +477,8 @@ class CBASBaseTest(BaseTestCase):
         except Exception as e:
             self.log.error(e.message)
 
-    def remove_node(self, otpnode=None, wait_for_rebalance=True, rest=None):
+    def remove_node(self, cluster, otpnode=None, wait_for_rebalance=True,
+                    rest=None):
         """
         Method to remove nodes from a cluster.
         :param otpnode: list of nodes to be removed.
@@ -493,7 +487,8 @@ class CBASBaseTest(BaseTestCase):
         :param rest: RestConnection object
         """
         if not rest:
-            rest = self.rest
+            rest = RestConnection(cluster.master)
+
         nodes = rest.node_statuses()
         '''This is the case when master node is running cbas service as well'''
         if len(nodes) <= len(otpnode):
@@ -701,7 +696,7 @@ class CBASBaseTest(BaseTestCase):
                                           self.sdk_client_pool,
                                           self.sdk_compression)
 
-        cluster_util.print_cluster_stats()
+        cluster_util.print_cluster_stats(self.cluster)
         if load_data:
             self.load_data_into_buckets(cluster, bucket_util, doc_loading_spec)
 
@@ -727,7 +722,8 @@ class CBASBaseTest(BaseTestCase):
             "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
             "volume_templates.buckets_for_volume_tests_with_ttl"]
         # Verify initial doc load count
-        bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                self.cluster.buckets)
         if self.bucket_spec not in ttl_buckets:
             bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
@@ -788,7 +784,7 @@ class CBASBaseTest(BaseTestCase):
             if "n1ql" in services:
                 services.remove("n1ql")
             # Get all services that are already running in cluster
-            cluster_services = cluster_util.get_services_map()
+            cluster_services = cluster_util.get_services_map(self.cluster)
             cluster_info = master_rest.get_nodes_self()
             rest = RestConnection(server)
             info = rest.get_nodes_self()

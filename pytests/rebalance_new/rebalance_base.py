@@ -108,9 +108,8 @@ class RebalanceBaseTest(BaseTestCase):
 
             if self.flusher_total_batch_limit:
                 self.bucket_util.set_flusher_total_batch_limit(
-                    self.cluster.master,
-                    self.flusher_total_batch_limit,
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets,
+                    self.flusher_total_batch_limit)
 
             self.gen_create = self.get_doc_generator(0, self.num_items)
             if self.active_resident_threshold < 100:
@@ -138,7 +137,7 @@ class RebalanceBaseTest(BaseTestCase):
                                            batch_size=self.batch_size)
                 self.log.info("Verifying num_items counts after doc_ops")
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
                     self.cluster,
                     timeout=self.wait_timeout)
@@ -157,7 +156,7 @@ class RebalanceBaseTest(BaseTestCase):
                 self.log, len(self.cluster.nodes_in_cluster),
                 durability=self.durability_level,
                 replicate_to=self.replicate_to, persist_to=self.persist_to)
-            self.cluster_util.print_cluster_stats()
+            self.cluster_util.print_cluster_stats(self.cluster)
             self.bucket_util.print_bucket_stats(self.cluster)
         self.log_setup_status("RebalanceBase", "complete")
 
@@ -191,7 +190,7 @@ class RebalanceBaseTest(BaseTestCase):
 
         for bucket in self.cluster.buckets:
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(), bucket))
+                self.cluster_util.get_kv_nodes(self.cluster), bucket))
 
     def create_buckets(self, bucket_size):
         if self.standard_buckets == 1:
@@ -200,7 +199,7 @@ class RebalanceBaseTest(BaseTestCase):
             self._create_multiple_buckets()
 
     def tearDown(self):
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         super(RebalanceBaseTest, self).tearDown()
 
     def collection_setup(self):
@@ -242,15 +241,16 @@ class RebalanceBaseTest(BaseTestCase):
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster,
             timeout=self.wait_timeout)
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
@@ -279,7 +279,8 @@ class RebalanceBaseTest(BaseTestCase):
                 nodes_in_zone[zones[i]] = []
             # Divide the nodes between zones.
             nodes_in_cluster = \
-                [node.ip for node in self.cluster_util.get_nodes_in_cluster()]
+                [node.ip for node in self.cluster_util.get_nodes_in_cluster(
+                    self.cluster)]
             nodes_to_remove = [node.ip for node in to_remove]
             for i in range(1, len(self.servers)):
                 if self.servers[i].ip in nodes_in_cluster \
@@ -305,7 +306,8 @@ class RebalanceBaseTest(BaseTestCase):
         # Verify replicas of one node should not be in the same zone
         # as active vbuckets of the node.
         if self.zone > 1:
-            self.cluster_util.verify_replica_distribution_in_zones(nodes_in_zone)
+            self.cluster_util.verify_replica_distribution_in_zones(
+                self.cluster, nodes_in_zone)
 
     def add_remove_servers_and_rebalance(self, to_add, to_remove):
         """
@@ -328,7 +330,7 @@ class RebalanceBaseTest(BaseTestCase):
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.cluster_util.vbuckets,
+                             vbuckets=self.cluster.vbuckets,
                              key_size=self.key_size,
                              randomize_doc_size=self.randomize_doc_size,
                              randomize_value=self.randomize_value,

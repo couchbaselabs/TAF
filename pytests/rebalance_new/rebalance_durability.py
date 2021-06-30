@@ -108,7 +108,8 @@ class RebalanceDurability(RebalanceBaseTest):
 
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
 
@@ -185,7 +186,8 @@ class RebalanceDurability(RebalanceBaseTest):
 
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
 
@@ -373,7 +375,8 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.task.jython_task_manager.get_task_result(task)
 
             # Verify doc load count to match the overall CRUDs
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
 
@@ -452,7 +455,8 @@ class RebalanceDurability(RebalanceBaseTest):
 
         # Doc count verification
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
 
@@ -507,6 +511,7 @@ class RebalanceDurability(RebalanceBaseTest):
             self.delete_rebalance_test_condition(test_failure_condition)
         # Verify doc load count to match the overall CRUDs
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)

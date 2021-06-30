@@ -39,7 +39,7 @@ class CollectionBase(ClusterSetup):
         self.validate_docs_count_during_teardown = \
             self.input.param("validate_docs_count_during_teardown", False)
         self.batch_size = self.input.param("batch_size", 200)
-        self.vbuckets = self.input.param("vbuckets", self.cluster_util.vbuckets)
+        self.vbuckets = self.input.param("vbuckets", self.cluster.vbuckets)
         self.retry_get_process_num = self.input.param("retry_get_process_num", 25)
 
         self.crud_batch_size = 100
@@ -173,7 +173,7 @@ class CollectionBase(ClusterSetup):
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
 
         ttl_buckets = [
             "multi_bucket.buckets_for_rebalance_tests_with_ttl",
@@ -181,7 +181,8 @@ class CollectionBase(ClusterSetup):
             "volume_templates.buckets_for_volume_tests_with_ttl"]
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         if self.spec_name not in ttl_buckets:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)

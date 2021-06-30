@@ -22,7 +22,7 @@ class StorageBase(BaseTestCase):
         self.data_path = self.fetch_data_path()
 
         # Bucket Params
-        self.vbuckets = self.input.param("vbuckets", self.cluster_util.vbuckets)
+        self.vbuckets = self.input.param("vbuckets", self.cluster.vbuckets)
         self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.fragmentation = int(self.input.param("fragmentation", 50))
         self.bucket_storage = self.input.param("bucket_storage",
@@ -280,7 +280,7 @@ class StorageBase(BaseTestCase):
         if wait_for_stats:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets, timeout=1800)
+                    self.cluster, self.cluster.buckets, timeout=1800)
             except Exception as e:
                 raise e
 
@@ -364,7 +364,7 @@ class StorageBase(BaseTestCase):
         self.log.info("init_items_per_collection =={} ".format(self.init_items_per_collection))
 
     def tearDown(self):
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         dgm = None
         timeout = 60
         while dgm is None and timeout > 0:
@@ -387,7 +387,7 @@ class StorageBase(BaseTestCase):
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=target_vbucket,
-                             vbuckets=self.cluster_util.vbuckets,
+                             vbuckets=self.cluster.vbuckets,
                              key_size=self.key_size,
                              randomize_doc_size=self.randomize_doc_size,
                              randomize_value=self.randomize_value,
@@ -856,14 +856,16 @@ class StorageBase(BaseTestCase):
             rest.diag_eval(cmd)
 
         # Restart Memcached in all cluster nodes to reflect the settings
-        for server in self.cluster_util.get_kv_nodes(master=node):
+        for server in self.cluster_util.get_kv_nodes(self.cluster,
+                                                     master=node):
             shell = RemoteMachineShellConnection(server)
             shell.restart_couchbase()
             shell.disconnect()
 
         # Check bucket-warm_up after Couchbase restart
         retry_count = 10
-        buckets_warmed_up = self.bucket_util.is_warmup_complete(buckets, retry_count)
+        buckets_warmed_up = self.bucket_util.is_warmup_complete(
+            self.cluster, buckets, retry_count)
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up "
                               "within expected time")

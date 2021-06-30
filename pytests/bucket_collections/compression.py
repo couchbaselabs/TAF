@@ -5,6 +5,7 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_client3 import SDKClient
 
+
 class SDKCompression(CollectionBase):
     def setUp(self):
         super(SDKCompression, self).setUp()
@@ -140,7 +141,8 @@ class SDKCompression(CollectionBase):
 
         self.validate_test_failure()
         self.bucket.scopes[s_name].collections[c_name].num_items += self.num_items
-        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
+        self.bucket_util.validate_doc_count_as_per_collections(
+            self.cluster, self.bucket)
 
     def test_compression_with_parallel_mutations_on_same_collection(self):
         """
@@ -210,7 +212,8 @@ class SDKCompression(CollectionBase):
 
         self.bucket.scopes[scope].collections[collection].num_items \
             += (self.num_items * 2)
-        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
+        self.bucket_util.validate_doc_count_as_per_collections(
+            self.cluster, self.bucket)
 
         self.log.info("Performing overlapping mutations")
         tasks = list()
@@ -249,7 +252,8 @@ class SDKCompression(CollectionBase):
         self.task.jython_task_manager.get_task_result(task)
 
         # Intermediate collection-doc validation
-        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
+        self.bucket_util.validate_doc_count_as_per_collections(
+            self.cluster, self.bucket)
 
         self.log.info("Performing parallel deletes")
         tasks = list()
@@ -279,4 +283,5 @@ class SDKCompression(CollectionBase):
         # Doc validation
         self.bucket.scopes[scope].collections[collection].num_items \
             -= (self.num_items * 2)
-        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
+        self.bucket_util.validate_doc_count_as_per_collections(
+            self.cluster, self.bucket)

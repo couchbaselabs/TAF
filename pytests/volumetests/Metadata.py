@@ -51,11 +51,11 @@ class volume(CollectionBase):
         self.bucket_util.flush_all_buckets(self.cluster,
                                            skip_resetting_num_items=True)
         self.set_memory_quota(services=["kv", "index"])
-        self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
-                                                                        get_all_nodes=True,
-                                                                        servers=self.cluster.servers[
-                                                                                :self.nodes_init],
-                                                                        master=self.cluster.master)
+        self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.N1QL,
+            get_all_nodes=True,
+            servers=self.cluster.servers[:self.nodes_init])
         self.n1ql_rest_connections = list()
         for n1ql_node in self.n1ql_nodes:
             self.n1ql_rest_connections.append(RestConnection(n1ql_node))
@@ -72,11 +72,11 @@ class volume(CollectionBase):
         self.fts_indexes_to_create = self.input.param("fts_indexes_to_create", 0)
         self.fts_indexes_to_recreate = self.input.param("fts_indexes_to_recreate", 0)
         self.fts_mem_quota = self.input.param("fts_mem_quota", 22000)
-        self.fts_nodes = self.cluster_util.get_nodes_from_services_map(service_type="fts",
-                                                                       get_all_nodes=True,
-                                                                       servers=self.cluster.servers[
-                                                                               :self.nodes_init],
-                                                                       master=self.cluster.master)
+        self.fts_nodes = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.FTS,
+            get_all_nodes=True,
+            servers=self.cluster.servers[:self.nodes_init])
 
         if self.fts_indexes_to_create > 0:
             self.fts_index_partitions = self.input.param("fts_index_partition", 6)
@@ -357,14 +357,15 @@ class volume(CollectionBase):
         fts_dict = self.create_fts_indexes(count=count, base_name="fts-recreate-")
         self.drop_fts_indexes(fts_dict, count=count)
 
-    def create_and_drop_metakv_keys(self, metakv_cycles=50, sleep_time_between=3, batches=1000):
+    def create_and_drop_metakv_keys(self, metakv_cycles=50,
+                                    sleep_time_between=3, batches=1000):
         """
-        metakv_cycles: Number of create and drops cycles
-        sleep_time_between: Sleep time between create and delete
-        batch: number of creates before starting drops
+        :param metakv_cycles: Number of create and drops cycles
+        :param sleep_time_between: Sleep time between create and delete
+        :param batches: number of creates before starting drops
         """
-        self.log.info("Creating and dropping metakv keys, cycles {0}, batches {1}"
-                      .format(metakv_cycles, batches))
+        self.log.info("Creating & dropping metakv keys, cycles %s, batches %s"
+                      % (metakv_cycles, batches))
         for cycle in range(metakv_cycles):
             keys = list()
             for batch in range(batches):
@@ -387,7 +388,7 @@ class volume(CollectionBase):
         """
         ts_purged_count_dict = dict()
         if nodes is None:
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
         for node in nodes:
             shell = RemoteMachineShellConnection(node)
             command = "grep 'tombstone_agent:purge:' /opt/couchbase/var/lib/couchbase/logs/debug.log | tail -1"
@@ -419,7 +420,7 @@ class volume(CollectionBase):
         """
         deleted_keys_count_dict = dict()
         if nodes is None:
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
         for node in nodes:
             shell = RemoteMachineShellConnection(node)
             shell.enable_diag_eval_on_non_local_hosts()
@@ -442,7 +443,7 @@ class volume(CollectionBase):
         8. Validate step4 count matches step 7 count for all nodes
         """
         if nodes is None:
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
 
         self.rest.update_tombstone_purge_age_for_removal(self.tombstone_purge_age)
         self.rest.disable_tombstone_purger()
@@ -496,7 +497,8 @@ class volume(CollectionBase):
             "volume_templates.buckets_for_volume_tests_with_ttl"]
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         if self.spec_name not in ttl_buckets:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
@@ -678,21 +680,24 @@ class volume(CollectionBase):
             self.validation_for_ts_purging()
             ############################################################################################
             remove_nodes = list()
-            kv_nodes = self.cluster_util.get_nodes_from_services_map(service_type="kv",
-                                                                     get_all_nodes=True,
-                                                                     servers=self.nodes_in_cluster,
-                                                                     master=self.cluster.master)
+            kv_nodes = self.cluster_util.get_nodes_from_services_map(
+                cluster=self.cluster,
+                service_type=CbServer.Services.KV,
+                get_all_nodes=True,
+                servers=self.nodes_in_cluster)
             kv_nodes.remove(self.cluster.master)
             remove_nodes.extend(random.sample(kv_nodes, 2))
-            gsi_nodes = self.cluster_util.get_nodes_from_services_map(service_type="index",
-                                                                      get_all_nodes=True,
-                                                                      servers=self.nodes_in_cluster,
-                                                                      master=self.cluster.master)
+            gsi_nodes = self.cluster_util.get_nodes_from_services_map(
+                cluster=self.cluster,
+                service_type=CbServer.Services.INDEX,
+                get_all_nodes=True,
+                servers=self.nodes_in_cluster)
             remove_nodes.extend(random.sample(gsi_nodes, 2))
-            fts_nodes = self.cluster_util.get_nodes_from_services_map(service_type="fts",
-                                                                      get_all_nodes=True,
-                                                                      servers=self.nodes_in_cluster,
-                                                                      master=self.cluster.master)
+            fts_nodes = self.cluster_util.get_nodes_from_services_map(
+                cluster=self.cluster,
+                service_type=CbServer.Services.FTS,
+                get_all_nodes=True,
+                servers=self.nodes_in_cluster)
             remove_nodes.extend(random.sample(fts_nodes, 2))
             operation = self.task.async_rebalance(self.nodes_in_cluster, [], remove_nodes,
                                                   retry_get_process_num=self.retry_get_process_num)

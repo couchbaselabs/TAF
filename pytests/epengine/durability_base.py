@@ -68,7 +68,7 @@ class DurabilityTestsBase(ClusterSetup):
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets)
+                vbuckets=self.cluster.vbuckets)
 
             self.log.info("Loading {0} items into bucket"
                           .format(self.num_items))
@@ -82,7 +82,8 @@ class DurabilityTestsBase(ClusterSetup):
             self.task.jython_task_manager.get_task_result(task)
 
             # Verify initial doc load count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
 
@@ -128,7 +129,7 @@ class BucketDurabilityBase(ClusterSetup):
         self.durability_helper = DurabilityHelper(
             self.log,
             len(self.cluster.nodes_in_cluster))
-        self.kv_nodes = self.cluster_util.get_kv_nodes()
+        self.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
 
         self.num_nodes_affected = 1
         if self.num_replicas > 1:
@@ -168,7 +169,7 @@ class BucketDurabilityBase(ClusterSetup):
 
         # Dict to store the list of active/replica VBs in each node
         self.vbs_in_node = dict()
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
             shell = RemoteMachineShellConnection(node)
             self.vbs_in_node[node] = dict()
             self.vbs_in_node[node]["shell"] = shell
@@ -349,7 +350,7 @@ class BucketDurabilityBase(ClusterSetup):
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.cluster.buckets[0],
             self.kv_nodes,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details validation failed")

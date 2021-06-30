@@ -1,18 +1,14 @@
-import os, shutil, ast, re, subprocess
+import subprocess
 from basetestcase import BaseTestCase
-from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
+from cluster_utils.cluster_ready_functions import ClusterUtils
 from bucket_utils.bucket_ready_functions import BucketUtils
-from BucketLib.bucket import Bucket
-from membase.api.rest_client import RestHelper, RestConnection, \
-                                    Bucket as CBBucket
+from membase.api.rest_client import RestHelper, RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from testconstants import LINUX_COUCHBASE_BIN_PATH,\
-                          COUCHBASE_DATA_PATH, WIN_COUCHBASE_DATA_PATH_RAW,\
-                          WIN_COUCHBASE_BIN_PATH_RAW, WIN_COUCHBASE_BIN_PATH, WIN_TMP_PATH_RAW,\
-                          MAC_COUCHBASE_BIN_PATH, LINUX_ROOT_PATH, WIN_ROOT_PATH,\
-                          WIN_TMP_PATH, STANDARD_BUCKET_PORT, WIN_CYGWIN_BIN_PATH
-from testconstants import INDEX_QUOTA, FTS_QUOTA, COUCHBASE_FROM_MAD_HATTER,\
-                          CLUSTER_QUOTA_RATIO
+from testconstants import COUCHBASE_DATA_PATH, WIN_COUCHBASE_DATA_PATH_RAW,\
+                          WIN_TMP_PATH_RAW,\
+                          LINUX_ROOT_PATH, WIN_ROOT_PATH,\
+                          WIN_TMP_PATH, WIN_CYGWIN_BIN_PATH
+
 
 class EnterpriseBKRSNewBaseTest(BaseTestCase):
 
@@ -171,8 +167,8 @@ class EnterpriseBKRSNewBaseTest(BaseTestCase):
         self.backups = []
         self.number_of_backups_taken = 0
         for cluster in self.clusters:
-            cluster_util = ClusterUtils(cluster, self.taskmgr)
-            cluster_util.add_all_nodes_then_rebalance(cluster.servers[1:])
+            self.cluster_util.add_all_nodes_then_rebalance(cluster,
+                                                           cluster.servers[1:])
 
     def tearDown(self):
         super(EnterpriseBKRSNewBaseTest, self).tearDown()
@@ -183,11 +179,8 @@ class EnterpriseBKRSNewBaseTest(BaseTestCase):
         """
         for cluster in self.clusters:
             if cluster.name == name:
-                cluster.cluster_util = ClusterUtils(cluster, self.task_manager)
-                cluster.bucket_util = BucketUtils(cluster, cluster.cluster_util,
-                                      self.task)
                 return cluster
-        raise Exception("Couchbase Cluster with name: {0} not exist".format(name))
+        raise Exception("Couchbase Cluster %s does not exist" % name)
 
     def _create_index(self, server):
         query_check_index_exists = "SELECT COUNT(*) FROM system:indexes " \

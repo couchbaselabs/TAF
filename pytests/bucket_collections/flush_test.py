@@ -99,7 +99,8 @@ class FlushTests(CollectionBase):
         self.bucket_util.flush_bucket(self.cluster, self.bucket)
 
         self.log.info("Validating scope/collections mapping and doc_count")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 
@@ -132,7 +133,8 @@ class FlushTests(CollectionBase):
             self.fail("Post flush doc_creates failed")
 
         self.log.info("Validating scope/collections mapping and doc_count")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 
@@ -174,7 +176,7 @@ class FlushTests(CollectionBase):
         doc_mutation = self.input.param("doc_mutation", True)
 
         node_dict = dict()
-        kv_nodes = self.cluster_util.get_kv_nodes()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for node in kv_nodes:
             node_dict[node] = dict()
             node_dict[node]["shell"] = RemoteMachineShellConnection(node)

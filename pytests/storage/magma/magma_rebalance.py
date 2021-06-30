@@ -111,14 +111,16 @@ class MagmaRebalance(MagmaBaseTest):
             self.subsequent_data_load(data_load_spec="dgm_load")
             curr_active = self.get_active_resident_threshold(bucket_name)
             self.log.info("curr_active resident {0} %".format(curr_active))
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
         self.log.info("Initial dgm load done. Resident {0} %".format(curr_active))
 
     def data_load_after_failover(self):
         self.log.info("Starting a sync data load after failover")
         self.subsequent_data_load()  # sync data load
         # Until we recover/rebalance-out, we can't call - self.bucket_util.validate_docs_per_collections_all_buckets()
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
     def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
         time_start = time.time()
@@ -644,7 +646,7 @@ class MagmaRebalance(MagmaBaseTest):
                 self.sleep(400, "wait for maxttl to finish")
                 items = 0
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
                 for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
@@ -653,7 +655,7 @@ class MagmaRebalance(MagmaBaseTest):
                 pass
             else:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
                     self.cluster)
 

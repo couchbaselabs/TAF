@@ -107,23 +107,26 @@ class ConfigPurging(CollectionBase):
         self.op_remove = "key_delete"
 
         self.ts_during_start = self.__get_current_timestamps_from_debug_log()
-        self.initial_tombstones = self.cluster_util.get_metakv_dicts()
+        self.initial_tombstones = \
+            self.cluster_util.get_metakv_dicts(self.cluster.master)
         self.log.info(self.ts_during_start)
 
     def tearDown(self):
         self.log_setup_status("ConfigPurging", "start", "tearDown")
         self.log.info("Resetting purger age value to default")
-        self.cluster_util.rest.run_tombstone_purger(self.default_purge_age)
-        self.cluster_util.rest.enable_tombstone_purger()
+        rest = RestConnection(self.cluster.master)
+        rest.run_tombstone_purger(self.default_purge_age)
+        rest.enable_tombstone_purger()
         self.log_setup_status("ConfigPurging", "complete", "tearDown")
         super(ConfigPurging, self).tearDown()
 
     def __perform_meta_kv_op_on_rand_key(self, op_type, key_name, value=None):
         self.log.info("%s meta_kv key '%s'" % (op_type, key_name))
         if op_type == self.op_create:
-            self.cluster_util.create_metakv_key(key_name, value)
+            self.cluster_util.create_metakv_key(self.cluster.master,
+                                                key_name, value)
         elif op_type == self.op_remove:
-            self.cluster_util.delete_metakv_key(key_name)
+            self.cluster_util.delete_metakv_key(self.cluster.master, key_name)
         else:
             self.fail("Invalid operation: %s" % op_type)
 
@@ -189,7 +192,7 @@ class ConfigPurging(CollectionBase):
 
         last_purged_tombstones = dict()
         if nodes is None:
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
         for node in nodes:
             self.log.info("Processing debug logs from %s" % node.ip)
             shell = RemoteMachineShellConnection(node)
@@ -261,9 +264,12 @@ class ConfigPurging(CollectionBase):
             "free -h",
             "ls -lh %s/var/lib/couchbase/config/config.dat "
             "| awk '{print $5,$9}'" % self.couchbase_base_dir]
+
+        rest = RestConnection(self.cluster.master)
+
         self.log.info("Stopping meta_kv purger autorun")
-        self.cluster_util.rest.disable_tombstone_purger()
-        self.cluster_util.rest.run_tombstone_purger(1)
+        rest.disable_tombstone_purger()
+        rest.run_tombstone_purger(1)
 
         shell_conn = dict()
         # Open required ssh connections
@@ -312,7 +318,7 @@ class ConfigPurging(CollectionBase):
         get_node_stats()
 
         self.log.info("Triggering tombstone purger")
-        self.cluster_util.rest.run_tombstone_purger(1)
+        rest.run_tombstone_purger(1)
         self.sleep(10, "Wait for purger run to complete")
 
         self.log.info("Purged tombstone info:")
@@ -385,8 +391,9 @@ class ConfigPurging(CollectionBase):
         """
         Create meta_kv tombstones with huge key_size and validate purging
         """
+        rest = RestConnection(self.cluster.master)
         self.log.info("Stopping meta_kv purger autorun")
-        self.cluster_util.rest.disable_tombstone_purger()
+        rest.disable_tombstone_purger()
 
         self.log.info("Creating %s indexes with length %s"
                       % (self.num_index, self.index_name_len))
@@ -411,7 +418,7 @@ class ConfigPurging(CollectionBase):
 
         deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count()
         self.sleep(60, "Wait before triggering purger")
-        self.cluster_util.rest.run_tombstone_purger(50)
+        rest.run_tombstone_purger(50)
         self.sleep(10, "Wait for purger to cleanup tombstones")
 
         self.log.info("Validating purged keys on each node")
@@ -431,8 +438,9 @@ class ConfigPurging(CollectionBase):
            across the nodes
         """
 
+        rest = RestConnection(self.cluster.master)
         self.log.info("Stopping meta_kv purger autorun")
-        self.cluster_util.rest.disable_tombstone_purger()
+        rest.disable_tombstone_purger()
 
         rest_objects = dict()
         for node in self.cluster.nodes_in_cluster:
@@ -450,7 +458,7 @@ class ConfigPurging(CollectionBase):
                 rest_obj.delete_metakv_key(meta_kv_key)
 
         self.sleep(15, "Waiting to trigger purger with tombstone age > 15secs")
-        self.cluster_util.rest.run_tombstone_purger(15)
+        rest.run_tombstone_purger(15)
         self.sleep(30, "Waiting for purger to run")
 
         # Validate tombstone purging
@@ -483,31 +491,29 @@ class ConfigPurging(CollectionBase):
             int(self.default_purge_age/self.default_run_interval)
         last_key_index = max_ts_to_create - 1
 
+        rest = RestConnection(self.cluster.master)
         # Remove any old tombstones prior to the test
-        self.cluster_util.rest.run_tombstone_purger(1)
+        rest.run_tombstone_purger(1)
         # Reset default purger run values
-        self.cluster_util.rest.update_tombstone_purger_run_interval(
-            self.default_run_interval)
-        self.cluster_util.rest.update_tombstone_purge_age_for_removal(
-            self.default_purge_age)
-        self.cluster_util.rest.disable_tombstone_purger()
+        rest.update_tombstone_purger_run_interval(self.default_run_interval)
+        rest.update_tombstone_purge_age_for_removal(self.default_purge_age)
+        rest.disable_tombstone_purger()
 
         # Create tombstones
         for index in range(max_ts_to_create):
             key = t_key % index
             self.log.info("Creating tombstone with key '%s'" % key)
-            self.cluster_util.create_metakv_key(key, value)
-            self.cluster_util.delete_metakv_key(key)
+            self.cluster_util.create_metakv_key(self.cluster.master,
+                                                key, value)
+            self.cluster_util.delete_metakv_key(self.cluster.master, key)
             if index != last_key_index:
                 self.sleep(self.default_run_interval,
                            "Wait before creating next tombstone")
 
         self.log.info("Enabling ts-purger with default settings")
-        self.cluster_util.rest.enable_tombstone_purger()
-        self.cluster_util.rest.update_tombstone_purger_run_interval(
-            self.default_run_interval)
-        self.cluster_util.rest.update_tombstone_purge_age_for_removal(
-            self.default_purge_age)
+        rest.enable_tombstone_purger()
+        rest.update_tombstone_purger_run_interval(self.default_run_interval)
+        rest.update_tombstone_purge_age_for_removal(self.default_purge_age)
 
         self.sleep(40, "Wait for purger to start running")
 
@@ -543,30 +549,28 @@ class ConfigPurging(CollectionBase):
             int(self.default_purge_age/self.default_run_interval)
         last_key_index = max_ts_to_create - 1
 
+        rest = RestConnection(self.cluster.master)
         # Remove any old tombstones prior to the test
-        self.cluster_util.rest.run_tombstone_purger(1)
+        rest.run_tombstone_purger(1)
         # Reset default purger run values
-        self.cluster_util.rest.update_tombstone_purger_run_interval(
-            self.default_run_interval)
-        self.cluster_util.rest.update_tombstone_purge_age_for_removal(
-            self.default_purge_age)
-        self.cluster_util.rest.disable_tombstone_purger()
+        rest.update_tombstone_purger_run_interval(self.default_run_interval)
+        rest.update_tombstone_purge_age_for_removal(self.default_purge_age)
+        rest.disable_tombstone_purger()
 
         # Create tombstones
         for index in range(max_ts_to_create):
             self.log.info("Creating tombstone with key '%s'" % key)
-            self.cluster_util.create_metakv_key(key, value)
-            self.cluster_util.delete_metakv_key(key)
+            self.cluster_util.create_metakv_key(self.cluster.master,
+                                                key, value)
+            self.cluster_util.delete_metakv_key(self.cluster.master, key)
             if index != last_key_index:
                 self.sleep(self.default_run_interval,
                            "Wait before creating next tombstone")
 
         self.log.info("Enabling ts-purger with default settings")
-        self.cluster_util.rest.enable_tombstone_purger()
-        self.cluster_util.rest.update_tombstone_purger_run_interval(
-            self.default_run_interval)
-        self.cluster_util.rest.update_tombstone_purge_age_for_removal(
-            self.default_purge_age)
+        rest.enable_tombstone_purger()
+        rest.update_tombstone_purger_run_interval(self.default_run_interval)
+        rest.update_tombstone_purge_age_for_removal(self.default_purge_age)
         self.sleep(20, "Wait for purger to start running")
 
         # Trigger purger with default values to validate the purging keys
@@ -597,8 +601,9 @@ class ConfigPurging(CollectionBase):
         3. Let the purger run complete
         """
         t_key = "fts_index-%s" % int(self.time_stamp) + "-%s"
+        rest = RestConnection(self.cluster.master)
         self.log.info("Stopping meta_kv purger autorun")
-        self.cluster_util.rest.disable_tombstone_purger()
+        rest.disable_tombstone_purger()
 
         self.log.info("Creating fts_index tombstones")
         for index in range(self.num_index):
@@ -635,7 +640,7 @@ class ConfigPurging(CollectionBase):
 
         self.sleep(15, "Wait before triggering purger")
         self.log.info("Triggering purger when a node is in failed state")
-        self.cluster_util.rest.run_tombstone_purger(10)
+        rest.run_tombstone_purger(10)
         purged_keys_dict = self.__get_purged_tombstone_from_last_run()
         for node_ip, purged_data in purged_keys_dict.items():
             if purged_data['count'] or purged_data['count'] != 0:
@@ -649,7 +654,7 @@ class ConfigPurging(CollectionBase):
         self.sleep(60, "Wait for node to come online")
 
         self.log.info("Triggering purger when a node is in failed state")
-        self.cluster_util.rest.run_tombstone_purger(10)
+        rest.run_tombstone_purger(10)
         self.sleep(10, "Wait for purger to run")
         purged_keys_dict = self.__get_purged_tombstone_from_last_run()
         for node_ip, purged_data in purged_keys_dict.items():
@@ -668,13 +673,14 @@ class ConfigPurging(CollectionBase):
 
         custom_meta_kv_key = "key_01_%s" % self.time_stamp
         fts_key = "fts_index_%s" % int(self.time_stamp)
+        rest = RestConnection(self.cluster.master)
 
         random_node = choice(self.cluster.servers[1:])
         if random_node.ip == self.cluster.fts_nodes[0].ip:
             self.fts_helper = FtsHelper(self.cluster.fts_nodes[1])
 
         self.log.info("Stopping meta_kv purger autorun")
-        self.cluster_util.rest.disable_tombstone_purger()
+        rest.disable_tombstone_purger()
 
         # Creating meta_kv keys
         self.__fts_index(self.op_create, fts_key,
@@ -706,7 +712,7 @@ class ConfigPurging(CollectionBase):
                                               custom_meta_kv_key)
 
         self.sleep(15, "Wait before triggering purger")
-        self.cluster_util.rest.run_tombstone_purger(10)
+        rest.run_tombstone_purger(10)
 
         purged_keys_dict = self.__get_purged_tombstone_from_last_run()
         for node_ip, purged_data in purged_keys_dict.items():
@@ -732,7 +738,7 @@ class ConfigPurging(CollectionBase):
                     "%s - Deleted keys count mismatch. Expected %s, got %s"
                     % (node_ip, del_key_count, curr_count))
 
-        self.cluster_util.rest.run_tombstone_purger(10)
+        rest.run_tombstone_purger(10)
 
         # Validate the key has been deleted from meta_kv
         purged_keys_dict = self.__get_purged_tombstone_from_last_run()
@@ -756,7 +762,7 @@ class ConfigPurging(CollectionBase):
         def run_purger_and_validate_purged_key(check_key="exists"):
             self.__get_deleted_key_count()
             self.log.info("Triggering meta_kv purger")
-            self.cluster_util.rest.run_tombstone_purger(10)
+            rest.run_tombstone_purger(10)
             self.sleep(10, "Wait for purger to complete")
 
             # Validate purger runs on targeted node
@@ -779,6 +785,7 @@ class ConfigPurging(CollectionBase):
                 self.__get_current_timestamps_from_debug_log()
             self.log.info("New timestamp reference: %s" % self.ts_during_start)
 
+        rest = RestConnection(self.cluster.master)
         custom_meta_kv_key = "metakv_key_%s" % int(self.time_stamp)
         fts_key = "fts_index_%s" % int(self.time_stamp)
         target_node_type = \
@@ -789,7 +796,7 @@ class ConfigPurging(CollectionBase):
                                                 "within_purge_interval")
 
         self.log.info("Stopping meta_kv purger autorun")
-        self.cluster_util.rest.disable_tombstone_purger()
+        rest.disable_tombstone_purger()
 
         # Creating meta_kv keys
         self.__fts_index(self.op_create, fts_key,
@@ -842,7 +849,8 @@ class ConfigPurging(CollectionBase):
 
         # Update new master node
         if target_node.ip == self.cluster.master.ip:
-            self.cluster_util.find_orchestrator(self.cluster.servers[1])
+            self.cluster_util.find_orchestrator(self.cluster,
+                                                self.cluster.servers[1])
 
         self.log.info("Current master node: %s" % self.cluster.master.ip)
 
@@ -852,13 +860,13 @@ class ConfigPurging(CollectionBase):
         # Add back the removed node
         self.log.info("Adding back node %s" % target_node.ip)
         if remove_node_method in ["rebalance_out", "swap_rebalance"]:
-            self.cluster_util.add_node(target_node, [CbServer.Services.KV])
+            self.cluster_util.add_node(self.cluster, target_node,
+                                       [CbServer.Services.KV])
         elif remove_node_method == "failover":
-            self.cluster_util.rest.set_recovery_type(
-                otpNode="ns_1@"+target_node.ip,
-                recoveryType=self.recovery_type)
+            rest.set_recovery_type(otpNode="ns_1@"+target_node.ip,
+                                   recoveryType=self.recovery_type)
             rebalance_result = self.task.rebalance(
-                self.cluster_util.get_nodes_in_cluster(), [], [])
+                self.cluster_util.get_nodes_in_cluster(self.cluster), [], [])
             self.assertTrue(rebalance_result, "Add back rebalance failed")
 
         if add_back_node_timing == "within_purge_interval":
@@ -900,14 +908,15 @@ class ConfigPurging(CollectionBase):
 
         fts_generic_name = "fts_%s" % int(self.time_stamp) + "_%s_%s_%s_%d"
 
+        rest = RestConnection(self.cluster.master)
         # Set RAM quota and Index storage mode
-        self.cluster_util.rest.set_service_mem_quota(
+        rest.set_service_mem_quota(
             {CbServer.Settings.KV_MEM_QUOTA: 1024,
              CbServer.Settings.INDEX_MEM_QUOTA: 4096,
              CbServer.Settings.FTS_MEM_QUOTA: 4096,
              CbServer.Settings.CBAS_MEM_QUOTA: 1024,
              CbServer.Settings.EVENTING_MEM_QUOTA: 256})
-        self.cluster_util.rest.set_indexer_storage_mode(storageMode="plasma")
+        rest.set_indexer_storage_mode(storageMode="plasma")
 
         # Open SDK for connection for running n1ql queries
         self.client = self.sdk_client_pool.get_client_for_bucket(
@@ -982,6 +991,7 @@ class ConfigPurging(CollectionBase):
             else:
                 self.fail("Invalid service %s" % service)
 
+            cluster_node = None
             for node in nodes_to_play:
                 if node.ip in nodes_involved:
                     continue
@@ -994,7 +1004,8 @@ class ConfigPurging(CollectionBase):
                 for cluster_action in self.cluster_actions:
                     self.log.info("Performing '%s' on node %s"
                                   % (cluster_action, node.ip))
-                    nodes_in_cluster = self.cluster_util.get_nodes_in_cluster()
+                    nodes_in_cluster = \
+                        self.cluster_util.get_nodes_in_cluster(self.cluster)
                     if cluster_action == "rebalance_in":
                         rest = RestConnection(self.cluster.master)
                         self.task.rebalance(nodes_in_cluster, [node], [])
@@ -1013,7 +1024,7 @@ class ConfigPurging(CollectionBase):
                             cluster_node = t_node
                             if cluster_node.ip != self.cluster.master.ip:
                                 self.cluster_util.find_orchestrator(
-                                    cluster_node)
+                                    self.cluster, cluster_node)
                                 break
                     elif cluster_action == "swap_rebalance":
                         rest = RestConnection(self.cluster.master)
@@ -1028,14 +1039,14 @@ class ConfigPurging(CollectionBase):
                         if node.ip == self.cluster.master.ip:
                             self.cluster.master = self.spare_node
                             self.cluster_util.find_orchestrator(
-                                self.spare_node)
+                                self.cluster, self.spare_node)
                         self.spare_node = node
                     elif cluster_action == "graceful_failover":
                         rest = None
                         for t_node in nodes_in_cluster:
                             if t_node.ip != node.ip:
                                 rest = RestConnection(t_node)
-                                self.new_master = t_node
+                                cluster_node = t_node
                                 break
                         rest.fail_over("ns_1@" + node.ip, graceful=True)
                         self.sleep(10, "Wait for failover to start")
@@ -1055,7 +1066,8 @@ class ConfigPurging(CollectionBase):
                         self.assertTrue(
                             rest.monitorRebalance(stop_if_loop=True),
                             "Rebalance failed with failover node %s" % node.ip)
-                        self.cluster_util.find_orchestrator(self.new_master)
+                        self.cluster_util.find_orchestrator(self.cluster,
+                                                            cluster_node)
                     elif cluster_action == "add_back_failover_node":
                         rest = RestConnection(self.cluster.master)
                         rest.set_recovery_type("ns_1@" + node.ip,
@@ -1065,7 +1077,8 @@ class ConfigPurging(CollectionBase):
                         self.assertTrue(
                             rest.monitorRebalance(stop_if_loop=True),
                             "Rebalance failed with failover node %s" % node.ip)
-                        self.cluster_util.find_orchestrator(self.new_master)
+                        self.cluster_util.find_orchestrator(self.cluster,
+                                                            cluster_node)
 
                 # Break if max nodes to run has reached per service
                 num_nodes_run += 1

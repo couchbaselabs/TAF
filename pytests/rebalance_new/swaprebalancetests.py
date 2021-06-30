@@ -117,7 +117,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.task.jython_task_manager.get_task_result(task)
 
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
 
@@ -132,8 +133,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         opt_nodes_ids = [node.id for node in to_eject_nodes]
 
         if self.swap_orchestrator:
-            status, content = \
-                self.cluster_util.find_orchestrator(self.cluster.master)
+            status, content = self.cluster_util.find_orchestrator(self.cluster)
             self.assertTrue(status, msg="Unable to find orchestrator: %s:%s"
                                         % (status, content))
             if self.num_swap is len(current_nodes):
@@ -161,7 +161,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating abort scenarios for vbs before rebalance")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -185,7 +185,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating abort scenarios during rebalance")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -237,7 +237,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.assertTrue(self.rest.monitorRebalance(),
                         msg="Rebalance operation failed after adding node {0}"
                         .format(opt_nodes_ids))
-        status, _ = self.cluster_util.find_orchestrator(self.cluster.master)
+        status, _ = self.cluster_util.find_orchestrator(self.cluster)
         self.assertTrue(status, msg="Unable to find the cluster orchestrator")
 
         # Wait till load phase is over
@@ -266,8 +266,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                                                       howmany=self.num_swap)
         opt_nodes_ids = [node.id for node in to_eject_nodes]
         if self.swap_orchestrator:
-            status, content = \
-                self.cluster_util.find_orchestrator(self.cluster.master)
+            status, content = self.cluster_util.find_orchestrator(self.cluster)
             self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
                             .format(status, content))
             # When swapping all the nodes
@@ -407,8 +406,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                                   .format(server.ip, server.port))
 
         if self.fail_orchestrator:
-            status, content = \
-                self.cluster_util.find_orchestrator(self.cluster.master)
+            status, content = self.cluster_util.find_orchestrator(self.cluster)
             self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
                             .format(status, content))
             # When swapping all the nodes
@@ -486,8 +484,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.cluster.master, howmany=self.failover_factor)
         opt_nodes_ids = [node.id for node in to_eject_nodes]
         if self.fail_orchestrator:
-            status, content = \
-                self.cluster_util.find_orchestrator(self.cluster.master)
+            status, content = self.cluster_util.find_orchestrator(self.cluster)
             self.assertTrue(status, msg="Unable to find orchestrator: %s:%s"
                                         % (status, content))
             opt_nodes_ids[0] = content

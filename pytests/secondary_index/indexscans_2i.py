@@ -1,3 +1,4 @@
+from Cb_constants import CbServer
 from base_2i import BaseSecondaryIndexingTests
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
@@ -35,7 +36,8 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
             return
         if index_nodes is None:
             index_nodes = self.cluster_util.get_nodes_from_services_map(
-                service_type="index",
+                cluster=self.cluster,
+                service_type=CbServer.Services.INDEX,
                 get_all_nodes=True)
         x = len(query_definitions) - 1
         while x > -1:
@@ -179,7 +181,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
 
         crud_batch_size = 50
         def_bucket = self.cluster.buckets[0]
-        kv_nodes = self.cluster_util.get_kv_nodes()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         replica_vbs = dict()
         verification_dict = dict()
         index_item_count = dict()
@@ -299,7 +301,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
                 self.validate_indexed_doc_count(def_bucket, index_item_count)
         failed = durability_helper.verify_vbucket_details_stats(
             def_bucket, kv_nodes,
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster.vbuckets, expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed")
         self.validate_test_failure()

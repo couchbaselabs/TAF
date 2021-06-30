@@ -18,8 +18,9 @@ class CBASSecondaryIndexes(CBASBaseTest):
         if "add_all_cbas_nodes" in self.input.test_params and \
                 self.input.test_params["add_all_cbas_nodes"] and len(
             self.cluster.cbas_nodes) > 1:
-            self.add_all_nodes_then_rebalance(self.cluster.cbas_nodes)
-        
+            self.cluster_util.add_all_nodes_then_rebalance(
+                self.cluster, self.cluster.cbas_nodes)
+
         self.cbas_util.createConn(self.cb_bucket_name)
 
         # Create dataset on the CBAS bucket
@@ -30,7 +31,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
 
     def tearDown(self):
         super(CBASSecondaryIndexes, self).tearDown()
-    
+
     def verify_index_used(self, statement, index_used=False, index_name=None):
         statement = 'EXPLAIN %s'%statement
         status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
@@ -48,7 +49,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
                 self.assertTrue("data-scan" in str(results))
                 self.assertFalse("index-search" in str(results))
                 self.log.info("DATA-SCAN is found in EXPLAIN hence index is not used to serve %s"%statement)
- 
+
     def test_create_index(self):
         '''
         Steps :
@@ -509,9 +510,9 @@ class CBASSecondaryIndexes(CBASBaseTest):
                 self.client.upsert(k, {index_fields.split(":")[0].split(".")[0]:{index_fields.split(":")[0].split(".")[1] : not_fit_value}})
             else:
                 self.client.upsert(k, {index_fields.split(":")[0] : not_fit_value})
-        
+
         self.client.close()
-        
+
         if index_fields.split(":")[1] == "string" and isinstance(not_fit_value,str) or \
             index_fields.split(":")[1] == "double" and isinstance(not_fit_value,(float,int)) or \
             index_fields.split(":")[1] == "bigint" and isinstance(not_fit_value,(float,int)):
@@ -553,12 +554,12 @@ class CBASSecondaryIndexes(CBASBaseTest):
         if status == 'success':
             self.assertEquals(errors, None)
             self.assertEquals(results, [{'$1': 1}])
-            
+
         self.log.info("Verify whether statement %s used index or not. Indexed: %s"%(statement,index_fields))
         self.verify_index_used(statement, index_used, self.index_name)
     # https://issues.couchbase.com/browse/MB-25646
     # https://issues.couchbase.com/browse/MB-25657
-    
+
     def test_index_population_thread(self):
         to_verify = 0
         index_used = self.input.param("index_used", False)
@@ -578,7 +579,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
                 else:
                     # 10% field removed
                     client.upsert(k, {index_fields.split(":")[0] + "_NEW_FIELD": not_fit_value})
-                    
+
         # Create Index
         search_by = self.input.param("search_by", '')
         exp_number = self.input.param("exp_number", 0)
@@ -642,7 +643,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
             if status == 'success':
                 self.assertEquals(errors, None)
                 self.assertEquals(results, [{'$1': 0}])
-                
+
             self.log.info("Verify whether statement %s used index or not. Indexed: %s"%(statement,index_fields))
             self.verify_index_used(statement, index_used, self.index_name)
         self.client.close()
@@ -650,7 +651,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
         exp_number = self.input.param("exp_number", 0)
         where_statement = self.input.param("where_statement", '').replace('_EQ_', '=')
         index_used = self.input.param("index_used", False)
-        
+
         testuser = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'password': 'password'}]
         rolelist = [{'id': self.cb_bucket_name, 'name': self.cb_bucket_name, 'roles': 'admin'}]
         self.add_built_in_server_user(testuser=testuser, rolelist=rolelist)
@@ -684,7 +685,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
 
         self.log.info("Verify whether statement %s used index or not. Indexed: %s"%(statement,index_fields))
         self.verify_index_used(statement, index_used, self.index_name)
-            
+
     def test_index_population_joins(self):
         exp_number = self.input.param("exp_number", 0)
         self.index_name2 = self.input.param('index_name2', None)
@@ -741,7 +742,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
         self.assertEquals(len(results), exp_number)
 
     # https://issues.couchbase.com/browse/MB-25695
-    
+
     def test_index_metadata(self):
         self.buckets = [Bucket(name="beer-sample")]
         self.perform_doc_ops_in_all_cb_buckets("create", start_key=0, end_key=100000)
@@ -761,7 +762,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
                                cb_bucket_password=self.cb_bucket_password)
         self.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name], 107303)
         statement = 'SELECT count(*) FROM `{0}`'.format(self.cbas_dataset_name)
-#        
+#
         _, result = self.cbas_util.verify_index_created(self.index_name, self.index_fields,
                                               self.cbas_dataset_name)
 
@@ -797,7 +798,7 @@ class CBASSecondaryIndexes(CBASBaseTest):
         self.assertEquals(status, "success")
         self.assertEquals(errors, None)
         self.assertEquals(results, [{'$1': 107303}])
-    
+
     def test_index_on_nested_fields_same_object(self):
         index_fields = ["geo.lon:double", "geo.lat:double"]
         create_idx_statement = "create index {0} IF NOT EXISTS on {1}({2});".format(self.index_name, self.cbas_dataset_name, ",".join(index_fields))

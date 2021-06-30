@@ -7,6 +7,7 @@ from collections import OrderedDict
 from datetime import datetime
 from ruamel.yaml import YAML
 
+import Cb_constants
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 from cb_tools.cb_cli import CbCli
@@ -49,6 +50,7 @@ class BaseTestCase(unittest.TestCase):
         self.servers = self.input.servers
         self.cb_clusters = OrderedDict()
         self.num_servers = self.input.param("servers", len(self.servers))
+        self.vbuckets =self.input.param("vbuckets", CbServer.total_vbuckets)
         self.primary_index_created = False
         self.index_quota_percent = self.input.param("index_quota_percent",
                                                     None)
@@ -249,19 +251,21 @@ class BaseTestCase(unittest.TestCase):
             # Multi cluster setup
             for _, nodes in self.input.clusters.iteritems():
                 cluster_name = cluster_name_format % counter_index
-                tem_cluster = CBCluster(name=cluster_name, servers=nodes)
+                tem_cluster = CBCluster(name=cluster_name, servers=nodes,
+                                        vbuckets=self.vbuckets)
                 self.cb_clusters[cluster_name] = tem_cluster
                 counter_index += 1
         else:
             # Single cluster
             cluster_name = cluster_name_format % counter_index
             self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
-                                                       servers=self.servers)
+                                                       servers=self.servers,
+                                                       vbuckets=self.vbuckets)
 
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[cluster_name_format
                                         % default_cluster_index]
-        self.cluster_util = ClusterUtils(self.cluster, self.task_manager)
+        self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
 
         if self.standard_buckets > 10:
@@ -295,9 +299,8 @@ class BaseTestCase(unittest.TestCase):
                 if not self.skip_buckets_handle \
                         and not self.skip_init_check_cbserver:
                     self.log.debug("Cleaning up cluster")
-                    cluster_util = ClusterUtils(cluster, self.task_manager)
-                    bucket_util = BucketUtils(cluster_util, self.task)
-                    cluster_util.cluster_cleanup(bucket_util)
+                    self.cluster_util.cluster_cleanup(cluster,
+                                                      self.bucket_util)
 
             # Avoid cluster operations in setup for new upgrade / upgradeXDCR
             if str(self.__class__).find('newupgradetests') != -1 or \
@@ -319,10 +322,9 @@ class BaseTestCase(unittest.TestCase):
                     self.tear_down_while_setup = False
             if not self.skip_init_check_cbserver:
                 for cluster_name, cluster in self.cb_clusters.items():
-                    self.log.info("Initializing cluster")
-                    cluster_util = ClusterUtils(cluster, self.task_manager)
-                    cluster_util.reset_cluster()
-                    master_services = cluster_util.get_services(
+                    self.log.info("Initializing cluster %s" % cluster_name)
+                    self.cluster_util.reset_cluster(cluster)
+                    master_services = self.cluster_util.get_services(
                         cluster.servers[:1], self.services_init, start_node=0)
                     if master_services is not None:
                         master_services = master_services[0].split(",")
@@ -339,9 +341,9 @@ class BaseTestCase(unittest.TestCase):
                         self.quota_percent,
                         services=master_services)
 
-                    cluster_util.change_env_variables()
-                    cluster_util.change_checkpoint_params()
-                    self.log.info("{0} initialized".format(cluster))
+                    self.cluster_util.change_env_variables(cluster)
+                    self.cluster_util.change_checkpoint_params(cluster)
+                    self.log.info("Cluster %s initialized" % cluster_name)
             else:
                 self.quota = ""
 
@@ -354,15 +356,18 @@ class BaseTestCase(unittest.TestCase):
                     shell_conn.disconnect()
 
             for cluster_name, cluster in self.cb_clusters.items():
-                cluster_util = ClusterUtils(cluster, self.task_manager)
                 if self.log_info:
-                    cluster_util.change_log_info()
+                    self.cluster_util.change_log_info(cluster,
+                                                      self.log_info)
                 if self.log_location:
-                    cluster_util.change_log_location()
+                    self.cluster_util.change_log_location(cluster,
+                                                          self.log_location)
                 if self.stat_info:
-                    cluster_util.change_stat_info()
+                    self.cluster_util.change_stat_info(cluster,
+                                                       self.stat_info)
                 if self.port_info:
-                    cluster_util.change_port_info()
+                    self.cluster_util.change_port_info(cluster,
+                                                       self.port_info)
                 if self.port:
                     self.port = str(self.port)
 
@@ -460,8 +465,6 @@ class BaseTestCase(unittest.TestCase):
         if self.skip_setup_cleanup:
             return
         for _, cluster in self.cb_clusters.items():
-            cluster_util = ClusterUtils(cluster, self.task_manager)
-            bucket_util = BucketUtils(cluster_util, self.task)
             try:
                 if self.skip_buckets_handle:
                     return
@@ -498,12 +501,13 @@ class BaseTestCase(unittest.TestCase):
                     if alerts is not None and len(alerts) != 0:
                         self.infra_log.warn("Alerts found: {0}".format(alerts))
                     self.log.debug("Cleaning up cluster")
-                    cluster_util.cluster_cleanup(bucket_util)
+                    self.cluster_util.cluster_cleanup(cluster,
+                                                      self.bucket_util)
             except BaseException as e:
                 # kill memcached
                 traceback.print_exc()
                 self.log.warning("Killing memcached due to {0}".format(e))
-                cluster_util.kill_memcached()
+                self.cluster_util.kill_memcached(cluster)
                 # Increase case_number to retry tearDown in setup for next test
                 self.case_number += 1000
             finally:
@@ -511,7 +515,7 @@ class BaseTestCase(unittest.TestCase):
                 if self.cleanup:
                     self.cleanup = False
                 else:
-                    cluster_util.reset_env_variables()
+                    self.cluster_util.reset_env_variables(cluster)
         self.infra_log.info("========== tasks in thread pool ==========")
         self.task_manager.print_tasks_in_pool()
         self.infra_log.info("==========================================")
@@ -618,15 +622,14 @@ class BaseTestCase(unittest.TestCase):
             rest = RestConnection(cluster.master)
             nodes = rest.get_nodes()
             # Creating cluster_util object to handle multi_cluster scenario
-            cluster_util = ClusterUtils(cluster, self.task_manager)
-            status = cluster_util.trigger_cb_collect_on_cluster(
+            status = self.cluster_util.trigger_cb_collect_on_cluster(
                 rest, nodes,
                 is_single_node_server)
 
             if status is True:
-                cluster_util.wait_for_cb_collect_to_complete(rest)
-                cluster_util.copy_cb_collect_logs(rest, nodes, cluster,
-                                                  log_path)
+                self.cluster_util.wait_for_cb_collect_to_complete(rest)
+                self.cluster_util.copy_cb_collect_logs(rest, nodes, cluster,
+                                                       log_path)
             else:
                 self.log.error("API perform_cb_collect returned False")
 
@@ -968,8 +971,7 @@ class ClusterSetup(BaseTestCase):
         self.bucket_util.add_rbac_user(self.cluster.master)
 
         # Print cluster stats
-        self.cluster_util.print_cluster_stats()
-
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.log_setup_status("ClusterSetup", "complete", "setup")
 
     def tearDown(self):

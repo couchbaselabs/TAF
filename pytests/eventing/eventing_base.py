@@ -39,7 +39,9 @@ class EventingBaseTest(BaseTestCase):
         self.input.test_params.update({"default_bucket": False})
         self.master = self.servers[0]
         self.server = self.master
-        self.restServer = self.cluster_util.get_nodes_from_services_map(service_type="eventing")
+        self.restServer = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.EVENTING)
         self.rest = RestConnection(self.restServer)
         self.eventing_helper = EventingHelper(self.restServer)
         self.rest.set_indexer_storage_mode()
@@ -91,14 +93,16 @@ class EventingBaseTest(BaseTestCase):
         #     buckets=self.cluster.buckets, item_flag=self.item_flag,
         #     n1ql_port=self.n1ql_port, full_docs_list=self.full_docs_list,
         #     log=self.log, input=self.input, master=self.cluster.master)
-        self.n1ql_node = self.cluster_util.get_nodes_from_services_map(service_type="n1ql")
-        if self.hostname=='local':
+        self.n1ql_node = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.EVENTING)
+        if self.hostname == 'local':
             self.insall_dependencies()
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             ip = s.getsockname()[0]
             s.close()
-            self.hostname= "http://"+ip+":1080/"
+            self.hostname = "http://"+ip+":1080/"
             self.log.info("local ip address:{}".format(self.hostname))
             self.setup_curl()
 
@@ -204,7 +208,10 @@ class EventingBaseTest(BaseTestCase):
                                 skip_stats_validation=False, bucket=None, timeout=600):
         # This resets the rest server as the previously used rest server might be out of cluster due to rebalance
         num_nodes = self.refresh_rest_server()
-        eventing_nodes = self.cluster_util.get_nodes_from_services_map(service_type="eventing", get_all_nodes=True)
+        eventing_nodes = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.EVENTING,
+            get_all_nodes=True)
         if bucket is None:
             bucket=self.dst_bucket_name
         if self.is_sbm:
@@ -369,13 +376,19 @@ class EventingBaseTest(BaseTestCase):
             self.wait_for_handler_state(body['appname'], "deployed")
 
     def refresh_rest_server(self):
-        eventing_nodes_list = self.cluster_util.get_nodes_from_services_map(service_type="eventing", get_all_nodes=True)
+        eventing_nodes_list = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.EVENTING,
+            get_all_nodes=True)
         self.restServer = eventing_nodes_list[0]
         self.rest = RestConnection(self.restServer)
         return len(eventing_nodes_list)
 
     def check_if_eventing_consumers_are_cleaned_up(self):
-        eventing_nodes = self.cluster_util.get_nodes_from_services_map(service_type="eventing", get_all_nodes=True)
+        eventing_nodes = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.EVENTING,
+            get_all_nodes=True)
         array_of_counts = []
         command = "ps -ef | grep eventing-consumer | grep -v grep | wc -l"
         for eventing_node in eventing_nodes:
@@ -399,7 +412,10 @@ class EventingBaseTest(BaseTestCase):
     def check_eventing_logs_for_panic(self):
         # self.generate_map_nodes_out_dist()
         panic_str = "panic"
-        eventing_nodes = self.cluster_util.get_nodes_from_services_map(service_type="eventing", get_all_nodes=True)
+        eventing_nodes = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.EVENTING,
+            get_all_nodes=True)
         if not eventing_nodes:
             return None
         for eventing_node in eventing_nodes:
@@ -513,7 +529,7 @@ class EventingBaseTest(BaseTestCase):
         # wait for restart and warmup on all node
         self.sleep(self.wait_timeout * 2)
         # disable firewall on these nodes
-        self.cluster_util.stop_firewall_on_node(server)
+        self.cluster_util.stop_firewall_on_node(self.cluster, server)
         # wait till node is ready after warmup
         self.cluster_util.wait_for_ns_servers_or_assert([server], self)
 
@@ -533,25 +549,37 @@ class EventingBaseTest(BaseTestCase):
         remote_client.disconnect()
 
     def cleanup_eventing(self):
-        ev_node = self.cluster_util.get_nodes_from_services_map(service_type="eventing", get_all_nodes=False)
+        ev_node = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.EVENTING,
+            get_all_nodes=False)
         ev_rest = EventingHelper(ev_node)
         self.log.info("Running eventing cleanup api...")
         ev_rest.cleanup_eventing()
 
     def generate_docs_bigdata(self, docs_per_day, start=0, document_size=1024000):
         json_generator = JsonGenerator()
-        return json_generator.generate_docs_bigdata(end=(2016 * docs_per_day), start=start, value_size=document_size)
+        return json_generator.generate_docs_bigdata(end=(2016 * docs_per_day),
+                                                    start=start,
+                                                    value_size=document_size)
 
     def print_eventing_stats_from_all_eventing_nodes(self):
-        eventing_nodes = self.cluster_util.get_nodes_from_services_map(service_type="eventing", get_all_nodes=True)
+        eventing_nodes = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.EVENTING,
+            get_all_nodes=True)
         for eventing_node in eventing_nodes:
             rest_conn = EventingHelper(eventing_node)
             out = rest_conn.get_all_eventing_stats()
-            log.info("Stats for Node {0} is \n{1} ".format(eventing_node.ip, json.dumps(out, sort_keys=True,
-                                                                                      indent=4)))
+            self.log.info("Stats for Node {0} is \n{1}"
+                          .format(eventing_node.ip,
+                                  json.dumps(out, sort_keys=True, indent=4)))
 
     def print_go_routine_dump_from_all_eventing_nodes(self):
-        eventing_nodes = self.cluster_util.get_nodes_from_services_map(service_type="eventing", get_all_nodes=True)
+        eventing_nodes = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.EVENTING,
+            get_all_nodes=True)
         for eventing_node in eventing_nodes:
             rest_conn = EventingHelper(eventing_node)
             out = rest_conn.get_eventing_go_routine_dumps()
@@ -701,7 +729,7 @@ class EventingBaseTest(BaseTestCase):
         return doc_generator(key, 0, docs_per_day * 2016, doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.cluster_util.vbuckets)
+                             vbuckets=self.cluster.vbuckets)
 
     def load(self, load_gen, bucket, operation="create"):
         self.log.info("doc_generator created")

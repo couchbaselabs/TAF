@@ -17,6 +17,7 @@ import random
 import importlib
 import copy
 
+from Cb_constants import CbServer
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
@@ -4461,17 +4462,19 @@ class CBASRebalanceUtil(object):
                   cbas_nodes_out=0):
         if kv_nodes_out > 0:
             cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
-                service_type="kv", get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster,
-                master=self.cluster.master)
+                cluster=self.cluster,
+                service_type=CbServer.Services.KV,
+                get_all_nodes=True,
+                servers=self.cluster.nodes_in_cluster)
         else:
             cluster_kv_nodes = []
 
         if cbas_nodes_out > 0:
             cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-                service_type="cbas", get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster,
-                master=self.cluster.master)
+                cluster=self.cluster,
+                service_type=CbServer.Services.CBAS,
+                get_all_nodes=True,
+                servers=self.cluster.nodes_in_cluster)
         else:
             cluster_cbas_nodes = []
 
@@ -4617,7 +4620,7 @@ class CBASRebalanceUtil(object):
         while retry_count < 10:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
             except:
                 retry_count = retry_count + 1
                 self.log.info(
@@ -4627,13 +4630,15 @@ class CBASRebalanceUtil(object):
                 break
         if retry_count == 10:
             self.log.info("Attempting last retry for ep-queue to drain")
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
         if doc_and_collection_ttl:
             self.bucket_util._expiry_pager(self.cluster, val=5)
             self.log.info("wait for doc/collection maxttl to finish")
             time.sleep(400)
             items = 0
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             for bucket in self.cluster.buckets:
                 items = items + self.bucket_helper_obj.get_active_key_count(
                     bucket)
@@ -4678,23 +4683,25 @@ class CBASRebalanceUtil(object):
                     actual_failover_count, expected_failover_count))
 
     def failover(self, failover_type="Hard", action="RebalanceOut",
-                 service_type="cbas", timeout=7200):
+                 service_type=CbServer.Services.CBAS, timeout=7200):
         self.log.info("{0} Failover a node and {1} that node".format(
             failover_type, action))
 
-        if "kv" in service_type:
+        if CbServer.Services.KV in service_type:
             cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
-                service_type="kv", get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster,
-                master=self.cluster.master)
+                cluster=self.cluster,
+                service_type=CbServer.Services.KV,
+                get_all_nodes=True,
+                servers=self.cluster.nodes_in_cluster)
         else:
             cluster_kv_nodes = []
 
-        if "cbas" in service_type:
+        if CbServer.Services.CBAS in service_type:
             cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-                service_type="cbas", get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster,
-                master=self.cluster.master)
+                cluster=self.cluster,
+                service_type=CbServer.Services.CBAS,
+                get_all_nodes=True,
+                servers=self.cluster.nodes_in_cluster)
         else:
             cluster_cbas_nodes = []
 

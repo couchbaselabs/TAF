@@ -21,7 +21,8 @@ class DocumentKeysTests(ClusterSetup):
         Helper function to wait for persistence and
         then verify data/stats on all buckets
         """
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     """Helper function to verify the data using view query"""
@@ -50,7 +51,7 @@ class DocumentKeysTests(ClusterSetup):
                                  key_size=self.key_size,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.cluster_util.vbuckets,
+                                 vbuckets=self.cluster.vbuckets,
                                  target_vbucket=target_vb)
 
         bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
@@ -72,7 +73,7 @@ class DocumentKeysTests(ClusterSetup):
                                  key_size=self.key_size,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.cluster_util.vbuckets)
+                                 vbuckets=self.cluster.vbuckets)
         bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         task = self.task.async_load_gen_docs(self.cluster, bucket,
                                              gen_load, "create", 0,
@@ -96,7 +97,7 @@ class DocumentKeysTests(ClusterSetup):
                                  key_size=self.key_size,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.cluster_util.vbuckets)
+                                 vbuckets=self.cluster.vbuckets)
         bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         task = self.task.async_load_gen_docs(self.cluster, bucket,
                                              gen_load, "create", 0,

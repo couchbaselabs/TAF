@@ -14,11 +14,11 @@ class Bucket_DGM_Tests(ClusterSetup):
         super(Bucket_DGM_Tests, self).setUp()
         self.create_bucket(self.cluster)
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         doc_create = doc_generator(
             self.key, 0, self.num_items,
             key_size=self.key_size, doc_size=self.doc_size,
-            doc_type=self.doc_type, vbuckets=self.cluster_util.vbuckets)
+            doc_type=self.doc_type, vbuckets=self.cluster.vbuckets)
         for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_create, "create", 0,
@@ -30,7 +30,8 @@ class Bucket_DGM_Tests(ClusterSetup):
                 process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
             # Verify initial doc load count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
         self.log.info("========= Finished Bucket_DGM_Tests setup =======")
@@ -60,17 +61,17 @@ class Bucket_DGM_Tests(ClusterSetup):
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster.vbuckets)
         gen_update = doc_generator(self.key, 0, self.num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster.vbuckets)
         gen_delete = doc_generator(self.key, self.num_items, num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster.vbuckets)
 
         # Perform continuous updates while bucket moves from DGM->non-DGM state
         if not self.atomicity:
@@ -190,7 +191,7 @@ class Bucket_DGM_Tests(ClusterSetup):
 
         bucket = self.cluster.buckets[0]
         node_data = dict()
-        kv_nodes = self.cluster_util.get_kv_nodes()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for node in kv_nodes:
             cbstat = Cbstats(RemoteMachineShellConnection(node))
             node_data[node] = dict()

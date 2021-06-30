@@ -213,14 +213,10 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
         self.backupset.backup_compressed = \
                                       self.input.param("backup-conpressed", False)
         self.backups = []
-        self.validation_helper = BackupRestoreValidations(self.backupset,
-                                                          self.cluster_to_backup,
-                                                          self.cluster_to_restore,
-                                            self.buckets,
-                                            self.backup_validation_files_location,
-                                            self.backups,
-                                            self.num_items,
-                                            self.cluster_util.vbuckets)
+        self.validation_helper = BackupRestoreValidations(
+            self.backupset, self.cluster_to_backup, self.cluster_to_restore,
+            self.buckets, self.backup_validation_files_location,
+            self.backups, self.num_items, self.cluster.vbuckets)
         self.number_of_backups_taken = 0
         self.vbucket_seqno = []
         self.expires = self.input.param("expires", 0)
@@ -303,7 +299,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
 
     def backup_reset_clusters(self, servers):
         self.bucket_util.delete_all_buckets(self.cluster, servers)
-        self.cluster_util.cleanup_cluster(master=servers[0])
+        self.cluster_util.cleanup_cluster(self.cluster, master=servers[0])
         self.cluster_util.wait_for_ns_servers_or_assert(servers)
 
     def store_vbucket_seqno(self):

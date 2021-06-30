@@ -240,7 +240,7 @@ class volume(BaseTestCase):
 
     def set_num_writer_and_reader_threads(self, num_writer_threads="default",
                                           num_reader_threads="default"):
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
             bucket_helper = BucketHelper(node)
             bucket_helper.update_memcached_settings(
                 num_writer_threads=num_writer_threads,
@@ -284,7 +284,7 @@ class volume(BaseTestCase):
                 self.update_end,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                vbuckets=self.cluster_util.vbuckets,
+                vbuckets=self.cluster.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
@@ -308,7 +308,7 @@ class volume(BaseTestCase):
                 self.delete_end,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                vbuckets=self.cluster_util.vbuckets,
+                vbuckets=self.cluster.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
@@ -336,7 +336,7 @@ class volume(BaseTestCase):
                 self.expire_end,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                vbuckets=self.cluster_util.vbuckets,
+                vbuckets=self.cluster.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
@@ -363,7 +363,7 @@ class volume(BaseTestCase):
                 self.create_start, self.create_end,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                vbuckets=self.cluster_util.vbuckets,
+                vbuckets=self.cluster.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
@@ -451,7 +451,7 @@ class volume(BaseTestCase):
         if wait_for_stats:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets, timeout=1200)
+                    self.cluster, self.cluster.buckets, timeout=1200)
             except Exception as e:
                 self.get_gdb()
                 raise e
@@ -492,11 +492,11 @@ class volume(BaseTestCase):
         nodes = nodes or [self.cluster.master]
         for node in nodes:
             if error_condition == "stop_server":
-                self.cluster_util.stop_server(node)
+                self.cluster_util.stop_server(self.cluster, node)
             elif error_condition == "enable_firewall":
-                self.cluster_util.start_firewall_on_node(node)
+                self.cluster_util.start_firewall_on_node(self.cluster, node)
             elif error_condition == "kill_memcached":
-                self.cluster_util.kill_server_memcached(node)
+                self.cluster_util.kill_memcached(self.cluster, node=node)
             elif error_condition == "reboot_server":
                 shell = RemoteMachineShellConnection(node)
                 shell.reboot_node()
@@ -511,9 +511,9 @@ class volume(BaseTestCase):
     def _recover_from_error(self, error_condition):
         for node in self.cluster.nodes_in_cluster:
             if error_condition == "stop_server" or error_condition == "kill_erlang":
-                self.cluster_util.start_server(node)
+                self.cluster_util.start_server(self.cluster, node)
             elif error_condition == "enable_firewall":
-                self.cluster_util.stop_firewall_on_node(node)
+                self.cluster_util.stop_firewall_on_node(self.cluster, node)
 
         for node in self.cluster.nodes_in_cluster:
             result = self.cluster_util.wait_for_ns_servers_or_assert([node],
@@ -831,7 +831,7 @@ class volume(BaseTestCase):
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
                 target_vbucket=target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
+                vbuckets=self.cluster.vbuckets,
                 key_size=self.key_size,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value,
@@ -1213,6 +1213,7 @@ class volume(BaseTestCase):
             end_step_checks(tasks_info)
 
             self.bucket_util.compare_failovers_logs(
+                self.cluster,
                 prev_failover_stats,
                 self.cluster.nodes_in_cluster,
                 self.cluster.buckets)
@@ -1221,12 +1222,12 @@ class volume(BaseTestCase):
                 disk_active_dataset, disk_replica_dataset,
                 self.cluster.servers[:self.nodes_in + self.nodes_init],
                 self.cluster.buckets, path=None)
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
-                std=std, total_vbuckets=self.cluster_util.vbuckets)
+                std=std, total_vbuckets=self.cluster.vbuckets)
 
             ###################################################################
             '''
@@ -1284,6 +1285,7 @@ class volume(BaseTestCase):
             end_step_checks(tasks_info)
 
             self.bucket_util.compare_failovers_logs(
+                self.cluster,
                 prev_failover_stats,
                 self.cluster.nodes_in_cluster,
                 self.cluster.buckets)
@@ -1292,12 +1294,12 @@ class volume(BaseTestCase):
                 disk_active_dataset, disk_replica_dataset,
                 self.cluster.servers[:self.nodes_in + self.nodes_init],
                 self.cluster.buckets, path=None)
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
-                std=std, total_vbuckets=self.cluster_util.vbuckets)
+                std=std, total_vbuckets=self.cluster.vbuckets)
 
             ###################################################################
             '''
@@ -1359,6 +1361,7 @@ class volume(BaseTestCase):
             end_step_checks(tasks_info)
 
             self.bucket_util.compare_failovers_logs(
+                self.cluster,
                 prev_failover_stats,
                 self.cluster.nodes_in_cluster,
                 self.cluster.buckets)
@@ -1367,12 +1370,12 @@ class volume(BaseTestCase):
                 disk_active_dataset, disk_replica_dataset,
                 self.cluster.servers[:self.nodes_in + self.nodes_init],
                 self.cluster.buckets, path=None)
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
-                std=std, total_vbuckets=self.cluster_util.vbuckets)
+                std=std, total_vbuckets=self.cluster.vbuckets)
 
             ###################################################################
             '''
@@ -1684,7 +1687,8 @@ class volume(BaseTestCase):
                 self.generate_docs(doc_ops="update")
                 self.perform_load(crash=True, validate_data=True)
                 _iter += 1
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets,
                                                          timeout=1200)
             if self.end_step == 10:
                 exit(10)
@@ -1723,7 +1727,8 @@ class volume(BaseTestCase):
                         bucket.scopes[scope].collections.pop(collection)
                         drop += 1
             self.num_collections = self.num_collections - drop
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.final_items = self.final_items * (self.num_collections)/total_collections
             self.log.info("Expected items after dropping collections: {}".
                           format(self.final_items))

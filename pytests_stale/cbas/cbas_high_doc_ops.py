@@ -117,8 +117,9 @@ class analytics_high_doc_ops(CBASBaseTest):
 
     def connect_cbas_buckets(self):
         # Connect to Bucket
-        self.cbas_util.connect_to_bucket(cbas_bucket_name='GleambookUsers',
-                               cb_bucket_password=self.cb_bucket_password)
+        self.cbas_util.connect_to_bucket(
+            cbas_bucket_name='GleambookUsers',
+            cb_bucket_password=self.cb_bucket_password)
 
     def disconnect_cbas_buckets(self):
 
@@ -165,29 +166,46 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.log.info("Add a N1QL/Index nodes")
         self.query_node = self.servers[1]
         rest = RestConnection(self.query_node)
-        rest.set_data_path(data_path=self.query_node.data_path,index_path=self.query_node.index_path,cbas_path=self.query_node.cbas_path)
-        result = self.cluster_util.add_node(self.query_node, rebalance=False)
+        rest.set_data_path(data_path=self.query_node.data_path,
+                           index_path=self.query_node.index_path,
+                           cbas_path=self.query_node.cbas_path)
+        result = self.cluster_util.add_node(self.cluster, self.query_node,
+                                            rebalance=False)
         self.assertTrue(result, msg="Failed to add N1QL/Index node.")
         self.log.info("Add a KV nodes")
         rest = RestConnection(self.cluster.kv_nodes[1])
-        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,index_path=self.cluster.kv_nodes[1].index_path,cbas_path=self.cluster.kv_nodes[1].cbas_path)
-        result = self.cluster_util.add_node(self.cluster.kv_nodes[1], services=["kv"], rebalance=False)
+        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,
+                           index_path=self.cluster.kv_nodes[1].index_path,
+                           cbas_path=self.cluster.kv_nodes[1].cbas_path)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.kv_nodes[1],
+            services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add one more KV node")
         rest = RestConnection(self.cluster.kv_nodes[3])
-        rest.set_data_path(data_path=self.cluster.kv_nodes[3].data_path,index_path=self.cluster.kv_nodes[3].index_path,cbas_path=self.cluster.kv_nodes[3].cbas_path)
-        result = self.cluster_util.add_node(self.cluster.kv_nodes[3], services=["kv"], rebalance=False)
+        rest.set_data_path(data_path=self.cluster.kv_nodes[3].data_path,
+                           index_path=self.cluster.kv_nodes[3].index_path,
+                           cbas_path=self.cluster.kv_nodes[3].cbas_path)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.kv_nodes[3],
+            services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add one more KV node")
         rest = RestConnection(self.cluster.kv_nodes[4])
-        rest.set_data_path(data_path=self.cluster.kv_nodes[4].data_path,index_path=self.cluster.kv_nodes[4].index_path,cbas_path=self.cluster.kv_nodes[4].cbas_path)
-        result = self.cluster_util.add_node(self.cluster.kv_nodes[4], services=["kv"], rebalance=False)
+        rest.set_data_path(data_path=self.cluster.kv_nodes[4].data_path,
+                           index_path=self.cluster.kv_nodes[4].index_path,
+                           cbas_path=self.cluster.kv_nodes[4].cbas_path)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.kv_nodes[4],
+            services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add a CBAS nodes")
-        result = self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=True)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.cbas_nodes[0],
+            services=["cbas"], rebalance=True)
         self.assertTrue(result, msg="Failed to add CBAS node.")
 
         nodes_in_cluster = nodes_in_cluster + [self.query_node, self.cluster.kv_nodes[1], self.cluster.kv_nodes[3], self.cluster.kv_nodes[4], self.cluster.cbas_nodes[0]]

@@ -71,7 +71,8 @@ class MultiDurabilityTests(BaseTestCase):
             if task.result:
                 self.sleep(2)
                 warmed_up = self.bucket_util._wait_warmup_completed(
-                    self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+                    self.cluster_util.get_kv_nodes(self.cluster), bucket,
+                    wait_time=60)
                 if not warmed_up:
                     task.result = False
                     raise_exception = "Bucket %s not warmed up" % bucket.name
@@ -82,7 +83,7 @@ class MultiDurabilityTests(BaseTestCase):
 
         if raise_exception:
             raise Exception("Create bucket failed: %s" % raise_exception)
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("=== MultiDurabilityTests base setup done ===")
 
@@ -121,9 +122,11 @@ class MultiDurabilityTests(BaseTestCase):
                 self.task.jython_task_manager.get_task_result(task)
 
             # Verify doc load count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             for _, tem_bucket in bucket_info.items():
                 self.bucket_util.verify_stats_for_bucket(
+                    self.cluster,
                     tem_bucket["object"],
                     tem_bucket["num_items"],
                     timeout=30)
@@ -151,7 +154,7 @@ class MultiDurabilityTests(BaseTestCase):
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster.vbuckets)
         doc_loading_tasks = list()
         for bucket in self.cluster.buckets:
             doc_loading_tasks.append(self.task.async_load_gen_docs(
@@ -164,7 +167,8 @@ class MultiDurabilityTests(BaseTestCase):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         half_of_num_items = int(self.num_items/2)
@@ -174,17 +178,17 @@ class MultiDurabilityTests(BaseTestCase):
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster.vbuckets)
         gen_update = doc_generator(self.key, half_of_num_items, self.num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster.vbuckets)
         gen_delete = doc_generator(self.key, 0, half_of_num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster.vbuckets)
 
         # replicate_to computation for 4th bucket object
         replica = self.bucket_dict[3]["replica"]

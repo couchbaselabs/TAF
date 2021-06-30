@@ -25,7 +25,7 @@ class RollbackTests(CollectionBase):
 
         # Used to calculate expected queue size of validation before rollback
         self.total_rollback_items = 0
-        self.kv_nodes = self.cluster_util.get_kv_nodes()
+        self.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
 
         self.sync_write_enabled = self.durability_helper.is_sync_write_enabled(
             self.bucket_durability_level, self.durability_level)
@@ -232,7 +232,7 @@ class RollbackTests(CollectionBase):
         # Fetch vbucket stats for validation
         self.get_vb_details_cbstats_for_all_nodes("pre_rollback")
 
-        target_node = choice(self.cluster_util.get_kv_nodes())
+        target_node = choice(self.cluster_util.get_kv_nodes(self.cluster))
         shell = self.node_shells[target_node]["shell"]
         cbstats = self.node_shells[target_node]["cbstat"]
         self.target_vbuckets = cbstats.vbucket_list(self.bucket.name)

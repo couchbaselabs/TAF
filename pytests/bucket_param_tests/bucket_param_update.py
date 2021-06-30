@@ -20,7 +20,7 @@ class BucketParamTest(ClusterSetup):
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster.vbuckets)
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
@@ -44,12 +44,13 @@ class BucketParamTest(ClusterSetup):
                     batch_size=10, process_concurrency=8)
                 self.task.jython_task_manager.get_task_result(task)
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Verify initial doc load count
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
         self.log.info("==========Finished Bucket_param_test setup========")
@@ -186,7 +187,7 @@ class BucketParamTest(ClusterSetup):
                                        key_size=self.key_size,
                                        doc_size=self.doc_size,
                                        doc_type=self.doc_type,
-                                       vbuckets=self.cluster_util.vbuckets)
+                                       vbuckets=self.cluster.vbuckets)
 
             # Creating doc updater to be used by test cases
             doc_update = doc_generator(
@@ -196,7 +197,7 @@ class BucketParamTest(ClusterSetup):
                 key_size=self.key_size,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
-                vbuckets=self.cluster_util.vbuckets)
+                vbuckets=self.cluster.vbuckets)
 
             # Creating doc updater to be used by test cases
             doc_delete = doc_generator(
@@ -205,7 +206,7 @@ class BucketParamTest(ClusterSetup):
                 start_doc_for_insert - (self.num_items/2),
                 key_size=self.key_size,
                 doc_size=self.doc_size, doc_type=self.doc_type,
-                vbuckets=self.cluster_util.vbuckets)
+                vbuckets=self.cluster.vbuckets)
 
             self.log.info("Updating replica count of bucket to {0}"
                           .format(replica_num))
@@ -320,7 +321,7 @@ class BucketParamTest(ClusterSetup):
             # Verify doc load count after each mutation cycle
             if not self.atomicity:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
                 self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                           doc_count)
         return doc_count, start_doc_for_insert
@@ -362,7 +363,7 @@ class BucketParamTest(ClusterSetup):
                                  key_size=self.key_size,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.cluster_util.vbuckets)
+                                 vbuckets=self.cluster.vbuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, self.def_bucket, load_gen, "update", 0,
             persist_to=self.persist_to, replicate_to=self.replicate_to,

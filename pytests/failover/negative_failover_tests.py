@@ -167,7 +167,7 @@ class NegativeFailoverTests(FailoverBaseTest):
                 self.rest.set_recovery_type(otpNode=chosen[0].id,
                                             recoveryType="delta")
             servers_out = self.cluster_util.add_remove_servers(
-                self.servers, [], [], [chosen[1]])
+                self.cluster, [], [], [chosen[1]])
             rebalance = self.task.async_rebalance(
                 self.servers[:self.nodes_init], [], servers_out)
             self.task_manager.get_task_result(rebalance)

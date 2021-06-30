@@ -41,7 +41,7 @@ class ServiceRebalanceTests(RebalanceBaseTest):
 
     def perform_rebalance_in(self, node):
         rest = RestConnection(self.cluster.master)
-        nodes_in_server = self.cluster_util.get_nodes_in_cluster()
+        nodes_in_server = self.cluster_util.get_nodes_in_cluster(self.cluster)
         self.task.rebalance(nodes_in_server, [node], [])
         self.sleep(30, "Wait for rebalance to start")
         self.assertTrue(rest.monitorRebalance(stop_if_loop=True),
@@ -49,7 +49,7 @@ class ServiceRebalanceTests(RebalanceBaseTest):
 
     def perform_rebalance_out(self, node):
         rest = RestConnection(self.cluster.master)
-        nodes_in_server = self.cluster_util.get_nodes_in_cluster()
+        nodes_in_server = self.cluster_util.get_nodes_in_cluster(self.cluster)
         self.task.rebalance(nodes_in_server, [], [node])
         self.sleep(30, "Wait for rebalance to start")
         self.assertTrue(rest.monitorRebalance(stop_if_loop=True),
@@ -62,10 +62,11 @@ class ServiceRebalanceTests(RebalanceBaseTest):
 
     def perform_swap_rebalance(self, node):
         rest = RestConnection(self.cluster.master)
-        self.task.rebalance(self.cluster_util.get_nodes_in_cluster(),
-                            [self.spare_node], [node],
-                            services=None,
-                            check_vbucket_shuffling=False)
+        self.task.rebalance(
+            self.cluster_util.get_nodes_in_cluster(self.cluster),
+            [self.spare_node], [node],
+            services=None,
+            check_vbucket_shuffling=False)
         self.sleep(30, "Wait for rebalance to start")
         self.assertTrue(rest.monitorRebalance(stop_if_loop=True),
                         "Swap_rebalance failed")
@@ -76,7 +77,7 @@ class ServiceRebalanceTests(RebalanceBaseTest):
 
     def perform_graceful_failover(self, node):
         rest = None
-        nodes_in_cluster = self.cluster_util.get_nodes_in_cluster()
+        nodes_in_cluster = self.cluster_util.get_nodes_in_cluster(self.cluster)
         for t_node in nodes_in_cluster:
             if t_node.ip != node.ip:
                 rest = RestConnection(t_node)
@@ -89,7 +90,7 @@ class ServiceRebalanceTests(RebalanceBaseTest):
 
     def perform_rebalance_out_failover_node(self, node):
         current_nodes = list()
-        for t_node in self.cluster_util.get_nodes_in_cluster():
+        for t_node in self.cluster_util.get_nodes_in_cluster(self.cluster):
             if t_node.ip != node.ip:
                 current_nodes.append(t_node)
 
@@ -104,7 +105,8 @@ class ServiceRebalanceTests(RebalanceBaseTest):
     def perform_add_back_failover_node(self, node):
         rest = RestConnection(self.cluster.master)
         rest.set_recovery_type("ns_1@"+node.ip, self.recovery_type)
-        self.task.rebalance(self.cluster_util.get_nodes_in_cluster(), [], [])
+        self.task.rebalance(
+            self.cluster_util.get_nodes_in_cluster(self.cluster), [], [])
         self.sleep(30)
         self.assertTrue(rest.monitorRebalance(stop_if_loop=True),
                         "Rebalance failed with failover node %s" % node.ip)

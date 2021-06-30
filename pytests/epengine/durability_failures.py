@@ -40,7 +40,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         vb_info["init"] = dict()
         vb_info["failure_stat"] = dict()
         vb_info["create_stat"] = dict()
-        nodes_in_cluster = self.cluster_util.get_kv_nodes()
+        nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
         gen_load = doc_generator(self.key, 0, self.num_items)
         err_msg = "Doc mutation succeeded with, "  \
                   "cluster size: {0}, replica: {1}" \
@@ -74,7 +74,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                     cbstat_obj[node.ip].vbucket_seqno(self.bucket.name))
 
             # Verify initial doc load count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
             self.assertTrue(len(d_create_task.fail.keys()) == self.num_items,
                             msg=err_msg)
@@ -98,7 +99,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(async_create_task)
 
         # Verify doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch vbucket seq_no status from vb_seqno command after async CREATEs
@@ -136,7 +138,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.log_failure("Unexpected exception type")
 
         # Verify doc count is unchanged due to durability failures
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Reset failure_stat dictionary for reuse
@@ -211,15 +214,15 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             target_vbucket=target_vbuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -348,7 +351,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         client.close()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
@@ -387,13 +391,13 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items+self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         gen_update = doc_generator(
             self.key, 0, self.num_items,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         gen_delete = doc_generator(
             self.key, 0, half_of_num_items,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -435,7 +439,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             # Validate the returned error from the SDK
             vb_num = self.bucket_util.get_vbucket_num_for_key(
                 key,
-                self.cluster_util.vbuckets)
+                self.cluster.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 if "error" not in fail:
                     self.log_failure("No failure detected for {0}"
@@ -455,7 +459,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
@@ -551,7 +556,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         vb_info["withDiskIssue"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Verify cbstats for the affected vbuckets are not updated during CRUDs
-        for vb in range(self.cluster_util.vbuckets):
+        for vb in range(self.cluster.vbuckets):
             if vb in active_vb_numbers:
                 for stat_name in vb_info["withDiskIssue"][vb].keys():
                     stat_before_crud = vb_info["init"][vb][stat_name]
@@ -566,7 +571,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         def validate_doc_errors(crud_type):
             for doc in doc_errors[crud_type]:
                 vb_num = self.bucket_util.get_vbucket_num_for_key(
-                    doc["key"], self.cluster_util.vbuckets)
+                    doc["key"], self.cluster.vbuckets)
                 if vb_num in active_vb_numbers:
                     if "durability_not_possible" not in str(doc["error"]):
                         self.log_failure("Invalid exception {0}".format(doc))
@@ -618,7 +623,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.log_failure(msg.format("update"))
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
@@ -674,15 +680,15 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             target_vbucket=target_vbuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -776,7 +782,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                      % (key, doc_info))
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
@@ -814,13 +821,13 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items+self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         gen_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -863,7 +870,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             # Validate the returned error from the SDK
             vb_num = self.bucket_util.get_vbucket_num_for_key(
                 key,
-                self.cluster_util.vbuckets)
+                self.cluster.vbuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 if "error" not in fail:
                     self.log_failure("No failures detected")
@@ -893,7 +900,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         client.close()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
@@ -909,7 +917,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         load_gen = dict()
 
         self.log.info("Loading docs such that all sync_writes will be aborted")
-        kv_nodes = self.cluster_util.get_kv_nodes()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for server in kv_nodes:
             ssh_shell = RemoteMachineShellConnection(server)
             cbstats = Cbstats(ssh_shell)
@@ -941,7 +949,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, kv_nodes,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed "
@@ -968,8 +976,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                     verification_dict["sync_write_committed_count"] += \
                         crud_batch_size
                 failed = self.durability_helper.verify_vbucket_details_stats(
-                    self.bucket, self.cluster_util.get_kv_nodes(),
-                    vbuckets=self.cluster_util.vbuckets,
+                    self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
+                    vbuckets=self.cluster.vbuckets,
                     expected_val=verification_dict)
                 if failed:
                     self.log_failure("Cbstat vbucket-details verification "
@@ -1103,7 +1111,8 @@ class TimeoutTests(DurabilityTestsBase):
         client.close()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
@@ -1218,7 +1227,8 @@ class TimeoutTests(DurabilityTestsBase):
         client.close()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch latest stats and validate the values are updated
@@ -1256,7 +1266,7 @@ class TimeoutTests(DurabilityTestsBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for tem_vb_num in range(self.cluster_util.vbuckets):
+            for tem_vb_num in range(self.cluster.vbuckets):
                 tem_vb_num = str(tem_vb_num)
                 if tem_vb_num not in affected_vbs:
                     if tem_vb_num in vb_info["init"][node.ip].keys() \
@@ -1374,7 +1384,7 @@ class TimeoutTests(DurabilityTestsBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.cluster_util.vbuckets)
+                        doc_id, self.cluster.vbuckets)
                     if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
@@ -1398,7 +1408,7 @@ class TimeoutTests(DurabilityTestsBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.cluster_util.vbuckets)))
+                        self.cluster.vbuckets)))
 
         affected_vbs = list(set(affected_vbs))
         err_msg = "%s - mismatch in %s vb-%s seq_no: %s != %s"
@@ -1467,7 +1477,8 @@ class TimeoutTests(DurabilityTestsBase):
         sdk_client.close()
 
         # Verify doc count after expected CRUD failure
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch latest stats and validate the values are updated

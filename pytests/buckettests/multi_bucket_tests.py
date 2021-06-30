@@ -30,7 +30,7 @@ class MultiBucketTests(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         self.log.info("doc_generator created")
 
         # Load all buckets with initial load of docs
@@ -50,7 +50,8 @@ class MultiBucketTests(BaseTestCase):
             self.task_manager.get_task_result(task)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.log.info("====== MultiBucketTests base setup complete ======")
 
@@ -75,7 +76,7 @@ class MultiBucketTests(BaseTestCase):
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items * 2,
             doc_size=self.doc_size, doc_type="json",
-            target_vbucket=self.target_vbucket, vbuckets=self.cluster_util.vbuckets)
+            target_vbucket=self.target_vbucket, vbuckets=self.cluster.vbuckets)
 
         update_dict(bucket_1, "create", gen_create)
         update_dict(bucket_2, "update", self.load_gen)
@@ -100,11 +101,14 @@ class MultiBucketTests(BaseTestCase):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify doc counts after bucket ops
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
-        self.bucket_util.verify_stats_for_bucket(bucket_1, self.num_items*2)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util.verify_stats_for_bucket(self.cluster, bucket_1,
+                                                 self.num_items*2)
         for bucket in [bucket_2, bucket_4]:
-            self.bucket_util.verify_stats_for_bucket(bucket, self.num_items)
-        self.bucket_util.verify_stats_for_bucket(bucket_3, 0)
+            self.bucket_util.verify_stats_for_bucket(self.cluster, bucket,
+                                                     self.num_items)
+        self.bucket_util.verify_stats_for_bucket(self.cluster, bucket_3, 0)
 
     def test_multi_bucket_in_different_state(self):
         def update_dict(bucket_obj, op_type, doc_gen, dgm=100, num_items=0):
@@ -188,5 +192,5 @@ class MultiBucketTests(BaseTestCase):
 
         # Validate docs in known buckets 3, 4
         for bucket_obj in [bucket_3, bucket_4]:
-            self.bucket_util.verify_stats_for_bucket(bucket_obj,
+            self.bucket_util.verify_stats_for_bucket(self.cluster, bucket_obj,
                                                      self.num_items)

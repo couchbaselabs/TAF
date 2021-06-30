@@ -75,7 +75,7 @@ class CrashTest(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets, gen_create, "create",
@@ -104,12 +104,12 @@ class CrashTest(BaseTestCase):
                 self.task.jython_task_manager.get_task_result(task)
 
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
                 # Verify cbstats vbucket-details
                 stats_failed = \
                     self.durability_helper.verify_vbucket_details_stats(
-                        bucket, self.cluster_util.get_kv_nodes(),
-                        vbuckets=self.cluster_util.vbuckets,
+                        bucket, self.cluster_util.get_kv_nodes(self.cluster),
+                        vbuckets=self.cluster.vbuckets,
                         expected_val=verification_dict)
 
                 if stats_failed:
@@ -117,7 +117,7 @@ class CrashTest(BaseTestCase):
 
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("==========Finished CrashTest setup========")
 
@@ -161,7 +161,7 @@ class CrashTest(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
@@ -234,7 +234,8 @@ class CrashTest(BaseTestCase):
 
         if not self.atomicity:
             # Validate doc count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
 
@@ -251,7 +252,7 @@ class CrashTest(BaseTestCase):
         def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
-        target_vbuckets = range(0, self.cluster_util.vbuckets)
+        target_vbuckets = range(0, self.cluster.vbuckets)
         retry_exceptions = list()
 
         # If Memcached is killed, we should not perform KV ops on
@@ -274,7 +275,7 @@ class CrashTest(BaseTestCase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets, gen_load, "create",
@@ -345,15 +346,17 @@ class CrashTest(BaseTestCase):
 
         # Validate doc count
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
 
             if self.process_name != "memcached":
                 stats_failed = \
                     self.durability_helper.verify_vbucket_details_stats(
-                        def_bucket, self.cluster_util.get_kv_nodes(),
-                        vbuckets=self.cluster_util.vbuckets,
+                        def_bucket,
+                        self.cluster_util.get_kv_nodes(self.cluster),
+                        vbuckets=self.cluster.vbuckets,
                         expected_val=verification_dict)
                 if stats_failed:
                     self.fail("Cbstats verification failed")
@@ -385,7 +388,7 @@ class CrashTest(BaseTestCase):
         error_to_simulate = self.input.param("simulate_error",
                                              CouchbaseError.KILL_MEMCACHED)
         num_times_to_affect = self.input.param("times_to_affect", 20)
-        nodes_to_affect = self.cluster_util.get_kv_nodes()
+        nodes_to_affect = self.cluster_util.get_kv_nodes(self.cluster)
         if crash_on == "single_node":
             nodes_to_affect = [choice(nodes_to_affect)]
 

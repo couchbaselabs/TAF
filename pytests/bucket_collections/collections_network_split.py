@@ -226,7 +226,8 @@ class CollectionsNetworkSplit(CollectionBase):
             self.fail("Doc_loading failed")
 
     def data_validation_collection(self):
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 

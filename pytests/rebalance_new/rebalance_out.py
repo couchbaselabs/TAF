@@ -172,7 +172,7 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write abort scenario for replica vbs")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -192,7 +192,8 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster,
                 timeout=self.wait_timeout)
@@ -208,20 +209,24 @@ class RebalanceOutTests(RebalanceBaseTest):
                 self.cluster, self.num_items,
                 check_ep_items_remaining=True,
                 timeout=self.wait_timeout)
-        new_failover_stats = self.bucket_util.compare_failovers_logs(prev_failover_stats,
-                                                         self.cluster.servers[:self.nodes_init - self.nodes_out], self.cluster.buckets)
-        new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(prev_vbucket_stats,
-                                                        self.cluster.servers[:self.nodes_init - self.nodes_out], self.cluster.buckets,
-                                                        perNode=False)
+        new_failover_stats = self.bucket_util.compare_failovers_logs(
+            self.cluster, prev_failover_stats,
+            self.cluster.servers[:self.nodes_init - self.nodes_out],
+            self.cluster.buckets)
+        new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
+            self.cluster, prev_vbucket_stats,
+            self.cluster.servers[:self.nodes_init - self.nodes_out],
+            self.cluster.buckets,
+            perNode=False)
         self.sleep(60)
 #         self.bucket_util.data_analysis_all(record_data_set, self.cluster.servers[:self.nodes_init - self.nodes_out], self.cluster.buckets)
         self.bucket_util.compare_vbucketseq_failoverlogs(new_vbucket_stats, new_failover_stats)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
-        nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+        nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
         self.bucket_util.vb_distribution_analysis(
             self.cluster,
             servers=nodes, buckets=self.cluster.buckets, std=1.0,
-            total_vbuckets=self.cluster_util.vbuckets, num_replicas=self.num_replicas)
+            total_vbuckets=self.cluster.vbuckets, num_replicas=self.num_replicas)
 
     """Rebalances nodes out with failover and full recovery add back of a node
 
@@ -241,7 +246,8 @@ class RebalanceOutTests(RebalanceBaseTest):
         # allows multiple of them but one by one
         tasks_info = self.loadgen_docs()
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
         self.rest = RestConnection(self.cluster.master)
@@ -273,15 +279,19 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.bucket_util.verify_cluster_stats(self.cluster, self.num_items,
                                               check_ep_items_remaining=True,
                                               timeout=self.wait_timeout)
-        self.bucket_util.compare_failovers_logs(prev_failover_stats, self.cluster.servers[:self.nodes_init - self.nodes_out], self.cluster.buckets)
+        self.bucket_util.compare_failovers_logs(
+            self.cluster, prev_failover_stats,
+            self.cluster.servers[:self.nodes_init - self.nodes_out],
+            self.cluster.buckets)
         self.sleep(30)
         self.bucket_util.data_analysis_all(record_data_set, self.cluster.servers[:self.nodes_init - self.nodes_out], self.cluster.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
-        nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+        nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
         self.bucket_util.vb_distribution_analysis(
-            self.cluster,
-            servers=nodes, buckets=self.cluster.buckets, std=1.0,
-            total_vbuckets=self.cluster_util.vbuckets, num_replicas=self.num_replicas)
+            self.cluster, servers=nodes,
+            buckets=self.cluster.buckets, std=1.0,
+            total_vbuckets=self.cluster.vbuckets,
+            num_replicas=self.num_replicas)
 
     """Rebalances nodes out with failover
 
@@ -304,7 +314,8 @@ class RebalanceOutTests(RebalanceBaseTest):
         tasks_info = self.loadgen_docs()
         ejectedNode = self.cluster_util.find_node_info(self.cluster.master, self.cluster.servers[self.nodes_init - 1])
         if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
         self.sleep(20)
@@ -315,7 +326,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.rest = RestConnection(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         new_server_list = self.cluster_util.add_remove_servers(
-            self.cluster.servers, self.cluster.servers[:self.nodes_init],
+            self.cluster, self.cluster.servers[:self.nodes_init],
             [self.cluster.servers[self.nodes_init - 1], chosen[0]], [])
         # Mark Node for failover
         success_failed_over = self.rest.fail_over(chosen[0].id, graceful=fail_over)
@@ -342,12 +353,12 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.sleep(30)
         self.bucket_util.data_analysis_all(record_data_set, new_server_list, self.cluster.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
-        nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+        nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
         self.bucket_util.vb_distribution_analysis(
             self.cluster,
             servers=nodes, buckets=self.cluster.buckets,
             num_replicas=self.num_replicas, std=1.0,
-            total_vbuckets=self.cluster_util.vbuckets)
+            total_vbuckets=self.cluster.vbuckets)
 
 
     """Rebalances nodes out of a cluster while doing docs ops:create, delete, update along with compaction.
@@ -528,7 +539,7 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write abort scenario for replica vbs")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -703,7 +714,7 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write abort scenario for replica vbs")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -739,7 +750,8 @@ class RebalanceOutTests(RebalanceBaseTest):
         if rebalance.result is False:
             self.log.info("Rebalance was failed as expected")
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(), self.cluster.buckets[0],
+                self.cluster_util.get_kv_nodes(self.cluster),
+                self.cluster.buckets[0],
                 wait_time=self.wait_timeout * 10))
 
             self.log.info("Second attempt to rebalance")

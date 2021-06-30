@@ -60,14 +60,14 @@ class CrashTest(CollectionBase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         gen_create = doc_generator(
             self.key, 0, self.num_items,
             key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         if self.atomicity:
             transaction_task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets,
@@ -93,7 +93,8 @@ class CrashTest(CollectionBase):
                 durability=self.durability_level,
                 batch_size=10, process_concurrency=8)
             self.task.jython_task_manager.get_task_result(task)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
 
             self.cluster.buckets[0].scopes[
                 CbServer.default_scope].collections[
@@ -104,8 +105,8 @@ class CrashTest(CollectionBase):
                     self.num_items
             # Verify cbstats vbucket-details
             stats_failed = self.durability_helper.verify_vbucket_details_stats(
-                bucket, self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
+                bucket, self.cluster_util.get_kv_nodes(self.cluster),
+                vbuckets=self.cluster.vbuckets,
                 expected_val=verification_dict)
 
             if self.atomicity is False:
@@ -119,8 +120,9 @@ class CrashTest(CollectionBase):
         self.bucket = self.cluster.buckets[0]
         if self.N1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
-                                service_type="n1ql",
-                                get_all_nodes=True)
+                cluster=self.cluster,
+                service_type=CbServer.Services.N1QL,
+                get_all_nodes=True)
             self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
                                           use_rest=True,
                                           buckets=self.cluster.buckets,
@@ -155,14 +157,14 @@ class CrashTest(CollectionBase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         gen_load = doc_generator(
             self.key, self.num_items, self.new_docs_to_add,
             key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         if self.atomicity:
             self.transaction_load_task = \
                 self.task.async_load_gen_docs_atomicity(
@@ -234,7 +236,7 @@ class CrashTest(CollectionBase):
             else:
                 self.log_failure("Invalid client_type provided")
 
-        kv_nodes = self.cluster_util.get_kv_nodes()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         if len(kv_nodes) == 1:
             self.fail("Need atleast two KV nodes to run this test")
 
@@ -337,7 +339,7 @@ class CrashTest(CollectionBase):
             else:
                 self.log_failure("Invalid client_type provided")
 
-        kv_nodes = self.cluster_util.get_kv_nodes()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         if len(kv_nodes) == 1:
             self.fail("Need atleast two KV nodes to run this test")
 
@@ -504,7 +506,8 @@ class CrashTest(CollectionBase):
 
         self.validate_test_failure()
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         # Update self.num_items and validate docs per collection
         if not self.N1qltxn and self.atomicity is False:
             self.bucket_util.validate_docs_per_collections_all_buckets(
@@ -521,7 +524,7 @@ class CrashTest(CollectionBase):
         def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
-        target_vbuckets = range(0, self.cluster_util.vbuckets)
+        target_vbuckets = range(0, self.cluster.vbuckets)
         retry_exceptions = list()
         self.transaction_load_task = None
         self.doc_loading_task = None
@@ -604,8 +607,8 @@ class CrashTest(CollectionBase):
         if self.process_name != "memcached":
             stats_failed = \
                 self.durability_helper.verify_vbucket_details_stats(
-                    def_bucket, self.cluster_util.get_kv_nodes(),
-                    vbuckets=self.cluster_util.vbuckets,
+                    def_bucket, self.cluster_util.get_kv_nodes(self.cluster),
+                    vbuckets=self.cluster.vbuckets,
                     expected_val=verification_dict)
             if stats_failed:
                 self.fail("Cbstats verification failed")

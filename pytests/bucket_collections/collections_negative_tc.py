@@ -157,13 +157,13 @@ class CollectionsNegativeTc(CollectionBase):
         else:
             self.key_size = 247
             self.collection_name = "collection-1"
-            BucketUtils.create_collection(self.cluster.master,
-                                          self.bucket,
-                                          scope_name=CbServer.default_scope,
-                                          collection_spec={"name": self.collection_name})
+            BucketUtils.create_collection(
+                self.cluster.master, self.bucket,
+                scope_name=CbServer.default_scope,
+                collection_spec={"name": self.collection_name})
         gen_load = doc_generator("test-max-key-size", 0, 1,
                                  key_size=self.key_size,
-                                 vbuckets=self.cluster_util.vbuckets)
+                                 vbuckets=self.cluster.vbuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_load, "create", self.maxttl,
             batch_size=20,

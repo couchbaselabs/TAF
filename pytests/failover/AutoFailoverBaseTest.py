@@ -89,7 +89,7 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.active_vb_in_failover_nodes = list()
             self.replica_vb_in_failover_nodes = list()
             self.get_vbucket_info_from_failover_nodes()
-            self.cluster_util.print_cluster_stats()
+            self.cluster_util.print_cluster_stats(self.cluster)
             self.bucket_util.print_bucket_stats(self.cluster)
 
     def collectionSetUp(self):
@@ -171,10 +171,11 @@ class AutoFailoverBaseTest(BaseTestCase):
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 
@@ -256,7 +257,6 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.rest = RestConnection(self.orchestrator)
         self.rest.reset_autofailover()
         self.disable_autofailover()
-        #self._cleanup_cluster()
         super(AutoFailoverBaseTest, self).tearDown()
 
     def _loadgen(self):
@@ -372,7 +372,9 @@ class AutoFailoverBaseTest(BaseTestCase):
                     rest.add_zone(zones[i])
                 nodes_in_zone[zones[i]] = []
             # Divide the nodes between zones.
-            nodes_in_cluster = [node.ip for node in self.cluster_util.get_nodes_in_cluster()]
+            nodes_in_cluster = \
+                [node.ip for node in self.cluster_util.get_nodes_in_cluster(
+                    self.cluster)]
             nodes_to_remove = [node.ip for node in to_remove]
             for i in range(1, len(self.cluster.servers)):
                 if self.cluster.servers[i].ip in nodes_in_cluster \
@@ -748,14 +750,6 @@ class AutoFailoverBaseTest(BaseTestCase):
             self.failover_orchestrator else self.cluster.servers[
             self.num_node_failures]
 
-    def _cleanup_cluster(self):
-        """
-        Cleaup the cluster. Delete all the buckets in the nodes and remove
-        the nodes from any cluster that has been formed.
-        :return:
-        """
-        self.bucket_util.delete_all_buckets(self.cluster)
-
     def reset_cluster(self):
         try:
             for node in self.cluster.servers:
@@ -928,7 +922,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster_util.vbuckets)
+                                   vbuckets=self.cluster.vbuckets)
         self.bucket = self.cluster.buckets[0]
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
@@ -1045,10 +1039,11 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 

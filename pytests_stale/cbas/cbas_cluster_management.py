@@ -59,7 +59,8 @@ class CBASClusterManagement(CBASBaseTest):
         1. For all the cbas nodes provided in ini file, Add all of them in one go and Rebalance.
         Author: Ritesh Agarwal
         '''
-        self.cluster_util.add_all_nodes_then_rebalance(self.cluster.cbas_nodes)
+        self.cluster_util.add_all_nodes_then_rebalance(
+            self.cluster, self.cluster.cbas_nodes)
 
     def test_add_remove_all_cbas_nodes_in_cluster(self):
         '''
@@ -73,8 +74,10 @@ class CBASClusterManagement(CBASBaseTest):
 
         Author: Ritesh Agarwal
         '''
-        cbas_otpnodes = self.cluster_util.add_all_nodes_then_rebalance(self.cluster.cbas_nodes)
-        self.cluster_util.remove_all_nodes_then_rebalance(cbas_otpnodes)
+        cbas_otpnodes = self.cluster_util.add_all_nodes_then_rebalance(
+            self.cluster, self.cluster.cbas_nodes)
+        self.cluster_util.remove_all_nodes_then_rebalance(self.cluster,
+                                                          cbas_otpnodes)
 
     def test_concurrent_sevice_existence_with_cbas(self):
         '''
@@ -128,7 +131,8 @@ class CBASClusterManagement(CBASBaseTest):
 
             stdout, stderr, result = CouchbaseCLI(self.cluster.master, self.cluster.master.rest_username, self.cluster.master.rest_password).server_add("http://"+cbas_server.ip+":"+cbas_server.port, cbas_server.rest_username, cbas_server.rest_password, None, service, None)
             self.assertTrue(result, "Server %s is not added to the cluster %s . Error: %s"%(cbas_server,self.cluster.master,stdout+stderr))
-            self.assertTrue(self.cluster_util.rebalance(), "Rebalance Failed")
+            self.assertTrue(self.cluster_util.rebalance(self.cluster),
+                            "Rebalance Failed")
 
             '''Check for the correct services alloted to the nodes.'''
             nodes = self.rest.get_nodes_data_from_cluster()
@@ -293,7 +297,8 @@ class CBASClusterManagement(CBASBaseTest):
         else:
             self.fail("Rebalance completed before the test could have stopped rebalance.")
 
-        self.assertTrue(self.cluster_util.rebalance(), "Rebalance Failed")
+        self.assertTrue(self.cluster_util.rebalance(self.cluster),
+                        "Rebalance Failed")
         self.setup_cbas_bucket_dataset_connect(self.cb_bucket_name,
                                                self.sample_bucket.stats.expected_item_count)
 
@@ -350,7 +355,8 @@ class CBASClusterManagement(CBASBaseTest):
         else:
             self.fail("Rebalance completed before the test could have stopped rebalance.")
 
-        self.assertTrue(self.cluster_util.rebalance(), "Rebalance Failed")
+        self.assertTrue(self.cluster_util.rebalance(self.cluster),
+                        "Rebalance Failed")
         self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(
             self.cbas_dataset_name,
             self.sample_bucket.stats.expected_item_count), "Data loss in CBAS.")
@@ -502,7 +508,8 @@ class CBASClusterManagement(CBASBaseTest):
         shell = RemoteMachineShellConnection(self.cluster.cbas_nodes[0])
         shell.stop_couchbase()
         self.rest.fail_over(otpNode=otpNode.id)
-        self.assertTrue(self.cluster_util.rebalance(), "Rebalance Failed")
+        self.assertTrue(self.cluster_util.rebalance(self.cluster),
+                        "Rebalance Failed")
         shell.start_couchbase(self.cluster.cbas_nodes[0])
 
         self.log.info("Wait for cluster to be active")
@@ -531,7 +538,8 @@ class CBASClusterManagement(CBASBaseTest):
         remote_client = RemoteMachineShellConnection(self.cluster.cbas_nodes[0])
         remote_client.stop_couchbase()
         self.rest.fail_over(otpNode=otpNode.id)
-        self.assertTrue(self.cluster_util.rebalance(), "Rebalance Failed")
+        self.assertTrue(self.cluster_util.rebalance(self.cluster),
+                        "Rebalance Failed")
 
         query = "select count(*) from {0};".format(self.cbas_dataset_name)
         self.cbas_util._run_concurrent_queries(query, "immediate", 100,

@@ -334,8 +334,10 @@ class CollectionsTTL(CollectionBase):
             .num_items += self.num_items
         self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
-        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util.validate_doc_count_as_per_collections(
+            self.cluster, self.bucket)
         self.validate_test_failure()
 
     def test_collections_ttl_with_non_0_and_then_setting_as_0(self):
@@ -353,6 +355,8 @@ class CollectionsTTL(CollectionBase):
             .num_items += self.num_items
         self.bucket_util._expiry_pager(self.cluster)
         # Validate the bucket doc count is '0' after drop collection
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
-        self.bucket_util.validate_doc_count_as_per_collections(self.bucket)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util.validate_doc_count_as_per_collections(
+            self.cluster, self.bucket)
         self.validate_test_failure()

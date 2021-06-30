@@ -173,10 +173,12 @@ class AutoCompactionTests(CollectionBase):
                                              doc_size=int(update_item_size))
             if self.during_ops:
                 if self.during_ops == "change_port":
-                    self.cluster_util.change_port(new_port=new_port)
+                    self.cluster_util.change_port(self.cluster,
+                                                  new_port=new_port)
                     self.cluster.master.port = new_port
                 elif self.during_ops == "change_password":
-                    self.cluster_util.change_password(new_password=new_passwd)
+                    self.cluster_util.change_password(self.cluster,
+                                                      new_password=new_passwd)
                     self.cluster.master.rest_password = new_passwd
                 rest = RestConnection(self.cluster.master)
 
@@ -203,7 +205,7 @@ class AutoCompactionTests(CollectionBase):
                 if self.during_ops:
                     if self.during_ops == "change_password":
                         self.cluster_util.change_password(
-                            new_password=old_pass)
+                            self.cluster, new_password=old_pass)
                     elif self.during_ops == "change_port":
                         self.cluster_util.change_port(new_port='8091',
                                                       current_port=new_port)
@@ -224,12 +226,15 @@ class AutoCompactionTests(CollectionBase):
             self.log.error("Unknown error")
         if self.during_ops:
             if self.during_ops == "change_password":
-                self.cluster_util.change_password(new_password=old_pass)
+                self.cluster_util.change_password(self.cluster,
+                                                  new_password=old_pass)
             elif self.during_ops == "change_port":
-                self.cluster_util.change_port(new_port='8091',
+                self.cluster_util.change_port(self.cluster,
+                                              new_port='8091',
                                               current_port=new_port)
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, items*1000)
 
     def rebalance_in_with_DB_compaction(self):
@@ -289,7 +294,8 @@ class AutoCompactionTests(CollectionBase):
         self.task.jython_task_manager.get_task_result(monitor_fragm)
         doc_update_task.end_task()
         self.task_manager.get_task_result(doc_update_task)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         remote_client.disconnect()
 
         self.bucket_util.validate_docs_per_collections_all_buckets(
@@ -430,7 +436,8 @@ class AutoCompactionTests(CollectionBase):
         self.task.jython_task_manager.get_task_result(monitor_fragm)
         doc_update_task.end_task()
         self.task_manager.get_task_result(doc_update_task)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
         self.validate_test_failure()

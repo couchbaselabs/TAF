@@ -260,7 +260,7 @@ class EventingSanity(EventingBaseTest):
         self.create_eventing_during = self.input.param("create_eventing_during", "before_doc_ops")
         crud_batch_size = 50
         def_bucket = self.src_bucket
-        kv_nodes = self.cluster_util.get_kv_nodes()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         replica_vbs = dict()
         verification_dict = dict()
         load_gen = dict()
@@ -360,7 +360,7 @@ class EventingSanity(EventingBaseTest):
 
         failed = durability_helper.verify_vbucket_details_stats(
             def_bucket, kv_nodes,
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster.vbuckets, expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed")
         self.validate_test_failure()
@@ -430,11 +430,13 @@ class EventingSanity(EventingBaseTest):
         self.index_name = "fts_test_index"
         self.sync_write_abort_pattern = self.input.param("sync_write_abort_pattern", "all_aborts")
         self.create_index_during = self.input.param("create_index_during", "before_doc_ops")
-        self.restServer = self.cluster_util.get_nodes_from_services_map(service_type="fts")
+        self.restServer = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.FTS)
         self.rest = RestConnection(self.restServer)
         crud_batch_size = 1000
         def_bucket = self.cluster.buckets[0]
-        kv_nodes = self.cluster_util.get_kv_nodes()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         replica_vbs = dict()
         verification_dict = dict()
         index_item_count = dict()
@@ -536,10 +538,11 @@ class EventingSanity(EventingBaseTest):
             ssh_shell.disconnect()
 
             if self.create_index_during == "before_doc_ops":
-                self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+                self.validate_indexed_doc_count(
+                    self.index_name, verification_dict["ops_create"])
         failed = durability_helper.verify_vbucket_details_stats(
             def_bucket, kv_nodes,
-            vbuckets=self.cluster_util.vbuckets, expected_val=verification_dict)
+            vbuckets=self.cluster.vbuckets, expected_val=verification_dict)
         # if failed:
         #     self.sleep(6000)
         #     self.log_failure("Cbstat vbucket-details verification failed")

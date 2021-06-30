@@ -61,7 +61,9 @@ class CollectionsRebalance(CollectionBase):
 
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", None)
         if self.rebalance_moves_per_node:
-            self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
+            self.cluster_util.set_rebalance_moves_per_nodes(
+                self.cluster.master,
+                rebalanceMovesPerNode=self.rebalance_moves_per_node)
         self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
             self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
@@ -84,7 +86,9 @@ class CollectionsRebalance(CollectionBase):
             self.log.info("Reverting prometheus settings back to default")
             StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
         if self.rebalance_moves_per_node:
-            self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=4)
+            self.cluster_util.set_rebalance_moves_per_nodes(
+                self.cluster.master,
+                rebalanceMovesPerNode=4)
         if self.disk_optimized_thread_settings:
             self.set_num_writer_and_reader_threads(num_writer_threads="default",
                                                    num_reader_threads="default")
@@ -92,7 +96,8 @@ class CollectionsRebalance(CollectionBase):
 
     def setup_N1ql_txn(self):
         self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
-            service_type="n1ql",
+            cluster=self.cluster,
+            service_type=CbServer.Services.N1QL,
             get_all_nodes=True)
         self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
                                       use_rest=True,
@@ -153,6 +158,7 @@ class CollectionsRebalance(CollectionBase):
                           % (fts_index_name, content))
 
         fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
             service_type=CbServer.Services.FTS,
             get_all_nodes=False))
         fts_param_template = '{ \
@@ -213,7 +219,8 @@ class CollectionsRebalance(CollectionBase):
     def validate_N1qltxn_data(self):
         if self.retry_n1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
-                service_type="n1ql",
+                cluster=self.cluster,
+                service_type=CbServer.Services.N1QL,
                 get_all_nodes=True)
             self.execute_N1qltxn(self.n1ql_server[0])
         doc_gen_list = self.n1ql_helper.get_doc_gen_list(self.bucket_col)
@@ -242,7 +249,7 @@ class CollectionsRebalance(CollectionBase):
 
     def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default",
                                           num_storage_threads="default"):
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
             bucket_helper = BucketHelper(node)
             bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
                                                     num_reader_threads=num_reader_threads,
@@ -323,28 +330,35 @@ class CollectionsRebalance(CollectionBase):
             if task.fail:
                 self.fail("preload dgm failed")
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def data_load_after_failover(self):
         self.log.info("Starting a sync data load after failover")
         self.subsequent_data_load()  # sync data load
-        # Until we recover/rebalance-out, we can't call -
+        # Until we recover/rebalance-out, we can't call,
         # self.bucket_util.validate_docs_per_collections_all_buckets()
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
-    def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
-        self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
+    def forced_failover_operation(self, known_nodes=None, failover_nodes=None,
+                                  wait_for_pending=120):
+        self.log.info("Updating all bucket's replica = %s"
+                      % self.updated_num_replicas)
         self.bucket_util.update_all_bucket_replicas(self.cluster,
                                                     self.updated_num_replicas)
         self.log.info("failing over nodes {0}".format(failover_nodes))
         for failover_node in failover_nodes:
-            result = self.task.failover(known_nodes, failover_nodes=[failover_node],
-                                        graceful=False, wait_for_pending=wait_for_pending)
+            result = self.task.failover(known_nodes,
+                                        failover_nodes=[failover_node],
+                                        graceful=False,
+                                        wait_for_pending=wait_for_pending)
             self.assertTrue(result, "Failover of node {0} failed".
                             format(failover_node.ip))
-        operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
-                                              retry_get_process_num=self.retry_get_process_num)
+        operation = self.task.async_rebalance(
+            known_nodes, [], failover_nodes,
+            retry_get_process_num=self.retry_get_process_num)
         self.execute_N1qltxn()
         self.data_load_after_failover()
         return operation
@@ -873,7 +887,7 @@ class CollectionsRebalance(CollectionBase):
                 self.sleep(60, "wait after compaction")
                 items = 0
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
                 for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
@@ -882,7 +896,7 @@ class CollectionsRebalance(CollectionBase):
                 pass
             else:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
                     self.cluster)
 
@@ -1045,36 +1059,38 @@ class CollectionsRebalance(CollectionBase):
         self.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
         for cycle in range(self.cycles):
             self.log.info("Cycle {0}".format(cycle))
-            orchestratorValue = self.cluster_util.find_orchestrator(self.cluster.master)
-            orchestrator_node_ip = orchestratorValue[1].split("@")[1]
+            _, content = self.cluster_util.find_orchestrator(self.cluster)
+            orchestrator_node_ip = content.split("@")[1]
             failover_nodes = list()
             for server in self.nodes_in_cluster:
                 if server.ip == orchestrator_node_ip:
                     failover_nodes.append(server)
                     self.nodes_in_cluster.remove(server)
                     break
-            self.cluster.master = self.nodes_in_cluster[0]  # temp cluster.master
+            self.cluster.master = self.nodes_in_cluster[0]
             self.log.info("Failing over node(s): {0}".format(failover_nodes))
-            result = self.task.failover(self.nodes_in_cluster, failover_nodes=failover_nodes,
+            result = self.task.failover(self.nodes_in_cluster,
+                                        failover_nodes=failover_nodes,
                                         graceful=self.graceful)
             self.assertTrue(result, "Failover failed")
 
-            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [],
-                                                       [],
-                                                       retry_get_process_num=self.retry_get_process_num)
+            rebalance_task = self.task.async_rebalance(
+                self.nodes_in_cluster, [], [],
+                retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(rebalance_task)
 
             # Set self.cluster.master to new orchestrator
-            orchestratorValue = self.cluster_util.find_orchestrator(self.cluster.master)
-            orchestrator_node_ip = orchestratorValue[1].split("@")[1]
+            _, content = self.cluster_util.find_orchestrator(self.cluster)
+            orchestrator_node_ip = content.split("@")[1]
             for server in self.nodes_in_cluster:
                 if server.ip == orchestrator_node_ip:
                     self.cluster.master = server
                     break
 
             # Rebalance-in back the node
-            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, failover_nodes, [],
-                                                       retry_get_process_num=self.retry_get_process_num)
+            rebalance_task = self.task.async_rebalance(
+                self.nodes_in_cluster, failover_nodes, [],
+                retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(rebalance_task)
             for node in failover_nodes:
                 self.nodes_in_cluster.append(node)

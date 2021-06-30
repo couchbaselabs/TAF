@@ -201,7 +201,7 @@ class OpsChangeCasTests(CollectionBase):
         self.shell_conn = dict()
         self.cb_stat = dict()
         self.vb_details = dict()
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
             self.vb_details[node.ip] = dict()
             self.vb_details[node.ip]["active"] = list()
             self.vb_details[node.ip]["replica"] = list()

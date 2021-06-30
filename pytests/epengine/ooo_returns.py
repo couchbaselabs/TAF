@@ -44,7 +44,7 @@ class OutOfOrderReturns(ClusterSetup):
                 compression_settings=self.sdk_compression)
 
         # Create shell connection to each kv_node for cbstat object
-        self.kv_nodes = self.cluster_util.get_kv_nodes()
+        self.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         self.node_data = dict()
         for node in self.kv_nodes:
             shell = RemoteMachineShellConnection(node)
@@ -58,7 +58,7 @@ class OutOfOrderReturns(ClusterSetup):
                 cb_stat.vbucket_list(self.bucket.name, vbucket_type="replica")
 
         # Print cluster & bucket stats
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def tearDown(self):

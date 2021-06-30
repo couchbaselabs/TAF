@@ -131,7 +131,8 @@ class CollectionsDgmSteady(CollectionBase):
     def data_validation(self, doc_loading_task):
         if doc_loading_task.result is False:
             self.fail("doc_loading failed while in DGM")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 

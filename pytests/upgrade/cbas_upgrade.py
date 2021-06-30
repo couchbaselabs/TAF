@@ -26,9 +26,10 @@ class UpgradeTests(UpgradeBase):
     def setUp(self):
         super(UpgradeTests, self).setUp()
         cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-            service_type="cbas", get_all_nodes=True,
-            servers=self.cluster.nodes_in_cluster,
-            master=self.cluster.master)
+            cluster=self.cluster,
+            service_type=CbServer.Services.CBAS,
+            get_all_nodes=True,
+            servers=self.cluster.nodes_in_cluster)
         self.cbas_util = CbasUtil(
             self.cluster.master, cluster_cbas_nodes[0], self.task)
         self.cbas_spec_name = self.input.param("cbas_spec", "local_datasets")
@@ -166,7 +167,8 @@ class UpgradeTests(UpgradeBase):
                 CbServer.default_collection].num_items = self.num_items * 2
 
             # Verify doc load count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.sleep(30, "Wait for num_items to get reflected")
             current_items = self.bucket_util.get_bucket_current_item_count(
                 self.cluster, bucket)
@@ -200,7 +202,8 @@ class UpgradeTests(UpgradeBase):
             self.task_manager.get_task_result(async_load_task)
 
             # Verify doc load count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             while True:
                 current_items = self.bucket_util.get_bucket_current_item_count(
                     self.cluster, bucket)
@@ -331,7 +334,8 @@ class UpgradeTests(UpgradeBase):
             self.fail("Initial reloading failed")
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 
@@ -362,7 +366,7 @@ class UpgradeTests(UpgradeBase):
                           % node_to_upgrade.ip)
             self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                      self.upgrade_version)
-            self.cluster_util.print_cluster_stats()
+            self.cluster_util.print_cluster_stats(self.cluster)
             node_to_upgrade = self.fetch_node_to_upgrade()
         if not all(self.post_upgrade_validation().values()):
             self.fail("Post upgrade scenarios failed")
@@ -379,7 +383,7 @@ class UpgradeTests(UpgradeBase):
             else:
                 self.upgrade_function[self.upgrade_type](
                     node_to_upgrade, self.upgrade_version)
-            self.cluster_util.print_cluster_stats()
+            self.cluster_util.print_cluster_stats(self.cluster)
             node_to_upgrade = self.fetch_node_to_upgrade()
         if not all(self.post_upgrade_validation().values()):
             self.fail("Post upgrade scenarios failed")

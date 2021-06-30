@@ -101,7 +101,7 @@ class FailoverTests(FailoverBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating abort scenarios for vbs")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -239,7 +239,7 @@ class FailoverTests(FailoverBaseTest):
         _servers_ = self.filter_servers(self.servers[:self.nodes_init], chosen)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
-                self.cluster.buckets,
+                self.cluster, self.cluster.buckets,
                 check_ep_items_remaining=False)
         self.sleep(5, "after failover before invoking rebalance...")
         if not self.atomicity:
@@ -324,16 +324,20 @@ class FailoverTests(FailoverBaseTest):
         # Currently, only  for checking case where we  have graceful failover
         if self.graceful and not self.atomicity:
             new_failover_stats = self.bucket_util.compare_failovers_logs(
-                prev_failover_stats, self.cluster_util.get_kv_nodes(),
+                self.cluster,
+                prev_failover_stats,
+                self.cluster_util.get_kv_nodes(self.cluster),
                 self.cluster.buckets)
             new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
-                prev_vbucket_stats, self.cluster_util.get_kv_nodes(),
+                self.cluster,
+                prev_vbucket_stats,
+                self.cluster_util.get_kv_nodes(self.cluster),
                 self.cluster.buckets)
             self.bucket_util.compare_vbucketseq_failoverlogs(
                     new_vbucket_stats, new_failover_stats)
         # Verify Active and Replica Bucket Count
         if self.num_replicas > 0:
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
                 servers=nodes, buckets=self.buckets,
@@ -355,7 +359,7 @@ class FailoverTests(FailoverBaseTest):
         _servers_ = self.filter_servers(self.servers[:self.nodes_init], chosen)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
-                self.cluster.buckets,
+                self.cluster, self.cluster.buckets,
                 check_ep_items_remaining=False)
         recoveryTypeMap = self.define_maps_during_failover(self.recoveryType)
         fileMapsForVerification = self.create_file(chosen, self.buckets,
@@ -475,7 +479,7 @@ class FailoverTests(FailoverBaseTest):
         # Drain ep_queue & make sure that intra-cluster replication is complete
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(
-                self.cluster.buckets,
+                self.cluster, self.cluster.buckets,
                 check_ep_items_remaining=False)
 
         self.log.info("Begin VERIFICATION for Add-back and rebalance")
@@ -506,17 +510,21 @@ class FailoverTests(FailoverBaseTest):
         # We will check only for version > 2.5.* & if the failover is graceful
         if self.graceful and not self.atomicity and not self.durability_level:
             new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
-                prev_vbucket_stats, self.cluster_util.get_kv_nodes(),
+                self.cluster,
+                prev_vbucket_stats,
+                self.cluster_util.get_kv_nodes(self.cluster),
                 self.cluster.buckets)
             new_failover_stats = self.bucket_util.compare_failovers_logs(
-                prev_failover_stats, self.cluster_util.get_kv_nodes(),
+                self.cluster,
+                prev_failover_stats,
+                self.cluster_util.get_kv_nodes(self.cluster),
                 self.cluster.buckets)
             self.bucket_util.compare_vbucketseq_failoverlogs(
                     new_vbucket_stats, new_failover_stats)
 
         # Verify Active and Replica Bucket Count
         if self.num_replicas > 0:
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
@@ -546,7 +554,7 @@ class FailoverTests(FailoverBaseTest):
             unreachable = False
             if failover_reason == 'stop_server':
                 unreachable = True
-                self.cluster_util.stop_server(node)
+                self.cluster_util.stop_server(self.cluster, node)
                 self.log.info("10 secs delay for membase-server to shutdown")
                 # wait for 5 minutes until node is down
                 self.assertTrue(RestHelper(self.rest).wait_for_node_status(
@@ -658,7 +666,7 @@ class FailoverTests(FailoverBaseTest):
             unreachable = False
             if failover_reason == 'stop_server':
                 unreachable = True
-                self.cluster_util.stop_server(node)
+                self.cluster_util.stop_server(self.cluster, node)
                 self.log.info("10 seconds delay to wait for membase-server to shutdown")
                 # wait for 5 minutes until node is down
                 self.assertTrue(RestHelper(self.rest).wait_for_node_status(
@@ -767,7 +775,7 @@ class FailoverTests(FailoverBaseTest):
         else:
             self.load_all_buckets(self.gen_initial_create, "create")
             self.bucket_util._wait_for_stats_all_buckets(
-                self.cluster.buckets,
+                self.cluster, self.cluster.buckets,
                 check_ep_items_remaining=False)
         # self.bucket_util._verify_stats_all_buckets(self.servers, timeout=120)
 
@@ -972,31 +980,33 @@ class FailoverTests(FailoverBaseTest):
         if self.killNodes:
             self.log.info(" Killing Memcached ")
             kill_nodes = self.cluster_util.get_victim_nodes(
-                self.servers, self.master, node, self.victim_type,
-                self.victim_count)
+                self.cluster, self.servers, self.master, node,
+                self.victim_type, self.victim_count)
             for kill_node in kill_nodes:
-                self.cluster_util.kill_server_memcached(kill_node)
+                self.cluster_util.kill_memcached(self.cluster, node=kill_node)
         if self.stopNodes:
             self.log.info(" Stopping Node")
             stop_nodes = self.cluster_util.get_victim_nodes(
-                self.servers, self.master, node, self.victim_type,
-                self.victim_count)
+                self.cluster, self.servers, self.master, node,
+                self.victim_type, self.victim_count)
             for stop_node in stop_nodes:
-                self.cluster_util.stop_server(stop_node)
+                self.cluster_util.stop_server(self.cluster, stop_node)
             self.sleep(10)
             for start_node in stop_nodes:
-                self.cluster_util.start_server(start_node)
+                self.cluster_util.start_server(self.cluster, start_node)
         if self.firewallOnNodes:
             self.log.info(" Enabling Firewall for Node ")
             stop_nodes = self.cluster_util.get_victim_nodes(
-                self.servers, self.master, node, self.victim_type,
-                self.victim_count)
+                self.cluster, self.servers, self.master, node,
+                self.victim_type, self.victim_count)
             for stop_node in stop_nodes:
-                self.cluster_util.start_firewall_on_node(stop_node)
+                self.cluster_util.start_firewall_on_node(self.cluster,
+                                                         stop_node)
             self.sleep(30)
             self.log.info(" Disable Firewall for Node ")
             for start_node in stop_nodes:
-                self.cluster_util.stop_firewall_on_node(start_node)
+                self.cluster_util.stop_firewall_on_node(self.cluster,
+                                                        start_node)
         self.sleep(60)
 
     def get_server_map(self):

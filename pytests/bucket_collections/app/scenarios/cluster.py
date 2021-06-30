@@ -36,7 +36,7 @@ class Cluster(object):
         self.cluster.nodes_in_cluster = list()
         cluster_status = RestConnection(self.cluster.master).cluster_status()
 
-        self.cluster_util.find_orchestrator()
+        self.cluster_util.find_orchestrator(self.cluster)
         self.log.info("Current master: %s" % self.cluster.master.ip)
 
         for node in cluster_status["nodes"]:
@@ -169,7 +169,8 @@ class Cluster(object):
         services = kwargs.get("services")
         nodes_in_failed_state = list()
 
-        nodes_status = self.cluster_util.rest.cluster_status()["nodes"]
+        rest = RestConnection(self.cluster.master)
+        nodes_status = rest.cluster_status()["nodes"]
         for node in nodes_status:
             if node["clusterMembership"] == "inactiveFailed":
                 nodes_in_failed_state.append(node["otpNode"].split("@")[1])
@@ -180,7 +181,7 @@ class Cluster(object):
                 "Failover nodes '%s' < '%s' expected node to recover"
                 % (len(nodes_in_failed_state), len(services)))
         for index, service in enumerate(services):
-            self.cluster_util.rest.set_recovery_type(
+            rest.set_recovery_type(
                 otpNode="ns_1@"+nodes_in_failed_state[index],
                 recoveryType=CbServer.Failover.RecoveryType.DELTA)
 

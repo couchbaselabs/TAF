@@ -62,7 +62,8 @@ class CreateBucketTests(BucketDurabilityBase):
                                      % (self.bucket_type, d_level))
             else:
                 # Wait for bucket warm_up to complete
-                while not self.bucket_util.is_warmup_complete([bucket_obj]):
+                while not self.bucket_util.is_warmup_complete(self.cluster,
+                                                              [bucket_obj]):
                     pass
 
             self.get_vbucket_type_mapping(bucket_obj.name)
@@ -283,7 +284,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.summary.add_step("%s for key %s" % (sub_doc_op, key))
 
             # Validate doc_count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster, 1)
 
             # Cbstats vbucket-details validation
@@ -683,15 +685,15 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.log.info("Creating doc_generators")
             gen_create = doc_generator(
                 self.key, self.num_items, crud_batch_size,
-                vbuckets=self.cluster_util.vbuckets,
+                vbuckets=self.cluster.vbuckets,
                 target_vbucket=target_vbuckets)
             gen_update = doc_generator(
                 self.key, 0, crud_batch_size,
-                vbuckets=self.cluster_util.vbuckets,
+                vbuckets=self.cluster.vbuckets,
                 target_vbucket=target_vbuckets, mutate=1)
             gen_delete = doc_generator(
                 self.key, 0, crud_batch_size,
-                vbuckets=self.cluster_util.vbuckets,
+                vbuckets=self.cluster.vbuckets,
                 target_vbucket=target_vbuckets)
             self.log.info("Done creating doc_generators")
 
@@ -930,7 +932,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             perform_crud_ops()
 
             # Validate doc_count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
 
             # Cbstats vbucket-details validation

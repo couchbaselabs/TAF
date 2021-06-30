@@ -156,7 +156,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         # Update num_items value accordingly to the CRUD performed
         self.num_items += self.crud_batch_size - int(self.num_items/3)
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Create a SDK client connection to retry operation
@@ -204,7 +205,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         # Verify doc count
         self.log.info("Validating doc count")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
@@ -231,7 +233,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         cbstat_obj = dict()
         failover_info = dict()
         vb_info_info = dict()
-        target_vbuckets = range(0, self.cluster_util.vbuckets)
+        target_vbuckets = range(0, self.cluster.vbuckets)
         active_vbs_in_target_nodes = list()
         failover_info["init"] = dict()
         failover_info["afterCrud"] = dict()
@@ -358,8 +360,10 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
                 self.assertTrue(result, "Rebalance failed")
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets,
                                                      cbstat_cmd="all",
                                                      stat_name="ep_queue_size",
                                                      timeout=60)
@@ -422,7 +426,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         # Verify doc count
         self.log.info("Validating doc count")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()
 
@@ -493,7 +498,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     def test_non_overlapping_parallel_cruds(self):
@@ -555,7 +561,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.task.jython_task_manager.get_task_result(task)
 
         # Verify doc count and other stats
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     def test_buffer_ack_during_dcp_commit(self):
@@ -580,9 +587,10 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.sleep(5, "Wait for dcp")
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
             shell = RemoteMachineShellConnection(node)
             cb_stat = Cbstats(shell)
             dcp_stats = cb_stat.dcp_stats(self.bucket.name)

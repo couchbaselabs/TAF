@@ -42,7 +42,9 @@ class volume(CollectionBase):
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_for_volume_test")
         self.perform_quorum_failover = self.input.param("perform_quorum_failover", True)
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 4)
-        self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
+        self.cluster_util.set_rebalance_moves_per_nodes(
+            self.cluster.master,
+            rebalanceMovesPerNode=self.rebalance_moves_per_node)
         self.scrape_interval = self.input.param("scrape_interval", None)
         if self.scrape_interval:
             self.log.info("Changing scrape interval and scrape_timeout to {0}".format(self.scrape_interval))
@@ -95,11 +97,11 @@ class volume(CollectionBase):
             self.index_mem_quota = self.input.param("index_mem_quota", 11000)
             self.set_memory_quota(services=["kv", "index"])
 
-            self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
-                                                                            get_all_nodes=True,
-                                                                            servers=self.cluster.servers[
-                                                                                    :self.nodes_init],
-                                                                            master=self.cluster.master)
+            self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(
+                cluster=self.cluster,
+                service_type=CbServer.Services.N1QL,
+                get_all_nodes=True,
+                servers=self.cluster.servers[:self.nodes_init])
             self.n1ql_rest_connections = list()
             for n1ql_node in self.n1ql_nodes:
                 self.n1ql_rest_connections.append(RestConnection(n1ql_node))
@@ -347,6 +349,7 @@ class volume(CollectionBase):
         """
         self.log.info("Creating {} fts indexes ".format(count))
         fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
             service_type=CbServer.Services.FTS,
             get_all_nodes=False))
         couchbase_buckets = [bucket for bucket in self.cluster.buckets if bucket.bucketType == "couchbase"]
@@ -383,6 +386,7 @@ class volume(CollectionBase):
         """
         self.log.info("Dropping {0} fts indexes".format(count))
         fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
             service_type=CbServer.Services.FTS,
             get_all_nodes=False))
         indexes_dropped = dict()
@@ -430,11 +434,11 @@ class volume(CollectionBase):
         """
         for node in nodes:
             if failover_action == "stop_server":
-                self.cluster_util.stop_server(node)
+                self.cluster_util.stop_server(self.cluster, node)
             elif failover_action == "firewall":
-                self.cluster_util.start_firewall_on_node(node)
+                self.cluster_util.start_firewall_on_node(self.cluster, node)
             elif failover_action == "stop_memcached":
-                self.cluster_util.stop_memcached_on_node(node)
+                self.cluster_util.stop_memcached_on_node(self.cluster, node)
             elif failover_action == "kill_erlang":
                 remote = RemoteMachineShellConnection(node)
                 remote.kill_erlang()
@@ -446,14 +450,14 @@ class volume(CollectionBase):
         """
         for node in nodes:
             if revert_failure == "stop_server":
-                self.cluster_util.start_server(node)
+                self.cluster_util.start_server(self.cluster, node)
             elif revert_failure == "firewall":
-                self.cluster_util.stop_firewall_on_node(node)
+                self.cluster_util.stop_firewall_on_node(self.cluster, node)
             elif revert_failure == "stop_memcached":
-                self.cluster_util.start_memcached_on_node(node)
+                self.cluster_util.start_memcached_on_node(self.cluster, node)
             elif revert_failure == "kill_erlang":
-                self.cluster_util.stop_server(node)
-                self.cluster_util.start_server(node)
+                self.cluster_util.stop_server(self.cluster, node)
+                self.cluster_util.start_server(self.cluster, node)
 
     def wipe_config_on_removed_nodes(self, remove_nodes):
         """
@@ -491,8 +495,10 @@ class volume(CollectionBase):
             services = services * nodes_in
 
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, servs_out, check_vbucket_shuffling=self.vbucket_check,
-            retry_get_process_num=self.retry_get_process_num, services=services)
+            self.cluster.servers[:self.nodes_init], servs_in, servs_out,
+            check_vbucket_shuffling=self.vbucket_check,
+            retry_get_process_num=self.retry_get_process_num,
+            services=services)
 
         self.available_servers = [servs for servs in self.available_servers if servs not in servs_in]
         self.available_servers += servs_out
@@ -558,7 +564,8 @@ class volume(CollectionBase):
             "volume_templates.buckets_for_volume_tests_with_ttl"]
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         if self.spec_name not in ttl_buckets:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
@@ -578,7 +585,7 @@ class volume(CollectionBase):
         while retry_count < 10:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
             except:
                 retry_count = retry_count + 1
                 self.log.info("ep-queue hasn't drained yet. Retry count: {0}".format(retry_count))
@@ -586,12 +593,14 @@ class volume(CollectionBase):
                 break
         if retry_count == 10:
             self.log.info("Attempting last retry for ep-queue to drain")
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
         if self.doc_and_collection_ttl:
             self.bucket_util._expiry_pager(self.cluster, val=5)
             self.sleep(400, "wait for doc/collection maxttl to finish")
             items = 0
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             for bucket in self.cluster.buckets:
                 items = items + self.bucket_helper_obj.get_active_key_count(bucket)
             if items != 0:
@@ -747,7 +756,7 @@ class volume(CollectionBase):
                     self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
                     std = self.std_vbucket_dist or 1.0
 
-                    kv_nodes = self.cluster_util.get_kv_nodes()
+                    kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
                     self.log.info("Collecting pre_failover_stats. KV nodes are {0}".format(kv_nodes))
                     prev_failover_stats = self.bucket_util.get_failovers_logs(kv_nodes,
                                                                               self.cluster.buckets)
@@ -760,7 +769,7 @@ class volume(CollectionBase):
 
                     # Pick node(s) for failover
                     failover_nodes = list()
-                    kv_nodes = self.cluster_util.get_kv_nodes()
+                    kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
                     for node in kv_nodes:
                         if node.ip != self.cluster.master.ip:
                             failover_nodes.append(node)
@@ -819,7 +828,7 @@ class volume(CollectionBase):
                     self.wait_for_async_data_load_to_complete(task)
                     self.data_validation_collection()
 
-                    kv_nodes = self.cluster_util.get_kv_nodes()
+                    kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
                     self.log.info("Collecting post_failover_stats. KV nodes are {0}".format(kv_nodes))
                     self.bucket_util.compare_failovers_logs(prev_failover_stats, kv_nodes,
                                                             self.cluster.buckets)
@@ -833,13 +842,14 @@ class volume(CollectionBase):
                         self.cluster,
                         servers=kv_nodes, buckets=self.cluster.buckets,
                         num_replicas=2,
-                        std=std, total_vbuckets=self.cluster_util.vbuckets)
+                        std=std, total_vbuckets=self.cluster.vbuckets)
                     self.sleep(10)
                     # Bring back the rebalance out node back to cluster for further steps
                     if action == "RebalanceOut":
                         self.sleep(120)
                         self.log.info("Rebalancing-in a node")
-                        rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+                        rebalance_task = self.rebalance(nodes_in=1,
+                                                        nodes_out=0)
                         # self.sleep(600)
                         self.wait_for_rebalance_to_complete(rebalance_task)
                     if self.fts_indexes_to_recreate > 0:

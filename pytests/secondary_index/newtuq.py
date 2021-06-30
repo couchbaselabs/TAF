@@ -1,6 +1,7 @@
 import copy
 import json
 
+from Cb_constants import CbServer
 from gsiLib.gsiHelper import GsiHelper
 from couchbase_helper.tuq_generators import TuqGenerators
 from couchbase_helper.tuq_generators import JsonGenerator
@@ -28,7 +29,8 @@ class QueryTests(BaseTestCase):
                 temp = rest.cluster_status()
 
         indexer_node = self.cluster_util.get_nodes_from_services_map(
-            service_type="index",
+            cluster=self.cluster,
+            service_type=CbServer.Services.INDEX,
             get_all_nodes=True)
         # Set indexer storage mode
         self.indexer_rest = GsiHelper(indexer_node[0], self.log)
@@ -95,9 +97,10 @@ class QueryTests(BaseTestCase):
             use_rest=self.use_rest, max_verify=self.max_verify,
             buckets=self.cluster.buckets, item_flag=self.item_flag,
             n1ql_port=self.n1ql_port, full_docs_list=self.full_docs_list,
-            log=self.log, input=self.input, master=self.cluster.master)
+            log=self.log, input=self.input)
         self.n1ql_node = self.cluster_util.get_nodes_from_services_map(
-            service_type="n1ql")
+            cluster=self.cluster,
+            service_type=CbServer.Services.N1QL)
         # self.n1ql_helper._start_command_line_query(self.n1ql_node)
         if self.create_primary_index:
             try:
@@ -114,7 +117,8 @@ class QueryTests(BaseTestCase):
         if hasattr(self, 'n1ql_helper'):
             if hasattr(self, 'skip_cleanup') and not self.skip_cleanup:
                 self.n1ql_node = self.cluster_util.get_nodes_from_services_map(
-                    service_type="n1ql")
+                    cluster=self.cluster,
+                    service_type=CbServer.Services.N1QL)
                 self.n1ql_helper.drop_primary_index(
                     using_gsi=self.use_gsi_for_primary,
                     server=self.n1ql_node)
@@ -342,12 +346,14 @@ class QueryTests(BaseTestCase):
         """
         nodes_out_list, index_nodes_out = \
             self.cluster_util.generate_map_nodes_out_dist(
+                self.cluster,
                 self.nodes_out_dist,
                 self.targetMaster,
                 self.targetIndexManager)
         panic_str = "panic"
         indexers = self.cluster_util.get_nodes_from_services_map(
-            service_type="index",
+            cluster=self.cluster,
+            service_type=CbServer.Services.INDEX,
             get_all_nodes=True)
         if not indexers:
             return None
@@ -367,7 +373,8 @@ class QueryTests(BaseTestCase):
                 if count > 0:
                     self.log.info("=== PANIC OBSERVED IN INDEXER LOGS ON SERVER {0} ===".format(server.ip))
         projectors = self.cluster_util.get_nodes_from_services_map(
-            service_type="kv",
+            cluster=self.cluster,
+            service_type=CbServer.Services.KV,
             get_all_nodes=True)
         if not projectors:
             return None

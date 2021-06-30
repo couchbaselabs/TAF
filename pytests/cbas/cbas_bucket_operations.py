@@ -29,7 +29,7 @@ class CBASBucketOperations(CBASBaseTest):
             self.bucket_util._set_time_sync_on_buckets(self.cluster,
                                                        ["default"])
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def tearDown(self):
@@ -49,7 +49,7 @@ class CBASBucketOperations(CBASBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write aborts before dataset creation")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -75,7 +75,7 @@ class CBASBucketOperations(CBASBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write aborts after dataset creation")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -120,7 +120,7 @@ class CBASBucketOperations(CBASBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write aborts after dataset connect")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -163,7 +163,7 @@ class CBASBucketOperations(CBASBaseTest):
 
         if self.test_abort_snapshot:
             self.log.info("Creating sync_write aborts after dataset connect")
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
                 cbstats = Cbstats(ssh_shell)
                 replica_vbs = cbstats.vbucket_list(
@@ -679,7 +679,7 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy)
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("Fetch RAM document load percentage")
         self.document_ram_percentage = \

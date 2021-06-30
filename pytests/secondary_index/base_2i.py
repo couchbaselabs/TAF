@@ -49,6 +49,7 @@ class BaseSecondaryIndexingTests(QueryTests):
         self.find_nodes_in_list()
         self.nodes_out_list, self.index_nodes_out = \
             self.cluster_util.generate_map_nodes_out_dist(
+                self.cluster,
                 self.nodes_out_dist,
                 self.targetMaster,
                 self.targetIndexManager)
@@ -642,7 +643,8 @@ class BaseSecondaryIndexingTests(QueryTests):
         pass
 
     def gen_scan_vector(self, use_percentage=1.0, use_random=False):
-        servers = self.cluster_util.get_kv_nodes(servers=self.cluster.servers[:self.nodes_init])
+        servers = self.cluster_util.get_kv_nodes(
+            self.cluster, servers=self.cluster.servers[:self.nodes_init])
         sequence_bucket_map = self.bucket_util.get_vbucket_seqnos(
             servers,
             self.cluster.buckets)
@@ -660,11 +662,11 @@ class BaseSecondaryIndexingTests(QueryTests):
         else:
             for bucket in self.cluster.buckets:
                 scan_vector = {}
-                total = int(self.cluster_util.vbuckets*use_percentage)
-                vbuckets_number_list = range(0,total)
+                total = int(self.cluster.vbuckets*use_percentage)
+                vbuckets_number_list = range(0, total)
                 if use_random:
                     vbuckets_number_list = random.sample(
-                        xrange(0, self.cluster_util.vbuckets),
+                        xrange(0, self.cluster.vbuckets),
                         total)
                 self.log.debug("analyzing for bucket {0}".format(bucket.name))
                 map = sequence_bucket_map[bucket.name]
@@ -708,7 +710,9 @@ class BaseSecondaryIndexingTests(QueryTests):
                                  expected_result[:100], expected_result[-100:]))
 
     def verify_index_absence(self, query_definitions, buckets):
-        server = self.cluster_util.get_nodes_from_services_map(service_type="n1ql")
+        server = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.N1QL)
         for bucket in buckets:
             for query_definition in query_definitions:
                 check = self.n1ql_helper._is_index_in_list(
@@ -904,7 +908,8 @@ class BaseSecondaryIndexingTests(QueryTests):
         """
         self.log.info("Setting indexer log level to {0}".format(loglevel))
         server = self.cluster_util.get_nodes_from_services_map(
-            service_type="index")
+            cluster=self.cluster,
+            service_type=CbServer.Services.INDEX)
         rest = RestConnection(server)
         status = rest.set_indexer_params("logLevel", loglevel)
 
@@ -957,7 +962,9 @@ class BaseSecondaryIndexingTests(QueryTests):
         def validate_disk_writes(index_nodes=None):
             if not index_nodes:
                 index_nodes = self.cluster_util.get_nodes_from_services_map(
-                    service_type="index", get_all_nodes=True)
+                    cluster=self.cluster,
+                    service_type=CbServer.Services.INDEX,
+                    get_all_nodes=True)
             for node in index_nodes:
                 indexer_rest = GsiHelper(node, self.log)
                 content = indexer_rest.get_index_storage_stats()
@@ -983,7 +990,8 @@ class BaseSecondaryIndexingTests(QueryTests):
             return
         self.log.info("Setting indexer memory quota to %s MB" % memory_quota)
         node = self.cluster_util.get_nodes_from_services_map(
-            service_type="index")
+            cluster=self.cluster,
+            service_type=CbServer.Services.INDEX)
         rest = RestConnection(node)
         rest.set_service_mem_quota(
             {CbServer.Settings.INDEX_MEM_QUOTA: memory_quota})
@@ -1011,6 +1019,6 @@ class BaseSecondaryIndexingTests(QueryTests):
         # wait for restart and warmup on all node
         self.sleep(300)
         # disable firewall on these nodes
-        self.cluster_util.stop_firewall_on_node(node)
+        self.cluster_util.stop_firewall_on_node(self.cluster, node)
         # wait till node is ready after warmup
         self.cluster_util.wait_for_ns_servers_or_assert([node], self)

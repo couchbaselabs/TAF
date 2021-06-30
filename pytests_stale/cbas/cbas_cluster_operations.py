@@ -214,7 +214,7 @@ class CBASClusterOperations(CBASBaseTest):
                                                         graceful_failover)
         self.task_manager.get_task_result(failover_task)
 
-        result = self.cluster_util.rebalance()
+        result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Rebalance operation failed")
         self.perform_doc_ops_in_all_cb_buckets("create",
                                                self.num_items,
@@ -548,7 +548,7 @@ class CBASClusterOperations(CBASBaseTest):
         self.rebalance_out = self.input.param("rebalance_out", False)
         if self.rebalance_out:
             self.log.info("Rebalance out the fail-over node")
-            result = self.cluster_util.rebalance()
+            result = self.cluster_util.rebalance(self.cluster)
             self.assertTrue(result, "Rebalance operation failed")
         else:
             self.recovery_strategy = self.input.param("recovery_strategy", "full")
@@ -566,7 +566,7 @@ class CBASClusterOperations(CBASBaseTest):
             if not success:
                 self.fail("Recovery %s failed." % self.recovery_strategy)
             self.rest.add_back_node('ns_1@' + self.rebalanceServers[1].ip)
-            result = self.cluster_util.rebalance()
+            result = self.cluster_util.rebalance(self.cluster)
             self.assertTrue(result, "Rebalance operation failed")
 
         self.log.info("Get KV ops result")
@@ -900,7 +900,7 @@ class MultiNodeFailOver(CBASBaseTest):
         self.assertTrue(self.task_manager.get_task_result(fail_over_task), msg="Fail over of nodes failed")
 
         self.log.info("Rebalance remaining nodes")
-        result = self.cluster_util.rebalance()
+        result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Rebalance operation failed")
 
         self.log.info("Validate dataset count")
@@ -930,7 +930,7 @@ class MultiNodeFailOver(CBASBaseTest):
         self.assertTrue(self.task_manager.get_task_result(fail_over_task), msg="Fail over of nodes failed")
 
         self.log.info("Rebalance remaining nodes")
-        result = self.cluster_util.rebalance()
+        result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Rebalance operation failed")
 
         for task in tasks:

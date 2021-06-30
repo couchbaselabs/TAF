@@ -62,7 +62,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.log.critical("Seeing failures in mutatate_from_spec")
 
     def validate_docs(self):
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 
@@ -81,7 +82,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.nodes_init|servs_in|extra_nodes_in|extra_nodes_out|servs_out
         """
         rest = RestConnection(self.cluster.master)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.log.info("Current nodes : {0}".format([node.id for node in rest.node_statuses()]))
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
@@ -119,7 +121,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 self.cbcollect_info(trigger=True, validate=True)
                 self.log.info("Rebalance is still required. Verifying the data in the buckets")
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
 
     def test_start_stop_rebalance_with_mutations(self):
@@ -139,7 +141,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.nodes_init|servs_in|extra_nodes_in|extra_nodes_out|servs_out
             """
         rest = RestConnection(self.cluster.master)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.log.info("Current nodes : {0}".format([node.id for node in rest.node_statuses()]))
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
@@ -185,7 +188,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 self.log.info("Rebalance is still required. "
                               "Verifying the data in the buckets")
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
 
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
 
@@ -208,7 +211,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.nodes_init|servs_in|extra_nodes_in|extra_nodes_out|servs_out
             """
         rest = RestConnection(self.cluster.master)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.log.info("Current nodes : {0}".format([node.id for node in rest.node_statuses()]))
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
@@ -252,7 +256,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 self.log.info("Rebalance is still required. "
                               "Verifying the data in the buckets.")
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
 
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
 
@@ -320,8 +324,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.validate_docs()
         self.sleep(30)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
-        nodes = self.cluster_util.get_nodes_in_cluster(self.cluster.master)
+        nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
         self.bucket_util.vb_distribution_analysis(
             self.cluster,
             servers=nodes, std=1.0,
-            total_vbuckets=self.cluster_util.vbuckets)
+            total_vbuckets=self.cluster.vbuckets)

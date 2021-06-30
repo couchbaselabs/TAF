@@ -72,8 +72,8 @@ class SDKExceptionTests(CollectionBase):
         """
         def validate_vb_detail_stats():
             failed = durability_helper.verify_vbucket_details_stats(
-                self.bucket, self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
+                self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
+                vbuckets=self.cluster.vbuckets,
                 expected_val=verification_dict)
             if failed:
                 self.log_failure("vBucket_details validation failed")
@@ -446,7 +446,8 @@ class SDKExceptionTests(CollectionBase):
             shell_conn[node.ip].disconnect()
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
         self.validate_test_failure()
@@ -502,7 +503,7 @@ class SDKExceptionTests(CollectionBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for tem_vb_num in range(self.cluster_util.vbuckets):
+            for tem_vb_num in range(self.cluster.vbuckets):
                 tem_vb_num = str(tem_vb_num)
                 if tem_vb_num not in affected_vbs:
                     if compare_vb_stat(vb_info["init"][node.ip],
@@ -695,7 +696,7 @@ class SDKExceptionTests(CollectionBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.cluster_util.vbuckets)
+                        doc_id, self.cluster.vbuckets)
                     if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
@@ -719,7 +720,7 @@ class SDKExceptionTests(CollectionBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.cluster_util.vbuckets)))
+                        self.cluster.vbuckets)))
 
         affected_vbs = list(set(affected_vbs))
         # Fetch latest stats and validate the seq_nos are not updated
@@ -792,7 +793,8 @@ class SDKExceptionTests(CollectionBase):
         self.sdk_client_pool.release_client(sdk_client)
 
         # Verify doc count after expected CRUD failure
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 

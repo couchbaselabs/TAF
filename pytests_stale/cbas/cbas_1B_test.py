@@ -165,44 +165,69 @@ class analytics_high_doc_ops(CBASBaseTest):
         self.log.info("Add a N1QL/Index nodes")
         self.query_node = self.servers[1]
         rest = RestConnection(self.query_node)
-        rest.set_data_path(data_path=self.query_node.data_path,index_path=self.query_node.index_path,cbas_path=self.query_node.cbas_path)
-        result = self.cluster_util.add_node(self.query_node, rebalance=False)
+        rest.set_data_path(data_path=self.query_node.data_path,
+                           index_path=self.query_node.index_path,
+                           cbas_path=self.query_node.cbas_path)
+        result = self.cluster_util.add_node(self.cluster, self.query_node,
+                                            rebalance=False)
         self.assertTrue(result, msg="Failed to add N1QL/Index node.")
 
         self.log.info("Add 2nd KV node")
         rest = RestConnection(self.cluster.kv_nodes[1])
-        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,index_path=self.cluster.kv_nodes[1].index_path,cbas_path=self.cluster.kv_nodes[1].cbas_path)
-        result = self.cluster_util.add_node(self.cluster.kv_nodes[1], services=["kv"], rebalance=False)
+        rest.set_data_path(data_path=self.cluster.kv_nodes[1].data_path,
+                           index_path=self.cluster.kv_nodes[1].index_path,
+                           cbas_path=self.cluster.kv_nodes[1].cbas_path)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.kv_nodes[1],
+            services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add 3rd KV node")
         rest = RestConnection(self.cluster.kv_nodes[2])
-        rest.set_data_path(data_path=self.cluster.kv_nodes[2].data_path,index_path=self.cluster.kv_nodes[2].index_path,cbas_path=self.cluster.kv_nodes[2].cbas_path)
-        result = self.cluster_util.add_node(self.cluster.kv_nodes[2], services=["kv"], rebalance=False)
+        rest.set_data_path(data_path=self.cluster.kv_nodes[2].data_path,
+                           index_path=self.cluster.kv_nodes[2].index_path,
+                           cbas_path=self.cluster.kv_nodes[2].cbas_path)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.kv_nodes[2],
+            services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add 4rd KV node")
         rest = RestConnection(self.cluster.kv_nodes[3])
-        rest.set_data_path(data_path=self.cluster.kv_nodes[3].data_path,index_path=self.cluster.kv_nodes[3].index_path,cbas_path=self.cluster.kv_nodes[3].cbas_path)
-        result = self.cluster_util.add_node(self.cluster.kv_nodes[3], services=["kv"], rebalance=False)
+        rest.set_data_path(data_path=self.cluster.kv_nodes[3].data_path,
+                           index_path=self.cluster.kv_nodes[3].index_path,
+                           cbas_path=self.cluster.kv_nodes[3].cbas_path)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.kv_nodes[3],
+            services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add 5th KV node")
         rest = RestConnection(self.cluster.kv_nodes[4])
-        rest.set_data_path(data_path=self.cluster.kv_nodes[4].data_path,index_path=self.cluster.kv_nodes[4].index_path,cbas_path=self.cluster.kv_nodes[4].cbas_path)
-        result = self.cluster_util.add_node(self.cluster.kv_nodes[4], services=["kv"], rebalance=False)
+        rest.set_data_path(data_path=self.cluster.kv_nodes[4].data_path,
+                           index_path=self.cluster.kv_nodes[4].index_path,
+                           cbas_path=self.cluster.kv_nodes[4].cbas_path)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.kv_nodes[4],
+            services=["kv"], rebalance=False)
         self.assertTrue(result, msg="Failed to add KV node.")
 
         self.log.info("Add 2nd CBAS nodes")
-        result = self.cluster_util.add_node(self.cluster.cbas_nodes[0], services=["cbas"], rebalance=False)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.cbas_nodes[0],
+            services=["cbas"], rebalance=False)
         self.assertTrue(result, msg="Failed to add CBAS node.")
 
         self.log.info("Add 3rd CBAS nodes")
-        result = self.cluster_util.add_node(self.cluster.cbas_nodes[1], services=["cbas"], rebalance=False)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.cbas_nodes[1],
+            services=["cbas"], rebalance=False)
         self.assertTrue(result, msg="Failed to add CBAS node.")
 
         self.log.info("Add 4th CBAS nodes")
-        result = self.cluster_util.add_node(self.cluster.cbas_nodes[2], services=["cbas"], rebalance=True)
+        result = self.cluster_util.add_node(
+            self.cluster, self.cluster.cbas_nodes[2],
+            services=["cbas"], rebalance=True)
         self.assertTrue(result, msg="Failed to add CBAS node.")
 
         ########################################################################################################################

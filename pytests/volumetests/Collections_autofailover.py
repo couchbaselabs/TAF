@@ -77,17 +77,22 @@ class volume(AutoFailoverBaseTest):
         :return: None
         """
         if self.failover_action == "stop_server":
-            self.cluster_util.stop_server(self.server_to_fail[0])
+            self.cluster_util.stop_server(self.cluster, self.server_to_fail[0])
             self.sleep(self.timeout, "keeping the failure")
-            self.cluster_util.start_server(self.server_to_fail[0])
+            self.cluster_util.start_server(self.cluster,
+                                           self.server_to_fail[0])
         elif self.failover_action == "firewall":
-            self.cluster_util.start_firewall_on_node(self.server_to_fail[0])
+            self.cluster_util.start_firewall_on_node(self.cluster,
+                                                     self.server_to_fail[0])
             self.sleep(self.timeout, "keeping the failure")
-            self.cluster_util.stop_firewall_on_node(self.server_to_fail[0])
+            self.cluster_util.stop_firewall_on_node(self.cluster,
+                                                    self.server_to_fail[0])
         elif self.failover_action == "stop_memcached":
-            self.cluster_util.stop_memcached_on_node(self.server_to_fail[0])
+            self.cluster_util.stop_memcached_on_node(self.cluster,
+                                                     self.server_to_fail[0])
             self.sleep(self.timeout, "keeping the failure")
-            self.cluster_util.start_memcached_on_node(self.server_to_fail[0])
+            self.cluster_util.start_memcached_on_node(self.cluster,
+                                                      self.server_to_fail[0])
         else:
             # for restart server, machine restart, and network restart use base libraries
             self.failover_actions[self.failover_action](self)
@@ -204,7 +209,7 @@ class volume(AutoFailoverBaseTest):
         while retry_count < 10:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
             except:
                 retry_count = retry_count + 1
                 self.log.info("ep-queue hasn't drained yet. Retry count: {0}".format(retry_count))
@@ -212,7 +217,8 @@ class volume(AutoFailoverBaseTest):
                 break
         if retry_count == 10:
             self.log.info("Attempting last retry for ep-queue to drain")
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
         if not self.skip_validations:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
@@ -282,10 +288,11 @@ class volume(AutoFailoverBaseTest):
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 

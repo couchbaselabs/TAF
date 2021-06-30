@@ -36,7 +36,7 @@ class CasBaseTest(BaseTestCase):
             replica=self.num_replicas,
             storage=self.bucket_storage,
             conflict_resolution=self.bucket_conflict_resolution_type)
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket = self.cluster.buckets[0]
 

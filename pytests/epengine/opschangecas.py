@@ -18,7 +18,7 @@ class OpsChangeCasTests(CasBaseTest):
         self.load_gen = doc_generator(self.key, 0, self.num_items,
                                       doc_size=self.doc_size)
         self.node_data = dict()
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
             shell = RemoteMachineShellConnection(node)
             cb_stat = Cbstats(shell)
             self.node_data[node.ip] = dict()

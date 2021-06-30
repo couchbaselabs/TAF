@@ -97,7 +97,7 @@ class UpgradeBase(BaseTestCase):
         self.task.rebalance(self.cluster.servers[0:self.nodes_init], [], [])
         self.cluster.nodes_in_cluster.extend(
             self.cluster.servers[0:self.nodes_init])
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
 
         # Disable auto-failover to avaid failover of nodes
         status = RestConnection(self.cluster.master) \
@@ -149,7 +149,8 @@ class UpgradeBase(BaseTestCase):
             CbServer.default_collection].num_items = self.num_items
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.sleep(30, "Wait for num_items to get reflected")
         current_items = self.bucket_util.get_bucket_current_item_count(
             self.cluster, self.bucket)
@@ -218,7 +219,7 @@ class UpgradeBase(BaseTestCase):
         install_params['num_nodes'] = len(nodes)
         install_params['product'] = "cb"
         install_params['version'] = version
-        install_params['vbuckets'] = [self.cluster_util.vbuckets]
+        install_params['vbuckets'] = [self.cluster.vbuckets]
         install_params['init_nodes'] = False
         install_params['debug_logs'] = False
         self.installer_job.parallel_install(nodes, install_params)
@@ -501,7 +502,7 @@ class UpgradeBase(BaseTestCase):
                              .format(node_to_upgrade))
 
         # Print cluster status
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
 
         # Update master node
         self.cluster.master = self.spare_node
@@ -539,7 +540,7 @@ class UpgradeBase(BaseTestCase):
                              .format(node_to_upgrade))
 
         # Print cluster status
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
 
         # Rebalance-out the target_node
         rest = self.__get_rest_node(self.spare_node)

@@ -85,6 +85,8 @@ class BucketParams(CollectionBase):
 
     def validate_docs(self, buckets):
         # Validate doc count as per bucket collections
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
-        self.bucket_util.validate_doc_count_as_per_collections(buckets[0])
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util.validate_doc_count_as_per_collections(
+            self.cluster, buckets[0])
         self.validate_test_failure()

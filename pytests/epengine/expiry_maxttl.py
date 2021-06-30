@@ -23,7 +23,7 @@ class ExpiryMaxTTL(ClusterSetup):
 
         self.bucket_util.get_all_buckets(self.cluster)
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Create sdk_clients for pool
@@ -59,7 +59,7 @@ class ExpiryMaxTTL(ClusterSetup):
         doc_create = doc_generator(
             self.key, 0, num_items, doc_size=self.doc_size,
             doc_type="json", target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         self.log.info("doc_generator created")
         task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_create, op_type, exp,
@@ -70,7 +70,8 @@ class ExpiryMaxTTL(ClusterSetup):
             compression=self.sdk_compression,
             sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         return
 
@@ -395,11 +396,11 @@ class ExpiryMaxTTL(ClusterSetup):
         ttl_gen_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         non_ttl_gen_create = doc_generator(
             self.key, self.num_items, self.num_items*2, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
 
         # Set durability levels based on doc_ops_type
         non_ttl_task_property["op_type"] = "create"
@@ -427,7 +428,8 @@ class ExpiryMaxTTL(ClusterSetup):
                                    non_ttl_gen_create, ttl_gen_create,
                                    non_ttl_task_property, ttl_task_property)
         # Validate doc_count before expiry of docs
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                   self.num_items*2)
 
@@ -461,7 +463,8 @@ class ExpiryMaxTTL(ClusterSetup):
             self.fail("Seen invalid document exception")
 
         # Validate doc_count after doc_expiry
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Document mutations after doc_expiry
@@ -470,7 +473,8 @@ class ExpiryMaxTTL(ClusterSetup):
                                    non_ttl_gen_create, ttl_gen_create,
                                    non_ttl_task_property, ttl_task_property)
         # Validate doc_count before expiry of docs
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                   self.num_items*2)
 
@@ -494,7 +498,7 @@ class ExpiryMaxTTL(ClusterSetup):
         gen_create = doc_generator(
             self.key, 0, self.num_items, doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=target_vbuckets,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         doc_op_task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, gen_create, "create", self.maxttl,
             batch_size=10, process_concurrency=8,
@@ -584,5 +588,6 @@ class ExpiryMaxTTL(ClusterSetup):
                       % doc_op_task.fail.keys())
 
         # Final doc_count validation
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)

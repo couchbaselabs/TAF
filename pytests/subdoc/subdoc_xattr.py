@@ -51,7 +51,7 @@ class SubdocBaseTest(ClusterSetup):
             self.bucket_util.add_rbac_user(self.cluster.master,
                                            testuser=testuser,
                                            rolelist=rolelist)
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def tearDown(self):
@@ -1646,7 +1646,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         # Reset it back to start index
         doc_gen["doc_crud"].reset()
 
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
             shell = RemoteMachineShellConnection(node)
             cbstat_obj = Cbstats(shell)
             replica_vbs = cbstat_obj.vbucket_list(
@@ -1753,7 +1753,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         doc_key = doc_generator(self.doc_id, 0, 1).next()[0]
         target_vb = self.bucket_util.get_vbucket_num_for_key(doc_key)
 
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
             shell = RemoteMachineShellConnection(node)
             cbstat_obj = Cbstats(shell)
             replica_vbs = cbstat_obj.vbucket_list(

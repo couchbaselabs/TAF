@@ -1519,7 +1519,7 @@ class BucketUtils(ScopeUtils):
                 break
         if status is True:
             warmed_up = self._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=60)
             if not warmed_up:
                 status = False
         if status is True:
@@ -1558,7 +1558,7 @@ class BucketUtils(ScopeUtils):
                            "or any other bucket request connections")
             sleep(2)
             warmed_up = self._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=60)
             if not warmed_up:
                 task.result = False
                 raise_exception = "Bucket not warmed up"
@@ -1642,26 +1642,19 @@ class BucketUtils(ScopeUtils):
         return False
 
     def delete_all_buckets(self, cluster):
-        servers = self.cluster_util.get_kv_nodes(master=cluster.master)
-        for serverInfo in servers:
-            try:
-                buckets = self.get_all_buckets(cluster)
-            except Exception as e:
-                self.log.error(e)
-                sleep(10, "Wait before get_all_buckets() call")
-                buckets = self.get_all_buckets(cluster)
-            self.log.debug('Deleting existing buckets {0} on {1}'
-                           .format([b.name for b in buckets], serverInfo.ip))
+        for server in cluster.servers:
+            buckets = self.get_all_buckets(cluster, cluster_node=server)
             for bucket in buckets:
-                self.log.debug("Remove bucket {0} ...".format(bucket.name))
+                self.log.debug("%s - Remove bucket %s"
+                               % (server.ip, bucket.name))
                 try:
                     status = self.delete_bucket(cluster, bucket)
                 except Exception as e:
                     self.log.error(e)
                     raise e
                 if not status:
-                    raise Exception("Bucket {0} could not be deleted"
-                                    .format(bucket.name))
+                    raise Exception("%s - Bucket %s could not be deleted"
+                                    % (server.ip, bucket.name))
 
     def create_default_bucket(
             self, cluster, bucket_type=Bucket.Type.MEMBASE,
@@ -2071,7 +2064,8 @@ class BucketUtils(ScopeUtils):
             # Check for warm_up
             for bucket in cluster.buckets:
                 warmed_up = self._wait_warmup_completed(
-                    self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+                    self.cluster_util.get_kv_nodes(cluster), bucket,
+                    wait_time=60)
                 if not warmed_up:
                     success = False
                     raise_exception = "Bucket %s not warmed up" % bucket.name
@@ -2136,14 +2130,15 @@ class BucketUtils(ScopeUtils):
             self.update_bucket_property(cluster.master, bucket,
                                         replica_number=replicas)
 
-    def is_warmup_complete(self, buckets, retry_count=5):
+    def is_warmup_complete(self, cluster, buckets, retry_count=5):
         buckets_warmed_up = True
         while retry_count != 0:
             buckets_warmed_up = True
             for bucket in buckets:
                 try:
                     warmed_up = self._wait_warmup_completed(
-                        self.cluster_util.get_kv_nodes(), bucket, wait_time=60)
+                        self.cluster_util.get_kv_nodes(cluster), bucket,
+                        wait_time=60)
                     if not warmed_up:
                         buckets_warmed_up = False
                         break
@@ -2160,7 +2155,7 @@ class BucketUtils(ScopeUtils):
                              verify_total_items=True):
         master = cluster.master
         self._wait_for_stats_all_buckets(
-            cluster.buckets,
+            cluster, cluster.buckets,
             timeout=(timeout or 120),
             check_ep_items_remaining=check_ep_items_remaining)
         if check_items:
@@ -2179,10 +2174,10 @@ class BucketUtils(ScopeUtils):
                     self.log.error(msg)
                     raise Exception(msg)
 
-    def verify_stats_for_bucket(self, bucket, items, timeout=60):
+    def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60):
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
-        servers = self.cluster_util.get_kv_nodes()
+        servers = self.cluster_util.get_kv_nodes(cluster)
         if bucket.bucketType == Bucket.Type.MEMCACHED:
             items_actual = 0
             for server in servers:
@@ -2234,11 +2229,12 @@ class BucketUtils(ScopeUtils):
 
     def verify_stats_all_buckets(self, cluster, items, timeout=500):
         vbucket_stats = self.get_vbucket_seqnos(
-            self.cluster_util.get_kv_nodes(),
+            self.cluster_util.get_kv_nodes(cluster),
             cluster.buckets,
             skip_consistency=True)
         for bucket in cluster.buckets:
-            self.verify_stats_for_bucket(bucket, items, timeout=timeout)
+            self.verify_stats_for_bucket(cluster, bucket, items,
+                                         timeout=timeout)
             # Validate seq_no snap_start/stop values with initial load
             result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
             self.assertTrue(result,
@@ -2278,7 +2274,7 @@ class BucketUtils(ScopeUtils):
             for shell in task.shellConnList:
                 shell.disconnect()
 
-    def _wait_for_stats_all_buckets(self, buckets, expected_val=0,
+    def _wait_for_stats_all_buckets(self, cluster, buckets, expected_val=0,
                                     comparison_condition='==',
                                     check_ep_items_remaining=False,
                                     timeout=500,
@@ -2298,7 +2294,7 @@ class BucketUtils(ScopeUtils):
           timeout - Waiting the end of the thread. (str)
         """
         tasks = list()
-        for server in self.cluster_util.get_kv_nodes():
+        for server in self.cluster_util.get_kv_nodes(cluster):
             for bucket in buckets:
                 if bucket.bucketType == 'memcached':
                     continue
@@ -2625,7 +2621,7 @@ class BucketUtils(ScopeUtils):
                     self.task_manager.get_task_result(task)
                     bucket.scopes[scope.name].collections[collection.name].num_items += (end - start)
         # Doc count validation
-        self._wait_for_stats_all_buckets(cluster.buckets)
+        self._wait_for_stats_all_buckets(cluster, cluster.buckets)
         self.validate_docs_per_collections_all_buckets(cluster)
 
     def _async_load_all_buckets(self, cluster, kv_gen, op_type,
@@ -2916,7 +2912,7 @@ class BucketUtils(ScopeUtils):
         Waits for max_unacked_bytes = 0 on all servers and buckets in a cluster
         A utility function that waits upr flow with unacked_bytes = 0
         """
-        servers = self.cluster_util.get_kv_nodes()
+        servers = self.cluster_util.get_kv_nodes(cluster)
         dcp_stat_map = self.data_collector.collect_compare_dcp_stats(
             cluster.buckets, servers, filter_list=filter_list)
         for bucket in dcp_stat_map.keys():
@@ -2972,11 +2968,11 @@ class BucketUtils(ScopeUtils):
                 new_vbucket_stats)
         return new_vbucket_stats
 
-    def get_vbucket_seqnos_per_Node_Only(self, servers, buckets):
+    def get_vbucket_seqnos_per_Node_Only(self, cluster, servers, buckets):
         """
         Method to get vbucket information from a cluster using cbstats
         """
-        servers = self.cluster_util.get_kv_nodes(servers)
+        servers = self.cluster_util.get_kv_nodes(cluster, servers)
         new_vbucket_stats = self.data_collector.collect_vbucket_stats(
             buckets, servers, collect_vbucket=False,
             collect_vbucket_seqno=True, collect_vbucket_details=False,
@@ -2984,7 +2980,8 @@ class BucketUtils(ScopeUtils):
         self.compare_per_node_for_vbucket_consistency(new_vbucket_stats)
         return new_vbucket_stats
 
-    def compare_vbucket_seqnos(self, prev_vbucket_stats, servers, buckets,
+    def compare_vbucket_seqnos(self, cluster, prev_vbucket_stats,
+                               servers, buckets,
                                perNode=False, compare="=="):
         """
             Method to compare vbucket information to a previously stored value
@@ -2999,12 +2996,10 @@ class BucketUtils(ScopeUtils):
         new_vbucket_stats = dict()
         self.log.debug("Begin Verification for vbucket seq_nos comparison")
         if perNode:
-            new_vbucket_stats = self.get_vbucket_seqnos_per_Node_Only(servers,
-                                                                      buckets)
+            new_vbucket_stats = self.get_vbucket_seqnos_per_Node_Only(
+                cluster, servers, buckets)
         else:
             new_vbucket_stats = self.get_vbucket_seqnos(servers, buckets)
-        isNotSame = True
-        summary = ""
         if not perNode:
             compare_vbucket_seqnos_result = self.data_analyzer.compare_stats_dataset(
                 prev_vbucket_stats, new_vbucket_stats, "vbucket_id",
@@ -3117,9 +3112,9 @@ class BucketUtils(ScopeUtils):
         Method to check vbucket distribution analysis after rebalance
         """
         self.log.debug("Begin Verification for vb_distribution_analysis")
-        servers = self.cluster_util.get_kv_nodes(servers)
+        servers = self.cluster_util.get_kv_nodes(cluster, servers)
         active, replica = self.get_vb_distribution_active_replica(
-            servers=servers, buckets=buckets)
+            cluster, servers=servers, buckets=buckets)
         for bucket in active.keys():
             self.log.debug("Begin Verification for Bucket {0}".format(bucket))
             active_result = active[bucket]
@@ -3207,7 +3202,7 @@ class BucketUtils(ScopeUtils):
         """
         return True
         self.log.debug("Begin Verification for data comparison")
-        servers = self.cluster_util.get_kv_nodes(servers)
+        servers = self.cluster_util.get_kv_nodes(cluster, servers)
         info, curr_data_set = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, mode=mode)
         comparison_result = self.data_analyzer.compare_all_dataset(
@@ -3227,20 +3222,22 @@ class BucketUtils(ScopeUtils):
             servers, buckets, data_path=path, perNode=False, mode=mode)
         return dataset
 
-    def get_data_set_with_data_distribution_all(self, servers, buckets,
+    def get_data_set_with_data_distribution_all(self, cluster, servers,
+                                                buckets,
                                                 path=None, mode="disk"):
         """ Method to get all data set for buckets and from the servers """
-        servers = self.cluster_util.get_kv_nodes(servers)
+        servers = self.cluster_util.get_kv_nodes(cluster, servers)
         _, dataset = self.data_collector.collect_data(
             servers, buckets, data_path=path, perNode=False, mode=mode)
         distribution = self.data_analyzer.analyze_data_distribution(dataset)
         return dataset, distribution
 
-    def get_vb_distribution_active_replica(self, servers=[], buckets=[]):
+    def get_vb_distribution_active_replica(self, cluster, servers=[],
+                                           buckets=[]):
         """
         Method to distribution analysis for active and replica vbuckets
         """
-        servers = self.cluster_util.get_kv_nodes(servers)
+        servers = self.cluster_util.get_kv_nodes(cluster, servers)
         active, replica = self.data_collector.collect_vbucket_num_stats(
             servers, buckets)
         active_result, replica_result = \
@@ -3336,7 +3333,8 @@ class BucketUtils(ScopeUtils):
             new_failovers_stats, vbucketMap)
         return new_failovers_stats
 
-    def compare_failovers_logs(self, prev_failovers_stats, servers, buckets,
+    def compare_failovers_logs(self, cluster, prev_failovers_stats,
+                               servers, buckets,
                                perNode=False, comp_map=None):
         """
         Method to compare failover log information to a previously stored value
@@ -3347,7 +3345,7 @@ class BucketUtils(ScopeUtils):
         comp_map["num_entries"] = {'type': "string", 'operation': "<="}
 
         self.log.debug("Begin Verification for failovers logs comparison")
-        servers = self.cluster_util.get_kv_nodes(servers)
+        servers = self.cluster_util.get_kv_nodes(cluster, servers)
         new_failovers_stats = self.get_failovers_logs(servers, buckets)
         compare_failovers_result = self.data_analyzer.compare_stats_dataset(
             prev_failovers_stats, new_failovers_stats, "vbucket_id", comp_map)
@@ -3391,7 +3389,7 @@ class BucketUtils(ScopeUtils):
         return tasks
 
     def _expiry_pager(self, cluster, val=10):
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(cluster):
             shell_conn = RemoteMachineShellConnection(node)
             cbepctl_obj = Cbepctl(shell_conn)
             for bucket in cluster.buckets:
@@ -3700,8 +3698,11 @@ class BucketUtils(ScopeUtils):
         errors = result.stderr.read()
         return errors
 
-    def get_all_buckets(self, cluster):
-        rest = BucketHelper(cluster.master)
+    def get_all_buckets(self, cluster, cluster_node=None):
+        if cluster_node is not None:
+            rest = BucketHelper(cluster_node)
+        else:
+            rest = BucketHelper(cluster.master)
         json_parsed = rest.get_buckets_json()
         bucket_list = list()
         for item in json_parsed:
@@ -4201,16 +4202,15 @@ class BucketUtils(ScopeUtils):
             ratio = 2.0 / 3.0
         return ratio
 
-    def set_flusher_total_batch_limit(self, node,
-                                      flusher_total_batch_limit=3,
-                                      buckets=None):
+    def set_flusher_total_batch_limit(self, cluster, buckets,
+                                      flusher_total_batch_limit=3):
         self.log.debug("Changing the bucket properties by changing "
                        "flusher_total_batch_limit to {0}"
                        .format(flusher_total_batch_limit))
-        rest = RestConnection(node)
+        rest = RestConnection(cluster.master)
 
         # Enable diag_eval outside localhost
-        shell = RemoteMachineShellConnection(node)
+        shell = RemoteMachineShellConnection(cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
 
@@ -4221,24 +4221,26 @@ class BucketUtils(ScopeUtils):
                    + str(flusher_total_batch_limit) + "\"}])."
             rest.diag_eval(code)
 
+        kv_nodes = self.cluster_util.get_kv_nodes(cluster)
         # Restart Memcached in all cluster nodes to reflect the settings
-        for server in self.cluster_util.get_kv_nodes(master=node):
+        for server in kv_nodes:
             shell = RemoteMachineShellConnection(server)
             shell.kill_memcached()
             shell.disconnect()
 
         # Check bucket-warm_up after Memcached restart
         retry_count = 10
-        buckets_warmed_up = self.is_warmup_complete(buckets, retry_count)
+        buckets_warmed_up = self.is_warmup_complete(cluster, buckets,
+                                                    retry_count)
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up "
                               "within expected time")
 
-        for server in self.cluster_util.get_kv_nodes(master=node):
+        for server in kv_nodes:
             for bucket in buckets:
                 mc = MemcachedClientHelper.direct_client(server, bucket)
                 stats = mc.stats()
-                self.assertTrue(int(stats['ep_flusher_total_batch_limit']) \
+                self.assertTrue(int(stats['ep_flusher_total_batch_limit'])
                                 == flusher_total_batch_limit)
 
     def update_bucket_props(self, command, value, cluster,
@@ -4262,14 +4264,15 @@ class BucketUtils(ScopeUtils):
             rest.diag_eval(cmd)
 
         # Restart Memcached in all cluster nodes to reflect the settings
-        for server in self.cluster_util.get_kv_nodes(master=node):
+        for server in self.cluster_util.get_kv_nodes(cluster, master=node):
             shell = RemoteMachineShellConnection(server)
             shell.restart_couchbase()
             shell.disconnect()
 
         # Check bucket-warm_up after Couchbase restart
         retry_count = 10
-        buckets_warmed_up = self.is_warmup_complete(buckets, retry_count)
+        buckets_warmed_up = self.is_warmup_complete(cluster, buckets,
+                                                    retry_count)
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up "
                               "within expected time")
@@ -4277,7 +4280,7 @@ class BucketUtils(ScopeUtils):
     def cbepctl_set_metadata_purge_interval(self, cluster, buckets, value):
         self.log.info("Changing the bucket properties by changing {0} to {1}".
                       format("persistent_metadata_purge_age", value))
-        for node in self.cluster_util.get_kv_nodes(master=cluster.master):
+        for node in self.cluster_util.get_kv_nodes(cluster):
             shell_conn = RemoteMachineShellConnection(node)
             cbepctl_obj = Cbepctl(shell_conn)
             for bucket in buckets:
@@ -4287,7 +4290,7 @@ class BucketUtils(ScopeUtils):
                                 60)
             shell_conn.disconnect()
 
-    def set_metadata_purge_interval(self, value, buckets, node):
+    def set_metadata_purge_interval(self, cluster, value, buckets, node):
         self.log.info("Changing the bucket properties by changing {0} to {1}".
                       format("purge_interval", value))
         rest = RestConnection(node)
@@ -4302,14 +4305,15 @@ class BucketUtils(ScopeUtils):
             rest.diag_eval(cmd)
 
         # Restart Memcached in all cluster nodes to reflect the settings
-        for server in self.cluster_util.get_kv_nodes(master=node):
+        for server in self.cluster_util.get_kv_nodes(cluster, master=node):
             shell = RemoteMachineShellConnection(server)
             shell.restart_couchbase()
             shell.disconnect()
 
         # Check bucket-warm_up after Couchbase restart
         retry_count = 10
-        buckets_warmed_up = self.is_warmup_complete(buckets, retry_count)
+        buckets_warmed_up = self.is_warmup_complete(cluster, buckets,
+                                                    retry_count)
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up "
                               "within expected time")
@@ -4393,13 +4397,14 @@ class BucketUtils(ScopeUtils):
                            collection.num_items))
         return status
 
-    def validate_doc_count_as_per_collections(self, bucket):
+    def validate_doc_count_as_per_collections(self, cluster, bucket):
         """
         Function to validate doc_item_count as per the collection object's
         num_items value against cbstats count from KV nodes
 
         Throws exception if mismatch in stats.
 
+        :param cluster: Target cluster object
         :param bucket: Bucket object using which the validation should be done
         """
         status = True
@@ -4407,7 +4412,7 @@ class BucketUtils(ScopeUtils):
         cb_stat_objects = list()
 
         # Create required cb_stat objects
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(cluster):
             shell = RemoteMachineShellConnection(node)
             cb_stat_objects.append(Cbstats(shell))
 
@@ -4439,14 +4444,14 @@ class BucketUtils(ScopeUtils):
     def validate_docs_per_collections_all_buckets(self, cluster, timeout=300):
         self.log.info("Validating collection stats and item counts")
         vbucket_stats = self.get_vbucket_seqnos(
-            self.cluster_util.get_kv_nodes(),
+            self.cluster_util.get_kv_nodes(cluster),
             cluster.buckets,
             skip_consistency=True)
 
         # Validate total expected doc_count matches with the overall bucket
         for bucket in cluster.buckets:
             expected_num_items = self.get_expected_total_num_items(bucket)
-            self.verify_stats_for_bucket(bucket, expected_num_items,
+            self.verify_stats_for_bucket(cluster, bucket, expected_num_items,
                                          timeout=timeout)
 
             if bucket.bucketType == Bucket.Type.MEMCACHED:
@@ -4460,7 +4465,7 @@ class BucketUtils(ScopeUtils):
             self.assertTrue(result,
                             "snap_start and snap_end corruption found!!!")
 
-            self.validate_doc_count_as_per_collections(bucket)
+            self.validate_doc_count_as_per_collections(cluster, bucket)
 
     def remove_scope_collections_for_bucket(self, cluster, bucket):
         """

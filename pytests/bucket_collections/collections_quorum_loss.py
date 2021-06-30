@@ -87,7 +87,8 @@ class CollectionsQuorumLoss(CollectionBase):
             self.fail("Doc_loading failed")
 
     def data_validation_collection(self):
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 
@@ -134,11 +135,11 @@ class CollectionsQuorumLoss(CollectionBase):
             nodes = self.server_to_fail
         for node in nodes:
             if self.failover_action == "stop_server":
-                self.cluster_util.stop_server(node)
+                self.cluster_util.stop_server(self.cluster, node)
             elif self.failover_action == "firewall":
-                self.cluster_util.start_firewall_on_node(node)
+                self.cluster_util.start_firewall_on_node(self.cluster, node)
             elif self.failover_action == "stop_memcached":
-                self.cluster_util.stop_memcached_on_node(node)
+                self.cluster_util.stop_memcached_on_node(self.cluster, node)
             elif self.failover_action == "kill_erlang":
                 remote = RemoteMachineShellConnection(node)
                 remote.info = remote.extract_remote_info()
@@ -156,14 +157,14 @@ class CollectionsQuorumLoss(CollectionBase):
             nodes = self.server_to_fail
         for node in nodes:
             if self.failover_action == "stop_server":
-                self.cluster_util.start_server(node)
+                self.cluster_util.start_server(self.cluster, node)
             elif self.failover_action == "firewall":
-                self.cluster_util.stop_firewall_on_node(node)
+                self.cluster_util.stop_firewall_on_node(self.cluster, node)
             elif self.failover_action == "stop_memcached":
-                self.cluster_util.start_memcached_on_node(node)
+                self.cluster_util.start_memcached_on_node(self.cluster, node)
             elif self.failover_action == "kill_erlang":
-                self.cluster_util.stop_server(node)
-                self.cluster_util.start_server(node)
+                self.cluster_util.stop_server(self.cluster, node)
+                self.cluster_util.start_server(self.cluster, node)
 
     def shuffle_nodes_between_two_zones(self):
         """

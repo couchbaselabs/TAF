@@ -95,11 +95,12 @@ class AppBase(BaseTestCase):
         self.nodes_init = self.cluster_conf["cb_cluster"]["nodes_init"]
         self.services_init = self.cluster_conf["cb_cluster"]["services"]
 
+        rest = RestConnection(self.cluster.master)
         # Set cluster settings
         for setting in self.cluster_conf["cb_cluster"]["settings"]:
             if setting["name"] == "memory_quota":
                 setting.pop("name")
-                self.cluster_util.rest.set_service_mem_quota(setting)
+                rest.set_service_mem_quota(setting)
 
         # Rebalance_in required nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
@@ -369,7 +370,7 @@ class AppBase(BaseTestCase):
         cb_stat_objects = list()
         collection_data = None
 
-        for node in self.cluster_util.get_kv_nodes():
+        for node in self.cluster_util.get_kv_nodes(self.cluster):
             shell = RemoteMachineShellConnection(node)
             cb_stat_objects.append(Cbstats(shell))
 

@@ -44,8 +44,8 @@ class CBASExternalLinks(CBASBaseTest):
                 self.to_clusters.append(cluster)
             cluster.rbac_util = RbacUtils(cluster.master)
             try:
-                cluster.cluster_util.add_all_nodes_then_rebalance(
-                    cluster.servers)
+                self.cluster_util.add_all_nodes_then_rebalance(cluster,
+                                                               cluster.servers)
             except Exception as err:
                 if "already added to this cluster" in str(err):
                     self.log.info(
@@ -101,7 +101,7 @@ class CBASExternalLinks(CBASBaseTest):
                                     rbac_users_created, delete=True)
 
         for cluster in self._cb_cluster:
-            cluster.cluster_util.stop_firewall_on_node(cluster.master)
+            self.cluster_util.stop_firewall_on_node(cluster, cluster.master)
 
         super(CBASExternalLinks, self).tearDown()
         self.log.info(
@@ -265,8 +265,8 @@ class CBASExternalLinks(CBASBaseTest):
         self.link_created = True
 
         self.log.info("Loading sample bucket")
-        if not to_cluster.bucket_util.load_sample_bucket(self.cluster,
-                                                         self.sample_bucket):
+        if not self.bucket_util.load_sample_bucket(self.cluster,
+                                                   self.sample_bucket):
             self.fail(
                 "Error while loading {0} bucket in remote cluster".format(
                     self.sample_bucket.name))
@@ -494,7 +494,8 @@ class CBASExternalLinks(CBASBaseTest):
                             link_properties[key] = value
 
                     if testcase.get("stop_server", False):
-                        to_cluster.cluster_util.stop_server(to_cluster.master)
+                        self.cluster_util.stop_server(to_cluster,
+                                                      to_cluster.master)
 
                     if not self.analytics_cluster.cbas_util.create_external_link_on_cbas(
                             link_properties=link_properties,
@@ -509,7 +510,8 @@ class CBASExternalLinks(CBASBaseTest):
                             "Error message is different than expected.")
 
                     if testcase.get("stop_server", False):
-                        to_cluster.cluster_util.start_server(to_cluster.master)
+                        self.cluster_util.start_server(to_cluster,
+                                                       to_cluster.master)
                         helper = RestHelper(to_cluster.rest)
                         service_up = False
                         count = 0
@@ -1102,7 +1104,7 @@ class CBASExternalLinks(CBASBaseTest):
                     raise Exception("Error while Disconnecting the link ")
 
                 if testcase.get("load_sample_bucket", False):
-                    if not self.to_clusters[0].bucket_util.load_sample_bucket(
+                    if not self.bucket_util.load_sample_bucket(
                             self.cluster,
                             self.sample_bucket):
                         raise Exception(
@@ -1188,8 +1190,8 @@ class CBASExternalLinks(CBASBaseTest):
                         testcase["new_user"].replace("[*]", ""))
 
                 if testcase.get("load_sample_bucket", False) \
-                        and not self.to_clusters[0].bucket_util.delete_bucket(
-                        self.to_clusters[0], self.sample_bucket):
+                        and not self.bucket_util.delete_bucket(
+                            self.to_clusters[0], self.sample_bucket):
                     raise Exception("Error while deleting {0} bucket in remote cluster".format(
                         self.sample_bucket.name))
 
@@ -1197,7 +1199,7 @@ class CBASExternalLinks(CBASBaseTest):
             except Exception as err:
                 self.log.error(str(err))
                 if testcase.get("load_sample_bucket", False) \
-                    and not self.to_clusters[0].bucket_util.delete_bucket(
+                    and not self.bucket_util.delete_bucket(
                         self.to_clusters[0], self.sample_bucket):
                     raise Exception(
                         "Error while deleting {0} bucket in remote cluster".format(
@@ -1325,8 +1327,8 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("link creation failed")
         self.link_created = True
 
-        if not to_cluster.bucket_util.load_sample_bucket(self.cluster,
-                                                         self.sample_bucket):
+        if not self.bucket_util.load_sample_bucket(self.cluster,
+                                                   self.sample_bucket):
             self.fail(
                 "Error while loading {0} bucket in remote cluster".format(
                     self.sample_bucket))
@@ -1683,8 +1685,8 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("link cration failed")
         self.link_created = True
 
-        if not to_cluster.bucket_util.load_sample_bucket(self.cluster,
-                                                         self.sample_bucket):
+        if not self.bucket_util.load_sample_bucket(self.cluster,
+                                                   self.sample_bucket):
             self.fail(
                 "Error while loading {0} bucket in remote cluster".format(
                     self.sample_bucket.name))
@@ -1697,7 +1699,8 @@ class CBASExternalLinks(CBASBaseTest):
 
         def sleep_and_bring_network_up():
             time.sleep(25)
-            to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
+            self.cluster_util.stop_firewall_on_node(to_cluster,
+                                                    to_cluster.master)
 
         if self.input.param("network_up_before_timeout", False):
             thread = Thread(target=sleep_and_bring_network_up,
@@ -1721,9 +1724,10 @@ class CBASExternalLinks(CBASBaseTest):
                 validate_error_msg=self.input.param("validate_error", False),
                 expected_error=self.input.param("expected_error", None),
                 timeout=360, analytics_timeout=360):
-            to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
+            self.cluster_util.stop_firewall_on_node(to_cluster,
+                                                    to_cluster.master)
             self.fail("Error while creating dataset")
-        to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
+        self.cluster_util.stop_firewall_on_node(to_cluster, to_cluster.master)
         self.dataset_created = True
 
     def test_connect_link_when_network_up_before_timeout(self):
@@ -1748,7 +1752,8 @@ class CBASExternalLinks(CBASBaseTest):
                         name="connect_link_thread")
         thread.start()
 
-        to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
+        self.cluster_util.stop_firewall_on_node(to_cluster,
+                                                to_cluster.master)
 
         thread.join()
 
@@ -1791,8 +1796,7 @@ class CBASExternalLinks(CBASBaseTest):
                                                       key=self.key)
 
         result = self.task.jython_task_manager.get_task_result(task)
-
-        to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
+        self.cluster_util.stop_firewall_on_node(to_cluster, to_cluster.master)
 
         # Allow ingestion to complete
         if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete(
@@ -1827,7 +1831,7 @@ class CBASExternalLinks(CBASBaseTest):
                 timeout=900, analytics_timeout=900):
             self.fail("Expected a different error while connecting link")
 
-        to_cluster.cluster_util.stop_firewall_on_node(to_cluster.master)
+        self.cluster_util.stop_firewall_on_node(to_cluster, to_cluster.master)
         if not self.analytics_cluster.cbas_util.connect_link(
                 "{0}.{1}".format(self.link_info["dataverse"],
                                  self.link_info["name"]),
@@ -1844,8 +1848,8 @@ class CBASExternalLinks(CBASBaseTest):
     def test_dataset_behaviour_on_remote_bucket_deletion(self):
         to_cluster = self.setup_datasets()
 
-        if not to_cluster.bucket_util.delete_bucket(cluster=to_cluster,
-                                                    bucket=self.sample_bucket):
+        if not self.bucket_util.delete_bucket(cluster=to_cluster,
+                                              bucket=self.sample_bucket):
             self.fail("Deletion of bucket failed")
 
         # Wait for link to get disconnected
@@ -1871,8 +1875,8 @@ class CBASExternalLinks(CBASBaseTest):
         to_cluster = self.perform_setup_and_add_new_docs(10,
                                                          wait_for_ingestion=True)
 
-        if not to_cluster.bucket_util.delete_bucket(cluster=to_cluster,
-                                                    bucket=self.sample_bucket):
+        if not self.bucket_util.delete_bucket(cluster=to_cluster,
+                                              bucket=self.sample_bucket):
             self.fail("Deletion of bucket failed")
 
         # Wait for link to get disconnected
@@ -1885,8 +1889,8 @@ class CBASExternalLinks(CBASBaseTest):
                 break
             self.sleep(10)
 
-        if not to_cluster.bucket_util.load_sample_bucket(self.cluster,
-                                                         self.sample_bucket):
+        if not self.bucket_util.load_sample_bucket(self.cluster,
+                                                   self.sample_bucket):
             self.fail(
                 "Error while loading {0} bucket in remote cluster".format(
                     self.sample_bucket.name))
@@ -2001,8 +2005,9 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info(
             "Rebalance in remote cluster, this node will be removed during swap")
-        to_cluster.cluster_util.add_node(node=rebalanceServers[0],
-                                         services=node_services)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[0],
+                                   services=node_services)
 
         self.log.info("Run KV ops in async while rebalance is in progress")
         tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create",
@@ -2031,11 +2036,12 @@ class CBASExternalLinks(CBASBaseTest):
                 out_nodes.append(node)
 
         self.log.info("Swap rebalance KV nodes")
-        to_cluster.cluster_util.add_node(node=rebalanceServers[1],
-                                         services=node_services,
-                                         rebalance=False)
-        self.remove_node([out_nodes[0]], wait_for_rebalance=False,
-                         rest=to_cluster.rest)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[1],
+                                   services=node_services,
+                                   rebalance=False)
+        self.remove_node(self.cluster, [out_nodes[0]],
+                         wait_for_rebalance=False)
 
         if not to_cluster.rest.monitorRebalance():
             self.fail("Rebalance failed")
@@ -2092,14 +2098,16 @@ class CBASExternalLinks(CBASBaseTest):
                 wait_for_execution=False)
 
         self.log.info("Rebalance in CBAS nodes")
-        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0],
-                                                     services=node_services,
-                                                     rebalance=False,
-                                                     wait_for_rebalance_completion=False)
-        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[1],
-                                                     services=node_services,
-                                                     rebalance=True,
-                                                     wait_for_rebalance_completion=True)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[0],
+                                   services=node_services,
+                                   rebalance=False,
+                                   wait_for_rebalance_completion=False)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[1],
+                                   services=node_services,
+                                   rebalance=True,
+                                   wait_for_rebalance_completion=True)
 
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
@@ -2137,8 +2145,9 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info(
             "Rebalance in local cluster, this node will be removed during swap")
-        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0],
-                                                     services=node_services)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[0],
+                                   services=node_services)
 
         self.log.info("Run KV ops in async while rebalance is in progress")
         tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create",
@@ -2167,11 +2176,12 @@ class CBASExternalLinks(CBASBaseTest):
                 out_nodes.append(node)
 
         self.log.info("Swap rebalance CBAS nodes")
-        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[1],
-                                                     services=node_services,
-                                                     rebalance=False)
-        self.remove_node([out_nodes[0]], wait_for_rebalance=True,
-                         rest=self.analytics_cluster.rest)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[1],
+                                   services=node_services,
+                                   rebalance=False)
+        self.remove_node(self.cluster, [out_nodes[0]],
+                         wait_for_rebalance=True)
 
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
@@ -2207,14 +2217,16 @@ class CBASExternalLinks(CBASBaseTest):
         rebalanceServers = self.get_rebalance_servers()
 
         self.log.info("Rebalance in CBAS nodes")
-        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0],
-                                                     services=node_services,
-                                                     rebalance=False,
-                                                     wait_for_rebalance_completion=False)
-        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[1],
-                                                     services=node_services,
-                                                     rebalance=True,
-                                                     wait_for_rebalance_completion=True)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[0],
+                                   services=node_services,
+                                   rebalance=False,
+                                   wait_for_rebalance_completion=False)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[1],
+                                   services=node_services,
+                                   rebalance=True,
+                                   wait_for_rebalance_completion=True)
 
         self.log.info("Run KV ops in async while rebalance is in progress")
         tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create",
@@ -2245,8 +2257,9 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Rebalance out CBAS nodes %s %s" % (
         out_nodes[0].ip, out_nodes[1].ip))
-        self.analytics_cluster.cluster_util.remove_all_nodes_then_rebalance(
-            [out_nodes[0], out_nodes[1]])
+        self.cluster_util.remove_all_nodes_then_rebalance(self.cluster,
+                                                          [out_nodes[0],
+                                                           out_nodes[1]])
 
         self.log.info("Get KV ops result")
         self.task_manager.get_task_result(tasks)
@@ -2285,10 +2298,11 @@ class CBASExternalLinks(CBASBaseTest):
         rebalanceServers = self.get_rebalance_servers()
 
         self.log.info("Add an extra node to fail-over")
-        self.analytics_cluster.cluster_util.add_node(node=rebalanceServers[0],
-                                                     services=node_services,
-                                                     rebalance=True,
-                                                     wait_for_rebalance_completion=True)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[0],
+                                   services=node_services,
+                                   rebalance=True,
+                                   wait_for_rebalance_completion=True)
 
         self.log.info("Run KV ops in async while rebalance is in progress")
         tasks = self.perform_doc_ops_in_all_cb_buckets(operation="create",
@@ -2322,14 +2336,14 @@ class CBASExternalLinks(CBASBaseTest):
                    "Sleeping before removing or adding back the failed over node")
         if self.rebalance_out:
             self.log.info("Rebalance out the fail-over node")
-            result = self.analytics_cluster.cluster_util.rebalance()
+            result = self.cluster_util.rebalance(self.cluster)
             self.assertTrue(result, "Rebalance operation failed")
         else:
             self.recovery_strategy = self.input.param("recovery_strategy",
                                                       "full")
             self.analytics_cluster.rest.set_recovery_type(
                 'ns_1@' + rebalanceServers[0].ip, self.recovery_strategy)
-            result = self.analytics_cluster.cluster_util.rebalance()
+            result = self.cluster_util.rebalance(self.cluster)
             self.assertTrue(result, "Rebalance operation failed")
 
         self.log.info("Get KV ops result")
@@ -2421,11 +2435,10 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Loading bucket, scopes and collections")
         self.bucket_spec = "analytics.single_bucket"
-        self.collectionSetUp(to_cluster, to_cluster.bucket_util,
-                             to_cluster.cluster_util)
+        self.collectionSetUp(to_cluster, self.bucket_util, self.cluster_util)
 
         dataset_obj = Dataset(
-            bucket_util=to_cluster.bucket_util,
+            bucket_util=self.bucket_util,
             cbas_util=self.analytics_cluster.cbas_util,
             consider_default_KV_scope=True,
             consider_default_KV_collection=True,
@@ -2536,7 +2549,7 @@ class CBASExternalLinks(CBASBaseTest):
         if not self.input.param("connect_invalid_link",
                                 False) and dataset_created:
             doc_count = dataset_obj.get_item_count_in_collection(
-                dataset_obj.bucket_util, dataset_obj.kv_bucket_obj,
+                self.bucket_util, dataset_obj.kv_bucket_obj,
                 dataset_obj.kv_scope_obj.name,
                 dataset_obj.kv_collection_obj.name)
             if not self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(

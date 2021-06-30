@@ -487,7 +487,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                           _sync=True,
                                           doc_ops="create")
                     self.bucket_util._wait_for_stats_all_buckets(
-                        self.cluster.buckets, timeout=1200)
+                        self.cluster, self.cluster.buckets, timeout=1200)
                     if time.time() < time_start + 60:
                         self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
                 items = items + items // divisor
@@ -1130,7 +1130,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                   self.ignore_exceptions, _sync=True,
                                   doc_ops="create")
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets, timeout=1200)
+                    self.cluster, self.cluster.buckets, timeout=1200)
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(), "After new creates, sleeping , itr={}".format(i))
             items = items + items // divisor
@@ -1204,7 +1204,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         items = self.num_items
@@ -1457,7 +1458,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets,
                                                      timeout=1200)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items,
                                                   timeout=600)
@@ -1663,7 +1665,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets,
                                                          timeout=1200)
 
             if time.time() < time_start + 60:
@@ -1741,7 +1744,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets,
                                                      timeout=1200)
         # self.bucket_util.verify_stats_all_buckets(self.num_items)
 
@@ -1933,7 +1937,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
 
             if time.time() < time_start + 60:
                 self.sleep(time_start + 60 - time.time(),
@@ -2013,14 +2018,15 @@ class MagmaSpaceAmplification(MagmaBaseTest):
                 self.key, 0, self.num_items,
                 doc_size=self.doc_size, doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster_util.vbuckets,
+                vbuckets=self.cluster.vbuckets,
                 randomize_doc_size=self.randomize_doc_size,
                 randomize_value=self.randomize_value)
             self.loadgen_docs(_sync=True,
                               retry_exceptions=self.retry_exceptions)
 
             self.bucket_util._wait_for_stats_all_buckets(
-                self.cluster.buckets, timeout=self.wait_timeout*20)
+                self.cluster, self.cluster.buckets,
+                timeout=self.wait_timeout*20)
             self.bucket_util.print_bucket_stats(self.cluster)
 
             disk_size = self.get_disk_usage(bucket)[0]

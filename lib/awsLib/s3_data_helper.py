@@ -203,7 +203,8 @@ class S3DataHelper():
                                          exp=exp, durability=durability,
                                          mutation_num=mutation_num, key=key)
         result = self.task.jython_task_manager.get_task_result(tasks)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
         item_list = [(folder, filename) for folder in self.folders for filename in self.filenames]
         threads = list()

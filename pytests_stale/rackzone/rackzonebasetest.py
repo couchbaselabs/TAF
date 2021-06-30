@@ -95,9 +95,9 @@ class RackzoneBaseTest(BaseTestCase):
             right after kill erlang process, we need to start couchbase server
             in teardown so that the next test will not be false failed """
         super(RackzoneBaseTest, self).tearDown()
-        self.cluster_util.cleanup_cluster(self.servers,
+        self.cluster_util.cleanup_cluster(self.cluster,
                                           master=self.cluster.master)
-        for server in self.servers:
+        for server in self.cluster.servers:
             shell = RemoteMachineShellConnection(server)
             shell.start_couchbase()
             self.sleep(7, "Wait for couchbase server start")

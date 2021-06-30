@@ -61,8 +61,10 @@ class N1qlBase(CollectionBase):
         self.write_conflict = self.input.param("write_conflict", False)
         self.Kvtimeout = self.input.param("Kvtimeout", None)
         self.memory_quota = self.input.param("memory_quota", 1)
-        self.n1ql_server = self.cluster_util.get_nodes_from_services_map(service_type="n1ql",
-                                                                         get_all_nodes=True)
+        self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
+            cluster=self.cluster,
+            service_type=CbServer.Services.N1QL,
+            get_all_nodes=True)
         self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
                                       use_rest=True,
                                       buckets=self.buckets,

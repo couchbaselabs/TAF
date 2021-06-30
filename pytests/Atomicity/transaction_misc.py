@@ -21,7 +21,7 @@ class basic_ops(ClusterSetup):
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster_util.vbuckets)
+                                        vbuckets=self.cluster.vbuckets)
         self.rebalance_in = self.input.param("rabalance_in", True)
 
         # Loading of 1M docs through normal loader
@@ -43,7 +43,7 @@ class basic_ops(ClusterSetup):
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster_util.vbuckets)
+                                        vbuckets=self.cluster.vbuckets)
         self.log.info("Going to perform any Transaction Operation")
         self.op_type = self.input.param("op_type","create")
         self.gen_delete = doc_generator(self.key, 0, self.delete_items,
@@ -51,7 +51,7 @@ class basic_ops(ClusterSetup):
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster_util.vbuckets)
+                                        vbuckets=self.cluster.vbuckets)
 
         tasks = []
         if "update" in self.op_type:

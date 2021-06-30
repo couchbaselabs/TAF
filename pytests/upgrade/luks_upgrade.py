@@ -48,7 +48,7 @@ class LuksUpgrade(UpgradeBase):
                 self.cluster.servers[index],
                 self.upgrade_version,
                 install_on_spare_node=False)
-            self.cluster_util.print_cluster_stats()
+            self.cluster_util.print_cluster_stats(self.cluster)
 
             # Validate sync_write results after upgrade
             if self.atomicity:

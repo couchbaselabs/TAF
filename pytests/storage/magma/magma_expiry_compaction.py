@@ -73,7 +73,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets,
                                                      timeout=1200)
 
     def tearDown(self):
@@ -158,7 +159,8 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets,
                                                          timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
@@ -168,9 +170,10 @@ class MagmaExpiryTests(MagmaBaseTest):
              to kickoff")
             self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util._wait_for_stats_all_buckets(
-                self.cluster.buckets,
+                self.cluster, self.cluster.buckets,
                 cbstat_cmd="all",
                 stat_name="vb_replica_queue_size")
             expected_ts_count = self.items*self.expiry_perc/100*(self.num_replicas+1)
@@ -266,7 +269,8 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets,
                                                          timeout=1200)
 
             disk_usage = self.get_disk_usage(self.buckets[0],
@@ -279,17 +283,18 @@ class MagmaExpiryTests(MagmaBaseTest):
             tasks_info = dict()
             for collection in self.collections:
                 task_in = self.loadgen_docs(self.retry_exceptions,
-                                  self.ignore_exceptions,
-                                  _sync=False,
-                                  doc_ops="expiry",
-                                  collection=collection)
+                                            self.ignore_exceptions,
+                                            _sync=False,
+                                            doc_ops="expiry",
+                                            collection=collection)
                 tasks_info.update(task_in.items())
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets,
                                                          timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
@@ -300,9 +305,10 @@ class MagmaExpiryTests(MagmaBaseTest):
              to kickoff")
             self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util._wait_for_stats_all_buckets(
-                self.cluster.buckets,
+                self.cluster, self.cluster.buckets,
                 cbstat_cmd="all",
                 stat_name="vb_replica_queue_size")
             # Check for tombstone count in Storage
@@ -410,7 +416,8 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets,
                                                          timeout=1200)
             disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
@@ -421,17 +428,18 @@ class MagmaExpiryTests(MagmaBaseTest):
             tasks_info = dict()
             for collection in self.collections:
                 task_in = self.loadgen_docs(self.retry_exceptions,
-                                  self.ignore_exceptions,
-                                  _sync=False,
-                                  doc_ops="expiry",
-                                  collection=collection)
+                                            self.ignore_exceptions,
+                                            _sync=False,
+                                            doc_ops="expiry",
+                                            collection=collection)
                 tasks_info.update(task_in.items())
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(
                 tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets,
                                                          timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
@@ -442,9 +450,10 @@ class MagmaExpiryTests(MagmaBaseTest):
              to kickoff")
             self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util._wait_for_stats_all_buckets(
-                self.cluster.buckets,
+                self.cluster, self.cluster.buckets,
                 cbstat_cmd="all",
                 stat_name="vb_replica_queue_size")
             # Check for tombstone count in Storage
@@ -528,7 +537,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         _ = self.loadgen_docs(self.retry_exceptions,
                               self.ignore_exceptions,
                               _sync=True)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
 
@@ -632,7 +642,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
             tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets,
                                                      timeout=1200)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
@@ -643,8 +654,10 @@ class MagmaExpiryTests(MagmaBaseTest):
          to kickoff")
         self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
         tombstones.")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets,
                                                      cbstat_cmd="all",
                                                      stat_name="vb_replica_queue_size")
 
@@ -716,7 +729,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
              tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets,
                                                      timeout=1200)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
@@ -808,7 +822,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util.verify_doc_op_task_exceptions(
              tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets,
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets,
                                                      timeout=1200)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
@@ -943,7 +958,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         _ = self.loadgen_docs(self.retry_exceptions,
                               self.ignore_exceptions,
                               _sync=True)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
         # exp_pager_stime
         self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
@@ -1018,7 +1034,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         _ = self.loadgen_docs(self.retry_exceptions,
                               self.ignore_exceptions,
                               _sync=True)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
         self.sleep(self.maxttl, "Wait for docs to expire")
 

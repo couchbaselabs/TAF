@@ -25,7 +25,11 @@ class CBASDCPState(CBASBaseTest):
         self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name, self.cbas_dataset_name)
 
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.cluster_util.add_node(self.servers[1], services=["cbas"], rebalance=True), msg="Failed to add CBAS node")
+        self.assertTrue(
+            self.cluster_util.add_node(
+                self.cluster, self.servers[1],
+                services=["cbas"], rebalance=True),
+            msg="Failed to add CBAS node")
 
         self.log.info("Connect to Local link")
         self.cbas_util.connect_link()
@@ -67,12 +71,16 @@ class CBASDCPState(CBASBaseTest):
         self.assertFalse(content["exact"], msg="DCP state is consistent. Failing the test since subsequent rebalance will pass.")
 
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.cluster_util.add_node(self.servers[3], services=["cbas"], rebalance=False), msg="Failed to add CBAS node")
+        self.assertTrue(
+            self.cluster_util.add_node(
+                self.cluster, self.servers[3],
+                services=["cbas"], rebalance=False),
+            msg="Failed to add CBAS node")
 
         self.log.info("Rebalance in CBAS node")
         rebalance_success = False
         try:
-            rebalance_success = self.cluster_util.rebalance()
+            rebalance_success = self.cluster_util.rebalance(self.cluster)
         except Exception as e:
             pass
         self.assertTrue(rebalance_success, msg="Rebalance in of CBAS node must succeed since DCP state API returned success")
@@ -100,13 +108,15 @@ class CBASDCPState(CBASBaseTest):
                 pass
 
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.cluster_util.add_node(self.servers[3],
-                                                   services=["cbas"],
-                                                   rebalance=False),
-                         msg="Failed to add a CBAS node")
+        self.assertTrue(
+            self.cluster_util.add_node(
+                self.cluster, self.servers[3],
+                services=["cbas"], rebalance=False),
+            msg="Failed to add a CBAS node")
 
         self.log.info("Rebalance in CBAS node")
-        self.assertTrue(self.cluster_util.rebalance(), msg="Rebalance in CBAS node failed")
+        self.assertTrue(self.cluster_util.rebalance(self.cluster),
+                        msg="Rebalance in CBAS node failed")
 
         self.log.info("Grep Analytics logs for message")
         result, _ = self.shell.execute_command("grep 'exist in KV anymore... nullifying its DCP state' /opt/couchbase/var/lib/couchbase/logs/analytics*.log")
@@ -135,11 +145,15 @@ class CBASDCPState(CBASBaseTest):
                 pass
 
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.cluster_util.add_node(self.servers[3], services=["cbas"], rebalance=False),
-                         msg="Failed to add a CBAS node")
+        self.assertTrue(
+            self.cluster_util.add_node(
+                self.cluster, self.servers[3],
+                services=["cbas"], rebalance=False),
+            msg="Failed to add a CBAS node")
 
         self.log.info("Rebalance in CBAS node")
-        self.assertTrue(self.cluster_util.rebalance(), msg="Rebalance in CBAS node failed")
+        self.assertTrue(self.cluster_util.rebalance(self.cluster),
+                        msg="Rebalance in CBAS node failed")
 
         self.log.info("Grep Analytics logs for message")
         result, _ = self.shell.execute_command("grep 'exist in KV anymore... nullifying its DCP state' /opt/couchbase/var/lib/couchbase/logs/analytics*.log")
@@ -180,13 +194,16 @@ class CBASDCPState(CBASBaseTest):
                 pass
 
         self.log.info("Add a CBAS nodes")
-        self.assertTrue(self.cluster_util.add_node(self.servers[3], services=["cbas"], rebalance=False),
-                         msg="Failed to add a CBAS node")
+        self.assertTrue(
+            self.cluster_util.add_node(
+                self.cluster, self.servers[3],
+                services=["cbas"], rebalance=False),
+            msg="Failed to add a CBAS node")
 
         self.log.info("Rebalance in CBAS node")
         rebalance_success = False
         try:
-            rebalance_success = self.cluster_util.rebalance()
+            rebalance_success = self.cluster_util.rebalance(self.cluster)
         except Exception as e:
             pass
 
@@ -205,7 +222,8 @@ class CBASDCPState(CBASBaseTest):
                 self.cbas_util.drop_dataset(self.cbas_dataset_name)
 
             self.log.info("Rebalance in CBAS node")
-            self.assertTrue(self.cluster_util.rebalance(), msg="Rebalance in CBAS node must succeed after user has taken the specified action.")
+            self.assertTrue(self.cluster_util.rebalance(self.cluster),
+                            msg="Rebalance in CBAS node must succeed after user has taken the specified action.")
         else:
             self.log.info("Rebalance was successful as DCP state were consistent")
 

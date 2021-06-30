@@ -24,7 +24,7 @@ class IsolationDocTest(ClusterSetup):
         self.transaction_fail_count = self.input.param("fail_count", 99999)
         self.transaction_fail = self.input.param("fail", True)
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Reset active_resident_threshold to avoid further data load as DGM

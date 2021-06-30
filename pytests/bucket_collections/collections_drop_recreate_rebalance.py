@@ -2,6 +2,7 @@ import threading
 import time
 import json
 
+from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
@@ -20,7 +21,9 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.nodes_swap = self.input.param("nodes_swap", 0)
         self.recovery_type = self.input.param("recovery_type", "delta")
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 2)
-        self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=self.rebalance_moves_per_node)
+        self.cluster_util.set_rebalance_moves_per_nodes(
+            self.cluster.master,
+            rebalanceMovesPerNode=self.rebalance_moves_per_node)
         self.change_ephemeral_purge_age_and_interval = self.input.param("change_ephemeral_purge_age_and_interval",
                                                                         True)
         if self.change_ephemeral_purge_age_and_interval:
@@ -31,25 +34,27 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.N1qltxn = self.input.param("N1ql_txn", False)
         if self.N1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
-                                service_type="n1ql",
-                                 get_all_nodes=True)
+                cluster=self.cluster,
+                service_type=CbServer.Services.N1QL,
+                get_all_nodes=True)
             self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
-                                              use_rest=True,
-                                              buckets = self.cluster.buckets,
-                                              log=self.log,
-                                              scan_consistency='REQUEST_PLUS',
-                                              num_collection=3,
-                                              num_buckets=1,
-                                              num_savepoints=1,
-                                              override_savepoint=False,
-                                              num_stmt=10,
-                                              load_spec=self.data_spec_name)
+                                          use_rest=True,
+                                          buckets = self.cluster.buckets,
+                                          log=self.log,
+                                          scan_consistency='REQUEST_PLUS',
+                                          num_collection=3,
+                                          num_buckets=1,
+                                          num_savepoints=1,
+                                          override_savepoint=False,
+                                          num_stmt=10,
+                                          load_spec=self.data_spec_name)
             self.bucket_col = self.n1ql_helper.get_collections()
             self.stmts = self.n1ql_helper.get_stmt(self.bucket_col)
             self.stmts = self.n1ql_helper.create_full_stmts(self.stmts)
 
     def tearDown(self):
-        self.cluster_util.set_rebalance_moves_per_nodes(rebalanceMovesPerNode=4)
+        self.cluster_util.set_rebalance_moves_per_nodes(
+            self.cluster.master, rebalanceMovesPerNode=4)
         if self.data_loading_thread:
             # stop data loading before tearDown if its still running
             self.data_load_flag = False

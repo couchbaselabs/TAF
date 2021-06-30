@@ -198,6 +198,7 @@ class CreateDeleteViewTests(BaseTestCase):
                 self._execute_ddoc_ops(self.ddoc_ops, self.test_with_view,
                                        self.num_ddocs / 2, self.num_views_per_ddoc / 2, bucket=bucket)
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self._verify_ddoc_ops_all_buckets()
         self._verify_ddoc_data_all_buckets()

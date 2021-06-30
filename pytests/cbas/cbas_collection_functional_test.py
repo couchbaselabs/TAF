@@ -329,7 +329,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 DocLoaderUtils.validate_doc_loading_results(
                     self.data_load_task)
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
                     self.cluster)
             delattr(self, "data_load_task")
@@ -1210,7 +1210,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.log.info("Flushing bucket: %s" % bucket_obj.name)
         self.bucket_util.flush_bucket(self.cluster, bucket_obj)
         self.log.info("Validating scope/collections mapping and doc_count")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
         # Print bucket stats
@@ -1244,7 +1245,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         # Print bucket stats
         self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("Validating scope/collections mapping and doc_count")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 

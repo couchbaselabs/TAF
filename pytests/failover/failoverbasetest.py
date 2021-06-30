@@ -89,9 +89,9 @@ class FailoverBaseTest(BaseTestCase):
         self.afterfailover_gen_delete = doc_generator(
             self.key, self.num_items * 0.5, self.num_items * 0.75)
 
-        if self.cluster_util.vbuckets is not None \
-                and self.cluster_util.vbuckets != self.total_vbuckets:
-            self.total_vbuckets = self.cluster_util.vbuckets
+        if self.cluster.vbuckets is not None \
+                and self.cluster.vbuckets != self.total_vbuckets:
+            self.total_vbuckets = self.cluster.vbuckets
         self.nodes_init = self.input.param("nodes_init", 1)
         self.nodes_in = self.input.param("nodes_in", 1)
         self.nodes_out = self.input.param("nodes_out", 1)
@@ -117,7 +117,7 @@ class FailoverBaseTest(BaseTestCase):
                     self.sdk_pool_capacity,
                     compression_settings=self.sdk_compression)
 
-        self.cluster_util.print_cluster_stats()
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         self.log.info("== FailoverBaseTest setup finished for test #{0} {1} =="

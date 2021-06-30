@@ -70,5 +70,6 @@ class BasicReadTests(BasicCrudTests):
                 self.task_manager.get_task_result(task)
 
         self.log.info("Waiting for ep-queues to get drained")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.log.info("test_read_docs_using_multithreads ends")

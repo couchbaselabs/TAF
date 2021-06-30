@@ -70,15 +70,15 @@ class CollectionDurabilityTests(CollectionBase):
         cbstat_obj = dict()
         vb_info["create_stat"] = dict()
         vb_info["failure_stat"] = dict()
-        nodes_in_cluster = self.cluster_util.get_kv_nodes()
+        nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
         sub_doc_test = self.input.param("sub_doc_test", False)
 
         if sub_doc_test:
             self.load_data_for_sub_doc_ops(self.verification_dict)
 
         failed = self.durability_helper.verify_vbucket_details_stats(
-            self.bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets,
+            self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
+            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -174,8 +174,8 @@ class CollectionDurabilityTests(CollectionBase):
 
         # Cb stat validation before trying successful mutation
         failed = self.durability_helper.verify_vbucket_details_stats(
-            self.bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets,
+            self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
+            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed ")
@@ -202,7 +202,8 @@ class CollectionDurabilityTests(CollectionBase):
             self.log_failure("CRUDs with async_writes failed")
 
         # Wait for ep_queue to drain
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
         # Reset failure_stat dictionary for reuse
         vb_info["failure_stat"] = dict()
@@ -226,8 +227,8 @@ class CollectionDurabilityTests(CollectionBase):
             collection_crud_task)
 
         failed = self.durability_helper.verify_vbucket_details_stats(
-            self.bucket, self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets,
+            self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
+            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed ")
@@ -246,7 +247,7 @@ class CollectionDurabilityTests(CollectionBase):
         # Override d_level, error_simulation type based on d_level
         self.__get_d_level_and_error_to_simulate()
 
-        kv_nodes = self.cluster_util.get_kv_nodes()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for server in kv_nodes:
             ssh_shell = RemoteMachineShellConnection(server)
             cbstats = Cbstats(ssh_shell)
@@ -294,7 +295,7 @@ class CollectionDurabilityTests(CollectionBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, kv_nodes,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed "
@@ -327,8 +328,8 @@ class CollectionDurabilityTests(CollectionBase):
                                     "sync_write_committed_count"] \
                                     += total_mutation
             failed = self.durability_helper.verify_vbucket_details_stats(
-                self.bucket, self.cluster_util.get_kv_nodes(),
-                vbuckets=self.cluster_util.vbuckets,
+                self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
+                vbuckets=self.cluster.vbuckets,
                 expected_val=self.verification_dict)
             if failed:
                 self.log_failure("Cbstat vbucket-details verification "
@@ -862,7 +863,8 @@ class CollectionDurabilityTests(CollectionBase):
         self.sdk_client_pool.release_client(client)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
         self.validate_test_failure()

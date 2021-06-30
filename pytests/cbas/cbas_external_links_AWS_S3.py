@@ -1340,13 +1340,20 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Fetch node to remove during rebalance")
         if rebalance_in:
             self.log.info("Rebalance in CBAS nodes")
-            self.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
-                                       rebalance=False, wait_for_rebalance_completion=False)
-            self.cluster_util.add_node(node=rebalanceServers[1], services=node_services,
-                                       rebalance=True, wait_for_rebalance_completion=True)
+            self.cluster_util.add_node(self.cluster,
+                                       node=rebalanceServers[0],
+                                       services=node_services,
+                                       rebalance=False,
+                                       wait_for_rebalance_completion=False)
+            self.cluster_util.add_node(self.cluster,
+                                       node=rebalanceServers[1],
+                                       services=node_services,
+                                       rebalance=True,
+                                       wait_for_rebalance_completion=True)
         elif failover:
             self.log.info("fail-over the node")
-            if not self.task.failover(self.cluster.servers, failover_nodes=[rebalanceServers[0]],
+            if not self.task.failover(self.cluster.servers,
+                                      failover_nodes=[rebalanceServers[0]],
                                       graceful=False, wait_for_pending=300):
                 self.fail("Error while node failover")
             self.log.info("Read input param to decide on add back or rebalance out")
@@ -1354,12 +1361,12 @@ class CBASExternalLinks(CBASBaseTest):
             self.sleep(10, "Sleeping before removing or adding back the failed over node")
             if self.rebalance_out:
                 self.log.info("Rebalance out the fail-over node")
-                result = self.cluster_util.rebalance()
+                result = self.cluster_util.rebalance(self.cluster)
                 self.assertTrue(result, "Rebalance operation failed")
             else:
                 self.recovery_strategy = self.input.param("recovery_strategy", "full")
                 self.rest.set_recovery_type('ns_1@' + rebalanceServers[0].ip, self.recovery_strategy)
-                result = self.cluster_util.rebalance()
+                result = self.cluster_util.rebalance(self.cluster)
                 self.assertTrue(result, "Rebalance operation failed")
         else:
             out_nodes = []
@@ -1373,8 +1380,12 @@ class CBASExternalLinks(CBASBaseTest):
                         out_nodes.append(node)
             if swap_rebalance:
                 self.log.info("Swap rebalance CBAS nodes")
-                self.cluster_util.add_node(node=rebalanceServers[1], services=node_services, rebalance=False)
-            self.cluster_util.remove_all_nodes_then_rebalance(out_nodes)
+                self.cluster_util.add_node(self.cluster,
+                                           node=rebalanceServers[1],
+                                           services=node_services,
+                                           rebalance=False)
+            self.cluster_util.remove_all_nodes_then_rebalance(self.cluster,
+                                                              out_nodes)
 
     def test_analytics_cluster_when_rebalancing_in_cbas_node(self):
         '''
@@ -1455,7 +1466,9 @@ class CBASExternalLinks(CBASBaseTest):
 
         rebalanceServers = self.get_rebalance_server()
         self.log.info("Rebalance in local cluster, this node will be removed during swap")
-        self.cluster_util.add_node(node=rebalanceServers[0], services=node_services)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[0],
+                                   services=node_services)
 
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
             aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
@@ -1520,10 +1533,16 @@ class CBASExternalLinks(CBASBaseTest):
         rebalanceServers = self.get_rebalance_server()
 
         self.log.info("Rebalance in CBAS nodes")
-        self.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
-                                   rebalance=False, wait_for_rebalance_completion=False)
-        self.cluster_util.add_node(node=rebalanceServers[1], services=node_services,
-                                   rebalance=True, wait_for_rebalance_completion=True)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[0],
+                                   services=node_services,
+                                   rebalance=False,
+                                   wait_for_rebalance_completion=False)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[1],
+                                   services=node_services,
+                                   rebalance=True,
+                                   wait_for_rebalance_completion=True)
 
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
             aws_bucket_name=self.dataset_params["aws_bucket_name"], key=self.key,
@@ -1592,8 +1611,11 @@ class CBASExternalLinks(CBASBaseTest):
         rebalanceServers = self.get_rebalance_server()
 
         self.log.info("Add an extra node to fail-over")
-        self.cluster_util.add_node(node=rebalanceServers[0], services=node_services,
-                                   rebalance=True, wait_for_rebalance_completion=True)
+        self.cluster_util.add_node(self.cluster,
+                                   node=rebalanceServers[0],
+                                   services=node_services,
+                                   rebalance=True,
+                                   wait_for_rebalance_completion=True)
 
         for i in range(0, 2):
             filename = "big_record_file_{0}".format(str(i))

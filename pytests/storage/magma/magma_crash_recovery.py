@@ -177,7 +177,7 @@ class MagmaCrashTests(MagmaBaseTest):
                     doc_ops="update")
 
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
 
             count += 1
 
@@ -210,7 +210,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                       doc_ops="update")
 
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster.buckets)
+                    self.cluster, self.cluster.buckets)
 
                 count += 1
             self.update_itr += self.update_itr
@@ -233,7 +233,8 @@ class MagmaCrashTests(MagmaBaseTest):
                                   _sync=True,
                                   doc_ops="delete")
 
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
 
@@ -248,7 +249,8 @@ class MagmaCrashTests(MagmaBaseTest):
                                   _sync=True,
                                   doc_ops="create")
 
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
 
@@ -318,7 +320,8 @@ class MagmaCrashTests(MagmaBaseTest):
         self.stop_crash = True
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
@@ -359,7 +362,8 @@ class MagmaCrashTests(MagmaBaseTest):
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
         self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
@@ -407,7 +411,8 @@ class MagmaCrashTests(MagmaBaseTest):
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
         success, _ = self.client.get_multi([key],
                                            self.wait_timeout)
@@ -452,18 +457,18 @@ class MagmaCrashTests(MagmaBaseTest):
             self.log.info("Iteration == {}".format(count))
 
             self.mutate += 1
-            self.gen_update = doc_generator(self.key, self.update_start,
-                                            self.update_end,
-                                            doc_size=upsert_size,
-                                            doc_type=self.doc_type,
-                                            target_vbucket=self.target_vbucket,
-                                            vbuckets=self.cluster_util.vbuckets,
-                                            key_size=self.key_size,
-                                            mutate=self.mutate,
-                                            randomize_doc_size=self.randomize_doc_size,
-                                            randomize_value=self.randomize_value,
-                                            mix_key_size=self.mix_key_size,
-                                            deep_copy=self.deep_copy)
+            self.gen_update = doc_generator(
+                self.key, self.update_start, self.update_end,
+                doc_size=upsert_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster.vbuckets,
+                key_size=self.key_size,
+                mutate=self.mutate,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size,
+                deep_copy=self.deep_copy)
 
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
@@ -472,7 +477,8 @@ class MagmaCrashTests(MagmaBaseTest):
                                   _sync=True,
                                   track_failures=False,
                                   sdk_retry_strategy=self.sdk_retry_strategy)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
 
             self.generate_docs(doc_ops="update")
             _ = self.loadgen_docs(self.retry_exceptions,
@@ -482,7 +488,8 @@ class MagmaCrashTests(MagmaBaseTest):
                                   _sync=True,
                                   track_failures=False,
                                   sdk_retry_strategy=self.sdk_retry_strategy)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
 
             count += 1
         self.stop_crash = True

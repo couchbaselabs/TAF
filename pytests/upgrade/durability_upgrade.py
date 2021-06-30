@@ -30,11 +30,11 @@ class UpgradeTests(UpgradeBase):
 
     def __wait_for_persistence_and_validate(self):
         self.bucket_util._wait_for_stats_all_buckets(
-            self.cluster.buckets,
+            self.cluster, self.cluster.buckets,
             cbstat_cmd="checkpoint", stat_name="num_items_for_persistence",
             timeout=300)
         self.bucket_util._wait_for_stats_all_buckets(
-            self.cluster.buckets,
+            self.cluster, self.cluster.buckets,
             cbstat_cmd="all", stat_name="ep_queue_size",
             timeout=60)
         self.bucket_util.validate_docs_per_collections_all_buckets(
@@ -169,7 +169,7 @@ class UpgradeTests(UpgradeBase):
                           % node_to_upgrade.ip)
             self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                      self.upgrade_version)
-            self.cluster_util.print_cluster_stats()
+            self.cluster_util.print_cluster_stats(self.cluster)
 
             # Validate sync_write results after upgrade
             if self.atomicity:
@@ -338,7 +338,7 @@ class UpgradeTests(UpgradeBase):
                 self.log.debug("Num_items mismatch. Expected: %s, Actual: %s"
                                % (self.num_items, current_items))
             # Doc count validation
-            self.cluster_util.print_cluster_stats()
+            self.cluster_util.print_cluster_stats(self.cluster)
 
             self.verification_dict["ops_create"] += create_batch_size
             self.summary.add_step("Upgrade %s" % node_to_upgrade.ip)
@@ -359,8 +359,8 @@ class UpgradeTests(UpgradeBase):
         # Cb_stats vb-details validation
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.cluster.buckets[0],
-            self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets,
+            self.cluster_util.get_kv_nodes(self.cluster),
+            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details validation failed")
@@ -421,8 +421,8 @@ class UpgradeTests(UpgradeBase):
         # Cb_stats vb-details validation
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.cluster.buckets[0],
-            self.cluster_util.get_kv_nodes(),
-            vbuckets=self.cluster_util.vbuckets,
+            self.cluster_util.get_kv_nodes(self.cluster),
+            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details validation failed")
@@ -475,7 +475,7 @@ class UpgradeTests(UpgradeBase):
                 stop_thread = True
                 update_task.join()
 
-            self.cluster_util.print_cluster_stats()
+            self.cluster_util.print_cluster_stats(self.cluster)
             self.bucket_util.print_bucket_stats(self.cluster)
 
             self.summary.add_step("Upgrade %s" % node_to_upgrade.ip)
@@ -554,7 +554,7 @@ class UpgradeTests(UpgradeBase):
                           % node_to_upgrade.ip)
             self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                      self.upgrade_version)
-            self.cluster_util.print_cluster_stats()
+            self.cluster_util.print_cluster_stats(self.cluster)
 
             try:
                 self.cluster.update_master_using_diag_eval(
@@ -589,7 +589,7 @@ class UpgradeTests(UpgradeBase):
 
     def get_low_cardinality_metrics(self, parse):
         content = None
-        for server in self.cluster_util.get_kv_nodes():
+        for server in self.cluster_util.get_kv_nodes(self.cluster):
             content = StatsHelper(server).get_prometheus_metrics(parse=parse)
             if not parse:
                 StatsHelper(server)._validate_metrics(content)
@@ -599,7 +599,7 @@ class UpgradeTests(UpgradeBase):
     def get_high_cardinality_metrics(self,parse):
         content = None
         try:
-            for server in self.cluster_util.get_kv_nodes():
+            for server in self.cluster_util.get_kv_nodes(self.cluster):
                 content = StatsHelper(server).get_prometheus_metrics_high(
                     parse=parse)
                 if not parse:

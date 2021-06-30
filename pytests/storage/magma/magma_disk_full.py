@@ -131,7 +131,8 @@ class MagmaDiskFull(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             self.free_disk(node)
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.doc_ops = "update"
         self.generate_docs(update_start=self.create_start,
                            update_end=self.create_end)

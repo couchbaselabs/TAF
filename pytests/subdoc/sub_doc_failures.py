@@ -26,7 +26,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             key_size=self.key_size,
             doc_size=self.sub_doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster_util.vbuckets)
+            vbuckets=self.cluster.vbuckets)
         self.log.info("Loading {0} Sub-docs into the bucket: {1}"
                       .format(self.num_items/2, self.bucket))
         task = self.task.async_load_gen_sub_docs(
@@ -180,7 +180,8 @@ class SubDocTimeouts(DurabilityTestsBase):
                                  % (doc_key, crud_result))
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.validate_test_failure()
@@ -212,7 +213,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for vb_id in range(self.cluster_util.vbuckets):
+            for vb_id in range(self.cluster.vbuckets):
                 vb_id = str(vb_id)
                 if vb_id not in affected_vbs:
                     if vb_id in vb_info["init"][node.ip].keys() \
@@ -354,7 +355,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.cluster_util.vbuckets)
+                        doc_id, self.cluster.vbuckets)
                     if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
@@ -378,7 +379,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.cluster_util.vbuckets)))
+                        self.cluster.vbuckets)))
 
         affected_vbs = list(set(affected_vbs))
         err_msg = "%s - mismatch in %s vb-%s seq_no: %s != %s"
@@ -447,7 +448,8 @@ class SubDocTimeouts(DurabilityTestsBase):
                                  % (op_type, retry_task.fail))
 
         # Verify doc count after expected CRUD failure
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch latest stats and validate the values are updated
@@ -504,7 +506,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         vb_info["init"] = dict()
         vb_info["failure_stat"] = dict()
         vb_info["create_stat"] = dict()
-        nodes_in_cluster = self.cluster_util.get_kv_nodes()
+        nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
         gen_load = doc_generator(self.key, 0, self.num_items)
         gen_subdoc_load = sub_doc_generator(self.key, 0, self.num_items,
                                             key_size=self.key_size)
@@ -525,7 +527,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(create_task)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         for node in nodes_in_cluster:
@@ -587,7 +590,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         validate_doc_mutated_value(1)
 
         # Verify doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Fetch vbucket seq_no status from vb_seqno command after async CREATEs
@@ -626,7 +630,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.log_failure("Unexpected exception type")
 
         # Verify doc count is unchanged due to durability failures
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         validate_doc_mutated_value(1)
 
@@ -700,17 +705,17 @@ class DurabilityFailureTests(DurabilityTestsBase):
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
             key_size=self.key_size,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             target_vbucket=target_vbuckets)
         gen_update_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
             key_size=self.key_size,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_subdoc = sub_doc_generator(
             self.key, 0, self.crud_batch_size,
             key_size=self.key_size,
-            vbuckets=self.cluster_util.vbuckets,
+            vbuckets=self.cluster.vbuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -742,7 +747,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 gen_subdoc = sub_doc_generator(
                     self.key, inital_num_items, self.crud_batch_size,
                     key_size=self.key_size,
-                    vbuckets=self.cluster_util.vbuckets,
+                    vbuckets=self.cluster.vbuckets,
                     target_vbucket=target_vbuckets)
                 gen_loader[1] = gen_subdoc
             gen_loader[1] = gen_subdoc
@@ -872,6 +877,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                      % (key, doc_info))
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.validate_test_failure()

@@ -93,14 +93,15 @@ class PlasmaBaseTest(BaseTestCase):
         self._load_all_buckets(self.cluster, self.gen_create,
                                "create", 0,
                                batch_size=self.batch_size)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
     def _doc_generator(self, start, end):
         return doc_generator(self.key, start, end,
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.cluster_util.vbuckets,
+                             vbuckets=self.cluster.vbuckets,
                              key_size=self.key_size,
                              randomize_doc_size=self.randomize_doc_size,
                              randomize_value=self.randomize_value,
