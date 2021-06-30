@@ -53,7 +53,6 @@ class MagmaBaseTest(StorageBase):
 
         # Creating clients in SDK client pool
         self.sdk_timeout = self.input.param("sdk_timeout", 60)
-        self.sdk_client_pool = True
         self.init_sdk_pool_object()
         self.log.info("Creating SDK clients for client_pool")
         max_clients = min(self.task_manager.number_of_threads, 20)
