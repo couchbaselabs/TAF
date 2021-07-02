@@ -683,7 +683,6 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.tasks = []
             if self.fts_indexes_to_recreate > 0:
                 self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats(self.cluster)
@@ -829,7 +828,6 @@ class volume(CollectionBase):
                         num_replicas=2,
                         std=std, total_vbuckets=self.cluster_util.vbuckets)
                     self.sleep(10)
-                    self.tasks = []
                     # Bring back the rebalance out node back to cluster for further steps
                     if action == "RebalanceOut":
                         self.sleep(120)
@@ -852,7 +850,6 @@ class volume(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
-            self.tasks = []
             if self.fts_indexes_to_recreate > 0:
                 self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
             self.bucket_util.print_bucket_stats(self.cluster)
