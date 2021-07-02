@@ -40,6 +40,13 @@ class volume(AutoFailoverBaseTest):
             self.assertFalse(result, msg="Cb_log file validation failed")
         if not self.skip_check_logs:
             self.check_logs()
+        # Close all tasks explicitly
+        self.task_manager.shutdown_task_manager()
+        self.task.shutdown(force=True)
+        self.task_manager.abort_all_tasks()
+        # Close all sdk clients explicitly
+        if self.sdk_client_pool:
+            self.sdk_client_pool.shutdown()
 
     def check_logs(self):
         result = self.check_coredump_exist(self.servers, force_collect=True)
