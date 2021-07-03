@@ -2,7 +2,7 @@ import json
 
 from Rest_Connection import RestConnection
 from common_lib import sleep
-
+import urllib
 
 class GsiHelper(RestConnection):
     def __init__(self, server, logger):
@@ -363,3 +363,63 @@ class GsiHelper(RestConnection):
                     break
             sleep(2, "Wait before next indexer stats query")
         return index_completed
+
+    def polling_create_index_status(self, bucket=None, index=None, timeout=300):
+        for x in range(timeout):
+            result = self.index_status()
+            if result[bucket.name].has_key(index):
+                if result[bucket.name][index]['status'] == 'Ready':
+                    return True
+            sleep(1)
+            self.log.info("Index {} not found with iteration {}".format(index, str(x)))
+        return False
+
+    def polling_delete_index(self, bucket=None, index=None, timeout=100):
+        for x in range(timeout):
+            result = self.index_status()
+            if result[bucket.name].get(index) is None:
+                return True
+            sleep(1)
+            self.log.info("Index found with iteration {}".format(index, str(x)))
+        return False
+
+    def get_plasma_stats(self, nodes_list=None):
+        """
+        Fetches index stats using localhost:9102/stats/storage api
+        :return result: Dictionary of stats in format,
+                        result[bucket_name][index_name][stat_name] = value
+        """
+        result = dict()
+        for node in nodes_list:
+            generic_url = "http://%s:%s/"
+            ip = node.ip
+            port = "9102"
+            baseURL = generic_url % (ip, port)
+            api = "{0}stats/storage".format(baseURL)
+            status, content, _ = self._http_request(api)
+            if status:
+                content = json.loads(content)
+                for key in content:
+                    indexName = str(key.get('Index'))
+                    backStoreStats = key.get('Stats').get('BackStore')
+                    mainStoreStats = key.get('Stats').get('MainStore')
+                    for item, itemValue in mainStoreStats.items():
+                        result[indexName + "_" + item] = itemValue
+            else:
+                self.log.error("Failure during get_index_stats: %s" % content)
+        return result
+
+    def execute_query(self, server, query, n1ql_port=8093, contentType='application/x-www-form-urlencoded',
+                      connection='keep-alive', timeout=600, isIndexerQuery=False):
+        if isIndexerQuery:
+            params = {'statement': query}
+            params = urllib.urlencode(params)
+            self.log.debug('Query params: {0}'.format(params))
+            url = "http://%s:%s/query" % (server.ip, n1ql_port)
+        else:
+            url = "http://%s:%s/query/service" % (server.ip, n1ql_port)
+            params = urllib.urlencode({'scan_consistency': 'request_plus', 'statement': query})
+        status, content, header = self._http_request(url, 'POST', params,
+                                                     headers=self._create_capi_headers(contentType=contentType,
+                                                                                       connection=connection))
+        return status, content, header

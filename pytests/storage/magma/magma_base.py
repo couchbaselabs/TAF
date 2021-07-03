@@ -62,7 +62,6 @@ class MagmaBaseTest(StorageBase):
                 bucket, [self.cluster.master],
                 clients_per_bucket,
                 compression_settings=self.sdk_compression)
-
         # Initial Data Load
         self.loader_dict = None
         self.init_loading = self.input.param("init_loading", True)
@@ -75,8 +74,16 @@ class MagmaBaseTest(StorageBase):
                 self.load_buckets_in_dgm(self.gen_create, "create", 0)
             else:
                 self.initial_load()
+        if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
+            for bucket in self.bucket_util.get_all_buckets(self.cluster):
+                disk_usage = self.get_disk_usage(
+                    bucket, self.cluster.nodes_in_cluster)
+                self.disk_usage[bucket.name] = disk_usage[0]
+                self.log.info(
+                    "For bucket {} disk usage after initial creation is {}MB\
+                    ".format(bucket.name,
+                             self.disk_usage[bucket.name]))
         self.log.info("==========Finished magma base setup========")
-
     def tearDown(self):
         super(MagmaBaseTest, self).tearDown()
 

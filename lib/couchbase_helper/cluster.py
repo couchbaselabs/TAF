@@ -1018,3 +1018,20 @@ class ServerTasks(object):
             cluster, cbas_util, cbas_endpoint, statement)
         self.jython_task_manager.add_new_task(task)
         return task
+
+    def aysnc_execute_query(self, server, query, contentType='application/x-www-form-urlencoded',
+                            connection='keep-alive', isIndexerQuery=False, bucket=None, indexName=None, timeout=300):
+        """
+                Synchronously runs query
+                Parameters:
+                  server - Server to handle query verification task (TestInputServer)
+                  query - Query params being used with the query. (dict)
+                  timeout - timeout for the task
+                Returns:
+                  _task - A task future that is a handle to the scheduled task
+                """
+        _task = jython_tasks.ExecuteQueryTask(server, query, contentType=contentType, connection=connection,
+                                              isIndexerQuery=isIndexerQuery, bucket=bucket, indexName=indexName,
+                                              timeout=600)
+        self.jython_task_manager.add_new_task(_task)
+        return _task

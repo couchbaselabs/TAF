@@ -154,15 +154,15 @@ class RestConnection(object):
                 print(e)
             return content, False
 
-    def _create_capi_headers(self, username=None, password=None):
+    def _create_capi_headers(self, username=None, password=None, contentType='application/json', connection='close'):
         if username is None:
             username = self.username
         if password is None:
             password = self.password
         authorization = base64.encodestring('%s:%s' % (username, password))
-        return {'Content-Type': 'application/json',
+        return {'Content-Type': contentType,
                 'Authorization': 'Basic %s' % authorization,
-                'Connection': 'close',
+                'Connection': connection,
                 'Accept': '*/*'}
 
     @staticmethod

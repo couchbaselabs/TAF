@@ -297,15 +297,6 @@ class StorageBase(BaseTestCase):
         task = self.data_load()
         self.wait_for_doc_load_completion(task)
 
-        if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
-            for bucket in self.bucket_util.get_all_buckets(self.cluster):
-                disk_usage = self.get_disk_usage(
-                    bucket, self.cluster.nodes_in_cluster)
-                self.disk_usage[bucket.name] = disk_usage[0]
-                self.log.info(
-                    "For bucket {} disk usage after initial creation is {}MB\
-                    ".format(bucket.name,
-                             self.disk_usage[bucket.name]))
         self.num_items = self.init_items_per_collection * self.num_collections
         self.read_start = 0
         self.read_end = self.init_items_per_collection

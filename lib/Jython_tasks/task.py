@@ -48,6 +48,7 @@ from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from testconstants import INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA, MIN_KV_QUOTA
+from gsiLib.GsiHelper_Rest import GsiHelper
 
 
 class Task(Callable):
@@ -6362,3 +6363,39 @@ class DropDataversesTask(Task):
             return
         self.complete_task()
 
+class ExecuteQueryTask(Task):
+    def __init__(self, server, query, contentType='application/x-www-form-urlencoded',
+                 connection='keep-alive', isIndexerQuery=False, bucket=None, indexName=None, timeout=300):
+        super(ExecuteQueryTask, self).__init__("ExecuteQueriesTask_%sstarted%s"
+                                               % (query, time.time()))
+        self.server = server
+        self.query = query
+        self.timeout = timeout
+        self.contentType = contentType
+        self.connection = connection
+        self.isIndexerQuery = isIndexerQuery
+        self.rest = RestConnection(server)
+        self.bucket = bucket
+        self.index_name = indexName
+        self.timeout = timeout
+        self.isIndexerQuery = isIndexerQuery
+    def call(self):
+        self.start_task()
+        try:
+            indexer_rest = GsiHelper(self.server, self.log)
+            self.log.info("starting call")
+            status, content, header = indexer_rest.execute_query(server=self.server, query=self.query,
+                                                                 contentType=self.contentType,
+                                                                 connection=self.connection, isIndexerQuery=self.isIndexerQuery)
+            newContent = json.loads(content)
+            self.log.info("Content is:"+str(newContent))
+            self.set_result(status)
+            if self.isIndexerQuery:
+                result = indexer_rest.polling_create_index_status(self.bucket, index=self.index_name,
+                                                                  timeout=self.timeout)
+                self.set_result(result)
+        except Exception as e:
+            self.test_log.error(e)
+            self.set_exception(e)
+            return
+        self.complete_task()
