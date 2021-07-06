@@ -941,6 +941,9 @@ class ClusterSetup(BaseTestCase):
     def setUp(self):
         super(ClusterSetup, self).setUp()
 
+        if self.skip_setup_cleanup:
+            return
+
         self.log_setup_status("ClusterSetup", "started", "setup")
 
         services = None
