@@ -572,29 +572,6 @@ def get_couch_dbinfo(input_obj, path):
             print("Failed to grab dbinfo from %s: %s" % (server.ip, e))
 
 
-def clear_old_core_dumps(_input, path):
-    for server in _input.servers:
-        path = path or "."
-        try:
-            Clearcoredumps(server, path).run()
-        except Exception as e:
-            print("Unable to clear core dumps on %s: %s" % (server.ip, e))
-
-
-def get_core_dumps(_input, path):
-    ret = False
-    for server in _input.servers:
-        print("Grabbing core dumps files from %s" % server.ip)
-        path = path or "."
-        try:
-            if Getcoredumps(server, path).run():
-                ret = True
-        except Exception as e:
-            print("Failed to grab CORE DUMPS from %s: %s"
-                  % (server.ip, e))
-    return ret
-
-
 class StoppableThreadWithResult(Thread):
     """Thread class with a stop() method. The thread itself has to check
     regularly for the stopped() condition."""
