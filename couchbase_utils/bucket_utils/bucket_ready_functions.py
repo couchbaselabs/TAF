@@ -140,7 +140,8 @@ class DocLoaderUtils(object):
     @staticmethod
     def get_doc_generator(op_type, collection_obj, num_items,
                           generic_key, mutation_num=0,
-                          target_vbuckets="all", type="default"):
+                          target_vbuckets="all", type="default",
+                          doc_size=256):
         """
         Create doc generators based on op_type provided
         :param op_type: CRUD type
@@ -150,6 +151,7 @@ class DocLoaderUtils(object):
         :param mutation_num: Mutation number, used for doc validation task
         :param target_vbuckets: Target_vbuckets for which doc loading
                                 should be done. Type: list / range()
+        :param doc_size: Doc size to use for doc_generator
         :return: doc_generator object based on given inputs
         """
         if op_type == "create":
@@ -170,15 +172,17 @@ class DocLoaderUtils(object):
         if op_type in [DocLoading.Bucket.DocOps.DELETE,
                        DocLoading.Bucket.DocOps.UPDATE,
                        DocLoading.Bucket.DocOps.REPLACE]:
-            # if document is deleted/updated/replaced, then it's corresponding subdoc
+            # if document is deleted/updated/replaced,
+            # then it's corresponding subdoc
             # start index must also be changed
             if collection_obj.sub_doc_index[0] < end:
-                collection_obj.sub_doc_index = (end,
-                                                collection_obj.sub_doc_index[1])
+                collection_obj.sub_doc_index = \
+                    (end, collection_obj.sub_doc_index[1])
                 if collection_obj.sub_doc_index[1] < collection_obj.sub_doc_index[0]:
                     # no subdocs present
-                    collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
-                                                    collection_obj.sub_doc_index[0])
+                    collection_obj.sub_doc_index = \
+                        (collection_obj.sub_doc_index[0],
+                         collection_obj.sub_doc_index[0])
 
         if target_vbuckets == "all":
             target_vbuckets = None
@@ -188,6 +192,7 @@ class DocLoaderUtils(object):
             end -= start
         if type == "default":
             gen_docs = doc_generator(generic_key, start, end,
+                                     doc_size=doc_size,
                                      target_vbucket=target_vbuckets,
                                      mutation_type=op_type,
                                      mutate=mutation_num)
@@ -203,7 +208,8 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def get_subdoc_generator(op_type, collection_obj, num_items,
-                             generic_key, target_vbuckets="all", xattr_test=False):
+                             generic_key, target_vbuckets="all",
+                             xattr_test=False):
         if target_vbuckets == "all":
             target_vbuckets = None
 
@@ -219,7 +225,8 @@ class DocLoaderUtils(object):
             if target_vbuckets is not None:
                 end -= start
             return sub_doc_generator(generic_key, start, end,
-                                     target_vbucket=target_vbuckets, xattr_test=xattr_test)
+                                     target_vbucket=target_vbuckets,
+                                     xattr_test=xattr_test)
         elif op_type == DocLoading.Bucket.SubDocOps.REMOVE:
             start = collection_obj.sub_doc_index[0]
             end = start + num_items
@@ -238,18 +245,19 @@ class DocLoaderUtils(object):
                     # otherwise it will result in docNotFound exceptions
                     if end > collection_obj.doc_index[1]:
                         end = collection_obj.doc_index[1]
-                        collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
-                                                        end)
+                        collection_obj.sub_doc_index = \
+                            (collection_obj.sub_doc_index[0], end)
                     elif end > collection_obj.sub_doc_index[1]:
                         end = collection_obj.sub_doc_index[1]
-                        collection_obj.sub_doc_index = (collection_obj.sub_doc_index[0],
-                                                        end)
+                        collection_obj.sub_doc_index = \
+                            (collection_obj.sub_doc_index[0], end)
 
         if target_vbuckets is not None:
             end -= start
         return sub_doc_generator_for_edit(generic_key, start, end,
                                           subdoc_gen_template_num,
-                                          target_vbucket=target_vbuckets, xattr_test=xattr_test)
+                                          target_vbucket=target_vbuckets,
+                                          xattr_test=xattr_test)
 
     @staticmethod
     def perform_doc_loading_for_spec(task_manager,
@@ -381,6 +389,7 @@ class DocLoaderUtils(object):
                                         collection,
                                         num_items,
                                         doc_key,
+                                        doc_size=doc_size,
                                         target_vbuckets=target_vbs,
                                         mutation_num=mutation_num,
                                         type=c_crud_data[op_type]["doc_gen_type"])
@@ -415,6 +424,9 @@ class DocLoaderUtils(object):
         # Fetch common doc_key to use while doc_loading
         doc_key = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.COMMON_DOC_KEY, "test_docs")
+        # Fetch doc_size to use for doc_loading
+        doc_size = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.DOC_SIZE, 256)
 
         ignore_exceptions = input_spec.get(
             MetaCrudParams.IGNORE_EXCEPTIONS, [])

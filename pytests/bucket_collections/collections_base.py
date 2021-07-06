@@ -223,7 +223,8 @@ class CollectionBase(ClusterSetup):
             elif key == "sdk_timeout":
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
             elif key == "doc_size":
-                target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
+                target_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_SIZE] \
+                    = self.doc_size
 
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
