@@ -723,9 +723,6 @@ def main():
             TestInputSingleton.input.test_params["rerun"] = False
         print("Test Input params:\n%s"
               % TestInputSingleton.input.test_params)
-        if "get-coredumps" in TestInputSingleton.input.test_params:
-            if TestInputSingleton.input.param("get-coredumps", True):
-                clear_old_core_dumps(TestInputSingleton.input, logs_folder)
         try:
             suite = unittest.TestLoader().loadTestsFromName(name)
         except AttributeError as e:
@@ -754,15 +751,6 @@ def main():
             #    args=(suite))
             # t.start()
             # result = t.join(timeout=test_timeout)
-            if "get-coredumps" in TestInputSingleton.input.test_params:
-                if TestInputSingleton.input.param("get-coredumps", True):
-                    if get_core_dumps(TestInputSingleton.input, logs_folder):
-                        result = unittest.TextTestRunner(verbosity=2)._makeResult()
-                        result.errors = [(name,
-                                          "Failing test: new core dump(s) "
-                                          "were found and collected."
-                                          " Check testrunner logs folder.")]
-                        print("FAIL: New core dump(s) was found and collected")
             if not result:
                 for t in threading.enumerate():
                     if t != threading.current_thread():
