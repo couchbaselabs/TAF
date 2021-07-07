@@ -713,7 +713,7 @@ class DocLoaderUtils(object):
 
         # Wait for all threads to complete
         for c_thread in c_validation_threads:
-            c_thread.join(60)
+            c_thread.join()
 
         # Set doc_loading result based on the retry outcome
         doc_loading_task.result = True
