@@ -39,8 +39,8 @@ class CollectionBase(ClusterSetup):
         self.validate_docs_count_during_teardown = \
             self.input.param("validate_docs_count_during_teardown", False)
         self.batch_size = self.input.param("batch_size", 200)
-        self.vbuckets = self.input.param("vbuckets", self.cluster.vbuckets)
-        self.retry_get_process_num = self.input.param("retry_get_process_num", 25)
+        self.retry_get_process_num = \
+            self.input.param("retry_get_process_num", 25)
 
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
