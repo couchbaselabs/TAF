@@ -40,7 +40,7 @@ from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
-from common_lib import sleep
+from common_lib import sleep, humanbytes
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
     DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
@@ -1947,9 +1947,9 @@ class BucketUtils(ScopeUtils):
                      str(bucket.durability_level),
                      str(bucket.maxTTL),
                      str(bucket.stats.itemCount),
-                     str(bucket.stats.ram),
-                     str(bucket.stats.memUsed),
-                     str(bucket.stats.diskUsed),
+                     humanbytes(str(bucket.stats.ram)),
+                     humanbytes(str(bucket.stats.memUsed)),
+                     humanbytes(str(bucket.stats.diskUsed)),
                      ARR])
         table.display("Bucket statistics")
 

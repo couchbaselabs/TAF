@@ -16,7 +16,7 @@ from Cb_constants import constants, CbServer
 from Jython_tasks.task import MonitorActiveTask
 from TestInput import TestInputSingleton, TestInputServer
 from cb_tools.cb_collectinfo import CbCollectInfo
-from common_lib import sleep
+from common_lib import sleep, humanbytes
 from couchbase_cli import CouchbaseCLI
 from global_vars import logger
 from membase.api.rest_client import RestConnection, RestHelper
@@ -873,10 +873,10 @@ class ClusterUtils:
             row.append(cluster_node.split(':')[0])
             row.append(", ".join(node_stats["services"]))
             row.append(str(node_stats["cpu_utilization"]))
-            row.append(str(node_stats["mem_total"]))
-            row.append(str(node_stats["mem_free"]))
-            row.append(str(node_stats["swap_mem_used"]) + " / "
-                       + str(node_stats["swap_mem_total"]))
+            row.append(humanbytes(str(node_stats["mem_total"])))
+            row.append(humanbytes(str(node_stats["mem_free"])))
+            row.append(humanbytes(str(node_stats["swap_mem_used"])) + " / "
+                       + humanbytes(str(node_stats["swap_mem_total"])))
             row.append(str(node_stats["active_item_count"]) + " / "
                        + str(node_stats["replica_item_count"]))
             row.append(node_stats["version"])
