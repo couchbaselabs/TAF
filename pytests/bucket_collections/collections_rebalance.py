@@ -82,6 +82,7 @@ class CollectionsRebalance(CollectionBase):
             self.log.info("Creating metakv entries end")
 
     def tearDown(self):
+        self.bucket_util.print_bucket_stats(self.cluster)
         if self.scrape_interval:
             self.log.info("Reverting prometheus settings back to default")
             StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
@@ -297,6 +298,8 @@ class CollectionsRebalance(CollectionBase):
             retry_exceptions.append(SDKException.TimeoutException)
             retry_exceptions.append(SDKException.RequestCanceledException)
             retry_exceptions.append(SDKException.DocumentNotFoundException)
+            # This is needed as most of the magma testing would be done < 10% DGM
+            retry_exceptions.append(SDKException.ServerOutOfMemoryException)
             if self.durability_level:
                 retry_exceptions.append(SDKException.DurabilityAmbiguousException)
                 retry_exceptions.append(SDKException.DurabilityImpossibleException)
