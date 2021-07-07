@@ -31,10 +31,12 @@ class CollectionsNegativeTc(CollectionBase):
                                           self.bucket,
                                           "scope1",
                                           {"name": "collection1"})
-        except Exception as e:
-            self.log.info("collection creation failed as expected as there was collection1 already")
+        except Exception:
+            self.log.info("Collection creation failed as expected "
+                          "as there was collection1 already")
         else:
-            self.fail("collection creation did not fail even when given duplicate")
+            self.fail("Collection creation did not fail "
+                      "even when given duplicate")
 
     def test_create_scope_with_existing_name(self):
         BucketUtils.create_scope(self.cluster.master, self.bucket,
@@ -42,14 +44,16 @@ class CollectionsNegativeTc(CollectionBase):
         try:
             BucketUtils.create_scope(self.cluster.master, self.bucket,
                                      {"name": "scope1"})
-        except Exception as e:
-            self.log.info("Scope creation failed as expected as there was scope1 already")
+        except Exception:
+            self.log.info("Scope creation failed as expected as there "
+                          "was scope1 already")
         else:
             self.fail("Scope creation did not fail even when given duplicate")
 
     def test_delete_default_scope(self):
         try:
-            BucketUtils.drop_scope(self.cluster.master, self.bucket, "_default")
+            BucketUtils.drop_scope(self.cluster.master, self.bucket,
+                                   "_default")
         except Exception as e:
             self.log.info("Deafult Scope deletion failed as expected")
         else:
@@ -57,17 +61,19 @@ class CollectionsNegativeTc(CollectionBase):
 
     def test_delete_nonexistant_collection(self):
         try:
-            BucketUtils.drop_collection(self.cluster.master, self.bucket, "sumedh")
-        except Exception as e:
-            self.log.info("Non existant collection deletion failed as expected")
+            BucketUtils.drop_collection(self.cluster.master, self.bucket,
+                                        "non_existent_col_123")
+        except Exception:
+            self.log.info("Drop collection failed as expected")
         else:
             self.fail("deletion of non existing collection did not fail")
 
     def test_delete_nonexistant_scope(self):
         try:
-            BucketUtils.drop_scope(self.cluster.master, self.bucket, "sumedh")
-        except Exception as e:
-            self.log.info("Non existant collection deletion failed as expected")
+            BucketUtils.drop_scope(self.cluster.master, self.bucket,
+                                   "non_existent_col_123")
+        except Exception:
+            self.log.info("Drop scope failed as expected")
         else:
             self.fail("deletion of non existing scope did not fail")
 
@@ -80,7 +86,7 @@ class CollectionsNegativeTc(CollectionBase):
                                               self.bucket,
                                               "scope1",
                                               {"name": name})
-            except Exception as e:
+            except Exception:
                 self.log.info("Illegal collection name as expected")
             else:
                 self.fail("Illegal collection name did not fail")
@@ -90,7 +96,7 @@ class CollectionsNegativeTc(CollectionBase):
             try:
                 BucketUtils.create_scope(self.cluster.master, self.bucket,
                                          {"name": name})
-            except Exception as e:
+            except Exception:
                 self.log.info("Illegal scope name as expected")
             else:
                 self.fail("Illegal scope name did not fail")
@@ -99,39 +105,44 @@ class CollectionsNegativeTc(CollectionBase):
         BucketUtils.create_scope(self.cluster.master, self.bucket,
                                  {"name": "scope1"})
         # create max collections under single scope
-        collects_dict = BucketUtils.create_collections(self.cluster, self.bucket, self.MAX_COLLECTIONS, "scope1")
+        collects_dict = BucketUtils.create_collections(
+            self.cluster, self.bucket, CbServer.max_collections, "scope1")
         actual_count = len(collects_dict)
-        if actual_count != self.MAX_COLLECTIONS:
+        if actual_count != CbServer.max_collections:
             self.fail("failed to create max number of collections")
         try:
             # create one more than the max allowed
-            BucketUtils.create_collections(self.cluster, self.bucket, 1, "scope1")
-        except Exception as e:
-            self.log.info("Creating more than max collections failed as expected")
+            BucketUtils.create_collections(self.cluster, self.bucket, 1,
+                                           "scope1")
+        except Exception:
+            self.log.info("Collection creation failed as expected")
         else:
             self.fail("Creating more than max collections did not fail")
 
     def test_more_than_max_collections_multiple_scopes(self):
         # create max collections across 10 scopes
-        BucketUtils.create_scopes(self.cluster, self.bucket, 10, collection_count=120)
+        BucketUtils.create_scopes(self.cluster, self.bucket, 10,
+                                  collection_count=120)
         try:
             # create one more collection under a new scope
-            BucketUtils.create_scopes(self.cluster, self.bucket, 1, collection_count=1)
-        except Exception as e:
-            self.log.info("Creating more than max collections failed as expected")
+            BucketUtils.create_scopes(self.cluster, self.bucket, 1,
+                                      collection_count=1)
+        except Exception:
+            self.log.info("Collection creation failed as expected")
         else:
             self.fail("Creating more than max collections did not fail")
 
     def test_more_than_max_scopes(self):
         # create max scopes
-        scopes_dict = BucketUtils.create_scopes(self.cluster, self.bucket, self.MAX_SCOPES)
+        scopes_dict = BucketUtils.create_scopes(self.cluster, self.bucket,
+                                                CbServer.max_scopes)
         actual_count = len(scopes_dict)
-        if actual_count != self.MAX_SCOPES:
+        if actual_count != CbServer.max_scopes:
             self.fail("failed to create max number of scopes")
         try:
             # create one more than the max allowed
             BucketUtils.create_scopes(self.cluster, self.bucket, 1)
-        except Exception as e:
+        except Exception:
             self.log.info("Creating more than max scopes failed as expected")
         else:
             self.fail("Creating more than max scopes did not fail")
@@ -175,6 +186,7 @@ class CollectionsNegativeTc(CollectionBase):
             collection=self.collection_name)
         self.task.jython_task_manager.get_task_result(task)
         if task.fail:
-            self.log.info("inserting doc key greater than max key size failed as expected")
+            self.log.info("Inserting doc key > max size failed as expected")
         else:
-            self.fail("inserting doc key greater than max key size succeeded when it should have failed")
+            self.fail("Inserting doc key greater than max key size "
+                      "succeeded when it should have failed")

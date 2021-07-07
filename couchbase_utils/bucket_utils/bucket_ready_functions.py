@@ -960,7 +960,8 @@ class CollectionUtils(DocLoaderUtils):
 
     @staticmethod
     def drop_collection(node, bucket, scope_name=CbServer.default_scope,
-                        collection_name=CbServer.default_collection, session=None):
+                        collection_name=CbServer.default_collection,
+                        session=None):
         """
         Function to drop collection under the given scope_name
 

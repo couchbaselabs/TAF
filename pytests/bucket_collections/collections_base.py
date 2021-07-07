@@ -19,8 +19,6 @@ class CollectionBase(ClusterSetup):
         super(CollectionBase, self).setUp()
         self.log_setup_status("CollectionBase", "started")
 
-        self.MAX_SCOPES = CbServer.max_scopes
-        self.MAX_COLLECTIONS = CbServer.max_collections
         self.key = 'test_collection'.rjust(self.key_size, '0')
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
