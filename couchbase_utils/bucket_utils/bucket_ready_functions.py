@@ -1935,8 +1935,11 @@ class BucketUtils(ScopeUtils):
                 ARR = "-"
                 if bucket.bucketType == Bucket.Type.MEMBASE:
                     storage_backend = bucket.storageBackend
-                    ARR = BucketHelper(cluster.master).fetch_bucket_stats(
-                        bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+                    try:
+                        ARR = BucketHelper(cluster.master).fetch_bucket_stats(
+                            bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+                    except KeyError:
+                        ARR = 100
                 table.add_row(
                     [bucket.name, bucket.bucketType,
                      storage_backend,
