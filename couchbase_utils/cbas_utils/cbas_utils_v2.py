@@ -16,8 +16,8 @@ import string
 import random
 import importlib
 import copy
+import requests
 
-from Cb_constants import CbServer
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
@@ -35,25 +35,22 @@ from Jython_tasks.task import Task, RunQueriesTask
 
 class BaseUtil(object):
 
-    def __init__(self, master, cbas_node, server_task=None):
+    def __init__(self, server_task=None):
         """
-        :param master cluster's master node object
-        :param cbas_node CBAS node object
         :param server_task task object
         """
         self.log = logger.get("test")
-        self.cbas_node = cbas_node
-        self.master = master
         self.task = server_task
-        self.cbas_helper = CBASHelper(master, cbas_node)
 
-    def createConn(self, bucket, username=None, password=None):
-        self.cbas_helper.createConn(bucket, username, password)
+    def createConn(self, cluster, bucket, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper.createConn(bucket, username, password)
 
-    def closeConn(self):
-        self.cbas_helper.closeConn()
+    def closeConn(self, cluster):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper.closeConn()
 
-    def execute_statement_on_cbas_util(self, statement, mode=None,
+    def execute_statement_on_cbas_util(self, cluster, statement, mode=None,
                                        timeout=120, client_context_id=None,
                                        username=None, password=None,
                                        analytics_timeout=120,
@@ -72,10 +69,11 @@ class BaseUtil(object):
         :param scan_consistency str
         :param scan_wait str
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         pretty = "true"
         try:
             self.log.debug("Running query on cbas: %s" % statement)
-            response = self.cbas_helper.execute_statement_on_cbas(
+            response = cbas_helper.execute_statement_on_cbas(
                 statement, mode, pretty, timeout, client_context_id,
                 username, password,
                 analytics_timeout=analytics_timeout,
@@ -114,7 +112,7 @@ class BaseUtil(object):
         except Exception as e:
             raise Exception(str(e))
 
-    def execute_parameter_statement_on_cbas_util(self, statement, mode=None,
+    def execute_parameter_statement_on_cbas_util(self, cluster, statement, mode=None,
                                                  timeout=120,
                                                  client_context_id=None,
                                                  username=None, password=None,
@@ -131,10 +129,11 @@ class BaseUtil(object):
         :param analytics_timeout int, timeout for analytics workbench
         :param parameters dict,
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         pretty = "true"
         try:
             self.log.debug("Running query on cbas: %s" % statement)
-            response = self.cbas_helper.execute_parameter_statement_on_cbas(
+            response = cbas_helper.execute_parameter_statement_on_cbas(
                 statement, mode, pretty, timeout, client_context_id,
                 username, password,
                 analytics_timeout=analytics_timeout, parameters=parameters)
@@ -263,22 +262,20 @@ class BaseUtil(object):
                 if key in cbas_spec[sub_spec_name]:
                     cbas_spec[sub_spec_name][key] = value
 
-    def run_jobs_in_parallel(self, consumer_func, jobs, results, thread_count,
-                             async_run=False, consume_from_queue_func=None):
-        if not consume_from_queue_func:
-            def consume_from_queue(jobs, results):
-                while not jobs.empty():
-                    job = jobs.get()
-                    try:
-                        results.append(consumer_func(job))
-                    except Exception as e:
-                        self.log.error(str(e))
-                        results.append(False)
-                    finally:
-                        jobs.task_done()
-        else:
-            consume_from_queue = consume_from_queue_func
-            consume_from_queue(jobs, results)
+    def run_jobs_in_parallel(self, jobs, results, thread_count,
+                             async_run=False):
+
+        def consume_from_queue(jobs, results):
+            while not jobs.empty():
+                job = jobs.get()
+                try:
+                    results.append(job[0](**job[1]))
+                except Exception as e:
+                    self.log.error(str(e))
+                    results.append(False)
+                finally:
+                    jobs.task_done()
+
         # start worker threads
         if jobs.qsize() < thread_count:
             thread_count = jobs.qsize()
@@ -292,13 +289,13 @@ class BaseUtil(object):
             jobs.join()
 
     @staticmethod
-    def get_kv_entity(bucket_util, bucket_cardinality=1,
+    def get_kv_entity(cluster, bucket_util, bucket_cardinality=1,
                       include_buckets=[], exclude_buckets=[],
                       include_scopes=[], exclude_scopes=[],
                       include_collections=[], exclude_collections=[]):
         bucket = None
         while not bucket:
-            bucket = random.choice(bucket_util.buckets)
+            bucket = random.choice(cluster.buckets)
             if include_buckets and bucket.name not in include_buckets:
                 bucket = None
             if exclude_buckets and bucket.name in exclude_buckets:
@@ -329,21 +326,19 @@ class BaseUtil(object):
 
 class Dataverse_Util(BaseUtil):
 
-    def __init__(self, master, cbas_node, server_task=None):
+    def __init__(self, server_task=None):
         """
-        :param master cluster's master node object
-        :param cbas_node CBAS node object
         :param server_task task object
         """
-        super(Dataverse_Util, self).__init__(master, cbas_node, server_task)
+        super(Dataverse_Util, self).__init__(server_task)
         # Initiate dataverses dict with Dataverse object for Default dataverse
         self.dataverses = dict()
         default_dataverse_obj = Dataverse()
         self.dataverses[default_dataverse_obj.name] = default_dataverse_obj
 
-    def validate_dataverse_in_metadata(self, dataverse_name, username=None,
-                                       password=None,
-                                       timeout=120, analytics_timeout=120):
+    def validate_dataverse_in_metadata(
+            self, cluster, dataverse_name, username=None,
+            password=None, timeout=120, analytics_timeout=120):
         """
         Validates whether a dataverse is present in Metadata.Dataverse
         :param dataverse_name: str, Name of the dataverse which has to be validated.
@@ -356,10 +351,10 @@ class Dataverse_Util(BaseUtil):
         self.log.debug("Validating dataverse entry in Metadata")
         cmd = "select value dv from Metadata.`Dataverse` as dv where\
          dv.DataverseName = \"{0}\";".format(
-            CBASHelper.metadata_format(CBASHelper.unformat_name(dataverse_name)))
+            CBASHelper.metadata_format(dataverse_name))
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if status == "success":
             if results:
@@ -369,11 +364,11 @@ class Dataverse_Util(BaseUtil):
         else:
             return False
 
-    def create_dataverse(self, dataverse_name, username=None, password=None,
-                         validate_error_msg=False, expected_error=None,
-                         expected_error_code=None, if_not_exists=False,
-                         analytics_scope=False, timeout=120,
-                         analytics_timeout=120):
+    def create_dataverse(self, cluster, dataverse_name, username=None,
+                         password=None, validate_error_msg=False,
+                         expected_error=None, expected_error_code=None,
+                         if_not_exists=False, analytics_scope=False,
+                         timeout=120, analytics_timeout=120):
         """
         Creates dataverse.
         :param dataverse_name: str, Name of the dataverse which has to be created.
@@ -402,12 +397,11 @@ class Dataverse_Util(BaseUtil):
         cmd += ";"
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error,
-                                                   expected_error_code)
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
                 return False
@@ -416,7 +410,7 @@ class Dataverse_Util(BaseUtil):
                     self.dataverses[obj.name] = obj
                 return True
 
-    def drop_dataverse(self, dataverse_name, username=None, password=None,
+    def drop_dataverse(self, cluster, dataverse_name, username=None, password=None,
                        validate_error_msg=False, expected_error=None,
                        expected_error_code=None, if_exists=False,
                        analytics_scope=False, timeout=120,
@@ -442,7 +436,7 @@ class Dataverse_Util(BaseUtil):
         if disconnect_local_link:
             link_cmd = "disconnect link {0}.Local".format(dataverse_name)
             status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                link_cmd, username=username, password=password, timeout=timeout,
+                cluster, link_cmd, username=username, password=password, timeout=timeout,
                 analytics_timeout=analytics_timeout)
             if status != "success":
                 return False
@@ -457,7 +451,7 @@ class Dataverse_Util(BaseUtil):
         cmd += ";"
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
@@ -473,7 +467,7 @@ class Dataverse_Util(BaseUtil):
                         del self.dataverses[obj.name]
                 return True
 
-    def create_analytics_scope(self, cbas_scope_name, username=None,
+    def create_analytics_scope(self, cluster, cbas_scope_name, username=None,
                                password=None,
                                validate_error_msg=False, expected_error=None,
                                expected_error_code=None, if_not_exists=False,
@@ -494,12 +488,12 @@ class Dataverse_Util(BaseUtil):
         :param analytics_timeout int, analytics query timeout
         :return boolean
         """
-        return self.create_dataverse(cbas_scope_name, username, password,
+        return self.create_dataverse(cluster, cbas_scope_name, username, password,
                                      validate_error_msg, expected_error,
                                      expected_error_code, if_not_exists, True,
                                      timeout, analytics_timeout)
 
-    def drop_analytics_scope(self, cbas_scope_name, username=None,
+    def drop_analytics_scope(self, cluster, cbas_scope_name, username=None,
                              password=None,
                              validate_error_msg=False, expected_error=None,
                              expected_error_code=None, if_exists=False,
@@ -519,7 +513,7 @@ class Dataverse_Util(BaseUtil):
         :param analytics_timeout int, analytics query timeout
         :return boolean
         """
-        return self.drop_dataverse(cbas_scope_name, username, password,
+        return self.drop_dataverse(cluster, cbas_scope_name, username, password,
                                    validate_error_msg,
                                    expected_error, expected_error_code,
                                    if_exists, True,
@@ -541,7 +535,7 @@ class Dataverse_Util(BaseUtil):
         """
         return cbas_spec.get("dataverse", {})
 
-    def create_dataverse_from_spec(self, cbas_spec):
+    def create_dataverse_from_spec(self, cluster, cbas_spec):
         self.log.info("Creating dataverses based on CBAS Spec")
 
         dataverse_spec = self.get_dataverse_spec(cbas_spec)
@@ -587,7 +581,7 @@ class Dataverse_Util(BaseUtil):
                     analytics_scope = False
                 results.append(
                     self.create_dataverse(
-                        dataverse.name,
+                        cluster, dataverse.name,
                         if_not_exists=True,
                         analytics_scope=analytics_scope,
                         timeout=cbas_spec.get("api_timeout", 120),
@@ -598,13 +592,13 @@ class Dataverse_Util(BaseUtil):
             return all(results)
         return True
 
-    def get_dataverses(self, retries=10):
+    def get_dataverses(self, cluster, retries=10):
         dataverses_created = []
         dataverse_query = "select value regexp_replace(dv.DataverseName,\"/\"," \
             "\".\") from Metadata.`Dataverse` as dv where dv.DataverseName <> \"Metadata\";"
         while not dataverses_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                dataverse_query, mode="immediate", timeout=300,
+                cluster, dataverse_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
             if status.encode('utf-8') == 'success' and results:
                 dataverses_created = list(
@@ -617,19 +611,15 @@ class Dataverse_Util(BaseUtil):
 
 class Link_Util(Dataverse_Util):
 
-    def __init__(self, master, cbas_node, server_task=None):
+    def __init__(self, server_task=None):
         """
-        :param master cluster's master node object
-        :param cbas_node CBAS node object
         :param server_task task object
         """
-        super(Link_Util, self).__init__(master, cbas_node, server_task)
+        super(Link_Util, self).__init__(server_task)
 
-    def validate_link_in_metadata(self, link_name, dataverse_name,
-                                  link_type="Local",
-                                  username=None, password=None,
-                                  is_active=False,
-                                  timeout=120, analytics_timeout=120):
+    def validate_link_in_metadata(self, cluster, link_name, dataverse_name,
+                                  link_type="Local", username=None, password=None,
+                                  is_active=False, timeout=120, analytics_timeout=120):
         """
         Validates whether a link is present in Metadata.Link
         :param link_name: str, Name of the link to be validated.
@@ -645,7 +635,7 @@ class Link_Util(Dataverse_Util):
         self.log.debug("Validating link entry in Metadata")
         cmd = "select value lnk from Metadata.`Link` as lnk where\
          lnk.DataverseName = \"{0}\" and lnk.Name = \"{1}\"".format(
-            CBASHelper.unformat_name(dataverse_name),
+            CBASHelper.metadata_format(dataverse_name),
             CBASHelper.unformat_name(link_name))
 
         if link_type != "Local":
@@ -654,7 +644,7 @@ class Link_Util(Dataverse_Util):
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if status == "success":
             if results:
@@ -670,9 +660,9 @@ class Link_Util(Dataverse_Util):
         else:
             return False
 
-    def is_link_active(self, link_name, dataverse_name, link_type="Local",
-                       username=None, password=None, timeout=120,
-                       analytics_timeout=120):
+    def is_link_active(self, cluster, link_name, dataverse_name,
+                       link_type="Local", username=None, password=None,
+                       timeout=120, analytics_timeout=120):
         """
         Validates whether a link is active or not. Valid only for
         Local and couchbase links
@@ -684,15 +674,14 @@ class Link_Util(Dataverse_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
-        return self.validate_link_in_metadata(link_name, dataverse_name,
-                                              link_type,
-                                              username, password, True,
-                                              timeout, analytics_timeout)
+        return self.validate_link_in_metadata(
+            cluster, link_name, dataverse_name, link_type,
+            username, password, True, timeout, analytics_timeout)
 
-    def create_link_on_cbas(self, link_name=None, username=None, password=None,
-                            validate_error_msg=False, expected_error=None,
-                            expected_error_code=None, timeout=120,
-                            analytics_timeout=120):
+    def create_link_on_cbas(self, cluster, link_name=None, username=None,
+                            password=None, validate_error_msg=False,
+                            expected_error=None, expected_error_code=None,
+                            timeout=120, analytics_timeout=120):
         """
         This method will fail in all the scenarios. It is only
         there to test negative scenario.
@@ -703,7 +692,7 @@ class Link_Util(Dataverse_Util):
             link_name = "Local"
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
@@ -715,7 +704,7 @@ class Link_Util(Dataverse_Util):
             else:
                 return True
 
-    def create_link(self, link_properties, username=None, password=None,
+    def create_link(self, cluster, link_properties, username=None, password=None,
                     validate_error_msg=False, expected_error=None,
                     expected_error_code=None, create_if_not_exists=False,
                     timeout=120, analytics_timeout=120):
@@ -757,23 +746,22 @@ class Link_Util(Dataverse_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         self.log.info(
-            "Creating link - {0}.{1}".format(link_properties["scope"],
-                                             link_properties["name"]))
+            "Creating link - {0}.{1}".format(
+                link_properties["scope"], link_properties["name"]))
         exists = False
         if create_if_not_exists:
             exists = self.validate_link_in_metadata(
-                link_properties["name"], link_properties["scope"],
-                link_properties["type"],
-                username, password)
+                cluster, link_properties["name"], link_properties["scope"],
+                link_properties["type"], username, password)
 
         if not exists:
             # If dataverse does not exits
             if not self.create_dataverse(
-                    CBASHelper.format_name(link_properties["scope"]),
-                    username=username, password=password,
-                    if_not_exists=True, timeout=timeout,
-                    analytics_timeout=analytics_timeout):
+                cluster, CBASHelper.format_name(link_properties["scope"]),
+                username=username, password=password, if_not_exists=True,
+                timeout=timeout, analytics_timeout=analytics_timeout):
                 return False
 
             link_prop = copy.deepcopy(link_properties)
@@ -781,11 +769,11 @@ class Link_Util(Dataverse_Util):
             uri = ""
             if "dataverse" in link_prop:
                 uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                    CBASHelper.unformat_name(link_prop["dataverse"])), safe=""))
+                    link_prop["dataverse"]), safe=""))
                 del link_prop["dataverse"]
             if "scope" in link_prop:
                 uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                    CBASHelper.unformat_name(link_prop["scope"])), safe=""))
+                    link_prop["scope"]), safe=""))
                 del link_prop["scope"]
             if "name" in link_prop:
                 uri += "/{0}".format(urllib.quote(
@@ -799,7 +787,7 @@ class Link_Util(Dataverse_Util):
                     else:
                         params[key] = value
             params = urllib.urlencode(params)
-            status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
+            status, status_code, content, errors = cbas_helper.analytics_link_operations(
                 method="POST", uri=uri, params=params, timeout=timeout,
                 username=username, password=password)
             if validate_error_msg:
@@ -810,7 +798,7 @@ class Link_Util(Dataverse_Util):
         else:
             return exists
 
-    def drop_link(self, link_name, username=None, password=None,
+    def drop_link(self, cluster, link_name, username=None, password=None,
                   validate_error_msg=False, expected_error=None,
                   expected_error_code=None, if_exists=False,
                   timeout=120, analytics_timeout=120):
@@ -834,7 +822,7 @@ class Link_Util(Dataverse_Util):
         cmd += ";"
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(
@@ -845,7 +833,7 @@ class Link_Util(Dataverse_Util):
             else:
                 return True
 
-    def get_link_info(self, dataverse=None, link_name=None, link_type=None,
+    def get_link_info(self, cluster, dataverse=None, link_name=None, link_type=None,
                       username=None, password=None, timeout=120, restapi=True,
                       validate_error_msg=False, expected_error=None,
                       expected_error_code=None):
@@ -864,19 +852,20 @@ class Link_Util(Dataverse_Util):
         :param restapi : True, if you want to create link using rest API. False, if you
         want to create link using DDL.
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if restapi:
             params = dict()
             uri = ""
             if dataverse:
-                uri += "/{0}".format(urllib.urlencode(CBASHelper.metadata_format(
-                    CBASHelper.unformat_name(dataverse)), safe=""))
+                uri += "/{0}".format(urllib.urlencode(
+                    CBASHelper.metadata_format(dataverse), safe=""))
             if link_name:
                 uri += "/{0}".format(urllib.urlencode(
                     CBASHelper.unformat_name(link_name), safe=""))
             if link_type:
                 params["type"] = link_type
             params = urllib.urlencode(params)
-            status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
+            status, status_code, content, errors = cbas_helper.analytics_link_operations(
                 method="GET", uri=uri, params=params, timeout=timeout,
                 username=username, password=password)
             if validate_error_msg:
@@ -885,11 +874,10 @@ class Link_Util(Dataverse_Util):
             if status:
                 return content
 
-    def update_external_link_properties(self, link_properties, username=None,
-                                        password=None, timeout=120,
-                                        validate_error_msg=False,
-                                        expected_error=None,
-                                        expected_error_code=None):
+    def update_external_link_properties(
+            self, cluster, link_properties, username=None, password=None,
+            timeout=120, validate_error_msg=False, expected_error=None,
+            expected_error_code=None):
         """
         Update all the link properties with the new values.
         :param link_properties: dict, parameters required for creating link.
@@ -901,16 +889,17 @@ class Link_Util(Dataverse_Util):
         :param expected_error : str, expected error string
         :param expected_error_code: str, expected error code
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         link_prop = copy.deepcopy(link_properties)
         params = dict()
         uri = ""
         if "dataverse" in link_prop:
             uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                CBASHelper.unformat_name(link_prop["dataverse"])), safe=""))
+                link_prop["dataverse"]), safe=""))
             del link_prop["dataverse"]
         if "scope" in link_prop:
             uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                CBASHelper.unformat_name(link_prop["scope"])), safe=""))
+                link_prop["scope"]), safe=""))
             del link_prop["scope"]
         if "name" in link_prop:
             uri += "/{0}".format(urllib.quote(
@@ -924,7 +913,7 @@ class Link_Util(Dataverse_Util):
                 else:
                     params[key] = value
         params = urllib.urlencode(params)
-        status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
+        status, status_code, content, errors = cbas_helper.analytics_link_operations(
             method="PUT", uri=uri, params=params, timeout=timeout, username=username,
             password=password)
         if validate_error_msg:
@@ -932,10 +921,9 @@ class Link_Util(Dataverse_Util):
                 status, errors, expected_error, expected_error_code)
         return status
 
-    def connect_link(self, link_name, validate_error_msg=False,
-                     with_force=False,
-                     username=None, password=None, expected_error=None,
-                     expected_error_code=None, timeout=120,
+    def connect_link(self, cluster, link_name, validate_error_msg=False,
+                     with_force=False, username=None, password=None,
+                     expected_error=None, expected_error_code=None, timeout=120,
                      analytics_timeout=120):
         """
         Connects a Link
@@ -959,7 +947,7 @@ class Link_Util(Dataverse_Util):
         connect_bucket_failed = True
         while connect_bucket_failed and retry_attempt > 0:
             status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                cmd_connect_bucket, username=username, password=password,
+                cluster, cmd_connect_bucket, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout)
 
             if errors:
@@ -983,11 +971,9 @@ class Link_Util(Dataverse_Util):
             else:
                 return True
 
-    def disconnect_link(self, link_name, validate_error_msg=False,
-                        username=None,
-                        password=None, expected_error=None,
-                        expected_error_code=None,
-                        timeout=120, analytics_timeout=120):
+    def disconnect_link(self, cluster, link_name, validate_error_msg=False,
+                        username=None, password=None, expected_error=None,
+                        expected_error_code=None, timeout=120, analytics_timeout=120):
         """
         Disconnects a link
         :param link_name: str, Name of the link to be disconnected.
@@ -1004,7 +990,7 @@ class Link_Util(Dataverse_Util):
         cmd_disconnect_link = 'disconnect link %s;' % link_name
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd_disconnect_link, username=username, password=password,
+            cluster, cmd_disconnect_link, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(
@@ -1023,7 +1009,7 @@ class Link_Util(Dataverse_Util):
         """
         return cbas_spec.get("link", {})
 
-    def create_link_from_spec(self, cbas_spec):
+    def create_link_from_spec(self, cluster, cbas_spec):
         self.log.info("Creating Links based on CBAS Spec")
 
         link_spec = self.get_link_spec(cbas_spec)
@@ -1038,14 +1024,10 @@ class Link_Util(Dataverse_Util):
                 no_of_remote_links = cbas_spec.get("no_of_links") // 2
                 no_of_external_links = cbas_spec.get("no_of_links") // 2
             else:
-                no_of_remote_links = (
-                                             cbas_spec.get(
-                                                 "no_of_links") * cbas_spec.get(
-                                         "percent_of_remote_links")) // 100
-                no_of_external_links = (
-                                               cbas_spec.get(
-                                                   "no_of_links") * cbas_spec.get(
-                                           "percent_of_external_links")) // 100
+                no_of_remote_links = (cbas_spec.get("no_of_links") * cbas_spec.get(
+                    "percent_of_remote_links")) // 100
+                no_of_external_links = (cbas_spec.get("no_of_links") * cbas_spec.get(
+                    "percent_of_external_links")) // 100
 
             for i in range(1, cbas_spec.get("no_of_links") + 1):
                 if link_spec.get("name_key", "random").lower() == "random":
@@ -1067,32 +1049,30 @@ class Link_Util(Dataverse_Util):
                         "exclude_dataverses"):
                         dataverse = None
 
-                link = Link(name=name, dataverse_name=dataverse.name,
-                            properties=random.choice(
-                                link_spec.get("properties", [{}])))
+                link = Link(
+                    name=name, dataverse_name=dataverse.name,
+                    properties=random.choice(link_spec.get("properties", [{}])))
 
                 if link.link_type == "s3":
                     if no_of_external_links > 0:
                         no_of_external_links -= 1
                     else:
                         while link.link_type == "s3":
-                            link = Link(name=name,
-                                        dataverse_name=dataverse.name,
-                                        properties=random.choice(
-                                            link_spec.get("properties")))
+                            link = Link(
+                                name=name, dataverse_name=dataverse.name,
+                                properties=random.choice(link_spec.get("properties")))
                         no_of_remote_links -= 1
                 elif link.link_type == "couchbase":
                     if no_of_remote_links > 0:
                         no_of_remote_links -= 1
                     else:
                         while link.link_type == "couchbase":
-                            link = Link(name=name,
-                                        dataverse_name=dataverse.name,
-                                        properties=random.choice(
-                                            link_spec.get("properties")))
+                            link = Link(
+                                name=name, dataverse_name=dataverse.name,
+                                properties=random.choice(link_spec.get("properties")))
                         no_of_external_links -= 1
                 if not self.create_link(
-                        link.properties, create_if_not_exists=True,
+                        cluster, link.properties, create_if_not_exists=True,
                         timeout=cbas_spec.get("api_timeout", 120),
                         analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
                     results.append(False)
@@ -1103,7 +1083,7 @@ class Link_Util(Dataverse_Util):
             return all(results)
         return True
 
-    def get_link_obj(self, link_name, link_type=None, dataverse_name=None):
+    def get_link_obj(self, cluster, link_name, link_type=None, dataverse_name=None):
         """
         Return Link object if the link with the required name already exists.
         If dataverse_name or link_type is not mentioned then it will return first
@@ -1122,7 +1102,7 @@ class Link_Util(Dataverse_Util):
 
             self.log.debug("Executing cmd - \n{0}\n".format(cmd))
             status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                cmd)
+                cluster, cmd)
             if status == "success":
                 if results:
                     dataverse_name = CBASHelper.format_name(
@@ -1160,19 +1140,15 @@ class Link_Util(Dataverse_Util):
 
 class Dataset_Util(Link_Util):
 
-    def __init__(self, master, cbas_node, server_task=None):
+    def __init__(self, server_task=None):
         """
-        :param master cluster's master node object
-        :param cbas_node CBAS node object
         :param server_task task object
         """
-        super(Dataset_Util, self).__init__(master, cbas_node, server_task)
+        super(Dataset_Util, self).__init__(server_task)
 
-    def validate_dataset_in_metadata(self, dataset_name, dataverse_name=None,
-                                     username=None,
-                                     password=None, timeout=120,
-                                     analytics_timeout=120,
-                                     **kwargs):
+    def validate_dataset_in_metadata(
+            self, cluster, dataset_name, dataverse_name=None, username=None,
+            password=None, timeout=120, analytics_timeout=120, **kwargs):
         """
         validates metadata information about a dataset with entry in Metadata.Dataset collection.
         :param dataset_name str, name of the dataset to be validated.
@@ -1188,11 +1164,11 @@ class Dataset_Util(Link_Util):
             CBASHelper.unformat_name(dataset_name))
         if dataverse_name:
             cmd += ' and DataverseName = "{0}"'.format(
-                CBASHelper.metadata_format(CBASHelper.unformat_name(dataverse_name)))
+                CBASHelper.metadata_format(dataverse_name))
         cmd += ";"
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if status == "success" and results:
             for result in results:
@@ -1223,13 +1199,12 @@ class Dataset_Util(Link_Util):
         else:
             return False
 
-    def create_dataset(self, dataset_name, kv_entity, dataverse_name=None,
-                       if_not_exists=False, compress_dataset=False,
-                       with_clause=None, link_name=None, where_clause=None,
-                       validate_error_msg=False, username=None,
-                       password=None, expected_error=None,
-                       timeout=120, analytics_timeout=120,
-                       analytics_collection=False):
+    def create_dataset(
+            self, cluster, dataset_name, kv_entity, dataverse_name=None,
+            if_not_exists=False, compress_dataset=False, with_clause=None,
+            link_name=None, where_clause=None, validate_error_msg=False,
+            username=None, password=None, expected_error=None, timeout=120,
+            analytics_timeout=120, analytics_collection=False):
         """
         Creates a dataset/analytics collection on a KV bucket.
         :param dataset_name str, fully qualified dataset name.
@@ -1253,9 +1228,8 @@ class Dataset_Util(Link_Util):
         :param analytics_collection bool, If True, will use create analytics collection syntax
         """
         if dataverse_name and not self.create_dataverse(
-                dataverse_name=dataverse_name, username=username,
-                password=password,
-                if_not_exists=True, timeout=timeout,
+                cluster, dataverse_name=dataverse_name, username=username,
+                password=password, if_not_exists=True, timeout=timeout,
                 analytics_timeout=analytics_timeout):
             return False
 
@@ -1289,7 +1263,7 @@ class Dataset_Util(Link_Util):
         cmd += ";"
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
@@ -1300,15 +1274,12 @@ class Dataset_Util(Link_Util):
             else:
                 return True
 
-    def create_analytics_collection(self, dataset_name, kv_entity,
-                                    dataverse_name=None,
-                                    if_not_exists=False,
-                                    compress_dataset=False,
-                                    with_clause=None, link_name=None,
-                                    where_clause=None,
-                                    validate_error_msg=False, username=None,
-                                    password=None, expected_error=None,
-                                    timeout=120, analytics_timeout=120):
+    def create_analytics_collection(
+            self, cluster, dataset_name, kv_entity, dataverse_name=None,
+            if_not_exists=False, compress_dataset=False, with_clause=None,
+            link_name=None, where_clause=None, validate_error_msg=False,
+            username=None, password=None, expected_error=None,
+            timeout=120, analytics_timeout=120):
         """
         Creates a analytics collection which is syntactic sugar for creating datasets.
         :param dataset_name str, fully qualified dataset name.
@@ -1330,22 +1301,19 @@ class Dataset_Util(Link_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
-        return self.create_dataset(dataset_name, kv_entity, dataverse_name,
-                                   if_not_exists,
-                                   compress_dataset, with_clause, link_name,
-                                   where_clause,
-                                   validate_error_msg, username, password,
-                                   expected_error,
-                                   timeout, analytics_timeout, True)
+        return self.create_dataset(
+            cluster, dataset_name, kv_entity, dataverse_name, if_not_exists,
+            compress_dataset, with_clause, link_name, where_clause,
+            validate_error_msg, username, password, expected_error,
+            timeout, analytics_timeout, True)
 
     def create_dataset_on_external_resource(
-            self, dataset_name, aws_bucket_name, link_name,
-            if_not_exists=False,
-            dataverse_name=None, object_construction_def=None,
+            self, cluster, dataset_name, aws_bucket_name, link_name,
+            if_not_exists=False, dataverse_name=None, object_construction_def=None,
             path_on_aws_bucket=None, file_format="json", redact_warning=None,
             header=None, null_string=None, include=None, exclude=None,
-            validate_error_msg=False, username=None,
-            password=None, expected_error=None, expected_error_code=None,
+            validate_error_msg=False, username=None, password=None,
+            expected_error=None, expected_error_code=None,
             timeout=120, analytics_timeout=120):
         """
         Creates a dataset for an external resource like AWS S3 bucket.
@@ -1379,9 +1347,8 @@ class Dataset_Util(Link_Util):
 
         """
         if dataverse_name and not self.create_dataverse(
-                dataverse_name=dataverse_name, username=username,
-                password=password,
-                if_not_exists=True):
+            cluster, dataverse_name=dataverse_name, username=username,
+            password=password, if_not_exists=True):
             return False
 
         cmd = "CREATE EXTERNAL DATASET"
@@ -1423,7 +1390,7 @@ class Dataset_Util(Link_Util):
         cmd += " WITH {0};".format(json.dumps(with_parameters))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
@@ -1435,12 +1402,11 @@ class Dataset_Util(Link_Util):
             else:
                 return True
 
-    def drop_dataset(self, dataset_name,
-                     username=None, password=None,
-                     validate_error_msg=False,
-                     expected_error=None, expected_error_code=None,
-                     if_exists=False, analytics_collection=False,
-                     timeout=120, analytics_timeout=120):
+    def drop_dataset(
+            self, cluster, dataset_name, username=None, password=None,
+            validate_error_msg=False, expected_error=None, expected_error_code=None,
+            if_exists=False, analytics_collection=False, timeout=120,
+            analytics_timeout=120):
         """
         Drops the dataset.
         :param dataset_name: str, dataset to be droppped
@@ -1467,7 +1433,7 @@ class Dataset_Util(Link_Util):
         cmd += ";"
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(
@@ -1478,13 +1444,10 @@ class Dataset_Util(Link_Util):
             else:
                 return True
 
-    def drop_analytics_collection(self, dataset_name,
-                                  username=None, password=None,
-                                  validate_error_msg=False,
-                                  expected_error=None,
-                                  expected_error_code=None,
-                                  if_exists=False, timeout=120,
-                                  analytics_timeout=120):
+    def drop_analytics_collection(
+            self, cluster, dataset_name, username=None, password=None,
+            validate_error_msg=False, expected_error=None, expected_error_code=None,
+            if_exists=False, timeout=120, analytics_timeout=120):
         """
         Drop a analytics collection which is syntactic sugar for dropping datasets.
         :param dataset_name: str, dataset to be droppped
@@ -1499,18 +1462,15 @@ class Dataset_Util(Link_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
-        return self.drop_dataset(dataset_name, username, password,
-                                 validate_error_msg,
-                                 expected_error, expected_error_code,
-                                 if_exists,
-                                 True,
-                                 timeout, analytics_timeout)
+        return self.drop_dataset(
+            cluster, dataset_name, username, password, validate_error_msg,
+            expected_error, expected_error_code, if_exists, True, timeout,
+            analytics_timeout)
 
-    def enable_analytics_from_KV(self, kv_entity_name, compress_dataset=False,
-                                 validate_error_msg=False,
-                                 expected_error=None, username=None,
-                                 password=None,
-                                 timeout=120, analytics_timeout=120):
+    def enable_analytics_from_KV(
+            self, cluster, kv_entity_name, compress_dataset=False,
+            validate_error_msg=False, expected_error=None, username=None,
+            password=None, timeout=120, analytics_timeout=120):
         """
         Enables analytics directly from KV.
         :param kv_entity_name: string, can be fully quantified collection name
@@ -1530,7 +1490,7 @@ class Dataset_Util(Link_Util):
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
@@ -1541,11 +1501,10 @@ class Dataset_Util(Link_Util):
             else:
                 return True
 
-    def disable_analytics_from_KV(self, kv_entity_name,
-                                  validate_error_msg=False,
-                                  expected_error=None, username=None,
-                                  password=None,
-                                  timeout=120, analytics_timeout=120):
+    def disable_analytics_from_KV(
+            self, cluster, kv_entity_name, validate_error_msg=False,
+            expected_error=None, username=None, password=None,
+            timeout=120, analytics_timeout=120):
         """
         Disables analytics directly from KV.
         :param kv_entity_name: string, can be fully quantified collection name
@@ -1561,7 +1520,7 @@ class Dataset_Util(Link_Util):
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
@@ -1572,8 +1531,8 @@ class Dataset_Util(Link_Util):
             else:
                 return True
 
-    def get_num_items_in_cbas_dataset(self, dataset_name, timeout=300,
-                                      analytics_timeout=300):
+    def get_num_items_in_cbas_dataset(
+            self, cluster, dataset_name, timeout=300, analytics_timeout=300):
         """
         Gets the count of docs in the cbas dataset
         """
@@ -1585,8 +1544,7 @@ class Dataset_Util(Link_Util):
 
         status, metrics, errors, results, _ = \
             self.execute_statement_on_cbas_util(
-                cmd_get_num_items,
-                timeout=timeout,
+                cluster, cmd_get_num_items, timeout=timeout,
                 analytics_timeout=analytics_timeout)
         if status != "success":
             self.log.error("Query failed")
@@ -1597,9 +1555,8 @@ class Dataset_Util(Link_Util):
 
         status, metrics, errors, results, _ = \
             self.execute_statement_on_cbas_util(
-                cmd_get_num_mutated_items,
-                timeout=timeout,
-                analytics_timeout=analytics_timeout)
+                cluster, cmd_get_num_mutated_items,
+                timeout=timeout, analytics_timeout=analytics_timeout)
         if status != "success":
             self.log.error("Query failed")
         else:
@@ -1609,12 +1566,12 @@ class Dataset_Util(Link_Util):
 
         return total_items, mutated_items
 
-    def wait_for_ingestion_complete(self, dataset_names, num_items,
-                                    timeout=300):
+    def wait_for_ingestion_complete(
+            self, cluster, dataset_names, num_items, timeout=300):
 
         total_items = 0
         for ds_name in dataset_names:
-            total_items += self.get_num_items_in_cbas_dataset(ds_name)[0]
+            total_items += self.get_num_items_in_cbas_dataset(cluster, ds_name)[0]
 
         counter = 0
         while timeout > counter:
@@ -1629,8 +1586,8 @@ class Dataset_Util(Link_Util):
                 sleep(2)
                 total_items = 0
                 for ds_name in dataset_names:
-                    total_items += self.get_num_items_in_cbas_dataset(ds_name)[
-                        0]
+                    total_items += self.get_num_items_in_cbas_dataset(
+                        cluster, ds_name)[0]
                 counter += 2
 
         self.log.error("datasets: {0} ds-items: {1} kv-items: {2}".format(
@@ -1638,10 +1595,7 @@ class Dataset_Util(Link_Util):
 
         return False
 
-    def wait_for_ingestion_all_datasets(self, bucket_util, timeout=600):
-
-        def caller(job):
-            return job[0](**job[1])
+    def wait_for_ingestion_all_datasets(self, cluster, bucket_util, timeout=600):
 
         self.refresh_dataset_item_count(bucket_util)
         jobs = Queue()
@@ -1650,27 +1604,22 @@ class Dataset_Util(Link_Util):
         if len(datasets) > 0:
             self.log.info("Waiting for data to be ingested into datasets")
             for dataset in datasets:
-                jobs.put((self.wait_for_ingestion_complete,
-                          {"dataset_names": [dataset.full_name],
-                           "num_items": dataset.num_of_items,
-                           "timeout": timeout}))
-        self.run_jobs_in_parallel(caller, jobs, results, 15,
-                                  async_run=False,
-                                  consume_from_queue_func=None)
+                jobs.put((
+                    self.wait_for_ingestion_complete,
+                    {"cluster": cluster, "dataset_names": [dataset.full_name],
+                     "num_items": dataset.num_of_items, "timeout": timeout}))
+        self.run_jobs_in_parallel(jobs, results, 15, async_run=False)
         return all(results)
 
-    def validate_cbas_dataset_items_count(self, dataset_name, expected_count,
-                                          expected_mutated_count=0,
-                                          num_tries=12,
-                                          timeout=300,
-                                          analytics_timeout=300):
+    def validate_cbas_dataset_items_count(
+            self, cluster, dataset_name, expected_count, expected_mutated_count=0,
+            num_tries=12, timeout=300, analytics_timeout=300):
         """
         Compares the count of CBAS dataset total
         and mutated items with the expected values.
         """
         count, mutated_count = self.get_num_items_in_cbas_dataset(
-            dataset_name,
-            timeout=timeout,
+            cluster, dataset_name, timeout=timeout,
             analytics_timeout=analytics_timeout)
         tries = num_tries
         if expected_mutated_count:
@@ -1678,16 +1627,14 @@ class Dataset_Util(Link_Util):
                    or mutated_count != expected_mutated_count) and tries > 0:
                 sleep(10)
                 count, mutated_count = self.get_num_items_in_cbas_dataset(
-                    dataset_name,
-                    timeout=timeout,
+                    cluster, dataset_name, timeout=timeout,
                     analytics_timeout=analytics_timeout)
                 tries -= 1
         else:
             while count != expected_count and tries > 0:
                 sleep(10)
                 count, mutated_count = self.get_num_items_in_cbas_dataset(
-                    dataset_name,
-                    timeout=timeout,
+                    cluster, dataset_name, timeout=timeout,
                     analytics_timeout=analytics_timeout)
                 tries -= 1
 
@@ -1703,11 +1650,11 @@ class Dataset_Util(Link_Util):
         else:
             return False
 
-    def get_dataset_compression_type(self, dataset_name):
+    def get_dataset_compression_type(self, cluster, dataset_name):
         query = "select raw BlockLevelStorageCompression.DatasetCompressionScheme from Metadata.`Dataset` where DatasetName='{0}';".format(
             CBASHelper.unformat_name(dataset_name))
         _, _, _, ds_compression_type, _ = self.execute_statement_on_cbas_util(
-            query)
+            cluster, query)
         ds_compression_type = ds_compression_type[0]
         if ds_compression_type is not None:
             ds_compression_type = ds_compression_type.encode('ascii', 'ignore')
@@ -1717,7 +1664,7 @@ class Dataset_Util(Link_Util):
 
         return ds_compression_type
 
-    def get_dataset_obj(self, dataset_name, dataverse_name=None):
+    def get_dataset_obj(self, cluster, dataset_name, dataverse_name=None):
         """
         Return Dataset/CBAS_collection object if the dataset with the required name already exists.
         If dataverse_name is not mentioned then it will return first dataset found with the dataset_name.
@@ -1728,7 +1675,7 @@ class Dataset_Util(Link_Util):
             cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE DatasetName="{0}";'.format(
                 CBASHelper.unformat_name(dataset_name))
             status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                cmd)
+                cluster, cmd)
             if status == "success" and results:
                 dataverse_name = CBASHelper.format_name(
                     results[0]["DataverseName"])
@@ -1760,8 +1707,7 @@ class Dataset_Util(Link_Util):
         """
         return cbas_spec.get("dataset", {})
 
-    def create_dataset_from_spec(self, cbas_spec, local_bucket_util,
-                                 remote_bucket_util=None):
+    def create_dataset_from_spec(self, cluster, cbas_spec, bucket_util):
         self.log.info("Creating Datasets based on CBAS Spec")
 
         dataset_spec = self.get_dataset_spec(cbas_spec)
@@ -1773,16 +1719,15 @@ class Dataset_Util(Link_Util):
             external_link_objs = set()
             if cbas_spec.get("no_of_links", 0) > 0:
                 # Return false if both include and exclude link types are same.
-                if dataset_spec.get("include_link_types",
-                                    "all") == dataset_spec.get(
-                    "exclude_link_types", None):
+                if dataset_spec.get(
+                    "include_link_types", "all") == dataset_spec.get(
+                        "exclude_link_types", None):
                     return False
 
-                if dataset_spec.get("include_link_types",
-                                    "all").lower() == "all" and not dataset_spec.get(
-                    "exclude_link_types", None):
-                    remote_link_objs |= set(
-                        self.list_all_link_objs("couchbase"))
+                if dataset_spec.get(
+                    "include_link_types", "all").lower() == "all" and not dataset_spec.get(
+                        "exclude_link_types", None):
+                    remote_link_objs |= set(self.list_all_link_objs("couchbase"))
                     external_link_objs |= set(self.list_all_link_objs("s3"))
                 else:
                     if dataset_spec.get(
@@ -1799,7 +1744,7 @@ class Dataset_Util(Link_Util):
                 if dataset_spec.get("include_links", []):
                     for link_name in dataset_spec["include_links"]:
                         link_obj = self.get_link_obj(
-                            CBASHelper.format_name(link_name))
+                            cluster, CBASHelper.format_name(link_name))
                         if link_obj.link_type == "s3":
                             external_link_objs |= set([link_obj])
                         else:
@@ -1808,7 +1753,7 @@ class Dataset_Util(Link_Util):
                 if dataset_spec.get("exclude_links", []):
                     for link_name in dataset_spec["exclude_links"]:
                         link_obj = self.get_link_obj(
-                            CBASHelper.format_name(link_name))
+                            cluster, CBASHelper.format_name(link_name))
                         if link_obj.link_type == "s3":
                             external_link_objs -= set([link_obj])
                         else:
@@ -1833,42 +1778,36 @@ class Dataset_Util(Link_Util):
                 no_of_remote_datasets = total_no_of_datasets // 3
                 no_of_local_datasets = total_no_of_datasets // 3
             else:
-                no_of_external_datasets = (
-                                                      total_no_of_datasets * cbas_spec.get(
-                                                  "percent_of_external_datasets",
-                                                  0)) // 100
+                no_of_external_datasets = (total_no_of_datasets * cbas_spec.get(
+                    "percent_of_external_datasets", 0)) // 100
                 no_of_remote_datasets = (total_no_of_datasets * cbas_spec.get(
                     "percent_of_remote_datasets")) // 100
                 no_of_local_datasets = total_no_of_datasets - no_of_external_datasets - no_of_remote_datasets
 
             for dataverse in self.dataverses.values():
-                if dataset_spec.get("include_dataverses",
-                                    []) and CBASHelper.unformat_name(
-                    dataverse.name) not in dataset_spec[
-                    "include_dataverses"]:
+                if dataset_spec.get(
+                    "include_dataverses", []) and CBASHelper.unformat_name(
+                        dataverse.name) not in dataset_spec["include_dataverses"]:
                     dataverse = None
-                if dataset_spec.get("exclude_dataverses",
-                                    []) and CBASHelper.unformat_name(
-                    dataverse.name) in dataset_spec["exclude_dataverses"]:
+                if dataset_spec.get(
+                    "exclude_dataverses", []) and CBASHelper.unformat_name(
+                        dataverse.name) in dataset_spec["exclude_dataverses"]:
                     dataverse = None
 
                 if dataverse:
-                    for i in range(1,
-                                   cbas_spec.get(
-                                       "no_of_datasets_per_dataverse",
-                                       1) + 1):
+                    for i in range(1, cbas_spec.get(
+                        "no_of_datasets_per_dataverse", 1) + 1):
                         dataset_obj = None
-                        if dataset_spec.get("name_key",
-                                            "random").lower() == "random":
+                        if dataset_spec.get(
+                            "name_key", "random").lower() == "random":
                             name = self.generate_name(name_cardinality=1)
                         else:
                             name = dataset_spec["name_key"] + "_{0}".format(
                                 str(i))
 
-                        if dataset_spec.get("datasource",
-                                            "all").lower() == "all":
-                            datasource = random.choice(
-                                ["internal", "external"])
+                        if dataset_spec.get(
+                            "datasource", "all").lower() == "all":
+                            datasource = random.choice(["internal", "external"])
                         else:
                             datasource = dataset_spec["datasource"].lower()
 
@@ -1916,47 +1855,41 @@ class Dataset_Util(Link_Util):
                                     if creation_method != "enable_cbas_from_kv":
                                         break
                                 bucket, scope, collection = self.get_kv_entity(
-                                    remote_bucket_util, bucket_cardinality,
+                                    cluster, bucket_util, bucket_cardinality,
                                     dataset_spec.get("include_buckets", []),
                                     dataset_spec.get("exclude_buckets", []),
                                     dataset_spec.get("include_scopes", []),
                                     dataset_spec.get("exclude_scopes", []),
-                                    dataset_spec.get("include_collections",
-                                                     []),
-                                    dataset_spec.get("exclude_collections",
-                                                     []))
+                                    dataset_spec.get("include_collections", []),
+                                    dataset_spec.get("exclude_collections", []))
                                 link_name = random.choice(
                                     remote_link_objs).full_name
                                 if collection:
                                     num_of_items = collection.num_items
                                 else:
-                                    num_of_items = remote_bucket_util.get_collection_obj(
-                                        remote_bucket_util.get_scope_obj(
-                                            bucket,
-                                            "_default"),
-                                        "_default").num_items
+                                    num_of_items = bucket_util.get_collection_obj(
+                                        bucket_util.get_scope_obj(
+                                            bucket, "_default"), "_default").num_items
                             else:
                                 creation_method = random.choice(
                                     dataset_spec["creation_methods"])
                                 bucket, scope, collection = self.get_kv_entity(
-                                    local_bucket_util, bucket_cardinality,
+                                    cluster,  bucket_util, bucket_cardinality,
                                     dataset_spec.get("include_buckets", []),
                                     dataset_spec.get("exclude_buckets", []),
                                     dataset_spec.get("include_scopes", []),
                                     dataset_spec.get("exclude_scopes", []),
-                                    dataset_spec.get("include_collections",
-                                                     []),
-                                    dataset_spec.get("exclude_collections",
-                                                     []))
+                                    dataset_spec.get("include_collections", []),
+                                    dataset_spec.get("exclude_collections", []))
                                 link_name = None
                                 if creation_method == "enable_cbas_from_kv":
                                     enabled_from_KV = True
                                     temp_scope = scope
                                     temp_collection = collection
                                     if not scope:
-                                        temp_scope = local_bucket_util.get_scope_obj(
+                                        temp_scope = bucket_util.get_scope_obj(
                                             bucket, "_default")
-                                        temp_collection = local_bucket_util.get_collection_obj(
+                                        temp_collection = bucket_util.get_collection_obj(
                                             temp_scope, "_default")
                                         # Check Synonym with name bucket name is present in Default dataverse or not
                                         cmd = "select value sy from Metadata.`Synonym` as sy where \
@@ -1964,7 +1897,7 @@ class Dataset_Util(Link_Util):
                                             bucket.name, "Default")
 
                                         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                                            cmd)
+                                            cluster, cmd)
                                         if status == "success":
                                             if results:
                                                 enabled_from_KV = False
@@ -1983,10 +1916,10 @@ class Dataset_Util(Link_Util):
                                             enabled_from_KV = False
                                     if enabled_from_KV:
                                         if not scope:
-                                            synonym_obj = Synonym(bucket.name,
-                                                                  temp_collection.name,
-                                                                  temp_dataverse_name,
-                                                                  dataverse_name="Default")
+                                            synonym_obj = Synonym(
+                                                bucket.name, temp_collection.name,
+                                                temp_dataverse_name,
+                                                dataverse_name="Default")
                                             self.dataverses[
                                                 "Default"].synonyms[
                                                 synonym_obj.name] = synonym_obj
@@ -2004,29 +1937,24 @@ class Dataset_Util(Link_Util):
                                 if collection:
                                     num_of_items = collection.num_items
                                 else:
-                                    num_of_items = local_bucket_util.get_collection_obj(
-                                        local_bucket_util.get_scope_obj(bucket,
-                                                                        "_default"),
+                                    num_of_items = bucket_util.get_collection_obj(
+                                        bucket_util.get_scope_obj(bucket, "_default"),
                                         "_default").num_items
 
                             if creation_method == "cbas_collection":
                                 dataset_obj = CBAS_Collection(
                                     name=name, dataverse_name=dataverse.name,
-                                    link_name=link_name,
-                                    dataset_source="internal",
-                                    dataset_properties={},
-                                    bucket=bucket, scope=scope,
-                                    collection=collection,
+                                    link_name=link_name, dataset_source="internal",
+                                    dataset_properties={}, bucket=bucket,
+                                    scope=scope, collection=collection,
                                     enabled_from_KV=enabled_from_KV,
                                     num_of_items=num_of_items)
                             else:
                                 dataset_obj = Dataset(
                                     name=name, dataverse_name=dataverse.name,
-                                    link_name=link_name,
-                                    dataset_source="internal",
-                                    dataset_properties={},
-                                    bucket=bucket, scope=scope,
-                                    collection=collection,
+                                    link_name=link_name, dataset_source="internal",
+                                    dataset_properties={}, bucket=bucket,
+                                    scope=scope, collection=collection,
                                     enabled_from_KV=enabled_from_KV,
                                     num_of_items=num_of_items)
                         elif datasource == "external" and no_of_external_datasets > 0:
@@ -2043,8 +1971,7 @@ class Dataset_Util(Link_Util):
                                     break
                             dataset_obj = Dataset(
                                 name=name, dataverse_name=dataverse.name,
-                                link_name=link.full_name,
-                                dataset_source="external",
+                                link_name=link.full_name, dataset_source="external",
                                 dataset_properties=dataset_properties,
                                 bucket=None, scope=None, collection=None,
                                 enabled_from_KV=False)
@@ -2057,7 +1984,7 @@ class Dataset_Util(Link_Util):
                                 if dataset_obj.enabled_from_KV:
                                     results.append(
                                         self.enable_analytics_from_KV(
-                                            dataset_obj.full_kv_entity_name,
+                                            cluster, dataset_obj.full_kv_entity_name,
                                             False, False, None, None, None,
                                             timeout=cbas_spec.get(
                                                 "api_timeout", 120),
@@ -2071,7 +1998,7 @@ class Dataset_Util(Link_Util):
                                         analytics_collection = False
                                     results.append(
                                         self.create_dataset(
-                                            dataset_obj.name,
+                                            cluster, dataset_obj.name,
                                             dataset_obj.full_kv_entity_name,
                                             dataverse_name,
                                             False, False, None,
@@ -2086,7 +2013,7 @@ class Dataset_Util(Link_Util):
                             else:
                                 results.append(
                                     self.create_dataset_on_external_resource(
-                                        dataset_obj.name,
+                                        cluster, dataset_obj.name,
                                         dataset_obj.dataset_properties[
                                             "aws_bucket_name"],
                                         dataset_obj.link_name, False,
@@ -2119,11 +2046,9 @@ class Dataset_Util(Link_Util):
             return all(results)
         return True
 
-    def create_datasets_on_all_collections(self, bucket_util,
-                                           cbas_name_cardinality=1,
-                                           kv_name_cardinality=1,
-                                           remote_datasets=False,
-                                           creation_methods=None):
+    def create_datasets_on_all_collections(
+            self, cluster, bucket_util, cbas_name_cardinality=1,
+            kv_name_cardinality=1, remote_datasets=False, creation_methods=None):
         """
         Create datasets on every collection across all the buckets and scopes.
         :param bucket_util obj, bucket_util obj to perform operations on KV bucket.
@@ -2195,15 +2120,13 @@ class Dataset_Util(Link_Util):
                 if kv_name_cardinality > 1:
                     results.append(
                         self.enable_analytics_from_KV(
-                            dataset_obj.full_kv_entity_name, False, False,
-                            None,
-                            None, None, 120, 120))
+                            cluster, dataset_obj.full_kv_entity_name, False,
+                            False, None, None, None, 120, 120))
                 else:
                     results.append(
                         self.enable_analytics_from_KV(
-                            dataset_obj.get_fully_qualified_kv_entity_name(1),
-                            False, False,
-                            None, None, None, 120, 120))
+                            cluster, dataset_obj.get_fully_qualified_kv_entity_name(1),
+                            False, False, None, None, None, 120, 120))
             else:
 
                 if isinstance(dataset_obj, CBAS_Collection):
@@ -2214,36 +2137,34 @@ class Dataset_Util(Link_Util):
                 if kv_name_cardinality > 1 and cbas_name_cardinality > 1:
                     results.append(
                         self.create_dataset(
-                            dataset_obj.name, dataset_obj.full_kv_entity_name,
-                            dataverse_name,
-                            False, False, None, dataset_obj.link_name, None,
-                            False, None, None,
+                            cluster, dataset_obj.name,
+                            dataset_obj.full_kv_entity_name,
+                            dataverse_name, False, False, None,
+                            dataset_obj.link_name, None, False, None, None,
                             None, 120, 120, analytics_collection))
                 elif kv_name_cardinality > 1 and cbas_name_cardinality == 1:
                     results.append(
                         self.create_dataset(
-                            dataset_obj.name, dataset_obj.full_kv_entity_name,
-                            None,
-                            False, False, None, dataset_obj.link_name, None,
-                            False, None, None,
-                            None, 120, 120, analytics_collection))
+                            cluster, dataset_obj.name,
+                            dataset_obj.full_kv_entity_name,
+                            None, False, False, None, dataset_obj.link_name,
+                            None, False, None, None, None, 120, 120,
+                            analytics_collection))
                 elif kv_name_cardinality == 1 and cbas_name_cardinality > 1:
                     results.append(
                         self.create_dataset(
-                            dataset_obj.name,
+                            cluster, dataset_obj.name,
                             dataset_obj.get_fully_qualified_kv_entity_name(1),
-                            dataverse_name,
-                            False, False, None, dataset_obj.link_name, None,
-                            False, None, None,
+                            dataverse_name, False, False, None,
+                            dataset_obj.link_name, None, False, None, None,
                             None, 120, 120, analytics_collection))
                 else:
                     results.append(
                         self.create_dataset(
-                            dataset_obj.name,
+                            cluster, dataset_obj.name,
                             dataset_obj.get_fully_qualified_kv_entity_name(1),
-                            None,
-                            False, False, None, dataset_obj.link_name, None,
-                            False, None, None,
+                            None, False, False, None, dataset_obj.link_name,
+                            None, False, None, None,
                             None, 120, 120, analytics_collection))
 
             if results[-1]:
@@ -2264,13 +2185,11 @@ class Dataset_Util(Link_Util):
 
         return all(results)
 
-    def create_dataset_obj(self, bucket_util, dataset_cardinality=1,
-                           bucket_cardinality=1,
-                           enabled_from_KV=False, name_length=30,
-                           fixed_length=False,
-                           exclude_bucket=[], exclude_scope=[],
-                           exclude_collection=[],
-                           no_of_objs=999999):
+    def create_dataset_obj(
+            self, bucket_util, dataset_cardinality=1, bucket_cardinality=1,
+            enabled_from_KV=False, name_length=30, fixed_length=False,
+            exclude_bucket=[], exclude_scope=[], exclude_collection=[],
+            no_of_objs=999999):
         """
         Generates dataset objects.
         """
@@ -2356,45 +2275,39 @@ class Dataset_Util(Link_Util):
             if count >= no_of_objs:
                 break
 
-    def validate_docs_in_all_datasets(self, local_bucket_util,
-                                      remote_bucket_util=None,
-                                      timeout=600):
-        self.refresh_dataset_item_count(local_bucket_util, remote_bucket_util)
+    def validate_docs_in_all_datasets(
+            self, cluster, bucket_util, timeout=600):
+        self.refresh_dataset_item_count(bucket_util)
         datasets = self.list_all_dataset_objs()
         jobs = Queue()
         results = list()
 
-        def consumer_func(job):
-            return job[0](**job[1])
-
         for dataset in datasets:
             jobs.put((self.wait_for_ingestion_complete,
-                      {"dataset_names": [dataset.full_name],
+                      {"cluster": cluster,
+                       "dataset_names": [dataset.full_name],
                        "num_items": dataset.num_of_items, "timeout": timeout}))
 
-        self.run_jobs_in_parallel(consumer_func, jobs, results, 50,
-                                  async_run=False)
+        self.run_jobs_in_parallel(jobs, results, 50, async_run=False)
         return all(results)
 
-    def refresh_dataset_item_count(self, local_bucket_util,
-                                   remote_bucket_util=None):
+    def refresh_dataset_item_count(self, bucket_util):
         datasets = self.list_all_dataset_objs()
         for dataset in datasets:
             if dataset.kv_collection:
                 dataset.num_of_items = dataset.kv_collection.num_items
             else:
                 if dataset.link_name:
-                    dataset.num_of_items = remote_bucket_util.get_collection_obj(
-                        remote_bucket_util.get_scope_obj(dataset.kv_bucket,
-                                                         "_default"),
+                    dataset.num_of_items = bucket_util.get_collection_obj(
+                        bucket_util.get_scope_obj(dataset.kv_bucket, "_default"),
                         "_default").num_items
                 else:
-                    dataset.num_of_items = local_bucket_util.get_collection_obj(
-                        local_bucket_util.get_scope_obj(dataset.kv_bucket,
-                                                        "_default"),
+                    dataset.num_of_items = bucket_util.get_collection_obj(
+                        bucket_util.get_scope_obj(dataset.kv_bucket, "_default"),
                         "_default").num_items
 
-    def get_datasets(self, retries=10, fields=[]):
+    def get_datasets(self, cluster, retries=10, fields=[]):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         datasets_created = []
         datasets_query = "select value regexp_replace(ds.DataverseName,\"/\",\".\") || " \
               "\".\" || ds.DatasetName from Metadata.`Dataset` as ds " \
@@ -2405,11 +2318,11 @@ class Dataset_Util(Link_Util):
                              'WHERE d.DataverseName <> "Metadata"'
         while not datasets_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                datasets_query, mode="immediate", timeout=300,
+                cluster, datasets_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
             if status.encode('utf-8') == 'success' and results:
                 if fields:
-                    results = self.cbas_helper.get_json(json_data=results)
+                    results = cbas_helper.get_json(json_data=results)
                     for result in results:
                         ds = result['d']
                         datasets_created.append(
@@ -2425,19 +2338,15 @@ class Dataset_Util(Link_Util):
 
 class Synonym_Util(Dataset_Util):
 
-    def __init__(self, master, cbas_node, server_task=None):
+    def __init__(self, server_task=None):
         """
-        :param master cluster's master node object
-        :param cbas_node CBAS node object
         :param server_task task object
         """
-        super(Synonym_Util, self).__init__(master, cbas_node, server_task)
+        super(Synonym_Util, self).__init__(server_task)
 
-    def validate_synonym_in_metadata(self, synonym_name,
-                                     synonym_dataverse_name,
-                                     cbas_entity_name,
-                                     cbas_entity_dataverse_name,
-                                     username=None, password=None):
+    def validate_synonym_in_metadata(
+            self, cluster, synonym_name, synonym_dataverse_name, cbas_entity_name,
+            cbas_entity_dataverse_name, username=None, password=None):
         """
         Validates whether an entry for Synonym is present in Metadata.Synonym.
         :param synonym_name : str, Synonym which has to be validated.
@@ -2453,15 +2362,15 @@ class Synonym_Util(Dataset_Util):
         cmd = "select value sy from Metadata.`Synonym` as sy where \
         sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\";".format(
             CBASHelper.unformat_name(synonym_name),
-            CBASHelper.metadata_format(CBASHelper.unformat_name(synonym_dataverse_name)))
+            CBASHelper.metadata_format(synonym_dataverse_name))
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password)
+            cluster, cmd, username=username, password=password)
         if status == "success":
             for result in results:
                 if result['ObjectDataverseName'] == CBASHelper.metadata_format(
-                    CBASHelper.unformat_name(cbas_entity_dataverse_name)) and result[
+                    cbas_entity_dataverse_name) and result[
                         'ObjectName'] == CBASHelper.unformat_name(
                     cbas_entity_name):
                     return True
@@ -2469,12 +2378,10 @@ class Synonym_Util(Dataset_Util):
         else:
             return False
 
-    def create_analytics_synonym(self, synonym_full_name,
-                                 cbas_entity_full_name,
-                                 if_not_exists=False,
-                                 validate_error_msg=False, expected_error=None,
-                                 username=None, password=None,
-                                 timeout=120, analytics_timeout=120):
+    def create_analytics_synonym(
+            self, cluster, synonym_full_name, cbas_entity_full_name,
+            if_not_exists=False, validate_error_msg=False, expected_error=None,
+            username=None, password=None, timeout=120, analytics_timeout=120):
         """
         Creates an analytics synonym on a dataset.
         :param synonym_full_name : str, Fully qualified Synonym which has to be created.
@@ -2497,21 +2404,21 @@ class Synonym_Util(Dataset_Util):
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
+            return self.validate_error_in_response(
+                status, errors, expected_error)
         else:
             if status != "success":
                 return False
             else:
                 return True
 
-    def drop_analytics_synonym(self, synonym_full_name, if_exists=False,
-                               validate_error_msg=False, expected_error=None,
-                               username=None, password=None,
-                               timeout=120, analytics_timeout=120):
+    def drop_analytics_synonym(
+            self, cluster, synonym_full_name, if_exists=False,
+            validate_error_msg=False, expected_error=None, username=None,
+            password=None, timeout=120, analytics_timeout=120):
         """
         Drop an analytics synonym.
         :param synonym_full_name : str, Fully qualified Synonym which has to be dropped.
@@ -2533,22 +2440,21 @@ class Synonym_Util(Dataset_Util):
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
+            return self.validate_error_in_response(
+                status, errors, expected_error)
         else:
             if status != "success":
                 return False
             else:
                 return True
 
-    def validate_synonym_doc_count(self, synonym_full_name,
-                                   cbas_entity_full_name,
-                                   validate_error_msg=False,
-                                   expected_error=None,
-                                   timeout=300, analytics_timeout=300):
+    def validate_synonym_doc_count(
+            self, cluster, synonym_full_name, cbas_entity_full_name,
+            validate_error_msg=False, expected_error=None,
+            timeout=300, analytics_timeout=300):
         """
         Validate that doc count in synonym is same as the dataset on which it was created.
         :param synonym_full_name : str, Fully qualified Synonym name whose count needs to be validated.
@@ -2564,7 +2470,7 @@ class Synonym_Util(Dataset_Util):
 
         synonym_status, metrics, errors, synonym_results, _ = \
             self.execute_statement_on_cbas_util(
-                cmd_get_num_items % synonym_full_name,
+                cluster, cmd_get_num_items % synonym_full_name,
                 timeout=timeout,
                 analytics_timeout=analytics_timeout)
         if validate_error_msg:
@@ -2582,7 +2488,7 @@ class Synonym_Util(Dataset_Util):
 
             dataset_status, metrics, errors, dataset_results, _ = \
                 self.execute_statement_on_cbas_util(
-                    cmd_get_num_items % cbas_entity_full_name,
+                    cluster, cmd_get_num_items % cbas_entity_full_name,
                     timeout=timeout,
                     analytics_timeout=analytics_timeout)
             if dataset_status != "success":
@@ -2598,7 +2504,7 @@ class Synonym_Util(Dataset_Util):
                 return False
             return True
 
-    def get_synonym_obj(self, synonym_name, synonym_dataverse=None,
+    def get_synonym_obj(self, cluster, synonym_name, synonym_dataverse=None,
                         cbas_entity_name=None, cbas_entity_dataverse=None):
         """
         Return Synonym object if the synonym with the required name already exists.
@@ -2621,7 +2527,7 @@ class Synonym_Util(Dataset_Util):
                     CBASHelper.unformat_name(cbas_entity_dataverse))
             cmd += ";"
             status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                cmd)
+                cluster, cmd)
             if status == "success" and results:
                 synonym_dataverse = CBASHelper.format_name(
                     results[0]["DataverseName"])
@@ -2648,7 +2554,7 @@ class Synonym_Util(Dataset_Util):
         """
         return cbas_spec["synonym"]
 
-    def create_synonym_from_spec(self, cbas_spec):
+    def create_synonym_from_spec(self, cluster, cbas_spec):
         self.log.info("Creating Synonyms based on CBAS Spec")
 
         synonym_spec = self.get_synonym_spec(cbas_spec)
@@ -2703,7 +2609,7 @@ class Synonym_Util(Dataset_Util):
                                   synonym_on_synonym=synonym_on_synonym)
 
                 if not self.create_analytics_synonym(
-                        synonym.full_name, synonym.cbas_entity_full_name,
+                        cluster, synonym.full_name, synonym.cbas_entity_full_name,
                         if_not_exists=False, validate_error_msg=False,
                         expected_error=None, username=None, password=None,
                         timeout=cbas_spec.get("api_timeout", 120),
@@ -2715,14 +2621,14 @@ class Synonym_Util(Dataset_Util):
             return all(results)
         return True
 
-    def get_synonyms(self, retries=10):
+    def get_synonyms(self, cluster, retries=10):
         synonyms_created = []
         synonyms_query = "select value regexp_replace(syn.DataverseName,\"/\",\".\") " \
               "|| \".\" || syn.SynonymName from Metadata.`Synonym` as syn " \
               "where syn.DataverseName <> \"Metadata\";"
         while not synonyms_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                synonyms_query, mode="immediate", timeout=300,
+                cluster, synonyms_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
             if status.encode('utf-8') == 'success' and results:
                 results = list(
@@ -2737,14 +2643,14 @@ class Synonym_Util(Dataset_Util):
         return synonyms_created
 
     def get_dataset_obj_for_synonym(
-            self, synonym_name, synonym_dataverse=None,
+            self, cluster, synonym_name, synonym_dataverse=None,
             cbas_entity_name=None, cbas_entity_dataverse=None):
 
         def inner_func(
                 synonym_name, synonym_dataverse,
                 cbas_entity_name, cbas_entity_dataverse):
             syn_obj = self.get_synonym_obj(
-                synonym_name, synonym_dataverse,
+                cluster, synonym_name, synonym_dataverse,
                 cbas_entity_name, cbas_entity_dataverse)
             while syn_obj.synonym_on_synonym:
                 syn_obj = inner_func(
@@ -2756,20 +2662,18 @@ class Synonym_Util(Dataset_Util):
             synonym_name, synonym_dataverse,
             cbas_entity_name, cbas_entity_dataverse)
         return self.get_dataset_obj(
-                final_obj.cbas_entity_name, final_obj.cbas_entity_dataverse)
+                cluster, final_obj.cbas_entity_name, final_obj.cbas_entity_dataverse)
 
 
 class Index_Util(Synonym_Util):
 
-    def __init__(self, master, cbas_node, server_task=None):
+    def __init__(self, server_task=None):
         """
-        :param master cluster's master node object
-        :param cbas_node CBAS node object
         :param server_task task object
         """
-        super(Index_Util, self).__init__(master, cbas_node, server_task)
+        super(Index_Util, self).__init__(server_task)
 
-    def verify_index_created(self, index_name, dataset_name, indexed_fields):
+    def verify_index_created(self, cluster, index_name, dataset_name, indexed_fields):
         """
         Validate in cbas index entry in Metadata.Index.
         :param index_name str, name of the index to be validated.
@@ -2780,7 +2684,7 @@ class Index_Util(Synonym_Util):
         statement = "select * from Metadata.`Index` where DatasetName='{0}' and IsPrimary=False" \
             .format(CBASHelper.unformat_name(dataset_name))
         status, metrics, errors, content, _ = \
-            self.execute_statement_on_cbas_util(statement)
+            self.execute_statement_on_cbas_util(cluster, statement)
         if status != "success":
             result = False
             self.log.debug("Index not created. Metadata query status = %s",
@@ -2815,7 +2719,7 @@ class Index_Util(Synonym_Util):
             result &= index_found
         return result, content
 
-    def verify_index_used(self, statement, index_used=False, index_name=None):
+    def verify_index_used(self, cluster, statement, index_used=False, index_name=None):
         """
         Validate whether an index was used while executing the query.
         :param statement str, query to be executed.
@@ -2825,7 +2729,7 @@ class Index_Util(Synonym_Util):
         """
         statement = 'EXPLAIN %s' % statement
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            statement)
+            cluster, statement)
         if status == 'success':
             if not errors:
                 if index_used:
@@ -2855,7 +2759,7 @@ class Index_Util(Synonym_Util):
         else:
             return False
 
-    def create_cbas_index(self, index_name, indexed_fields, dataset_name,
+    def create_cbas_index(self, cluster, index_name, indexed_fields, dataset_name,
                           analytics_index=False, validate_error_msg=False,
                           expected_error=None, username=None, password=None,
                           timeout=120, analytics_timeout=120):
@@ -2887,19 +2791,19 @@ class Index_Util(Synonym_Util):
         self.log.debug("Executing cmd - \n{0}\n".format(create_idx_statement))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            create_idx_statement, username=username, password=password,
+            cluster, create_idx_statement, username=username, password=password,
             timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
+            return self.validate_error_in_response(
+                status, errors, expected_error)
         else:
             if status != "success":
                 return False
             else:
                 return True
 
-    def drop_cbas_index(self, index_name, dataset_name, analytics_index=False,
+    def drop_cbas_index(self, cluster, index_name, dataset_name, analytics_index=False,
                         validate_error_msg=False, expected_error=None,
                         username=None, password=None,
                         timeout=120, analytics_timeout=120):
@@ -2926,19 +2830,19 @@ class Index_Util(Synonym_Util):
         self.log.debug("Executing cmd - \n{0}\n".format(drop_idx_statement))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            drop_idx_statement, username=username, password=password,
+            cluster, drop_idx_statement, username=username, password=password,
             timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
+            return self.validate_error_in_response(
+                status, errors, expected_error)
         else:
             if status != "success":
                 return False
             else:
                 return True
 
-    def get_index_obj(self, index_name, dataset_name=None,
+    def get_index_obj(self, cluster, index_name, dataset_name=None,
                       dataset_dataverse=None):
         """
         Return CBAS_index object if the index with the required name already exists.
@@ -2960,7 +2864,7 @@ class Index_Util(Synonym_Util):
         cmd += ";"
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd)
+            cluster, cmd)
         if status == "success" and results:
             dataset_dataverse = CBASHelper.format_name(
                 results[0]["DataverseName"])
@@ -2968,7 +2872,7 @@ class Index_Util(Synonym_Util):
         else:
             return None
 
-        dataset_obj = self.get_dataset_obj(dataset_name, dataset_dataverse)
+        dataset_obj = self.get_dataset_obj(cluster, dataset_name, dataset_dataverse)
         return dataset_obj.indexes.get(index_name, None)
 
     def list_all_index_objs(self):
@@ -2988,7 +2892,7 @@ class Index_Util(Synonym_Util):
         """
         return cbas_spec["index"]
 
-    def create_index_from_spec(self, cbas_spec):
+    def create_index_from_spec(self, cluster, cbas_spec):
         self.log.info(
             "Creating Secondary indexes on datasets based on CBAS spec")
 
@@ -3044,15 +2948,13 @@ class Index_Util(Synonym_Util):
                     index.analytics_index = False
 
                 if not self.create_cbas_index(
-                        index_name=index.name,
-                        indexed_fields=index.indexed_fields,
-                        dataset_name=index.full_dataset_name,
-                        analytics_index=index.analytics_index,
-                        validate_error_msg=False,
-                        expected_error=None,
-                        username=None, password=None, timeout=cbas_spec.get(
-                            "api_timeout", 120),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
+                    cluster, index_name=index.name,
+                    indexed_fields=index.indexed_fields,
+                    dataset_name=index.full_dataset_name,
+                    analytics_index=index.analytics_index,
+                    validate_error_msg=False, expected_error=None, username=None,
+                    password=None, timeout=cbas_spec.get("api_timeout", 120),
+                    analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
                     results.append(False)
                 else:
                     dataset.indexes[index.name] = index
@@ -3061,14 +2963,14 @@ class Index_Util(Synonym_Util):
             return all(results)
         return True
 
-    def get_indexes(self, retries=10):
+    def get_indexes(self, cluster, retries=10):
         indexes_created = []
         indexes_query = "select value regexp_replace(idx.DataverseName,\"/\",\".\") " \
               "|| \".\" || idx.DatasetName || \".\" || idx.IndexName " \
               "from Metadata.`Index` as idx where idx.DataverseName <> \"Metadata\""
         while not indexes_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                indexes_query, mode="immediate", timeout=300,
+                cluster, indexes_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
             if status.encode('utf-8') == 'success' and results:
                 indexes_created = list(
@@ -3081,15 +2983,13 @@ class Index_Util(Synonym_Util):
 
 class UDFUtil(Index_Util):
 
-    def __init__(self, master, cbas_node, server_task=None):
+    def __init__(self, server_task=None):
         """
-        :param master cluster's master node object
-        :param cbas_node CBAS node object
         :param server_task task object
         """
-        super(UDFUtil, self).__init__(master, cbas_node, server_task)
+        super(UDFUtil, self).__init__(server_task)
 
-    def create_udf(self, name, dataverse=None, or_replace=False,
+    def create_udf(self, cluster, name, dataverse=None, or_replace=False,
                    parameters=[], body=None, if_not_exists=False,
                    query_context=False, use_statement=False,
                    validate_error_msg=False, expected_error=None,
@@ -3146,19 +3046,19 @@ class UDFUtil(Index_Util):
 
         status, metrics, errors, results, \
         _ = self.execute_parameter_statement_on_cbas_util(
-            create_udf_statement, timeout=timeout, username=username,
+            cluster, create_udf_statement, timeout=timeout, username=username,
             password=password, analytics_timeout=analytics_timeout,
             parameters=param)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
+            return self.validate_error_in_response(
+                status, errors, expected_error)
         else:
             if status != "success":
                 return False
             else:
                 return True
 
-    def drop_udf(self, name, dataverse, parameters=[], if_exists=False,
+    def drop_udf(self, cluster, name, dataverse, parameters=[], if_exists=False,
                  use_statement=False, query_context=False,
                  validate_error_msg=False, expected_error=None,
                  username=None, password=None, timeout=120,
@@ -3207,7 +3107,7 @@ class UDFUtil(Index_Util):
 
         status, metrics, errors, results, \
         _ = self.execute_parameter_statement_on_cbas_util(
-            drop_udf_statement, timeout=timeout, username=username,
+            cluster, drop_udf_statement, timeout=timeout, username=username,
             password=password, analytics_timeout=analytics_timeout,
             parameters=param)
         if validate_error_msg:
@@ -3219,7 +3119,7 @@ class UDFUtil(Index_Util):
             else:
                 return True
 
-    def get_udf_obj(self, name, dataverse_name=None, parameters=[]):
+    def get_udf_obj(self, cluster, name, dataverse_name=None, parameters=[]):
         """
         Return CBAS_UDF object if the UDF with the required name already
         exists.
@@ -3244,7 +3144,7 @@ class UDFUtil(Index_Util):
         cmd += ";"
 
         status, metrics, errors, results, \
-        _ = self.execute_statement_on_cbas_util(cmd)
+        _ = self.execute_statement_on_cbas_util(cluster, cmd)
 
         if status == "success" and results:
             dataverse_name = CBASHelper.format_name(
@@ -3263,10 +3163,9 @@ class UDFUtil(Index_Util):
         return [udf for dataverse in self.dataverses.values() for udf in
                 dataverse.udfs.values()]
 
-    def validate_udf_in_metadata(self, udf_name, udf_dataverse_name,
-                                 parameters, body, dataset_dependencies=[],
-                                 udf_dependencies=[],
-                                 synonym_dependencies=[]):
+    def validate_udf_in_metadata(
+            self, cluster, udf_name, udf_dataverse_name, parameters, body,
+            dataset_dependencies=[], udf_dependencies=[], synonym_dependencies=[]):
         """
         Validates whether an entry for UDF is present in Metadata.Function.
         :param udf_name : str, UDF which has to be validated.
@@ -3285,11 +3184,11 @@ class UDFUtil(Index_Util):
         cmd = "select value func from Metadata.`Function` as func where " \
               "Name=\"{0}\" and DataverseName=\"{1}\"".format(
                   CBASHelper.unformat_name(udf_name),
-                  CBASHelper.metadata_format(CBASHelper.unformat_name(udf_dataverse_name)))
+                  CBASHelper.metadata_format(udf_dataverse_name))
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, \
-        _ = self.execute_statement_on_cbas_util(cmd)
+        _ = self.execute_statement_on_cbas_util(cluster, cmd)
 
         if parameters and parameters[0] == "...":
             arity = -1
@@ -3349,14 +3248,14 @@ class UDFUtil(Index_Util):
             return False
 
     def verify_function_execution_result(
-            self, func_name, func_parameters, expected_result=None,
+            self, cluster, func_name, func_parameters, expected_result=None,
             validate_error_msg=False, expected_error=None, username=None,
             password=None, timeout=120, analytics_timeout=120):
         cmd = "{0}({1})".format(func_name, ",".join([str(param) for param in func_parameters]))
         self.log.info("Executing function {0}".format(cmd))
         status, metrics, errors, results, \
         _ = self.execute_statement_on_cbas_util(
-            cmd, timeout=timeout, username=username, password=password,
+            cluster, cmd, timeout=timeout, username=username, password=password,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(
@@ -3374,36 +3273,53 @@ class UDFUtil(Index_Util):
                 else:
                     return True
 
+    def get_udfs(self, cluster, retries=10):
+        udfs_created = []
+        udf_query = "select value(fn) from Metadata.`Function` as fn"
+        while not udfs_created and retries:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                cluster, udf_query, mode="immediate", timeout=300, analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                for r in results:
+                    dv_name = ".".join(r["DataverseName"].split("/"))
+                    if int(r["Arity"]) == -1:
+                        param = ["..."]
+                    else:
+                        param = r["Params"]
+                    udfs_created.append([dv_name, r["Name"], param])
+                break
+            sleep(10, "Wait for atleast one index to be created")
+            retries -= 1
+        return udfs_created
+
 
 class CbasUtil(UDFUtil):
 
-    def __init__(self, master, cbas_node, server_task=None):
+    def __init__(self, server_task=None):
         """
-        :param master cluster's master node object
-        :param cbas_node CBAS node object
         :param server_task task object
         """
-        super(CbasUtil, self).__init__(master, cbas_node, server_task)
+        super(CbasUtil, self).__init__(server_task)
 
-    def delete_request(self, client_context_id, username=None, password=None):
+    def delete_request(self, cluster, client_context_id, username=None, password=None):
         """
         Deletes a request from CBAS
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         try:
             if client_context_id is None:
                 payload = "client_context_id=None"
             else:
                 payload = "client_context_id=" + client_context_id
 
-            status = self.cbas_helper.delete_active_request_on_cbas(payload,
-                                                                    username,
-                                                                    password)
+            status = cbas_helper.delete_active_request_on_cbas(
+                payload, username, password)
             self.log.info(status)
             return status
         except Exception, e:
             raise Exception(str(e))
 
-    def retrieve_request_status_using_handle(self, server, handle, shell=None):
+    def retrieve_request_status_using_handle(self, cluster, server, handle, shell=None):
         """
         Retrieves status of a request from /analytics/status endpoint
         """
@@ -3411,10 +3327,9 @@ class CbasUtil(UDFUtil):
             shell = RemoteMachineShellConnection(server)
 
         output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-                .format(handle,
-                        self.cbas_node.rest_username,
-                        self.cbas_node.rest_password))
+            """curl -g -v {0} -u {1}:{2}""".format(
+                handle, cluster.cbas_cc_node.rest_username,
+                cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -3435,17 +3350,16 @@ class CbasUtil(UDFUtil):
         self.log.debug("status=%s, handle=%s" % (status, handle))
         return status, handle
 
-    def retrieve_result_using_handle(self, server, handle):
+    def retrieve_result_using_handle(self, cluster, server, handle):
         """
         Retrieves result from the /analytics/results endpoint
         """
         shell = RemoteMachineShellConnection(server)
 
         output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-                .format(handle,
-                        self.cbas_node.rest_username,
-                        self.cbas_node.rest_password))
+            """curl -g -v {0} -u {1}:{2}""".format(
+                handle, cluster.cbas_cc_node.rest_username,
+                cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -3480,30 +3394,25 @@ class CbasUtil(UDFUtil):
         else:
             return None
 
-    def async_query_execute(self, statement, mode, num_queries):
+    def async_query_execute(self, cluster, statement, mode, num_queries):
         """
         Asynchronously run queries
         """
         self.log.debug("Executing %s queries concurrently", num_queries)
 
         cbas_base_url = "http://{0}:8095/analytics/service" \
-            .format(self.cbas_node.ip)
+            .format(cluster.cbas_cc_node.ip)
 
         pretty = "true"
         tasks = []
         for count in range(0, num_queries):
-            tasks.append(self.cluster.async_cbas_query_execute(self.master,
-                                                               self.cbas_node,
-                                                               cbas_base_url,
-                                                               statement,
-                                                               mode,
-                                                               pretty))
+            tasks.append(self.task.async_cbas_query_execute(
+                cluster, self, cbas_base_url, statement))
         return tasks
 
-    def _run_concurrent_queries(self, query, mode, num_queries, rest=None,
-                                batch_size=100, timeout=300,
-                                analytics_timeout=300,
-                                wait_for_execution=True):
+    def _run_concurrent_queries(
+            self, cluster, query, mode, num_queries, rest=None, batch_size=100,
+            timeout=300, analytics_timeout=300, wait_for_execution=True):
         self.failed_count = 0
         self.success_count = 0
         self.rejected_count = 0
@@ -3515,13 +3424,10 @@ class CbasUtil(UDFUtil):
         # Run queries concurrently
         self.log.debug("Running queries concurrently now...")
         threads = []
-        if rest:
-            self.cbas_util = rest
         for i in range(0, num_queries):
-            threads.append(Thread(target=self._run_query,
-                                  name="query_thread_{0}".format(i),
-                                  args=(query, mode, rest, False, 0, timeout,
-                                        analytics_timeout)))
+            threads.append(Thread(
+                target=self._run_query, name="query_thread_{0}".format(i),
+                args=(cluster, query, mode, rest, False, 0, timeout, analytics_timeout)))
         i = 0
         for thread in threads:
             # Send requests in batches, and sleep for 5 seconds before sending another batch of queries.
@@ -3547,17 +3453,15 @@ class CbasUtil(UDFUtil):
                                 % (self.failed_count, self.error_count))
         return self.handles
 
-    def _run_query(self, query, mode, rest=None, validate_item_count=False,
+    def _run_query(self, cluster, query, mode, rest=None, validate_item_count=False,
                    expected_count=0, timeout=300, analytics_timeout=300):
         # Execute query (with sleep induced)
         name = threading.currentThread().getName()
         client_context_id = name
-        if rest:
-            self.cbas_util = rest
         try:
             status, metrics, errors, results, handle = \
                 self.execute_statement_on_cbas_util(
-                    query, mode=mode, timeout=timeout,
+                    cluster, query, mode=mode, timeout=timeout,
                     client_context_id=client_context_id,
                     analytics_timeout=analytics_timeout)
             # Validate if the status of the request is success, and if the count matches num_items
@@ -3629,119 +3533,89 @@ class CbasUtil(UDFUtil):
                 self.error_count += 1
                 self.log.error(str(e))
 
-    def retrieve_cc_ip(self, shell=None):
+    def retrieve_cc_ip_from_master(self, cluster):
 
-        if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
-        url = self.cbas_helper.cbas_base_url + "/analytics/cluster"
-        output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-                .format(url,
-                        self.cbas_node.rest_username,
-                        self.cbas_node.rest_password))
-
-        response = ""
-        for line in output:
-            response = response + line
+        response = self.fetch_analytics_cluster_response(cluster.master)
         if response:
-            response = json.loads(response)
+            cc_node_id = ""
+            cc_node_ip = ""
+            if 'ccNodeId' in response:
+                cc_node_id = response['ccNodeId']
+            if 'nodes' in response:
+                nodes = response['nodes']
+                for node in nodes:
+                    if node["nodeId"] == cc_node_id:
+                        cc_node_ip = node['nodeName'].split(":")[0]
+                        break
 
-        if not shell:
-            shell.disconnect()
+            return cc_node_ip
+        else:
+            return response
 
-        cc_node_id = ""
-        cc_node_ip = ""
-        cc_node_config_url = None
-        if 'ccNodeId' in response:
-            cc_node_id = response['ccNodeId']
-        if 'nodes' in response:
-            nodes = response['nodes']
-            for node in nodes:
-                if node["nodeId"] == cc_node_id:
-                    cc_node_config_url = node['configUri']
-                    cc_node_ip = node['nodeName'][:-5]
-                    break
-
-        self.log.debug("cc_config_urls=%s, ccNodeId=%s, ccNodeIP=%s"
-                       % (cc_node_config_url, cc_node_id, cc_node_ip))
-        return cc_node_ip
-
-    def retrieve_nodes_config(self, only_cc_node_url=True, shell=None):
+    def retrieve_nodes_config(self, cluster, only_cc_node_url=True):
         """
         Retrieves status of a request from /analytics/status endpoint
         """
-        if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
-        url = self.cbas_helper.cbas_base_url + "/analytics/cluster"
-        output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-                .format(url,
-                        self.cbas_node.rest_username,
-                        self.cbas_node.rest_password))
-
-        response = ""
-        for line in output:
-            response = response + line
+        response = self.fetch_analytics_cluster_response(cluster.master)
         if response:
-            response = json.loads(response)
+            cc_node_id = ""
+            nodes = None
+            cc_node_config_url = None
+            if 'ccNodeId' in response:
+                cc_node_id = response['ccNodeId']
+            if 'nodes' in response:
+                nodes = response['nodes']
+                for node in nodes:
+                    if only_cc_node_url and node["nodeId"] == cc_node_id:
+                        # node['apiBase'] will not be present in pre-6.5.0 clusters,
+                        # hence the check
+                        if 'apiBase' in node:
+                            cc_node_config_url = node['apiBase'] + response[
+                                'nodeConfigUri']
+                        else:
+                            cc_node_config_url = node['configUri']
+                        break
 
-        if not shell:
-            shell.disconnect()
+            self.log.debug("cc_config_urls=%s, ccNodeId=%s"
+                           % (cc_node_config_url, cc_node_id))
+            self.log.debug("Nodes: %s" % nodes)
+            return nodes, cc_node_id, cc_node_config_url
+        else:
+            return None,None,None
 
-        cc_node_id = ""
-        nodes = None
-        cc_node_config_url = None
-        if 'ccNodeId' in response:
-            cc_node_id = response['ccNodeId']
-        if 'nodes' in response:
-            nodes = response['nodes']
-            for node in nodes:
-                if only_cc_node_url and node["nodeId"] == cc_node_id:
-                    # node['apiBase'] will not be present in pre-6.5.0 clusters,
-                    # hence the check
-                    if 'apiBase' in node:
-                        cc_node_config_url = node['apiBase'] + response[
-                            'nodeConfigUri']
-                    else:
-                        cc_node_config_url = node['configUri']
-                    break
-
-        self.log.debug("cc_config_urls=%s, ccNodeId=%s"
-                       % (cc_node_config_url, cc_node_id))
-        self.log.debug("Nodes: %s" % nodes)
-        return nodes, cc_node_id, cc_node_config_url
-
-    def fetch_analytics_cluster_response(self, shell=None):
+    def fetch_analytics_cluster_response(self, master_node):
         """
         Retrieves response from /analytics/status endpoint
         """
-        if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
-        url = self.cbas_helper.cbas_base_url + "/analytics/cluster"
-        output, error = shell.execute_command(
-            "curl -g -v {0} -u {1}:{2}"
-                .format(url,
-                        self.cbas_node.rest_username,
-                        self.cbas_node.rest_password))
-        response = ""
-        for line in output:
-            response = response + line
-        if response:
-            response = json.loads(response)
-        return response
+        url = "http://{0}:8091/_p/cbas/analytics/cluster".format(master_node.ip)
+        response = requests.get(url, auth=(
+            master_node.rest_username, master_node.rest_password))
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
 
-    def retrieve_analyticsHttpAdminListen_address_port(self, node_config_url,
-                                                       shell=None):
+    def is_analytics_running(self, cluster, timeout=600):
+        end_time = time.time() + timeout
+        self.log.info("Waiting for analytics service to come up")
+        while end_time > time.time():
+            response = self.fetch_analytics_cluster_response(cluster.master)
+            if response and response["state"] == "ACTIVE":
+                return True
+            time.sleep(10)
+        return False
+
+    def retrieve_analyticsHttpAdminListen_address_port(
+            self, cluster, node_config_url, shell=None):
         """
         Retrieves status of a request from /analytics/status endpoint
         """
         if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
+            shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
         output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-                .format(node_config_url,
-                        self.cbas_node.rest_username,
-                        self.cbas_node.rest_password))
+            """curl -g -v {0} -u {1}:{2}""".format(
+                node_config_url, cluster.cbas_cc_node.rest_username,
+                cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -3768,21 +3642,20 @@ class CbasUtil(UDFUtil):
         return analytics_http_admin_listen_addr, \
                analytics_http_admin_listen_port
 
-    def retrive_replica_from_storage_data(self,
-                                          analytics_http_admin_listen_addr,
-                                          analytics_http_admin_listen_port,
-                                          shell=None):
+    def retrive_replica_from_storage_data(
+            self, cluster, analytics_http_admin_listen_addr,
+            analytics_http_admin_listen_port, shell=None):
         url = "http://{0}:{1}/analytics/node/storage" \
             .format(analytics_http_admin_listen_addr,
                     analytics_http_admin_listen_port)
 
         if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
+            shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
         output, error = shell.execute_command(
             """curl -g -v {0} -u {1}:{2}"""
                 .format(url,
-                        self.cbas_node.rest_username,
-                        self.cbas_node.rest_password))
+                        cluster.cbas_cc_node.rest_username,
+                        cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -3799,51 +3672,51 @@ class CbasUtil(UDFUtil):
                 return partition['replicas']
         return []
 
-    def get_replicas_info(self, shell=None):
+    def get_replicas_info(self, cluster, shell=None):
         cc__metadata_replicas_info = []
         start_time = time.time()
         cc_node_id = None
         nodes = []
         while (not cc_node_id or not nodes) and start_time + 60 > time.time():
             nodes, cc_node_id, cc_config_url = \
-                self.retrieve_nodes_config(shell)
+                self.retrieve_nodes_config(cluster)
         if cc_config_url:
             address, port = \
                 self.retrieve_analyticsHttpAdminListen_address_port(
-                    cc_config_url, shell)
+                    cluster, cc_config_url, shell)
             cc__metadata_replicas_info = \
-                self.retrive_replica_from_storage_data(address, port, shell)
+                self.retrive_replica_from_storage_data(
+                    cluster, address, port, shell)
 
         return cc__metadata_replicas_info
 
-    def get_num_partitions(self, shell=None):
+    def get_num_partitions(self, cluster, shell=None):
         partitons = dict()
         nodes, cc_node_id, cc_config_url = \
-            self.retrieve_nodes_config(shell=shell)
+            self.retrieve_nodes_config(cluster)
         for node in nodes:
             address, port = \
                 self.retrieve_analyticsHttpAdminListen_address_port(
-                    node['apiBase'] + "/analytics/node/config",
-                    shell)
+                    cluster, node['apiBase'] + "/analytics/node/config", shell)
             partitons[node['nodeName']] = \
-                self.retrieve_number_of_partitions(address, port, shell)
+                self.retrieve_number_of_partitions(cluster, address, port, shell)
 
         return partitons
 
-    def retrieve_number_of_partitions(self, analytics_http_admin_listen_addr,
-                                      analytics_http_admin_listen_port,
-                                      shell=None):
+    def retrieve_number_of_partitions(
+            self, cluster, analytics_http_admin_listen_addr,
+            analytics_http_admin_listen_port, shell=None):
         url = "http://{0}:{1}/analytics/node/storage" \
             .format(analytics_http_admin_listen_addr,
                     analytics_http_admin_listen_port)
 
         if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
+            shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
         output, error = shell.execute_command(
             """curl -g -v {0} -u {1}:{2}"""
                 .format(url,
-                        self.cbas_node.rest_username,
-                        self.cbas_node.rest_password))
+                        cluster.cbas_cc_node.rest_username,
+                        cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -3857,102 +3730,98 @@ class CbasUtil(UDFUtil):
 
         return len(response)
 
-    def set_log_level_on_cbas(self, log_level_dict, timeout=120, username=None,
-                              password=None):
-
+    def set_log_level_on_cbas(self, cluster, log_level_dict, timeout=120,
+                              username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         payload = ""
         for component, level in log_level_dict.items():
             payload += '{ "level": "' + level + '", "name": "' + component + '" },'
         payload = payload.rstrip(",")
         params = '{ "loggers": [ ' + payload + ' ] }'
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="PUT", params=params,
-                logger_name=None,
-                timeout=timeout, username=username,
+            cbas_helper.operation_log_level_on_cbas(
+                method="PUT", params=params, logger_name=None,
+                timeout=timeout, username=username, password=password)
+        return status, content, response
+
+    def set_specific_log_level_on_cbas(
+            self, cluster, logger_name, log_level, timeout=120, username=None,
+            password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = \
+            cbas_helper.operation_log_level_on_cbas(
+                method="PUT", params=None, logger_name=logger_name,
+                log_level=log_level, timeout=timeout, username=username,
                 password=password)
         return status, content, response
 
-    def set_specific_log_level_on_cbas(self, logger_name, log_level,
-                                       timeout=120, username=None,
-                                       password=None):
+    def get_log_level_on_cbas(self, cluster, timeout=120, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="PUT", params=None,
-                logger_name=logger_name, log_level=log_level,
-                timeout=timeout, username=username,
-                password=password)
-        return status, content, response
-
-    def get_log_level_on_cbas(self, timeout=120, username=None, password=None):
-        status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="GET", params="",
-                logger_name=None,
-                timeout=timeout,
+            cbas_helper.operation_log_level_on_cbas(
+                method="GET", params="", logger_name=None, timeout=timeout,
                 username=username, password=password)
         return status, content, response
 
-    def get_specific_cbas_log_level(self, logger_name, timeout=120,
+    def get_specific_cbas_log_level(self, cluster, logger_name, timeout=120,
                                     username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="GET", params=None,
-                logger_name=logger_name,
-                timeout=timeout,
-                username=username, password=password)
+            cbas_helper.operation_log_level_on_cbas(
+                method="GET", params=None, logger_name=logger_name,
+                timeout=timeout, username=username, password=password)
         return status, content, response
 
-    def delete_all_loggers_on_cbas(self, timeout=120, username=None,
+    def delete_all_loggers_on_cbas(self, cluster, timeout=120, username=None,
                                    password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="DELETE", params="",
-                logger_name=None,
-                timeout=timeout,
-                username=username, password=password)
+            cbas_helper.operation_log_level_on_cbas(
+                method="DELETE", params="", logger_name=None,
+                timeout=timeout, username=username, password=password)
         return status, content, response
 
-    def delete_specific_cbas_log_level(self, logger_name, timeout=120,
+    def delete_specific_cbas_log_level(self, cluster, logger_name, timeout=120,
                                        username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="DELETE", params=None,
-                logger_name=logger_name,
-                timeout=timeout,
-                username=username, password=password)
+            cbas_helper.operation_log_level_on_cbas(
+                method="DELETE", params=None, logger_name=logger_name,
+                timeout=timeout, username=username, password=password)
         return status, content, response
 
-    def update_config_on_cbas(self, config_name=None, config_value=None,
+    def update_config_on_cbas(self, cluster, config_name=None, config_value=None,
                               username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if config_name and config_value:
             params = '{"' + config_name + '":' + str(config_value) + '}'
         else:
             raise ValueError("Missing config name and/or config value")
-        status, content, response = self.cbas_helper.operation_config_on_cbas(
-            method="PUT", params=params,
-            username=username, password=password)
+        status, content, response = cbas_helper.operation_config_on_cbas(
+            method="PUT", params=params, username=username, password=password)
         return status, content, response
 
-    def fetch_config_on_cbas(self, username=None, password=None):
-        status, content, response = self.cbas_helper.operation_config_on_cbas(
+    def fetch_config_on_cbas(self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = cbas_helper.operation_config_on_cbas(
             method="GET", username=username, password=password)
         return status, content, response
 
-    def fetch_cbas_stats(self, username=None, password=None):
-        status, content, response = self.cbas_helper.fetch_cbas_stats(
+    def fetch_cbas_stats(self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = cbas_helper.fetch_cbas_stats(
             username=username, password=password)
         return status, content, response
 
-    def log_concurrent_query_outcome(self, node_in_test, handles):
+    def log_concurrent_query_outcome(self, cluster, node_in_test, handles):
         run_count = 0
         fail_count = 0
         success_count = 0
         aborted_count = 0
         shell = RemoteMachineShellConnection(node_in_test)
         for handle in handles:
-            status, hand = self.retrieve_request_status_using_handle(
-                node_in_test, handle, shell)
+            status, handle = self.retrieve_request_status_using_handle(
+                cluster, node_in_test, handle, shell)
             if status == "running":
                 run_count += 1
                 self.log.debug("query with handle %s is running." % handle)
@@ -3972,99 +3841,107 @@ class CbasUtil(UDFUtil):
         self.log.debug("%s queued jobs are Aborted." % aborted_count)
 
     def update_service_parameter_configuration_on_cbas(
-            self, config_map=None, username=None, password=None):
+            self, cluster, config_map=None, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if config_map:
             params = json.dumps(config_map)
         else:
             raise ValueError("Missing config map")
         status, content, response = \
-            self.cbas_helper.operation_service_parameters_configuration_cbas(
-                method="PUT", params=params,
-                username=username, password=password)
+            cbas_helper.operation_service_parameters_configuration_cbas(
+                method="PUT", params=params, username=username, password=password)
         return status, content, response
 
     def fetch_service_parameter_configuration_on_cbas(
-            self, username=None, password=None):
+            self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_service_parameters_configuration_cbas(
+            cbas_helper.operation_service_parameters_configuration_cbas(
                 method="GET", username=username, password=password)
         return status, content, response
 
     def update_node_parameter_configuration_on_cbas(
-            self, config_map=None, username=None, password=None):
+            self, cluster, config_map=None, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if config_map:
             params = json.dumps(config_map)
         else:
             raise ValueError("Missing config map")
         status, content, response = \
-            self.cbas_helper.operation_node_parameters_configuration_cbas(
-                method="PUT", params=params,
-                username=username, password=password)
+            cbas_helper.operation_node_parameters_configuration_cbas(
+                method="PUT", params=params, username=username, password=password)
         return status, content, response
 
-    def fetch_node_parameter_configuration_on_cbas(self, username=None,
-                                                   password=None):
+    def fetch_node_parameter_configuration_on_cbas(
+            self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_node_parameters_configuration_cbas(
+            cbas_helper.operation_node_parameters_configuration_cbas(
                 method="GET", username=username, password=password)
         return status, content, response
 
-    def restart_analytics_cluster_uri(self, username=None, password=None):
+    def restart_analytics_cluster_uri(self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.restart_analytics_cluster_uri(username=username,
+            cbas_helper.restart_analytics_cluster_uri(username=username,
                                                            password=password)
         return status, content, response
 
-    def restart_analytics_node_uri(self, node_id, port=8095,
+    def restart_analytics_node_uri(self, cluster, node_id, port=8095,
                                    username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.restart_analytics_node_uri(node_id, port,
-                                                        username=username,
-                                                        password=password)
+            cbas_helper.restart_analytics_node_uri(
+                node_id, port, username=username, password=password)
         return status, content, response
 
-    def fetch_bucket_state_on_cbas(self):
+    def fetch_bucket_state_on_cbas(self, cluster):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.fetch_bucket_state_on_cbas(method="GET",
-                                                        username=None,
-                                                        password=None)
+            cbas_helper.fetch_bucket_state_on_cbas(
+                method="GET", username=None, password=None)
         return status, content, response
 
-    def fetch_pending_mutation_on_cbas_node(self, node_ip, port=9110,
+    def fetch_pending_mutation_on_cbas_node(self, cluster, node_ip, port=9110,
                                             username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.fetch_pending_mutation_on_cbas_node(
+            cbas_helper.fetch_pending_mutation_on_cbas_node(
                 node_ip, port, method="GET",
                 username=username, password=password)
         return status, content, response
 
-    def fetch_pending_mutation_on_cbas_cluster(self, port=9110,
+    def fetch_pending_mutation_on_cbas_cluster(self, cluster, port=9110,
                                                username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.fetch_pending_mutation_on_cbas_cluster(
+            cbas_helper.fetch_pending_mutation_on_cbas_cluster(
                 port, method="GET", username=username, password=password)
         return status, content, response
 
-    def fetch_dcp_state_on_cbas(self, data_set, data_verse="Default",
+    def fetch_dcp_state_on_cbas(self, cluster, data_set, data_verse="Default",
                                 username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if not data_set:
             raise ValueError("dataset is required field")
-        status, content, response = self.cbas_helper.fetch_dcp_state_on_cbas(
+        status, content, response = cbas_helper.fetch_dcp_state_on_cbas(
             data_set, method="GET", dataverse=data_verse,
             username=username, password=password)
         return status, content, response
 
-    def get_analytics_diagnostics(self, cbas_node, timeout=120):
-        response = self.cbas_helper.get_analytics_diagnostics(cbas_node,
+    def get_analytics_diagnostics(self, cluster, cbas_node, timeout=120):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        response = cbas_helper.get_analytics_diagnostics(cbas_node,
                                                               timeout=timeout)
         return response
 
-    def set_global_compression_type(self, compression_type="snappy",
+    def set_global_compression_type(self, cluster, compression_type="snappy",
                                     username=None, password=None):
-        return self.cbas_helper.set_global_compression_type(compression_type,
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        return cbas_helper.set_global_compression_type(compression_type,
                                                             username, password)
 
-    def wait_for_cbas_to_recover(self, timeout=180):
+    def wait_for_cbas_to_recover(self, cluster, timeout=180):
         """
         Returns True if analytics service is recovered/available.
         False if service is unavailable despite waiting for specified "timeout" period.
@@ -4074,7 +3951,7 @@ class CbasUtil(UDFUtil):
         while time.time() < cluster_recover_start_time + timeout:
             try:
                 status, _, _, _, _ = self.execute_statement_on_cbas_util(
-                    "set `import-private-functions` `true`;ping()")
+                    cluster, "set `import-private-functions` `true`;ping()")
                 if status == "success":
                     analytics_recovered = True
                     break
@@ -4083,29 +3960,26 @@ class CbasUtil(UDFUtil):
         return analytics_recovered
 
     # Backup Analytics metadata
-    def backup_cbas_metadata(self, bucket_name='default',
-                             username=None, password=None, include="",
-                             exclude=""):
-        response = self.cbas_helper.backup_cbas_metadata(bucket_name,
-                                                         username=username,
-                                                         password=password,
-                                                         include=include,
-                                                         exclude=exclude)
+    def backup_cbas_metadata(
+            self, cluster, bucket_name='default', username=None,
+            password=None, include="", exclude=""):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        response = cbas_helper.backup_cbas_metadata(
+            bucket_name, username=username, password=password, include=include,
+            exclude=exclude)
         return response.json()
 
     # Restore Analytics metadata
-    def restore_cbas_metadata(self, metadata, bucket_name='default',
+    def restore_cbas_metadata(self, cluster, metadata, bucket_name='default',
                               username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if metadata is None:
             raise ValueError("Missing metadata")
-        response = self.cbas_helper.restore_cbas_metadata(metadata,
-                                                          bucket_name,
-                                                          username=username,
-                                                          password=password)
+        response = cbas_helper.restore_cbas_metadata(
+            metadata, bucket_name, username=username, password=password)
         return response.json()
 
-    def create_cbas_infra_from_spec(self, cbas_spec, local_bucket_util,
-                                    remote_bucket_util=None,
+    def create_cbas_infra_from_spec(self, cluster, cbas_spec, bucket_util,
                                     wait_for_ingestion=True):
         """
         Method creates CBAS infra based on the spec data.
@@ -4114,19 +3988,15 @@ class CbasUtil(UDFUtil):
         :param remote_bucket_util bucket_util_obj, bucket util object of remote cluster.
         :param wait_for_ingestion bool
         """
-        if not self.create_dataverse_from_spec(cbas_spec):
+        if not self.create_dataverse_from_spec(cluster, cbas_spec):
             return False, "Failed at create dataverse"
-        if not self.create_link_from_spec(cbas_spec):
+        if not self.create_link_from_spec(cluster, cbas_spec):
             return False, "Failed at create link from spec"
-        if not self.create_dataset_from_spec(cbas_spec, local_bucket_util,
-                                             remote_bucket_util):
+        if not self.create_dataset_from_spec(cluster, cbas_spec, bucket_util):
             return False, "Failed at create dataset from spec"
 
         jobs = Queue()
         results = list()
-
-        def consumer_func(job):
-            return job[0](**job[1])
 
         # Connect link only when remote links are present, Local link is connected by default and
         # external links are not required to be connected.
@@ -4135,7 +4005,7 @@ class CbasUtil(UDFUtil):
             self.log.info("Connecting all remote Links")
             for link in remote_links:
                 if not self.connect_link(
-                        link.full_name,
+                        cluster, link.full_name,
                         timeout=cbas_spec.get("api_timeout", 120),
                         analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
                     results.append(False)
@@ -4151,39 +4021,36 @@ class CbasUtil(UDFUtil):
             # Wait for data ingestion only for datasets based on either local KV source or remote KV source,
             internal_datasets = self.list_all_dataset_objs(
                 dataset_source="internal")
-            self.refresh_dataset_item_count(local_bucket_util,
-                                            remote_bucket_util)
+            self.refresh_dataset_item_count(bucket_util)
             if len(internal_datasets) > 0:
                 self.log.info("Waiting for data to be ingested into datasets")
                 for dataset in internal_datasets:
                     jobs.put((
                         self.wait_for_ingestion_complete,
-                        {"dataset_names": [dataset.full_name],
+                        {"cluster": cluster,
+                         "dataset_names": [dataset.full_name],
                          "num_items": dataset.num_of_items,
                          "timeout": cbas_spec.get("api_timeout", 120)}))
-            self.run_jobs_in_parallel(consumer_func, jobs, results,
+            self.run_jobs_in_parallel(jobs, results,
                                       cbas_spec["max_thread_count"],
-                                      async_run=False,
-                                      consume_from_queue_func=None)
+                                      async_run=False)
             if not all(results):
                 return False, "Failed at wait for ingestion"
 
         self.log.info("Creating Synonyms based on CBAS Spec")
-        if not self.create_synonym_from_spec(cbas_spec):
+        if not self.create_synonym_from_spec(cluster, cbas_spec):
             return False, "Could not create synonym"
 
         self.log.info("Creating Indexes based on CBAS Spec")
-        if not self.create_index_from_spec(cbas_spec):
+        if not self.create_index_from_spec(cluster, cbas_spec):
             return False, "Failed at create index from spec"
 
         return True, "Success"
 
     def delete_cbas_infra_created_from_spec(
-            self, cbas_spec, expected_index_drop_fail=True,
-            expected_synonym_drop_fail=True,
-            expected_dataset_drop_fail=True,
-            expected_link_drop_fail=True,
-            expected_dataverse_drop_fail=True,
+            self, cluster, cbas_spec, expected_index_drop_fail=True,
+            expected_synonym_drop_fail=True, expected_dataset_drop_fail=True,
+            expected_link_drop_fail=True, expected_dataverse_drop_fail=True,
             delete_dataverse_object=True):
 
         results = list()
@@ -4208,7 +4075,7 @@ class CbasUtil(UDFUtil):
         for index in self.list_all_index_objs():
             retry_func(
                 index, self.drop_cbas_index,
-                {"index_name": index.name,
+                {"cluster": cluster, "index_name": index.name,
                  "dataset_name": index.full_dataset_name,
                  "analytics_index": index.analytics_index,
                  "timeout": cbas_spec.get("api_timeout", 120),
@@ -4224,8 +4091,8 @@ class CbasUtil(UDFUtil):
         for synonym in self.list_all_synonym_objs():
             retry_func(
                 synonym, self.drop_analytics_synonym,
-                {"synonym_full_name": synonym.full_name, "if_exists": True,
-                 "timeout": cbas_spec.get("api_timeout", 120),
+                {"cluster":cluster, "synonym_full_name": synonym.full_name,
+                 "if_exists": True, "timeout": cbas_spec.get("api_timeout", 120),
                  "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
         if any(results):
             if expected_synonym_drop_fail:
@@ -4243,15 +4110,15 @@ class CbasUtil(UDFUtil):
             if isinstance(dataset, CBAS_Collection):
                 retry_func(
                     dataset, self.drop_dataset,
-                    {"dataset_name": dataset_name, "if_exists": True,
-                     "analytics_collection": True,
+                    {"cluster": cluster, "dataset_name": dataset_name,
+                     "if_exists": True, "analytics_collection": True,
                      "timeout": cbas_spec.get("api_timeout", 120),
                      "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
             else:
                 retry_func(
                     dataset, self.drop_dataset,
-                    {"dataset_name": dataset_name, "if_exists": True,
-                     "timeout": cbas_spec.get("api_timeout", 120),
+                    {"cluster": cluster, "dataset_name": dataset_name,
+                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 120),
                      "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
         if any(results):
             if expected_dataset_drop_fail:
@@ -4264,7 +4131,7 @@ class CbasUtil(UDFUtil):
         for link in self.list_all_link_objs():
             retry_func(
                 link, self.disconnect_link,
-                {"link_name": link.full_name,
+                {"cluster":cluster, "link_name": link.full_name,
                  "timeout": cbas_spec.get("api_timeout", 120),
                  "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
             try:
@@ -4272,8 +4139,8 @@ class CbasUtil(UDFUtil):
             except:
                 retry_func(
                     link, self.drop_link,
-                    {"link_name": link.full_name, "if_exists": True,
-                     "timeout": cbas_spec.get("api_timeout", 120),
+                    {"cluster":cluster, "link_name": link.full_name,
+                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 120),
                      "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
             else:
                 results.append(link.full_name)
@@ -4291,8 +4158,8 @@ class CbasUtil(UDFUtil):
                 if isinstance(dataverse, CBAS_Scope):
                     retry_func(
                         dataverse, self.drop_dataverse,
-                        {"dataverse_name": dataverse.name, "if_exists": True,
-                         "analytics_scope": True,
+                        {"cluster":cluster, "dataverse_name": dataverse.name,
+                         "if_exists": True, "analytics_scope": True,
                          "delete_dataverse_obj": delete_dataverse_object,
                          "timeout": cbas_spec.get("api_timeout", 120),
                          "analytics_timeout": cbas_spec.get("cbas_timeout",
@@ -4300,7 +4167,8 @@ class CbasUtil(UDFUtil):
                 else:
                     retry_func(
                         dataverse, self.drop_dataverse,
-                        {"dataverse_name": dataverse.name, "if_exists": True,
+                        {"cluster":cluster, "dataverse_name": dataverse.name,
+                         "if_exists": True,
                          "delete_dataverse_obj": delete_dataverse_object,
                          "timeout": cbas_spec.get("api_timeout", 120),
                          "analytics_timeout": cbas_spec.get("cbas_timeout",
@@ -4313,10 +4181,10 @@ class CbasUtil(UDFUtil):
                 return False
         return True
 
-    def kill_cbas_process(self, cbas_nodes=[]):
+    def kill_cbas_process(self, cluster, cbas_nodes=[]):
         results = {}
         if not cbas_nodes:
-            cbas_nodes = [self.cbas_node]
+            cbas_nodes = [cluster.cbas_cc_node]
         for cbas_node in cbas_nodes:
             cbas_shell = RemoteMachineShellConnection(cbas_node)
             output, error = cbas_shell.kill_cbas()
@@ -4324,14 +4192,13 @@ class CbasUtil(UDFUtil):
             cbas_shell.disconnect()
         return results
 
-    def start_kill_processes_task(self, cluster_util, cbas_kill_count=0,
+    def start_kill_processes_task(self, cluster, cluster_util, cbas_kill_count=0,
                                   memcached_kill_count=0, interval=5):
         if not cbas_kill_count and not memcached_kill_count:
             return None
-        process_kill_task = KillProcessesInLoopTask(self, cluster_util,
-                                                    cbas_kill_count,
-                                                    memcached_kill_count,
-                                                    interval)
+        process_kill_task = KillProcessesInLoopTask(
+            cluster, self, cluster_util, cbas_kill_count, memcached_kill_count,
+            interval)
         self.task.jython_task_manager.add_new_task(process_kill_task)
         return process_kill_task
 
@@ -4352,20 +4219,61 @@ class CbasUtil(UDFUtil):
             time.sleep(20)
         return results
 
-    def start_connect_disconnect_links_task(self, links, run_infinitely=False,
-                                            interval=5):
+    def start_connect_disconnect_links_task(self, cluster, links,
+                                            run_infinitely=False, interval=5):
         if not links:
             return None
-        links_task = DisconnectConnectLinksTask(self, links, run_infinitely,
-                                                interval)
+        links_task = DisconnectConnectLinksTask(
+            cluster, self, links, run_infinitely, interval)
         self.task.jython_task_manager.add_new_task(links_task)
         return links_task
 
+    def cleanup_cbas(self, cluster):
+        """
+        Drops all Dataverses, Datasets, Indexes, UDFs, Synonyms and Links
+        """
+        try:
+            # Drop all indexes
+            for idx in self.get_indexes(cluster):
+                idx = idx.split(".")
+                if not self.drop_cbas_index(cluster, idx[-1], ".".join(idx[:-1])):
+                    self.log.error("Unable to drop Index {0}".format(idx))
+
+            # Disconnect all links
+            links = [".".join(l["scope"].split("/") + [l["name"]]) for l in self.get_link_info(
+                cluster)]
+            for lnk in links:
+                if not self.disconnect_link(cluster, lnk):
+                    self.log.error("Unable to disconnect Link {0}".format(lnk))
+
+            for syn in self.get_synonyms(cluster):
+                if not self.drop_analytics_synonym(cluster, syn):
+                    self.log.error("Unable to drop Synonym {0}".format(syn))
+
+            for udf in self.get_udfs(cluster):
+                if not self.drop_udf(cluster, udf[1], udf[0], udf[2]):
+                    self.log.error("Unable to drop UDF {0}".format(udf[1]))
+
+            for ds in self.get_datasets(cluster):
+                if not self.drop_dataset(cluster, ds):
+                    self.log.error("Unable to drop Dataset {0}".format(ds))
+
+            for lnk in links:
+                if not self.drop_link(cluster, lnk):
+                    self.log.error("Unable to drop Link {0}".format(lnk))
+
+            for dv in self.get_dataverses(cluster).remove("Default"):
+                if not self.drop_dataverse(cluster, dv):
+                    self.log.error("Unable to drop Dataverse {0}".format(dv))
+        except Exception as e:
+            self.log.info(e.message)
+
 
 class DisconnectConnectLinksTask(Task):
-    def __init__(self, cbas_util, links, run_infinitely=False, interval=5):
+    def __init__(self, cluster, cbas_util, links, run_infinitely=False, interval=5):
         super(DisconnectConnectLinksTask, self).__init__(
             "DisconnectConnectLinksTask")
+        self.cluster = cluster
         self.cbas_util = cbas_util
         self.links = links
         self.run_infinitely = run_infinitely
@@ -4378,16 +4286,18 @@ class DisconnectConnectLinksTask(Task):
             while True:
                 for link in self.links:
                     dv, name = link.split(".")
-                    if self.cbas_util.is_link_active(name, dv):
-                        disconnect_result = self.cbas_util.disconnect_link(link)
+                    if self.cbas_util.is_link_active(self.cluster, name, dv):
+                        disconnect_result = self.cbas_util.disconnect_link(
+                            self.cluster, link)
                         self.sleep(self.interval)
                         connect_result = self.cbas_util.connect_link(
-                            link, with_force=True)
+                            self.cluster, link, with_force=True)
                     else:
                         connect_result = self.cbas_util.connect_link(
-                            link, with_force=True)
+                            self.cluster, link, with_force=True)
                         self.sleep(self.interval)
-                        disconnect_result = self.cbas_util.disconnect_link(link)
+                        disconnect_result = self.cbas_util.disconnect_link(
+                            self.cluster, link)
                     self.sleep(self.interval)
                     self.results.append(connect_result and disconnect_result)
                 if not self.run_infinitely:
@@ -4400,10 +4310,11 @@ class DisconnectConnectLinksTask(Task):
 
 
 class KillProcessesInLoopTask(Task):
-    def __init__(self, cbas_util, cluster_util, cbas_kill_count=0,
+    def __init__(self, cluster, cbas_util, cluster_util, cbas_kill_count=0,
                  memcached_kill_count=0, interval=5, timeout=600):
         super(KillProcessesInLoopTask, self).__init__(
             "KillProcessesInLoopTask")
+        self.cluster = cluster
         self.cbas_util = cbas_util
         self.cluster_util = cluster_util
         self.cbas_kill_count = cbas_kill_count
@@ -4417,11 +4328,11 @@ class KillProcessesInLoopTask(Task):
             for _ in range(self.cbas_kill_count + self.memcached_kill_count):
                 if self.cbas_kill_count > 0:
                     output = self.cbas_util.kill_cbas_process(
-                        self.cluster_util.cluster.servers)
+                        self.cluster, self.cluster.servers)
                     self.cbas_kill_count -= 1
                     self.log.info(str(output))
                 if self.memcached_kill_count > 0:
-                    self.cluster_util.kill_memcached()
+                    self.cluster_util.kill_memcached(self.cluster)
                     self.memcached_kill_count -= 1
                 self.sleep(self.interval)
         except Exception as e:
@@ -4431,54 +4342,44 @@ class KillProcessesInLoopTask(Task):
 
 
 class CBASRebalanceUtil(object):
-    available_servers = list()
-    exclude_nodes = list()
 
-    def __init__(self, cluster, cluster_util, bucket_util, task, rest,
-                 vbucket_check=True, cbas_util=None):
+    def __init__(self, cluster_util, bucket_util, task, vbucket_check=True,
+                 cbas_util=None):
         """
         :param master cluster's master node object
         :param cbas_node CBAS node object
         :param server_task task object
         """
         self.log = logger.get("test")
-        self.cluster = cluster
         self.cluster_util = cluster_util
         self.bucket_util = bucket_util
         self.task = task
-        self.rest = rest
         self.vbucket_check = vbucket_check
         self.cbas_util = cbas_util
 
-        self.bucket_helper_obj = BucketHelper(self.cluster.master)
         self.query_threads = list()
-        self.durability_level = None
 
     def wait_for_rebalance_task_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         return task.result
 
-    def rebalance(self, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
-                  cbas_nodes_out=0):
+    def rebalance(self, cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
+                  cbas_nodes_out=0, available_servers=[], exclude_nodes=[]):
         if kv_nodes_out > 0:
             cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
-                cluster=self.cluster,
-                service_type=CbServer.Services.KV,
-                get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster)
+                cluster, service_type="kv", get_all_nodes=True,
+                servers=cluster.nodes_in_cluster)
         else:
             cluster_kv_nodes = []
 
         if cbas_nodes_out > 0:
             cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-                cluster=self.cluster,
-                service_type=CbServer.Services.CBAS,
-                get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster)
+                cluster, service_type="cbas", get_all_nodes=True,
+                servers=cluster.nodes_in_cluster)
         else:
             cluster_cbas_nodes = []
 
-        for node in CBASRebalanceUtil.exclude_nodes:
+        for node in exclude_nodes:
             try:
                 cluster_kv_nodes.remove(node)
             except:
@@ -4488,10 +4389,8 @@ class CBASRebalanceUtil(object):
             except:
                 pass
 
-        servs_in = random.sample(CBASRebalanceUtil.available_servers,
-                                 kv_nodes_in + cbas_nodes_in)
-        servs_out = random.sample(cluster_kv_nodes,
-                                  kv_nodes_out) + random.sample(
+        servs_in = random.sample(available_servers, kv_nodes_in + cbas_nodes_in)
+        servs_out = random.sample(cluster_kv_nodes, kv_nodes_out) + random.sample(
             cluster_cbas_nodes, cbas_nodes_out)
 
         if kv_nodes_in == kv_nodes_out:
@@ -4504,59 +4403,50 @@ class CBASRebalanceUtil(object):
             services += ["cbas"] * cbas_nodes_in
 
         rebalance_task = self.task.async_rebalance(
-            self.cluster.nodes_in_cluster, servs_in, servs_out,
+            cluster.nodes_in_cluster, servs_in, servs_out,
             check_vbucket_shuffling=self.vbucket_check,
             retry_get_process_num=200, services=services)
 
-        CBASRebalanceUtil.available_servers = [servs for servs in
-                                               CBASRebalanceUtil.available_servers
-                                               if
-                                               servs not in servs_in]
-        CBASRebalanceUtil.available_servers += servs_out
+        available_servers = [servs for servs in available_servers if
+                             servs not in servs_in]
+        available_servers += servs_out
 
-        self.cluster.nodes_in_cluster.extend(servs_in)
-        self.cluster.nodes_in_cluster = list(
-            set(self.cluster.nodes_in_cluster) - set(servs_out))
-        return rebalance_task
+        cluster.nodes_in_cluster.extend(servs_in)
+        cluster.nodes_in_cluster = list(
+            set(cluster.nodes_in_cluster) - set(servs_out))
+        return rebalance_task, available_servers
 
-    def start_parallel_queries(self, run_kv_queries, run_cbas_queries,
+    def start_parallel_queries(self, cluster, run_kv_queries, run_cbas_queries,
                                parallelism=3):
         queries = ["SELECT COUNT (*) FROM {0};"]
+        n1ql_query_task = None
+        cbas_query_task = None
         if run_kv_queries:
-            n1ql_helper = N1QLHelper(use_rest=True,
-                                     buckets=self.cluster.buckets,
-                                     n1ql_port=self.cluster.master.n1ql_port,
-                                     log=self.log,
-                                     server=self.cluster.master)
-            self.n1ql_query_task = RunQueriesTask(
-                self.cluster.master,
-                queries,
-                self.task.jython_task_manager,
-                n1ql_helper,
-                query_type="n1ql",
-                parallelism=parallelism,
+            n1ql_helper = N1QLHelper(
+                use_rest=True, buckets=cluster.buckets, log=self.log,
+                n1ql_port=cluster.master.n1ql_port, server=cluster.master)
+            n1ql_query_task = RunQueriesTask(
+                cluster, queries, self.task.jython_task_manager,
+                n1ql_helper, query_type="n1ql", parallelism=parallelism,
                 run_infinitely=True, is_prepared=False)
-            self.task.jython_task_manager.add_new_task(self.n1ql_query_task)
+            self.task.jython_task_manager.add_new_task(n1ql_query_task)
         if run_cbas_queries:
-            self.cbas_query_task = RunQueriesTask(
-                self.cluster.master,
-                queries,
-                self.task.jython_task_manager,
-                self.cbas_util,
-                query_type="cbas",
-                parallelism=parallelism,
+            cbas_query_task = RunQueriesTask(
+                cluster, queries, self.task.jython_task_manager,
+                self.cbas_util, query_type="cbas", parallelism=parallelism,
                 run_infinitely=True, is_prepared=False)
-            self.task.jython_task_manager.add_new_task(self.cbas_query_task)
+            self.task.jython_task_manager.add_new_task(cbas_query_task)
+        return n1ql_query_task, cbas_query_task
 
-    def stop_parallel_queries(self):
-        if hasattr(self, "cbas_query_task"):
+    def stop_parallel_queries(self, n1ql_query_task, cbas_query_task):
+        if cbas_query_task:
             self.log.info("Stopping CBAS queries")
-            self.task.jython_task_manager.stop_task(self.cbas_query_task)
-        if hasattr(self, "n1ql_query_task"):
+            self.task.jython_task_manager.stop_task(cbas_query_task)
+        if n1ql_query_task:
             self.log.info("Stopping N1QL queries")
-            self.task.jython_task_manager.stop_task(self.n1ql_query_task)
+            self.task.jython_task_manager.stop_task(n1ql_query_task)
 
-    def set_retry_exceptions(self, doc_loading_spec):
+    def set_retry_exceptions(self, doc_loading_spec, durability_level=None):
         """
         Exceptions for which mutations need to be retried during
         topology changes
@@ -4565,7 +4455,7 @@ class CBASRebalanceUtil(object):
         retry_exceptions.append(SDKException.AmbiguousTimeoutException)
         retry_exceptions.append(SDKException.TimeoutException)
         retry_exceptions.append(SDKException.RequestCanceledException)
-        if self.durability_level:
+        if durability_level:
             retry_exceptions.append(SDKException.DurabilityAmbiguousException)
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
@@ -4588,25 +4478,23 @@ class CBASRebalanceUtil(object):
         return task.result
 
     def data_load_collection(
-            self, doc_spec_name, skip_validations, async_load=True,
-            skip_read_success_results=True, percentage_per_collection=100):
+            self, cluster, doc_spec_name, skip_validations, async_load=True,
+            skip_read_success_results=True, percentage_per_collection=100,
+            durability_level=None):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(
             doc_spec_name)
-        self.set_retry_exceptions(doc_loading_spec)
+        self.set_retry_exceptions(doc_loading_spec, durability_level)
         self.set_ignore_exceptions(doc_loading_spec)
-        doc_loading_spec[
-            MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
+        doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = durability_level
         doc_loading_spec[
             MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = skip_read_success_results
-        doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = \
-            self.durability_level
         doc_loading_spec[MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = \
             skip_read_success_results
         doc_loading_spec["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = \
             percentage_per_collection
         task = self.bucket_util.run_scenario_from_spec(
-            self.task, self.cluster, self.cluster.buckets,
+            self.task, cluster, cluster.buckets,
             doc_loading_spec, mutation_num=0, async_load=async_load)
         if not async_load:
             if not skip_validations:
@@ -4614,13 +4502,13 @@ class CBASRebalanceUtil(object):
             return task.result
         return task
 
-    def data_validation_collection(self, skip_validations=True,
+    def data_validation_collection(self, cluster, skip_validations=True,
                                    doc_and_collection_ttl=False):
         retry_count = 0
         while retry_count < 10:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster, self.cluster.buckets)
+                    cluster, cluster.buckets)
             except:
                 retry_count = retry_count + 1
                 self.log.info(
@@ -4630,27 +4518,27 @@ class CBASRebalanceUtil(object):
                 break
         if retry_count == 10:
             self.log.info("Attempting last retry for ep-queue to drain")
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                         self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(
+                cluster, cluster.buckets)
         if doc_and_collection_ttl:
-            self.bucket_util._expiry_pager(self.cluster, val=5)
+            self.bucket_util._expiry_pager(cluster, val=5)
             self.log.info("wait for doc/collection maxttl to finish")
             time.sleep(400)
             items = 0
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                         self.cluster.buckets)
-            for bucket in self.cluster.buckets:
-                items = items + self.bucket_helper_obj.get_active_key_count(
+            self.bucket_util._wait_for_stats_all_buckets(
+                cluster, cluster.buckets)
+            bucket_helper_obj = BucketHelper(cluster.master)
+            for bucket in cluster.buckets:
+                items = items + bucket_helper_obj.get_active_key_count(
                     bucket)
             if items != 0:
                 raise Exception("doc count!=0, TTL + rebalance failed")
         else:
             if not skip_validations:
-                self.bucket_util.validate_docs_per_collections_all_buckets(
-                    self.cluster)
+                self.bucket_util.validate_docs_per_collections_all_buckets(cluster)
 
-    def get_failover_count(self):
-        cluster_status = self.rest.cluster_status()
+    def get_failover_count(self, cluster):
+        cluster_status = cluster.rest.cluster_status()
         failover_count = 0
         # check for inactiveFailed
         for node in cluster_status['nodes']:
@@ -4658,20 +4546,20 @@ class CBASRebalanceUtil(object):
                 failover_count += 1
         return failover_count
 
-    def wait_for_failover_or_assert(self, expected_failover_count,
+    def wait_for_failover_or_assert(self, cluster, expected_failover_count,
                                     timeout=7200):
         # Timeout is kept large for graceful failover
         time_start = time.time()
         time_max_end = time_start + timeout
         actual_failover_count = 0
         while time.time() < time_max_end:
-            actual_failover_count = self.get_failover_count()
+            actual_failover_count = self.get_failover_count(cluster)
             if actual_failover_count == expected_failover_count:
                 break
             time.sleep(20)
         time_end = time.time()
         if actual_failover_count != expected_failover_count:
-            self.log.info(self.rest.print_UI_logs())
+            self.log.info(cluster.rest.print_UI_logs())
 
         if actual_failover_count == expected_failover_count:
             self.log.info("{0} nodes failed over as expected in {1} seconds"
@@ -4682,30 +4570,28 @@ class CBASRebalanceUtil(object):
                 "{0} nodes failed over, expected : {1}".format(
                     actual_failover_count, expected_failover_count))
 
-    def failover(self, failover_type="Hard", action="RebalanceOut",
-                 service_type=CbServer.Services.CBAS, timeout=7200):
+    def failover(self, cluster, failover_type="Hard", action="RebalanceOut",
+                 service_type="cbas", timeout=7200, available_servers=[],
+                 exclude_nodes=[]):
+
         self.log.info("{0} Failover a node and {1} that node".format(
             failover_type, action))
 
-        if CbServer.Services.KV in service_type:
+        if "kv" in service_type:
             cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
-                cluster=self.cluster,
-                service_type=CbServer.Services.KV,
-                get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster)
+                cluster, service_type="kv", get_all_nodes=True,
+                servers=cluster.nodes_in_cluster)
         else:
             cluster_kv_nodes = []
 
-        if CbServer.Services.CBAS in service_type:
+        if "cbas" in service_type:
             cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-                cluster=self.cluster,
-                service_type=CbServer.Services.CBAS,
-                get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster)
+                cluster, service_type="cbas", get_all_nodes=True,
+                servers=cluster.nodes_in_cluster)
         else:
             cluster_cbas_nodes = []
 
-        for node in CBASRebalanceUtil.exclude_nodes:
+        for node in exclude_nodes:
             try:
                 cluster_kv_nodes.remove(node)
             except:
@@ -4718,138 +4604,140 @@ class CBASRebalanceUtil(object):
         failover_count = 0
         kv_failover_nodes = []
         cbas_failover_nodes = []
-        self.success_kv_failed_over = False
-        self.success_cbas_failed_over = False
+        success_kv_failed_over = False
+        success_cbas_failed_over = False
 
         # Mark Node for failover
         if failover_type == "Graceful":
             chosen = self.cluster_util.pick_nodes(
-                self.cluster.master, howmany=1,
+                cluster.master, howmany=1,
                 target_node=cluster_kv_nodes[0],
-                exclude_nodes=CBASRebalanceUtil.exclude_nodes)
-            self.success_kv_failed_over = self.rest.fail_over(chosen[0].id,
-                                                              graceful=True)
+                exclude_nodes=exclude_nodes)
+            success_kv_failed_over = cluster.rest.fail_over(
+                chosen[0].id, graceful=True)
             failover_count += 1
             kv_failover_nodes.extend(chosen)
         else:
             if "kv" in service_type:
                 chosen = self.cluster_util.pick_nodes(
-                    self.cluster.master, howmany=1,
-                    target_node=cluster_kv_nodes[0],
-                    exclude_nodes=CBASRebalanceUtil.exclude_nodes)
-                self.success_kv_failed_over = self.rest.fail_over(chosen[0].id,
-                                                                  graceful=False)
+                    cluster.master, howmany=1,
+                    target_node=cluster_kv_nodes[0], exclude_nodes=exclude_nodes)
+                success_kv_failed_over = cluster.rest.fail_over(
+                    chosen[0].id, graceful=False)
                 failover_count += 1
                 kv_failover_nodes.extend(chosen)
             if "cbas" in service_type and cluster_cbas_nodes:
                 chosen = self.cluster_util.pick_nodes(
-                    self.cluster.master, howmany=1,
-                    target_node=cluster_cbas_nodes[0],
-                    exclude_nodes=CBASRebalanceUtil.exclude_nodes)
-                self.success_cbas_failed_over = self.rest.fail_over(
+                    cluster.master, howmany=1, target_node=cluster_cbas_nodes[0],
+                    exclude_nodes=exclude_nodes)
+                success_cbas_failed_over = cluster.rest.fail_over(
                     chosen[0].id, graceful=False)
                 failover_count += 1
                 cbas_failover_nodes.extend(chosen)
         time.sleep(300)
-        self.wait_for_failover_or_assert(failover_count, timeout)
+        self.wait_for_failover_or_assert(cluster, failover_count, timeout)
 
         # Perform the action
         if action == "RebalanceOut":
-            nodes = self.rest.node_statuses()
-            self.rest.rebalance(
+            nodes = cluster.rest.node_statuses()
+            cluster.rest.rebalance(
                 otpNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in
                               (kv_failover_nodes + cbas_failover_nodes)]
             )
             # self.sleep(600)
-            if not self.rest.monitorRebalance(stop_if_loop=False):
+            if not cluster.rest.monitorRebalance(stop_if_loop=False):
                 raise Exception("Rebalance failed")
-            servs_out = [node for node in self.cluster.nodes_in_cluster for
+            servs_out = [node for node in cluster.nodes_in_cluster for
                          fail_node in (
                                  kv_failover_nodes + cbas_failover_nodes) if
                          node.ip == fail_node.ip]
-            self.cluster.nodes_in_cluster = list(
-                set(self.cluster.nodes_in_cluster) - set(servs_out))
-            CBASRebalanceUtil.available_servers += servs_out
+            cluster.nodes_in_cluster = list(
+                set(cluster.nodes_in_cluster) - set(servs_out))
+            available_servers += servs_out
             time.sleep(10)
         else:
             if action == "FullRecovery":
-                if self.success_kv_failed_over:
-                    self.rest.set_recovery_type(
-                        otpNode=kv_failover_nodes[0].id,
-                        recoveryType="full")
-                if self.success_cbas_failed_over:
-                    self.rest.set_recovery_type(
+                if success_kv_failed_over:
+                    cluster.rest.set_recovery_type(
+                        otpNode=kv_failover_nodes[0].id, recoveryType="full")
+                if success_cbas_failed_over:
+                    cluster.rest.set_recovery_type(
                         otpNode=cbas_failover_nodes[0].id, recoveryType="full")
             elif action == "DeltaRecovery":
-                if self.success_kv_failed_over:
-                    self.rest.set_recovery_type(otpNode=kv_failover_nodes[0].id,
-                                                recoveryType="delta")
+                if success_kv_failed_over:
+                    cluster.rest.set_recovery_type(
+                        otpNode=kv_failover_nodes[0].id, recoveryType="delta")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
-                retry_get_process_num=200)
+                cluster.nodes_in_cluster, [], [], retry_get_process_num=200)
             if not self.wait_for_rebalance_task_to_complete(rebalance_task):
                 raise Exception(
                     "Rebalance failed while doing recovery after failover")
             time.sleep(10)
+        return available_servers
 
 
 class BackupUtils(object):
-    def __init__(self, master, cbas_node):
-        self.master = master
-        self.cbas_node = cbas_node
-        self.shell = RemoteMachineShellConnection(cbas_node)
-        self.cbas_helper = CBASHelper(self.master, self.cbas_node)
 
-    def _configure_backup(self, archive, repo, disable_analytics,
+    def __init__(self):
+        pass
+
+    def _configure_backup(self, cluster, archive, repo, disable_analytics,
                           exclude, include):
-        self.shell.log.info('Delete previous backups')
-        command = 'rm -rf %s' % archive
-        o, r = self.shell.execute_command(command)
-        self.shell.log_command_output(o, r)
 
-        self.shell.log.info('Configure backup')
+        shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
+        shell.log.info('Delete previous backups')
+        command = 'rm -rf %s' % archive
+        o, r = shell.execute_command(command)
+        shell.log_command_output(o, r)
+
+        shell.log.info('Configure backup')
         configure_bkup_cmd = '{0}cbbackupmgr config -a {1} -r {2}'.format(
-            self.shell.return_bin_path_based_on_os(self.shell.return_os_type()),
+            shell.return_bin_path_based_on_os(shell.return_os_type()),
             archive, repo)
         configure_bkup_cmd = self._build_backup_cmd_with_optional_parameters(
             disable_analytics, exclude, include, [], configure_bkup_cmd)
-        o, r = self.shell.execute_command(configure_bkup_cmd)
-        self.shell.log_command_output(o, r)
+        o, r = shell.execute_command(configure_bkup_cmd)
+        shell.log_command_output(o, r)
+        shell.disconnect()
 
-    def cbbackupmgr_backup_cbas(self, server, archive='/tmp/backups', repo='example',
-                      disable_analytics=False, exclude=[],
-                      include=[], username="Administrator",
-                      password="password", skip_configure_bkup=False):
+    def cbbackupmgr_backup_cbas(
+            self, cluster, archive='/tmp/backups', repo='example',
+            disable_analytics=False, exclude=[], include=[],
+            username="Administrator", password="password", skip_configure_bkup=False):
+
+        shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
         if not skip_configure_bkup:
-            self._configure_backup(archive, repo, disable_analytics,
-                                   exclude, include)
+            self._configure_backup(
+                cluster, archive, repo, disable_analytics, exclude, include)
 
         bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5}'.format(
-            self.shell.return_bin_path_based_on_os(self.shell.return_os_type()),
-            archive, repo, server.ip, username, password)
-        o, r = self.shell.execute_command(bkup_cmd)
-        self.shell.log_command_output(o, r)
+            shell.return_bin_path_based_on_os(shell.return_os_type()),
+            archive, repo, cluster.cbas_cc_node.ip, username, password)
+        o, r = shell.execute_command(bkup_cmd)
+        shell.log_command_output(o, r)
+        shell.disconnect()
         return o
 
-    def cbbackupmgr_restore_cbas(self, server, archive='/tmp/backups', repo='example',
-                       disable_analytics=False, exclude=[],
-                       include=[], mappings=[], username="Administrator",
-                       password="password"):
+    def cbbackupmgr_restore_cbas(
+            self, cluster, archive='/tmp/backups', repo='example',
+            disable_analytics=False, exclude=[], include=[], mappings=[],
+            username="Administrator", password="password"):
 
-        self.shell.log.info('Restore backup using cbbackupmgr')
+        shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
+        shell.log.info('Restore backup using cbbackupmgr')
         restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5} --force-updates'.format(
-            self.shell.return_bin_path_based_on_os(self.shell.return_os_type()),
-            archive, repo, server.ip, username, password)
+            shell.return_bin_path_based_on_os(shell.return_os_type()),
+            archive, repo, cluster.cbas_cc_node.ip, username, password)
         restore_cmd = self._build_backup_cmd_with_optional_parameters(
             disable_analytics, exclude, include, mappings, restore_cmd)
-        o, r = self.shell.execute_command(restore_cmd)
-        self.shell.log_command_output(o, r)
+        o, r = shell.execute_command(restore_cmd)
+        shell.log_command_output(o, r)
+        shell.disconnect()
         return o
 
-    def _build_backup_cmd_with_optional_parameters(self, disable_analytics,
-                                                   exclude, include, mappings,
-                                                   command):
+    def _build_backup_cmd_with_optional_parameters(
+            self, disable_analytics, exclude, include, mappings, command):
         if disable_analytics:
             command = command + ' --disable-analytics'
         if exclude:
@@ -4860,18 +4748,20 @@ class BackupUtils(object):
             command = command + ' --map-data ' + ",".join(mappings)
         return command
 
-    def rest_backup_cbas(self, username=None, password=None, bucket="", include="",
-                    exclude="", level="cluster"):
-        status, content, response = self.cbas_helper.backup_cbas(
+    def rest_backup_cbas(self, cluster, username=None, password=None, bucket="",
+                         include="", exclude="", level="cluster"):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = cbas_helper.backup_cbas(
             username=username, password=password, bucket=bucket,
             include=include, exclude=exclude, level=level)
-        return status, self.cbas_helper.get_json(content), response
+        return status, cbas_helper.get_json(content), response
 
-    def rest_restore_cbas(self, username=None, password=None, bucket="",
+    def rest_restore_cbas(self, cluster, username=None, password=None, bucket="",
                           include=[], exclude=[], remap="", level="cluster",
                           backup={}):
-        status, content, response = self.cbas_helper.restore_cbas(
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = cbas_helper.restore_cbas(
             username=username, password=password, bucket=bucket,
             include=include, exclude=exclude, remap=remap,
             level=level, backup=backup)
-        return status, self.cbas_helper.get_json(content), response
+        return status, cbas_helper.get_json(content), response

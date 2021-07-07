@@ -1004,18 +1004,17 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(task)
         return task
 
-    def async_cbas_query_execute(self, master, cbas_util, cbas_endpoint,
-                                 statement, bucket_name='default'):
+    def async_cbas_query_execute(self, cluster, cbas_util, cbas_endpoint,
+                                 statement):
         """
         Asynchronously execute a CBAS query
-        :param master: Master server
+        :param cluster: cluster where the query has to be executed
         :param cbas_util: CbasUtil object from testcase
         :param cbas_endpoint: CBAS Endpoint URL (/analytics/service)
         :param statement: Query to be executed
-        :param bucket_name: Name of the bucket
         :return: task with the output or error message
         """
         task = jython_tasks.CBASQueryExecuteTask(
-            master, cbas_util, cbas_endpoint, statement, bucket_name)
+            cluster, cbas_util, cbas_endpoint, statement)
         self.jython_task_manager.add_new_task(task)
         return task

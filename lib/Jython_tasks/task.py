@@ -3140,12 +3140,11 @@ class RunQueriesTask(Task):
                 select count(*) from {0} where mutated > 0;
     """
 
-    def __init__(self, server, queries, task_manager, helper, query_type,
-                 run_infinitely=False,
-                 parallelism=1, is_prepared=True):
+    def __init__(self, cluster, queries, task_manager, helper, query_type,
+                 run_infinitely=False, parallelism=1, is_prepared=True):
         super(RunQueriesTask, self).__init__("RunQueriesTask_started_%s"
                                              % (time.time()))
-        self.server = server
+        self.cluster = cluster
         self.queries = queries
         self.query_type = query_type
         if query_type == "n1ql":
@@ -3180,9 +3179,8 @@ class RunQueriesTask(Task):
                         self.task_manager.add_new_task(query_task)
                         self.query_tasks.append(query_task)
                     if hasattr(self, "cbas_util"):
-                        query_task = CBASQueryExecuteTask(None, self.cbas_util,
-                                                          None,
-                                                          query, None)
+                        query_task = CBASQueryExecuteTask(
+                            self.cluster, self.cbas_util, None, query)
                         self.task_manager.add_new_task(query_task)
                         self.query_tasks.append(query_task)
                 for query_task in self.query_tasks:
@@ -3207,7 +3205,7 @@ class RunQueriesTask(Task):
         self.complete_task()
 
     def prepare_cbas_queries(self):
-        datasets = self.cbas_util.get_datasets(retries=20)
+        datasets = self.cbas_util.get_datasets(self.cluster, retries=20)
         if not datasets:
             self.set_exception(Exception("Datasets not available"))
         prepared_queries = []
@@ -5663,11 +5661,10 @@ class MonitorBucketCompaction(Task):
 
 
 class CBASQueryExecuteTask(Task):
-    def __init__(self, master, cbas_util, cbas_endpoint,
-                 statement, bucket_name):
+    def __init__(self, cluster, cbas_util, cbas_endpoint, statement):
         super(CBASQueryExecuteTask, self).__init__("Cbas_query_task: %s"
                                                    % statement)
-        self.master = master
+        self.cluster = cluster
         self.cbas_util = cbas_util
         self.cbas_endpoint = cbas_endpoint
         self.statement = statement
@@ -5676,7 +5673,8 @@ class CBASQueryExecuteTask(Task):
         self.start_task()
         try:
             response, metrics, errors, results, handle = \
-                self.cbas_util.execute_statement_on_cbas_util(self.statement)
+                self.cbas_util.execute_statement_on_cbas_util(
+                    self.cluster, self.statement)
 
             if response:
                 self.set_result(True)
@@ -5920,12 +5918,13 @@ class BucketFlushTask(Task):
 
 
 class CreateDatasetsTask(Task):
-    def __init__(self, bucket_util, cbas_util, cbas_name_cardinality=1,
+    def __init__(self, cluster, bucket_util, cbas_util, cbas_name_cardinality=1,
                  kv_name_cardinality=1, remote_datasets=False,
                  creation_methods=None, ds_per_collection=1,
                  ds_per_dv=None):
         super(CreateDatasetsTask, self).__init__(
             "CreateDatasetsOnAllCollectionsTask")
+        self.cluster = cluster
         self.bucket_util = bucket_util
         self.cbas_name_cardinality = cbas_name_cardinality
         self.kv_name_cardinality = kv_name_cardinality
@@ -5990,9 +5989,8 @@ class CreateDatasetsTask(Task):
             else:
                 link_name = None
 
-            name = self.cbas_util.generate_name(name_cardinality=1,
-                                                max_length=3,
-                                                fixed_length=True)
+            name = self.cbas_util.generate_name(
+                name_cardinality=1, max_length=3, fixed_length=True)
 
             if creation_method == "enable_cbas_from_kv":
                 enabled_from_KV = True
@@ -6019,9 +6017,8 @@ class CreateDatasetsTask(Task):
                     dataverse = self.cbas_util.get_dataverse_obj("Default")
 
             while self.dataset_present(name, dataverse.name):
-                name = self.cbas_util.generate_name(name_cardinality=1,
-                                                    max_length=3,
-                                                    fixed_length=True)
+                name = self.cbas_util.generate_name(
+                    name_cardinality=1, max_length=3, fixed_length=True)
             num_of_items = collection.num_items
 
             if creation_method == "cbas_collection":
@@ -6054,12 +6051,12 @@ class CreateDatasetsTask(Task):
         if dataset.enabled_from_KV:
             if self.kv_name_cardinality > 1:
                 return self.cbas_util.enable_analytics_from_KV(
-                    dataset.full_kv_entity_name, False, False, None, None,
-                    None, 120, 120)
+                    self.cluster, dataset.full_kv_entity_name, False, False,
+                    None, None, None, 120, 120)
             else:
                 return self.cbas_util.enable_analytics_from_KV(
-                    dataset.get_fully_qualified_kv_entity_name(1), False,
-                    False, None, None, None, 120, 120)
+                    self.cluster, dataset.get_fully_qualified_kv_entity_name(1),
+                    False, False, None, None, None, 120, 120)
         else:
             if isinstance(dataset, CBAS_Collection):
                 analytics_collection = True
@@ -6067,32 +6064,35 @@ class CreateDatasetsTask(Task):
                 analytics_collection = False
             if self.kv_name_cardinality > 1 and self.cbas_name_cardinality > 1:
                 return self.cbas_util.create_dataset(
-                    dataset.name, dataset.full_kv_entity_name, dataverse_name,
-                    False, False, None, dataset.link_name, None, False, None,
-                    None, None, 120, 120, analytics_collection)
+                    self.cluster, dataset.name, dataset.full_kv_entity_name,
+                    dataverse_name, False, False, None, dataset.link_name, None,
+                    False, None, None, None, 120, 120, analytics_collection)
             elif self.kv_name_cardinality > 1 and \
                     self.cbas_name_cardinality == 1:
                 return self.cbas_util.create_dataset(
-                    dataset.name, dataset.full_kv_entity_name, None, False,
-                    False, None, dataset.link_name, None, False, None, None,
-                    None, 120, 120, analytics_collection)
+                    self.cluster, dataset.name, dataset.full_kv_entity_name,
+                    None, False, False, None, dataset.link_name, None, False,
+                    None, None, None, 120, 120, analytics_collection)
             elif self.kv_name_cardinality == 1 and \
                     self.cbas_name_cardinality > 1:
                 return self.cbas_util.create_dataset(
-                    dataset.name, dataset.get_fully_qualified_kv_entity_name(1),
+                    self.cluster, dataset.name,
+                    dataset.get_fully_qualified_kv_entity_name(1),
                     dataverse_name, False, False, None, dataset.link_name, None,
                     False, None, None, None, 120, 120, analytics_collection)
             else:
                 return self.cbas_util.create_dataset(
-                    dataset.name, dataset.get_fully_qualified_kv_entity_name(1),
+                    self.cluster, dataset.name,
+                    dataset.get_fully_qualified_kv_entity_name(1),
                     None, False, False, None, dataset.link_name, None, False,
                     None, None, None, 120, 120, analytics_collection)
 
 
 class CreateSynonymsTask(Task):
-    def __init__(self, cbas_util, cbas_entity, dataverse, synonyms_per_entity=1,
-                 synonym_on_synonym=False, prefix=None):
+    def __init__(self, cluster, cbas_util, cbas_entity, dataverse,
+                 synonyms_per_entity=1, synonym_on_synonym=False, prefix=None):
         super(CreateSynonymsTask, self).__init__("CreateSynonymsTask")
+        self.cluster = cluster
         self.cbas_util = cbas_util
         self.cbas_entity = cbas_entity
         self.dataverse = dataverse
@@ -6105,25 +6105,23 @@ class CreateSynonymsTask(Task):
         results = []
         try:
             for _ in range(self.synonyms_per_entity):
-                name = self.cbas_util.generate_name(name_cardinality=1,
-                                                    max_length=3,
-                                                    fixed_length=True)
+                name = self.cbas_util.generate_name(
+                    name_cardinality=1, max_length=3, fixed_length=True)
                 while name in \
                         self.cbas_util.dataverses[
                             self.dataverse.name].synonyms.keys():
-                    name = self.cbas_util.generate_name(name_cardinality=1,
-                                                        max_length=3,
-                                                        fixed_length=True)
+                    name = self.cbas_util.generate_name(
+                        name_cardinality=1, max_length=3, fixed_length=True)
                 synonym = Synonym(
                     name=name, cbas_entity_name=self.cbas_entity.name,
                     cbas_entity_dataverse=self.cbas_entity.dataverse_name,
                     dataverse_name=self.dataverse.name,
                     synonym_on_synonym=self.synonym_on_synonym)
                 if not self.cbas_util.create_analytics_synonym(
-                        synonym.full_name, synonym.cbas_entity_full_name,
-                        if_not_exists=False, validate_error_msg=False,
-                        expected_error=None, username=None, password=None,
-                        timeout=300, analytics_timeout=300):
+                    self.cluster, synonym.full_name,
+                    synonym.cbas_entity_full_name, if_not_exists=False,
+                    validate_error_msg=False, expected_error=None, username=None,
+                    password=None, timeout=300, analytics_timeout=300):
                     results.append(False)
                 else:
                     self.cbas_util.dataverses[self.cbas_entity.dataverse_name].\
@@ -6140,10 +6138,11 @@ class CreateSynonymsTask(Task):
 
 
 class CreateCBASIndexesTask(Task):
-    def __init__(self, cbas_util, dataset, indexes_per_dataset=1, prefix=None,
-                 index_fields=[]):
+    def __init__(self, cluster, cbas_util, dataset, indexes_per_dataset=1,
+                 prefix=None, index_fields=[]):
         super(CreateCBASIndexesTask, self).__init__(
             "CreateCBASIndexesTask")
+        self.cluster = cluster
         self.cbas_util = cbas_util
         self.indexes_per_dataset = indexes_per_dataset
         self.prefix = prefix
@@ -6159,13 +6158,12 @@ class CreateCBASIndexesTask(Task):
         try:
             for i in range(self.indexes_per_dataset):
 
-                name = self.cbas_util.generate_name(name_cardinality=1,
-                                                    max_length=3,
-                                                    fixed_length=True)
-                index = CBAS_Index(name=name, dataset_name=self.dataset.name,
-                                   dataverse_name=self.dataset.dataverse_name,
-                                   indexed_fields=random.choice(
-                                       self.index_fields))
+                name = self.cbas_util.generate_name(
+                    name_cardinality=1, max_length=3, fixed_length=True)
+                index = CBAS_Index(
+                    name=name, dataset_name=self.dataset.name,
+                    dataverse_name=self.dataset.dataverse_name,
+                    indexed_fields=random.choice(self.index_fields))
 
                 creation_method = random.choice(self.creation_methods)
                 if creation_method == "cbas_index":
@@ -6173,13 +6171,12 @@ class CreateCBASIndexesTask(Task):
                 else:
                     index.analytics_index = False
                 if not self.cbas_util.create_cbas_index(
-                        index_name=index.name,
-                        indexed_fields=index.indexed_fields,
-                        dataset_name=index.full_dataset_name,
-                        analytics_index=index.analytics_index,
-                        validate_error_msg=False, expected_error=None,
-                        username=None, password=None, timeout=300,
-                        analytics_timeout=300):
+                    self.cluster, index_name=index.name,
+                    indexed_fields=index.indexed_fields,
+                    dataset_name=index.full_dataset_name,
+                    analytics_index=index.analytics_index,
+                    validate_error_msg=False, expected_error=None,
+                    username=None, password=None, timeout=300, analytics_timeout=300):
                     raise Exception(
                         "Failed to create index {0} on {1}({2})".format(
                             index.name, index.full_dataset_name,
@@ -6194,9 +6191,10 @@ class CreateCBASIndexesTask(Task):
 
 
 class CreateUDFTask(Task):
-    def __init__(self, cbas_util, udf, dataverse, body, referenced_entities=[],
+    def __init__(self, cluster, cbas_util, udf, dataverse, body, referenced_entities=[],
                  parameters=[]):
         super(CreateUDFTask, self).__init__("CreateUDFTask")
+        self.cluster = cluster
         self.cbas_util = cbas_util
         self.dataverse = dataverse
         self.body = body
@@ -6208,19 +6206,16 @@ class CreateUDFTask(Task):
         self.start_task()
         try:
             if not self.cbas_util.create_udf(
-                    name=self.udf, dataverse=self.dataverse.name,
-                    or_replace=False, parameters=self.parameters,
-                    body=self.body,
-                    if_not_exists=False, query_context=False,
-                    use_statement=False, validate_error_msg=False,
-                    expected_error=None, username=None, password=None,
-                    timeout=120, analytics_timeout=120):
+                self.cluster, name=self.udf, dataverse=self.dataverse.name,
+                or_replace=False, parameters=self.parameters, body=self.body,
+                if_not_exists=False, query_context=False, use_statement=False,
+                validate_error_msg=False, expected_error=None, username=None,
+                password=None, timeout=120, analytics_timeout=120):
                 raise Exception(
                     "Couldn't create UDF {0} on dataverse {1}: def :{2}".format(
                         self.udf, self.dataverse.name, self.body))
             udf_obj = CBAS_UDF(
-                name=self.udf,
-                dataverse_name=self.dataverse.name, parameters=[],
+                name=self.udf, dataverse_name=self.dataverse.name, parameters=[],
                 body=self.body, referenced_entities=self.referenced_entities)
             self.cbas_util.dataverses[
                 self.dataverse.name].udfs[udf_obj.full_name] = udf_obj
@@ -6231,8 +6226,9 @@ class CreateUDFTask(Task):
 
 
 class DropUDFTask(Task):
-    def __init__(self, cbas_util, dataverse):
+    def __init__(self, cluster, cbas_util, dataverse):
         super(DropUDFTask, self).__init__("DropUDFTask")
+        self.cluster = cluster
         self.cbas_util = cbas_util
         self.dataverse = dataverse
 
@@ -6241,12 +6237,11 @@ class DropUDFTask(Task):
         try:
             for udf in self.dataverse.udfs.values():
                 if not self.cbas_util.drop_udf(
-                        name=udf.name, dataverse=self.dataverse.name,
-                        parameters=udf.parameters, if_exists=False,
-                        use_statement=False, query_context=False,
-                        validate_error_msg=False, expected_error=None,
-                        username=None, password=None, timeout=120,
-                        analytics_timeout=120):
+                    self.cluster, name=udf.name, dataverse=self.dataverse.name,
+                    parameters=udf.parameters, if_exists=False,
+                    use_statement=False, query_context=False,
+                    validate_error_msg=False, expected_error=None, username=None,
+                    password=None, timeout=120, analytics_timeout=120):
                     raise Exception("Could not drop {0} on {1}: def :".format(
                         udf.name, self.dataverse.name, udf.body))
         except Exception as e:
@@ -6256,8 +6251,9 @@ class DropUDFTask(Task):
 
 
 class DropCBASIndexesTask(Task):
-    def __init__(self, cbas_util, dataset):
+    def __init__(self, cluster, cbas_util, dataset):
         super(DropCBASIndexesTask, self).__init__("DropCBASIndexesTask")
+        self.cluster = cluster
         self.cbas_util = cbas_util
         self.dataset = dataset
 
@@ -6266,10 +6262,10 @@ class DropCBASIndexesTask(Task):
         try:
             for index in self.dataset.indexes.values():
                 if not self.cbas_util.drop_cbas_index(
-                        index_name=index.name,
-                        dataset_name=index.full_dataset_name,
-                        analytics_index=index.analytics_index,
-                        timeout=120, analytics_timeout=120):
+                    self.cluster, index_name=index.name,
+                    dataset_name=index.full_dataset_name,
+                    analytics_index=index.analytics_index,
+                    timeout=120, analytics_timeout=120):
                     raise Exception("Failed to drop index {0} on {1}".format(
                         index.name, index.full_dataset_name))
                 self.cbas_util.dataverses[
@@ -6282,8 +6278,9 @@ class DropCBASIndexesTask(Task):
 
 
 class DropSynonymsTask(Task):
-    def __init__(self, cbas_util):
+    def __init__(self, cluster, cbas_util):
         super(DropSynonymsTask, self).__init__("DropSynonymsTask")
+        self.cluster = cluster
         self.cbas_util = cbas_util
 
     def call(self):
@@ -6292,8 +6289,8 @@ class DropSynonymsTask(Task):
             for dv_name, dataverse in self.cbas_util.dataverses.items():
                 for synonym in dataverse.synonyms.values():
                     if not self.cbas_util.drop_analytics_synonym(
-                            synonym_full_name=synonym.full_name, if_exists=True,
-                            timeout=120, analytics_timeout=120):
+                        self.cluster, synonym_full_name=synonym.full_name,
+                        if_exists=True, timeout=120, analytics_timeout=120):
                         raise Exception(
                             "Unable to drop synonym " + synonym.full_name)
                     self.cbas_util.dataverses[dataverse.name].synonyms.pop(
@@ -6305,9 +6302,10 @@ class DropSynonymsTask(Task):
 
 
 class DropDatasetsTask(Task):
-    def __init__(self, cbas_util, kv_name_cardinality=1):
+    def __init__(self, cluster, cbas_util, kv_name_cardinality=1):
         super(DropDatasetsTask, self).__init__(
             "DropDatasetsTask")
+        self.cluster = cluster
         self.cbas_util = cbas_util
         self.kv_name_cardinality = kv_name_cardinality
 
@@ -6319,20 +6317,21 @@ class DropDatasetsTask(Task):
                     if dataset.enabled_from_KV:
                         if self.kv_name_cardinality > 1:
                             if not self.cbas_util.disable_analytics_from_KV(
-                                    dataset.full_kv_entity_name):
+                                self.cluster, dataset.full_kv_entity_name):
                                 raise Exception(
                                     "Unable to disable analytics on " + \
                                     dataset.full_kv_entity_name)
                         else:
                             if not self.cbas_util.disable_analytics_from_KV(
-                                    dataset.get_fully_qualified_kv_entity_name(
-                                        1)):
+                                self.cluster,
+                                dataset.get_fully_qualified_kv_entity_name(1)):
                                 raise Exception(
                                     "Unable to disable analytics on " + \
                                     dataset.get_fully_qualified_kv_entity_name(
                                         1))
                     else:
-                        if not self.cbas_util.drop_dataset(dataset.full_name):
+                        if not self.cbas_util.drop_dataset(
+                            self.cluster, dataset.full_name):
                             raise Exception(
                                 "Unable to drop dataset " + dataset.full_name)
                     dataverse.datasets.pop(dataset.full_name)
@@ -6343,17 +6342,19 @@ class DropDatasetsTask(Task):
 
 
 class DropDataversesTask(Task):
-    def __init__(self, cbas_util):
+    def __init__(self, cluster, cbas_util):
         super(DropDataversesTask, self).__init__(
             "DropDataversesTask")
         self.cbas_util = cbas_util
+        self.cluster = cluster
 
     def call(self):
         self.start_task()
         try:
             for dataverse in self.cbas_util.dataverses.values():
                 if dataverse.name != "Default":
-                    if not self.cbas_util.drop_dataverse(dataverse.name):
+                    if not self.cbas_util.drop_dataverse(
+                        self.cluster, dataverse.name):
                         raise Exception(
                             "Unable to drop dataverse " + dataverse.name)
         except Exception as e:

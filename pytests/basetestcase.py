@@ -322,28 +322,7 @@ class BaseTestCase(unittest.TestCase):
                     self.tear_down_while_setup = False
             if not self.skip_init_check_cbserver:
                 for cluster_name, cluster in self.cb_clusters.items():
-                    self.log.info("Initializing cluster %s" % cluster_name)
-                    self.cluster_util.reset_cluster(cluster)
-                    master_services = self.cluster_util.get_services(
-                        cluster.servers[:1], self.services_init, start_node=0)
-                    if master_services is not None:
-                        master_services = master_services[0].split(",")
-
-                    self.quota = self._initialize_nodes(
-                        self.task,
-                        cluster,
-                        self.disabled_consistent_view,
-                        self.rebalanceIndexWaitingDisabled,
-                        self.rebalanceIndexPausingDisabled,
-                        self.maxParallelIndexers,
-                        self.maxParallelReplicaIndexers,
-                        self.port,
-                        self.quota_percent,
-                        services=master_services)
-
-                    self.cluster_util.change_env_variables(cluster)
-                    self.cluster_util.change_checkpoint_params(cluster)
-                    self.log.info("Cluster %s initialized" % cluster_name)
+                    self.initialize_cluster(cluster_name, cluster, services=None)
             else:
                 self.quota = ""
 
@@ -356,20 +335,7 @@ class BaseTestCase(unittest.TestCase):
                     shell_conn.disconnect()
 
             for cluster_name, cluster in self.cb_clusters.items():
-                if self.log_info:
-                    self.cluster_util.change_log_info(cluster,
-                                                      self.log_info)
-                if self.log_location:
-                    self.cluster_util.change_log_location(cluster,
-                                                          self.log_location)
-                if self.stat_info:
-                    self.cluster_util.change_stat_info(cluster,
-                                                       self.stat_info)
-                if self.port_info:
-                    self.cluster_util.change_port_info(cluster,
-                                                       self.port_info)
-                if self.port:
-                    self.port = str(self.port)
+                self.modify_cluster_settings(cluster)
 
             self.log_setup_status("BaseTestCase", "finished")
 
@@ -379,6 +345,50 @@ class BaseTestCase(unittest.TestCase):
             traceback.print_exc()
             self.task.shutdown(force=True)
             self.fail(e)
+
+    def initialize_cluster(self, cluster_name, cluster, services=None):
+        self.log.info("Initializing cluster : {0}".format(cluster_name))
+        self.cluster_util.reset_cluster(cluster)
+        if not services:
+            master_services = self.cluster_util.get_services(
+                            cluster.servers[:1], self.services_init, start_node=0)
+        else:
+            master_services = self.cluster_util.get_services(
+                            cluster.servers[:1], services, start_node=0)
+        if master_services is not None:
+            master_services = master_services[0].split(",")
+
+        self.quota = self._initialize_nodes(
+            self.task,
+            cluster,
+            self.disabled_consistent_view,
+            self.rebalanceIndexWaitingDisabled,
+            self.rebalanceIndexPausingDisabled,
+            self.maxParallelIndexers,
+            self.maxParallelReplicaIndexers,
+            self.port,
+            self.quota_percent,
+            services=master_services)
+
+        self.cluster_util.change_env_variables(cluster)
+        self.cluster_util.change_checkpoint_params(cluster)
+        self.log.info("Cluster %s initialized" % cluster_name)
+
+    def modify_cluster_settings(self, cluster):
+        if self.log_info:
+            self.cluster_util.change_log_info(cluster,
+                                              self.log_info)
+        if self.log_location:
+            self.cluster_util.change_log_location(cluster,
+                                                  self.log_location)
+        if self.stat_info:
+            self.cluster_util.change_stat_info(cluster,
+                                               self.stat_info)
+        if self.port_info:
+            self.cluster_util.change_port_info(cluster,
+                                               self.port_info)
+        if self.port:
+            self.port = str(self.port)
 
     def cleanup_pcaps(self):
         for server in self.servers:
