@@ -226,6 +226,9 @@ class CollectionBase(ClusterSetup):
             elif key == "doc_size":
                 target_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_SIZE] \
                     = self.doc_size
+            elif key == "randomize_value":
+                target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
+                    = self.randomize_value
 
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
