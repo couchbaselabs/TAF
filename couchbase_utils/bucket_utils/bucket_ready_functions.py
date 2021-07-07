@@ -1925,15 +1925,18 @@ class BucketUtils(ScopeUtils):
         table = TableView(self.log.info)
         table.set_headers(["Bucket", "Type", "Storage Backend", "Replicas",
                            "Durability", "TTL", "Items", "RAM Quota",
-                           "RAM Used", "Disk Used"])
+                           "RAM Used", "Disk Used", "ARR"])
         buckets = self.get_all_buckets(cluster)
         if len(buckets) == 0:
             table.add_row(["No buckets", "", "", "", "", "", "", "", ""])
         else:
             for bucket in buckets:
                 storage_backend = "-"
+                ARR = "-"
                 if bucket.bucketType == Bucket.Type.MEMBASE:
                     storage_backend = bucket.storageBackend
+                    ARR = BucketHelper(cluster.master).fetch_bucket_stats(
+                        bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
                 table.add_row(
                     [bucket.name, bucket.bucketType,
                      storage_backend,
@@ -1943,7 +1946,8 @@ class BucketUtils(ScopeUtils):
                      str(bucket.stats.itemCount),
                      str(bucket.stats.ram),
                      str(bucket.stats.memUsed),
-                     str(bucket.stats.diskUsed)])
+                     str(bucket.stats.diskUsed),
+                     ARR])
         table.display("Bucket statistics")
 
     def get_vbucket_num_for_key(self, doc_key, total_vbuckets=1024):
