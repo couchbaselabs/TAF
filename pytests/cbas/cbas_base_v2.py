@@ -77,7 +77,7 @@ class CBASBaseTest(BaseTestCase):
         servers in that cluster.
         """
         start = 0
-        end = self.cluster_nodes_init[0]
+        end = self.nodes_init[0]
         cluster = self.cb_clusters[self.cb_clusters.keys()[0]]
         cluster.servers = self.servers[start:end]
         cluster.nodes_in_cluster.append(cluster.master)
@@ -92,7 +92,7 @@ class CBASBaseTest(BaseTestCase):
         cluster_name_format = "C%s"
         for i in range(1, self.num_of_clusters):
             start = end
-            end += self.cluster_nodes_init[i]
+            end += self.nodes_init[i]
             cluster_name = cluster_name_format % str(i+1)
             cluster = CBCluster(
                 name=cluster_name,
@@ -475,3 +475,62 @@ class CBASBaseTest(BaseTestCase):
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
             elif over_ride_param == "doc_size":
                 target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
+
+    @staticmethod
+    def create_or_delete_users(rbac_util, rbac_users_created, delete=False):
+        """
+        Creates all types of rbac users.
+        """
+        if delete:
+            for user in rbac_users_created:
+                try:
+                    rbac_util._drop_user(user)
+                    del (rbac_users_created[user])
+                except:
+                    pass
+        else:
+            for role in rbac_util.cb_server_roles:
+                if "[*]" in role:
+                    user = role.replace("[*]", "")
+                else:
+                    user = role
+                rbac_users_created[user] = role
+                rbac_util._create_user_and_grant_role(user, role)
+
+    @staticmethod
+    def create_testcase_for_rbac_user(description, rbac_users_created,
+                                      users_with_permission=[],
+                                      users_without_permission=[]):
+        testcases = []
+        for user in rbac_users_created:
+            if user in ["admin", "analytics_admin"] + users_with_permission:
+                test_params = {
+                    "description": description.format(user),
+                    "validate_error_msg": False
+                }
+            elif user in ["security_admin_local", "security_admin_external",
+                          "query_external_access",
+                          "query_system_catalog", "replication_admin",
+                          "ro_admin", "bucket_full_access",
+                          "replication_target", "mobile_sync_gateway",
+                          "data_reader", "data_writer",
+                          "data_dcp_reader", "data_monitoring",
+                          "views_admin", "views_reader",
+                          "query_delete", "query_insert",
+                          "query_manage_index", "query_select",
+                          "query_update", "fts_admin", "fts_searcher",
+                          "cluster_admin", "bucket_admin",
+                          "analytics_manager", "data_backup", "analytics_select",
+                          "analytics_reader"] + users_without_permission:
+                test_params = {
+                    "description": description.format(user),
+                    "validate_error_msg": True,
+                    "expected_error": "User must have permission",
+                }
+            else:
+                test_params = {"description": description.format(user),
+                               "validate_error_msg": True,
+                               "expected_error": "Unauthorized user"}
+            test_params["username"] = user
+            testcases.append(test_params)
+        return testcases

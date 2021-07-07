@@ -1,6 +1,6 @@
 import random
 
-from cbas.cbas_base import CBASBaseTest
+from cbas.cbas_base_v2 import CBASBaseTest
 from Jython_tasks.task import CreateDatasetsTask, DropDatasetsTask, \
     CreateSynonymsTask, DropSynonymsTask, DropDataversesTask, \
     CreateCBASIndexesTask, DropCBASIndexesTask, CreateUDFTask, DropUDFTask
@@ -11,8 +11,15 @@ import urllib
 
 
 class BackupRestoreTest(CBASBaseTest):
+
     def setUp(self):
         self.input = TestInputSingleton.input
+
+        self.input.test_params.update(
+            {"services_init": "kv:n1ql:index-cbas-cbas-kv"})
+        self.input.test_params.update(
+            {"nodes_init": "4"})
+
         self.num_dataverses = int(self.input.param("no_of_dv", 1))
         self.ds_per_dv = int(self.input.param("ds_per_dv", 1))
         self.kv_name_cardinality = self.input.param("kv_name_cardinality", 3)
@@ -23,12 +30,16 @@ class BackupRestoreTest(CBASBaseTest):
             if "bucket_spec" not in self.input.test_params:
                 self.input.test_params.update(
                     {"bucket_spec": "analytics.default"})
-        else:
-            if "default_bucket" not in self.input.test_params:
-                self.input.test_params.update({"default_bucket": False})
+            self.input.test_params.update(
+                {"cluster_kv_infra": "bkt_spec"})
+
         super(BackupRestoreTest, self).setUp()
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.setUp.__name__)
+
+        # Since all the test cases are being run on 1 cluster only
+        self.cluster = self.cb_clusters.values()[0]
+
         self.synonyms_per_ds = int(self.input.param("synonyms_per_ds", 1))
         self.overlap_path = self.input.param("overlap_path", False)
         self.drop_datasets = self.input.param("drop_datasets", True)
@@ -39,14 +50,14 @@ class BackupRestoreTest(CBASBaseTest):
         self.remap_bucket = self.input.param("remap_bucket", False)
         self.ds_fields = ['DatasetName', 'DataverseName', 'BucketName', 'ScopeName',
             'CollectionName']
-        self.backup_util = BackupUtils(self.cluster.servers[0], self.cbas_node)
+
+        self.backup_util = BackupUtils()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
 
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
-        self.backup_util.shell.disconnect()
         super(BackupRestoreTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
@@ -56,11 +67,11 @@ class BackupRestoreTest(CBASBaseTest):
                          original_bucket, original_scope, original_collection,
                          remap_bucket, remap_scope, remap_collection,
                          level="cluster"):
-        dv_after_restore = self.cbas_util_v2.get_dataverses(retries=1)
-        ds_after_restore = self.cbas_util_v2.get_datasets(retries=1,
-                                                          fields=self.ds_fields)
-        syn_after_restore = self.cbas_util_v2.get_synonyms(retries=1)
-        idx_after_restore = self.cbas_util_v2.get_indexes(retries=1)
+        dv_after_restore = self.cbas_util.get_dataverses(self.cluster, retries=1)
+        ds_after_restore = self.cbas_util.get_datasets(
+            self.cluster, retries=1, fields=self.ds_fields)
+        syn_after_restore = self.cbas_util.get_synonyms(self.cluster, retries=1)
+        idx_after_restore = self.cbas_util.get_indexes(self.cluster, retries=1)
         if include:
             if not isinstance(include, list):
                 include = urllib.quote(include).split(",")
@@ -107,9 +118,10 @@ class BackupRestoreTest(CBASBaseTest):
     def create_datasets(self,
                         creation_methods=["cbas_collection", "cbas_dataset"]):
         create_datasets_task = CreateDatasetsTask(
+            self.cluster,
             bucket_util=self.bucket_util,
             cbas_name_cardinality=self.cbas_name_cardinality,
-            cbas_util=self.cbas_util_v2,
+            cbas_util=self.cbas_util,
             kv_name_cardinality=self.kv_name_cardinality,
             ds_per_dv=self.ds_per_dv, ds_per_collection=self.ds_per_collection,
             creation_methods=creation_methods)
@@ -119,12 +131,12 @@ class BackupRestoreTest(CBASBaseTest):
 
     def create_synonyms(self, cbas_entities=[], synonym_on_synonym=False):
         if not cbas_entities:
-            cbas_entities = self.cbas_util_v2.list_all_dataset_objs()
+            cbas_entities = self.cbas_util.list_all_dataset_objs()
         results = []
         for ds in cbas_entities:
             synonyms_task = CreateSynonymsTask(
-                cbas_util=self.cbas_util_v2, cbas_entity=ds,
-                dataverse=self.cbas_util_v2.dataverses[ds.dataverse_name],
+                cluster=self.cluster, cbas_util=self.cbas_util, cbas_entity=ds,
+                dataverse=self.cbas_util.dataverses[ds.dataverse_name],
                 synonyms_per_entity=self.synonyms_per_ds,
                 synonym_on_synonym=synonym_on_synonym)
             self.task_manager.add_new_task(synonyms_task)
@@ -135,68 +147,69 @@ class BackupRestoreTest(CBASBaseTest):
     def create_indexes(self, datasets=[], prefix=""):
         results = []
         if not datasets:
-            datasets = self.cbas_util_v2.list_all_dataset_objs()
+            datasets = self.cbas_util.list_all_dataset_objs()
         for ds in datasets:
-            create_index_task = CreateCBASIndexesTask(self.cbas_util_v2, ds)
+            create_index_task = CreateCBASIndexesTask(
+                self.cluster, self.cbas_util, ds)
             create_index_task.call()
             results.append(create_index_task.result)
         return all(results)
 
     def create_udfs(self):
         if self.input.param("udfs_on_datasets", True):
-            for num, ds in enumerate(self.cbas_util_v2.list_all_dataset_objs()):
+            for num, ds in enumerate(self.cbas_util.list_all_dataset_objs()):
                 name = "func_ds_" + str(num)
-                dv = self.cbas_util_v2.dataverses[ds.dataverse_name]
+                dv = self.cbas_util.dataverses[ds.dataverse_name]
                 ds_name = ds.full_name
                 body = "select count(*) from {0}".format(ds_name)
                 create_udf_task = CreateUDFTask(
-                    self.cbas_util_v2, name, dv, body,
+                    self.cluster, self.cbas_util, name, dv, body,
                     parameters=[], referenced_entities=[dv.datasets[ds_name]])
                 self.task_manager.add_new_task(create_udf_task)
                 self.task_manager.get_task_result(create_udf_task)
         if self.input.param("udfs_on_synonyms", False):
-            for num, syn in enumerate(self.cbas_util_v2.get_synonyms()):
+            for num, syn in enumerate(self.cbas_util.get_synonyms(self.cluster)):
                 name = "func_syn_" + str(num)
                 dv, syn_name = syn.split(".")
                 body = "SELECT COUNT(*) FROM {0}".format(syn)
-                create_udf_task = CreateUDFTask(self.cbas_util_v2, name,
-                                                self.cbas_util_v2.dataverses[dv],
-                                                body, parameters=[],
-                                                referenced_entities=[syn])
+                create_udf_task = CreateUDFTask(
+                    self.cluster, self.cbas_util, name,
+                    self.cbas_util.dataverses[dv], body, parameters=[],
+                    referenced_entities=[syn])
                 self.task_manager.add_new_task(create_udf_task)
                 self.task_manager.get_task_result(create_udf_task)
 
     def drop_all_udfs(self):
-        for dv in self.cbas_util_v2.dataverses.values():
-            drop_udf_task = DropUDFTask(self.cbas_util_v2, dv)
+        for dv in self.cbas_util.dataverses.values():
+            drop_udf_task = DropUDFTask(self.cluster, self.cbas_util, dv)
             self.task_manager.add_new_task(drop_udf_task)
             self.task_manager.get_task_result(drop_udf_task)
 
     def drop_all_indexes(self, datasets=[]):
         results = []
         if not datasets:
-            datasets = self.cbas_util_v2.list_all_dataset_objs()
+            datasets = self.cbas_util.list_all_dataset_objs()
         for ds in datasets:
-            drop_indexes_task = DropCBASIndexesTask(self.cbas_util_v2, ds)
+            drop_indexes_task = DropCBASIndexesTask(self.cluster, self.cbas_util, ds)
             drop_indexes_task.call()
             results.append(drop_indexes_task.result)
         return all(results)
 
     def drop_all_datasets(self):
-        drop_datasets_task = DropDatasetsTask(self.cbas_util_v2,
-                                              self.kv_name_cardinality)
+        drop_datasets_task = DropDatasetsTask(
+            self.cluster, self.cbas_util, self.kv_name_cardinality)
         self.task_manager.add_new_task(drop_datasets_task)
         self.task_manager.get_task_result(drop_datasets_task)
         return drop_datasets_task.result
 
     def drop_all_synonyms(self):
-        drop_synonyms_task = DropSynonymsTask(self.cbas_util_v2)
+        drop_synonyms_task = DropSynonymsTask(self.cluster, self.cbas_util)
         self.task_manager.add_new_task(drop_synonyms_task)
         self.task_manager.get_task_result(drop_synonyms_task)
         return drop_synonyms_task.result
 
     def drop_all_dataverses(self):
-        drop_dataverses_task = DropDataversesTask(self.cbas_util_v2)
+        drop_dataverses_task = DropDataversesTask(self.cluster, self.cbas_util)
         self.task_manager.add_new_task(drop_dataverses_task)
         self.task_manager.get_task_result(drop_dataverses_task)
         return drop_dataverses_task.result
@@ -214,15 +227,15 @@ class BackupRestoreTest(CBASBaseTest):
         7. Validate CBAS infra.(Dataverses, Synonyms, Datasets and \
         Ingestion)
         """
-        self.cbas_logger("test_cluster_level_backup started", "DEBUG")
+        self.log.debug("test_cluster_level_backup started")
         self.create_datasets()
         self.create_synonyms()
         self.create_indexes()
         self.create_udfs()
-        syn_before_backup = self.cbas_util_v2.get_synonyms()
-        dv_before_backup = self.cbas_util_v2.get_dataverses()
+        syn_before_backup = self.cbas_util.get_synonyms(self.cluster)
+        dv_before_backup = self.cbas_util.get_dataverses(self.cluster)
         status, backup, response = self.backup_util.rest_backup_cbas(
-            level="cluster")
+            self.cluster, level="cluster")
         self.assertTrue(status)
         if self.drop_synonyms:
             self.drop_all_synonyms()
@@ -233,19 +246,19 @@ class BackupRestoreTest(CBASBaseTest):
         if self.drop_dataverses:
             self.drop_all_dataverses()
         status, restore, response = self.backup_util.rest_restore_cbas(
-            level="cluster", backup=backup)
+            self.cluster, level="cluster", backup=backup)
         self.assertTrue(status)
-        syn_after_restore = self.cbas_util_v2.get_synonyms(retries=1)
-        dv_after_restore = self.cbas_util_v2.get_dataverses(retries=1)
-        ds_after_restore = self.cbas_util_v2.get_datasets(retries=1)
-        idx_after_restore = self.cbas_util_v2.get_indexes(retries=1)
+        syn_after_restore = self.cbas_util.get_synonyms(self.cluster, retries=1)
+        dv_after_restore = self.cbas_util.get_dataverses(self.cluster, retries=1)
+        ds_after_restore = self.cbas_util.get_datasets(self.cluster, retries=1)
+        idx_after_restore = self.cbas_util.get_indexes(self.cluster, retries=1)
         self.assertEquals(len(syn_before_backup), len(syn_after_restore))
         self.assertEquals(len(dv_before_backup), len(dv_after_restore))
         if self.drop_datasets:
             self.assertEquals(len(ds_after_restore), 0)
         if self.drop_indexes:
             self.assertEquals(len(idx_after_restore), 0)
-        self.cbas_logger("test_cluster_level_backup finished", "DEBUG")
+        self.log.debug("test_cluster_level_backup finished")
 
     def test_bucket_level_backup(self):
         """
@@ -258,17 +271,18 @@ class BackupRestoreTest(CBASBaseTest):
         6. Restore using backed up metadata
         7. Validate CBAS infra.(Dataverses, Links, Datasets and Ingestion)
         """
-        self.cbas_logger("test_cluster_level_backup started", "DEBUG")
+        self.log.debug("test_cluster_level_backup started")
         include = self.input.param("include", True)
         exclude = self.input.param("exclude", False)
         self.create_datasets()
         self.create_synonyms()
         self.create_indexes()
         self.create_udfs()
-        dv_before_backup = self.cbas_util_v2.get_dataverses()
-        ds_before_backup = self.cbas_util_v2.get_datasets(fields=self.ds_fields)
-        syn_before_backup = self.cbas_util_v2.get_synonyms()
-        idx_before_backup = self.cbas_util_v2.get_indexes()
+        dv_before_backup = self.cbas_util.get_dataverses(self.cluster)
+        ds_before_backup = self.cbas_util.get_datasets(
+            self.cluster, fields=self.ds_fields)
+        syn_before_backup = self.cbas_util.get_synonyms(self.cluster)
+        idx_before_backup = self.cbas_util.get_indexes(self.cluster)
         bucket = random.choice(self.cluster.buckets)
         scope = random.choice(self.bucket_util.get_active_scopes(bucket))
         collection = random.choice(self.bucket_util.get_active_collections(
@@ -286,7 +300,7 @@ class BackupRestoreTest(CBASBaseTest):
         else:
             exclude = ""
         status, backup, response = self.backup_util.rest_backup_cbas(
-            level="bucket", bucket=bucket.name, include=include,
+            self.cluster, level="bucket", bucket=bucket.name, include=include,
             exclude=exclude)
         if (include and exclude) or self.overlap_path:
             self.assertFalse(status)
@@ -303,15 +317,14 @@ class BackupRestoreTest(CBASBaseTest):
             if self.drop_dataverses:
                 self.drop_all_dataverses()
             status, restore, response = self.backup_util.rest_restore_cbas(
-                level="bucket", bucket=bucket.name, backup=backup)
+                self.cluster, level="bucket", bucket=bucket.name, backup=backup)
             self.assertTrue(status)
-            self.validate_restore(dv_before_backup, ds_before_backup,
-                                  syn_before_backup, idx_before_backup,
-                                  include, exclude,
-                                  bucket, scope, collection, None,
-                                  None, None, level="bucket")
+            self.validate_restore(
+                dv_before_backup, ds_before_backup, syn_before_backup,
+                idx_before_backup, include, exclude, bucket, scope, collection,
+                None, None, None, level="bucket")
         # validate metadata
-        self.cbas_logger("test_cluster_level_backup finished", "DEBUG")
+        self.log.debug("test_cluster_level_backup finished")
 
     def test_bucket_level_restore(self):
         """
@@ -326,15 +339,15 @@ class BackupRestoreTest(CBASBaseTest):
         """
         include = self.input.param("include", True)
         exclude = self.input.param("exclude", False)
-        self.cbas_logger("test_cluster_level_backup started", "DEBUG")
+        self.log.debug("test_cluster_level_backup started")
         self.create_datasets()
         self.create_synonyms()
         self.create_indexes()
         self.create_udfs()
-        dv_before_backup = self.cbas_util_v2.get_dataverses()
-        ds_before_backup = self.cbas_util_v2.get_datasets(fields=self.ds_fields)
-        syn_before_backup = self.cbas_util_v2.get_synonyms()
-        idx_before_backup = self.cbas_util_v2.get_indexes()
+        dv_before_backup = self.cbas_util.get_dataverses(self.cluster)
+        ds_before_backup = self.cbas_util.get_datasets(self.cluster, fields=self.ds_fields)
+        syn_before_backup = self.cbas_util.get_synonyms(self.cluster)
+        idx_before_backup = self.cbas_util.get_indexes(self.cluster)
         original_bucket = random.choice(self.cluster.buckets)
         # remap collections
         original_scope = random.choice(
@@ -376,7 +389,7 @@ class BackupRestoreTest(CBASBaseTest):
         else:
             exclude = ""
         status, backup, response = self.backup_util.rest_backup_cbas(
-            level="bucket", bucket=original_bucket.name)
+            self.cluster, level="bucket", bucket=original_bucket.name)
 
         self.assertTrue(status)
 
@@ -392,31 +405,30 @@ class BackupRestoreTest(CBASBaseTest):
             self.drop_all_dataverses()
 
         status, restore, response = self.backup_util.rest_restore_cbas(
-            level="bucket", bucket=remap_bucket.name, backup=backup,
-            include=include, exclude=exclude, remap=remap)
+            self.cluster, level="bucket", bucket=remap_bucket.name,
+            backup=backup, include=include, exclude=exclude, remap=remap)
         if (include and exclude) or self.overlap_path:
             self.assertFalse(status)
         else:
             self.assertTrue(status)
-            self.validate_restore(dv_before_backup, ds_before_backup,
-                                  syn_before_backup, idx_before_backup,
-                                  include, exclude,
-                                  original_bucket, original_scope,
-                                  original_collection, remap_bucket,
-                                  remap_scope, remap_collection, level="bucket")
+            self.validate_restore(
+                dv_before_backup, ds_before_backup, syn_before_backup,
+                idx_before_backup, include, exclude, original_bucket,
+                original_scope, original_collection, remap_bucket, remap_scope,
+                remap_collection, level="bucket")
 
     def test_backup_with_cbbackupmgr(self):
-        self.cbas_logger("test_cluster_level_backup started", "DEBUG")
+        self.log.debug("test_cluster_level_backup started")
         include = self.input.param("include", True)
         exclude = self.input.param("exclude", False)
         self.create_datasets()
         self.create_synonyms()
         self.create_indexes()
         self.create_udfs()
-        dv_before_backup = self.cbas_util_v2.get_dataverses()
-        ds_before_backup = self.cbas_util_v2.get_datasets()
-        syn_before_backup = self.cbas_util_v2.get_synonyms()
-        idx_before_backup = self.cbas_util_v2.get_indexes()
+        dv_before_backup = self.cbas_util.get_dataverses(self.cluster)
+        ds_before_backup = self.cbas_util.get_datasets(self.cluster)
+        syn_before_backup = self.cbas_util.get_synonyms(self.cluster)
+        idx_before_backup = self.cbas_util.get_indexes(self.cluster)
         bucket = random.choice(self.cluster.buckets)
         scope = random.choice(self.bucket_util.get_active_scopes(bucket))
         collection = random.choice(self.bucket_util.get_active_collections(
@@ -432,9 +444,8 @@ class BackupRestoreTest(CBASBaseTest):
             exclude = paths
         else:
             exclude = []
-        o = self.backup_util.cbbackupmgr_backup_cbas(self.cbas_node,
-                                                     include=include,
-                                                     exclude=exclude)
+        o = self.backup_util.cbbackupmgr_backup_cbas(
+            self.cluster, include=include, exclude=exclude)
         if (include and exclude) or self.overlap_path:
             self.assertFalse('Backup completed successfully' in ''.join(o),
                             msg='Backup was successful')
@@ -451,16 +462,15 @@ class BackupRestoreTest(CBASBaseTest):
                 self.drop_all_datasets()
             if self.drop_dataverses:
                 self.drop_all_dataverses()
-            o = self.backup_util.cbbackupmgr_restore_cbas(self.cbas_node)
+            o = self.backup_util.cbbackupmgr_restore_cbas(self.cluster)
             self.assertTrue('Restore completed successfully' in ''.join(o),
                             msg='Restore was unsuccessful')
-            self.validate_restore(dv_before_backup, ds_before_backup,
-                                  syn_before_backup, idx_before_backup,
-                                  include, exclude,
-                                  bucket, scope, collection, None,
-                                  None, None)
+            self.validate_restore(
+                dv_before_backup, ds_before_backup, syn_before_backup,
+                idx_before_backup, include, exclude, bucket, scope, collection,
+                None, None, None)
         # validate metadata
-        self.cbas_logger("test_cluster_level_backup finished", "DEBUG")
+        self.log.debug("test_cluster_level_backup finished")
 
     def test_restore_with_cbbackupmgr(self):
         """
@@ -473,17 +483,17 @@ class BackupRestoreTest(CBASBaseTest):
         6. Restore using backed up metadata along with remap arg
         7. Validate CBAS infra.(Dataverses, Links, Datasets and Ingestion)
         """
-        self.cbas_logger("test_cluster_level_backup started", "DEBUG")
+        self.log.debug("test_cluster_level_backup started")
         include = self.input.param("include", True)
         exclude = self.input.param("exclude", False)
         self.create_datasets()
         self.create_synonyms()
         self.create_indexes()
         self.create_udfs()
-        dv_before_backup = self.cbas_util_v2.get_dataverses()
-        ds_before_backup = self.cbas_util_v2.get_datasets(fields=self.ds_fields)
-        syn_before_backup = self.cbas_util_v2.get_synonyms()
-        idx_before_backup = self.cbas_util_v2.get_indexes()
+        dv_before_backup = self.cbas_util.get_dataverses(self.cluster)
+        ds_before_backup = self.cbas_util.get_datasets(self.cluster ,fields=self.ds_fields)
+        syn_before_backup = self.cbas_util.get_synonyms(self.cluster)
+        idx_before_backup = self.cbas_util.get_indexes(self.cluster)
         original_bucket = random.choice(self.cluster.buckets)
         # remap collections
         original_scope = random.choice(
@@ -505,30 +515,24 @@ class BackupRestoreTest(CBASBaseTest):
                         self.bucket_util.get_active_scopes(remap_bucket))))
         remap_collection = random.choice(
             self.bucket_util.get_active_collections(remap_bucket, remap_scope.name))
-        mappings = ["{0}.{1}.{2}={3}.{4}.{5}".format(original_bucket.name,
-                                                     original_scope.name,
-                                                     original_collection.name,
-                                                     remap_bucket.name,
-                                                     remap_scope.name,
-                                                     remap_collection.name)]
+        mappings = ["{0}.{1}.{2}={3}.{4}.{5}".format(
+            original_bucket.name, original_scope.name, original_collection.name,
+            remap_bucket.name, remap_scope.name, remap_collection.name)]
         if self.overlap_path:
-            mappings.append("{0}.{1}={2}.{3}".format(original_bucket.name,
-                                                     original_scope.name,
-                                                     remap_bucket.name,
-                                                     remap_scope.name))
+            mappings.append("{0}.{1}={2}.{3}".format(
+                original_bucket.name, original_scope.name, remap_bucket.name,
+                remap_scope.name))
         if include:
-            include = ["{0}.{1}.{2}".format(original_bucket.name,
-                                            original_scope.name,
-                                            original_collection.name)]
+            include = ["{0}.{1}.{2}".format(
+                original_bucket.name, original_scope.name, original_collection.name)]
         else:
             include = []
         if exclude:
-            exclude = ["{0}.{1}.{2}".format(original_bucket.name,
-                                            original_scope.name,
-                                            original_collection.name)]
+            exclude = ["{0}.{1}.{2}".format(
+                original_bucket.name, original_scope.name, original_collection.name)]
         else:
             exclude = []
-        o = self.backup_util.cbbackupmgr_backup_cbas(self.cbas_node)
+        o = self.backup_util.cbbackupmgr_backup_cbas(self.cluster)
         self.assertTrue('Backup completed successfully' in ''.join(o),
                         msg='Backup was unsuccessful')
 
@@ -543,19 +547,17 @@ class BackupRestoreTest(CBASBaseTest):
         if self.drop_dataverses:
             self.drop_all_dataverses()
 
-        o = self.backup_util.cbbackupmgr_restore_cbas(self.cbas_node,
-                                                      include=include,
-                                                      exclude=exclude,
-                                                      mappings=mappings)
+        o = self.backup_util.cbbackupmgr_restore_cbas(
+            self.cluster, include=include, exclude=exclude, mappings=mappings)
         if (include and exclude) or self.overlap_path:
             self.assertFalse('Restore completed successfully' in ''.join(o),
                              msg='Restore was successful')
         else:
             self.assertTrue('Restore completed successfully' in ''.join(o),
                             msg='Restore was unsuccessful')
-            self.validate_restore(dv_before_backup, ds_before_backup,
-                                  syn_before_backup, idx_before_backup,include,
-                                  exclude, original_bucket, original_scope,
-                                  original_collection, remap_bucket,
-                                  remap_scope, remap_collection)
+            self.validate_restore(
+                dv_before_backup, ds_before_backup, syn_before_backup,
+                idx_before_backup,include, exclude, original_bucket,
+                original_scope, original_collection, remap_bucket, remap_scope,
+                remap_collection)
 

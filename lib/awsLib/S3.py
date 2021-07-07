@@ -172,21 +172,57 @@ class S3():
             self.logger.error(e)
             return False
 
-    def list_existing_buckets(self, return_response=False):
+    def list_existing_buckets(self):
         """
         List all the S3 buckets.
-        :param return_response: Returns response received from AWS if set to true, else returns a
-        list of buckets.
         """
         try:
-            response = self.client.list_buckets()
-            if return_response:
-                return response
+            response = self.s3_client.list_buckets()
+            if response:
+                return [x["Name"] for x in response['Buckets']]
             else:
-                return response['Buckets']
+                return []
         except Exception as e:
             self.logger.error(e)
             return []
+
+    def get_region_wise_buckets(self):
+        """
+        Fetch all buckets in all regions.
+        """
+        try:
+            buckets = self.list_existing_buckets()
+            if buckets:
+                region_wise_bucket = {}
+                for bucket in buckets:
+                    region = self.get_bucket_region(bucket)
+                    if region in region_wise_bucket:
+                        region_wise_bucket[region].append(bucket)
+                    else:
+                        region_wise_bucket[region] = [bucket]
+                return region_wise_bucket
+            else:
+                return {}
+        except Exception as e:
+            self.logger.error(e)
+            return {}
+
+    def get_bucket_region(self, bucket_name):
+        """
+        Gets the region where the bucket is located
+        """
+        try:
+            response = self.s3_client.list_buckets(Bucket=bucket_name)
+            if response:
+                if response["LocationConstraint"] == None:
+                    return "us-east-1"
+                else:
+                    return response["LocationConstraint"]
+            else:
+                return ""
+        except Exception as e:
+            self.logger.error(e)
+            return ""
 
     def upload_file(self, bucket_name, source_path, destination_path):
         """
@@ -262,6 +298,8 @@ def main():
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--new_bucket", help="create new bucket with name")
     group.add_argument("--existing_bucket", help="use existing bucket with name")
+    group.add_argument("--list_bucket", help="list existing buckets")
+    group.add_argument("--list_regionwise_bucket", help="list existing buckets")
     group.add_argument("--get_regions", help="fetches all the regions", action="store_true")
 
     parser.add_argument("access_key", help="access key for aws")
@@ -308,6 +346,12 @@ def main():
             print(json.dumps(result))
     elif args.get_regions:
         result = {"result": s3_obj.get_region_list()}
+        print(json.dumps(result))
+    elif args.list_bucket:
+        result = {"result": s3_obj.list_existing_buckets()}
+        print(json.dumps(result))
+    elif args.list_regionwise_bucket:
+        result = {"result": s3_obj.get_region_wise_buckets()}
         print(json.dumps(result))
 
 
