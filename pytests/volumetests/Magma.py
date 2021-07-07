@@ -954,11 +954,11 @@ class volume(BaseTestCase):
 
     def PrintStep(self, msg=None):
         print("\n")
-        print("\t", "#"*60)
-        print("\t", "#")
-        print("\t", "#  %s" % msg)
-        print("\t", "#")
-        print("\t", "#"*60)
+        print("\t" + "#"*60)
+        print("\t" + "#")
+        print("\t" + "#  %s" % msg)
+        print("\t" + "#")
+        print("\t" + "#"*60)
         print("\n")
 
     def ClusterOpsVolume(self):
@@ -1500,6 +1500,149 @@ class volume(BaseTestCase):
                                update_end=self.end)
             self.perform_load(validate_data=False)
 
+    def MB_42652(self):
+        self.loop = 1
+        while self.loop <= self.iterations:
+            #######################################################################
+            '''
+            creates: 0 - 10M
+            creates: 0 - 10M
+            Final Docs = 20M (0-20M)
+            '''
+            self.create_perc = 200
+            self.PrintStep("Step 4: Load %s items, sequential keys" %
+                           str(self.num_items*self.create_perc/100))
+            self.generate_docs(doc_ops="create")
+            self.perform_load(validate_data=False)
+            if self.end_step == 4:
+                exit(4)
+            '''
+            fragmentation at this time: 0, total data: 2X, stale: 0
+            '''
+            #######################################################################
+            '''
+            update: 0 - 1M * 10
+            Final Docs = 20M (0-20M)
+            '''
+            self.update_perc = 100
+            self.PrintStep("Step 5: Update the first set of %s percent (%s) items \
+            %s times" % (str(self.update_perc),
+                         str(self.num_items*self.update_perc/100),
+                         str(self.step_iterations)))
+            _iter = 0
+            while _iter < self.step_iterations:
+                self.PrintStep("Step 5.%s: Update the first set of %s percent (%s) \
+                items %s times" % (str(_iter), str(self.update_perc),
+                                   str(self.num_items*self.update_perc/100),
+                                   str(self.step_iterations)))
+                self.generate_docs(doc_ops="update")
+                self.perform_load(crash=False, validate_data=True)
+                _iter += 1
+            if self.end_step == 5:
+                exit(5)
+            '''
+            fragmentation at this time: 50, total data: 2X, stale: X
+            '''
+            #######################################################################
+            '''
+            Create Random: 0 - 10M
+            Final Docs = 30M (0-20M, 10M Random)
+            '''
+            temp = self.key_prefix
+            self.key_prefix = "random_keys"
+            self.create_perc = 100
+            self.PrintStep("Step 7: Create %s random keys" %
+                           str(self.num_items*self.create_perc/100))
+            self.generate_docs(doc_ops="create")
+            self.perform_load(crash=False, validate_data=True)
+            self.key_prefix = temp
+            '''
+            fragmentation: 50, total data: 3X, stale: X
+            '''
+            #######################################################################
+            '''
+            Update Random: 0 - 10M
+            Final Docs = 30M (0-20M, 10M Random)
+            '''
+            _iter = 0
+            self.update_perc = 100
+            self.key_prefix = "random_keys"
+            self.PrintStep("Step 8: Update all %s random items %s times" %
+                           (str(self.num_items*self.update_perc/100),
+                            str(self.step_iterations)))
+            while _iter < self.step_iterations:
+                self.PrintStep("Step 8.%s: Update all %s random items %s times" %
+                               (str(_iter),
+                                str(self.num_items*self.update_perc/100),
+                                str(self.step_iterations)))
+                self.generate_docs(doc_ops="update",
+                                   update_start=self.start,
+                                   update_end=self.end*self.update_perc/100)
+                self.perform_load(crash=False, validate_data=True)
+                _iter += 1
+            self.key_prefix = temp
+            if self.end_step == 8:
+                exit(8)
+            '''
+            fragmentation: 50, total data: 3X, stale: 1.5X
+            '''
+            #######################################################################
+            self.PrintStep("Step 13: Drop a collection")
+            total_collections = self.num_collections
+            total_items = self.final_items
+            drop = 0
+            for bucket in self.cluster.buckets:
+                for scope in bucket.scopes.keys():
+                    drop = 0
+                    for i in range(1, total_collections, 2):
+                        collection = self.collection_prefix + str(i)
+                        self.bucket_util.drop_collection(self.cluster.master,
+                                                         bucket,
+                                                         scope,
+                                                         collection)
+                        bucket.scopes[scope].collections.pop(collection)
+                        self.sleep(random.randint(1, 4))
+                        drop += 1
+                        if drop % (total_collections/4) == 0:
+                            self.sleep(60, "Sleep after dropping half collections...")
+                            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                                         self.cluster.buckets)
+                            total_items = self.final_items * (total_collections - drop)/total_collections
+                            self.log.info("Expected items after dropping collections: {}".
+                                          format(total_items))
+                            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                                      total_items,
+                                                                      timeout=3600)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
+            total_items = self.final_items * (total_collections - drop)/total_collections
+            self.log.info("Expected items after dropping collections: {}".
+                          format(total_items))
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      total_items,
+                                                      timeout=3600)
+            self.final_items = total_items
+            self.num_collections = self.num_collections - drop
+            if self.end_step == 13:
+                exit(13)
+            #######################################################################
+            for bucket in self.cluster.buckets:
+                for scope in bucket.scopes.keys():
+                    for i in range(1, total_collections, 2):
+                        collection = self.collection_prefix + str(i)
+                        self.bucket_util.create_collection(self.cluster.master,
+                                                           bucket,
+                                                           scope,
+                                                           {"name": collection})
+                        self.num_collections += 1
+                    self.sleep(0.5)
+            self.bucket_util.flush_all_buckets(self.cluster)
+            self.init_doc_params()
+            self.sleep(10, "Iteration %s completed successfully !!!" % self.loop)
+            self.loop += 1
+            if self.end_step == 18:
+                exit(18)
+
     def SteadyStateVolume(self):
         check_dump_th = threading.Thread(target=self.check_dump)
         check_dump_th.start()
@@ -1826,6 +1969,7 @@ class volume(BaseTestCase):
                                                            bucket,
                                                            scope,
                                                            {"name": collection})
+                        self.num_collections += 1
                     self.sleep(0.5)
             self.bucket_util.flush_all_buckets(self.cluster)
             self.init_doc_params()
