@@ -933,6 +933,61 @@ class CBASExternalLinks(CBASBaseTest):
                 failed_testcases.append(testcase["description"])
         if failed_testcases:
             self.fail("Following testcases failed - {0}".format(str(failed_testcases)))
+    
+    def test_drop_dataset(self):
+
+        self.setup_for_dataset()
+
+        # Create users with all RBAC roles.
+        self.create_or_delete_users(self.rbac_util, rbac_users_created)
+
+        testcases = self.create_testcase_for_rbac_user(
+            "Dropping dataset on external link using {0} user", rbac_users_created)
+
+        for tc in testcases:
+            if tc["validate_error_msg"]:
+                tc["expected_error"] = "User must have permission"
+
+        failed_testcases = list()
+
+        if not self.cbas_util.create_dataset_on_external_resource(
+            **self.dataset_params):
+            self.fail("Error while creating dataset")
+
+        recreate_dataset = False
+
+        for testcase in testcases:
+            try:
+                self.log.info(testcase["description"])
+
+                if recreate_dataset:
+                    if not self.cbas_util.create_dataset_on_external_resource(
+                        **self.dataset_params):
+                        self.fail("Error while creating dataset")
+                    recreate_dataset = False
+
+                dataset_param = copy.deepcopy(self.dataset_params)
+                for param in testcase:
+                    if param in dataset_param:
+                        dataset_param[param] = testcase[param]
+
+                if not self.cbas_util.drop_dataset(
+                    cbas_dataset_name=dataset_param["cbas_dataset_name"],
+                    dataverse=dataset_param["dataverse"],
+                    validate_error_msg=dataset_param["validate_error_msg"],
+                    username=dataset_param["username"],
+                    password=dataset_param["password"],
+                    expected_error=dataset_param["expected_error"]):
+                    raise Exception("Error while dropping dataset")
+
+                if not dataset_param["validate_error_msg"]:
+                    recreate_dataset = True
+
+            except Exception:
+                failed_testcases.append(testcase["description"])
+
+        if failed_testcases:
+            self.fail("Following testcases failed - {0}".format(str(failed_testcases)))
 
     def test_query_dataset(self):
         """
