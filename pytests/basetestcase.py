@@ -223,22 +223,6 @@ class BaseTestCase(unittest.TestCase):
             if self.skip_setup_cleanup:
                 self.bucket_util.get_all_buckets()
                 return
-            if not self.skip_init_check_cbserver:
-                for cluster in self.__cb_clusters:
-                    self.cb_version = None
-                    if RestHelper(RestConnection(cluster.master)).is_ns_server_running():
-                        """
-                        Since every new couchbase version, there will be new
-                        features that test code won't work on previous release.
-                        So we need to get couchbase version to filter out
-                        those tests.
-                        """
-                        self.cb_version = RestConnection(cluster.master).get_nodes_version()
-                    else:
-                        self.log.debug("couchbase server does not run yet")
-                    # Stopped supporting TAP protocol since 3.x
-                    # and 3.x support also has stopped
-                    self.protocol = "dcp"
             self.services_map = None
 
             self.__log_setup_status("started")

@@ -99,7 +99,7 @@ class ClusterUtils:
             if not stopped:
                 raise Exception("Unable to stop rebalance")
         bucket_util.delete_all_buckets(self.cluster.servers)
-        self.cleanup_cluster(self.cluster.servers, master=self.cluster.master)
+        self.cleanup_cluster(self.cluster.servers)
         self.wait_for_ns_servers_or_assert(self.cluster.servers)
 
     # wait_if_warmup=True is useful in tearDown method for (auto)failover tests
@@ -118,70 +118,69 @@ class ClusterUtils:
                 return False
             return True
 
-    def cleanup_cluster(self, wait_for_rebalance=True, master=None):
-        if master is None:
-            master = self.cluster.master
-        rest = RestConnection(master)
-        rest.remove_all_replications()
-        rest.remove_all_remote_clusters()
-        rest.remove_all_recoveries()
-        helper = RestHelper(rest)
-        helper.is_ns_server_running(timeout_in_seconds=testconstants.NS_SERVER_TIMEOUT)
-        nodes = rest.node_statuses()
-        master_id = rest.get_nodes_self().id
-        for node in nodes:
-            if int(node.port) in xrange(9091, 9991):
-                rest.eject_node(node)
-                nodes.remove(node)
+    def cleanup_cluster(self, servers):
+        for node in servers:
+            rest = RestConnection(node)
+            rest.remove_all_replications()
+            rest.remove_all_remote_clusters()
+            rest.remove_all_recoveries()
+            helper = RestHelper(rest)
+            helper.is_ns_server_running(timeout_in_seconds=testconstants.NS_SERVER_TIMEOUT)
+            nodes = rest.node_statuses()
+            master_id = rest.get_nodes_self().id
+            for node in nodes:
+                if int(node.port) in xrange(9091, 9991):
+                    rest.eject_node(node)
+                    nodes.remove(node)
 
-        if len(nodes) > 1:
-            self.log.debug("Rebalancing all nodes in order to remove nodes")
-            rest.log_client_error("Starting rebalance from test, ejected nodes %s" %
-                                  [node.id for node in nodes if node.id != master_id])
-            removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
-                                          ejectedNodes=[node.id for node in nodes if node.id != master_id],
-                                          wait_for_rebalance=wait_for_rebalance)
-            success_cleaned = []
-            for removed in [node for node in nodes if (node.id != master_id)]:
-                removed.rest_password = self.cluster.master.rest_password
-                removed.rest_username = self.cluster.master.rest_username
-                try:
-                    rest = RestConnection(removed)
-                except Exception as ex:
-                    self.log.error("Can't create rest connection after "
-                                   "rebalance out for ejected nodes, will "
-                                   "retry after 10 seconds according to "
-                                   "MB-8430: {0}".format(ex))
-                    time.sleep(10)
-                    rest = RestConnection(removed)
-                start = time.time()
-                while time.time() - start < 30:
-                    if len(rest.get_pools_info()["pools"]) == 0:
-                        success_cleaned.append(removed)
-                        break
-                    else:
-                        time.sleep(0.1)
-                if time.time() - start > 10:
-                    self.log.error("'pools' on node {0}:{1} - {2}"
-                                   .format(removed.ip, removed.port,
-                                           rest.get_pools_info()["pools"]))
-            for node in set([node for node in nodes if (node.id != master_id)]) - set(success_cleaned):
-                self.log.error("Node {0}:{1} was not cleaned after "
-                               "removing from cluster"
-                               .format(removed.ip, removed.port))
-                try:
-                    rest = RestConnection(node)
-                    rest.force_eject_node()
-                except Exception as ex:
-                    self.log.error("Force_eject_node {0}:{1} failed: {2}"
-                                   .format(removed.ip, removed.port, ex))
-            if len(set([node for node in nodes if (node.id != master_id)])\
-                    - set(success_cleaned)) != 0:
-                raise Exception("Not all ejected nodes were cleaned successfully")
+            if len(nodes) > 1:
+                self.log.debug("Rebalancing all nodes in order to remove nodes")
+                rest.log_client_error("Starting rebalance from test, ejected nodes %s" %
+                                      [node.id for node in nodes if node.id != master_id])
+                removed = helper.remove_nodes(knownNodes=[node.id for node in nodes],
+                                              ejectedNodes=[node.id for node in nodes if node.id != master_id],
+                                              wait_for_rebalance=True)
+                success_cleaned = []
+                for removed in [node for node in nodes if (node.id != master_id)]:
+                    removed.rest_password = self.cluster.master.rest_password
+                    removed.rest_username = self.cluster.master.rest_username
+                    try:
+                        rest = RestConnection(removed)
+                    except Exception as ex:
+                        self.log.error("Can't create rest connection after "
+                                       "rebalance out for ejected nodes, will "
+                                       "retry after 10 seconds according to "
+                                       "MB-8430: {0}".format(ex))
+                        time.sleep(10)
+                        rest = RestConnection(removed)
+                    start = time.time()
+                    while time.time() - start < 30:
+                        if len(rest.get_pools_info()["pools"]) == 0:
+                            success_cleaned.append(removed)
+                            break
+                        else:
+                            time.sleep(0.1)
+                    if time.time() - start > 10:
+                        self.log.error("'pools' on node {0}:{1} - {2}"
+                                       .format(removed.ip, removed.port,
+                                               rest.get_pools_info()["pools"]))
+                for node in set([node for node in nodes if (node.id != master_id)]) - set(success_cleaned):
+                    self.log.error("Node {0}:{1} was not cleaned after "
+                                   "removing from cluster"
+                                   .format(removed.ip, removed.port))
+                    try:
+                        rest = RestConnection(node)
+                        rest.force_eject_node()
+                    except Exception as ex:
+                        self.log.error("Force_eject_node {0}:{1} failed: {2}"
+                                       .format(removed.ip, removed.port, ex))
+                if len(set([node for node in nodes if (node.id != master_id)])\
+                        - set(success_cleaned)) != 0:
+                    raise Exception("Not all ejected nodes were cleaned successfully")
 
-            self.log.debug("Removed all the nodes from cluster associated with {0} ? {1}"
-                           .format(self.cluster.master,
-                                   [(node.id, node.port) for node in nodes if (node.id != master_id)]))
+                self.log.debug("Removed all the nodes from cluster associated with {0} ? {1}"
+                               .format(self.cluster.master,
+                                       [(node.id, node.port) for node in nodes if (node.id != master_id)]))
 
     def get_nodes_in_cluster(self, master_node=None):
         rest = None

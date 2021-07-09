@@ -179,7 +179,7 @@ class BucketUtils:
                        .format(bucket, serverInfo))
 
         bucket_conn = BucketHelper(serverInfo)
-        if self.bucket_exists(bucket):
+        if self.bucket_exists(bucket, node=serverInfo):
             status = bucket_conn.delete_bucket(bucket.name)
             if not status:
                 try:
@@ -230,9 +230,10 @@ class BucketUtils:
                 self.sleep(2)
         return False
 
-    def bucket_exists(self, bucket):
+    def bucket_exists(self, bucket, node=None):
+        node = node if node is not None else self.cluster.master
         try:
-            buckets = self.get_all_buckets(self.cluster.master)
+            buckets = self.get_all_buckets(node)
             for item in buckets:
                 if item.name == bucket.name:
                     return True
