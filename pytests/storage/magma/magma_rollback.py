@@ -98,7 +98,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.fail("Not enough nodes/replicas in the cluster/bucket \
             to test rollback")
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
-        shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         cbstats = Cbstats(shell)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
@@ -107,7 +107,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         for _ in xrange(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
-                self.cluster_util.cluster.master, self.cluster.buckets[0])
+                self.cluster.master, self.cluster.buckets[0])
             mem_client.stop_persistence()
             self.gen_create = self.genrate_docs_basic(start, mem_only_items,
                                                       self.target_vbucket)
@@ -140,7 +140,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell.kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
+                [self.cluster.master],
                 self.cluster.buckets[0],
                 wait_time=self.wait_timeout * 10))
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
@@ -183,7 +183,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.duration = self.input.param("duration", 2)
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
 
-        shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         cbstats = Cbstats(shell)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
 
@@ -221,7 +221,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             # Stopping persistence on master node (NodeA)
             mem_client = MemcachedClientHelper.direct_client(
-                self.cluster_util.cluster.master, self.cluster.buckets[0])
+                self.cluster.master, self.cluster.buckets[0])
             mem_client.stop_persistence()
 
             ###################################################################
@@ -290,7 +290,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell.kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
+                [self.cluster.master],
                 self.cluster.buckets[0],
                 wait_time=self.wait_timeout * 10))
 
@@ -345,7 +345,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.duration = self.input.param("duration", 2)
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
 
-        shell = RemoteMachineShellConnection(self.cluster_util.cluster.master)
+        shell = RemoteMachineShellConnection(self.cluster.master)
         cbstats = Cbstats(shell)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
 
@@ -447,7 +447,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell.kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
+                [self.cluster.master],
                 self.cluster.buckets[0],
                 wait_time=self.wait_timeout * 10))
 
@@ -632,7 +632,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell_conn[0].kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master],
+                [self.cluster.master],
                 self.cluster.buckets[0],
                 wait_time=self.wait_timeout * 10))
 
@@ -1333,7 +1333,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 shell.kill_memcached()
                 self.sleep(10, "sleep after MemCached kill on node {}".format(node))
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [self.cluster_util.cluster.master],
+                    [self.cluster.master],
                     self.cluster.buckets[0],
                     wait_time=self.wait_timeout * 10))
 
@@ -1855,7 +1855,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             tasks_in = dict()
             shell_conn[0].kill_memcached()
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster_util.cluster.master], self.cluster.buckets[0],
+                [self.cluster.master], self.cluster.buckets[0],
                 wait_time=self.wait_timeout * 20))
             rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
                                                        servs_in, servs_out,

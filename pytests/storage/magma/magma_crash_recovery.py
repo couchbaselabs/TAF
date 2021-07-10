@@ -76,7 +76,7 @@ class MagmaCrashTests(MagmaBaseTest):
         nIter = 200
         while nIter > 0:
             shell = RemoteMachineShellConnection(
-                self.cluster_util.cluster.master)
+                self.cluster.master)
             shell.kill_memcached()
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")

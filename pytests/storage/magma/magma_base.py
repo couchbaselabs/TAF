@@ -264,7 +264,7 @@ class MagmaBaseTest(StorageBase):
     def get_state_files(self, bucket, server=None):
 
         if server is None:
-            server = self.cluster_util.cluster.master
+            server = self.cluster.master
 
         shell = RemoteMachineShellConnection(server)
 

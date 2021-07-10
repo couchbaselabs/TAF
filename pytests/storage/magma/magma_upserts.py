@@ -552,7 +552,7 @@ class BasicUpsertTests(BasicCrudTests):
             shell.disconnect()
             self.assertTrue(
                 self.bucket_util._wait_warmup_completed(
-                    [self.cluster_util.cluster.master],
+                    [self.cluster.master],
                     self.cluster.buckets[0],
                     wait_time=self.wait_timeout * 10))
 
@@ -662,7 +662,7 @@ class BasicUpsertTests(BasicCrudTests):
                 shell.kill_memcached()
                 shell.disconnect()
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                                [self.cluster_util.cluster.master],
+                                [self.cluster.master],
                                 self.cluster.buckets[0],
                                 wait_time=self.wait_timeout * 10))
             #######################################################################
