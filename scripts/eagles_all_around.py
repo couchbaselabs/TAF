@@ -4,6 +4,7 @@ from org.python.core.util import FileUtil
 import sys
 
 failed = []
+exclude = "'Rollback point not found\|No space left on device\|Permission denied\|Already exists'"
 
 
 def run(command, session):
@@ -98,7 +99,6 @@ def scan_all_slaves():
                             break
                     run("rm -rf /root/cbcollect*", session)[0]
                     run("unzip {}".format(cbcollect_zips), session)[0]
-                    exclude = "'Rollback point not found\|No space left on device\|Permission denied'"
                     memcached = "/root/cbcollect*/memcached.log*"
                     o, _ = run("grep 'CRITICAL\| ERROR ' {} | grep -v {}".format(memcached, exclude), session)
                     if o:
@@ -160,7 +160,6 @@ def check_coredump_exist(server):
     logsDir = libCb + "logs/"
     logFiles = run("ls " + logsDir + "memcached.log.*", session)[0]
     for logFile in logFiles:
-        exclude = "'Rollback point not found\|No space left on device\|Permission denied'"
         criticalMessages = run("grep -r 'CRITICAL\| ERROR ' {} | grep -v {}".format(logFile.strip("\n"), exclude), session)[0]
         index = findIndexOf(criticalMessages, "Fatal error encountered during exception handling")
         criticalMessages = criticalMessages[:index]
