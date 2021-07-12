@@ -196,15 +196,16 @@ class KVStoreTests(MagmaBaseTest):
 
         return tasks_info
 
-    def compute_docs_ranges(self, start):
-        self.divisor = self.input.param("divisor", 2)
-        ops_len = len(self.doc_ops.split(":"))
+    def compute_docs_ranges(self, start, doc_ops=None):
+        self.multiplier = self.input.param("mulitplier", 1)
+        doc_ops = doc_ops or self.doc_ops
+        ops_len = len(doc_ops.split(":"))
 
         self.create_start = start
-        self.create_end = start + start // self.divisor
+        self.create_end = start + start // self.multiplier
 
-        if "create" in self.doc_ops:
-            self.create_end = start + start // self.divisor
+        if "create" in doc_ops:
+            self.create_end = start + start // self.multiplier
 
         if ops_len == 1:
             self.update_start = 0
@@ -219,7 +220,7 @@ class KVStoreTests(MagmaBaseTest):
             self.delete_start = start // 2
             self.delete_end = start
 
-            if "expiry" in self.doc_ops:
+            if "expiry" in doc_ops:
                 self.delete_start = 0
                 self.delete_end = start // 2
                 self.expiry_start = start // 2
