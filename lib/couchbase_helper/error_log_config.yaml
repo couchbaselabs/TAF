@@ -34,7 +34,3 @@ file_name_patterns:
     target_file_index: 0
     grep_for:
       - string: '^'
-
-  - file: 'babysitter.log'
-    grep_for:
-      - string: ' CRITICAL '
