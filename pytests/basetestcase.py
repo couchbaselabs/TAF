@@ -765,9 +765,9 @@ class BaseTestCase(unittest.TestCase):
                 print("#"*30)
                 result = get_full_thread_dump(shell)
                 print(result)
-                print("#"*30)
-                run_cbanalyze_core(shell, crash_dir + dmp_files[-1].strip(".dmp") + ".core")
-                print("#"*30)
+#                 print("#"*30)
+#                 run_cbanalyze_core(shell, crash_dir + dmp_files[-1].strip(".dmp") + ".core")
+#                 print("#"*30)
                 if self.stop_server_on_crash:
                     shell.stop_couchbase()
                 result = True
