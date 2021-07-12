@@ -724,12 +724,13 @@ class BaseTestCase(unittest.TestCase):
                   that of VM's. Else it won't be possible to compare timestamps
             """
             last_line = grep_output_list[-1]
-            if not re.match(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T", last_line):
-                # To check if line doesn't begin with any yyyy-mm-ddT
+            # eg: 2021-07-12T04:03:45
+            timestamp_regex = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+            match_obj = timestamp_regex.search(last_line)
+            if not match_obj:
                 self.log.critical("%s does not match any timestamp" % last_line)
                 return True
-            timestamp = last_line.split()[0]
-            timestamp = timestamp.split(".")[0]
+            timestamp = match_obj.group()
             timestamp = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
             self.log.info("Comparing timestamps: Log's latest timestamp: %s, "
                           "Test's start timestamp is %s"
