@@ -155,7 +155,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         shell.disconnect()
@@ -220,9 +221,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                            % self.get_state_files(self.buckets[0]))
 
             # Stopping persistence on master node (NodeA)
-            mem_client = MemcachedClientHelper.direct_client(
-                self.cluster.master, self.cluster.buckets[0])
-            mem_client.stop_persistence()
+            self.log.debug("Iteration == {}, stopping persistence".format(i))
+            Cbepctl(shell).persistence(self.cluster.buckets[0].name, "stop")
 
             ###################################################################
             '''
@@ -302,9 +302,19 @@ class MagmaRollbackTests(MagmaBaseTest):
                                                      items, timeout=300)
             for bucket in self.cluster.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
-        #######################################################################
+
+            ###################################################################
+            '''
+            STEP -5
+              -- Restarting persistence on master node
+            '''
+
+            self.log.debug("Iteration=={}, Re-Starting persistence".format(i))
+            Cbepctl(shell).persistence(self.cluster.buckets[0].name, "start")
+            self.sleep(5, "Iteration=={}, sleep after restarting persistence".format(i))
+        ###################################################################
         '''
-        STEP - 5
+        STEP - 6
           -- Data Validation
         '''
         data_validation = self.task.async_validate_docs(
@@ -312,7 +322,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(data_validation)
         #######################################################################
         shell.disconnect()
@@ -929,7 +940,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                sdk_client_pool=self.sdk_client_pool)
         self.task.jython_task_manager.get_task_result(data_validation)
         #######################################################################
 
