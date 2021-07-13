@@ -15,6 +15,8 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+
+from pytests.bucket_collections.collections_base import CollectionBase
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 
@@ -29,6 +31,23 @@ class AutoFailoverBaseTest(BaseTestCase):
         super(AutoFailoverBaseTest, self).setUp()
         self.spec_name = self.input.param("bucket_spec",
                                           None)
+        self.auto_reprovision = self.input.param("auto_reprovision", False)
+        self._get_params()
+        self.rest = RestConnection(self.orchestrator)
+        self.server_index_to_fail = self.input.param("server_index_to_fail",
+                                                     None)
+        self.new_replica = self.input.param("new_replica", None)
+        self.replica_update_during = self.input.param("replica_update_during",
+                                                      None)
+        if self.server_index_to_fail is None:
+            self.server_to_fail = self._servers_to_fail()
+        else:
+            self.server_to_fail = [self.cluster.servers[self.server_index_to_fail]]
+        self.servers_to_add = self.cluster.servers[self.nodes_init:self.nodes_init +
+                                                                   self.nodes_in]
+        self.servers_to_remove = self.cluster.servers[self.nodes_init -
+                                                      self.nodes_out:self.nodes_init]
+
         if self.spec_name is not None:
             try:
                 self.collectionSetUp()
@@ -37,9 +56,6 @@ class AutoFailoverBaseTest(BaseTestCase):
             except Exception as exception:
                 self.handle_setup_exception(exception)
         else:
-            self.auto_reprovision = self.input.param("auto_reprovision", False)
-            self._get_params()
-            self.rest = RestConnection(self.orchestrator)
             self.initial_load_gen = doc_generator(self.key,
                                                   0,
                                                   self.num_items,
@@ -70,33 +86,16 @@ class AutoFailoverBaseTest(BaseTestCase):
                         compression_settings=self.sdk_compression)
 
             self.load_all_buckets(self.initial_load_gen, "create", 0)
-            self.server_index_to_fail = self.input.param("server_index_to_fail",
-                                                         None)
-            self.new_replica = self.input.param("new_replica", None)
-            self.replica_update_during = self.input.param("replica_update_during",
-                                                          None)
-            if self.server_index_to_fail is None:
-                self.server_to_fail = self._servers_to_fail()
-            else:
-                self.server_to_fail = [self.cluster.servers[self.server_index_to_fail]]
-            self.servers_to_add = self.cluster.servers[self.nodes_init:self.nodes_init +
-                                                       self.nodes_in]
-            self.servers_to_remove = self.cluster.servers[self.nodes_init -
-                                                          self.nodes_out:self.nodes_init]
-            self.durability_helper = DurabilityHelper(
-                self.log, len(self.cluster.servers), self.durability_level)
 
-            self.active_vb_in_failover_nodes = list()
-            self.replica_vb_in_failover_nodes = list()
-            self.get_vbucket_info_from_failover_nodes()
-            self.cluster_util.print_cluster_stats(self.cluster)
-            self.bucket_util.print_bucket_stats(self.cluster)
+        self.durability_helper = DurabilityHelper(
+            self.log, len(self.cluster.servers), self.durability_level)
+        self.active_vb_in_failover_nodes = list()
+        self.replica_vb_in_failover_nodes = list()
+        self.get_vbucket_info_from_failover_nodes()
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def collectionSetUp(self):
-        self.auto_reprovision = self.input.param("auto_reprovision", False)
-        self._get_params()
-        self.rest = RestConnection(self.orchestrator)
-
         # Set up cluster
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
@@ -105,25 +104,6 @@ class AutoFailoverBaseTest(BaseTestCase):
 
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
-        self.server_index_to_fail = self.input.param("server_index_to_fail",
-                                                     None)
-        self.new_replica = self.input.param("new_replica", None)
-        self.replica_update_during = self.input.param("replica_update_during",
-                                                      None)
-        if self.server_index_to_fail is None:
-            self.server_to_fail = self._servers_to_fail()
-        else:
-            self.server_to_fail = [self.cluster.servers[self.server_index_to_fail]]
-        self.servers_to_add = self.cluster.servers[self.nodes_init:self.nodes_init +
-                                                                   self.nodes_in]
-        self.servers_to_remove = self.cluster.servers[self.nodes_init -
-                                                      self.nodes_out:self.nodes_init]
-        self.durability_helper = DurabilityHelper(
-            self.log, len(self.cluster.servers), self.durability_level)
-
-        self.active_vb_in_failover_nodes = list()
-        self.replica_vb_in_failover_nodes = list()
-        self.get_vbucket_info_from_failover_nodes()
 
         # Create bucket(s) and add rbac user
         self.bucket_util.add_rbac_user(self.cluster.master)
@@ -136,10 +116,6 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.over_ride_bucket_template_params(buckets_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
 
-        # MB-38438, adding CollectionNotFoundException in retry exception
-        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
-            SDKException.CollectionNotFoundException)
-
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
@@ -148,18 +124,12 @@ class AutoFailoverBaseTest(BaseTestCase):
         if self.sdk_client_pool is None:
             self.init_sdk_pool_object()
 
-        # Create clients in SDK client pool
-        if self.sdk_client_pool:
-            self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(self.cluster.buckets)
-            max_clients = self.task_manager.number_of_threads
-            clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in self.cluster.buckets:
-                self.sdk_client_pool.create_clients(
-                    bucket,
-                    [self.orchestrator],
-                    clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+        self.log.info("Creating required SDK clients for client_pool")
+        CollectionBase.create_sdk_clients(self.task_manager.number_of_threads,
+                                          self.cluster.master,
+                                          self.cluster.buckets,
+                                          self.sdk_client_pool,
+                                          self.sdk_compression)
 
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
@@ -171,15 +141,12 @@ class AutoFailoverBaseTest(BaseTestCase):
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
-        self.cluster_util.print_cluster_stats(self.cluster)
-
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 
-        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_helper_obj = BucketHelper(self.orchestrator)
 
     def over_ride_bucket_template_params(self, bucket_spec):
@@ -203,6 +170,10 @@ class AutoFailoverBaseTest(BaseTestCase):
                     bucket_spec[Bucket.storageBackend] = self.bucket_storage
                 elif key == "compression_mode":
                     bucket_spec[Bucket.compressionMode] = self.compression_mode
+                elif key == "flushEnabled":
+                    bucket_spec[Bucket.flushEnabled] = int(self.flush_enabled)
+                elif key == "bucket_type":
+                    bucket_spec[Bucket.bucketType] = self.bucket_type
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for key, value in self.input.test_params.items():
@@ -212,7 +183,11 @@ class AutoFailoverBaseTest(BaseTestCase):
             elif key == "sdk_timeout":
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
             elif key == "doc_size":
-                target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
+                target_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_SIZE] \
+                    = self.doc_size
+            elif key == "randomize_value":
+                target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
+                    = self.randomize_value
 
     def bareSetUp(self):
         super(AutoFailoverBaseTest, self).setUp()
@@ -1016,18 +991,12 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         if self.sdk_client_pool is None:
             self.init_sdk_pool_object()
 
-        # Create clients in SDK client pool
-        if self.sdk_client_pool:
-            self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(self.cluster.buckets)
-            max_clients = self.task_manager.number_of_threads
-            clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in self.cluster.buckets:
-                self.sdk_client_pool.create_clients(
-                    bucket,
-                    [self.cluster.master],
-                    clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+        self.log.info("Creating required SDK clients for client_pool")
+        CollectionBase.create_sdk_clients(self.task_manager.number_of_threads,
+                                          self.cluster.master,
+                                          self.cluster.buckets,
+                                          self.sdk_client_pool,
+                                          self.sdk_compression)
 
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
