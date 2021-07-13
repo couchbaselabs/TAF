@@ -548,7 +548,7 @@ class ServerTasks(object):
           timeout    - Timeout for stat verification task
 
         Returns:
-          RebalanceTask - Task future that is a handle to the scheduled task
+          StatsWaitTask - Task future that is a handle to the scheduled task
         """
         self.log.debug("Starting StatsWaitTask for %s on bucket %s"
                        % (stat, bucket.name))
@@ -932,7 +932,7 @@ class ServerTasks(object):
                         multiple failover nodes
 
         Returns:
-            boolean - Whether or not the bucket was failed-over."""
+            boolean - Whether or not nodes were failed-over."""
         _task = self.async_failover(servers, failover_nodes, graceful,
                                     use_hostnames, wait_for_pending, allow_unsafe,
                                     all_at_once=all_at_once)
@@ -976,7 +976,7 @@ class ServerTasks(object):
             bucket - bucket to compact
 
         Returns:
-            boolean - Whether or not the compaction started successfully"""
+            CompactBucketTask - A task future that is a handle for scheduled task"""
         _task = jython_tasks.CompactBucketTask(server, bucket)
         self.jython_task_manager.schedule(_task)
         return _task
@@ -989,7 +989,7 @@ class ServerTasks(object):
             bucket - bucket to compact
 
         Returns:
-            boolean - Whether or not the cbrecovery completed successfully"""
+            boolean - Whether or not the compaction completed successfully"""
         _task = self.async_compact_bucket(server, bucket)
         status = self.jython_task_manager.get_task_result(_task)
         return status
