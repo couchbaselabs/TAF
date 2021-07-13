@@ -127,7 +127,8 @@ class volume(AutoFailoverBaseTest):
         else:
             self.failover_actions[self.failover_action](self)
 
-        self.sleep(300, "keep the cluster with the failure(autofailover test)/warmup to complete(autoreprovision test)")
+        self.sleep(300, "keep the cluster with the failure (autofailover test)/"
+                        "warmup to complete(autoreprovision test)")
 
         # Wait for async data load to complete
         self.wait_for_async_data_load_to_complete(task)
@@ -178,6 +179,7 @@ class volume(AutoFailoverBaseTest):
         retry_exceptions.append(SDKException.TimeoutException)
         retry_exceptions.append(SDKException.RequestCanceledException)
         retry_exceptions.append(SDKException.DocumentNotFoundException)
+        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
         if self.durability_level:
             retry_exceptions.append(SDKException.DurabilityAmbiguousException)
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
@@ -227,9 +229,9 @@ class volume(AutoFailoverBaseTest):
 
     def test_volume_taf(self):
         self.log.info("Finished steps 1-4 successfully in setup")
-        #########################################################################################################################
-        failure_conditions = ["restart_machine", "stop_server", "restart_server", "firewall", "restart_network",
-                              "stop_memcached"]
+        ########################################################################################################
+        failure_conditions = ["restart_machine", "stop_server", "restart_server",
+                              "firewall", "restart_network", "stop_memcached"]
         step_count = 4
         for failover_action in failure_conditions:
             self.failover_action = failover_action
@@ -251,11 +253,11 @@ class volume(AutoFailoverBaseTest):
             self.rebalance_after_autofailover()
             self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
-        #########################################################################################################################
+        ########################################################################################################
         step_count = step_count + 1
         self.log.info("Step {0}: Deleting all buckets".format(step_count))
         self.bucket_util.delete_all_buckets(self.cluster)
-        #########################################################################################################################
+        ########################################################################################################
         step_count = step_count + 1
         self.log.info("Step {0}: Creating ephemeral buckets".format(step_count))
         # Create bucket(s) and add rbac user
@@ -267,7 +269,7 @@ class volume(AutoFailoverBaseTest):
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
         # Prints bucket stats before doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
-        #########################################################################################################################
+        ########################################################################################################
         step_count = step_count + 1
         self.log.info("Step {0}: Initial data data load into ephemeral buckets".format(step_count))
         doc_loading_spec = \
@@ -298,10 +300,10 @@ class volume(AutoFailoverBaseTest):
 
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
-        #########################################################################################################################
+        ########################################################################################################
         self.auto_reprovision = True
-        failure_conditions = ["restart_machine", "stop_server", "restart_server", "firewall", "restart_network",
-                              "stop_memcached"]
+        failure_conditions = ["restart_machine", "stop_server", "restart_server",
+                              "firewall", "restart_network", "stop_memcached"]
         for failover_action in failure_conditions:
             self.failover_action = failover_action
             step_count = step_count + 1
@@ -312,9 +314,10 @@ class volume(AutoFailoverBaseTest):
             if step_count % 2 == 0:
                 self.failover_orchestrator = False
             else:
-                # ToDo: 1. Enable failover_orchaestror for odd step number
+                # ToDo: 1. Enable failover_orchestrator for odd step number
                 self.failover_orchestrator = False
-            self.log.info("Step {0}: {1} -> Autoreprovision -> Rebalance".format(step_count, self.failover_action))
+            self.log.info("Step {0}: {1} -> Autoreprovision -> Rebalance".format(step_count,
+                                                                                 self.failover_action))
             self.server_to_fail = self.servers_to_fail()
             self.rebalance_after_autofailover()
             self.bucket_util.print_bucket_stats(self.cluster)

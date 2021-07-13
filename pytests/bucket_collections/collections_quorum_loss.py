@@ -75,6 +75,7 @@ class CollectionsQuorumLoss(CollectionBase):
         retry_exceptions.append(SDKException.TimeoutException)
         retry_exceptions.append(SDKException.RequestCanceledException)
         retry_exceptions.append(SDKException.DocumentNotFoundException)
+        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
         if self.durability_level:
             retry_exceptions.append(SDKException.DurabilityAmbiguousException)
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
@@ -513,7 +514,6 @@ class CollectionsQuorumLoss(CollectionBase):
         except:
             self.log.info("Failed as expected: {0} {1}"
                           .format(sys.exc_info()[0], sys.exc_info()[1]))
-            # TODO add code to verify the error response after MB-45086 is resolved
         else:
             self.wipe_config_on_removed_nodes()
             self.fail("Unsafe failover of healthy orchestrator node did not fail")
