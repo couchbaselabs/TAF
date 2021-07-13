@@ -21,7 +21,6 @@ class CollectionsRebalance(CollectionBase):
     def setUp(self):
         super(CollectionsRebalance, self).setUp()
         self.bucket_util._expiry_pager(self.cluster)
-        self.load_gen = doc_generator(self.key, 0, self.num_items)
         self.bucket = self.cluster.buckets[0]
         self.rest = RestConnection(self.cluster.master)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
