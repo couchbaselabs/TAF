@@ -25,6 +25,8 @@ spec = {
 
     # Doc loading params
     "doc_crud": {
+        MetaCrudParams.DocCrud.RANDOMIZE_VALUE: False,
+
         # This applies to all collections created during following steps:
         # COLLECTIONS_TO_ADD_FOR_NEW_SCOPES,
         # COLLECTIONS_TO_ADD_PER_BUCKET,
