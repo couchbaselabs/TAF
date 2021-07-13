@@ -267,7 +267,8 @@ class DocLoaderUtils(object):
                                      buckets,
                                      crud_spec,
                                      batch_size=200,
-                                     async_load=False):
+                                     async_load=False,
+                                     process_concurrency=1):
         """
         Will load(only Creates) all given collections under all bucket objects.
         :param task_manager: TaskManager object used for task management
@@ -279,6 +280,7 @@ class DocLoaderUtils(object):
                           (Returned from create_doc_gens_for_spec function)
         :param batch_size: Batch size to use during doc_loading tasks
         :param async_load: (Boolean) To wait for doc_loading to finish or not
+        :param process_concurrency: process_concurrency to use during doc_loading
         :return: List of doc_loading tasks
         """
         loader_spec = dict()
@@ -289,7 +291,7 @@ class DocLoaderUtils(object):
             cluster, task_manager.jython_task_manager, loader_spec,
             DocLoaderUtils.sdk_client_pool,
             batch_size=batch_size,
-            process_concurrency=1,
+            process_concurrency=process_concurrency,
             print_ops_rate=True,
             start_task=True)
         if not async_load:
@@ -804,7 +806,8 @@ class DocLoaderUtils(object):
                                batch_size=200,
                                mutation_num=1,
                                async_load=False,
-                               validate_task=True):
+                               validate_task=True,
+                               process_concurrency=1):
         """
         :param task_manager: TaskManager object used for task management
         :param cluster: Cluster object to fetch master node
@@ -815,6 +818,7 @@ class DocLoaderUtils(object):
         :param mutation_num: Mutation field value to be used in doc_generator
         :param async_load: (Bool) To wait for doc_loading to finish or not
         :param validate_task: (Bool) To validate doc_loading results or not
+        :param process_concurrency: process_concurrency to use during doc_loading
         :return doc_loading_task: Task object returned from
                                   DocLoaderUtils.perform_doc_loading_for_spec
         """
@@ -831,7 +835,8 @@ class DocLoaderUtils(object):
             buckets,
             crud_spec,
             batch_size=batch_size,
-            async_load=async_load)
+            async_load=async_load,
+            process_concurrency=process_concurrency)
         if not async_load and validate_task:
             DocLoaderUtils.validate_doc_loading_results(doc_loading_task)
         return doc_loading_task

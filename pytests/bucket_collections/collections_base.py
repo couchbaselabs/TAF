@@ -37,6 +37,7 @@ class CollectionBase(ClusterSetup):
         self.validate_docs_count_during_teardown = \
             self.input.param("validate_docs_count_during_teardown", False)
         self.batch_size = self.input.param("batch_size", 200)
+        self.process_concurrency = self.input.param("process_concurrency", 1)
         self.retry_get_process_num = \
             self.input.param("retry_get_process_num", 25)
 
@@ -167,7 +168,8 @@ class CollectionBase(ClusterSetup):
                 self.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
-                batch_size=self.batch_size)
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency)
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
