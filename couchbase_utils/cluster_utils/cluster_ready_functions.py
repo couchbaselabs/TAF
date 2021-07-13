@@ -233,7 +233,8 @@ class ClusterUtils:
                            .format(cluster.master,
                                    [(node.id, node.port) for node in nodes if (node.id != master_id)]))
 
-    def get_nodes_in_cluster(self, cluster):
+    @staticmethod
+    def get_nodes_in_cluster(cluster):
         server_set = list()
         for node in RestConnection(cluster.master).node_statuses():
             for server in cluster.servers:
@@ -737,7 +738,8 @@ class ClusterUtils:
                     new_servers.append(server)
         return new_servers
 
-    def generate_services_map(self, nodes, services=None):
+    @staticmethod
+    def generate_services_map(nodes, services=None):
         service_map = dict()
         index = 0
         if services is None:
@@ -747,7 +749,8 @@ class ClusterUtils:
             index += 1
         return service_map
 
-    def find_node_info(self, master, node):
+    @staticmethod
+    def find_node_info(master, node):
         """ Get Nodes from list of server """
         target_node = None
         rest = RestConnection(master)
@@ -990,38 +993,8 @@ class ClusterUtils:
             _tasks.append(_task)
         return _tasks
 
-    def pick_node(self, master):
-        log = logger.get("infra")
-        rest = RestConnection(master)
-        nodes = rest.node_statuses()
-        node_picked = None
-        nodes_on_same_ip = True
-
-        firstIp = nodes[0].ip
-        for node in nodes:
-            if node.ip != firstIp:
-                nodes_on_same_ip = False
-                break
-
-        for node in nodes:
-            node_picked = node
-            if not nodes_on_same_ip:
-                if node_picked.ip != master.ip:
-                    log.info("Picked node ... {0}:{1}"
-                             .format(node_picked.ip, node_picked.port))
-                    break
-            else:
-                # temp fix: port numbers of master ip and localhost:9000 match
-                if int(node_picked.port) == int(master.port):
-                    log.info("Not picking the master node {0}:{1}..try again.."
-                             .format(node_picked.ip, node_picked.port))
-                else:
-                    log.info("Picked  node {0}:{1}"
-                             .format(node_picked.ip, node_picked.port))
-                    break
-        return node_picked
-
-    def pick_nodes(self, master, howmany=1, target_node=None, exclude_nodes=None):
+    @staticmethod
+    def pick_nodes(master, howmany=1, target_node=None, exclude_nodes=None):
         rest = RestConnection(master)
         nodes = rest.node_statuses()
         if exclude_nodes:

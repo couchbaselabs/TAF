@@ -3393,11 +3393,6 @@ class RemoteMachineShellConnection:
                     debug=False)
                 self.log_command_output(o, r)
 
-#     def disconnect(self):
-#         if self._ssh_client:
-#             log.info("Disconnecting ssh_client for {0}".format(self.ip))
-#             self._ssh_client.disconnect()
-
     def extract_remote_info(self):
         # initialize params
         os_distro = "linux"
@@ -4192,7 +4187,8 @@ class RemoteMachineShellConnection:
         self.extract_remote_info()
         return self.info.type.lower()
 
-    def return_bin_path_based_on_os(self, os):
+    @staticmethod
+    def return_bin_path_based_on_os(os):
         if os == "linux":
             path = LINUX_COUCHBASE_BIN_PATH
         elif os == 'windows':
@@ -4912,7 +4908,8 @@ class RemoteMachineShellConnection:
         else:
             return True
 
-    def stop_current_python_running(self, mesg):
+    @staticmethod
+    def stop_current_python_running(mesg):
         os.system("ps aux | grep python | grep %d " % os.getpid())
         sleep(5, "Delay kill pid %d in 5 seconds to printout message"
                  % os.getpid(),

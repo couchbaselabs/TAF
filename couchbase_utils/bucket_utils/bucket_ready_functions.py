@@ -1953,7 +1953,8 @@ class BucketUtils(ScopeUtils):
                      ARR])
         table.display("Bucket statistics")
 
-    def get_vbucket_num_for_key(self, doc_key, total_vbuckets=1024):
+    @staticmethod
+    def get_vbucket_num_for_key(doc_key, total_vbuckets=1024):
         """
         Calculates vbucket number based on the document's key
 
@@ -1966,7 +1967,8 @@ class BucketUtils(ScopeUtils):
         """
         return (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & (total_vbuckets - 1)
 
-    def change_max_buckets(self, cluster_node, total_buckets):
+    @staticmethod
+    def change_max_buckets(cluster_node, total_buckets):
         command = "curl -X POST -u {0}:{1} -d maxBucketCount={2} http://{3}:{4}/internalSettings" \
             .format(cluster_node.rest_username,
                     cluster_node.rest_password, total_buckets,
@@ -1976,7 +1978,8 @@ class BucketUtils(ScopeUtils):
         shell.log_command_output(output, error)
         shell.disconnect()
 
-    def _set_time_sync_on_buckets(self, cluster, buckets):
+    @staticmethod
+    def _set_time_sync_on_buckets(cluster, buckets):
         # get the credentials beforehand
         memcache_credentials = dict()
         for s in cluster.nodes_in_cluster:
@@ -1997,7 +2000,8 @@ class BucketUtils(ScopeUtils):
                 active_vb.bucket_select(b)
                 _ = active_vb.set_time_sync_state(j, 1)
 
-    def get_bucket_compressionMode(self, cluster_node, bucket='default'):
+    @staticmethod
+    def get_bucket_compressionMode(cluster_node, bucket='default'):
         b_info = BucketHelper(cluster_node).get_bucket_json(bucket_name=bucket)
         return b_info[Bucket.compressionMode]
 
@@ -2111,7 +2115,8 @@ class BucketUtils(ScopeUtils):
                 skip_resetting_num_items=skip_resetting_num_items)
         return status
 
-    def update_bucket_property(self, cluster_node, bucket, ram_quota_mb=None,
+    @staticmethod
+    def update_bucket_property(cluster_node, bucket, ram_quota_mb=None,
                                replica_number=None, replica_index=None,
                                flush_enabled=None, time_synchronization=None,
                                max_ttl=None, compression_mode=None,
@@ -2376,7 +2381,8 @@ class BucketUtils(ScopeUtils):
                                    total_collection_as_per_bucket_obj,
                                    total_collection_as_per_stats))
 
-    def get_doc_op_info_dict(self, bucket, op_type, exp=0, replicate_to=0,
+    @staticmethod
+    def get_doc_op_info_dict(bucket, op_type, exp=0, replicate_to=0,
                              persist_to=0, durability="",
                              timeout=5, time_unit="seconds",
                              scope=CbServer.default_scope,
@@ -2402,7 +2408,8 @@ class BucketUtils(ScopeUtils):
 
         return info_dict
 
-    def doc_ops_tasks_status(self, tasks_info):
+    @staticmethod
+    def doc_ops_tasks_status(tasks_info):
         """
         :param tasks_info: dict with "ops_failed" Bool value updated
         :return: Aggregated success status for all tasks. (Boolean)
@@ -2472,7 +2479,8 @@ class BucketUtils(ScopeUtils):
                                "after retry: {0}"
                                .format(task_info["unwanted"]["fail"]))
 
-    def verify_doc_op_task_exceptions(self, tasks_info, cluster,
+    @staticmethod
+    def verify_doc_op_task_exceptions(tasks_info, cluster,
                                       sdk_client_pool=None):
         """
         :param tasks_info:  dict() of dict() of form,
@@ -2934,7 +2942,8 @@ class BucketUtils(ScopeUtils):
                       "viewFragmntThreshold": None}
         self.modify_fragmentation_config(cluster, new_config, bucket)
 
-    def modify_fragmentation_config(self, cluster, config, bucket="default"):
+    @staticmethod
+    def modify_fragmentation_config(cluster, config, bucket="default"):
         bucket_op = BucketHelper(cluster.master)
         _config = {"parallelDBAndVC": "false",
                    "dbFragmentThreshold": None,
@@ -3026,7 +3035,9 @@ class BucketUtils(ScopeUtils):
         self.log.debug("End Verification for vbucket seq_nos comparison")
         return new_vbucket_stats
 
-    def compare_per_node_for_vbucket_consistency(self, map1, check_abs_high_seqno=False, check_purge_seqno=False):
+    @staticmethod
+    def compare_per_node_for_vbucket_consistency(map1, check_abs_high_seqno=False,
+                                                 check_purge_seqno=False):
         """
             Method to check uuid is consistent on active and replica new_vbucket_stats
         """
@@ -3073,7 +3084,8 @@ class BucketUtils(ScopeUtils):
             raise Exception(output)
         return bucketMap
 
-    def compare_vbucketseq_failoverlogs(self, vbucketseq={}, failoverlog={}):
+    @staticmethod
+    def compare_vbucketseq_failoverlogs(vbucketseq={}, failoverlog={}):
         """
             Method to compare failoverlog and vbucket-seq for uuid and  seq no
         """
@@ -3098,7 +3110,8 @@ class BucketUtils(ScopeUtils):
         if not isTrue:
             raise Exception(output)
 
-    def print_results_per_node(self, node_map):
+    @staticmethod
+    def print_results_per_node(node_map):
         """ Method to print map results - Used only for debugging purpose """
         for bucket in node_map.keys():
             print("----- Bucket {0} -----".format(bucket))
@@ -3280,7 +3293,8 @@ class BucketUtils(ScopeUtils):
         self.log.debug("End Verification for Active Vs Replica")
         return disk_replica_dataset, disk_active_dataset
 
-    def compare_per_node_for_failovers_consistency(self, map1, vbucketMap):
+    @staticmethod
+    def compare_per_node_for_failovers_consistency(map1, vbucketMap):
         """
         Method to check uuid is consistent on active and
         replica new_vbucket_stats
@@ -3419,7 +3433,8 @@ class BucketUtils(ScopeUtils):
             for task in compaction_tasks:
                 self.task_manager.get_task_result(task)
 
-    def get_item_count_mc(self, server, bucket):
+    @staticmethod
+    def get_item_count_mc(server, bucket):
         client = MemcachedClientHelper.direct_client(server, bucket)
         return int(client.stats()["curr_items"])
 
@@ -3427,10 +3442,12 @@ class BucketUtils(ScopeUtils):
         bucket_map = self.get_buckets_itemCount(cluster)
         return bucket_map[bucket.name]
 
-    def get_buckets_itemCount(self, cluster):
+    @staticmethod
+    def get_buckets_itemCount(cluster):
         return BucketHelper(cluster.master).get_buckets_itemCount()
 
-    def expire_pager(self, servers, buckets, val=10):
+    @staticmethod
+    def expire_pager(servers, buckets, val=10):
         for bucket in buckets:
             for server in servers:
                 ClusterOperationHelper.flushctl_set(server, "exp_pager_stime",
@@ -3474,7 +3491,8 @@ class BucketUtils(ScopeUtils):
                            % json.loads(rq_content))
         return output, rq_content
 
-    def get_bucket_priority(self, priority):
+    @staticmethod
+    def get_bucket_priority(priority):
         if priority is None:
             return None
         if priority.lower() == 'low':
@@ -4175,7 +4193,8 @@ class BucketUtils(ScopeUtils):
                 % wait_time)
         return result
 
-    def make_default_views(self, default_view, prefix, count,
+    @staticmethod
+    def make_default_views(default_view, prefix, count,
                            is_dev_ddoc=False, different_map=False):
         ref_view = default_view
         ref_view.name = (prefix, ref_view.name)[prefix is None]
@@ -4194,8 +4213,8 @@ class BucketUtils(ScopeUtils):
                 for i in xrange(count)
             ]
 
-    def base_bucket_ratio(self, servers):
-        ratio = 1.0
+    @staticmethod
+    def base_bucket_ratio(servers):
         # check if ip is same for all servers
         ip = servers[0].ip
         dev_environment = True
@@ -4325,7 +4344,8 @@ class BucketUtils(ScopeUtils):
             self.log.critical("Few bucket(s) not warmed up "
                               "within expected time")
 
-    def validate_manifest_uid(self, cluster_node, bucket):
+    @staticmethod
+    def validate_manifest_uid(cluster_node, bucket):
         status = True
         manifest_uid = BucketHelper(cluster_node) \
             .get_bucket_manifest_uid(bucket)
@@ -4337,7 +4357,8 @@ class BucketUtils(ScopeUtils):
             status = False
         return status
 
-    def get_expected_total_num_items(self, bucket):
+    @staticmethod
+    def get_expected_total_num_items(bucket):
         """
         Function to calculate the expected num_items under the given bucket.
         This will aggregate all active collections' num_items under
