@@ -560,14 +560,12 @@ class GenericLoadingTask(Task):
         return success, fail
 
     def batch_delete(self, key_val, shared_client=None, persist_to=None,
-                     replicate_to=None, timeout=None, timeunit=None,
-                     durability=""):
+                     replicate_to=None, durability=""):
         self.client = self.client or shared_client
         success, fail = self.client.delete_multi(key_val.keys(),
                                                  persist_to=persist_to,
                                                  replicate_to=replicate_to,
-                                                 timeout=timeout,
-                                                 time_unit=timeunit,
+                                                 timeout=self.timeout,
                                                  durability=durability)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
@@ -835,8 +833,6 @@ class LoadDocumentsTask(GenericLoadingTask):
             success, fail = self.batch_delete(key_value,
                                               persist_to=self.persist_to,
                                               replicate_to=self.replicate_to,
-                                              timeout=self.timeout,
-                                              timeunit=self.time_unit,
                                               durability=self.durability)
             self.fail.update(fail)
             # self.success.update(success)
@@ -1170,8 +1166,6 @@ class Durability(Task):
                     key_value,
                     persist_to=self.persist_to,
                     replicate_to=self.replicate_to,
-                    timeout=self.timeout,
-                    timeunit=self.time_unit,
                     durability=self.durability)
                 self.delete_failed.update(fail)
             else:
