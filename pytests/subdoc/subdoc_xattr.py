@@ -1,6 +1,7 @@
 import copy
 import json
 import sys
+import zlib
 from random import choice, shuffle
 
 from BucketLib.bucket import Bucket
@@ -10,7 +11,8 @@ from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import \
     doc_generator, \
-    sub_doc_generator
+    sub_doc_generator, \
+    SubdocDocumentGenerator
 from error_simulation.cb_error import CouchbaseError
 from custom_exceptions.exception import DesignDocCreationException
 from couchbase_helper.document import View
@@ -1843,6 +1845,14 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         self.validate_test_failure()
 
 
+class VbucketUtil:
+    @staticmethod
+    def to_vbucket(key):
+        """ Returns the vbucket of a key
+        """
+        return (((zlib.crc32(key)) >> 16) & 0x7fff) & (1024 - 1)
+
+
 class XattrTests(SubdocBaseTest):
     """ Xattributes testing in the context of KV featuring storage, tombstones
     and lifetimes."""
@@ -1971,7 +1981,7 @@ class XattrTests(SubdocBaseTest):
 
     def format_doc_key(self, key_number):
         """ Returns a document key given a document number. """
-        return "{}-{:04}".format(self.doc_id, key_number)
+        return "{}-{:04}".format(self.doc_prefix, key_number)
 
     def get_subdoc_val(self):
         """ Given a document key and sub-doc path returns a pure value."""
@@ -2002,3 +2012,86 @@ class XattrTests(SubdocBaseTest):
             return 'VIR_ATTR'
 
         return 'USR_ATTR'
+
+    def create_workload(self, key_min, key_max, exp=0):
+        """ Produces documents
+
+        Creates documents between keys key_min and key_max.
+
+        Args:
+            key_min (int): The first key in the interval.
+            key_max (int): The final key in the interval.
+        """
+        # A generator for regular documents
+        doc_gen = doc_generator(
+            self.doc_prefix, key_min, key_max, doc_type=self.doc_type, doc_size=self.doc_size)
+
+        # Create docs between keys_min and keys_max. This is required because
+        # documents must previously exist before xattrs can be added to them.
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, doc_gen, "create", exp=exp, **self.async_gen_common)
+
+        self.task.jython_task_manager.get_task_result(task)
+
+    def xattrs_workload(self, key_min, key_max):
+        """ A faster version of the xattrs workload method to produce
+        xattributes between key_min and key_max. Expects the documents to
+        pre-exist.
+        """
+        tasks = []
+
+        for path in self.paths:
+            xattribute_template = '{{ "' + path + '": "{0}" }}'
+            template_value = [self.get_subdoc_val()]
+            sub_doc_gen = SubdocDocumentGenerator(
+                self.doc_prefix, xattribute_template, template_value, start=key_min, end=key_max)
+            task = self.task.async_load_gen_sub_docs(
+                self.cluster, self.bucket, sub_doc_gen, "upsert", xattr=True, path_create=True, **self.async_gen_common)
+            tasks.append(task)
+
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+
+    def xattrs_workload_slow(self, key_min, key_max, vbucket_filter=None):
+        """ Updates xattributes between key_min and key_max.
+
+        Args:
+            vbucket_filter (set(int)): A set of vbuckets that the key must be in.
+        """
+        # Create xattrs for docs between keys_min and keys_max.
+        for path in self.paths:
+            for key_number in range(key_min, key_max):
+                doc_key = self.format_doc_key(key_number)
+                if vbucket_filter and VbucketUtil.to_vbucket(doc_key) not in vbucket_filter:
+                    continue
+                sub_val = self.get_subdoc_val()
+                sub_doc = [path, sub_val]
+                success, failed = self.client.crud(
+                    "subdoc_upsert", doc_key, sub_doc, durability=self.durability_level, create_path=True, xattr=True)
+
+    def delete_workload(self, key_min, key_max):
+        """ Deletes documents in the range key_min, key_max.
+        """
+        # A generator for regular documents
+        doc_gen = doc_generator(self.doc_prefix, key_min, key_max)
+
+        # Delete documents between keys_min and keys_max.
+        task = self.task.async_load_gen_docs(self.cluster, self.bucket, doc_gen,
+                                             "delete", **self.async_gen_common)
+        self.task.jython_task_manager.get_task_result(task)
+
+    def get_xattribute(self, doc_key, path, access_deleted=True):
+        """ Returns a tuple where the first element indicates the tuple was
+        accessible and the second element contains the value. """
+        success, failed = self.client.crud(
+            "subdoc_read", doc_key, path, xattr=True, access_deleted=True)
+
+        accessible = success and (
+            success[doc_key]['value'][0] != "PATH_NOT_FOUND")
+
+        if accessible:
+            xattrvalue = success[doc_key]['value'][0]
+        else:
+            xattrvalue = None
+
+        return accessible, xattrvalue
