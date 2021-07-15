@@ -1969,6 +1969,14 @@ class XattrTests(SubdocBaseTest):
         shell.restart_couchbase()
         shell.disconnect()
 
+    def format_doc_key(self, key_number):
+        """ Returns a document key given a document number. """
+        return "{}-{:04}".format(self.doc_id, key_number)
+
+    def get_subdoc_val(self):
+        """ Given a document key and sub-doc path returns a pure value."""
+        return 'a' * self.xattr_size
+
     def create_paths(self):
         """ Returns a list with user and system attributes. """
         paths = []
@@ -1980,3 +1988,17 @@ class XattrTests(SubdocBaseTest):
             paths.append("usr{}".format(i))
 
         return paths
+
+    def xattr_type(self, xattribute):
+        """ Returns the type of an xattribute. """
+        if not xattribute:
+            raise ValueError('The xattribute is empty.')
+        first_character = xattribute[0]
+
+        if first_character == '_':
+            return 'SYS_ATTR'
+
+        if first_character == '$':
+            return 'VIR_ATTR'
+
+        return 'USR_ATTR'
