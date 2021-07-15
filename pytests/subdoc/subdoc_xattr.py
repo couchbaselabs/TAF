@@ -1,7 +1,7 @@
 import copy
 import json
 import sys
-from random import choice
+from random import choice, shuffle
 
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer, DocLoading
@@ -15,6 +15,7 @@ from error_simulation.cb_error import CouchbaseError
 from custom_exceptions.exception import DesignDocCreationException
 from couchbase_helper.document import View
 from membase.api.rest_client import RestConnection
+from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -1896,6 +1897,77 @@ class XattrTests(SubdocBaseTest):
         """ Tears down the cluster
         """
         super(XattrTests, self).tearDown()
+
+    def apply_faults(self):
+        """ Applies the list of faults the user has provided. """
+        fault_functions = {"dgm": self.apply_dgm,
+                           "rebalance": lambda: self.apply_rebalance(strategy="rebalance"),
+                           "hard-failover": lambda: self.apply_rebalance(strategy="hard-failover"),
+                           "graceful-failover": lambda: self.apply_rebalance(strategy="graceful-failover"),
+                           "lose_last_node": self.apply_lose_last_node,
+                           "node_restart": self.apply_node_restart,
+                           "stop_persistence": self.apply_stop_persistence}
+
+        for fault in self.faults:
+            fault_functions[fault]()
+
+    def apply_dgm(self, percentage=50):
+        """ Places the cluster in dgm at the given percentage. """
+        dgm_gen = doc_generator("dgm", 0, 1000000, doc_size=self.doc_size)
+
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, dgm_gen, "create", exp=0, process_concurrency=8, active_resident_threshold=percentage, **self.async_gen_common)
+
+        self.task.jython_task_manager.get_task_result(task)
+
+    def apply_rebalance(self, cycles=3, strategy="rebalance"):
+        """ Shuffles servers in and out via a swap-rebalance or failover.
+        Requires a minimum of 3 servers. """
+        servers = copy.copy(self.cluster.servers)
+
+        # Remove last server
+        self.task.rebalance(servers, [], servers[-1:])
+
+        # Swap rebalance a single node for several cycles.
+        for i in range(cycles):
+            # Add last server and remove second-to-last server
+            to_add, to_remove = servers[-1:], servers[-2:-1]
+
+            if strategy == "rebalance":
+                # Perform a swap rebalance
+                self.task.rebalance(servers, to_add, to_remove)
+
+            if strategy == "graceful-failover" or strategy == "hard-failover":
+                # Perform a graceful-failover followed
+                self.task.failover(
+                    servers=servers, failover_nodes=to_remove, graceful=strategy == "graceful-failover")
+                self.task.rebalance(servers, to_add, [])
+
+            # Swap last two elements
+            servers[-1], servers[-2] = servers[-2], servers[-1]
+            # Shuffle elements between index 1 and index n - 2 inclusive
+            shuffled = servers[1:-1]
+            shuffle(shuffled)
+            servers[1:-1] = shuffled
+
+    def apply_stop_persistence(self):
+        """ Stop persistence  """
+        # Stopping persistence on main node
+        mem_client = MemcachedClientHelper.direct_client(
+            self.cluster_util.cluster.master, self.bucket)
+        mem_client.stop_persistence()
+
+    def apply_lose_last_node(self):
+        """ Loses the last node """
+        # Lose a single node by performing a graceful-failover if followed
+        self.task.failover(servers=self.cluster.servers,
+                           failover_nodes=self.cluster.servers[-1:], graceful=False)
+
+    def apply_node_restart(self):
+        """ Restarts a the last node """
+        shell = RemoteMachineShellConnection(self.cluster.servers[-1])
+        shell.restart_couchbase()
+        shell.disconnect()
 
     def create_paths(self):
         """ Returns a list with user and system attributes. """
