@@ -1840,3 +1840,71 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         # Closing the shell connection
         shell.disconnect()
         self.validate_test_failure()
+
+
+class XattrTests(SubdocBaseTest):
+    """ Xattributes testing in the context of KV featuring storage, tombstones
+    and lifetimes."""
+
+    def setUp(self):
+        """ Sets the cluster up
+        """
+        super(XattrTests, self).setUp()
+
+        # The name of the bucket
+        self.bucket = self.cluster.buckets[0]
+
+        # A client for reading xattributes
+        self.client = SDKClient([self.cluster.master], self.bucket)
+
+        # Parallelism for verifying xattributes
+        self.parallelism = self.input.param("parallelism", 5)
+
+        # Common document prefix
+        self.doc_prefix = self.input.param("doc_prefix", "doc")
+
+        # The number of user and system attributes per document
+        self.no_of_usr_attributes = self.input.param("no_of_usr_xattr", 1)
+        self.no_of_sys_attributes = self.input.param("no_of_sys_xattr", 2)
+
+        # The size of each document body and xattribute value
+        self.doc_size = self.input.param("doc_size", 1024)
+        self.xattr_size = self.input.param("xattr_size", 512)
+
+        # A list of fault to introduce
+        self.faults = self.input.param("faults", "")
+        self.faults = self.faults.split(";") if self.faults else []
+
+        # A list of xattributes to include in documents
+        self.paths = self.create_paths()
+
+        # Common async_workload kwargs
+        self.async_gen_common = \
+            {'scope': CbServer.default_scope,
+             'collection': CbServer.default_collection,
+             'durability': self.durability_level,
+             'batch_size': 50,
+             'print_ops_rate': True}
+
+        # A list of tasks that need to be waited on
+        self.tasks = []
+
+        # Please configure the bucket settings
+        # E.g. compression, eviction type and storage backend
+
+    def tearDown(self):
+        """ Tears down the cluster
+        """
+        super(XattrTests, self).tearDown()
+
+    def create_paths(self):
+        """ Returns a list with user and system attributes. """
+        paths = []
+
+        for i in range(self.no_of_sys_attributes):
+            paths.append("_sys{}".format(i))
+
+        for i in range(self.no_of_usr_attributes):
+            paths.append("usr{}".format(i))
+
+        return paths
