@@ -2429,3 +2429,29 @@ class XattrTests(SubdocBaseTest):
 
         for connection in remote_connections:
             connection.disconnect()
+
+    def test_xattributes_tolerate_1_failure(self):
+        """ Test xattributes with sync replication tolerate 1 failure.
+
+        Lose a single node in a cluster with nodes >= 3 with items which have
+        been created using synchronous replication by performing a hard
+        failover without a rebalance-out.
+
+        Expect a replica to be promoted on the healthy side and no xattributes
+        to be lost.
+        """
+        key_min = 0
+        key_max = 100000
+
+        # Load data
+        self.create_workload(key_min, key_max)
+        self.xattrs_workload(key_min, key_max)
+
+        self.apply_faults()
+
+        # Lose a single node by performing a hard-failover
+        self.task.failover(servers=self.cluster.servers,
+                           failover_nodes=self.cluster.servers[-1:], graceful=False)
+
+        # Perform validation
+        self.parallel(self.verify_workload, key_min, key_max)
