@@ -2376,3 +2376,56 @@ class XattrTests(SubdocBaseTest):
                       key_max, vbuckets=active_vbuckets)
 
         shell.disconnect()
+
+    def verify_stopped_replicas(self, key_min, key_max, vbuckets=None):
+        """ Perform validation """
+        for doc_key in map(self.format_doc_key, range(key_min, key_max)):
+            for path in self.paths:
+                # Fetch xattribute
+                accessible, xattrvalue = self.get_xattribute(
+                    doc_key, path, access_deleted=True)
+                # If vbucket belongs to a node 1 vbucket, then that xattribute should be accessible
+                if VbucketUtil.to_vbucket(doc_key) in vbuckets:
+                    self.assertEqual(
+                        xattrvalue, self.get_subdoc_val())
+
+    def test_xattributes_with_stopped_replicas(self):
+        """ Test xattributes with no replica vbuckets.
+
+        Stop replica nodes and generate documents with xattributes that exist
+        in the active vbuckets of the non-stopped node.
+
+        Expect the xattributes belonging to the active documents to be
+        accessible.
+        """
+        key_min = 0
+        key_max = self.input.param("key_max", 100000)
+
+        # Active vbuckets on node 1
+        active_vbuckets = self.vbuckets_on_node(
+            self.cluster_util.cluster.master)
+
+        # Create documents
+        self.create_workload(key_min, key_max)
+
+        self.apply_faults()
+
+        # Stop replica nodes (Sigstop nodes numbered 2 and above)
+        remote_connections = [RemoteMachineShellConnection(
+            server) for server in self.cluster.servers[1:]]
+        for connection in remote_connections:
+            connection.pause_memcached()
+
+        # Create xattributes
+        self.parallel(self.xattrs_workload_slow, key_min,
+                      key_max, vbucket_filter=active_vbuckets)
+
+        # Resume the replica nodes
+        for connection in remote_connections:
+            connection.unpause_memcached()
+
+        self.parallel(self.verify_stopped_replicas, key_min,
+                      key_max, vbuckets=active_vbuckets)
+
+        for connection in remote_connections:
+            connection.disconnect()
