@@ -2309,3 +2309,70 @@ class XattrTests(SubdocBaseTest):
 
         # Check at most 1 tombstone exists per vbucket
         self.parallel(self.verify_purged_tombstones, key_min, key_max)
+
+    def vbuckets_on_node(self, server, vbucket_type='active'):
+        """ Returns vbuckets for a specific node """
+        shell = RemoteMachineShellConnection(server)
+        vbuckets = set(Cbstats(shell).vbucket_list(
+            self.bucket.name, vbucket_type))
+        shell.disconnect()
+        return vbuckets
+
+    def verify_rollback(self, key_min, key_max, vbuckets=None):
+        """ Validates rollback by expecting the xattributes belonging to
+        vbuckets not to exist. """
+        for doc_key in map(self.format_doc_key, range(key_min, key_max)):
+            for path in self.paths:
+                accessible, xattrvalue = self.get_xattribute(
+                    doc_key, path, access_deleted=True)
+                # If vbucket belongs to a node 1 vbucket, then xattribute should not exist
+                if VbucketUtil.to_vbucket(doc_key) in vbuckets:
+                    self.assertFalse(accessible)
+                else:
+                    self.assertEqual(
+                        xattrvalue, self.get_subdoc_val())
+
+    def test_xattributes_with_rollback(self):
+        """ Test xattributes with rollback.
+
+        After stopping persistence, create documents with xattributes. Kill
+        memcached and wait for it to restart. At this point the replicas for
+        each active vbucket on 1 are further ahead. Similarly, the replica
+        vbuckets on node 1 are behind their active vbuckets. Consequently, the
+        actives on node 1 cause their replicas to rollback and the replicas
+        present on node 1 accept the new mutations from their actives.
+
+        Expect xattributes belonging to active vbucket's on node 1 to not
+        exist. Expect xattributes belonging to non-active vbuckets.
+        """
+        key_min = 0
+        key_max = self.input.param("key_max", 100000)
+
+        node1 = self.cluster_util.cluster.master
+        shell = RemoteMachineShellConnection(node1)
+        mem_client = MemcachedClientHelper.direct_client(node1, self.bucket)
+        active_vbuckets = self.vbuckets_on_node(node1, vbucket_type='active')
+
+        # Load some data
+        self.create_workload(key_min, key_max // 2)
+        self.xattrs_workload(key_min, key_max // 2)
+
+        self.apply_faults()
+
+        # Stop persistence so replicas of node 1 move ahead
+        mem_client.stop_persistence()
+
+        # Create documents with xattributes
+        self.create_workload(key_max // 2, key_max)
+        self.xattrs_workload(key_max // 2, key_max)
+
+        # Kill memcached and wait for it to restart
+        shell.kill_memcached()
+
+        self.assertTrue(self.bucket_util._wait_warmup_completed(
+            [node1], self.bucket, wait_time=60))
+
+        self.parallel(self.verify_rollback, key_max // 2,
+                      key_max, vbuckets=active_vbuckets)
+
+        shell.disconnect()
