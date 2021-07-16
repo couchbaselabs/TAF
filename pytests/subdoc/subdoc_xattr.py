@@ -2271,3 +2271,41 @@ class XattrTests(SubdocBaseTest):
         # Check both user and system attributes are no longer accessible
         # following expiration.
         self.parallel(self.verify_workload, 20000, 50000, is_expired=True)
+
+    def test_xattribute_metadata_purge(self):
+        """ Test xattributes are discarded during metadata purging.
+
+        Delete documents with xattributes and run compaction once the metadata
+        purge interval has been exceeded such that the tombstones are
+        sufficiently old to be discarded.
+
+        Expect both user and system attributes to be inaccesible following the
+        compaction.
+        """
+        key_min = 0
+        key_max = self.input.param("key_max", 100000)
+        del_min = key_min
+        del_max = key_max
+
+        self.create_workload(key_min, key_max)
+        self.xattrs_workload(key_min, key_max)
+
+        # Delete keys between a certain range
+        self.delete_workload(del_min, del_max)
+
+        self.bucket_util._wait_for_stats_all_buckets([self.bucket])
+
+        # Set the metadata purge interval to 120 seconds.
+        # The autoCompactionDefined field must be set to true, otherwise the
+        # metadata purge interval will reset back to 3 days.
+        self.bucket_util.modify_fragmentation_config(self.cluster, {})
+        self.bucket_util.set_metadata_purge_interval(
+            0.0014, [self.bucket], self.cluster_util.cluster.master)
+
+        self.sleep(120, "Waiting for the metadata purge interval to pass.")
+
+        # Trigger manual compaction
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+
+        # Check at most 1 tombstone exists per vbucket
+        self.parallel(self.verify_purged_tombstones, key_min, key_max)
