@@ -2162,3 +2162,45 @@ class XattrTests(SubdocBaseTest):
 
         for task in tasks:
             self.task_manager.get_task_result(task)
+
+    def test_xattributes(self):
+        """ Create some documents with xattributes.
+
+        Create some documents with xattributes.
+
+        Expect both user and system xattributes to be accessible.
+        """
+        key_min = 0
+        key_max = self.input.param("key_max", 100000)
+
+        self.create_workload(key_min, key_max)
+        self.xattrs_workload(key_min, key_max)
+        self.apply_faults()
+        self.parallel(self.verify_workload, key_min, key_max)
+
+    def test_xattribute_compaction(self):
+        """ Manually run compaction.
+
+        Disable auto-compaction, bloat storage, create documents with
+        xattributes and manually run compaction.
+
+        Expect both user attributes and system xattributes to be accessible
+        following compaction.
+        """
+        key_min = 0
+        key_max = self.input.param("key_max", 100000)
+
+        # Disable auto-compaction
+        self.bucket_util.disable_compaction(self.cluster)
+
+        # Run workload until threshold is reached
+        self.create_workload(key_min, key_max)
+        self.xattrs_workload(key_min, key_max)
+
+        self.apply_faults()
+
+        # Trigger manual compaction
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+
+        # Validate the keys
+        self.parallel(self.verify_workload, key_min, key_max)
