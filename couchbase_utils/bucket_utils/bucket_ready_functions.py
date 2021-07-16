@@ -4425,7 +4425,7 @@ class BucketUtils(ScopeUtils):
                 cbepctl_obj.set(bucket.name,
                                 "flush_param",
                                 "persistent_metadata_purge_age",
-                                60)
+                                value)
             shell_conn.disconnect()
 
     def set_metadata_purge_interval(self, cluster, value, buckets, node):
@@ -4437,10 +4437,8 @@ class BucketUtils(ScopeUtils):
         shell.disconnect()
 
         for bucket in buckets:
-            cmd = 'ns_bucket:update_bucket_props(' \
-                  '"%s", [{purge_interval, "%s"}]).' \
-                  % (bucket.name, value)
-            rest.diag_eval(cmd)
+           cmd = '{ok, BC} = ns_bucket:get_bucket("%s"), BC2 = lists:keyreplace(purge_interval, 1, BC, {purge_interval, %s}), ns_bucket:set_bucket_config("%s", BC2).' % (bucket.name, value, bucket.name)
+           rest.diag_eval(cmd)
 
         # Restart Memcached in all cluster nodes to reflect the settings
         for server in self.cluster_util.get_kv_nodes(cluster, master=node):
