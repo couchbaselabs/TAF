@@ -21,6 +21,7 @@ from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from Jython_tasks.task import FunctionCallTask
 
 
 class SubdocBaseTest(ClusterSetup):
@@ -2095,3 +2096,69 @@ class XattrTests(SubdocBaseTest):
             xattrvalue = None
 
         return accessible, xattrvalue
+
+    def verify_purged_tombstones(self, key_min, key_max):
+        """ Validate documents xattributes once they have been deleted and purged.
+
+        Check that there is at most 1 tombstones with system xattribute per
+        vbucket once tombstones have been purged.
+
+        Context: Each document has a sequence number, assuming all documents
+        have been deleted the tombstone with the highest sequence number is
+        preserved to remember the high sequence number for that vbucket.
+        """
+        seen_vbuckets = set()
+
+        for doc_key in map(self.format_doc_key, range(key_min, key_max)):
+            for xattr in self.paths:
+                if self.get_xattribute(doc_key, xattr, access_deleted=True)[0]:
+                    if VbucketUtil.to_vbucket(doc_key) in seen_vbuckets:
+                        self.fail(
+                            "Found multiple tombstones in the same vbucket post purging.")
+                    else:
+                        seen_vbuckets.add(VbucketUtil.to_vbucket(doc_key))
+                        break
+
+    def verify_workload(self, key_min, key_max, is_deleted=False, is_expired=False):
+        """ Ensures document xattrs have the correct values between the
+        half-open interval key_min and key_max.
+
+        Args:
+            key_min (int): The first key in the interval.
+            key_max (int): The final key in the interval.
+            is_deleted (bool): Indicates the documents have been deleted.
+            is_expired (bool): Indicates the documents have been expired.
+        """
+        self.log.info(
+            "Verifying workload between {} and {}".format(key_min, key_max))
+        for doc_key in map(self.format_doc_key, range(key_min, key_max)):
+            for path in self.paths:
+                accessible, xattrvalue = self.get_xattribute(
+                    doc_key, path, access_deleted=True)
+
+                # User attributes are discarded upon deletion.
+                # System attributes are only discarded upon purging.
+                # System attributes are not accessible once expired.
+                if is_expired or (is_deleted and self.xattr_type(path) == 'USR_ATTR'):
+                    self.assertFalse(accessible)
+                else:
+                    self.assertEqual(
+                        xattrvalue, self.get_subdoc_val(doc_key, path))
+
+    def parallel(self, function, key_min, key_max, **kwargs):
+        """ Execute the workload in parallel by batching keys between key_max
+        and key_min into groups and executing the given function across each
+        group in parallel.
+        """
+        tasks = []
+        minimum_size = 10000
+        batch_size = max((key_max - key_min) // self.parallelism, minimum_size)
+
+        for lower_bound in range(key_min, key_max, batch_size):
+            upper_bound = min(lower_bound + batch_size, key_max)
+            tasks.append(FunctionCallTask(function, args=[
+                         lower_bound, upper_bound], kwds=kwargs))
+            self.task_manager.add_new_task(tasks[-1])
+
+        for task in tasks:
+            self.task_manager.get_task_result(task)
