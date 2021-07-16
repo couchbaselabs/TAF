@@ -842,7 +842,7 @@ class SDKClient(object):
              persist_to=0, durability="",
              timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
              create_path=True, xattr=False, cas=0, sdk_retry_strategy=None,
-             store_semantics=None, preserve_expiry=None):
+             store_semantics=None, preserve_expiry=None, access_deleted=False):
         result = None
         if op_type == DocLoading.Bucket.DocOps.UPDATE:
             result = self.upsert(
@@ -985,8 +985,9 @@ class SDKClient(object):
             mutate_in_specs.append(
                 SDKClient.sub_doc_op.getLookUpInSpec(value, xattr))
             content = Tuples.of(key, mutate_in_specs)
+            lookup_in_options = SDKClient.sub_doc_op.getLookupInOptions(access_deleted)
             result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
-                self.collection, [content])
+                self.collection, [content], lookup_in_options)
             result = self.__translate_get_multi_sub_doc_result(result, path_val)
         elif op_type == DocLoading.Bucket.SubDocOps.COUNTER:
             sub_key, step_value = value[0], value[1]

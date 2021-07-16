@@ -15,6 +15,7 @@ import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.kv.LookupInResult;
 import com.couchbase.client.java.kv.LookupInSpec;
+import com.couchbase.client.java.kv.LookupInOptions;
 import com.couchbase.client.java.kv.MutateInOptions;
 import com.couchbase.client.java.kv.MutateInResult;
 import com.couchbase.client.java.kv.MutateInSpec;
@@ -145,7 +146,11 @@ public class SubDocOperations extends doc_ops {
         return returnValue;
     }
 
-    public List<HashMap<String, Object>> bulkGetSubDocOperation(Collection collection, List<Tuple2<String, List<LookupInSpec>>> keys) {
+    public LookupInOptions getLookupInOptions(boolean accessDeleted) {
+        return LookupInOptions.lookupInOptions().accessDeleted(accessDeleted);
+    }
+
+    public List<HashMap<String, Object>> bulkGetSubDocOperation(Collection collection, List<Tuple2<String, List<LookupInSpec>>> keys, LookupInOptions lookupInOptions) {
         final ReactiveCollection reactiveCollection = collection.reactive();
         List<HashMap<String, Object>> returnValue = Flux.fromIterable(keys)
                 .flatMap(new Function<Tuple2<String, List<LookupInSpec>>, Publisher<HashMap<String, Object>>>() {
@@ -158,7 +163,7 @@ public class SubDocOperations extends doc_ops {
                         retVal.put("content", null);
                         retVal.put("error", null);
                         retVal.put("status", false);
-                        return reactiveCollection.lookupIn(id, lookUpInSpecs)
+                        return reactiveCollection.lookupIn(id, lookUpInSpecs, lookupInOptions)
                                 .map(new Function<LookupInResult, HashMap<String, Object>>() {
                                     public HashMap<String, Object> apply(LookupInResult optionalResult) {
                                             retVal.put("cas", optionalResult.cas());
