@@ -2204,3 +2204,70 @@ class XattrTests(SubdocBaseTest):
 
         # Validate the keys
         self.parallel(self.verify_workload, key_min, key_max)
+
+    def test_xattribute_deletion(self):
+        """ Test xattribute deletion
+
+        Create documents with xattributes and delete them.
+
+        Expect the user attributes to be discarded and the system xattributes
+        to be accessible following deletion.
+        """
+        key_min = 0
+        key_max = self.input.param("key_max", 100000)
+
+        # Run workload until threshold is reached
+        self.create_workload(key_min, key_max)
+        self.xattrs_workload(key_min, key_max)
+
+        # Delete keys between a certain range
+        self.delete_workload(key_min, key_max)
+
+        # Check system keys exist and user attributes no longer exist
+        self.parallel(self.verify_workload, key_min, key_max, is_deleted=True)
+
+    def wait_for_expiration(self, ttl, expiry_pager_time):
+        """ Waits for the expiry pager to delete documents.
+        """
+        self.bucket_util._wait_for_stats_all_buckets(
+            [self.bucket], timeout=1200)
+
+        # Wait for documents to expire
+        self.sleep(ttl, "Waiting for documents to expire.")
+        # Set expiry pager interval
+        self.bucket_util._expiry_pager(self.cluster, expiry_pager_time)
+        # Wait for expiry pager to expire documents.
+        self.sleep(expiry_pager_time*2, "Wait for expiry pager to complete.")
+
+        self.bucket_util._wait_for_stats_all_buckets([self.bucket])
+        self.bucket_util._wait_for_stats_all_buckets(
+            [self.bucket], cbstat_cmd="all", stat_name="vb_replica_queue_size")
+
+    def test_xattribute_expiry(self):
+        """ Test xattribute expiry
+
+        Create documents with xattributes, configure expiry by setting a
+        time-to-live for each document and wait for the documents to expire.
+
+        Expect both user and system attributes to be inaccessible following
+        expiration.
+        """
+        key_min = 0
+        key_max = self.input.param("key_max", 100000)
+        ttl = self.input.param("ttl", 5)
+        expiry_pager_time = self.input.param("expiry_pager_time", 10)
+
+        # Run workload until threshold is reached
+        self.create_workload(key_min, key_max, exp=ttl)
+        self.xattrs_workload(key_min, key_max)
+
+        self.wait_for_expiration(ttl, expiry_pager_time)
+
+        self.apply_faults()
+
+        # Trigger manual compaction
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+
+        # Check both user and system attributes are no longer accessible
+        # following expiration.
+        self.parallel(self.verify_workload, 20000, 50000, is_expired=True)
