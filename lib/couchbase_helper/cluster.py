@@ -1026,8 +1026,7 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(task)
         return task
 
-    def aysnc_execute_query(self, server, query, contentType='application/x-www-form-urlencoded',
-                            connection='keep-alive', isIndexerQuery=False, bucket=None, indexName=None, timeout=300):
+    def async_execute_query(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=300):
         """
                 Synchronously runs query
                 Parameters:
@@ -1037,7 +1036,7 @@ class ServerTasks(object):
                 Returns:
                   _task - A task future that is a handle to the scheduled task
                 """
-        _task = jython_tasks.ExecuteQueryTask(server, query, contentType=contentType, connection=connection,
+        _task = jython_tasks.ExecuteQueryTask(server, query,
                                               isIndexerQuery=isIndexerQuery, bucket=bucket, indexName=indexName,
                                               timeout=600)
         self.jython_task_manager.add_new_task(_task)

@@ -1,6 +1,11 @@
+from Cb_constants import constants
+from index_utls.index_ready_functions import IndexUtils
+from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 import string, random, math
 from storage.storage_base import StorageBase
+from gsiLib.gsiHelper import GsiHelper
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
 
 class PlasmaBaseTest(StorageBase):
@@ -21,9 +26,7 @@ class PlasmaBaseTest(StorageBase):
                 clients_per_bucket,
                 compression_settings=self.sdk_compression)
         self.initial_load()
-
-    def randStr(self, Num=10):
-        return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(Num))
+        self.indexUtil = IndexUtils(server_task=self.task)
 
     def print_plasma_stats(self, plasmaDict, bucket, indexname):
         bucket_Index_key = bucket.name + ":" + indexname
@@ -41,6 +44,52 @@ class PlasmaBaseTest(StorageBase):
 
     def isServerListContainsNode(self, serverList, ip):
         for node in serverList:
-            if node.ip+":"+node.port == ip:
+            if node.ip + ":" + node.port == ip:
                 return True
         return False
+
+    def kill_indexer(self, server, timeout=10):
+        self.stop_killIndexer = False
+        counter = 0
+        indexerkill_shell = RemoteMachineShellConnection(server)
+        output, error = indexerkill_shell.kill_indexer()
+        while not self.stop_killIndexer:
+            counter += 1
+            if counter > timeout:
+                break
+            output, error = indexerkill_shell.kill_indexer()
+            # output, error = remote_client.execute_command("pkill -f indexer")
+            self.log.info("Output value is:" + str(output))
+            indexerkill_shell.disconnect()
+            counter = 0
+            self.sleep(1)
+        self.log.info("Kill indexer process for node: {} completed".format(str(server.ip)))
+
+    def polling_for_All_Indexer_to_Ready(self, indexes_to_build, buckets=None):
+        if buckets is None:
+            buckets = self.buckets
+        for _, scope_data in indexes_to_build.items():
+            for _, collection_data in scope_data.items():
+                for collection, gsi_index_names in collection_data.items():
+                    for gsi_index_name in gsi_index_names:
+                        self.assertTrue(self.indexUtil.wait_for_indexes_to_go_online(self.cluster, buckets, gsi_index_name),
+                                        "Index {} is not up".format(gsi_index_name))
+        return True
+
+    def wait_for_indexer_service_to_Active(self, indexer_rest, indexer_nodes_list, time_out):
+        for node in indexer_nodes_list:
+            indexCounter = 0
+            while indexCounter < time_out:
+                generic_url = "http://%s:%s/"
+                ip = node.ip
+                port = constants.index_port
+                baseURL = generic_url % (ip, port)
+                self.log.info("Try to get index from URL as {}".format(baseURL))
+                indexCounter += 1
+                indexStatMap = indexer_rest.get_index_stats(URL=baseURL)
+                self.sleep(1)
+                if indexStatMap['indexer_state'] == "Active":
+                    self.log.info("Indexer state is Active for node with ip:{}".format(baseURL))
+                    break
+                else:
+                    self.log.info("Indexer state is still {}".format(indexStatMap['indexer_state']))

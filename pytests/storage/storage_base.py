@@ -81,6 +81,9 @@ class StorageBase(BaseTestCase):
         for idx, node in enumerate(self.cluster.nodes_in_cluster):
             node.services = self.services[idx]
 
+        self.cluster.query_nodes = self.find_nodes_with_service("n1ql", nodes_in)
+        self.cluster.index_nodes = self.find_nodes_with_service("index", nodes_in)
+        self.cluster.kv_nodes = self.find_nodes_with_service("kv", nodes_in).insert(0,self.cluster.master)
         # Create Buckets
         if self.standard_buckets == 1:
             self.bucket_util.create_default_bucket(
@@ -213,6 +216,14 @@ class StorageBase(BaseTestCase):
         self.suppress_error_table = True
         self.skip_read_on_error = False
         self.track_failures = True
+
+    def find_nodes_with_service(self, service_type, nodes_list):
+        filter_list = list()
+        for node in nodes_list:
+            if service_type in node.services:
+                filter_list.append(node)
+
+        return filter_list
 
     def _loader_dict(self):
         loader_dict = dict()

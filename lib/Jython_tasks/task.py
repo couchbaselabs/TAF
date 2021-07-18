@@ -6374,15 +6374,12 @@ class DropDataversesTask(Task):
         self.complete_task()
 
 class ExecuteQueryTask(Task):
-    def __init__(self, server, query, contentType='application/x-www-form-urlencoded',
-                 connection='keep-alive', isIndexerQuery=False, bucket=None, indexName=None, timeout=300):
+    def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=300):
         super(ExecuteQueryTask, self).__init__("ExecuteQueriesTask_%sstarted%s"
                                                % (query, time.time()))
         self.server = server
         self.query = query
         self.timeout = timeout
-        self.contentType = contentType
-        self.connection = connection
         self.isIndexerQuery = isIndexerQuery
         self.rest = RestConnection(server)
         self.bucket = bucket
@@ -6394,9 +6391,11 @@ class ExecuteQueryTask(Task):
         try:
             indexer_rest = GsiHelper(self.server, self.log)
             self.log.info("starting call")
+            contentType = 'application/x-www-form-urlencoded'
+            connection = 'keep-alive'
             status, content, header = indexer_rest.execute_query(server=self.server, query=self.query,
-                                                                 contentType=self.contentType,
-                                                                 connection=self.connection, isIndexerQuery=self.isIndexerQuery)
+                                                                 contentType=contentType,
+                                                                 connection=connection, isIndexerQuery=self.isIndexerQuery)
             newContent = json.loads(content)
             self.log.info("Content is:"+str(newContent))
             self.set_result(status)

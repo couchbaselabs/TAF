@@ -6,71 +6,99 @@ Created on 07-May-2021
 from global_vars import logger
 import time
 from membase.api.rest_client import RestConnection
+from gsiLib.GsiHelper_Rest import GsiHelper
+import string, random, math
 
 
 class IndexUtils:
 
-    def __init__(self, cluster, server_task, n1ql_node):
-        self.cluster = cluster
+    def __init__(self, server_task=None):
         self.task = server_task
         self.task_manager = self.task.jython_task_manager
-        self.n1ql_node = n1ql_node
         self.log = logger.get("test")
 
-    def build_deferred_indexes(self, indexes_to_build):
+    """
+    Method to create list of RestClient for each node
+    arguments: 
+             a. nodes_list: list of nodes list
+    return: list of restClient object corresponds each node in the list
+    """
+
+    def create_restClient_obj_list(self, nodes_list):
+        restClient_list = list()
+        for query_node in nodes_list:
+            restClient_list.append(RestConnection(query_node))
+        return restClient_list
+
+    def build_deferred_indexes(self, cluster, indexes_to_build):
         """
         Build secondary indexes that were deferred
         """
+        query_nodes_count = len(cluster.query_nodes)
+        restClient_Obj_list = self.create_restClient_obj_list(cluster.query_nodes)
         self.log.info("Building indexes")
+        x = 0
         for bucket, bucket_data in indexes_to_build.items():
             for scope, collection_data in bucket_data.items():
                 for collection, gsi_index_names in collection_data.items():
                     build_query = "BUILD INDEX on `%s`.`%s`.`%s`(%s) " \
                                   "USING GSI" \
                                   % (bucket, scope, collection, gsi_index_names)
-                    result = self.run_cbq_query(build_query)
-                    self.assertTrue(result['status'] == "success", "Build query %s failed." % build_query)
-                    self.wait_for_indexes_to_go_online(gsi_index_names)
+                    query_client = restClient_Obj_list[x % query_nodes_count]
+                    query_client.query_tool(build_query)
+                    x += 1
 
-        query = "select state from system:indexes where state='deferred'"
-        result = self.run_cbq_query(query)
-        self.log.info("deferred indexes remaining: {0}".format(len(result['results'])))
-        query = "select state from system:indexes where state='online'"
-        result = self.run_cbq_query(query)
-        self.log.info("online indexes count: {0}".format(len(result['results'])))
-        self.sleep(60, "Wait after building indexes")
-
-    def create_indexes(self, buckets, gsi_base_name="gsi",
-                       replica=0, defer=True):
+    def create_gsi_on_each_collection(self, cluster, buckets=None, gsi_base_name=None,
+                                      replica=0, defer=True, number_of_indexes_per_coll=1, count=1,
+                                      field='key', async=True):
         """
         Create gsi indexes on collections - according to number_of_indexes_per_coll
         """
         self.log.info("Creating indexes with defer:{} build".format(defer))
-        indexes_to_build = dict()
-        count = 0
+        if buckets is None:
+            buckets = cluster.buckets
+
         couchbase_buckets = [bucket for bucket in buckets
                              if bucket.bucketType == "couchbase"]
+        query_node_list = cluster.query_nodes
+        query_nodes_count = len(query_node_list)
+        x = 0
+        createIndexTasklist = list()
+        indexes_to_build = dict()
         for bucket in couchbase_buckets:
-            indexes_to_build[bucket.name] = dict()
+            if bucket.name not in indexes_to_build:
+                indexes_to_build[bucket.name] = dict()
             for _, scope in bucket.scopes.items():
-                indexes_to_build[bucket.name][scope.name] = dict()
+                if scope.name not in indexes_to_build[bucket.name]:
+                    indexes_to_build[bucket.name][scope.name] = dict()
                 for _, collection in scope.collections.items():
-                    for _ in range(self.number_of_indexes_per_coll):
-                        gsi_index_name = gsi_base_name + str(count)
+                    for tempCount in range(count, number_of_indexes_per_coll):
+                        if gsi_base_name is None:
+                            gsi_index_name = bucket.name.replace(".","") + "_" + scope.name + "_" + collection.name + "_" + str(
+                                tempCount)
+                        else:
+                            gsi_index_name = gsi_base_name + str(tempCount)
                         create_index_query = "CREATE INDEX `%s` " \
-                                             "ON `%s`.`%s`.`%s`(`age`) " \
+                                             "ON `%s`.`%s`.`%s`(`%s`) " \
                                              "WITH { 'defer_build': %s, 'num_replica': %s }" \
                                              % (gsi_index_name, bucket.name,
-                                                scope.name, collection.name,
+                                                scope.name, collection.name, field,
                                                 defer, replica)
-                        result = self.run_cbq_query(create_index_query)
-                        # self.assertTrue(result['status'] == "success", "Defer build Query %s failed." % create_index_query)
-
+                        query_node_instance = x % query_nodes_count
+                        task = self.task.aysnc_execute_query(server=query_node_list[query_node_instance],
+                                                             indexName=gsi_index_name, bucket=bucket,
+                                                             query=create_index_query)
+                        if async:
+                            createIndexTasklist.append(task)
+                        else:
+                            self.task_manager.get_task_result(task)
                         if collection.name not in indexes_to_build[bucket.name][scope.name]:
                             indexes_to_build[bucket.name][scope.name][collection.name] = list()
                         indexes_to_build[bucket.name][scope.name][collection.name].append(gsi_index_name)
-                        count += 1
-        return indexes_to_build
+        if async:
+            return indexes_to_build, createIndexTasklist
+        else:
+            return indexes_to_build
 
     def recreate_dropped_indexes(self, indexes_dropped):
         """
@@ -88,31 +116,43 @@ class IndexUtils:
                         result = self.run_cbq_query(create_index_query)
         self.build_deferred_indexes(indexes_dropped)
 
-    def drop_indexes(self, num_indexes_to_drop=15):
+    def async_drop_indexes(self, cluster, indexList, buckets=None):
         """
         Drop gsi indexes
-        Returns dropped indexes dict
+        Returns dropped indexes dict and task list
         """
-        self.log.info("Dropping {0} indexes".format(num_indexes_to_drop))
         indexes_dropped = dict()
-        count = 0
-        for bucket, bucket_data in self.indexes_to_build.items():
-            indexes_dropped[bucket] = dict()
-            for scope, collection_data in bucket_data.items():
-                indexes_dropped[bucket][scope] = dict()
-                for collection, gsi_index_names in collection_data.items():
-                    for gsi_index_name in gsi_index_names:
+        if buckets is None:
+            buckets = cluster.buckets
+        couchbase_buckets = [bucket for bucket in buckets
+                             if bucket.bucketType == "couchbase"]
+        query_nodes_list = cluster.query_nodes
+        query_nodes_count = len(query_nodes_list)
+        x = 0
+        dropIndexTaskList = list()
+        for bucket in couchbase_buckets:
+            indexes_dropped[bucket.name] = dict()
+            for _, scope in bucket.scopes.items():
+                indexes_dropped[bucket.name][scope.name] = dict()
+                for _, collection in scope.collections.items():
+                    gsi_index_names = indexList[bucket.name][scope.name][collection.name]
+                    for gsi_index_name in list(gsi_index_names):
                         drop_index_query = "DROP INDEX `%s` ON " \
                                            "`%s`.`%s`.`%s`" \
                                            "USING GSI" \
                                            % (gsi_index_name, bucket, scope, collection)
-                        result = self.run_cbq_query(drop_index_query)
-                        if collection not in indexes_dropped[bucket][scope]:
-                            indexes_dropped[bucket][scope][collection] = list()
-                        indexes_dropped[bucket][scope][collection].append(gsi_index_name)
-                        count = count + 1
-                        if count >= num_indexes_to_drop:
-                            return indexes_dropped
+                        query_node_index = x % query_nodes_count
+                        task = self.task.aysnc_execute_query(server=query_nodes_list[query_node_index],
+                                                             query=drop_index_query,
+                                                             bucket=bucket,
+                                                             indexName=gsi_index_name, isIndexerQuery=False)
+                        dropIndexTaskList.append(task)
+                        gsi_index_names.remove(gsi_index_name)
+                        if collection.name not in indexes_dropped[bucket.name][scope.name]:
+                            indexes_dropped[bucket.name][scope.name][collection.name] = list()
+                        indexes_dropped[bucket.name][scope.name][collection.name].append(gsi_index_name)
+                        x += 1
+        return dropIndexTaskList, indexes_dropped
 
     def run_cbq_query(self, query, n1ql_node=None, timeout=1300):
         """
@@ -124,18 +164,39 @@ class IndexUtils:
         result = conn.query_tool(query, timeout)
         return result
 
-    def wait_for_indexes_to_go_online(self, gsi_index_names, timeout=300):
+    def wait_for_indexes_to_go_online(self, cluster, buckets, gsi_index_name, timeout=300):
         """
         Wait for indexes to go online after building the deferred indexes
         """
         self.log.info("Waiting for indexes to go online")
         start_time = time.time()
         stop_time = start_time + timeout
-        for gsi_index_name in gsi_index_names:
-            while True:
-                check_state_query = "SELECT state FROM system:indexes WHERE name='%s'" % gsi_index_name
-                result = self.run_cbq_query(check_state_query)
-                if result['results'][0]['state'] == "online":
-                    break
-                if time.time() > stop_time:
-                    self.fail("Index availability timeout of index: {0}".format(gsi_index_name))
+        self.indexer_rest = GsiHelper(cluster.master, self.log)
+        for bucket in buckets:
+            if gsi_index_name.find(bucket.name.replace(".","")) > -1:
+                while True:
+                    if self.indexer_rest.polling_create_index_status(bucket=bucket, index=gsi_index_name) is True:
+                        return True
+                    else:
+                        if time.time() > stop_time:
+                            return False
+
+    def randStr(self, Num=10):
+        return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(Num))
+
+    def run_full_scan(self, cluster, indexesDict, key):
+        x = 0
+        query_tasks_info = list()
+        x = 0
+        query_len = len(cluster.query_nodes)
+        for bucket, bucket_data in indexesDict.items():
+            for scope, collection_data in bucket_data.items():
+                for collection, gsi_index_names in collection_data.items():
+                    for gsi_index_name in gsi_index_names:
+                        query_node_index = x % query_len
+                        queryString = self.randStr(Num=8)
+                        query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s like '%%%s%%' limit 10" % (
+                            bucket, scope, collection, gsi_index_name, key, queryString)
+                        task = self.task.aysnc_execute_query(cluster.query_nodes[query_node_index], query)
+                        query_tasks_info.append(task)
+        return query_tasks_info
