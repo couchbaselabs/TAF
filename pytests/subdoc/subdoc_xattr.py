@@ -1,4 +1,5 @@
 import copy
+import functools
 import json
 import sys
 import zlib
@@ -1898,6 +1899,16 @@ class XattrTests(SubdocBaseTest):
              'batch_size': 50,
              'print_ops_rate': True}
 
+        # Some workloads can be ran cyclically
+        self.cycles = self.input.param("cycles", 1)
+
+        # Number of keys in a cycle
+        self.cycle_size = self.input.param("cycle_size", 100000)
+
+        # If the test cannot be ran cyclically, we can define a sensible key_min and key_max
+        self.key_min = 0
+        self.key_max = self.input.param("key_max", self.cycle_size)
+
         # A list of tasks that need to be waited on
         self.tasks = []
 
@@ -2163,6 +2174,23 @@ class XattrTests(SubdocBaseTest):
         for task in tasks:
             self.task_manager.get_task_result(task)
 
+    def cyclic(f):
+        """ A decorator to run a test cyclically.
+
+        Params:
+            cycles: The number of cycles.
+            cycle_size: The number of documents in a cycle.
+        """
+        @functools.wraps(f)
+        def run_cycles(self):
+            for i in range(self.cycles):
+                self.key_min = self.cycle_size * i
+                self.key_max = self.cycle_size * (i + 1)
+                f(self)
+
+        return run_cycles
+
+    @cyclic
     def test_xattributes(self):
         """ Create some documents with xattributes.
 
@@ -2170,14 +2198,15 @@ class XattrTests(SubdocBaseTest):
 
         Expect both user and system xattributes to be accessible.
         """
-        key_min = 0
-        key_max = self.input.param("key_max", 100000)
+        key_min = self.key_min
+        key_max = self.key_max
 
         self.create_workload(key_min, key_max)
         self.xattrs_workload(key_min, key_max)
         self.apply_faults()
         self.parallel(self.verify_workload, key_min, key_max)
 
+    @cyclic
     def test_xattribute_compaction(self):
         """ Manually run compaction.
 
@@ -2187,8 +2216,8 @@ class XattrTests(SubdocBaseTest):
         Expect both user attributes and system xattributes to be accessible
         following compaction.
         """
-        key_min = 0
-        key_max = self.input.param("key_max", 100000)
+        key_min = self.key_min
+        key_max = self.key_max
 
         # Disable auto-compaction
         self.bucket_util.disable_compaction(self.cluster)
@@ -2205,6 +2234,7 @@ class XattrTests(SubdocBaseTest):
         # Validate the keys
         self.parallel(self.verify_workload, key_min, key_max)
 
+    @cyclic
     def test_xattribute_deletion(self):
         """ Test xattribute deletion
 
@@ -2213,8 +2243,8 @@ class XattrTests(SubdocBaseTest):
         Expect the user attributes to be discarded and the system xattributes
         to be accessible following deletion.
         """
-        key_min = 0
-        key_max = self.input.param("key_max", 100000)
+        key_min = self.key_min
+        key_max = self.key_max
 
         # Run workload until threshold is reached
         self.create_workload(key_min, key_max)
@@ -2244,6 +2274,7 @@ class XattrTests(SubdocBaseTest):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      [self.bucket], cbstat_cmd="all", stat_name="vb_replica_queue_size")
 
+    @cyclic
     def test_xattribute_expiry(self):
         """ Test xattribute expiry
 
@@ -2253,8 +2284,8 @@ class XattrTests(SubdocBaseTest):
         Expect both user and system attributes to be inaccessible following
         expiration.
         """
-        key_min = 0
-        key_max = self.input.param("key_max", 100000)
+        key_min = self.key_min
+        key_max = self.key_max
         ttl = self.input.param("ttl", 5)
         expiry_pager_time = self.input.param("expiry_pager_time", 10)
 
@@ -2273,6 +2304,7 @@ class XattrTests(SubdocBaseTest):
         # following expiration.
         self.parallel(self.verify_workload, 20000, 50000, is_expired=True)
 
+    @cyclic
     def test_xattribute_metadata_purge(self):
         """ Test xattributes are discarded during metadata purging.
 
@@ -2283,16 +2315,14 @@ class XattrTests(SubdocBaseTest):
         Expect both user and system attributes to be inaccesible following the
         compaction.
         """
-        key_min = 0
-        key_max = self.input.param("key_max", 100000)
-        del_min = key_min
-        del_max = key_max
+        key_min = self.key_min
+        key_max = self.key_max
 
         self.create_workload(key_min, key_max)
         self.xattrs_workload(key_min, key_max)
 
         # Delete keys between a certain range
-        self.delete_workload(del_min, del_max)
+        self.delete_workload(key_min, key_max)
 
         self.bucket_util._wait_for_stats_all_buckets([self.bucket])
 
@@ -2333,6 +2363,7 @@ class XattrTests(SubdocBaseTest):
                     self.assertEqual(
                         xattrvalue, self.get_subdoc_val())
 
+    @cyclic
     def test_xattributes_with_rollback(self):
         """ Test xattributes with rollback.
 
@@ -2346,17 +2377,17 @@ class XattrTests(SubdocBaseTest):
         Expect xattributes belonging to active vbucket's on node 1 to not
         exist. Expect xattributes belonging to non-active vbuckets.
         """
-        key_min = 0
-        key_max = self.input.param("key_max", 100000)
+        key_min = self.key_min
+        key_max = self.key_max
 
-        node1 = self.cluster_util.cluster.master
+        node1 = self.cluster.servers[0]
         shell = RemoteMachineShellConnection(node1)
         mem_client = MemcachedClientHelper.direct_client(node1, self.bucket)
         active_vbuckets = self.vbuckets_on_node(node1, vbucket_type='active')
 
         # Load some data
-        self.create_workload(key_min, key_max // 2)
-        self.xattrs_workload(key_min, key_max // 2)
+        self.create_workload(key_min, (key_max + key_min) // 2)
+        self.xattrs_workload(key_min, (key_max + key_min) // 2)
 
         self.apply_faults()
 
@@ -2364,8 +2395,8 @@ class XattrTests(SubdocBaseTest):
         mem_client.stop_persistence()
 
         # Create documents with xattributes
-        self.create_workload(key_max // 2, key_max)
-        self.xattrs_workload(key_max // 2, key_max)
+        self.create_workload((key_max + key_min) // 2, key_max)
+        self.xattrs_workload((key_max + key_min) // 2, key_max)
 
         # Kill memcached and wait for it to restart
         shell.kill_memcached()
@@ -2373,7 +2404,7 @@ class XattrTests(SubdocBaseTest):
         self.assertTrue(self.bucket_util._wait_warmup_completed(
             [node1], self.bucket, wait_time=60))
 
-        self.parallel(self.verify_rollback, key_max // 2,
+        self.parallel(self.verify_rollback, (key_max + key_min) // 2,
                       key_max, vbuckets=active_vbuckets)
 
         shell.disconnect()
@@ -2390,6 +2421,7 @@ class XattrTests(SubdocBaseTest):
                     self.assertEqual(
                         xattrvalue, self.get_subdoc_val())
 
+    @cyclic
     def test_xattributes_with_stopped_replicas(self):
         """ Test xattributes with no replica vbuckets.
 
@@ -2399,12 +2431,9 @@ class XattrTests(SubdocBaseTest):
         Expect the xattributes belonging to the active documents to be
         accessible.
         """
-        key_min = 0
-        key_max = self.input.param("key_max", 100000)
-
-        # Active vbuckets on node 1
-        active_vbuckets = self.vbuckets_on_node(
-            self.cluster_util.cluster.master)
+        key_min = self.key_min
+        key_max = self.key_max
+        active_vbuckets = self.vbuckets_on_node(self.cluster.master)
 
         # Create documents
         self.create_workload(key_min, key_max)
@@ -2441,8 +2470,8 @@ class XattrTests(SubdocBaseTest):
         Expect a replica to be promoted on the healthy side and no xattributes
         to be lost.
         """
-        key_min = 0
-        key_max = 100000
+        key_min = self.key_min
+        key_max = self.key_max
 
         # Load data
         self.create_workload(key_min, key_max)
