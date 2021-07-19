@@ -665,6 +665,11 @@ class ServerTasks(object):
         self.jython_task_manager.get_task_result(_task)
         return _task
 
+    def async_function(self, func_def, args=(), kwargs={}):
+        task = jython_tasks.FunctionCallTask(func_def, args, kwargs)
+        self.jython_task_manager.add_new_task(task)
+        return task
+
     def wait_for_stats(self, cluster, bucket, param, stat, comparison, value,
                        timeout=None):
         """Synchronously wait for stats

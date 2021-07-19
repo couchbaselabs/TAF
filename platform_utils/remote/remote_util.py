@@ -1087,32 +1087,44 @@ class RemoteMachineShellConnection:
             channelSftp.cd(remotepath)
             if self.file_exists(remotepath, filename):
                 channelSftp.get('{0}/{1}'.format(remotepath, filename), todir)
-                channel.disconnect()
+                channelSftp.disconnect()
                 result = True
             else:
                 os.system("cp {0}/{1} {2}".format(remotepath, filename, todir))
         except:
             pass
         finally:
-            channel.disconnect()
+            channelSftp.disconnect()
 
         return result
+
     def get_dir(self, remotepath, dirname, todir="."):
-        channel = self.session.openChannel("sftp")
-        channel.connect()
-        channelSftp = channel
-        result = False
+        channelSftp = self.session.openChannel("sftp")
+        channelSftp.connect()
+        result = True
+        remotepath = os.path.join(remotepath, dirname)
+
+        # Create local dir (if not exists)
+        if not os.path.exists(todir):
+            os.makedirs(todir)
+
+        channelSftp.lcd(todir)
+
         try:
-            channelSftp.cd(remotepath)
-            if self.file_exists(remotepath, dirname):
-                channelSftp.get('-r {0}/{1}'.format(remotepath, dirname), todir)
-                channel.disconnect()
-                result = True
-        except:
-            self.log.info("Copying file to slave failed")
+            for remote_file in channelSftp.ls(remotepath):
+                file_name = remote_file.getFilename()
+                if file_name in [".", ".."]:
+                    continue
+
+                remote_file = os.path.join(remotepath, file_name)
+                self.log.critical("GET %s" % remote_file)
+                result = channelSftp.get(remote_file, file_name) and result
+        except Exception as e:
+            self.log.critical("Copying file to slave failed: %s" % e)
         finally:
-            channel.disconnect()
+            channelSftp.disconnect()
         return result
+
     def read_remote_file(self, remote_path, filename):
         if self.file_exists(remote_path, filename):
             if self.remote:

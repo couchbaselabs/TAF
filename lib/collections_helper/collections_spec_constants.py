@@ -6,6 +6,8 @@ class MetaConstants(object):
     REMOVE_DEFAULT_COLLECTION = "remove_default_collection"
     CREATE_COLLECTIONS_USING_MANIFEST_IMPORT = \
         "create_collections_using_manifest_import"
+    BUCKET_TAR_DIR = "bucket_tar_dir"
+    BUCKET_TAR_SRC = "bucket_tar_src"
 
     @staticmethod
     def get_params():

@@ -6,6 +6,7 @@ Created on Sep 26, 2017
 
 import copy
 import importlib
+import os.path
 import re
 import threading
 import datetime
@@ -34,7 +35,7 @@ from Jython_tasks.task import \
     ViewDeleteTask, \
     ViewQueryTask
 from SecurityLib.rbac import RbacUtil
-from TestInput import TestInputSingleton
+from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
@@ -1880,11 +1881,14 @@ class BucketUtils(ScopeUtils):
     def create_buckets_using_json_data(self, cluster, buckets_spec,
                                        async_create=True):
         self.log.info("Creating required buckets from template")
+        load_data_from_existing_tar = False
         rest_conn = RestConnection(cluster.master)
         buckets_spec = BucketUtils.expand_buckets_spec(rest_conn,
                                                        buckets_spec)
         bucket_creation_tasks = list()
         for bucket_name, bucket_spec in buckets_spec.items():
+            if bucket_spec[MetaConstants.BUCKET_TAR_SRC]:
+                load_data_from_existing_tar = True
             bucket_creation_tasks.append(
                 self.create_bucket_from_dict_spec(cluster,
                                                   bucket_name, bucket_spec,
@@ -1914,6 +1918,110 @@ class BucketUtils(ScopeUtils):
                     self.create_collection_object(bucket,
                                                   scope_name,
                                                   c_spec)
+
+        if load_data_from_existing_tar:
+            for bucket_name, bucket_spec in buckets_spec.items():
+                bucket_obj = self.get_bucket_obj(cluster.buckets, bucket_name)
+                self.load_bucket_from_tar(
+                    cluster.nodes_in_cluster, bucket_obj,
+                    bucket_spec[MetaConstants.BUCKET_TAR_SRC],
+                    bucket_spec[MetaConstants.BUCKET_TAR_DIR])
+
+                # Update new num_items for each collection post data loading
+                collection_item_count = \
+                    self.get_doc_count_per_collection(cluster, bucket_obj)
+                for s_name, scope in bucket_obj.scopes.items():
+                    for c_name, collection in scope.collections.items():
+                        collection.num_items = \
+                            collection_item_count[s_name][c_name]["items"]
+
+    def load_bucket_from_tar(self, kv_nodes, bucket_obj, tar_src, tar_dir):
+        """
+        1. Get data storage path info using REST
+        2. Stop Couchbase server
+        3. Remove old content from the current bucket
+        4. Copy and extract the bucket tar into the storage path
+        5. Change dir permissions to couchbase:couchbase
+        6. Start Couchbase server
+
+        :param kv_nodes: List of kv_nodes in the cluster to load data
+        :param bucket_obj: Bucket_obj for which to override data from files
+        :param tar_src: Source of the tar files. (remote / local)
+        :param tar_dir: Target path from where the files are loaded.
+          Examples,
+          tar_src=local  - /data/4_nodes_1_replica_10G
+          tar_src=remote - 172.23.10.12:/data/4_nodes_1_replica_10G
+
+        """
+        def load_bucket_on_node(n_index, shell_conn, b_name, data_path,
+                                s_tar_dir):
+            file_path = os.path.join(s_tar_dir, "node%d.tar.gz" % n_index)
+            remote_tar_file_path = "/tmp/node%d.tar.gz" % n_index
+            bucket_path = os.path.join(data_path, b_name)
+
+            BucketUtils.log.info("%s - Loading bucket from tar"
+                                 % shell_conn.ip)
+            shell_conn.execute_command("rm -rf %s" % remote_tar_file_path)
+            shell_conn.copy_file_local_to_remote(file_path,
+                                                 remote_tar_file_path)
+            shell_conn.execute_command(
+                "rm -rf {0}/* ; cd {0} ; tar -zxf {1} ; cd - ; rm -f {1}"
+                .format(bucket_path, remote_tar_file_path))
+            shell_conn.execute_command(
+                "chown -R couchbase:couchbase %s" % data_path)
+            BucketUtils.log.info("%s - Done loading bucket %s"
+                                 % (shell_conn.ip, b_name))
+
+        node_info = dict()
+        for kv_node in kv_nodes:
+            shell = RemoteMachineShellConnection(kv_node)
+            rest = RestConnection(kv_node)
+            n_info = rest.get_nodes_self()
+            shell.stop_server()
+            node_info[kv_node.ip] = dict()
+            node_info[kv_node.ip]["shell"] = shell
+            node_info[kv_node.ip]["data_path"] = \
+                n_info.storage[0].path
+
+        sleep(5, "Wait for servers to shutdown gracefully")
+        if tar_src == "remote":
+            # Copy from remote to executor path
+            src_ip, src_dir = tar_dir.split(":")
+            server_obj = TestInputServer()
+            server_obj.ip = src_ip
+            server_obj.ssh_username = "root"
+            server_obj.ssh_password = "couchbase"
+            remote_file_shell = RemoteMachineShellConnection(server_obj)
+            remote_file_shell.get_dir(os.path.dirname(src_dir),
+                                      os.path.basename(src_dir),
+                                      todir=os.path.basename(src_dir))
+            remote_file_shell.disconnect()
+            # Override remote dir with copied local path
+            tar_dir = os.path.basename(src_dir)
+
+        # Copy from executor's path to all kv_nodes' data_path
+        bucket_loading_task = list()
+        for index, cluster_node in enumerate(kv_nodes):
+            bucket_loading_task.append(
+                self.task.async_function(
+                    load_bucket_on_node,
+                    (index+1,
+                     node_info[cluster_node.ip]["shell"],
+                     bucket_obj.name,
+                     node_info[cluster_node.ip]["data_path"],
+                     tar_dir)))
+
+        for task in bucket_loading_task:
+            self.task_manager.get_task_result(task)
+
+        for kv_node in kv_nodes:
+            node_info[kv_node.ip]["shell"].start_server()
+            node_info[kv_node.ip]["shell"].disconnect()
+
+        # Wait for warmup to complete for the given bucket
+        if not self._wait_warmup_completed(kv_nodes, bucket_obj):
+            self.log.critical("Bucket %s warmup failed after loading from tar"
+                              % bucket_obj.name)
 
     # Support functions with bucket object
     @staticmethod
@@ -4429,17 +4537,13 @@ class BucketUtils(ScopeUtils):
                            collection.num_items))
         return status
 
-    def validate_doc_count_as_per_collections(self, cluster, bucket):
+    def get_doc_count_per_collection(self, cluster, bucket):
         """
-        Function to validate doc_item_count as per the collection object's
-        num_items value against cbstats count from KV nodes
-
-        Throws exception if mismatch in stats.
+        Fetch total items per collection.
 
         :param cluster: Target cluster object
         :param bucket: Bucket object using which the validation should be done
         """
-        status = True
         collection_data = None
         cb_stat_objects = list()
 
@@ -4458,12 +4562,33 @@ class BucketUtils(ScopeUtils):
                         for col_name, c_data in value.items():
                             collection_data[key][col_name]['items'] \
                                 += c_data['items']
+
+        # Disconnect all created shell connections
+        for cb_stat in cb_stat_objects:
+            cb_stat.shellConn.disconnect()
+        return collection_data
+
+    def validate_doc_count_as_per_collections(self, cluster, bucket):
+        """
+        Function to validate doc_item_count as per the collection object's
+        num_items value against cbstats count from KV nodes
+
+        Throws exception if mismatch in stats.
+
+        :param cluster: Target cluster object
+        :param bucket: Bucket object using which the validation should be done
+        """
+        cb_stat_objects = list()
+        collection_data = self.get_doc_count_per_collection(cluster, bucket)
+
+        # Create required cb_stat objects
+        for node in self.cluster_util.get_kv_nodes(cluster):
+            cb_stat_objects.append(Cbstats(RemoteMachineShellConnection(node)))
+
         # Validate scope-collection hierarchy with doc_count
-        status = \
-            status \
-            and self.validate_bucket_collection_hierarchy(bucket,
-                                                          cb_stat_objects,
-                                                          collection_data)
+        status = self.validate_bucket_collection_hierarchy(bucket,
+                                                           cb_stat_objects,
+                                                           collection_data)
 
         # Disconnect all created shell connections
         for cb_stat in cb_stat_objects:
