@@ -1867,12 +1867,11 @@ class BucketUtils(ScopeUtils):
 
         return buckets_spec["buckets"]
 
-    def create_bucket_from_dict_spec(self, cluster_node, bucket_name,
+    def create_bucket_from_dict_spec(self, cluster, bucket_name,
                                      bucket_spec, async_create=True):
-        task = BucketCreateFromSpecTask(self.task_manager,
-                                        cluster_node,
-                                        bucket_name,
-                                        bucket_spec)
+        task = BucketCreateFromSpecTask(
+            self.task_manager, self.cluster_util.get_kv_nodes(cluster),
+            bucket_name, bucket_spec)
         self.task_manager.add_new_task(task)
         if not async_create:
             self.task_manager.get_task_result(task)
@@ -1887,7 +1886,7 @@ class BucketUtils(ScopeUtils):
         bucket_creation_tasks = list()
         for bucket_name, bucket_spec in buckets_spec.items():
             bucket_creation_tasks.append(
-                self.create_bucket_from_dict_spec(cluster.master,
+                self.create_bucket_from_dict_spec(cluster,
                                                   bucket_name, bucket_spec,
                                                   async_create=async_create))
 

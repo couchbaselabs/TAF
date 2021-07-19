@@ -31,6 +31,7 @@ from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
     CBAS_Index, CBAS_UDF
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cbstats import Cbstats
+from collections_helper.collections_spec_constants import MetaConstants
 from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
@@ -3621,16 +3622,16 @@ class BucketCreateTask(Task):
 
 
 class BucketCreateFromSpecTask(Task):
-    def __init__(self, task_manager, server, bucket_name, bucket_spec):
+    def __init__(self, task_manager, kv_nodes, bucket_name, bucket_spec):
         super(BucketCreateFromSpecTask, self) \
             .__init__("Bucket_create_task_%s" % bucket_name)
         self.task_manager = task_manager
-        self.server = server
+        self.servers = kv_nodes
         self.bucket_spec = bucket_spec
         self.bucket_spec["name"] = bucket_name
         self.retries = 0
-        self.rest = RestConnection(self.server)
-        self.bucket_helper = BucketHelper(self.server)
+        self.rest = RestConnection(self.servers[0])
+        self.bucket_helper = BucketHelper(self.servers[0])
         # Used to store the Created Bucket() object, for appending into
         # bucket_utils.buckets list
         self.bucket_obj = Bucket()
@@ -3656,7 +3657,8 @@ class BucketCreateFromSpecTask(Task):
                 .collections \
                 .pop(CbServer.default_collection, None)
 
-        if self.bucket_spec["create_collections_using_manifest_import"]:
+        if self.bucket_spec[
+                MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT]:
             self.create_collections_using_manifest_import()
             for scope_name, scope_spec in self.bucket_spec["scopes"].items():
                 scope_spec["name"] = scope_name
@@ -3666,7 +3668,6 @@ class BucketCreateFromSpecTask(Task):
                         continue
                     collection_spec["name"] = collection_name
         else:
-            scope_create_threads = list()
             for scope_name, scope_spec in self.bucket_spec["scopes"].items():
                 scope_spec["name"] = scope_name
                 scope_create_thread = threading.Thread(
@@ -3674,10 +3675,6 @@ class BucketCreateFromSpecTask(Task):
                     args=[scope_spec])
                 scope_create_thread.start()
                 scope_create_thread.join()
-                # scope_create_threads.append(scope_create_thread)
-
-            # for scope_create_thread in scope_create_threads:
-            #     scope_create_thread.join(30)
 
         self.complete_task()
 
@@ -3706,7 +3703,7 @@ class BucketCreateFromSpecTask(Task):
             self.bucket_obj.threadsNumber = 8
 
         try:
-            BucketHelper(self.server).create_bucket(self.bucket_obj.__dict__)
+            self.bucket_helper.create_bucket(self.bucket_obj.__dict__)
         except BucketCreationException as e:
             self.result = False
             self.test_log.error(str(e))

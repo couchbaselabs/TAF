@@ -19,5 +19,5 @@ spec = {
     Bucket.maxTTL: 0,
     Bucket.storageBackend: Bucket.StorageBackend.couchstore,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.VALUE_ONLY,
-    Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
+    Bucket.compressionMode: Bucket.CompressionMode.PASSIVE
 }
