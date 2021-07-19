@@ -4,7 +4,7 @@ from org.python.core.util import FileUtil
 import sys
 
 failed = []
-exclude = "'Rollback point not found\|No space left on device\|Permission denied\|Already exists'"
+exclude = "'Rollback point not found\|No space left on device\|Permission denied\|Already exists\|Unsupported key supplied'"
 
 
 def run(command, session):
