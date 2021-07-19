@@ -2230,7 +2230,7 @@ class XattrTests(SubdocBaseTest):
         """ Waits for the expiry pager to delete documents.
         """
         self.bucket_util._wait_for_stats_all_buckets(
-            [self.bucket], timeout=1200)
+            self.cluster, [self.bucket], timeout=1200)
 
         # Wait for documents to expire
         self.sleep(ttl, "Waiting for documents to expire.")
@@ -2239,9 +2239,10 @@ class XattrTests(SubdocBaseTest):
         # Wait for expiry pager to expire documents.
         self.sleep(expiry_pager_time*2, "Wait for expiry pager to complete.")
 
-        self.bucket_util._wait_for_stats_all_buckets([self.bucket])
         self.bucket_util._wait_for_stats_all_buckets(
-            [self.bucket], cbstat_cmd="all", stat_name="vb_replica_queue_size")
+            self.cluster, [self.bucket])
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     [self.bucket], cbstat_cmd="all", stat_name="vb_replica_queue_size")
 
     def test_xattribute_expiry(self):
         """ Test xattribute expiry
