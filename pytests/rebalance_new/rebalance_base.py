@@ -409,12 +409,17 @@ class RebalanceBaseTest(BaseTestCase):
             shell.disconnect()
 
     def check_retry_rebalance_succeeded(self):
-        result = json.loads(self.rest.get_pending_rebalance_info())
-        self.log.debug("Result from get_pending_rebalance_info: {0}"
-                       .format(result))
-        retry_after_secs = result["retry_after_secs"]
-        attempts_remaining = result["attempts_remaining"]
-        retry_rebalance = result["retry_rebalance"]
+        self.sleep(30)
+        attempts_remaining = retry_rebalance = retry_after_secs = None
+        for i in range(10):
+            self.log.info("Getting stats : try {0}".format(i))
+            result = json.loads(self.rest.get_pending_rebalance_info())
+            if "retry_after_secs" in result:
+                retry_after_secs = result["retry_after_secs"]
+                attempts_remaining = result["attempts_remaining"]
+                retry_rebalance = result["retry_rebalance"]
+                break
+            self.sleep(5)
         self.log.debug("Attempts remaining: {0}, Retry rebalance: {1}"
                        .format(attempts_remaining, retry_rebalance))
         while attempts_remaining:
