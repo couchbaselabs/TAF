@@ -1556,6 +1556,57 @@ class volume(BaseTestCase):
                 if bucket.storageBackend == Bucket.StorageBackend.magma:
                     self.get_magma_disk_usage(bucket)
 
+    def MB_43460(self):
+        self.loop = 1
+        while self.loop <= self.iterations:
+            #######################################################################
+            '''
+            creates: 0 - 10M
+            creates: 0 - 10M
+            Final Docs = 20M (0-20M)
+            '''
+            self.create_perc = 200
+            self.PrintStep("Step 4: Load %s items, sequential keys" %
+                           str(self.num_items*self.create_perc/100))
+            self.generate_docs(doc_ops="create")
+            self.perform_load(validate_data=False)
+            #######################################################################
+            self.PrintStep("Step 13: Drop a collection")
+            total_collections = self.num_collections
+            total_scopes = self.num_scopes
+            drop = 0
+            for bucket in self.cluster.buckets:
+                for scope in bucket.scopes.keys():
+                    drop = 0
+                    for i in range(1, total_collections, 2):
+                        collection = self.collection_prefix + str(i)
+                        self.bucket_util.drop_collection(self.cluster.master,
+                                                         bucket,
+                                                         scope,
+                                                         collection)
+                        bucket.scopes[scope].collections.pop(collection)
+                        drop += 1
+            self.num_collections = self.num_collections - drop
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
+            self.final_items = self.final_items * (self.num_collections)/total_collections
+            self.log.info("Expected items after dropping collections: {}".
+                          format(self.final_items))
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.final_items,
+                                                      timeout=3600)
+            if self.end_step == 13:
+                exit(13)
+            #######################################################################
+            self.PrintStep("Step 14: Normal Rollback with deletes")
+            '''
+            Final Docs = 30M (0-20M, 10M Random)
+            '''
+            mem_only_items = self.input.param("rollback_items", 100000)
+            self.perform_rollback(0, mem_only_items, doc_type="delete")
+            if self.end_step == 14:
+                exit(14)
+
     def MB_42652(self):
         self.loop = 1
         while self.loop <= self.iterations:
