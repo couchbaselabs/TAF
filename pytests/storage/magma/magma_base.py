@@ -87,6 +87,45 @@ class MagmaBaseTest(StorageBase):
     def tearDown(self):
         super(MagmaBaseTest, self).tearDown()
 
+    def compute_docs_ranges(self, start=None, doc_ops=None):
+        self.multiplier = self.input.param("multiplier", 1)
+        doc_ops = doc_ops or self.doc_ops
+        ops_len = len(doc_ops.split(":"))
+
+        if "create" in doc_ops:
+            ops_len -= 1
+            self.create_start = start or self.init_items_per_collection
+            if start:
+                self.create_end = start + start * self.multiplier
+            else:
+                self.create_end = self.init_items_per_collection + self.init_num_items * self.multiplier
+
+        if ops_len == 1:
+            self.update_start = 0
+            self.update_end = self.init_num_items
+            self.expiry_start = 0
+            self.expiry_end = self.init_num_items * self.multiplier
+            self.delete_start = 0
+            self.delete_end = self.init_num_items
+        elif ops_len == 2:
+            self.update_start = 0
+            self.update_end = self.init_num_items // 2
+            self.delete_start = self.init_num_items // 2
+            self.delete_end = self.init_num_items
+
+            if "expiry" in doc_ops:
+                self.delete_start = 0
+                self.delete_end = self.init_num_items // 2
+                self.expiry_start = self.init_num_items // 2
+                self.expiry_end = self.init_num_items * self.multiplier
+        elif ops_len == 3:
+            self.update_start = 0
+            self.update_end = self.init_num_items // 3
+            self.delete_start = self.init_num_items // 3
+            self.delete_end = (2 * self.init_num_items) // 3
+            self.expiry_start = (2 * self.init_num_items) // 3
+            self.expiry_end = self.init_num_items * self.multiplier
+
     def validate_seq_itr(self):
         if self.dcp_services and self.num_collections == 1:
             index_build_q = "SELECT state FROM system:indexes WHERE name='{}';"

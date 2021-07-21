@@ -196,43 +196,6 @@ class KVStoreTests(MagmaBaseTest):
 
         return tasks_info
 
-    def compute_docs_ranges(self, start, doc_ops=None):
-        self.multiplier = self.input.param("mulitplier", 1)
-        doc_ops = doc_ops or self.doc_ops
-        ops_len = len(doc_ops.split(":"))
-
-        self.create_start = start
-        self.create_end = start + start // self.multiplier
-
-        if "create" in doc_ops:
-            self.create_end = start + start // self.multiplier
-
-        if ops_len == 1:
-            self.update_start = 0
-            self.update_end = start
-            self.expiry_start = 0
-            self.expiry_end = start
-            self.delete_start = 0
-            self.delete_end = start
-        elif ops_len == 2:
-            self.update_start = 0
-            self.update_end = start // 2
-            self.delete_start = start // 2
-            self.delete_end = start
-
-            if "expiry" in doc_ops:
-                self.delete_start = 0
-                self.delete_end = start // 2
-                self.expiry_start = start // 2
-                self.expiry_end = start
-        else:
-            self.update_start = 0
-            self.update_end = start // 3
-            self.delete_start = start // 3
-            self.delete_end = (2 * start) // 3
-            self.expiry_start = (2 * start) // 3
-            self.expiry_end = start
-
     def test_create_delete_bucket_n_times(self):
         """
         Test Focus: Create and Delete bucket multiple times.

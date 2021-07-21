@@ -35,43 +35,6 @@ class MagmaCrashTests(MagmaBaseTest):
             self.crash_th.join()
         super(MagmaCrashTests, self).tearDown()
 
-    def compute_docs_ranges(self):
-        self.multiplier = self.input.param("multiplier", 1)
-        ops_len = len(self.doc_ops.split(":"))
-
-        self.create_start = self.init_items_per_collection
-        self.create_end = self.init_items_per_collection + self.init_num_items * self.multiplier
-
-        if "create" in self.doc_ops:
-            ops_len -= 1
-            self.create_end = self.init_items_per_collection + self.init_num_items * self.multiplier
-
-        if ops_len == 1:
-            self.update_start = 0
-            self.update_end = self.init_num_items
-            self.expiry_start = 0
-            self.expiry_end = self.init_num_items * self.multiplier
-            self.delete_start = 0
-            self.delete_end = self.init_num_items
-        elif ops_len == 2:
-            self.update_start = 0
-            self.update_end = self.init_num_items // 2
-            self.delete_start = self.init_num_items // 2
-            self.delete_end = self.init_num_items
-
-            if "expiry" in self.doc_ops:
-                self.delete_start = 0
-                self.delete_end = self.init_num_items // 2
-                self.expiry_start = self.init_num_items // 2
-                self.expiry_end = self.init_num_items * self.multiplier
-        else:
-            self.update_start = 0
-            self.update_end = self.init_num_items // 3
-            self.delete_start = self.init_num_items // 3
-            self.delete_end = (2 * self.init_num_items) // 3
-            self.expiry_start = (2 * self.init_num_items) // 3
-            self.expiry_end = self.init_num_items * self.multiplier
-
     def kill_magma_check_wal_file_size(self):
         nIter = 200
         while nIter > 0:
