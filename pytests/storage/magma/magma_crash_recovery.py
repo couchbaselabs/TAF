@@ -8,6 +8,7 @@ import copy
 import threading
 
 from Cb_constants.CBServer import CbServer
+from TestInput import TestInputSingleton
 from couchbase_helper.documentgenerator import doc_generator
 import json as Json
 from magma_base import MagmaBaseTest
@@ -19,6 +20,8 @@ from sdk_constants.java_client import SDKConstants
 class MagmaCrashTests(MagmaBaseTest):
 
     def setUp(self):
+        self.input = TestInputSingleton.input
+        self.input.test_params.update({"random_key": True})
         super(MagmaCrashTests, self).setUp()
         self.sdk_timeout = self.input.param("sdk_timeout", 10)
         self.time_unit = "seconds"
