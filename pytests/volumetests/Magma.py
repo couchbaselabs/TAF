@@ -36,6 +36,7 @@ class volume(BaseTestCase):
         self.update_perc = self.input.param("update_perc", 50)
         self.delete_perc = self.input.param("delete_perc", 50)
         self.expiry_perc = self.input.param("expiry_perc", 0)
+        self.read_perc = self.input.param("read_perc", 100)
         self.start = 0
         self.end = 0
         self.initial_items = self.start
@@ -189,6 +190,8 @@ class volume(BaseTestCase):
                     [self.cluster.master],
                     clients_per_bucket,
                     compression_settings=self.sdk_compression)
+        self.retry_exceptions = None
+        self.ignore_exceptions = None
 
     def tearDown(self):
         self.check_dump_thread = False
@@ -250,7 +253,8 @@ class volume(BaseTestCase):
                       create_end=None, create_start=None,
                       update_end=None, update_start=None,
                       delete_end=None, delete_start=None,
-                      expire_end=None, expire_start=None):
+                      expire_end=None, expire_start=None,
+                      read_end=None, read_start=None):
         self.get_memory_footprint()
         self.gen_delete = None
         self.gen_create = None
@@ -268,6 +272,26 @@ class volume(BaseTestCase):
         self.initial_items = self.final_items
 
         doc_ops = doc_ops or self.doc_ops
+
+        if "read" in doc_ops:
+            if read_start is not None:
+                self.read_start = read_start
+            else:
+                self.read_start = 0
+            if read_end is not None:
+                self.read_end = read_end
+            else:
+                self.read_end = self.num_items*self.read_perc/100
+            self.gen_read = doc_generator(
+                self.key_prefix, self.read_start,
+                self.read_end,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                vbuckets=self.cluster.vbuckets,
+                key_size=self.key_size,
+                randomize_doc_size=self.randomize_doc_size,
+                randomize_value=self.randomize_value,
+                mix_key_size=self.mix_key_size, mutate=self.mutate)
 
         if "update" in doc_ops:
             if update_start is not None:
@@ -384,12 +408,16 @@ class volume(BaseTestCase):
 
     def _loader_dict(self):
         loader_dict = dict()
-        retry_exceptions = [
+        ignore_exceptions = self.ignore_exceptions or []
+        retry_exceptions = self.retry_exceptions or [
+            SDKException.TimeoutException,
             SDKException.AmbiguousTimeoutException,
             SDKException.RequestCanceledException,
+            SDKException.UnambiguousTimeoutException,
             SDKException.ServerOutOfMemoryException
         ]
         common_params = {"retry_exceptions": retry_exceptions,
+                         "ignore_exceptions": ignore_exceptions,
                          "suppress_error_table": self.suppress_error_table,
                          "durability_level": self.durability_level,
                          "skip_read_success_results": False,
@@ -430,10 +458,19 @@ class volume(BaseTestCase):
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
                         common_params.update({"doc_ttl": 0})
                     if self.gen_read is not None:
+                        ignore_exceptions = self.ignore_exceptions or [
+                            SDKException.TimeoutException,
+                            SDKException.AmbiguousTimeoutException,
+                            SDKException.RequestCanceledException,
+                            SDKException.UnambiguousTimeoutException,
+                            SDKException.ServerOutOfMemoryException
+                        ]
+                        retry_exceptions = []
                         op_type = "read"
-                        common_params.update({"doc_gen": self.gen_read,
+                        common_params.update({"retry_exceptions": retry_exceptions,
+                                              "ignore_exceptions": ignore_exceptions,
+                                              "doc_gen": self.gen_read,
                                               "skip_read_success_results": True,
-                                              "track_failures": False,
                                               "suppress_error_table": True})
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
         self.loader_dict = loader_dict
@@ -1478,35 +1515,46 @@ class volume(BaseTestCase):
             else:
                 self.log.info("Volume Test Run Complete")
 
-    def SteadyStateVolume1(self):
+    def ReadHeavyWorkload(self):
         #######################################################################
-        self.expiry_perc = 100
-        self.create_perc = 100
-        self.update_perc = 100
-        self.delete_perc = 100
         self.key_prefix = "random_keys"
         self.loop = 1
         self.skip_read_on_error = True
         self.suppress_error_table = True
-        self.track_failures = False
-        check_dump_th = threading.Thread(target=self.check_dump)
-        check_dump_th.start()
 
         self.doc_ops = "create"
+        self.create_perc = 100
         for bucket in self.cluster.buckets:
             self.PrintStep("Step 1: Create %s items" % self.num_items)
+            self.generate_docs(doc_ops=self.doc_ops)
+            self.perform_load(validate_data=False)
             dgm = self.get_bucket_dgm(bucket)
             while self.dgm and dgm > self.dgm:
                 self.generate_docs(doc_ops=self.doc_ops)
                 dgm = self.get_bucket_dgm(bucket)
                 self.perform_load(validate_data=False)
 
-        self.doc_ops = "update:read"
+        self.doc_ops = "read"
+        self.read_perc = 100
+        self.generate_docs(doc_ops=self.doc_ops)
+        self.data_validation()
         while self.loop <= self.iterations:
-            self.generate_docs(doc_ops=self.doc_ops,
-                               update_start=0,
-                               update_end=self.end)
-            self.perform_load(validate_data=False)
+            task = self.perform_load(wait_for_load=False, validate_data=False)
+            self.wait_for_doc_load_completion(task)
+
+            result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+            if result:
+                self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
+                if self.assert_crashes_on_load:
+                    self.task.jython_task_manager.abort_all_tasks()
+                    self.assertFalse(result)
+
+            self.bucket_util.print_bucket_stats(self.cluster)
+            self.print_crud_stats()
+            for bucket in self.cluster.buckets:
+                self.get_bucket_dgm(bucket)
+                if bucket.storageBackend == Bucket.StorageBackend.magma:
+                    self.get_magma_disk_usage(bucket)
 
     def MB_42652(self):
         self.loop = 1
