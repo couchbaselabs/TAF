@@ -804,6 +804,20 @@ class StorageBase(BaseTestCase):
         for _, shell in connections.items():
             shell.disconnect()
 
+    def compact_bucket(self):
+        compaction_tasks=[]
+        self.stop_compaction = False
+        iteration = 1
+        while not self.stop_compaction:
+            self.log.info("Compaction Iteration == {}".format(iteration))
+            for bucket in self.cluster.buckets:
+                compaction_tasks.append(self.task.async_compact_bucket(self.cluster.master,
+                                               bucket))
+            for task in compaction_tasks:
+                self.task_manager.get_task_result(task)
+            iteration += 1
+            self.sleep(20, "sleep before next compaction iteration")
+
     def chmod(self, server, path, mod="000"):
         '''
             # (Base-10)    Binary    Sum (in binary)    Sum (in decimal)    rwx    Permission
