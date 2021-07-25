@@ -714,7 +714,8 @@ class StorageBase(BaseTestCase):
                 scope=CbServer.default_scope,
                 collection=collection,
                 retry_exceptions=self.retry_exceptions,
-                ignore_exceptions=self.ignore_exceptions)
+                ignore_exceptions=self.ignore_exceptions,
+                sdk_client_pool=self.sdk_client_pool)
             validate_tasks_info.update(temp_tasks_info.items())
         if _sync:
             for task in validate_tasks_info:
