@@ -1878,11 +1878,11 @@ class XattrTests(SubdocBaseTest):
 
         # The number of user and system attributes per document
         self.no_of_usr_attributes = self.input.param("no_of_usr_xattr", 1)
-        self.no_of_sys_attributes = self.input.param("no_of_sys_xattr", 2)
+        self.no_of_sys_attributes = self.input.param("no_of_sys_xattr", 1)
 
         # The size of each document body and xattribute value
         self.doc_size = self.input.param("doc_size", 1024)
-        self.xattr_size = self.input.param("xattr_size", 512)
+        self.xattr_size = self.input.param("xattr_size", 1024)
 
         # A list of fault to introduce
         self.faults = self.input.param("faults", "")
@@ -1896,6 +1896,7 @@ class XattrTests(SubdocBaseTest):
             {'scope': CbServer.default_scope,
              'collection': CbServer.default_collection,
              'durability': self.durability_level,
+             'process_concurrency': 8,
              'batch_size': 50,
              'print_ops_rate': True}
 
@@ -1905,20 +1906,75 @@ class XattrTests(SubdocBaseTest):
         # Number of keys in a cycle
         self.cycle_size = self.input.param("cycle_size", 100000)
 
+        # The current cycle
+        self.cycle = 1
+
         # If the test cannot be ran cyclically, we can define a sensible key_min and key_max
         self.key_min = 0
         self.key_max = self.input.param("key_max", self.cycle_size)
 
-        # A list of tasks that need to be waited on
+        # Bloat storage with regular documents before test
+        self.preload_storage = self.input.param("preload_storage", False)
+
+        # Enable steady state load while tests are running
+        self.steady_state_load = self.input.param("steady_state_load", False)
+
+        # Bloat storage with tombstones
+        self.preload_tombstones = self.input.param("preload_tombstones", False)
+
+        # A list of tasks that will be stopped at the end of the test
         self.tasks = []
+
+        self.preamble()
 
         # Please configure the bucket settings
         # E.g. compression, eviction type and storage backend
 
+    def preamble(self):
+        """ Apply operations before a test begins """
+        if self.preload_storage:
+            self.apply_preload_storage()
+
+        if self.preload_tombstones:
+            self.apply_preload_tombstones()
+
+        if self.steady_state_load:
+            self.async_apply_steady_load()
+
     def tearDown(self):
         """ Tears down the cluster
         """
+        for task in self.tasks:
+            self.task.jython_task_manager.stop_task(task)
+
         super(XattrTests, self).tearDown()
+
+    def async_apply_steady_load(self):
+        """ Loads documents asynchronously
+        TODO add different operations
+        """
+        # A generator for regular documents
+        doc_gen = doc_generator(
+            "steady_state", 0, 100000000, doc_type=self.doc_type, doc_size=self.doc_size)
+
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, doc_gen, "create", **self.async_gen_common)
+
+        self.tasks.append(task)
+
+    def apply_preload_storage(self):
+        """ Preload a certain quantity of documents before a test. """
+        # TODO Use warm-up when testing locally
+        # A generator for regular documents
+        keys = self.input.param("preload_size", 100)
+
+        doc_gen = doc_generator(
+            "preload", 0, keys, doc_type=self.doc_type, doc_size=1000)
+
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, doc_gen, "create", **self.async_gen_common)
+
+        self.jython_task_manager.get_task_result(task)
 
     def apply_faults(self):
         """ Applies the list of faults the user has provided. """
@@ -1928,17 +1984,46 @@ class XattrTests(SubdocBaseTest):
                            "graceful-failover": lambda: self.apply_rebalance(strategy="graceful-failover"),
                            "lose_last_node": self.apply_lose_last_node,
                            "node_restart": self.apply_node_restart,
-                           "stop_persistence": self.apply_stop_persistence}
+                           "stop_persistence": self.apply_stop_persistence,
+                           "apply_preload_tombstones": self.apply_preload_tombstones}
 
         for fault in self.faults:
             fault_functions[fault]()
+
+    def apply_kill_memcached(self, delay=0):
+        """ Kill memcached on a random node """
+        self.sleep(delay, "Sleeping before killing memcached")
+
+        node = choice(self.cluster.servers)
+        shell = RemoteMachineShellConnection(node)
+        shell.kill_memcached()
+        self.assertTrue(self.bucket_util._wait_warmup_completed([node], self.bucket, wait_time=60))
+        shell.disconnect()
+
+    def apply_start_compaction(self, delay=0):
+        """ Trigger manual compaction """
+        self.sleep(delay, "Sleeping before starting compaction")
+
+        # Trigger manual compaction
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+
+    def apply_preload_tombstones(self, key_min=0, key_max=1000000):
+        """ Disable autocompaction and create deleted documents with xattributes
+        """
+        doc_prefix = "tombstone"
+
+        self.create_workload(key_min, key_max, doc_prefix=doc_prefix)
+        self.xattrs_workload(key_min, key_max, doc_prefix=doc_prefix)
+
+        # Delete keys to create tombstones
+        self.delete_workload(key_min, key_max, doc_prefix=doc_prefix)
 
     def apply_dgm(self, percentage=50):
         """ Places the cluster in dgm at the given percentage. """
         dgm_gen = doc_generator("dgm", 0, 1000000, doc_size=self.doc_size)
 
         task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, dgm_gen, "create", exp=0, process_concurrency=8, active_resident_threshold=percentage, **self.async_gen_common)
+            self.cluster, self.bucket, dgm_gen, "create", exp=0, active_resident_threshold=percentage, **self.async_gen_common)
 
         self.task.jython_task_manager.get_task_result(task)
 
@@ -2025,7 +2110,7 @@ class XattrTests(SubdocBaseTest):
 
         return 'USR_ATTR'
 
-    def create_workload(self, key_min, key_max, exp=0):
+    def create_workload(self, key_min, key_max, exp=0, doc_prefix=None):
         """ Produces documents
 
         Creates documents between keys key_min and key_max.
@@ -2034,6 +2119,9 @@ class XattrTests(SubdocBaseTest):
             key_min (int): The first key in the interval.
             key_max (int): The final key in the interval.
         """
+        if doc_prefix is None:
+            doc_prefix=self.doc_prefix
+
         # A generator for regular documents
         doc_gen = doc_generator(
             self.doc_prefix, key_min, key_max, doc_type=self.doc_type, doc_size=self.doc_size)
@@ -2045,18 +2133,21 @@ class XattrTests(SubdocBaseTest):
 
         self.task.jython_task_manager.get_task_result(task)
 
-    def xattrs_workload(self, key_min, key_max):
+    def xattrs_workload(self, key_min, key_max, doc_prefix=None):
         """ A faster version of the xattrs workload method to produce
         xattributes between key_min and key_max. Expects the documents to
         pre-exist.
         """
         tasks = []
 
+        if doc_prefix is None:
+            doc_prefix = self.doc_prefix
+
         for path in self.paths:
             xattribute_template = '{{ "' + path + '": "{0}" }}'
             template_value = [self.get_subdoc_val()]
             sub_doc_gen = SubdocDocumentGenerator(
-                self.doc_prefix, xattribute_template, template_value, start=key_min, end=key_max)
+                doc_prefix, xattribute_template, template_value, start=key_min, end=key_max)
             task = self.task.async_load_gen_sub_docs(
                 self.cluster, self.bucket, sub_doc_gen, "upsert", xattr=True, path_create=True, **self.async_gen_common)
             tasks.append(task)
@@ -2081,11 +2172,14 @@ class XattrTests(SubdocBaseTest):
                 success, failed = self.client.crud(
                     "subdoc_upsert", doc_key, sub_doc, durability=self.durability_level, create_path=True, xattr=True)
 
-    def delete_workload(self, key_min, key_max):
+    def delete_workload(self, key_min, key_max, doc_prefix=None):
         """ Deletes documents in the range key_min, key_max.
         """
+        if doc_prefix is None:
+            self.doc_prefix = None
+
         # A generator for regular documents
-        doc_gen = doc_generator(self.doc_prefix, key_min, key_max)
+        doc_gen = doc_generator(self.key_prefix, key_min, key_max)
 
         # Delete documents between keys_min and keys_max.
         task = self.task.async_load_gen_docs(self.cluster, self.bucket, doc_gen,
@@ -2154,7 +2248,7 @@ class XattrTests(SubdocBaseTest):
                     self.assertFalse(accessible)
                 else:
                     self.assertEqual(
-                        xattrvalue, self.get_subdoc_val(doc_key, path))
+                        xattrvalue, self.get_subdoc_val())
 
     def parallel(self, function, key_min, key_max, **kwargs):
         """ Execute the workload in parallel by batching keys between key_max
@@ -2186,6 +2280,7 @@ class XattrTests(SubdocBaseTest):
             for i in range(self.cycles):
                 self.key_min = self.cycle_size * i
                 self.key_max = self.cycle_size * (i + 1)
+                self.cycle = i + 1
                 f(self)
 
         return run_cycles
@@ -2485,3 +2580,32 @@ class XattrTests(SubdocBaseTest):
 
         # Perform validation
         self.parallel(self.verify_workload, key_min, key_max)
+
+    @cyclic
+    def test_crashing_processes(self):
+        """
+        Asynchronously kill memcached while data is loading and optionally while compaction is in progress.
+        """
+        key_min = self.key_min
+        key_max = self.key_max
+        tasks = []
+        start_compaction = self.input.param("start_compaction", True)
+
+        # Load initial data
+        self.create_workload(key_min, key_max)
+
+        # Start compaction after a delay of 8 seconds
+        if start_compaction:
+            tasks.append(FunctionCallTask(self.apply_start_compaction, kwds={'delay': 8}))
+            self.task_manager.add_new_task(tasks[-1])
+
+        # Kill memcached after a delay of 15 seconds
+        tasks.append(FunctionCallTask(self.apply_kill_memcached, kwds={'delay': 15}))
+        self.task_manager.add_new_task(tasks[-1])
+
+        # Load xattributes data
+        self.xattrs_workload(key_min, key_max)
+
+        # Wait for task
+        for task in tasks:
+            self.task_manager.get_task_result(task)
