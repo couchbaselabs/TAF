@@ -334,7 +334,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                                                              "MUTATED >= 0"
         self.query_task = RunQueriesTask(
             self.cluster, [query], self.task_manager, self.cbas_util, "cbas",
-            run_infinitely=True, parallelism=3, is_prepared=False)
+            run_infinitely=True, parallelism=3, is_prepared=False,
+            record_results=False)
         self.task_manager.add_new_task(self.query_task)
 
     def wait_for_data_load_task(self, verify=True):
@@ -583,7 +584,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 self.fail("Error while creating dataverses")
         self.cbas_util.create_dataset_obj(
             self.cluster, self.bucket_util, bucket_cardinality=self.input.param(
-                'bucket_cardinality', 1), enabled_from_KV=True)
+                'bucket_cardinality', 1), enabled_from_KV=True,
+            for_all_kv_entities=True)
         dataset_objs = self.cbas_util.list_all_dataset_objs()
 
         def populate_job_queue(list_of_objs, func_name):

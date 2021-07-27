@@ -695,9 +695,8 @@ class Link_Util(Dataverse_Util):
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error,
-                                                   expected_error_code)
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
                 return False
@@ -707,7 +706,7 @@ class Link_Util(Dataverse_Util):
     def create_link(self, cluster, link_properties, username=None, password=None,
                     validate_error_msg=False, expected_error=None,
                     expected_error_code=None, create_if_not_exists=False,
-                    timeout=120, analytics_timeout=120):
+                    timeout=120, analytics_timeout=120, create_dataverse=True):
         """
         Creates Link.
         :param link_properties: dict, parameters required for creating link.
@@ -749,34 +748,30 @@ class Link_Util(Dataverse_Util):
         cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         self.log.info(
             "Creating link - {0}.{1}".format(
-                link_properties["scope"], link_properties["name"]))
+                link_properties["dataverse"], link_properties["name"]))
         exists = False
         if create_if_not_exists:
             exists = self.validate_link_in_metadata(
-                cluster, link_properties["name"], link_properties["scope"],
+                cluster, link_properties["name"], link_properties["dataverse"],
                 link_properties["type"], username, password)
 
         if not exists:
             # If dataverse does not exits
-            if not self.create_dataverse(
-                cluster, CBASHelper.format_name(link_properties["scope"]),
-                username=username, password=password, if_not_exists=True,
-                timeout=timeout, analytics_timeout=analytics_timeout):
+            if create_dataverse and not self.create_dataverse(
+                cluster, CBASHelper.format_name(link_properties["dataverse"]),
+                if_not_exists=True, timeout=timeout,
+                analytics_timeout=analytics_timeout):
                 return False
 
             link_prop = copy.deepcopy(link_properties)
             params = dict()
             uri = ""
             if "dataverse" in link_prop:
-                uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
+                uri += "/{0}".format(urllib.quote_plus(CBASHelper.metadata_format(
                     link_prop["dataverse"]), safe=""))
                 del link_prop["dataverse"]
-            if "scope" in link_prop:
-                uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                    link_prop["scope"]), safe=""))
-                del link_prop["scope"]
             if "name" in link_prop:
-                uri += "/{0}".format(urllib.quote(
+                uri += "/{0}".format(urllib.quote_plus(
                     CBASHelper.unformat_name(link_prop["name"]), safe=""))
                 del link_prop["name"]
 
@@ -791,9 +786,8 @@ class Link_Util(Dataverse_Util):
                 method="POST", uri=uri, params=params, timeout=timeout,
                 username=username, password=password)
             if validate_error_msg:
-                return self.validate_error_in_response(status, errors,
-                                                       expected_error,
-                                                       expected_error_code)
+                return self.validate_error_in_response(
+                    status, errors, expected_error, expected_error_code)
             return status
         else:
             return exists
@@ -857,10 +851,10 @@ class Link_Util(Dataverse_Util):
             params = dict()
             uri = ""
             if dataverse:
-                uri += "/{0}".format(urllib.urlencode(
+                uri += "/{0}".format(urllib.quote_plus(
                     CBASHelper.metadata_format(dataverse), safe=""))
             if link_name:
-                uri += "/{0}".format(urllib.urlencode(
+                uri += "/{0}".format(urllib.quote_plus(
                     CBASHelper.unformat_name(link_name), safe=""))
             if link_type:
                 params["type"] = link_type
@@ -897,10 +891,6 @@ class Link_Util(Dataverse_Util):
             uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
                 link_prop["dataverse"]), safe=""))
             del link_prop["dataverse"]
-        if "scope" in link_prop:
-            uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                link_prop["scope"]), safe=""))
-            del link_prop["scope"]
         if "name" in link_prop:
             uri += "/{0}".format(urllib.quote(
                 CBASHelper.unformat_name(link_prop["name"]), safe=""))
@@ -1141,7 +1131,7 @@ class Link_Util(Dataverse_Util):
             self, cluster, link_type, dataverse=None, link_cardinality=1,
             hostname=None, username=None, password=None, encryption=None,
             certificate=None, clientCertificate=None, clientKey=None,
-            accessKeyId=None, secretAccessKey=None, region=None,
+            accessKeyId=None, secretAccessKey=None, regions=[],
             serviceEndpoint=None, no_of_objs=1, name_length=30,
             fixed_length=False):
         """
@@ -1151,12 +1141,12 @@ class Link_Util(Dataverse_Util):
         while count < no_of_objs:
             if not dataverse:
                 if link_cardinality > 1:
-                    dataverse_name = self.generate_name(
+                    dataverse_name = CBASHelper.format_name(self.generate_name(
                         name_cardinality=link_cardinality - 1,
                         max_length=name_length - 1,
-                        fixed_length=fixed_length)
-                    if not self.create_dataverse(cluster, dataverse_name,
-                                                 if_not_exists=True):
+                        fixed_length=fixed_length))
+                    if not self.create_dataverse(
+                        cluster, dataverse_name, if_not_exists=True):
                         raise Exception("Error while creating dataverse")
                     dataverse = self.get_dataverse_obj(dataverse_name)
                 else:
@@ -1170,7 +1160,7 @@ class Link_Util(Dataverse_Util):
                     dataverse_name=dataverse.name,
                     properties={"type": "s3", "accessKeyId":accessKeyId,
                                 "secretAccessKey":secretAccessKey,
-                                "region":region,
+                                "region":random.choice(regions),
                                 "serviceEndpoint":serviceEndpoint})
             elif link_type.lower() == "couchbase":
                 link = Link(
@@ -1191,7 +1181,7 @@ class Link_Util(Dataverse_Util):
             self, cluster, link_properties, username=None, password=None,
             timeout=120, restapi=True):
         response = self.get_link_info(
-            cluster, link_properties["scope"], link_properties["name"],
+            cluster, link_properties["dataverse"], link_properties["name"],
             link_properties["type"], username=username, password=password,
             timeout=timeout, restapi=restapi)
         if "secretAccessKey" in link_properties:
@@ -1382,7 +1372,7 @@ class Dataset_Util(Link_Util):
             header=None, null_string=None, include=None, exclude=None,
             validate_error_msg=False, username=None, password=None,
             expected_error=None, expected_error_code=None,
-            timeout=120, analytics_timeout=120):
+            timeout=120, analytics_timeout=120, create_dv=True):
         """
         Creates a dataset for an external resource like AWS S3 bucket.
         Note - No shadow dataset is created for this type of external datasets.
@@ -1414,7 +1404,7 @@ class Dataset_Util(Link_Util):
         :return True/False
 
         """
-        if dataverse_name and not self.create_dataverse(
+        if create_dv and dataverse_name and not self.create_dataverse(
             cluster, dataverse_name=dataverse_name, username=username,
             password=password, if_not_exists=True):
             return False
@@ -2236,7 +2226,7 @@ class Dataset_Util(Link_Util):
                             None, 120, 120, analytics_collection))
 
             if results[-1]:
-                dataverse.datasets[dataset_obj.full_name] = dataset_obj
+                dataverse.datasets[dataset_obj.name] = dataset_obj
 
         for bucket in cluster.buckets:
             if kv_name_cardinality > 1:
@@ -2255,9 +2245,10 @@ class Dataset_Util(Link_Util):
 
     def create_dataset_obj(
             self, cluster, bucket_util, dataset_cardinality=1, bucket_cardinality=1,
-            enabled_from_KV=False, name_length=30, fixed_length=False,
-            exclude_bucket=[], exclude_scope=[], exclude_collection=[],
-            no_of_objs=999999):
+            enabled_from_KV=False, for_all_kv_entities=False,
+            remote_dataset=False, link=None, same_dv_for_link_and_dataset=False,
+            name_length=30, fixed_length=False, exclude_bucket=[],
+            exclude_scope=[], exclude_collection=[], no_of_objs=1):
         """
         Generates dataset objects.
         """
@@ -2274,15 +2265,25 @@ class Dataset_Util(Link_Util):
             else:
                 dataverse_name = None
 
-                if dataset_cardinality > 1:
-                    dataverse_name = self.generate_name(
-                        name_cardinality=dataset_cardinality - 1,
-                        max_length=name_length - 1, fixed_length=fixed_length)
+                if remote_dataset:
+                    if not link:
+                        link = random.choice(self.list_all_link_objs(
+                            link_type="couchbase"))
+
+                if same_dv_for_link_and_dataset and link:
+                    dataverse_name = link.dataverse_name
+                else:
+                    if dataset_cardinality > 1:
+                        dataverse_name = self.generate_name(
+                            name_cardinality=dataset_cardinality - 1,
+                            max_length=name_length - 1,
+                            fixed_length=fixed_length)
                 dataset_name = self.generate_name(
                     name_cardinality=1, max_length=name_length,
                     fixed_length=fixed_length)
 
             if dataverse_name:
+                dataverse_name = CBASHelper.unformat_name(dataverse_name)
                 dataverse_obj = self.get_dataverse_obj(dataverse_name)
                 if not dataverse_obj:
                     dataverse_obj = Dataverse(dataverse_name)
@@ -2295,9 +2296,14 @@ class Dataset_Util(Link_Util):
             else:
                 num_of_items = 0
 
+            if link:
+                link_name = link.full_name
+            else:
+                link_name=None
+
             dataset_obj = Dataset(
                 name=dataset_name, dataverse_name=dataverse_name,
-                link_name=None,
+                link_name=link_name,
                 dataset_source="internal", dataset_properties={},
                 bucket=bucket, scope=scope, collection=collection,
                 enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
@@ -2305,7 +2311,7 @@ class Dataset_Util(Link_Util):
             self.log.info("Adding Dataset object for - {0}".format(
                 dataset_obj.full_name))
 
-            dataverse_obj.datasets[dataset_obj.full_name] = dataset_obj
+            dataverse_obj.datasets[dataset_obj.name] = dataset_obj
 
             if enabled_from_KV:
                 if collection.name == "_default":
@@ -2314,37 +2320,54 @@ class Dataset_Util(Link_Util):
                         dataverse_name="Default",
                         synonym_on_synonym=False)
 
-        count = 0
-        for bucket in cluster.buckets:
+        if for_all_kv_entities:
+            for bucket in cluster.buckets:
 
-            if bucket.name in exclude_bucket:
-                continue
+                if bucket.name in exclude_bucket:
+                    continue
 
-            if bucket_cardinality == 1:
-                count += 1
-                create_object(bucket, None, None)
-            else:
-                active_scopes = bucket_util.get_active_scopes(bucket)
-                for scope in active_scopes:
-                    if scope.is_dropped or scope.name in exclude_scope:
-                        continue
+                if bucket_cardinality == 1:
+                    create_object(bucket, None, None)
+                else:
+                    active_scopes = bucket_util.get_active_scopes(bucket)
+                    for scope in active_scopes:
+                        if scope.is_dropped or scope.name in exclude_scope:
+                            continue
+
+                        active_collections = bucket_util.get_active_collections(
+                            bucket, scope.name, only_names=False)
+                        for collection in active_collections:
+                            if collection.is_dropped or collection.name in exclude_collection:
+                                continue
+                            create_object(bucket, scope, collection)
+        else:
+            for _ in range(no_of_objs):
+                bucket = random.choice(cluster.buckets)
+                while bucket.name in exclude_bucket:
+                    bucket = random.choice(cluster.buckets)
+
+                if bucket_cardinality == 1:
+                    create_object(bucket, None, None)
+                else:
+                    active_scopes = bucket_util.get_active_scopes(bucket)
+                    scope = random.choice(active_scopes)
+                    while scope.is_dropped or (scope.name in exclude_scope):
+                        scope = random.choice(active_scopes)
 
                     active_collections = bucket_util.get_active_collections(
                         bucket, scope.name, only_names=False)
-                    for collection in active_collections:
-                        if collection.is_dropped or collection.name in exclude_collection:
+                    collection = random.choice(active_collections)
+                    while collection.is_dropped or (
+                        collection.name in exclude_collection):
+                        collection = random.choice(active_collections)
+
+                    for scope in active_scopes:
+                        if scope.is_dropped or scope.name in exclude_scope:
                             continue
-                        create_object(bucket, scope, collection)
-                        count += 1
-                        if count >= no_of_objs:
-                            break
-                    if count >= no_of_objs:
-                        break
-            if count >= no_of_objs:
-                break
+                    create_object(bucket, scope, collection)
 
     def create_external_dataset_obj(
-            self, cluster, aws_bucket_names, dataverse=None, link=None,
+            self, cluster, aws_bucket_names, same_dv_for_link_and_dataset=False,
             dataset_cardinality=1, object_construction_def=None,
             path_on_aws_bucket=None, file_format="json", redact_warning=None,
             header=None, null_string=None, include=None, exclude=None,
@@ -2353,16 +2376,24 @@ class Dataset_Util(Link_Util):
         Creates a Dataset object for external datasets.
         :param aws_bucket_names: dict, format {"aws_bucket_name":"region"}
         """
-
         for _ in range(no_of_objs):
             aws_bucket = random.choice(aws_bucket_names.keys())
 
-            if not dataverse:
+            all_links = self.list_all_link_objs("s3")
+            link = random.choice(all_links)
+            while all_links and (
+                link.properties["region"] != aws_bucket_names[aws_bucket]):
+                all_links.remove(link)
+                link = random.choice(self.list_all_link_objs("s3"))
+
+            if same_dv_for_link_and_dataset:
+                dataverse = self.get_dataverse_obj(link.dataverse_name)
+            else:
                 if dataset_cardinality > 1:
-                    dataverse_name = self.generate_name(
+                    dataverse_name = CBASHelper.format_name(self.generate_name(
                         name_cardinality=dataset_cardinality - 1,
                         max_length=name_length - 1,
-                        fixed_length=fixed_length)
+                        fixed_length=fixed_length))
                     if not self.create_dataverse(cluster, dataverse_name,
                                                  if_not_exists=True):
                         raise Exception("Error while creating dataverse")
@@ -2370,18 +2401,10 @@ class Dataset_Util(Link_Util):
                 else:
                     dataverse = self.get_dataverse_obj("Default")
 
-            if not link:
-                all_links = self.list_all_link_objs("s3")
-                link = random.choice(all_links)
-                while all_links and (
-                    link.properties["region"] != aws_bucket_names[aws_bucket]):
-                    all_links.remove(link)
-                    link = random.choice(self.list_all_link_objs("s3"))
-
             dataset = Dataset(
                 name=self.generate_name(name_cardinality=1, max_length=name_length,
                                         fixed_length=fixed_length),
-                dataverse_name=dataverse.name, link_name=link,
+                dataverse_name=dataverse.name, link_name=link.full_name,
                 dataset_source="external", dataset_properties={})
             dataset.dataset_properties["aws_bucket_name"] = aws_bucket
             dataset.dataset_properties["object_construction_def"] = object_construction_def
@@ -2393,7 +2416,7 @@ class Dataset_Util(Link_Util):
             dataset.dataset_properties["include"] = include
             dataset.dataset_properties["exclude"] = exclude
 
-            dataverse.datasets[dataset.full_name] = dataset
+            dataverse.datasets[dataset.name] = dataset
 
     def validate_docs_in_all_datasets(
             self, cluster, bucket_util, timeout=600):
@@ -4548,13 +4571,13 @@ class CBASRebalanceUtil(object):
             n1ql_query_task = RunQueriesTask(
                 cluster, queries, self.task.jython_task_manager,
                 n1ql_helper, query_type="n1ql", parallelism=parallelism,
-                run_infinitely=True, is_prepared=False)
+                run_infinitely=True, is_prepared=False, record_results=True)
             self.task.jython_task_manager.add_new_task(n1ql_query_task)
         if run_cbas_queries:
             cbas_query_task = RunQueriesTask(
                 cluster, queries, self.task.jython_task_manager,
                 self.cbas_util, query_type="cbas", parallelism=parallelism,
-                run_infinitely=True, is_prepared=False)
+                run_infinitely=True, is_prepared=False, record_results=True)
             self.task.jython_task_manager.add_new_task(cbas_query_task)
         return n1ql_query_task, cbas_query_task
 

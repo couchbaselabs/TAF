@@ -3143,7 +3143,8 @@ class RunQueriesTask(Task):
     """
 
     def __init__(self, cluster, queries, task_manager, helper, query_type,
-                 run_infinitely=False, parallelism=1, is_prepared=True):
+                 run_infinitely=False, parallelism=1, is_prepared=True,
+                 record_results=True):
         super(RunQueriesTask, self).__init__("RunQueriesTask_started_%s"
                                              % (time.time()))
         self.cluster = cluster
@@ -3160,6 +3161,7 @@ class RunQueriesTask(Task):
         self.result = []
         self.is_prepared = is_prepared
         self.debug_msg = self.query_type + "-DEBUG-"
+        self.record_results = record_results
 
     def call(self):
         start = 0
@@ -3189,7 +3191,7 @@ class RunQueriesTask(Task):
                     self.task_manager.get_task_result(query_task)
                     self.log.info(self.debug_msg + "ActualResult: " + str(
                         query_task.actual_result))
-                    if not self.run_infinitely:
+                    if self.record_results:
                         self.result.append(query_task.actual_result)
                 self.query_tasks = []
                 start = end

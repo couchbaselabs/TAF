@@ -72,7 +72,7 @@ class Link(object):
         self.dataverse_name = CBASHelper.format_name(dataverse_name)
         self.properties = properties
         self.properties["name"] = CBASHelper.unformat_name(self.name)
-        self.properties["scope"] = CBASHelper.unformat_name(
+        self.properties["dataverse"] = CBASHelper.unformat_name(
             self.dataverse_name)
         self.link_type = self.properties["type"].lower()
         self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)

@@ -59,7 +59,7 @@ def perform_S3_operation(**kwargs):
     response = subprocess.Popen(arguements, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output, error = response.communicate()
-    if error:
+    if error and "import sitecustomize" not in str(error):
         raise Exception(str(error))
     else:
         result = json.loads(output)
@@ -504,7 +504,7 @@ class S3DataHelper():
                 while os.stat(filepath).st_size <= (file_size_in_KB * 1024):
                     # This for loop is to prevent checking file size after each record insertion.
                     for i in range(0, 1000):
-                        fh.write(data_to_write)
+                        fh.write(data_to_write + "\n")
                     no_of_records += 1000
 
             file_record_count[filename] = no_of_records
