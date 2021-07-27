@@ -39,7 +39,8 @@ class StorageBase(BaseTestCase):
                                  SDKException.AmbiguousTimeoutException,
                                  SDKException.RequestCanceledException,
                                  SDKException.UnambiguousTimeoutException,
-                                 SDKException.ServerOutOfMemoryException]
+                                 SDKException.ServerOutOfMemoryException,
+                                 SDKException.DurabilityAmbiguousException]
         self.ignore_exceptions = []
 
         # Sets autocompaction at bucket level
