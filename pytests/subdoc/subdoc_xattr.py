@@ -1847,14 +1847,6 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         self.validate_test_failure()
 
 
-class VbucketUtil:
-    @staticmethod
-    def to_vbucket(key):
-        """ Returns the vbucket of a key
-        """
-        return (((zlib.crc32(key)) >> 16) & 0x7fff) & (1024 - 1)
-
-
 class XattrTests(SubdocBaseTest):
     """ Xattributes testing in the context of KV featuring storage, tombstones
     and lifetimes."""
@@ -1924,6 +1916,9 @@ class XattrTests(SubdocBaseTest):
 
         # A list of tasks that will be stopped at the end of the test
         self.tasks = []
+
+        # An alias which returns the vbucket of a given key
+        self.to_vbucket = self.bucket_util.get_vbucket_num_for_key
 
         self.preamble()
 
@@ -2165,7 +2160,7 @@ class XattrTests(SubdocBaseTest):
         for path in self.paths:
             for key_number in range(key_min, key_max):
                 doc_key = self.format_doc_key(key_number)
-                if vbucket_filter and VbucketUtil.to_vbucket(doc_key) not in vbucket_filter:
+                if vbucket_filter and self.to_vbucket(doc_key) not in vbucket_filter:
                     continue
                 sub_val = self.get_subdoc_val()
                 sub_doc = [path, sub_val]
@@ -2217,11 +2212,11 @@ class XattrTests(SubdocBaseTest):
         for doc_key in map(self.format_doc_key, range(key_min, key_max)):
             for xattr in self.paths:
                 if self.get_xattribute(doc_key, xattr, access_deleted=True)[0]:
-                    if VbucketUtil.to_vbucket(doc_key) in seen_vbuckets:
+                    if self.to_vbucket(doc_key) in seen_vbuckets:
                         self.fail(
                             "Found multiple tombstones in the same vbucket post purging.")
                     else:
-                        seen_vbuckets.add(VbucketUtil.to_vbucket(doc_key))
+                        seen_vbuckets.add(self.to_vbucket(doc_key))
                         break
 
     def verify_workload(self, key_min, key_max, is_deleted=False, is_expired=False):
@@ -2452,7 +2447,7 @@ class XattrTests(SubdocBaseTest):
                 accessible, xattrvalue = self.get_xattribute(
                     doc_key, path, access_deleted=True)
                 # If vbucket belongs to a node 1 vbucket, then xattribute should not exist
-                if VbucketUtil.to_vbucket(doc_key) in vbuckets:
+                if self.to_vbucket(doc_key) in vbuckets:
                     self.assertFalse(accessible)
                 else:
                     self.assertEqual(
@@ -2512,7 +2507,7 @@ class XattrTests(SubdocBaseTest):
                 accessible, xattrvalue = self.get_xattribute(
                     doc_key, path, access_deleted=True)
                 # If vbucket belongs to a node 1 vbucket, then that xattribute should be accessible
-                if VbucketUtil.to_vbucket(doc_key) in vbuckets:
+                if self.to_vbucket(doc_key) in vbuckets:
                     self.assertEqual(
                         xattrvalue, self.get_subdoc_val())
 
