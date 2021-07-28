@@ -9,6 +9,7 @@ import urllib
 import requests
 import numbers
 
+from Cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
 from membase.api import httplib2
 
@@ -16,7 +17,9 @@ from membase.api import httplib2
 class CBASHelper(RestConnection):
     def __init__(self, master, cbas_node):
         super(CBASHelper, self).__init__(cbas_node)
-        self.cbas_base_url = "http://{0}:{1}".format(self.ip, 8095)
+        self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
+        if CbServer.use_https:
+            self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
 
     def createConn(self, bucket, username, password):
         pass
