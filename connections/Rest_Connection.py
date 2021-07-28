@@ -9,13 +9,22 @@ import traceback
 import socket
 import time
 
-from Cb_constants import constants
+from Cb_constants import constants, CbServer
 from TestInput import TestInputSingleton
 from common_lib import sleep
 from global_vars import logger
 from membase.api import httplib2
-import requests
 from custom_exceptions.exception import ServerUnavailableException
+
+import requests
+
+try:
+    requests.packages.urllib3.disable_warnings()
+except:
+    pass
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class RestConnection(object):
@@ -93,17 +102,27 @@ class RestConnection(object):
                 if serverInfo.eventing_port:
                     self.eventing_port = serverInfo.eventing_port
             if hasattr(serverInfo, 'hostname') and serverInfo.hostname \
-               and serverInfo.hostname.find(self.ip) == -1:
+                    and serverInfo.hostname.find(self.ip) == -1:
                 self.hostname = serverInfo.hostname
             if hasattr(serverInfo, 'services'):
                 self.services = serverInfo.services
+        if CbServer.use_https:
+            self.port = CbServer.ssl_port
+            index_port = CbServer.ssl_index_port
+            query_port = CbServer.ssl_n1ql_port
+            fts_port = CbServer.ssl_fts_port
+            eventing_port = CbServer.ssl_eventing_port
         self.input = TestInputSingleton.input
         if self.input is not None:
             """ from watson, services param order and format:
                 new_services=fts-kv-index-n1ql """
             self.services_node_init = self.input.param("new_services", None)
 
-        generic_url = "http://%s:%s/"
+        http_url = "http://%s:%s/"
+        https_url = "https://%s:%s/"
+        generic_url = http_url
+        if CbServer.use_https:
+            generic_url = https_url
         url_host = "%s" % self.ip
         if self.hostname:
             url_host = "%s" % self.hostname
@@ -122,8 +141,8 @@ class RestConnection(object):
             http_res, success = \
                 self.init_http_request(self.baseUrl + 'nodes/self')
             if not success and type(http_res) == unicode \
-               and (http_res.find(node_unknown_msg) > -1
-                    or http_res.find(unexpected_server_err_msg) > -1):
+                    and (http_res.find(node_unknown_msg) > -1
+                         or http_res.find(unexpected_server_err_msg) > -1):
                 self.log.error("Error {0}, 5 seconds sleep before retry"
                                .format(http_res))
                 sleep(5, log_type="infra")
@@ -174,50 +193,61 @@ class RestConnection(object):
                 return "auth: " + base64.decodestring(val[6:])
         return ""
 
-    def _http_session_post(self, api, params='', headers=None, session=None, timeout=120):
-        try:
-            headers['Connection'] = "keep-alive"
-            response = session.post(api, headers=headers, data=params, timeout=timeout)
-            status = response.status_code
-            content = response.content
-            if status in [200, 201, 202]:
-                return True, content, response
-            else:
-                self.log.error(response.reason)
-                return False, content, response
-        except requests.exceptions.HTTPError as errh:
-            self.log.error("HTTP Error {0}".format(errh))
-        except requests.exceptions.ConnectionError as errc:
-            self.log.error("Error Connecting {0}".format(errc))
-        except requests.exceptions.Timeout as errt:
-            self.log.error("Timeout Error: {0}".format(errt))
-        except requests.exceptions.RequestException as err:
-            self.log.error("Something else: {0}".format(err))
-
-    def _http_session_delete(self, api, params='', headers=None, session=None, timeout=120):
-        try:
-            headers['Connection'] = "keep-alive"
-            response = session.delete(api, headers=headers, data=params, timeout=timeout)
-            status = response.status_code
-            content = response.content
-            if status in [200, 201, 202]:
-                return True, content, response
-            else:
-                self.log.error(response.reason)
-                return False, content, response
-        except requests.exceptions.HTTPError as errh:
-            self.log.error("HTTP Error {0}".format(errh))
-        except requests.exceptions.ConnectionError as errc:
-            self.log.error("Error Connecting {0}".format(errc))
-        except requests.exceptions.Timeout as errt:
-            self.log.error("Timeout Error: {0}".format(errt))
-        except requests.exceptions.RequestException as err:
-            self.log.error("Something else: {0}".format(err))
+    def _urllib_request(self, api, method='GET', params='', headers=None,
+                        timeout=300, verify=False, session=None):
+        if session is None:
+            session = requests.Session()
+        end_time = time.time() + timeout
+        while True:
+            try:
+                if method == "GET":
+                    response = session.get(api=api, params=params, headers=headers,
+                                           session=session, timeout=timeout, verify=verify)
+                elif method == "POST":
+                    response = session.post(api=api, params=params, headers=headers,
+                                            session=session, timeout=timeout, verify=verify)
+                elif method == "DELETE":
+                    response = session.delete(api=api, params=params, headers=headers,
+                                              session=session, timeout=timeout, verify=verify)
+                elif method == "PUT":
+                    response = session.put(api=api, params=params, headers=headers,
+                                           session=session, timeout=timeout, verify=verify)
+                status = response.status_code
+                content = response.content
+                if status in [200, 201, 202]:
+                    return True, content, response
+                else:
+                    self.log.error(response.reason)
+                    return False, content, response
+            except requests.exceptions.HTTPError as errh:
+                self.log.error("HTTP Error {0}".format(errh))
+            except requests.exceptions.ConnectionError as errc:
+                if "Illegal state exception" in str(errc):
+                    # Known ssl bug, retry
+                    pass
+                else:
+                    self.log.error("Error Connecting {0}".format(errc))
+                if time.time() > end_time:
+                    raise ServerUnavailableException(ip=self.ip)
+            except requests.exceptions.Timeout as errt:
+                self.log.error("Timeout Error: {0}".format(errt))
+                if time.time() > end_time:
+                    raise ServerUnavailableException(ip=self.ip)
+            except requests.exceptions.RequestException as err:
+                self.log.error("Something else: {0}".format(err))
+                if time.time() > end_time:
+                    raise ServerUnavailableException(ip=self.ip)
+            sleep(3, log_type="infra")
 
     def _http_request(self, api, method='GET', params='', headers=None,
                       timeout=300):
         if not headers:
             headers = self._create_headers()
+        if CbServer.use_https:
+            status, content, response = \
+                self._urllib_request(api, method=method, params=params, headers=headers,
+                                     timeout=timeout, verify=False)
+            return status, content, response
         end_time = time.time() + timeout
         while True:
             try:
@@ -236,20 +266,20 @@ class RestConnection(object):
                     if "error" in json_parsed:
                         reason = json_parsed["error"]
                     if ("accesskey" in params.lower()) or ("secretaccesskey" in params.lower()) or (
-                        "password" in params.lower()) or ("secretkey" in params.lower()):
+                            "password" in params.lower()) or ("secretkey" in params.lower()):
                         message = '{0} {1} body: {2} headers: {3} ' \
-                              'error: {4} reason: {5} {6} {7}'.\
-                              format(method, api, "Body is being redacted because it contains sensitive info", headers,
-                                     response['status'], reason,
-                                     content.rstrip('\n'),
-                                     RestConnection.get_auth(headers))
+                                  'error: {4} reason: {5} {6} {7}'. \
+                            format(method, api, "Body is being redacted because it contains sensitive info", headers,
+                                   response['status'], reason,
+                                   content.rstrip('\n'),
+                                   RestConnection.get_auth(headers))
                     else:
                         message = '{0} {1} body: {2} headers: {3} ' \
-                                  'error: {4} reason: {5} {6} {7}'.\
-                                  format(method, api, params, headers,
-                                         response['status'], reason,
-                                         content.rstrip('\n'),
-                                         RestConnection.get_auth(headers))
+                                  'error: {4} reason: {5} {6} {7}'. \
+                            format(method, api, params, headers,
+                                   response['status'], reason,
+                                   content.rstrip('\n'),
+                                   RestConnection.get_auth(headers))
                     self.log.error(message)
                     self.log.debug(''.join(traceback.format_stack()))
                     return False, content, response

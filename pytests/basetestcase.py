@@ -2,6 +2,7 @@ import os
 import re
 import traceback
 import unittest
+from security_config import trust_all_certs
 from collections import OrderedDict
 
 from datetime import datetime
@@ -186,6 +187,11 @@ class BaseTestCase(unittest.TestCase):
         self.quota_percent = self.input.param("quota_percent", 90)
         self.skip_buckets_handle = self.input.param("skip_buckets_handle",
                                                     False)
+        self.use_https = self.input.param("use_https", False)
+        self.enforce_tls = self.input.param("enforce_tls", False)
+        if self.use_https:
+            CbServer.use_https = True
+            trust_all_certs()
 
         # SDKClientPool object for creating generic clients across tasks
         if self.sdk_client_pool is True:
@@ -336,6 +342,22 @@ class BaseTestCase(unittest.TestCase):
                     cb_cli.enable_dp()
                     shell_conn.disconnect()
 
+            # Enforce tls on master node of all clusters
+            if self.use_https and self.enforce_tls:
+                for _, cluster in self.cb_clusters.items():
+                    RestConnection(cluster.master).update_autofailover_settings(False, 120, False)
+                    self.log.info("Setting cluster encryption level to strict on cluster "
+                                  "with node {0}". format(cluster.master))
+                    shell_conn = RemoteMachineShellConnection(cluster.master)
+                    cb_cli = CbCli(shell_conn)
+                    o = cb_cli.enable_n2n_encryption()
+                    self.log.info("Enabling n2n nencryption")
+                    self.log.info(o)
+                    o = cb_cli.set_n2n_encryption_level(level="strict")
+                    self.log.info("setting encryption level to strict")
+                    self.log.info(o)
+                    shell_conn.disconnect()
+
             for cluster_name, cluster in self.cb_clusters.items():
                 self.modify_cluster_settings(cluster)
 
@@ -461,6 +483,19 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
+
+        # Disable n2n encryption on nodes of all clusters
+        if self.use_https and self.enforce_tls:
+            for _, cluster in self.cb_clusters.items():
+                for node in cluster.servers:
+                    RestConnection(node).update_autofailover_settings(False, 120, False)
+                    self.log.info("Setting cluster encryption level to control on cluster "
+                                  "with node {0}".format(self.cluster.master))
+                    shell_conn = RemoteMachineShellConnection(self.cluster.master)
+                    cb_cli = CbCli(shell_conn)
+                    _ = cb_cli.set_n2n_encryption_level(level="control")
+                    cb_cli.disable_n2n_encryption()
+                    shell_conn.disconnect()
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
         if self.collect_pcaps:

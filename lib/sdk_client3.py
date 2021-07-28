@@ -8,6 +8,8 @@ Created on Mar 14, 2019
 import json as pyJson
 import subprocess
 import os
+import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory \
+    as InsecureTrustManagerFactory
 
 from _threading import Lock
 
@@ -15,7 +17,8 @@ from _threading import Lock
 from com.couchbase.client.core.env import \
     CompressionConfig, \
     SeedNode, \
-    TimeoutConfig, IoConfig
+    TimeoutConfig, IoConfig, \
+    SecurityConfig
 from com.couchbase.client.core.error import \
     CasMismatchException, \
     ConfigException, \
@@ -165,13 +168,13 @@ class SDKClientPool(object):
 
 class SDKClient(object):
     System.setProperty("com.couchbase.forceIPv4", "false")
-    cluster_env = \
-        ClusterEnvironment \
+    env = ClusterEnvironment \
         .builder() \
         .ioConfig(IoConfig.numKvConnections(25)) \
         .timeoutConfig(TimeoutConfig.builder()
                        .connectTimeout(Duration.ofSeconds(20))
-                       .kvTimeout(Duration.ofSeconds(10))).build()
+                       .kvTimeout(Duration.ofSeconds(10)))
+    cluster_env = env.build()
     sdk_connections = 0
     sdk_disconnections = 0
     doc_op = doc_op()
@@ -221,24 +224,28 @@ class SDKClient(object):
         self.compression = compression_settings
         self.cert_path = cert_path
         self.log = logger.get("test")
-
         for server in servers:
             self.servers.append((server.ip, int(server.port)))
             if server.ip == "127.0.0.1":
-                self.hosts.append("%s:%s" % (server.ip, server.port))
-                self.scheme = "http"
+                if CbServer.use_https:
+                    self.scheme = "https"
+                else:
+                    self.scheme = "http"
             else:
                 self.hosts.append(server.ip)
-                self.scheme = "couchbase"
+                if CbServer.use_https:
+                    self.scheme = "couchbases"
+                else:
+                    self.scheme = "couchbase"
 
         self.__create_conn()
         SDKClient.sdk_connections += 1
 
     def __create_conn(self):
         self.log.debug("Creating SDK connection for '%s'" % self.bucket)
-
         # Having 'None' will enable us to test without sending any
         # compression settings and explicitly setting to 'False' as well
+        cluster_env = None
         if self.compression is not None:
             is_compression = self.compression.get("enabled", False)
             compression_config = CompressionConfig.enable(is_compression)
@@ -248,13 +255,18 @@ class SDKClient(object):
             if "minRatio" in self.compression:
                 compression_config = compression_config.minRatio(
                     self.compression["minRatio"])
-            SDKClient.cluster_env = ClusterEnvironment \
-                .builder() \
-                .ioConfig(IoConfig.numKvConnections(25)) \
-                .timeoutConfig(TimeoutConfig.builder()
-                               .connectTimeout(Duration.ofSeconds(20))
-                               .kvTimeout(Duration.ofSeconds(10)))\
-                .compressionConfig(compression_config).build()
+            cluster_env = SDKClient.env.compressionConfig(compression_config)
+        if CbServer.use_https:
+            if cluster_env:
+                cluster_env = cluster_env.\
+                    securityConfig(SecurityConfig.enableTls(True).
+                                   trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+            else:
+                cluster_env = SDKClient.env.\
+                    securityConfig(SecurityConfig.enableTls(True).
+                                   trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+        if CbServer.use_https or (self.compression is not None):
+            SDKClient.cluster_env = cluster_env.build()
         cluster_options = ClusterOptions \
             .clusterOptions(self.username, self.password) \
             .environment(SDKClient.cluster_env)
@@ -272,8 +284,11 @@ class SDKClient(object):
                     self.cluster = Cluster.connect(master_seed,
                                                    cluster_options)
                 else:
+                    connection_string = "{0}://{1}".format(self.scheme, ", ".
+                                                           join(self.hosts).
+                                                           replace(" ", ""))
                     self.cluster = Cluster.connect(
-                        ", ".join(self.hosts).replace(" ", ""),
+                        connection_string,
                         cluster_options)
                 break
             except ConfigException as e:
