@@ -22,8 +22,6 @@ class MagmaCrashTests(MagmaBaseTest):
     def setUp(self):
         self.input = TestInputSingleton.input
         self.input.test_params.update({"random_key": True})
-        doc_tasks = (self.num_buckets*self.num_scopes*self.num_collections) * len(self.doc_ops) * process_concurrency + 2
-        self.input.test_params.update({"threads_to_use": doc_tasks})
         super(MagmaCrashTests, self).setUp()
         self.sdk_timeout = self.input.param("sdk_timeout", 10)
         self.time_unit = "seconds"
