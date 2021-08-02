@@ -1614,9 +1614,9 @@ class CBASExternalLinks(CBASBaseTest):
         region = "us-west-1"
         object_construction_def = "num1 int, num2 int"
         doc_counts = {
-            "json": 155861000,
-            "csv": 219619000,
-            "tsv": 219619000,
+            "json": 13950000,
+            "csv": 33560000,
+            "tsv": 33560000,
         }
 
         self.get_link_property_dict(self.aws_access_key, self.aws_secret_key)
