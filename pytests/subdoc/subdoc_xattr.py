@@ -1,5 +1,6 @@
 import copy
 import functools
+import time
 import json
 import sys
 import zlib
@@ -23,6 +24,7 @@ from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from storage_utils.magma_utils import MagmaUtils
 from Jython_tasks.task import FunctionCallTask
 
 
@@ -1886,6 +1888,9 @@ class XattrTests(SubdocBaseTest):
         # An alias which returns the vbucket of a given key
         self.to_vbucket = self.bucket_util.get_vbucket_num_for_key
 
+        # A magma util object
+        self.magma_utils = MagmaUtils()
+
         self.preamble()
 
         # Please configure the bucket settings
@@ -2554,6 +2559,48 @@ class XattrTests(SubdocBaseTest):
 
         # Perform validation
         self.parallel(self.verify_workload, key_min, key_max)
+
+    def average_kvstore_usage(self):
+        """ Returns the average kvstore usage. """
+        kvstore, wal, key_tree, seq_tree = \
+        self.magma_utils.get_disk_usage(self.cluster, self.bucket,
+                "/opt/couchbase/var/lib/couchbase/data/", servers=self.servers)
+        return kvstore
+
+    def test_fragmentation(self):
+        """ Fragmentation test
+
+        Load an initial set of documents with xattributes. Repeat the initial
+        workload and such that fragmentation reaches 50%. Auto-compaction
+        should kick in and ensure the disk usage remains below a sensible
+        threshold.
+
+        Expect the cost of repeating the workload result be at most 2.5x the
+        initial load.
+        """
+        key_min = self.key_min
+        key_max = self.key_max
+
+        props = "magma;magma_max_checkpoints={}".format(0)
+        self.bucket_util.update_bucket_props("backend", props, self.cluster, self.cluster.buckets)
+
+        # Load initial set of xattribuites xattributes
+        self.xattrs_workload(key_min, key_max)
+        # The cost of storing the initial documents
+        initial_cost = self.average_kvstore_usage()
+
+        # Upsert xattributes
+        self.xattrs_workload(key_min, key_max)
+
+        timeout = time.time() + 30
+        while time.time() < timeout:
+            # The cost of storing the additional documents
+            update_cost = self.average_kvstore_usage()
+            self.log.info("Initial cost: {} Update cost: {}".format(initial_cost, update_cost))
+            if update_cost <= initial_cost * 2.5:
+                return
+
+        self.fail("The update cost exceeded the initial cost.")
 
     @cyclic
     def test_crashing_processes(self):
