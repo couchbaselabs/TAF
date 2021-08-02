@@ -16,6 +16,7 @@ from couchbase_helper.documentgenerator import \
     SubdocDocumentGenerator
 from error_simulation.cb_error import CouchbaseError
 from custom_exceptions.exception import DesignDocCreationException
+from com.couchbase.client.java.kv import StoreSemantics
 from couchbase_helper.document import View
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
@@ -2144,7 +2145,9 @@ class XattrTests(SubdocBaseTest):
             sub_doc_gen = SubdocDocumentGenerator(
                 doc_prefix, xattribute_template, template_value, start=key_min, end=key_max)
             task = self.task.async_load_gen_sub_docs(
-                self.cluster, self.bucket, sub_doc_gen, "upsert", exp=exp, xattr=True, path_create=True, **self.async_gen_common)
+                self.cluster, self.bucket, sub_doc_gen, "upsert", xattr=True,
+                path_create=True, store_semantics=StoreSemantics.UPSERT,
+                **self.async_gen_common)
             tasks.append(task)
 
         for task in tasks:

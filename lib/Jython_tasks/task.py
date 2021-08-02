@@ -676,7 +676,8 @@ class GenericLoadingTask(Task):
     def batch_sub_doc_insert(self, key_value,
                              persist_to=0, replicate_to=0,
                              durability="",
-                             create_path=True, xattr=False):
+                             create_path=True, xattr=False,
+                             store_semantics=None):
         success = dict()
         fail = dict()
         try:
@@ -692,7 +693,8 @@ class GenericLoadingTask(Task):
                 create_path=create_path,
                 xattr=xattr,
                 preserve_expiry=self.preserve_expiry,
-                sdk_retry_strategy=self.sdk_retry_strategy)
+                sdk_retry_strategy=self.sdk_retry_strategy,
+                store_semantics=store_semantics)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc insert: {0}"
@@ -702,7 +704,8 @@ class GenericLoadingTask(Task):
     def batch_sub_doc_upsert(self, key_value,
                              persist_to=0, replicate_to=0,
                              durability="",
-                             create_path=True, xattr=False):
+                             create_path=True, xattr=False,
+                             store_semantics=None):
         success = dict()
         fail = dict()
         try:
@@ -718,7 +721,8 @@ class GenericLoadingTask(Task):
                 create_path=create_path,
                 xattr=xattr,
                 preserve_expiry=self.preserve_expiry,
-                sdk_retry_strategy=self.sdk_retry_strategy)
+                sdk_retry_strategy=self.sdk_retry_strategy,
+                store_semantics=store_semantics)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc upsert: {0}"
@@ -936,7 +940,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  collection=CbServer.default_collection,
                  skip_read_success_results=False,
                  preserve_expiry=None,
-                 sdk_retry_strategy=None):
+                 sdk_retry_strategy=None,
+                 store_semantics=None):
         super(LoadSubDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             timeout_secs=timeout_secs,
@@ -964,6 +969,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         self.time_unit = time_unit
         self.num_loaded = 0
         self.durability = durability
+        self.store_semantics = store_semantics
         self.fail = dict()
         self.success = dict()
         self.skip_read_success_results = skip_read_success_results
@@ -986,7 +992,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 replicate_to=self.replicate_to,
                 durability=self.durability,
                 create_path=self.create_path,
-                xattr=self.xattr)
+                xattr=self.xattr,
+                store_semantics=self.store_semantics)
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == DocLoading.Bucket.SubDocOps.UPSERT:
@@ -996,7 +1003,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 replicate_to=self.replicate_to,
                 durability=self.durability,
                 create_path=self.create_path,
-                xattr=self.xattr)
+                xattr=self.xattr,
+                store_semantics=self.store_semantics)
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == DocLoading.Bucket.SubDocOps.REMOVE:
@@ -1729,7 +1737,8 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 preserve_expiry=None, sdk_retry_strategy=None):
+                 preserve_expiry=None, sdk_retry_strategy=None,
+                 store_semantics=None):
         thread_name = "SubDocumentsLoadGenTask_%s_%s_%s_%s_%s" \
                       % (task_identifier,
                          bucket.name,
@@ -1764,6 +1773,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
         self.collection = collection
         self.preserve_expiry = preserve_expiry
         self.sdk_retry_strategy = sdk_retry_strategy
+        self.store_semantics = store_semantics
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1889,7 +1899,8 @@ class LoadSubDocumentsGeneratorsTask(Task):
                 collection=self.collection,
                 sdk_client_pool=self.sdk_client_pool,
                 preserve_expiry=self.preserve_expiry,
-                sdk_retry_strategy=self.sdk_retry_strategy)
+                sdk_retry_strategy=self.sdk_retry_strategy,
+                store_semantics=self.store_semantics)
             tasks.append(task)
         return tasks
 

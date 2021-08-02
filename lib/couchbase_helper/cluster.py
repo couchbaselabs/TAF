@@ -238,7 +238,8 @@ class ServerTasks(object):
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection,
                                 preserve_expiry=None,
-                                sdk_retry_strategy=None):
+                                sdk_retry_strategy=None,
+                                store_semantics=None):
         self.log.debug("Loading sub documents to {}".format(bucket.name))
         if not isinstance(generator, SubdocDocumentGenerator):
             raise Exception("Document generator needs to be of "
@@ -278,7 +279,8 @@ class ServerTasks(object):
             durability=durability,
             task_identifier=task_identifier,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            store_semantics=store_semantics)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task
