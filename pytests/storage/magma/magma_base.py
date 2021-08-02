@@ -7,6 +7,7 @@ from Cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
 from remote.remote_util import RemoteMachineShellConnection
 from storage.storage_base import StorageBase
+from storage_utils.magma_utils import MagmaUtils
 
 
 class MagmaBaseTest(StorageBase):
@@ -33,6 +34,8 @@ class MagmaBaseTest(StorageBase):
             self.bucket_util.update_bucket_props(
                     "backend", props,
                     self.cluster, self.cluster.buckets)
+
+        self.magma_utils = MagmaUtils()
 
         # Monitor Stats Params
         self.ep_queue_stats = self.input.param("ep_queue_stats", True)
@@ -216,38 +219,7 @@ class MagmaBaseTest(StorageBase):
         return magma_stats_for_all_servers
 
     def get_disk_usage(self, bucket, servers=None):
-        disk_usage = []
-        if servers is None:
-            servers = self.cluster.nodes_in_cluster
-        if type(servers) is not list:
-            servers = [servers]
-        kvstore = 0
-        wal = 0
-        keyTree = 0
-        seqTree = 0
-        for server in servers:
-            shell = RemoteMachineShellConnection(server)
-            kvstore += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(self.data_path,
-                             bucket.name, "magma.*/kv*"))[0][0].split('\n')[0])
-            wal += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(self.data_path,
-                             bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
-            keyTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(self.data_path,
-                             bucket.name, "magma.*/kv*/rev*/key*"))[0][0].split('\n')[0])
-            seqTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(self.data_path,
-                             bucket.name, "magma.*/kv*/rev*/seq*"))[0][0].split('\n')[0])
-            shell.disconnect()
-        self.log.info("Disk usage stats for bucekt {} is below".format(bucket.name))
-        self.log.info("Total Disk usage for kvstore is {}MB".format(kvstore))
-        self.get_bucket_dgm(bucket)
-        self.log.debug("Total Disk usage for wal is {}MB".format(wal))
-        self.log.debug("Total Disk usage for keyTree is {}MB".format(keyTree))
-        self.log.debug("Total Disk usage for seqTree is {}MB".format(seqTree))
-        disk_usage.extend([kvstore, wal, keyTree, seqTree])
-        return disk_usage
+        return self.magma_utils.get_disk_usage(self.cluster, bucket, self.data_path, servers)
 
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()
