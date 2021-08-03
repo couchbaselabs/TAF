@@ -1992,7 +1992,7 @@ class XattrTests(SubdocBaseTest):
         node = choice(self.cluster.servers)
         shell = RemoteMachineShellConnection(node)
         shell.kill_memcached()
-        self.assertTrue(self.bucket_util._wait_warmup_completed([node], self.bucket, wait_time=60))
+        self.assertTrue(self.bucket_util._wait_warmup_completed([node], self.bucket, wait_time=600))
         shell.disconnect()
 
     def apply_start_compaction(self, delay=0):
@@ -2056,7 +2056,7 @@ class XattrTests(SubdocBaseTest):
         """ Stop persistence  """
         # Stopping persistence on main node
         mem_client = MemcachedClientHelper.direct_client(
-            self.cluster_util.cluster.master, self.bucket)
+            self.cluster.master, self.bucket)
         mem_client.stop_persistence()
 
     def apply_lose_last_node(self):
@@ -2115,11 +2115,11 @@ class XattrTests(SubdocBaseTest):
             key_max (int): The final key in the interval.
         """
         if doc_prefix is None:
-            doc_prefix=self.doc_prefix
+            doc_prefix = self.doc_prefix
 
         # A generator for regular documents
         doc_gen = doc_generator(
-            self.doc_prefix, key_min, key_max, doc_type=self.doc_type, doc_size=self.doc_size)
+            doc_prefix, key_min, key_max, doc_type=self.doc_type, doc_size=self.doc_size)
 
         # Create docs between keys_min and keys_max. This is required because
         # documents must previously exist before xattrs can be added to them.
@@ -2128,7 +2128,7 @@ class XattrTests(SubdocBaseTest):
 
         self.task.jython_task_manager.get_task_result(task)
 
-    def xattrs_workload(self, key_min, key_max, doc_prefix=None):
+    def xattrs_workload(self, key_min, key_max, exp=0, doc_prefix=None):
         """ A faster version of the xattrs workload method to produce
         xattributes between key_min and key_max. Expects the documents to
         pre-exist.
@@ -2144,7 +2144,7 @@ class XattrTests(SubdocBaseTest):
             sub_doc_gen = SubdocDocumentGenerator(
                 doc_prefix, xattribute_template, template_value, start=key_min, end=key_max)
             task = self.task.async_load_gen_sub_docs(
-                self.cluster, self.bucket, sub_doc_gen, "upsert", xattr=True, path_create=True, **self.async_gen_common)
+                self.cluster, self.bucket, sub_doc_gen, "upsert", exp=exp, xattr=True, path_create=True, **self.async_gen_common)
             tasks.append(task)
 
         for task in tasks:
@@ -2171,10 +2171,10 @@ class XattrTests(SubdocBaseTest):
         """ Deletes documents in the range key_min, key_max.
         """
         if doc_prefix is None:
-            self.doc_prefix = None
+            doc_prefix = self.doc_prefix
 
         # A generator for regular documents
-        doc_gen = doc_generator(self.key_prefix, key_min, key_max)
+        doc_gen = doc_generator(doc_prefix, key_min, key_max)
 
         # Delete documents between keys_min and keys_max.
         task = self.task.async_load_gen_docs(self.cluster, self.bucket, doc_gen,
@@ -2219,7 +2219,7 @@ class XattrTests(SubdocBaseTest):
                         seen_vbuckets.add(self.to_vbucket(doc_key))
                         break
 
-    def verify_workload(self, key_min, key_max, is_deleted=False, is_expired=False):
+    def verify_workload(self, key_min, key_max, is_deleted=False):
         """ Ensures document xattrs have the correct values between the
         half-open interval key_min and key_max.
 
@@ -2227,7 +2227,6 @@ class XattrTests(SubdocBaseTest):
             key_min (int): The first key in the interval.
             key_max (int): The final key in the interval.
             is_deleted (bool): Indicates the documents have been deleted.
-            is_expired (bool): Indicates the documents have been expired.
         """
         self.log.info(
             "Verifying workload between {} and {}".format(key_min, key_max))
@@ -2239,11 +2238,11 @@ class XattrTests(SubdocBaseTest):
                 # User attributes are discarded upon deletion.
                 # System attributes are only discarded upon purging.
                 # System attributes are not accessible once expired.
-                if is_expired or (is_deleted and self.xattr_type(path) == 'USR_ATTR'):
+                if is_deleted and self.xattr_type(path) == 'USR_ATTR':
                     self.assertFalse(accessible)
                 else:
                     self.assertEqual(
-                        xattrvalue, self.get_subdoc_val())
+                        xattrvalue, self.get_subdoc_val(), "for key {}".format(doc_key))
 
     def parallel(self, function, key_min, key_max, **kwargs):
         """ Execute the workload in parallel by batching keys between key_max
@@ -2346,6 +2345,22 @@ class XattrTests(SubdocBaseTest):
         # Check system keys exist and user attributes no longer exist
         self.parallel(self.verify_workload, key_min, key_max, is_deleted=True)
 
+    def verify_expired_workload(self, key_min, key_max):
+        """ Ensures documents xattrs are no longer accessible following expiration.
+
+        Args:
+            key_min (int): The first key in the interval.
+            key_max (int): The final key in the interval.
+        """
+        self.log.info(
+            "Verifying workload between {} and {}".format(key_min, key_max))
+        for doc_key in map(self.format_doc_key, range(key_min, key_max)):
+            for path in self.paths:
+                accessible, xattrvalue = self.get_xattribute(
+                    doc_key, path, access_deleted=False)
+
+                self.assertFalse(accessible)
+
     def wait_for_expiration(self, ttl, expiry_pager_time):
         """ Waits for the expiry pager to delete documents.
         """
@@ -2357,7 +2372,7 @@ class XattrTests(SubdocBaseTest):
         # Set expiry pager interval
         self.bucket_util._expiry_pager(self.cluster, expiry_pager_time)
         # Wait for expiry pager to expire documents.
-        self.sleep(expiry_pager_time*2, "Wait for expiry pager to complete.")
+        self.sleep(expiry_pager_time*3, "Wait for expiry pager to complete.")
 
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, [self.bucket])
@@ -2376,23 +2391,19 @@ class XattrTests(SubdocBaseTest):
         """
         key_min = self.key_min
         key_max = self.key_max
-        ttl = self.input.param("ttl", 5)
+        ttl = self.input.param("ttl", 15)
         expiry_pager_time = self.input.param("expiry_pager_time", 10)
 
         # Run workload until threshold is reached
-        self.create_workload(key_min, key_max, exp=ttl)
-        self.xattrs_workload(key_min, key_max)
+        self.create_workload(key_min, key_max)
+        self.xattrs_workload(key_min, key_max, exp=ttl)
 
         self.wait_for_expiration(ttl, expiry_pager_time)
-
         self.apply_faults()
-
-        # Trigger manual compaction
-        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
 
         # Check both user and system attributes are no longer accessible
         # following expiration.
-        self.parallel(self.verify_workload, 20000, 50000, is_expired=True)
+        self.parallel(self.verify_expired_workload, 20000, 50000)
 
     @cyclic
     def test_xattribute_metadata_purge(self):
@@ -2414,14 +2425,14 @@ class XattrTests(SubdocBaseTest):
         # Delete keys between a certain range
         self.delete_workload(key_min, key_max)
 
-        self.bucket_util._wait_for_stats_all_buckets([self.bucket])
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, [self.bucket])
 
         # Set the metadata purge interval to 120 seconds.
         # The autoCompactionDefined field must be set to true, otherwise the
         # metadata purge interval will reset back to 3 days.
         self.bucket_util.modify_fragmentation_config(self.cluster, {})
-        self.bucket_util.set_metadata_purge_interval(
-            0.0014, [self.bucket], self.cluster_util.cluster.master)
+        self.bucket_util.set_metadata_purge_interval(self.cluster,
+            0.0014, [self.bucket], self.cluster.master)
 
         self.sleep(120, "Waiting for the metadata purge interval to pass.")
 
@@ -2492,7 +2503,7 @@ class XattrTests(SubdocBaseTest):
         shell.kill_memcached()
 
         self.assertTrue(self.bucket_util._wait_warmup_completed(
-            [node1], self.bucket, wait_time=60))
+            [node1], self.bucket, wait_time=300))
 
         self.parallel(self.verify_rollback, (key_max + key_min) // 2,
                       key_max, vbuckets=active_vbuckets)
