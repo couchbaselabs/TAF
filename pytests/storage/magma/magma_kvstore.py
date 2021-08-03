@@ -76,7 +76,8 @@ class KVStoreTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "update", 0,
                 scope=scope,
@@ -101,7 +102,8 @@ class KVStoreTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "create", 0,
                 scope=scope,
@@ -127,7 +129,8 @@ class KVStoreTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "update", 0,
                 scope=scope,
@@ -149,7 +152,8 @@ class KVStoreTests(MagmaBaseTest):
                retry_exceptions=retry_exceptions,
                ignore_exceptions=ignore_exceptions,
                scope=scope,
-               collection=collection)
+               collection=collection,
+               sdk_client_pool=self.sdk_client_pool)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:
             task = self.bucket_util.async_load_bucket(
@@ -164,7 +168,8 @@ class KVStoreTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "delete", 0,
                 scope=scope,
@@ -183,7 +188,8 @@ class KVStoreTests(MagmaBaseTest):
                 self.task_manager.get_task_result(task)
 
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster)
+                                                           self.cluster,
+                                                           sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         if read_task:
