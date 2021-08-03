@@ -1218,7 +1218,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             sdk_client_pool=self.sdk_client_pool)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+                                                     self.cluster.buckets,
+                                                     timeout=1200)
         self.bucket_util.verify_stats_for_bucket(self.cluster, self.buckets[0],
                                                  self.num_items)
 
@@ -1959,7 +1960,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                         self.cluster.buckets)
+                                                         self.cluster.buckets,
+                                                         timeout=1200)
 
             if time.time() < time_start + 60:
                 self.sleep(time_start + 60 - time.time(),
@@ -2047,7 +2049,7 @@ class MagmaSpaceAmplification(MagmaBaseTest):
 
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets,
-                timeout=self.wait_timeout*20)
+                timeout=1200)
             self.bucket_util.print_bucket_stats(self.cluster)
 
             disk_size = self.get_disk_usage(bucket)[0]
