@@ -170,24 +170,24 @@ public class SubDocOperations extends doc_ops {
                                             List<Object> content = new ArrayList<Object>();
                                             for (int i=0; i<lookUpInSpecs.size(); i++) {
                                                 try {
-                                                		content.add(optionalResult.contentAsObject(i));
+                                                        content.add(optionalResult.contentAsObject(i));
                                                 } catch (DecodingFailureException e1) {
-                                                		try {
-                                                			content.add(optionalResult.contentAsArray(i));
-                                                		} catch (DecodingFailureException e2) {
-                                                			try {
-                                                				content.add(optionalResult.contentAs(i, Integer.class));
-                                                			}
-                                                			catch (DecodingFailureException e3) {
-                                                				try {
-                                                					content.add(optionalResult.contentAs(i, String.class));
-                                                				} catch (Exception e4) {
-                                                					content.add(null);
-                                                				}
-                                                			}
-                                                		}
+                                                        try {
+                                                            content.add(optionalResult.contentAsArray(i));
+                                                        } catch (DecodingFailureException e2) {
+                                                            try {
+                                                                content.add(optionalResult.contentAs(i, Integer.class));
+                                                            }
+                                                            catch (DecodingFailureException e3) {
+                                                                try {
+                                                                    content.add(optionalResult.contentAs(i, String.class));
+                                                                } catch (Exception e4) {
+                                                                    content.add(null);
+                                                                }
+                                                            }
+                                                        }
                                                 } catch (PathNotFoundException e1) {
-                                                		content.add("PATH_NOT_FOUND");
+                                                        content.add("PATH_NOT_FOUND");
                                                 }
                                             }
                                             retVal.put("status", true);

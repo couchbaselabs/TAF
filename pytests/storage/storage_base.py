@@ -13,6 +13,12 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from com.couchbase.test.taskmanager import TaskManager
+from com.couchbase.test.sdk import Server, SDKClient
+from com.couchbase.test.sdk import SDKClient as NewSDKClient
+from com.couchbase.test.docgen import WorkLoadSettings,\
+    DocumentGenerator
+from com.couchbase.test.loadgen import WorkLoadGenerate
 
 
 class StorageBase(BaseTestCase):
@@ -148,7 +154,7 @@ class StorageBase(BaseTestCase):
 
         # Doc controlling params
         self.key = 'test_docs'
-        self.key_size = self.input.param("key_size", 8)
+        self.key_size = self.input.param("key_size", 18)
         if self.random_key:
             self.key = "random_keys"
             '''
@@ -165,10 +171,11 @@ class StorageBase(BaseTestCase):
         self.gen_read = None
         self.gen_update = None
         self.gen_expiry = None
-        self.create_perc = self.input.param("update_perc", 100)
-        self.update_perc = self.input.param("update_perc", 0)
-        self.delete_perc = self.input.param("delete_perc", 0)
-        self.expiry_perc = self.input.param("expiry_perc", 0)
+        self.create_perc = 100
+        self.read_perc = 0
+        self.update_perc = 0
+        self.delete_perc = 0
+        self.expiry_perc = 0
         self.start = 0
         self.end = 0
         self.create_start = None
@@ -284,6 +291,45 @@ class StorageBase(BaseTestCase):
                     self.cluster, self.cluster.buckets, timeout=1800)
             except Exception as e:
                 raise e
+
+    def new_loader(self, cmd=dict(), wait=False):
+        master = Server(self.cluster.master.ip, self.cluster.master.port,
+                        self.cluster.master.rest_username, self.cluster.master.rest_password,
+                        str(self.cluster.master.memcached_port))
+        self.tm = TaskManager(self.process_concurrency)
+
+        ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
+                              cmd.get("itr", 0),
+                              cmd.get("start", 0),
+                              cmd.get("end", self.init_items_per_collection),
+                              cmd.get("keySize", self.key_size),
+                              cmd.get("docSize", self.doc_size),
+                              cmd.get("cr", self.create_perc),
+                              cmd.get("rd", self.read_perc),
+                              cmd.get("up", self.update_perc),
+                              cmd.get("dl", self.delete_perc),
+                              cmd.get("workers", self.process_concurrency),
+                              cmd.get("ops", self.ops_rate),
+                              cmd.get("items", 0),
+                              cmd.get("loadType", None),
+                              cmd.get("keyType", None),
+                              cmd.get("valueType", None))
+        dg = DocumentGenerator(ws, "", None)
+        tasks = list()
+        i = ws.workers
+        while i > 0:
+            for bucket in self.buckets:
+                for scope in bucket.scopes.keys():
+                    for collection in self.collections:
+                        client = NewSDKClient(master, bucket.name, scope, collection)
+                        client.initialiseSDK()
+                        th_name = "Loader_" + scope + "-" + collection
+                        task = WorkLoadGenerate(th_name, dg, client)
+                        tasks.append(task)
+                        self.tm.submit(task)
+                        i -= 1
+        if wait:
+            self.tm.getAllTaskResult()
 
     def initial_load(self):
         self.create_start = 0

@@ -15,6 +15,11 @@ from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_constants.java_client import SDKConstants
+from com.couchbase.test.docgen import WorkLoadSettings, DocumentGenerator
+from com.couchbase.test.taskmanager import TaskManager
+from com.couchbase.test.sdk import Server
+from com.couchbase.test.sdk import SDKClient as NewSDKClient
+from com.couchbase.test.loadgen import WorkLoadGenerate
 
 
 class MagmaCrashTests(MagmaBaseTest):
@@ -46,6 +51,36 @@ class MagmaCrashTests(MagmaBaseTest):
             shell.kill_memcached()
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
+
+    def test_crash_during_ops_exp(self):
+        self.graceful = self.input.param("graceful", False)
+        self.ops_rate = self.input.param("ops_rate", 10000)
+        wait_warmup = self.input.param("wait_warmup", True)
+        self.log.info("====test_crash_during_ops starts====")
+
+        self.new_loader({}, True)
+
+        self.create_perc = self.input.param("create_perc", 30)
+        self.read_perc = self.input.param("read_perc", 30)
+        self.update_perc = self.input.param("update_perc", 40)
+        self.delete_perc = self.input.param("delete_perc", 0)
+        self.expiry_perc = self.input.param("expiry_perc", 0)
+        self.multiplier = self.input.param("multiplier", 1)
+
+        self.new_loader({
+            "start": self.init_items_per_collection,
+            "end": self.init_items_per_collection*self.multiplier,
+            "items": self.init_items_per_collection
+             }
+        )
+        self.crash_th = threading.Thread(target=self.crash,
+                                         kwargs=dict(graceful=self.graceful,
+                                                     wait=wait_warmup))
+        self.crash_th.start()
+        self.tm.getAllTaskResult()
+        self.stop_crash = True
+        self.crash_th.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)

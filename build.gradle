@@ -54,10 +54,13 @@ dependencies {
 
     // For fetching SDK logs
     compile group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: '2.11.1'
+
+    // https://mvnrepository.com/artifact/commons-cli/commons-cli
+	compile group: 'commons-cli', name: 'commons-cli', version: '1.4'
 }
 
 task copyDeps(type: Copy) {
-  from configurations.runtime
+  from configurations.compileClasspath
   into 'jars'
 }
 

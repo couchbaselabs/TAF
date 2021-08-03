@@ -87,6 +87,7 @@ class MagmaBaseTest(StorageBase):
                     ".format(bucket.name,
                              self.disk_usage[bucket.name]))
         self.log.info("==========Finished magma base setup========")
+
     def tearDown(self):
         super(MagmaBaseTest, self).tearDown()
 
