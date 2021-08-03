@@ -226,7 +226,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
     def tearDown(self):
         # Delete the inserted doc
-        self.client.crud("remove", self.doc_id)
+        self.client.crud("delete", self.doc_id)
 
         # Close the SDK connection
         self.client.close()
@@ -278,13 +278,8 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.__read_doc_and_validate("{}")
 
         # Using lookup_in
-        result, _ = self.client.crud("subdoc_read",
-                                     self.doc_id,
-                                     "my.attr")
-        self.assertEqual(
-            result["xattrs"]["value"][0],
-            "PATH_NOT_FOUND",
-            "Invalid SDK return value: %s" % result["xattrs"]["value"])
+        _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
+        self.assertTrue(failure)
 
         # Finally, use lookup_in with 'xattrs' attribute enabled
         self.__read_doc_and_validate("value", "my.attr")
@@ -357,13 +352,8 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
         self.__read_doc_and_validate("{}")
 
-        result, _ = self.client.crud("subdoc_read",
-                                     self.doc_id,
-                                     "my.attr")
-        self.assertEqual(
-            result["xattrs"]["value"][0],
-            "PATH_NOT_FOUND",
-            "Invalid SDK return value: %s" % result["xattrs"]["value"])
+        _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
+        self.assertTrue(failure)
 
         self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
         self.__read_doc_and_validate("{\"value\":1,\"inner\":{\"value_inner\":2}}",
@@ -574,14 +564,8 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.__upsert_document_and_validate("update", {})
 
         # Trying getting non-existing xattr
-        result, _ = self.client.crud("subdoc_read",
-                                     self.doc_id,
-                                     "my_attr",
-                                     xattr=True)
-        self.assertEqual(
-            result["xattrs"]["value"][0],
-            "PATH_NOT_FOUND",
-            "Invalid SDK return value: %s" % result["xattrs"]["value"])
+        _, failure = self.client.crud("subdoc_read", self.doc_id, "my_attr", xattr=True)
+        self.assertTrue(failure)
 
         # Try to upsert a single xattr
         self.__insert_sub_doc_and_validate("subdoc_insert",
@@ -613,16 +597,12 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                          % (result["value"], "{}"))
 
         # Read deleted xattr to verify
-        result, _ = self.client.crud("subdoc_read",
-                                     self.doc_id,
-                                     "my_attr",
-                                     xattr=True)
-        self.assertEqual(
-            result["xattrs"]["value"][0],
-            "PATH_NOT_FOUND",
-            "Invalid SDK return value: %s" % result["xattrs"]["value"])
+        _, failure = self.client.crud("subdoc_read", self.doc_id, "my_attr", xattr=True)
+        self.assertTrue(failure)
 
     def test_cas_changed_upsert(self):
+        """ Test the CAS field changes following subdoc insert operations.
+        """
         if self.xattr is False:
             self.doc_id = 'non_xattrs'
 
@@ -652,18 +632,9 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         if self.xattr:
             self.__read_doc_and_validate("{}")
 
-        result, _ = self.client.crud("subdoc_read",
-                                     self.doc_id,
-                                     "my.attr")
-        if self.xattr:
-            result = result["xattrs"]
-        else:
-            result = result["non_xattrs"]
-
-        self.assertEqual(
-            result["value"][0],
-            "PATH_NOT_FOUND",
-            "Invalid SDK return value: %s" % result["value"])
+        # Ensure we cannot read a non-existent xattribute
+        _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
+        self.assertTrue(failure)
 
         self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
         self.__read_doc_and_validate("{\"value\":1,\"inner\":{\"value_inner\":2}}",
@@ -746,14 +717,8 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             self.assertTrue(success[self.doc_id]["cas"] != 0, "CAS is zero")
 
             # Get and validate
-            success, _ = self.client.crud("subdoc_read",
-                                          self.doc_id,
-                                          "my_attr",
-                                          xattr=self.xattr)
-            self.assertEqual(
-                success["xattrs"]["value"][0],
-                "PATH_NOT_FOUND",
-                "Invalid SDK return value: %s" % success["xattrs"]["value"])
+            _, failure = self.client.crud("subdoc_read", self.doc_id, "my_attr", xattr=self.xattr)
+            self.assertTrue(failure)
 
     def test_update_xattr(self):
         self.__upsert_document_and_validate("update", {})
