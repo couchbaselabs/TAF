@@ -1237,7 +1237,7 @@ class SDKClient(object):
 
     def sub_doc_read_multi(self, keys, timeout=5,
                            time_unit=SDKConstants.TimeUnit.SECONDS,
-                           xattr=False):
+                           xattr=False, access_deleted=False):
         """
         :param keys: List of tuples (key,value)
         :param timeout: timeout for the operation
@@ -1261,9 +1261,10 @@ class SDKClient(object):
                 mutate_in_spec.append(_mutate_in_spec)
             content = Tuples.of(key, mutate_in_spec)
             mutate_in_specs.append(content)
+        lookup_in_options = SDKClient.sub_doc_op.getLookupInOptions(access_deleted)
         result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
             # timeout, time_unit,
-            self.collection, mutate_in_specs)
+            self.collection, mutate_in_specs, lookup_in_options)
         return self.__translate_get_multi_sub_doc_result(result, path_val)
 
     def sub_doc_remove_multi(self, keys, exp=0,
