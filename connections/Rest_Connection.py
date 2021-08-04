@@ -201,17 +201,17 @@ class RestConnection(object):
         while True:
             try:
                 if method == "GET":
-                    response = session.get(api=api, params=params, headers=headers,
-                                           session=session, timeout=timeout, verify=verify)
+                    response = session.get(api, params=params, headers=headers,
+                                           timeout=timeout, verify=verify)
                 elif method == "POST":
-                    response = session.post(api=api, params=params, headers=headers,
-                                            session=session, timeout=timeout, verify=verify)
+                    response = session.post(api, data=params, headers=headers,
+                                            timeout=timeout, verify=verify)
                 elif method == "DELETE":
-                    response = session.delete(api=api, params=params, headers=headers,
-                                              session=session, timeout=timeout, verify=verify)
+                    response = session.delete(api, data=params, headers=headers,
+                                              timeout=timeout, verify=verify)
                 elif method == "PUT":
-                    response = session.put(api=api, params=params, headers=headers,
-                                           session=session, timeout=timeout, verify=verify)
+                    response = session.put(api, data=params, headers=headers,
+                                           timeout=timeout, verify=verify)
                 status = response.status_code
                 content = response.content
                 if status in [200, 201, 202]:
