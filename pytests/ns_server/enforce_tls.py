@@ -27,15 +27,15 @@ class EnforceTls(CollectionBase):
         trust_all_certs()
 
     def tearDown(self):
-        super(CollectionBase, self).tearDown()
         self.disable_n2n_encryption_cli_on_nodes(nodes=self.cluster.servers)
+        super(CollectionBase, self).tearDown()
 
     def set_n2n_encryption_level_on_nodes(self, nodes, level="control"):
         for node in nodes:
             self.log.info("Enabling n2n encryption and setting level to "
                           "{0} on node {1}".format(level, node))
             shell_conn = RemoteMachineShellConnection(node)
-            cb_cli = CbCli(shell_conn)
+            cb_cli = CbCli(shell_conn, no_ssl_verify=True)
             cb_cli.enable_n2n_encryption()
             cb_cli.set_n2n_encryption_level(level=level)
             shell_conn.disconnect()
@@ -45,7 +45,7 @@ class EnforceTls(CollectionBase):
         self.log.info("Disabling n2n encryption on all nodes")
         for node in nodes:
             shell_conn = RemoteMachineShellConnection(node)
-            cb_cli = CbCli(shell_conn)
+            cb_cli = CbCli(shell_conn, no_ssl_verify=True)
             o = cb_cli.disable_n2n_encryption()
             self.log.info(o)
             shell_conn.disconnect()
@@ -56,7 +56,7 @@ class EnforceTls(CollectionBase):
     @staticmethod
     def get_encryption_level_on_node(node):
         shell_conn = RemoteMachineShellConnection(node)
-        cb_cli = CbCli(shell_conn)
+        cb_cli = CbCli(shell_conn, no_ssl_verify=True)
         level = cb_cli.get_n2n_encryption_level()
         shell_conn.disconnect()
         return level
@@ -108,6 +108,25 @@ class EnforceTls(CollectionBase):
                     self.fail("{0} failed".format(api))
             else:
                 self.fail("{0} worked".format(api))
+
+    def test_all_encrypted_and_non_encrypted_ports(self):
+        """
+        Enforce TLS on cluster
+        check if services obey TLS
+        """
+        self.enable_tls_encryption_cli_on_nodes(nodes=[self.cluster.master])
+        port_map = {"4369": None, "8091": "18091", "8092": "18092",
+                    "8093": "18093", "8094": "18094", "9100": None,
+                    "9101": None, "9102": "19102", "9103": None, "9104": None,
+                    "9105": None, "9110": None, "9111": None, "9112": None,
+                    "9113": None, "9114": None, "9115": None, "9116": None,
+                    "9117": None, "9118": None, "9120": None, "9121": None,
+                    "9122": None, "9130": "19130", "11209": None, "11210": "11207",
+                    "21100": "21150", "8095": "18095", "8096": "18096", "8097": "18097",
+                    "11211": "11207"}
+        # ToDO assertTrue on status
+        status = self.cluster_util.check_if_services_obey_tls(servers=[self.cluster.master],
+                                                              port_map=port_map)
 
     def test_check_tls_after_restarting_nodes(self):
         """

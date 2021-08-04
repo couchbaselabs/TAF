@@ -3,12 +3,17 @@ import json
 from BucketLib.bucket import Bucket
 from cb_tools.cb_tools_base import CbCmdBase
 
+from Cb_constants import CbServer
+
 
 class CbCli(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
-                 password="password"):
+                 password="password", no_ssl_verify=CbServer.use_https):
         CbCmdBase.__init__(self, shell_conn, "couchbase-cli",
                            username=username, password=password)
+        self.cli_flags = ""
+        if no_ssl_verify:
+            self.cli_flags += "--no-ssl-verify"
 
     def create_bucket(self, bucket_dict, wait=False):
         """
@@ -19,7 +24,7 @@ class CbCli(CbCmdBase):
         :return:
         """
         cmd = "%s bucket-create -c %s:%s -u %s -p %s" \
-              % (self.cbstatCmd, self.shellConn.ip, self.port,
+              % (self.cbstatCmd, "localhost", self.port,
                  self.username, self.password)
         if wait:
             cmd += " --wait"
@@ -62,8 +67,9 @@ class CbCli(CbCmdBase):
 
     def delete_bucket(self, bucket_name):
         cmd = "%s bucket-delete -c %s:%s -u %s -p %s --bucket %s" \
-              % (self.cbstatCmd, self.shellConn.ip, self.port,
+              % (self.cbstatCmd, "localhost", self.port,
                  self.username, self.password, bucket_name)
+        cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
@@ -78,8 +84,9 @@ class CbCli(CbCmdBase):
         """
         cmd = "echo 'y' | %s enable-developer-preview --enable " \
               "-c %s:%s -u %s -p %s" \
-              % (self.cbstatCmd, self.shellConn.ip, self.port,
+              % (self.cbstatCmd, "localhost", self.port,
                  self.username, self.password)
+        cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception("\n".join(error))
@@ -88,8 +95,9 @@ class CbCli(CbCmdBase):
 
     def enable_n2n_encryption(self):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --enable" \
-             % (self.cbstatCmd, self.shellConn.ip, self.port,
+             % (self.cbstatCmd, "localhost", self.port,
                 self.username, self.password)
+        cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
@@ -97,8 +105,9 @@ class CbCli(CbCmdBase):
 
     def disable_n2n_encryption(self):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --disable" \
-              % (self.cbstatCmd, self.shellConn.ip, self.port,
+              % (self.cbstatCmd, "localhost", self.port,
                  self.username, self.password)
+        cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
@@ -106,8 +115,9 @@ class CbCli(CbCmdBase):
 
     def set_n2n_encryption_level(self, level="all"):
         cmd = "%s setting-security -c %s:%s -u %s -p %s --set --cluster-encryption-level %s" \
-              % (self.cbstatCmd, self.shellConn.ip, self.port,
+              % (self.cbstatCmd, "localhost", self.port,
                  self.username, self.password, level)
+        cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
@@ -115,8 +125,9 @@ class CbCli(CbCmdBase):
 
     def get_n2n_encryption_level(self):
         cmd = "%s setting-security -c %s:%s -u %s -p %s --get" \
-              % (self.cbstatCmd, self.shellConn.ip, self.port,
+              % (self.cbstatCmd, "localhost", self.port,
                  self.username, self.password)
+        cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
