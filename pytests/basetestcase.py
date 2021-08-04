@@ -358,21 +358,26 @@ class BaseTestCase(unittest.TestCase):
                     cb_cli.enable_dp()
                     shell_conn.disconnect()
 
-            # Enforce tls on master node of all clusters
+            # Enforce tls on nodes of all clusters
             if self.use_https and self.enforce_tls:
                 for _, cluster in self.cb_clusters.items():
-                    RestConnection(cluster.master).update_autofailover_settings(False, 120, False)
-                    self.log.info("Setting cluster encryption level to strict on cluster "
-                                  "with node {0}". format(cluster.master))
-                    shell_conn = RemoteMachineShellConnection(cluster.master)
-                    cb_cli = CbCli(shell_conn)
-                    o = cb_cli.enable_n2n_encryption()
-                    self.log.info("Enabling n2n nencryption")
-                    self.log.info(o)
-                    o = cb_cli.set_n2n_encryption_level(level="strict")
-                    self.log.info("setting encryption level to strict")
-                    self.log.info(o)
-                    shell_conn.disconnect()
+                    for node in cluster.servers:
+                        RestConnection(node).update_autofailover_settings(False, 120, False)
+                        self.log.info("Setting cluster encryption level to strict on cluster "
+                                      "with node {0}". format(node))
+                        shell_conn = RemoteMachineShellConnection(node)
+                        cb_cli = CbCli(shell_conn)
+                        o = cb_cli.enable_n2n_encryption()
+                        self.log.info(o)
+                        o = cb_cli.set_n2n_encryption_level(level="strict")
+                        self.log.info(o)
+                        shell_conn.disconnect()
+                    self.log.info("Validating if services obey tls only on servers {0}".
+                                  format(cluster.servers))
+                    status = ClusterUtils(cluster, self.task_manager).\
+                        check_if_services_obey_tls(cluster.servers)
+                    if not status:
+                        self.fail("Services did not honor enforce tls")
 
             for cluster_name, cluster in self.cb_clusters.items():
                 cluster_util = ClusterUtils(cluster, self.task_manager)
@@ -471,12 +476,14 @@ class BaseTestCase(unittest.TestCase):
             for _, cluster in self.cb_clusters.items():
                 for node in cluster.servers:
                     RestConnection(node).update_autofailover_settings(False, 120, False)
-                    self.log.info("Setting cluster encryption level to control on cluster "
-                                  "with node {0}".format(self.cluster.master))
-                    shell_conn = RemoteMachineShellConnection(self.cluster.master)
+                    self.log.info("Disabling n2n encryption on cluster "
+                                  "with node {0}".format(node))
+                    shell_conn = RemoteMachineShellConnection(node)
                     cb_cli = CbCli(shell_conn)
-                    _ = cb_cli.set_n2n_encryption_level(level="control")
-                    cb_cli.disable_n2n_encryption()
+                    o = cb_cli.set_n2n_encryption_level(level="control")
+                    self.log.info(o)
+                    o = cb_cli.disable_n2n_encryption()
+                    self.log.info(o)
                     shell_conn.disconnect()
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
