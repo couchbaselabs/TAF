@@ -2255,7 +2255,6 @@ class BucketUtils(ScopeUtils):
                                         replica_number=replicas)
 
     def is_warmup_complete(self, cluster, buckets, retry_count=5):
-        buckets_warmed_up = True
         while retry_count != 0:
             buckets_warmed_up = True
             for bucket in buckets:
@@ -2269,8 +2268,12 @@ class BucketUtils(ScopeUtils):
                 except:
                     buckets_warmed_up = False
                     break
+
+            if buckets_warmed_up:
+                return True
+
             retry_count -= 1
-        return buckets_warmed_up
+        return False
 
     def verify_cluster_stats(self, cluster, items,
                              timeout=None, check_items=True,
