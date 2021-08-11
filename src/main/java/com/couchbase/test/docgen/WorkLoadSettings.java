@@ -34,12 +34,16 @@ public class WorkLoadSettings {
     public String loadType;
     public String keyType;
     public String valueType;
+    public boolean gtm;
+    public boolean expectDeleted;
+    public boolean validate;
 
     public WorkLoadSettings(){}
 
     public WorkLoadSettings(String keyPrefix, int itr, int start, int end,
             int keySize, int docSize, int c, int r, int u,
-            int d, int workers, int ops, int items, String loadType, String keyType, String valueType) {
+            int d, int workers, int ops, int items, String loadType, String keyType, String valueType,
+            boolean validate, boolean gtm, boolean deleted) {
         super();
         this.keyPrefix = keyPrefix;
         this.start = start;
@@ -56,6 +60,9 @@ public class WorkLoadSettings {
 
         this.batchSize = this.ops/this.workers;
         this.items = items;
+        this.gtm = gtm;
+        this.expectDeleted = deleted;
+        this.validate = validate;
     };
 
 }

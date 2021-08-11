@@ -155,4 +155,19 @@ public class DocumentGenerator extends KVGenerator{
         return docs;
     }
 
+    public List<String> nextDeleteBatch() {
+        int count = 0;
+        int temp = this.ws.delItr.incrementAndGet();
+        List<String> docs = new ArrayList<String>();
+        while (this.has_next_update() && count<ws.batchSize*ws.deletes/100) {
+            try {
+                docs.add((String) this.keyMethod.invoke(this.keys, temp));
+            } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+                e.printStackTrace();
+            }
+            count += 1;
+        }
+        return docs;
+    }
+
 }

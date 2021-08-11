@@ -84,6 +84,15 @@ public class Loader {
         Option valueType = new Option("valueType", "valueType", true, "");
         options.addOption(valueType);
 
+        Option validate = new Option("validate", "validate", true, "Validate Data during Reads");
+        options.addOption(validate);
+
+        Option gtm = new Option("gtm", "gtm", true, "Go for max doc ops");
+        options.addOption(gtm);
+
+        Option deleted = new Option("deleted", "deleted", true, "To verify deleted docs");
+        options.addOption(deleted);
+
         HelpFormatter formatter = new HelpFormatter();
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd;
@@ -116,7 +125,10 @@ public class Loader {
                 Integer.parseInt(cmd.getOptionValue("items", "0")),
                 cmd.getOptionValue("loadType", null),
                 cmd.getOptionValue("keyType", null),
-                cmd.getOptionValue("valueType", null)
+                cmd.getOptionValue("valueType", null),
+                Boolean.parseBoolean(cmd.getOptionValue("validate", "false")),
+                Boolean.parseBoolean(cmd.getOptionValue("gtm", "true")),
+                Boolean.parseBoolean(cmd.getOptionValue("deleted", "false"))
                 );
         DocumentGenerator dg = null;
         try {

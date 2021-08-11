@@ -60,27 +60,27 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.new_loader({}, True)
 
-        self.create_perc = self.input.param("create_perc", 30)
-        self.read_perc = self.input.param("read_perc", 30)
-        self.update_perc = self.input.param("update_perc", 40)
+        self.create_perc = self.input.param("create_perc", 0)
+        self.read_perc = self.input.param("read_perc", 100)
+        self.update_perc = self.input.param("update_perc", 0)
         self.delete_perc = self.input.param("delete_perc", 0)
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.multiplier = self.input.param("multiplier", 1)
 
         self.new_loader({
-            "start": self.init_items_per_collection,
-            "end": self.init_items_per_collection*self.multiplier,
-            "items": self.init_items_per_collection
+            "items": self.init_items_per_collection,
+            "gtm": True,
+            "validate": True
              }
         )
-        self.crash_th = threading.Thread(target=self.crash,
-                                         kwargs=dict(graceful=self.graceful,
-                                                     wait=wait_warmup))
-        self.crash_th.start()
+#         self.crash_th = threading.Thread(target=self.crash,
+#                                          kwargs=dict(graceful=self.graceful,
+#                                                      wait=wait_warmup))
+#         self.crash_th.start()
         self.tm.getAllTaskResult()
-        self.stop_crash = True
-        self.crash_th.join()
-        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
+#         self.stop_crash = True
+#         self.crash_th.join()
+#         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)

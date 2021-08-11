@@ -3,7 +3,7 @@ package com.couchbase.test.taskmanager;
 public abstract class Task implements Runnable{
 
     String taskName;
-    Boolean result;
+    protected Boolean result;
 
     public Task(String taskName) {
         super();
@@ -20,6 +20,6 @@ public abstract class Task implements Runnable{
     }
 
     @Override
-    public abstract void run();
+    public abstract void run() throws RuntimeException;
 
 }

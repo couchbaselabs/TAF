@@ -313,7 +313,11 @@ class StorageBase(BaseTestCase):
                               cmd.get("items", 0),
                               cmd.get("loadType", None),
                               cmd.get("keyType", None),
-                              cmd.get("valueType", None))
+                              cmd.get("valueType", None),
+                              cmd.get("validate", False),
+                              cmd.get("gtm", False),
+                              cmd.get("deleted", False)
+                              )
         dg = DocumentGenerator(ws, "", None)
         tasks = list()
         i = ws.workers

@@ -31,6 +31,7 @@ import com.couchbase.test.docgen.DocType.Person;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 public class DocOps {
 
@@ -92,29 +93,30 @@ public class DocOps {
         return returnValue;
     }
 
-    public List<ConcurrentHashMap<String, Object>> bulkGets(Collection collection, List<Tuple2<String, Object>> documents, GetOptions getOptions) {
+    public List<Tuple2<String, Object>> bulkGets(Collection collection, List<Tuple2<String, Object>> documents, GetOptions getOptions) {
         final ReactiveCollection reactiveCollection = collection.reactive();
-        List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
-                .flatMap(new Function<Tuple2<String, Object>, Publisher<ConcurrentHashMap<String, Object>>>() {
-                    public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
+        List<Tuple2<String, Object>> returnValue = Flux.fromIterable(documents)
+                .flatMap(new Function<Tuple2<String, Object>, Publisher<Tuple2<String, Object>>>() {
+                    public Publisher<Tuple2<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
                         final String id = documentToInsert.getT1();
-                        final ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
-                        returnValue.put("error", "");
-                        returnValue.put("status", true);
-                        returnValue.put("id", id);
+                        final Tuple2<String, Object> returnValue;
+//                        returnValue.put("error", "");
+//                        returnValue.put("status", true);
+//                        returnValue.put("id", id);
                         return reactiveCollection.get(id, getOptions)
-                                .map(new Function<GetResult, ConcurrentHashMap<String, Object>>() {
-                                    public ConcurrentHashMap<String, Object> apply(GetResult result) {
-                                        returnValue.put("result", result);
-                                        returnValue.put("cas", result.cas());
-                                        returnValue.put("document", result.contentAsObject());
-                                        return returnValue;
+                                .map(new Function<GetResult, Tuple2<String, Object>>() {
+                                    public Tuple2<String, Object> apply(GetResult result) {
+                                        return Tuples.of(id, result.contentAs(Person.class));
+//                                        returnValue.put("cas", result.cas());
+//                                        returnValue.put("document", result.contentAs(Person.class));
+//                                        return new Tuple2<String, Object>(id, result.contentAs(Person.class));
                                     }
-                                }).onErrorResume(new Function<Throwable, Mono<ConcurrentHashMap<String, Object>>>() {
-                                    public Mono<ConcurrentHashMap<String, Object>> apply(Throwable error) {
-                                        returnValue.put("error", error);
-                                        returnValue.put("status", false);
-                                        return Mono.just(returnValue);
+                                }).onErrorResume(new Function<Throwable, Mono<Tuple2<String, Object>>>() {
+                                    public Mono<Tuple2<String, Object>> apply(Throwable error) {
+                                        return Mono.just(Tuples.of(id, error.getClass().getName()));
+//                                        returnValue.put("error", error.getClass().getName() + "|" +  error.getMessage());
+//                                        returnValue.put("status", false);
+//                                        return Mono.just(returnValue);
                                     }
                                 });
                     }

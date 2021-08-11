@@ -25,12 +25,11 @@ public class SimpleValue {
     String randomString = null;
     int randomStringLength = 0;
 
-    static final Random random_obj = new Random();
-
     public SimpleValue(WorkLoadSettings ws) {
         super();
         this.ws = ws;
         char[] str_buf = new char[4096];
+        Random random_obj = new Random();
         random_obj.setSeed(ws.keyPrefix.hashCode());
 
         for (int index=0; index<4096; index++) {
@@ -46,7 +45,7 @@ public class SimpleValue {
         this.randomStringLength = this.randomString.length();
     }
 
-    private String get_random_string(String key, int length) {
+    private String get_random_string(String key, int length, Random random_obj) {
         if(length>0) {
             int _slice = random_obj.nextInt(this.randomStringLength - length);
             return this.randomString.substring(_slice, length+_slice);
@@ -55,53 +54,54 @@ public class SimpleValue {
     }
 
     public Person next(String key) {
+        Random random_obj = new Random();
         random_obj.setSeed(key.hashCode());
-        Person person = new Person(this.get_name(), this.get_int(), this.get_animals(),
-                new Attributes(this.get_colour(), new Dimensions(this.get_int(), this.get_int()),
+        Person person = new Person(this.get_name(random_obj), this.get_int(random_obj), this.get_animals(random_obj),
+                new Attributes(this.get_colour(random_obj), new Dimensions(this.get_int(random_obj), this.get_int(random_obj)),
                         Collections.singletonList(
-                                new Hobby(this.get_hobby(), this.get_hobby(),
-                                        new Details(new Location(this.get_double(), this.get_double()))))),
-                this.get_gender(), this.get_marital_status(),
-                this.get_random_string(key, this.ws.docSize - fixedSize));
+                                new Hobby(this.get_hobby(random_obj), this.get_hobby(random_obj),
+                                        new Details(new Location(this.get_double(random_obj), this.get_double(random_obj)))))),
+                this.get_gender(random_obj), this.get_marital_status(random_obj),
+                this.get_random_string(key, this.ws.docSize - fixedSize, random_obj));
         return person;
     }
 
-    private String get_marital_status() {
+    private String get_marital_status(Random random_obj) {
         int num = random_obj.nextInt(Dictionary.MARITAL_STATUSES_LENGTH);
         return Dictionary.MARITAL_STATUSES.get(num);
     }
 
-    private String get_gender() {
+    private String get_gender(Random random_obj) {
         int num = random_obj.nextInt(Dictionary.GENDER_LENGTH);
         return Dictionary.GENDER.get(num);
     }
 
-    private String get_name() {
+    private String get_name(Random random_obj) {
         int num = random_obj.nextInt(this.randomStringLength);
         return this.randomString.charAt(num) + "John";
     }
 
-    private String get_hobby() {
+    private String get_hobby(Random random_obj) {
         int num = random_obj.nextInt(Dictionary.HOBBY_LENGTH);
         return Dictionary.HOBBIES.get(num);
     }
 
-    private String get_colour() {
+    private String get_colour(Random random_obj) {
         int num = random_obj.nextInt(Dictionary.COLOR_LENGTH);
         return Dictionary.COLOR.get(num);
     }
 
-    private List<String> get_animals() {
+    private List<String> get_animals(Random random_obj) {
         int num = random_obj.nextInt(Dictionary.COLOR_LENGTH-2);
         return Dictionary.COLOR.subList(num, num+2);
     }
 
-    private int get_int() {
-        return SimpleValue.random_obj.nextInt(100);
+    private int get_int(Random random_obj) {
+        return random_obj.nextInt(100);
     }
 
-    private double get_double() {
-        return SimpleValue.random_obj.nextDouble()*100;
+    private double get_double(Random random_obj) {
+        return random_obj.nextDouble()*100;
     }
 
 }
