@@ -14,7 +14,8 @@ from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import \
     doc_generator, \
     sub_doc_generator, \
-    SubdocDocumentGenerator
+    SubdocDocumentGenerator, \
+    DocumentGenerator
 from error_simulation.cb_error import CouchbaseError
 from custom_exceptions.exception import DesignDocCreationException
 from com.couchbase.client.java.kv import StoreSemantics
@@ -1893,13 +1894,15 @@ class XattrTests(SubdocBaseTest):
 
         self.preamble()
 
+        self.txn = TxnTransition(self)
+
         # Please configure the bucket settings
         # E.g. compression, eviction type and storage backend
 
     def preamble(self):
         """ Apply operations before a test begins """
         if self.preload_storage:
-            self.apply_preload_storage()
+            self.apply_preload_storage(key_max=self.input.param("preload_size", 100))
 
         if self.preload_tombstones:
             self.apply_preload_tombstones()
@@ -1928,19 +1931,19 @@ class XattrTests(SubdocBaseTest):
 
         self.tasks.append(task)
 
-    def apply_preload_storage(self):
+    def apply_preload_storage(self, key_min=0, key_max=100, doc_prefix=None):
         """ Preload a certain quantity of documents before a test. """
-        # TODO Use warm-up when testing locally
-        # A generator for regular documents
-        keys = self.input.param("preload_size", 100)
+        if doc_prefix is None:
+            doc_prefix = "preload"
 
+        # A generator for regular documents
         doc_gen = doc_generator(
-            "preload", 0, keys, doc_type=self.doc_type, doc_size=1000)
+            doc_prefix, key_min, key_max, doc_type=self.doc_type, doc_size=1000)
 
         task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, doc_gen, "create", **self.async_gen_common)
 
-        self.jython_task_manager.get_task_result(task)
+        self.task.jython_task_manager.get_task_result(task)
 
     def apply_faults(self):
         """ Applies the list of faults the user has provided. """
@@ -2630,3 +2633,328 @@ class XattrTests(SubdocBaseTest):
         # Wait for task
         for task in tasks:
             self.task_manager.get_task_result(task)
+
+    def test_transitions(self):
+        """ Test document transitions
+
+        Params:
+            workload (str): A name of a workload (e.g. workload_a).
+            type (str): The type of a workload (e.g. shadow, regular).
+        """
+        loadtype = self.input.param("loadtype", "shadow")
+        workload = self.input.param("workload", "workload_a")
+
+        workloads = ["shadow", "regular"]
+
+        if loadtype not in workloads:
+            self.fail("Loadtype '{}' is not in {}".format(workloads, workloads))
+
+        if loadtype == "shadow":
+            workloads = self.txn.get_shadow_workloads()
+        else:
+            workloads = self.txn.get_workloads()
+
+        if workload not in workloads:
+            self.fail("Workload does not exist")
+
+        self.log.info("Running workload {0} of type {1}".format(workload, loadtype))
+
+        self.txn.apply_transitions(workloads[workload])
+
+
+class TxnTransition:
+    """ Represents the state transitions for documents. """
+
+    # Note: Any sequence that starts with a non-existant document and ends with a remove
+    # does not require an unstage
+
+    def __init__(self, base):
+        """ Constructor """
+        # References to the base class
+        self.base = base
+
+        # Logging
+        self.log = base.log
+
+        # Reference to the task object
+        self.task = base.task
+
+        # Document loading methods
+        self.load_docs = functools.partial(self.task.async_load_gen_docs, base.cluster, base.bucket)
+        self.load_sub_docs = functools.partial(self.task.async_load_gen_sub_docs, base.cluster, base.bucket)
+
+        # The xattribute to use
+        self.path = 'just_a_path'
+
+        # The document key prefix
+        self.doc_prefix = base.doc_prefix
+
+        # The documents ranges to mutate
+        self.key_min = 0
+        self.key_max = base.key_max
+
+        # Increment this after every transition
+        self.token = 0
+
+    def apply_transitions(self, transitions):
+        """ Applies transitions in sequence. """
+        for transition in transitions:
+            self.log.info("Applying a transition")
+            transition()
+            self.increment_token()
+
+        self.reset_token()
+
+    def reset_token(self):
+        """ Reset the token back to 0 """
+        self.token = 0
+
+    def increment_token(self):
+        """ Increments a counter so mutations have different values """
+        self.token += 1
+
+    def get_body(self):
+        """ The document body """
+        return {'key': 'value' * (self.token + 1), 'padding': 'a' * self.doc_size}
+
+    def get_value(self, op_type='unknown', body=None):
+        """ The value of the xattribute """
+        if body is None:
+            body = self.get_body()
+        return json.dumps({'op_type':  op_type,
+                              'key2': 'value2',
+                              'key3': 'value3',
+                              'body':  body})
+
+    def get_template(self, path=None, binary=False):
+        """ Returns a template
+
+        Returns a format string which resembles a Json Object consisting of the
+        'path' as the key and a format string placeholder as the value.
+
+        Args:
+            path (str): The path supplied to a MutateInSpec.
+            binary (bool): Surrounds the template value with quotes.
+        """
+        if path is None:
+            path = self.path
+
+        return '{{ "' + path + '": "{0}" }}' if binary else '{{ "' + path + '": {0} }}'
+
+    def get_generator(self, template=None, value=None):
+        """ Returns a SubdocDocumentGenerator
+
+        Args:
+        template (str): A format string resembling a Json Object.
+        value (str): A value supplied to template.format().
+        """
+        if value is None:
+            value = self.get_value()
+        if template is None:
+            template = self.get_template()
+        return SubdocDocumentGenerator(self.doc_prefix, template, [value], start=self.key_min, end=self.key_max)
+
+    def merge_dicts(self, a, b):
+        """ Merges two dictionaries """
+        m = dict(a)
+        m.update(b)
+        return m
+
+    def kv_delete(self):
+        """ Deletes documents between a given range """
+        # Note the template and value doesn't really matter here as we are
+        # performing deletes
+        task = self.load_docs(
+            DocumentGenerator(self.doc_prefix, '{{ "key": "{0}" }}', [''], start=self.key_min, end=self.key_max),
+            "delete",
+            **self.base.async_gen_common)
+        self.task.jython_task_manager.get_task_result(task)
+        return task
+
+    def subdoc_task(self, sub_doc_gen, op_type, kwds):
+        """ Performs a sub-document task """
+        task = self.load_sub_docs(sub_doc_gen,
+                                  op_type,
+                                  **self.merge_dicts(kwds,
+                                                     self.base.async_gen_common))
+        self.task.jython_task_manager.get_task_result(task)
+        return task
+
+    def check(self, gen, xattr=True, access_deleted=True, exists=True):
+        """ Perform validation
+
+        Args:
+            gen (SubdocDocumentGenerator): Generates documents consisting of
+            the path and the expected value of a document.
+            xattr (bool): Set if the path points to an xattribute.
+            access_deleted (bool): Set if the document is in tombstone form.
+            exists (bool): Set False if the document is expected to exist.
+        """
+        # Fetch documents
+        kwds = {'xattr': xattr, 'access_deleted': access_deleted}
+        task = self.subdoc_task(gen, "read", kwds)
+
+        # Grab the expected value of the document from generator
+        _, path_value_list = next(gen)
+        expected_value = path_value_list[0][1]
+
+        if not exists:
+            # Expect the path not to exist
+            self.base.assertTrue(task.fail)
+            self.base.assertFalse(task.success)
+        else:
+            # Expect the value of actual the document to match the expected
+            # value
+            for value in task.success.values():
+                actual_value = value['value'][0].toMap()
+                actual_value.pop('mutated', None)
+                self.base.assertEqual(actual_value, expected_value)
+
+    def create_documents(self):
+        """ Creates regular documents """
+        self.base.apply_preload_storage(key_min=0, key_max=self.key_max, doc_prefix=self.doc_prefix)
+
+    def staged_insert(self):
+        """ Document does not exist -> Create an xattribute with the given
+        value.
+
+        Creates Shadow Documents. """
+        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.INSERT, 'access_deleted': True, 'create_as_deleted': True}
+        task = self.subdoc_task(self.get_generator(), "insert", kwds)
+
+        self.check(self.get_generator(), xattr=True, access_deleted=True)
+
+    def staged_insert_from_staged(self):
+        """ Previous operation was a remove -> Create an xattribute with the
+        given value. """
+        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.REPLACE, 'access_deleted': True}
+        task = self.subdoc_task(self.get_generator(), "insert", kwds)
+
+        self.check(self.get_generator(), xattr=True, access_deleted=True)
+
+    def staged_replace(self):
+        """ Stage a replace.  """
+        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.REPLACE, 'access_deleted': True}
+        task = self.subdoc_task(self.get_generator(), "upsert", kwds)
+
+        self.check(self.get_generator(), xattr=True, access_deleted=True)
+
+    def staged_remove_from_staged(self):
+        """ Document didn't previously exists and is staged -> Delete
+        xattribute (No Unstage or Rollback should follow this). """
+        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.REPLACE, 'access_deleted': True}
+        task = self.subdoc_task(self.get_generator(), "remove", kwds)
+
+        self.check(self.get_generator(), xattr=True, access_deleted=True, exists=False)
+
+    def staged_remove_from_document(self):
+        """ Document exists -> Mark xattribute as a remove operation. """
+        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.REPLACE, 'access_deleted': True}
+        task = self.subdoc_task(self.get_generator(value=self.get_value(op_type='remove')), "upsert", kwds)
+
+        self.check(self.get_generator(value=self.get_value(op_type='remove')), xattr=True, access_deleted=False)
+
+    def upsert_and_remove(self, access_deleted=False):
+        """ Clear and remove xattribute. """
+        # Clear xattribute by setting it to an empty value
+        kwds = {'xattr': True, 'access_deleted': access_deleted}
+        task = self.subdoc_task(self.get_generator(template=self.get_template(binary=True), value=''), "upsert", kwds)
+
+        # Remove xattribute
+        task = self.subdoc_task(self.get_generator(), "remove", kwds)
+
+        # check xattribute does not exist
+        self.check(self.get_generator(), xattr=True, access_deleted=access_deleted, exists=False)
+
+    def unstage_insert_or_replace(self):
+        """ Read staged document -> Insert/Replace document """
+        # Read staged document
+        kwds = {'xattr': True, 'access_deleted': True}
+        task = self.subdoc_task(self.get_generator(), "read", kwds)
+
+        # Grab a document body
+        body = task.success.values()[0]['value'][0].get('body').toString()
+
+        # upsert-and-remove the xattribute
+        self.upsert_and_remove()
+
+        # Write body to document using a CMD_SET
+        kwds = {'store_semantics': StoreSemantics.UPSERT}
+        task = self.subdoc_task(self.get_generator(template=self.get_template(path=''), value=body), "replace", kwds)
+
+        # Check body contains the expected value
+        self.check(self.get_generator(template=self.get_template(path=''), value=body), xattr=False, access_deleted=False)
+
+    def unstage_remove(self):
+        """ Perform a KV remove on the document """
+        self.kv_delete()
+
+        # Check the document does not exist
+        self.check(self.get_generator(template=self.get_template(path='')), xattr=False, exists=False)
+
+    def rollback_insert_or_replace(self):
+        """ Remove Staged document """
+        self.upsert_and_remove(access_deleted=True)
+
+    def rollback_remove(self):
+        """ Document exists -> Removed Staged document """
+        self.upsert_and_remove(access_deleted=False)
+
+    def repeat_transition(self, n, transition):
+        """ Repeat a transition n times. """
+        def repeated_transition():
+            for i in range(n):
+                transition()
+        return repeated_transition
+
+    def compose_transition(self, *transitions):
+        """ Compose a transitions """
+        def composed_transition():
+            for transition in transitions:
+                transition()
+        return composed_transition
+
+    def rep_staged_replace(self):
+        """ Repeat staged replace """
+        self.repeat_transition(5, self.staged_replace)
+
+    def insert_replace_and_unstage(self):
+        """ Insert, replace and unstage a document """
+        return self.compose_transition(self.staged_insert, self.staged_replace, self.unstage_insert_or_replace)
+
+    def get_shadow_workloads(self):
+        """ Returns workloads in which the document does not initially exist
+        and work with shadow documents. """
+
+        remove_and_replace = self.compose_transition(self.staged_remove_from_staged, self.staged_replace)
+
+        workloads = \
+            {"workload_a": [self.staged_insert, self.staged_replace, self.unstage_insert_or_replace],
+             "workload_b": [self.staged_insert, self.staged_replace, self.staged_remove_from_staged, self.staged_replace, self.unstage_insert_or_replace],
+             "workload_c": [self.staged_insert, self.rep_staged_replace, self.staged_remove_from_staged, self.staged_replace, self.unstage_insert_or_replace],
+             "workload_d": [self.staged_insert, self.rep_staged_replace, self.staged_remove_from_staged],
+             "workload_e": [self.insert_replace_and_unstage(), self.staged_remove_from_document, self.unstage_remove],
+             "workload_f": [self.insert_replace_and_unstage(), self.staged_replace, self.unstage_insert_or_replace],
+             "workload_g": [self.staged_insert, self.staged_replace, self.rollback_insert_or_replace],
+             "workload_h": [self.staged_insert, self.staged_remove_from_staged, self.staged_insert, self.rollback_insert_or_replace],
+             "workload_i": [self.insert_replace_and_unstage(), self.staged_remove_from_document, self.rollback_remove],
+             "workload_j": [self.insert_replace_and_unstage(), self.rep_staged_replace, self.rollback_insert_or_replace]}
+
+        return workloads
+
+    def get_workloads(self):
+        """ Returns workloads in which a document initially exists.
+        """
+        workloads = \
+            {"workload_a": [self.create_documents, self.staged_remove_from_document, self.unstage_remove],
+             "workload_b": [self.create_documents, self.staged_replace, self.unstage_insert_or_replace],
+             "workload_c": [self.create_documents, self.staged_remove_from_document, self.staged_replace, self.unstage_insert_or_replace],
+             "workload_d": [self.create_documents, self.staged_replace, self.unstage_insert_or_replace, self.staged_remove_from_document, self.unstage_remove],
+             "workload_e": [self.create_documents, self.staged_remove_from_document, self.unstage_remove, self.staged_insert, self.unstage_insert_or_replace],
+             "workload_f": [self.create_documents, self.staged_remove_from_document, self.staged_replace, self.staged_remove_from_staged,  self.unstage_remove],
+             "workload_g": [self.create_documents, self.staged_replace, self.rollback_insert_or_replace],
+             "workload_h": [self.create_documents, self.staged_remove_from_document, self.rollback_remove],
+             "workload_i": [self.create_documents, self.rep_staged_replace, self.rollback_insert_or_replace],
+             "workload_j": [self.create_documents, self.staged_replace, self.rollback_insert_or_replace, self.staged_remove_from_document, self.rollback_remove]}
+
+        return workloads
