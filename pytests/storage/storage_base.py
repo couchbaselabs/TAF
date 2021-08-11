@@ -19,6 +19,7 @@ from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.docgen import WorkLoadSettings,\
     DocumentGenerator
 from com.couchbase.test.loadgen import WorkLoadGenerate
+from com.couchbase.test.docgen import DocRange
 
 
 class StorageBase(BaseTestCase):
@@ -299,9 +300,6 @@ class StorageBase(BaseTestCase):
         self.tm = TaskManager(self.process_concurrency)
 
         ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
-                              cmd.get("itr", 0),
-                              cmd.get("start", 0),
-                              cmd.get("end", self.init_items_per_collection),
                               cmd.get("keySize", self.key_size),
                               cmd.get("docSize", self.doc_size),
                               cmd.get("cr", self.create_perc),
@@ -310,7 +308,6 @@ class StorageBase(BaseTestCase):
                               cmd.get("dl", self.delete_perc),
                               cmd.get("workers", self.process_concurrency),
                               cmd.get("ops", self.ops_rate),
-                              cmd.get("items", 0),
                               cmd.get("loadType", None),
                               cmd.get("keyType", None),
                               cmd.get("valueType", None),
@@ -318,6 +315,7 @@ class StorageBase(BaseTestCase):
                               cmd.get("gtm", False),
                               cmd.get("deleted", False)
                               )
+        ws.dr = self.dr
         dg = DocumentGenerator(ws, "", None)
         tasks = list()
         i = ws.workers

@@ -34,7 +34,6 @@ abstract class KVGenerator{
     public KVGenerator(WorkLoadSettings ws, String keyClass, String valClass) throws ClassNotFoundException {
         super();
         this.ws = ws;
-        this.ws.dr = new DocRange();
         if(keyClass.equals(RandomKey.class.getSimpleName()))
             this.keyInstance = RandomKey.class;
         else if(keyClass == ReverseKey.class.getName())
@@ -66,25 +65,25 @@ abstract class KVGenerator{
     }
 
     public boolean has_next() {
-        return this.ws.dr.createItr.get() < DocRange.create_e;
+        return this.ws.dr.createItr.get() < this.ws.dr.create_e;
     }
 
     public boolean has_next_read() {
-        return this.ws.dr.readItr.get() < DocRange.read_e;
+        return this.ws.dr.readItr.get() < this.ws.dr.read_e;
     }
 
     public boolean has_next_update() {
-        return this.ws.dr.updateItr.get() < DocRange.update_e;
+        return this.ws.dr.updateItr.get() < this.ws.dr.update_e;
     }
 
     public boolean has_next_delete() {
-        return this.ws.dr.deleteItr.get() < DocRange.delete_e;
+        return this.ws.dr.deleteItr.get() < this.ws.dr.delete_e;
     }
 
     abstract Tuple2<String, Object> next();
 
     void resetRead() {
-        this.ws.dr.readItr =  new AtomicInteger(DocRange.read_s);
+        this.ws.dr.readItr =  new AtomicInteger(this.ws.dr.read_s);
     }
 }
 

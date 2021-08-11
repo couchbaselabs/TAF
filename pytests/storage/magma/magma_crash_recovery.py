@@ -20,6 +20,9 @@ from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.sdk import Server
 from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.loadgen import WorkLoadGenerate
+from com.couchbase.test.docgen import DocRange
+from couchbase.test.docgen import DRConstants
+from java.util import HashMap
 
 
 class MagmaCrashTests(MagmaBaseTest):
@@ -55,32 +58,35 @@ class MagmaCrashTests(MagmaBaseTest):
     def test_crash_during_ops_exp(self):
         self.graceful = self.input.param("graceful", False)
         self.ops_rate = self.input.param("ops_rate", 10000)
-        wait_warmup = self.input.param("wait_warmup", True)
         self.log.info("====test_crash_during_ops starts====")
-
+        hm = HashMap()
+        hm.putAll({DRConstants.create_s: 0,
+                   DRConstants.create_e: self.init_items_per_collection})
+        self.dr = DocRange(hm)
         self.new_loader({}, True)
 
+        self.multiplier = self.input.param("multiplier", 2)
+
+        hm.putAll({DRConstants.create_s: self.init_items_per_collection,
+                   DRConstants.create_e: self.init_items_per_collection*self.multiplier,
+                   DRConstants.delete_s: 0,
+                   DRConstants.delete_e: self.init_items_per_collection/2,
+                   DRConstants.read_s: self.init_items_per_collection/2,
+                   DRConstants.read_e: self.init_items_per_collection})
+        self.dr = DocRange(hm)
+
         self.create_perc = self.input.param("create_perc", 0)
-        self.read_perc = self.input.param("read_perc", 100)
+        self.read_perc = self.input.param("read_perc", 0)
         self.update_perc = self.input.param("update_perc", 0)
         self.delete_perc = self.input.param("delete_perc", 0)
         self.expiry_perc = self.input.param("expiry_perc", 0)
-        self.multiplier = self.input.param("multiplier", 1)
 
         self.new_loader({
-            "items": self.init_items_per_collection,
-            "gtm": True,
+            "gtm": False,
             "validate": True
              }
         )
-#         self.crash_th = threading.Thread(target=self.crash,
-#                                          kwargs=dict(graceful=self.graceful,
-#                                                      wait=wait_warmup))
-#         self.crash_th.start()
         self.tm.getAllTaskResult()
-#         self.stop_crash = True
-#         self.crash_th.join()
-#         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)

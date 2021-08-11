@@ -37,7 +37,7 @@ public class WorkLoadSettings extends WorkLoadBase {
 
     public WorkLoadSettings(String keyPrefix,
             int keySize, int docSize, int c, int r, int u, int d,
-            int workers, int ops, int items, String loadType,
+            int workers, int ops, String loadType,
             String keyType, String valueType,
             boolean validate, boolean gtm, boolean deleted) {
         super();

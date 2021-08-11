@@ -1,5 +1,6 @@
 package com.couchbase.test.sdk;
 
+import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -16,6 +17,8 @@ import com.couchbase.test.docgen.DocumentGenerator;
 import com.couchbase.test.docgen.WorkLoadSettings;
 import com.couchbase.test.loadgen.WorkLoadGenerate;
 import com.couchbase.test.taskmanager.TaskManager;
+
+import couchbase.test.docgen.DRConstants;
 
 public class Loader {
     static Logger logger = LogManager.getLogger(Loader.class);
@@ -163,7 +166,6 @@ public class Loader {
                 Integer.parseInt(cmd.getOptionValue("dl", "0")),
                 Integer.parseInt(cmd.getOptionValue("workers", "10")),
                 Integer.parseInt(cmd.getOptionValue("ops", "10000")),
-                Integer.parseInt(cmd.getOptionValue("items", "0")),
                 cmd.getOptionValue("loadType", null),
                 cmd.getOptionValue("keyType", null),
                 cmd.getOptionValue("valueType", null),
@@ -171,21 +173,24 @@ public class Loader {
                 Boolean.parseBoolean(cmd.getOptionValue("gtm", "false")),
                 Boolean.parseBoolean(cmd.getOptionValue("deleted", "false"))
                 );
-        DocRange.create_s = Integer.parseInt(cmd.getOptionValue("create_s", "0"));
-        DocRange.create_e = Integer.parseInt(cmd.getOptionValue("create_e", "0"));
-        DocRange.read_s = Integer.parseInt(cmd.getOptionValue("read_s", "0"));
-        DocRange.read_e = Integer.parseInt(cmd.getOptionValue("read_e", "0"));
-        DocRange.update_s = Integer.parseInt(cmd.getOptionValue("update_s", "0"));
-        DocRange.update_e = Integer.parseInt(cmd.getOptionValue("update_e", "0"));
-        DocRange.delete_s = Integer.parseInt(cmd.getOptionValue("delete_s", "0"));
-        DocRange.delete_e = Integer.parseInt(cmd.getOptionValue("delete_e", "0"));
-        DocRange.touch_s = Integer.parseInt(cmd.getOptionValue("touch_s", "0"));
-        DocRange.touch_e = Integer.parseInt(cmd.getOptionValue("touch_e", "0"));
-        DocRange.replace_s = Integer.parseInt(cmd.getOptionValue("replace_s", "0"));
-        DocRange.replace_e = Integer.parseInt(cmd.getOptionValue("replace_e", "0"));
-        DocRange.expiry_s = Integer.parseInt(cmd.getOptionValue("expiry_s", "0"));
-        DocRange.expiry_e = Integer.parseInt(cmd.getOptionValue("expiry_e", "0"));
+        HashMap<String, Integer> dr = new HashMap<String, Integer>();
+        dr.put(DRConstants.create_s, Integer.parseInt(cmd.getOptionValue(DRConstants.create_s, "0")));
+        dr.put(DRConstants.create_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.create_e, "0")));
+        dr.put(DRConstants.read_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.read_s, "0")));
+        dr.put(DRConstants.read_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.read_e, "0")));
+        dr.put(DRConstants.update_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.update_s, "0")));
+        dr.put(DRConstants.update_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.update_e, "0")));
+        dr.put(DRConstants.delete_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.delete_s, "0")));
+        dr.put(DRConstants.delete_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.delete_e, "0")));
+        dr.put(DRConstants.touch_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.touch_s, "0")));
+        dr.put(DRConstants.touch_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.touch_e, "0")));
+        dr.put(DRConstants.replace_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.replace_s, "0")));
+        dr.put(DRConstants.replace_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.replace_e, "0")));
+        dr.put(DRConstants.expiry_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.expiry_s, "0")));
+        dr.put(DRConstants.expiry_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.expiry_e, "0")));
 
+        DocRange range = new DocRange(dr);
+        ws.dr = range;
         DocumentGenerator dg = null;
         try {
             dg = new DocumentGenerator(ws, "RandomKey", null);
