@@ -677,7 +677,9 @@ class GenericLoadingTask(Task):
                              persist_to=0, replicate_to=0,
                              durability="",
                              create_path=True, xattr=False,
-                             store_semantics=None):
+                             store_semantics=None,
+                             access_deleted=False,
+                             create_as_deleted=False):
         success = dict()
         fail = dict()
         try:
@@ -694,7 +696,8 @@ class GenericLoadingTask(Task):
                 xattr=xattr,
                 preserve_expiry=self.preserve_expiry,
                 sdk_retry_strategy=self.sdk_retry_strategy,
-                store_semantics=store_semantics)
+                store_semantics=store_semantics,
+                create_as_deleted=create_as_deleted)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc insert: {0}"
@@ -705,7 +708,9 @@ class GenericLoadingTask(Task):
                              persist_to=0, replicate_to=0,
                              durability="",
                              create_path=True, xattr=False,
-                             store_semantics=None):
+                             store_semantics=None,
+                             access_deleted=False,
+                             create_as_deleted=False):
         success = dict()
         fail = dict()
         try:
@@ -722,7 +727,9 @@ class GenericLoadingTask(Task):
                 xattr=xattr,
                 preserve_expiry=self.preserve_expiry,
                 sdk_retry_strategy=self.sdk_retry_strategy,
-                store_semantics=store_semantics)
+                store_semantics=store_semantics,
+                access_deleted=access_deleted,
+                create_as_deleted=create_as_deleted)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc upsert: {0}"
@@ -731,7 +738,11 @@ class GenericLoadingTask(Task):
 
     def batch_sub_doc_replace(self, key_value,
                               persist_to=0, replicate_to=0,
-                              durability="", xattr=False):
+                              durability="",
+                              xattr=False,
+                              store_semantics=None,
+                              access_deleted=False,
+                              create_as_deleted=False):
         success = dict()
         fail = dict()
         try:
@@ -746,7 +757,10 @@ class GenericLoadingTask(Task):
                 durability=durability,
                 xattr=xattr,
                 preserve_expiry=self.preserve_expiry,
-                sdk_retry_strategy=self.sdk_retry_strategy)
+                sdk_retry_strategy=self.sdk_retry_strategy,
+                store_semantics=store_semantics,
+                access_deleted=access_deleted,
+                create_as_deleted=create_as_deleted)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc upsert: {0}"
@@ -755,7 +769,9 @@ class GenericLoadingTask(Task):
 
     def batch_sub_doc_remove(self, key_value,
                              persist_to=0, replicate_to=0,
-                             durability="", xattr=False):
+                             durability="", xattr=False,
+                             access_deleted=False,
+                             create_as_deleted=False):
         success = dict()
         fail = dict()
         try:
@@ -770,14 +786,17 @@ class GenericLoadingTask(Task):
                 durability=durability,
                 xattr=xattr,
                 preserve_expiry=self.preserve_expiry,
-                sdk_retry_strategy=self.sdk_retry_strategy)
+                sdk_retry_strategy=self.sdk_retry_strategy,
+                access_deleted=access_deleted,
+                create_as_deleted=create_as_deleted)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc remove: {0}"
                                .format(error))
         return success, fail
 
-    def batch_sub_doc_read(self, key_value, xattr=False):
+    def batch_sub_doc_read(self, key_value, xattr=False,
+                           access_deleted=False):
         success = dict()
         fail = dict()
         try:
@@ -785,7 +804,8 @@ class GenericLoadingTask(Task):
                 key_value,
                 timeout=self.timeout,
                 time_unit=self.time_unit,
-                xattr=xattr)
+                xattr=xattr,
+                access_deleted=access_deleted)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc read: {0}"
@@ -941,7 +961,9 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  skip_read_success_results=False,
                  preserve_expiry=None,
                  sdk_retry_strategy=None,
-                 store_semantics=None):
+                 store_semantics=None,
+                 access_deleted=False,
+                 create_as_deleted=False):
         super(LoadSubDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             timeout_secs=timeout_secs,
@@ -970,6 +992,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         self.num_loaded = 0
         self.durability = durability
         self.store_semantics = store_semantics
+        self.access_deleted = access_deleted
+        self.create_as_deleted = create_as_deleted
         self.fail = dict()
         self.success = dict()
         self.skip_read_success_results = skip_read_success_results
@@ -993,7 +1017,9 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 durability=self.durability,
                 create_path=self.create_path,
                 xattr=self.xattr,
-                store_semantics=self.store_semantics)
+                store_semantics=self.store_semantics,
+                access_deleted=self.access_deleted,
+                create_as_deleted=self.create_as_deleted)
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == DocLoading.Bucket.SubDocOps.UPSERT:
@@ -1004,7 +1030,9 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 durability=self.durability,
                 create_path=self.create_path,
                 xattr=self.xattr,
-                store_semantics=self.store_semantics)
+                store_semantics=self.store_semantics,
+                access_deleted=self.access_deleted,
+                create_as_deleted=self.create_as_deleted)
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == DocLoading.Bucket.SubDocOps.REMOVE:
@@ -1013,7 +1041,9 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
                 durability=self.durability,
-                xattr=self.xattr)
+                xattr=self.xattr,
+                access_deleted=self.access_deleted,
+                create_as_deleted=self.create_as_deleted)
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == "replace":
@@ -1022,12 +1052,17 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
                 durability=self.durability,
-                xattr=self.xattr)
+                xattr=self.xattr,
+                store_semantics=self.store_semantics,
+                access_deleted=self.access_deleted,
+                create_as_deleted=self.create_as_deleted)
             self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type in ['read', 'lookup']:
-            success, fail = self.batch_sub_doc_read(key_value,
-                                                    xattr=self.xattr)
+            success, fail = self.batch_sub_doc_read(
+                    key_value,
+                    xattr=self.xattr,
+                    access_deleted=self.access_deleted)
             self.fail.update(fail)
             if not self.skip_read_success_results:
                 self.success.update(success)
@@ -1738,7 +1773,9 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  preserve_expiry=None, sdk_retry_strategy=None,
-                 store_semantics=None):
+                 store_semantics=None,
+                 access_deleted=False,
+                 create_as_deleted=False):
         thread_name = "SubDocumentsLoadGenTask_%s_%s_%s_%s_%s" \
                       % (task_identifier,
                          bucket.name,
@@ -1774,6 +1811,8 @@ class LoadSubDocumentsGeneratorsTask(Task):
         self.preserve_expiry = preserve_expiry
         self.sdk_retry_strategy = sdk_retry_strategy
         self.store_semantics = store_semantics
+        self.access_deleted = access_deleted
+        self.create_as_deleted = create_as_deleted
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1900,7 +1939,9 @@ class LoadSubDocumentsGeneratorsTask(Task):
                 sdk_client_pool=self.sdk_client_pool,
                 preserve_expiry=self.preserve_expiry,
                 sdk_retry_strategy=self.sdk_retry_strategy,
-                store_semantics=self.store_semantics)
+                store_semantics=self.store_semantics,
+                access_deleted=self.access_deleted,
+                create_as_deleted=self.create_as_deleted)
             tasks.append(task)
         return tasks
 

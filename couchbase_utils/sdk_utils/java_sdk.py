@@ -78,7 +78,8 @@ class SDKOptions(object):
                     durability=None,
                     timeout=None, timeunit=SDKConstants.TimeUnit.SECONDS,
                     store_semantics=None,
-                    preserve_expiry=None, retry_strategy=None):
+                    preserve_expiry=None, retry_strategy=None,
+                    access_deleted=False, create_as_deleted=False):
         """
         Generic method to set options for all CRUD operations.
         Note: Value 'None' means don't set any thing explicitly.
@@ -115,6 +116,14 @@ class SDKOptions(object):
         elif retry_strategy == SDKConstants.RetryStrategy.BEST_EFFORT:
             options = \
                 options.retryStrategy(BestEffortRetryStrategy.INSTANCE)
+
+        # Set access deleted
+        if access_deleted:
+            options = options.accessDeleted(access_deleted)
+
+        # Set create as deleted
+        if create_as_deleted:
+            options = options.createAsDeleted(create_as_deleted)
 
         # Set Store_Semantics option (Only for sub_doc)
         if store_semantics is not None:
@@ -193,11 +202,14 @@ class SDKOptions(object):
                               time_unit=SDKConstants.TimeUnit.SECONDS,
                               durability="",
                               store_semantics=None,
-                              preserve_expiry=None, sdk_retry_strategy=None):
+                              preserve_expiry=None, sdk_retry_strategy=None,
+                              access_deleted=False,
+                              create_as_deleted=False):
         return SDKOptions.set_options(
             MutateInOptions.mutateInOptions(),
             exp=exp, exp_unit=exp_unit,
             persist_to=persist_to, replicate_to=replicate_to,
             timeout=timeout, timeunit=time_unit,
             durability=durability, store_semantics=store_semantics,
-            preserve_expiry=preserve_expiry, retry_strategy=sdk_retry_strategy)
+            preserve_expiry=preserve_expiry, retry_strategy=sdk_retry_strategy,
+            access_deleted=access_deleted, create_as_deleted=create_as_deleted)

@@ -857,7 +857,8 @@ class SDKClient(object):
              persist_to=0, durability="",
              timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
              create_path=True, xattr=False, cas=0, sdk_retry_strategy=None,
-             store_semantics=None, preserve_expiry=None, access_deleted=False):
+             store_semantics=None, preserve_expiry=None, access_deleted=False,
+             create_as_deleted=False):
         result = None
         if op_type == DocLoading.Bucket.DocOps.UPDATE:
             result = self.upsert(
@@ -918,7 +919,9 @@ class SDKClient(object):
                 timeout, time_unit, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                access_deleted=access_deleted,
+                create_as_deleted=create_as_deleted)
             if cas > 0:
                 options = options.cas(cas)
 
@@ -942,7 +945,8 @@ class SDKClient(object):
                 timeout, time_unit, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                create_as_deleted=create_as_deleted)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -964,7 +968,8 @@ class SDKClient(object):
                 timeout, time_unit, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                create_as_deleted=create_as_deleted)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -987,7 +992,8 @@ class SDKClient(object):
                 timeout, time_unit, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                create_as_deleted=create_as_deleted)
             if cas > 0:
                 options = options.cas(cas)
             result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1134,7 +1140,9 @@ class SDKClient(object):
                              cas=0,
                              store_semantics=None,
                              preserve_expiry=None,
-                             sdk_retry_strategy=None):
+                             sdk_retry_strategy=None,
+                             access_deleted=False,
+                             create_as_deleted=False):
         """
 
         :param keys: Documents to perform sub_doc operations on.
@@ -1153,6 +1161,8 @@ class SDKClient(object):
         :param store_semantics: Extra action to take during mutate_in op
         :param preserve_expiry: Boolean to preserver ttl of the doc or not
         :param sdk_retry_strategy: Sets sdk_retry_strategy for doc ops
+        :param access_deleted: Allows editing documents in Tombstones form
+        :param create_as_deleted: Allows creating documents in Tombstone form
         :return:
         """
         mutate_in_specs = []
@@ -1180,7 +1190,9 @@ class SDKClient(object):
             durability,
             store_semantics=store_semantics,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            access_deleted=access_deleted,
+            create_as_deleted=create_as_deleted)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1198,7 +1210,9 @@ class SDKClient(object):
                              cas=0,
                              store_semantics=None,
                              preserve_expiry=None,
-                             sdk_retry_strategy=None):
+                             sdk_retry_strategy=None,
+                             access_deleted=False,
+                             create_as_deleted=False):
         """
         :param keys: Documents to perform sub_doc operations on.
         Must be a dictionary with Keys and List of tuples for
@@ -1243,7 +1257,9 @@ class SDKClient(object):
             durability,
             store_semantics=store_semantics,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            access_deleted=access_deleted,
+            create_as_deleted=create_as_deleted)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1292,7 +1308,9 @@ class SDKClient(object):
                              cas=0,
                              store_semantics=None,
                              preserve_expiry=None,
-                             sdk_retry_strategy=None):
+                             sdk_retry_strategy=None,
+                             access_deleted=False,
+                             create_as_deleted=False):
         """
         :param keys: Documents to perform sub_doc operations on.
         Must be a dictionary with Keys and List of tuples for
@@ -1337,7 +1355,9 @@ class SDKClient(object):
             durability,
             store_semantics=store_semantics,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            access_deleted=access_deleted,
+            create_as_deleted=create_as_deleted)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
@@ -1353,7 +1373,9 @@ class SDKClient(object):
                               xattr=False,
                               cas=0,
                               store_semantics=None,
-                              preserve_expiry=None, sdk_retry_strategy=None):
+                              preserve_expiry=None, sdk_retry_strategy=None,
+                              access_deleted=False,
+                              create_as_deleted=False):
         """
 
         :param keys: Documents to perform sub_doc operations on.
@@ -1398,7 +1420,9 @@ class SDKClient(object):
             durability,
             store_semantics=store_semantics,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            access_deleted=access_deleted,
+            create_as_deleted=create_as_deleted)
         if cas > 0:
             options = options.cas(cas)
         result = SDKClient.sub_doc_op.bulkSubDocOperation(
