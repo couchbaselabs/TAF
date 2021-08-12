@@ -178,7 +178,7 @@ class RestConnection(object):
             username = self.username
         if password is None:
             password = self.password
-        authorization = base64.encodestring('%s:%s' % (username, password))
+        authorization = base64.encodestring('%s:%s' % (username, password)).strip("\n")
         return {'Content-Type': contentType,
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': connection,
@@ -309,6 +309,6 @@ class RestConnection(object):
 
     def get_headers_for_content_type_json(self):
         authorization = base64.encodestring('%s:%s'
-                                            % (self.username, self.password))
+                                            % (self.username, self.password)).strip("\n")
         return {'Content-type': 'application/json',
                 'Authorization': 'Basic %s' % authorization}
