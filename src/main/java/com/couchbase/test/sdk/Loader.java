@@ -11,9 +11,9 @@ import org.apache.commons.cli.ParseException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.test.docgen.DocRange;
 import com.couchbase.test.docgen.DocumentGenerator;
 import com.couchbase.test.docgen.WorkLoadSettings;
-import com.couchbase.test.key.SimpleKey;
 import com.couchbase.test.loadgen.WorkLoadGenerate;
 import com.couchbase.test.taskmanager.TaskManager;
 
@@ -45,6 +45,48 @@ public class Loader {
         port.setRequired(true);
         options.addOption(port);
 
+        Option create_s = new Option("create_s", "create_s", true, "Creates Start");
+        options.addOption(create_s);
+
+        Option create_e = new Option("create_e", "create_e", true, "Creates Start");
+        options.addOption(create_e);
+
+        Option read_s = new Option("read_s", "read_s", true, "Read Start");
+        options.addOption(read_s);
+
+        Option read_e = new Option("read_e", "read_e", true, "Read End");
+        options.addOption(read_e);
+
+        Option update_s = new Option("update_s", "update_s", true, "Update Start");
+        options.addOption(update_s);
+
+        Option update_e = new Option("update_e", "update_e", true, "Update End");
+        options.addOption(update_e);
+
+        Option delete_s = new Option("delete_s", "delete_s", true, "Delete Start");
+        options.addOption(delete_s);
+
+        Option delete_e = new Option("delete_e", "delete_e", true, "Delete End");
+        options.addOption(delete_e);
+
+        Option touch_s = new Option("touch_s", "touch_s", true, "Touch Start");
+        options.addOption(touch_s);
+
+        Option touch_e = new Option("touch_e", "touch_e", true, "Touch End");
+        options.addOption(touch_e);
+
+        Option replace_s = new Option("replace_s", "replace_s", true, "Replace Start");
+        options.addOption(replace_s);
+
+        Option replace_e = new Option("replace_e", "replace_w", true, "Replace End");
+        options.addOption(replace_e);
+
+        Option expiry_s = new Option("expiry_s", "expiry_s", true, "Expiry Start");
+        options.addOption(expiry_s);
+
+        Option expiry_e = new Option("expiry_e", "expiry_e", true, "Expiry End");
+        options.addOption(expiry_e);
+
         Option create = new Option("cr", "create", true, "Creates%");
         options.addOption(create);
 
@@ -62,15 +104,6 @@ public class Loader {
 
         Option ops = new Option("ops", "ops", true, "Ops/Sec");
         options.addOption(ops);
-
-        Option items = new Option("items", "items", true, "Current Items");
-        options.addOption(items);
-
-        Option start = new Option("start", "start", true, "Start Index");
-        options.addOption(start);
-
-        Option end = new Option("end", "end", true, "End Index");
-        options.addOption(end);
 
         Option keySize = new Option("keySize", "keySize", true, "Size of the key");
         options.addOption(keySize);
@@ -111,11 +144,8 @@ public class Loader {
 
         WorkLoadSettings ws = new WorkLoadSettings(
                 cmd.getOptionValue("keyPrefix", "test_docs-"),
-                Integer.parseInt(cmd.getOptionValue("itr", "0")),
-                Integer.parseInt(cmd.getOptionValue("start", "0")),
-                Integer.parseInt(cmd.getOptionValue("end", "0")),
                 Integer.parseInt(cmd.getOptionValue("keySize", "20")),
-                Integer.parseInt(cmd.getOptionValue("docSize", "5000")),
+                Integer.parseInt(cmd.getOptionValue("docSize", "1024")),
                 Integer.parseInt(cmd.getOptionValue("cr", "0")),
                 Integer.parseInt(cmd.getOptionValue("rd", "0")),
                 Integer.parseInt(cmd.getOptionValue("up", "0")),
@@ -127,9 +157,24 @@ public class Loader {
                 cmd.getOptionValue("keyType", null),
                 cmd.getOptionValue("valueType", null),
                 Boolean.parseBoolean(cmd.getOptionValue("validate", "false")),
-                Boolean.parseBoolean(cmd.getOptionValue("gtm", "true")),
+                Boolean.parseBoolean(cmd.getOptionValue("gtm", "false")),
                 Boolean.parseBoolean(cmd.getOptionValue("deleted", "false"))
                 );
+        DocRange.create_s = Integer.parseInt(cmd.getOptionValue("create_s", "0"));
+        DocRange.create_e = Integer.parseInt(cmd.getOptionValue("create_e", "0"));
+        DocRange.read_s = Integer.parseInt(cmd.getOptionValue("read_s", "0"));
+        DocRange.read_e = Integer.parseInt(cmd.getOptionValue("read_e", "0"));
+        DocRange.update_s = Integer.parseInt(cmd.getOptionValue("update_s", "0"));
+        DocRange.update_e = Integer.parseInt(cmd.getOptionValue("update_e", "0"));
+        DocRange.delete_s = Integer.parseInt(cmd.getOptionValue("delete_s", "0"));
+        DocRange.delete_e = Integer.parseInt(cmd.getOptionValue("delete_e", "0"));
+        DocRange.touch_s = Integer.parseInt(cmd.getOptionValue("touch_s", "0"));
+        DocRange.touch_e = Integer.parseInt(cmd.getOptionValue("touch_e", "0"));
+        DocRange.replace_s = Integer.parseInt(cmd.getOptionValue("replace_s", "0"));
+        DocRange.replace_e = Integer.parseInt(cmd.getOptionValue("replace_e", "0"));
+        DocRange.expiry_s = Integer.parseInt(cmd.getOptionValue("expiry_s", "0"));
+        DocRange.expiry_e = Integer.parseInt(cmd.getOptionValue("expiry_e", "0"));
+
         DocumentGenerator dg = null;
         try {
             dg = new DocumentGenerator(ws, "RandomKey", null);

@@ -17,8 +17,6 @@ public class RandomKey extends SimpleKey{
     String randomString = null;
     int randomStringLength = 0;
 
-    static final Random random_obj = new Random();
-
     public RandomKey() {
         super();
     }
@@ -26,21 +24,24 @@ public class RandomKey extends SimpleKey{
     public RandomKey(WorkLoadSettings ws) {
         super();
         this.ws = ws;
+        Random random_obj = new Random();
+        random_obj.setSeed(ws.keyPrefix.hashCode());
         char[] str_buf = new char[4096];
         for (int index=0; index<4096; index++) {
-            str_buf[index] = RandomKey.key_chars[RandomKey.random_obj.nextInt(RandomKey.key_chars.length)];
+            str_buf[index] = RandomKey.key_chars[random_obj.nextInt(RandomKey.key_chars.length)];
         }
         this.randomString = String.valueOf(str_buf);
         this.randomStringLength = randomString.length();
     }
 
     public String next(int doc_index) {
-        RandomKey.random_obj.setSeed(doc_index);
+        Random random_obj = new Random();
+        random_obj.setSeed(doc_index);
         String counter = Integer.toString(doc_index);
-        return this.get_random_string(ws.keySize - counter.length()-1) + "-" +counter;
+        return this.get_random_string(ws.keySize - counter.length()-1, random_obj) + "-" +counter;
     }
 
-    public String get_random_string(int length) {
+    public String get_random_string(int length, Random random_obj) {
         int _slice = random_obj.nextInt(randomStringLength - ws.keySize);
         return randomString.substring(_slice, _slice + length);
     }

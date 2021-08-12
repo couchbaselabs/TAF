@@ -65,7 +65,7 @@ public class WorkLoadGenerate extends Task{
                 List<String> docs = dg.nextDeleteBatch();
                 if (docs.size()>0) {
                     docops.bulkDelete(this.sdk.connection, docs, removeOptions);
-                    ops += dg.ws.batchSize*dg.ws.updates/100;
+                    ops += dg.ws.batchSize*dg.ws.deletes/100;
                 }
             }
             if(dg.ws.reads > 0) {

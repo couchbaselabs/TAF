@@ -14,6 +14,10 @@ import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 import com.couchbase.test.val.SimpleValue;
 
+import com.couchbase.test.docgen.DocRange;
+import com.couchbase.test.docgen.KVGenerator;
+import com.couchbase.test.docgen.WorkLoadSettings;
+
 abstract class KVGenerator{
     public WorkLoadSettings ws;
     String padding = "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
@@ -30,6 +34,7 @@ abstract class KVGenerator{
     public KVGenerator(WorkLoadSettings ws, String keyClass, String valClass) throws ClassNotFoundException {
         super();
         this.ws = ws;
+        this.ws.dr = new DocRange();
         if(keyClass.equals(RandomKey.class.getSimpleName()))
             this.keyInstance = RandomKey.class;
         else if(keyClass == ReverseKey.class.getName())
@@ -61,21 +66,25 @@ abstract class KVGenerator{
     }
 
     public boolean has_next() {
-        return this.ws.Itr.get() < this.ws.end;
+        return this.ws.dr.createItr.get() < DocRange.create_e;
     }
 
     public boolean has_next_read() {
-        return this.ws.readItr.get() < this.ws.items*this.ws.reads/100;
+        return this.ws.dr.readItr.get() < DocRange.read_e;
     }
 
     public boolean has_next_update() {
-        return this.ws.upsertItr.get() < this.ws.items*this.ws.updates/100;
+        return this.ws.dr.updateItr.get() < DocRange.update_e;
+    }
+
+    public boolean has_next_delete() {
+        return this.ws.dr.deleteItr.get() < DocRange.delete_e;
     }
 
     abstract Tuple2<String, Object> next();
 
     void resetRead() {
-        this.ws.readItr =  new AtomicInteger(this.ws.start);
+        this.ws.dr.readItr =  new AtomicInteger(DocRange.read_s);
     }
 }
 
@@ -87,7 +96,7 @@ public class DocumentGenerator extends KVGenerator{
     }
 
     public Tuple2<String, Object> next() {
-        int temp = this.ws.Itr.incrementAndGet();
+        int temp = this.ws.dr.createItr.incrementAndGet();
         String k = null;
         Object v = null;
             try {
@@ -100,7 +109,7 @@ public class DocumentGenerator extends KVGenerator{
     }
 
     public Tuple2<String, Object> nextRead() {
-        int temp = this.ws.readItr.incrementAndGet();
+        int temp = this.ws.dr.readItr.incrementAndGet();
         String k = null;
         Object v = null;
             try {
@@ -113,7 +122,7 @@ public class DocumentGenerator extends KVGenerator{
     }
 
     public Tuple2<String, Object> nextUpdate() {
-        int temp = this.ws.upsertItr.incrementAndGet();
+        int temp = this.ws.dr.updateItr.incrementAndGet();
         String k = null;
         Object v = null;
             try {
@@ -157,10 +166,11 @@ public class DocumentGenerator extends KVGenerator{
 
     public List<String> nextDeleteBatch() {
         int count = 0;
-        int temp = this.ws.delItr.incrementAndGet();
+        int temp;
         List<String> docs = new ArrayList<String>();
-        while (this.has_next_update() && count<ws.batchSize*ws.deletes/100) {
+        while (this.has_next_delete() && count<ws.batchSize*ws.deletes/100) {
             try {
+                temp = this.ws.dr.deleteItr.incrementAndGet();
                 docs.add((String) this.keyMethod.invoke(this.keys, temp));
             } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
                 e.printStackTrace();
