@@ -8,12 +8,14 @@ from Cb_constants import CbServer
 
 class CbCli(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
-                 password="password", no_ssl_verify=CbServer.use_https):
+                 password="password", no_ssl_verify=None):
         CbCmdBase.__init__(self, shell_conn, "couchbase-cli",
                            username=username, password=password)
+        if no_ssl_verify is None:
+            no_ssl_verify = CbServer.use_https
         self.cli_flags = ""
         if no_ssl_verify:
-            self.cli_flags += "--no-ssl-verify"
+            self.cli_flags += " --no-ssl-verify"
 
     def create_bucket(self, bucket_dict, wait=False):
         """
