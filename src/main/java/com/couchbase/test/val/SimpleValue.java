@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 
+import com.couchbase.test.docgen.WorkLoadBase;
 import com.couchbase.test.docgen.DocType.Attributes;
 import com.couchbase.test.docgen.DocType.Details;
 import com.couchbase.test.docgen.DocType.Dimensions;
@@ -16,7 +17,7 @@ import com.couchbase.test.docgen.WorkLoadSettings;
 import com.couchbase.test.dictionary.Dictionary;
 
 public class SimpleValue {
-    public WorkLoadSettings ws;
+    public WorkLoadBase ws;
     private static int fixedSize = 454;
     static final String upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     static final String lower = upper.toLowerCase(Locale.ROOT);
@@ -25,7 +26,7 @@ public class SimpleValue {
     String randomString = null;
     int randomStringLength = 0;
 
-    public SimpleValue(WorkLoadSettings ws) {
+    public SimpleValue(WorkLoadBase ws) {
         super();
         this.ws = ws;
         char[] str_buf = new char[4096];
