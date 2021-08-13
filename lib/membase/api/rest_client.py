@@ -1166,8 +1166,10 @@ class RestConnection(object):
     def add_node(self, user='', password='', remoteIp='',
                  port=constants.port, zone_name='', services=None):
         otpNode = None
-        if CbServer.use_https:
+        protocol = "http"
+        if CbServer.use_https or CbServer.n2n_encryption:
             port = CbServer.ssl_port_map.get(str(port), str(port))
+            protocol = "https"
         # if ip format is ipv6 and enclosing brackets are not found,
         # enclose self.ip and remoteIp
         if self.ip.count(':') and self.ip[0] != '[':
@@ -1190,13 +1192,13 @@ class RestConnection(object):
                 raise Exception("There is not zone with name: %s in cluster" % zone_name)
 
         params = urllib.urlencode(
-            {'hostname': "{0}://{1}:{2}".format(self.protocol, remoteIp, port),
+            {'hostname': "{0}://{1}:{2}".format(protocol, remoteIp, port),
              'user': user,
              'password': password})
         if services is not None:
             services = ','.join(services)
             params = urllib.urlencode(
-                {'hostname':  "{0}://{1}:{2}".format(self.protocol, remoteIp, port),
+                {'hostname':  "{0}://{1}:{2}".format(protocol, remoteIp, port),
                  'user': user,
                  'password': password,
                  'services': services})

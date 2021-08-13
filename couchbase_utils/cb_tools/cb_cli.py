@@ -103,6 +103,7 @@ class CbCli(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
+        CbServer.n2n_encryption = True
         return output
 
     def disable_n2n_encryption(self):
@@ -113,6 +114,7 @@ class CbCli(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
+        CbServer.n2n_encryption = False
         return output
 
     def set_n2n_encryption_level(self, level="all"):
