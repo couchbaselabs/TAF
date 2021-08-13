@@ -13,7 +13,6 @@ import java.util.stream.Collectors;
 import com.couchbase.client.core.deps.com.fasterxml.jackson.core.JsonProcessingException;
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.ObjectMapper;
 import com.couchbase.client.core.error.DocumentNotFoundException;
-import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.java.kv.GetOptions;
 import com.couchbase.client.java.kv.InsertOptions;
 import com.couchbase.client.java.kv.RemoveOptions;
@@ -39,11 +38,23 @@ public class WorkLoadGenerate extends Task{
     }
 
     @Override
-    public void run() throws RuntimeException {
-        UpsertOptions upsertOptions = UpsertOptions.upsertOptions().timeout(Duration.ofSeconds(10)).durability(DurabilityLevel.NONE);
-        InsertOptions setOptions = InsertOptions.insertOptions().timeout(Duration.ofSeconds(10)).durability(DurabilityLevel.NONE);
-        RemoveOptions removeOptions = RemoveOptions.removeOptions().timeout(Duration.ofSeconds(10)).durability(DurabilityLevel.NONE);
-        GetOptions getOptions = GetOptions.getOptions().timeout(Duration.ofSeconds(10));
+    public void run() {
+        // Set timeout in WorkLoadSettings
+        this.dg.ws.setTimeoutDuration(10, "seconds");
+        // Set Durability in WorkLoadSettings
+        this.dg.ws.setDurabilityLevel("NONE");
+
+        UpsertOptions upsertOptions = UpsertOptions.upsertOptions()
+            .timeout(this.dg.ws.timeout)
+            .durability(this.dg.ws.durability);
+        InsertOptions setOptions = InsertOptions.insertOptions()
+            .timeout(this.dg.ws.timeout)
+            .durability(this.dg.ws.durability);
+        RemoveOptions removeOptions = RemoveOptions.removeOptions()
+            .timeout(this.dg.ws.timeout)
+            .durability(this.dg.ws.durability);
+        GetOptions getOptions = GetOptions.getOptions()
+            .timeout(this.dg.ws.timeout);
         int ops = 0;
         while(true) {
             Instant start = Instant.now();
@@ -97,7 +108,7 @@ public class WorkLoadGenerate extends Task{
                             }
                         }
                     }
-                    ops += dg.ws.batchSize*dg.ws.reads/100; 
+                    ops += dg.ws.batchSize*dg.ws.reads/100;
                 }
             }
             if(ops == 0)

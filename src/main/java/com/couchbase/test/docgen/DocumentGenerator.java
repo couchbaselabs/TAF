@@ -137,7 +137,7 @@ public class DocumentGenerator extends KVGenerator{
     public List<Tuple2<String, Object>> nextInsertBatch() {
         List<Tuple2<String, Object>> docs = new ArrayList<Tuple2<String,Object>>();
         int count = 0;
-        while (this.has_next() && (count<ws.batchSize*ws.creates/100)) { 
+        while (this.has_next() && (count<ws.batchSize*ws.creates/100)) {
             docs.add(this.next());
             count += 1;
         }
@@ -147,7 +147,7 @@ public class DocumentGenerator extends KVGenerator{
     public List<Tuple2<String, Object>> nextReadBatch() {
         List<Tuple2<String, Object>> docs = new ArrayList<Tuple2<String,Object>>();
         int count = 0;
-        while (this.has_next_read() && count<ws.batchSize*ws.reads/100) { 
+        while (this.has_next_read() && count<ws.batchSize*ws.reads/100) {
             docs.add(this.nextRead());
             count += 1;
         }
@@ -157,7 +157,7 @@ public class DocumentGenerator extends KVGenerator{
     public List<Tuple2<String, Object>> nextUpdateBatch() {
         List<Tuple2<String, Object>> docs = new ArrayList<Tuple2<String,Object>>();
         int count = 0;
-        while (this.has_next_update() && count<ws.batchSize*ws.updates/100) { 
+        while (this.has_next_update() && count<ws.batchSize*ws.updates/100) {
             docs.add(this.nextUpdate());
             count += 1;
         }
@@ -181,3 +181,4 @@ public class DocumentGenerator extends KVGenerator{
     }
 
 }
+
