@@ -5,11 +5,10 @@ from couchbase_helper.tuq_generators import JsonGenerator
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
-from java.util import List
-
 from com.couchbase.client.java.json import JsonObject
-from com.couchbase.test.docgen import TransactionalWorkLoadSettings, TransactionWorkLoadGenerate
-from com.couchbase.test.sdk import Server, SDKClient
+from com.couchbase.test.docgen import TransactionalWorkLoadSettings, TransactionDocGenerator
+from com.couchbase.test.loadgen import TransactionWorkLoadGenerate
+from com.couchbase.test.sdk import Server
 from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.transactions import Transaction
 
@@ -34,7 +33,7 @@ class basic_ops(ClusterSetup):
         else:
             self.create_bucket(self.cluster)
 
-        self.sleep(10, "Wait for bucket to become ready for ops")
+        # self.sleep(10, "Wait for bucket to become ready for ops")
 
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
@@ -221,26 +220,59 @@ class basic_ops(ClusterSetup):
         trans_config = transaction_app.createTransactionConfig(
             self.transaction_timeout,
             self.transaction_durability_level)
-        master = Server(self.cluster.master.ip, self.cluster.master.port,
-                        self.cluster.master.rest_username,
-                        self.cluster.master.rest_password,
-                        str(self.cluster.master.memcached_port))
+        # master = Server(self.cluster.master.ip, self.cluster.master.port,
+        #                 self.cluster.master.rest_username,
+        #                 self.cluster.master.rest_password,
+        #                 str(self.cluster.master.memcached_port))
+        self.process_concurrency = 8
         self.tm = TaskManager(self.process_concurrency)
-        trans_pattern = List([[CbServer.default_scope,
-                               CbServer.default_collection,
-                               ["C", "R", "U", "D"]]])
+
+        workload = dict()
+        workload["keyPrefix"] = "test_transaction-"
+        workload["start"] = 0
+        workload["end"] = self.num_items
+        workload["batchSize"] = 1
+        workload["min_key_size"] = 20
+        workload["max_key_size"] = 20
+        workload["randomize_keys"] = False
+        workload["workers"] = self.process_concurrency
+        workload["items"] = 0
+        workload["transaction_on_same_keys"] = True
+        workload["transaction_pattern"] = [
+            [CbServer.default_scope, CbServer.default_collection,
+             [["C", "R"], ["C"], ["C", "U"]]]
+        ]
+        workload["commit"] = None
+        workload["rollback"] = None
 
         work_load = TransactionalWorkLoadSettings(
-            "test_transaction-", 0, 10000, 10, 20, 20, False,
-            self.process_concurrency, 0, True, trans_pattern)
+            workload["keyPrefix"],
+            workload["start"],
+            workload["end"],
+            workload["batchSize"],
+            workload["min_key_size"],
+            workload["max_key_size"],
+            workload["randomize_keys"],
+            workload["workers"],
+            workload["items"],
+            workload["transaction_on_same_keys"],
+            workload["transaction_pattern"],
+            workload["commit"],
+            workload["rollback"])
 
         client = SDKClient([self.cluster.master], bucket)
         transaction_obj = transaction_app.createTransaction(client.cluster,
                                                             trans_config)
 
-        for loop_index in range(self.process_concurrency):
-            th_name = "Transaction_%s" % loop_index
-            task = TransactionWorkLoadGenerate(th_name, client)
+        for index, load_pattern in enumerate(work_load.load_pattern):
+            th_name = "Transaction_%s" % index
+            batch_size = load_pattern[0]
+            num_transactions = load_pattern[1]
+            trans_pattern = load_pattern[2]
+            task = TransactionWorkLoadGenerate(
+                th_name, client.cluster, client.bucketObj, transaction_obj,
+                work_load.doc_gen, batch_size, num_transactions, trans_pattern,
+                work_load.commit, work_load.rollback, transaction_app)
             tasks.append(task)
             self.tm.submit(task)
 
