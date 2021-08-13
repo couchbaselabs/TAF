@@ -19,6 +19,8 @@ import com.couchbase.test.taskmanager.TaskManager;
 
 public class Loader {
     static Logger logger = LogManager.getLogger(Loader.class);
+    static final String default_scope = "_default";
+    static final String default_collection = "_default";
 
     public static void main(String[] args) {
         logger.info("#################### Starting Java Based Doc-Loader ####################");
@@ -40,6 +42,12 @@ public class Loader {
         Option bucket = new Option("b", "bucket", true, "Bucket");
         bucket.setRequired(true);
         options.addOption(bucket);
+
+        Option scope = new Option("scope", true, "Scope");
+        options.addOption(scope);
+
+        Option collection = new Option("collection", true, "Collection");
+        options.addOption(collection);
 
         Option port = new Option("p", "port", true, "Memcached Port");
         port.setRequired(true);
@@ -125,6 +133,9 @@ public class Loader {
 
         Option deleted = new Option("deleted", "deleted", true, "To verify deleted docs");
         options.addOption(deleted);
+
+        Option transaction_load = new Option("transaction_patterns", true, "Transaction load pattern");
+        options.addOption(transaction_load);
 
         HelpFormatter formatter = new HelpFormatter();
         CommandLineParser parser = new DefaultParser();

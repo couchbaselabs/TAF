@@ -1,11 +1,17 @@
-from Cb_constants import DocLoading
+from Cb_constants import DocLoading, CbServer
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
 from couchbase_helper.tuq_generators import JsonGenerator
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
+from java.util import List
+
 from com.couchbase.client.java.json import JsonObject
+from com.couchbase.test.docgen import TransactionalWorkLoadSettings, TransactionWorkLoadGenerate
+from com.couchbase.test.sdk import Server, SDKClient
+from com.couchbase.test.taskmanager import TaskManager
+from com.couchbase.test.transactions import Transaction
 
 """
 Basic test cases with commit,rollback scenarios
@@ -207,3 +213,37 @@ class basic_ops(ClusterSetup):
         # Close SDK Client connection
         client.close()
         self.validate_test_failure()
+
+    def test_multi_transactions(self):
+        tasks = list()
+        bucket = self.cluster.buckets[0]
+        transaction_app = Transaction()
+        trans_config = transaction_app.createTransactionConfig(
+            self.transaction_timeout,
+            self.transaction_durability_level)
+        master = Server(self.cluster.master.ip, self.cluster.master.port,
+                        self.cluster.master.rest_username,
+                        self.cluster.master.rest_password,
+                        str(self.cluster.master.memcached_port))
+        self.tm = TaskManager(self.process_concurrency)
+        trans_pattern = List([[CbServer.default_scope,
+                               CbServer.default_collection,
+                               ["C", "R", "U", "D"]]])
+
+        work_load = TransactionalWorkLoadSettings(
+            "test_transaction-", 0, 10000, 10, 20, 20, False,
+            self.process_concurrency, 0, True, trans_pattern)
+
+        client = SDKClient([self.cluster.master], bucket)
+        transaction_obj = transaction_app.createTransaction(client.cluster,
+                                                            trans_config)
+
+        for loop_index in range(self.process_concurrency):
+            th_name = "Transaction_%s" % loop_index
+            task = TransactionWorkLoadGenerate(th_name, client)
+            tasks.append(task)
+            self.tm.submit(task)
+
+        self.tm.getAllTaskResult()
+
+        client.close()

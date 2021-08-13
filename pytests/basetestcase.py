@@ -124,6 +124,8 @@ class BaseTestCase(unittest.TestCase):
         # Transactions parameters
         self.transaction_timeout = self.input.param("transaction_timeout", 100)
         self.transaction_commit = self.input.param("transaction_commit", True)
+        self.transaction_durability_level = \
+            self.input.param("transaction_durability", "")
         self.update_count = self.input.param("update_count", 1)
         self.sync = self.input.param("sync", True)
         self.default_bucket = self.input.param("default_bucket", True)
