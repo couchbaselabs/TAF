@@ -55,7 +55,8 @@ class CbServer(object):
                     str(index_port): str(ssl_index_port),
                     str(eventing_port): str(ssl_eventing_port),
                     str(cbas_port): str(ssl_cbas_port),
-                    str(memcached_port): str(ssl_memcached_port)}
+                    str(memcached_port): str(ssl_memcached_port),
+                    str(backup_port): str(ssl_backup_port)}
     use_https = False
 
     default_scope = "_default"

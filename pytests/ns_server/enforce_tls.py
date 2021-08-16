@@ -1,3 +1,4 @@
+from BucketLib.bucket import TravelSample
 from Cb_constants import CbServer
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
@@ -9,7 +10,7 @@ from security_config import trust_all_certs
 
 class EnforceTls(CollectionBase):
     def setUp(self):
-        super(CollectionBase, self).setUp()
+        super(EnforceTls, self).setUp()
         self.sample_urls_map = \
             {"http://%s:8091/nodes/self": "https://%s:18091/nodes/self",
              "http://%s:9102/api/v1/stats": "https://%s:19102/api/v1/stats",
@@ -17,7 +18,8 @@ class EnforceTls(CollectionBase):
              "http://%s:8094/api/cfg": "https://%s:18094/api/cfg",
              "http://%s:8096/api/v1/functions": "https://%s:18096/api/v1/functions",
              "http://%s:8095/analytics/node/agg/stats/remaining":
-                 "https://%s:18095/analytics/node/agg/stats/remaining"}
+                 "https://%s:18095/analytics/node/agg/stats/remaining",
+             "http://%s:8097/api/v1/config": "https://%s:18097/api/v1/config"}
 
         self.log.info("Disabling AF on all nodes before beginning the test")
         for node in self.cluster.servers:
@@ -25,6 +27,7 @@ class EnforceTls(CollectionBase):
             self.assertTrue(status)
         self.log.info("Changing security settings to trust all CAs")
         trust_all_certs()
+        self.bucket_util.load_sample_bucket(TravelSample())
 
     def tearDown(self):
         self.disable_n2n_encryption_cli_on_nodes(nodes=self.cluster.servers)
@@ -90,24 +93,34 @@ class EnforceTls(CollectionBase):
         and validate that it fails.
         3. Make the same above request on TLS port and validate that it works
         4. Repeat for all components
+        5. Disable n2n encryption on all nodes
+        6. For each component make a GET request on non-ssl port,
+        and validate that it works
         """
         self.enable_tls_encryption_cli_on_nodes(nodes=[self.cluster.master])
+        CbServer.use_https = True
+        rest = RestConnection(self.cluster.master)
         for non_ssl_request in self.sample_urls_map.keys():
             api = non_ssl_request % self.cluster.master.ip
             try:
-                CbServer.use_https = False
-                rest = RestConnection(self.cluster.master)
                 rest._http_request(api=api, timeout=10)
             except Exception as _:
-                CbServer.use_https = True
-                rest = RestConnection(self.cluster.master)
                 ssl_request = self.sample_urls_map[non_ssl_request]
                 api = ssl_request % self.cluster.master.ip
                 status, content, response = rest._http_request(api=api, timeout=10)
                 if not status:
                     self.fail("{0} failed".format(api))
             else:
-                self.fail("{0} worked".format(api))
+                self.log.error("{0} worked".format(api))
+
+        self.disable_n2n_encryption_cli_on_nodes(nodes=[self.cluster.master])
+        CbServer.use_https = False
+        rest = RestConnection(self.cluster.master)
+        for non_ssl_request in self.sample_urls_map.keys():
+            api = non_ssl_request % self.cluster.master.ip
+            status, content, response = rest._http_request(api=api, timeout=10)
+            if not status:
+                self.fail("{0} api failed with content {1}".format(api, content))
 
     def test_all_encrypted_and_non_encrypted_ports(self):
         """
