@@ -405,7 +405,8 @@ class CBASBaseTest(BaseTestCase):
             self.load_data_into_buckets(cluster, doc_loading_spec)
 
     def load_data_into_buckets(self, cluster, doc_loading_spec=None,
-                               async_load=False, validate_task=True):
+                               async_load=False, validate_task=True,
+                               mutation_num=0):
         """
         Loads data into buckets using the data spec
         """
@@ -418,7 +419,7 @@ class CBASBaseTest(BaseTestCase):
             SDKException.CollectionNotFoundException)
         doc_loading_task = self.bucket_util.run_scenario_from_spec(
             self.task, cluster, cluster.buckets, doc_loading_spec,
-            mutation_num=0, batch_size=self.batch_size,
+            mutation_num=mutation_num, batch_size=self.batch_size,
             async_load=async_load, validate_task=validate_task)
         if doc_loading_task.result is False:
             self.fail("Initial reloading failed")
