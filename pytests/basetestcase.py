@@ -358,7 +358,7 @@ class BaseTestCase(unittest.TestCase):
                         shell_conn.disconnect()
                     self.log.info("Validating if services obey tls only on servers {0}".
                                   format(cluster.servers))
-                    status = ClusterUtils(cluster, self.task_manager).\
+                    status = ClusterUtils(self.task_manager).\
                         check_if_services_obey_tls(cluster.servers)
                     if not status:
                         self.fail("Services did not honor enforce tls")

@@ -27,7 +27,7 @@ class EnforceTls(CollectionBase):
             self.assertTrue(status)
         self.log.info("Changing security settings to trust all CAs")
         trust_all_certs()
-        self.bucket_util.load_sample_bucket(TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
 
     def tearDown(self):
         self.disable_n2n_encryption_cli_on_nodes(nodes=self.cluster.servers)
