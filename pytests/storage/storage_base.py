@@ -324,7 +324,8 @@ class StorageBase(BaseTestCase):
                               cmd.get("valueType", None),
                               cmd.get("validate", False),
                               cmd.get("gtm", False),
-                              cmd.get("deleted", False)
+                              cmd.get("deleted", False),
+                              cmd.get("mutated", 0)
                               )
         ws.dr = self.dr
         dg = DocumentGenerator(ws, "", None)
@@ -336,8 +337,8 @@ class StorageBase(BaseTestCase):
                     for collection in self.collections:
                         client = NewSDKClient(master, bucket.name, scope, collection)
                         client.initialiseSDK()
-                        th_name = "Loader_" + scope + "-" + collection
-                        task = WorkLoadGenerate(th_name, dg, client)
+                        th_name = "Loader_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, str(i), time.time())
+                        task = WorkLoadGenerate(th_name, dg, client, self.durability_level)
                         tasks.append(task)
                         self.tm.submit(task)
                         i -= 1

@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import couchbase.test.docgen.DRConstants;
 
 public class DocRange {
-	public int create_s = 0;
+    public int create_s = 0;
     public int create_e = 0;
 
     public int read_s = 0;
@@ -37,7 +37,7 @@ public class DocRange {
 
     public DocRange(HashMap<String, Integer> ranges) {
         super();
-        
+
         this.create_s = ranges.getOrDefault(DRConstants.create_s, 0);
         this.read_s = ranges.getOrDefault(DRConstants.read_s, 0);
         this.update_s = ranges.getOrDefault(DRConstants.update_s, 0);
@@ -45,7 +45,7 @@ public class DocRange {
         this.expiry_s = ranges.getOrDefault(DRConstants.expiry_s, 0);
         this.touch_s = ranges.getOrDefault(DRConstants.touch_s, 0);
         this.replace_s = ranges.getOrDefault(DRConstants.replace_s, 0);
-        
+
         this.create_e = ranges.getOrDefault(DRConstants.create_e, 0);
         this.read_e = ranges.getOrDefault(DRConstants.read_e, 0);
         this.update_e = ranges.getOrDefault(DRConstants.update_e, 0);
@@ -53,7 +53,7 @@ public class DocRange {
         this.expiry_e = ranges.getOrDefault(DRConstants.expiry_e, 0);
         this.touch_e = ranges.getOrDefault(DRConstants.touch_e, 0);
         this.replace_e = ranges.getOrDefault(DRConstants.replace_e, 0);
-        
+
         this.createItr = new AtomicInteger(this.create_s);
         this.readItr = new AtomicInteger(this.read_s);
         this.updateItr = new AtomicInteger(this.update_s);
@@ -61,20 +61,6 @@ public class DocRange {
         this.expiryItr = new AtomicInteger(this.expiry_s);
         this.touchItr = new AtomicInteger(this.touch_s);
         this.replaceItr = new AtomicInteger(this.replace_s);
-        
-        System.out.println("Create Start: " + this.create_s);
-        System.out.println("Create End: " + this.create_e);
-        System.out.println("Read Start: " + this.read_s);
-        System.out.println("Read End: " + this.read_e);
-        System.out.println("Update Start: " + this.update_s);
-        System.out.println("Update End: " + this.update_e);
-        System.out.println("Delete Start: " + this.delete_s);
-        System.out.println("Delete End: " + this.delete_e);
-        
-        System.out.println("createItr: " + createItr);
-        System.out.println("readItr: " + readItr);
-        System.out.println("updateItr: " + updateItr);
-        System.out.println("deleteItr: " + deleteItr);
     }
 
     public void resetAllItrs() {

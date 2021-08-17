@@ -61,7 +61,7 @@ public class SimpleValue {
                         Collections.singletonList(
                                 new Hobby(this.get_hobby(random_obj), this.get_hobby(random_obj),
                                         new Details(new Location(this.get_double(random_obj), this.get_double(random_obj)))))),
-                this.get_gender(random_obj), this.get_marital_status(random_obj),
+                this.get_gender(random_obj), this.get_marital_status(random_obj), this.ws.mutated,
                 this.get_random_string(key, this.ws.docSize - fixedSize, random_obj));
         return person;
     }

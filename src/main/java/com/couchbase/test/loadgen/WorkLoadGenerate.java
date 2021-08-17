@@ -3,6 +3,7 @@ package com.couchbase.test.loadgen;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -23,26 +24,31 @@ import com.couchbase.test.sdk.DocOps;
 import com.couchbase.test.sdk.SDKClient;
 import com.couchbase.test.taskmanager.Task;
 
+import com.couchbase.test.sdk.Result;
 import reactor.util.function.Tuple2;
 
 public class WorkLoadGenerate extends Task{
     DocumentGenerator dg;
     SDKClient sdk;
     DocOps docops;
+    public String durability;
+    public HashMap<String, List<Result>> failedMutations = new HashMap<String, List<Result>>();
 
-    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client) {
+    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability) {
         super(taskName);
         this.dg = dg;
         this.docops = new DocOps();
         this.sdk = client;
+        this.durability = durability;
     }
 
     @Override
     public void run() {
+    	System.out.println("Starting " + this.taskName);
         // Set timeout in WorkLoadSettings
         this.dg.ws.setTimeoutDuration(10, "seconds");
         // Set Durability in WorkLoadSettings
-        this.dg.ws.setDurabilityLevel("NONE");
+        this.dg.ws.setDurabilityLevel(this.durability);
 
         UpsertOptions upsertOptions = UpsertOptions.upsertOptions()
             .timeout(this.dg.ws.timeout)
@@ -56,32 +62,40 @@ public class WorkLoadGenerate extends Task{
         GetOptions getOptions = GetOptions.getOptions()
             .timeout(this.dg.ws.timeout);
         int ops = 0;
+        boolean flag = false;
         while(true) {
             Instant start = Instant.now();
             if(dg.ws.creates > 0) {
                 List<Tuple2<String, Object>> docs = dg.nextInsertBatch();
                 if (docs.size()>0) {
-                    docops.bulkInsert(this.sdk.connection, docs, setOptions);
+                	flag = true;
+                    List<Result> result = docops.bulkInsert(this.sdk.connection, docs, setOptions);
                     ops += dg.ws.batchSize*dg.ws.creates/100;
+                    failedMutations.put("create", result);
                 }
             }
             if(dg.ws.updates > 0) {
                 List<Tuple2<String, Object>> docs = dg.nextUpdateBatch();
                 if (docs.size()>0) {
-                    docops.bulkUpsert(this.sdk.connection, docs, upsertOptions);
+                	flag = true;
+                	List<Result> result = docops.bulkUpsert(this.sdk.connection, docs, upsertOptions);
                     ops += dg.ws.batchSize*dg.ws.updates/100;
+                    failedMutations.put("update", result);
                 }
             }
             if(dg.ws.deletes > 0) {
                 List<String> docs = dg.nextDeleteBatch();
                 if (docs.size()>0) {
-                    docops.bulkDelete(this.sdk.connection, docs, removeOptions);
+                	flag = true;
+                	List<Result> result = docops.bulkDelete(this.sdk.connection, docs, removeOptions);
                     ops += dg.ws.batchSize*dg.ws.deletes/100;
+                    failedMutations.put("delete", result);
                 }
             }
             if(dg.ws.reads > 0) {
                 List<Tuple2<String, Object>> docs = dg.nextReadBatch();
                 if (docs.size()>0) {
+                	flag = true;
                     List<Tuple2<String, Object>> res = docops.bulkGets(this.sdk.connection, docs, getOptions);
                     if (this.dg.ws.validate) {
                         Map<Object, Object> trnx_res = res.stream().collect(Collectors.toMap(t -> t.get(0), t -> t.get(1)));
@@ -111,9 +125,11 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.reads/100;
                 }
             }
+            System.out.println(this.taskName + ": " + ops);
             if(ops == 0)
                 break;
-            else if(ops < dg.ws.ops/dg.ws.workers) {
+            else if(ops < dg.ws.ops/dg.ws.workers && flag) {
+            	flag = false;
                 continue;
             }
             ops = 0;
@@ -127,6 +143,7 @@ public class WorkLoadGenerate extends Task{
                     e.printStackTrace();
                 }
         }
+        System.out.println(this.taskName + " is completed!");
         this.result = true;
         this.sdk.disconnectCluster();
     }

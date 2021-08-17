@@ -83,10 +83,19 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.new_loader({
             "gtm": False,
-            "validate": True
+            "validate": False
              }
         )
+        self.graceful = self.input.param("graceful", False)
+        wait_warmup = self.input.param("wait_warmup", True)
+        self.crash_th = threading.Thread(target=self.crash,
+                                         kwargs=dict(graceful=self.graceful,
+                                                     wait=wait_warmup))
+        self.crash_th.start()
         self.tm.getAllTaskResult()
+        self.stop_crash = True
+        self.crash_th.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
 
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)

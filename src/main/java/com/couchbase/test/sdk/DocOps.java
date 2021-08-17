@@ -1,6 +1,7 @@
 package com.couchbase.test.sdk;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -28,71 +29,56 @@ import com.couchbase.client.java.kv.TouchOptions;
 import com.couchbase.client.java.kv.UpsertOptions;
 
 import com.couchbase.test.docgen.DocType.Person;
+import com.couchbase.test.sdk.Result;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.annotation.Nullable;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
+
 public class DocOps {
 
-    public List<ConcurrentHashMap<String, Object>> bulkInsert(Collection collection, List<Tuple2<String, Object>> documents, InsertOptions insertOptions) {
+    public List<Result> bulkInsert(Collection collection, List<Tuple2<String, Object>> documents, InsertOptions insertOptions) {
         ReactiveCollection reactiveCollection = collection.reactive();
-        List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
-                .flatMap(new Function<Tuple2<String, Object>, Publisher<ConcurrentHashMap<String, Object>>>() {
-                    public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
 
-                        String k = documentToInsert.getT1();
-                        Object v = documentToInsert.getT2();
-                        final ConcurrentHashMap<String, Object> retValue = new ConcurrentHashMap<String, Object>();
+        List<Result> out = new ArrayList();
+        
+        Flux.fromIterable(documents)
+                .flatMap(documentToInsert -> {
 
-                        return reactiveCollection.insert(k, v, insertOptions)
-                                .map(new Function<MutationResult, ConcurrentHashMap<String, Object>>() {
-                                    public ConcurrentHashMap<String, Object> apply(MutationResult result) {
-                                        return retValue;
-                                    }
-                                }).onErrorResume(new Function<Throwable, Mono<ConcurrentHashMap<String, Object>>>() {
-                                    public Mono<ConcurrentHashMap<String, Object>> apply(Throwable error) {
-                                        retValue.put("id", k);
-                                        retValue.put("document", v);
-                                        retValue.put("error", error);
-                                        retValue.put("status", false);
-                                        return Mono.just(retValue);
-                                    }
-                                });
-                    }
-                }).collectList().block();
-        return returnValue;
-    }
+                  String k = documentToInsert.getT1();
+                  Object v = documentToInsert.getT2();
 
-    public List<ConcurrentHashMap<String, Object>> bulkUpsert(Collection collection, List<Tuple2<String, Object>> documents,
+                  return reactiveCollection.insert(k, v, insertOptions)
+                          .doOnError(error -> out.add(new Result(k, v, error, false)))
+                          .onErrorResume(error -> Mono.empty());
+                })
+                .blockLast();
+
+        return out;
+      }
+
+    public List<Result> bulkUpsert(Collection collection, List<Tuple2<String, Object>> documents,
             UpsertOptions upsertOptions) {
-        final ReactiveCollection reactiveCollection = collection.reactive();
-        List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(documents)
-                .flatMap(new Function<Tuple2<String, Object>, Publisher<ConcurrentHashMap<String, Object>>>() {
-                    public Publisher<ConcurrentHashMap<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
-                        final String id = documentToInsert.getT1();
-                        final Object content = documentToInsert.getT2();
-                        final ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
+    	ReactiveCollection reactiveCollection = collection.reactive();
+    	List<Result> out = new ArrayList();
+        
+        Flux.fromIterable(documents)
+                .flatMap(documentToInsert -> {
 
-                        return reactiveCollection.upsert(id, content, upsertOptions)
-                                .map(new Function<MutationResult, ConcurrentHashMap<String, Object>>() {
-                                    public ConcurrentHashMap<String, Object> apply(MutationResult result) {
-                                        return returnValue;
-                                    }
-                                }).onErrorResume(new Function<Throwable, Mono<ConcurrentHashMap<String, Object>>>() {
-                                    public Mono<ConcurrentHashMap<String, Object>> apply(Throwable error) {
-                                        returnValue.put("id", id);
-                                        returnValue.put("document", content);
-                                        returnValue.put("error", error);
-                                        returnValue.put("status", false);
-                                        return Mono.just(returnValue);
-                                    }
-                                });
-                    }
-                }).collectList().block();
-        return returnValue;
+                  String k = documentToInsert.getT1();
+                  Object v = documentToInsert.getT2();
+
+                  return reactiveCollection.upsert(k, v, upsertOptions)
+                          .doOnError(error -> out.add(new Result(k, v, error, false)))
+                          .onErrorResume(error -> Mono.empty());
+                })
+                .blockLast();
+
+        return out;
     }
-
+    
     public List<Tuple2<String, Object>> bulkGets(Collection collection, List<Tuple2<String, Object>> documents, GetOptions getOptions) {
         final ReactiveCollection reactiveCollection = collection.reactive();
         List<Tuple2<String, Object>> returnValue = Flux.fromIterable(documents)
@@ -100,23 +86,14 @@ public class DocOps {
                     public Publisher<Tuple2<String, Object>> apply(Tuple2<String, Object> documentToInsert) {
                         final String id = documentToInsert.getT1();
                         final Tuple2<String, Object> returnValue;
-//                        returnValue.put("error", "");
-//                        returnValue.put("status", true);
-//                        returnValue.put("id", id);
                         return reactiveCollection.get(id, getOptions)
                                 .map(new Function<GetResult, Tuple2<String, Object>>() {
                                     public Tuple2<String, Object> apply(GetResult result) {
                                         return Tuples.of(id, result.contentAs(Person.class));
-//                                        returnValue.put("cas", result.cas());
-//                                        returnValue.put("document", result.contentAs(Person.class));
-//                                        return new Tuple2<String, Object>(id, result.contentAs(Person.class));
                                     }
                                 }).onErrorResume(new Function<Throwable, Mono<Tuple2<String, Object>>>() {
                                     public Mono<Tuple2<String, Object>> apply(Throwable error) {
                                         return Mono.just(Tuples.of(id, error.getClass().getName()));
-//                                        returnValue.put("error", error.getClass().getName() + "|" +  error.getMessage());
-//                                        returnValue.put("status", false);
-//                                        return Mono.just(returnValue);
                                     }
                                 });
                     }
@@ -124,6 +101,23 @@ public class DocOps {
         return returnValue;
     }
 
+    public List<Result> bulkDelete(Collection collection, List<String> keys, RemoveOptions removeOptions) {
+    	ReactiveCollection reactiveCollection = collection.reactive();
+
+    	List<Result> out = new ArrayList();
+        
+        Flux.fromIterable(keys)
+                .flatMap(key -> {
+
+                  return reactiveCollection.remove(key, removeOptions)
+                          .doOnError(error -> out.add(new Result(key, null, error, false)))
+                          .onErrorResume(error -> Mono.empty());
+                })
+                .blockLast();
+
+        return out;
+    }
+    
     public List<ConcurrentHashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, Object>> documents,
             ReplaceOptions replaceOptions) {
         final ReactiveCollection reactiveCollection = collection.reactive();
@@ -177,60 +171,6 @@ public class DocOps {
                                     }
                                 }).onErrorResume(new Function<Throwable, Mono<ConcurrentHashMap<String, Object>>>() {
                                     public Mono<ConcurrentHashMap<String, Object>> apply(Throwable error) {
-                                        returnValue.put("error", error);
-                                        return Mono.just(returnValue);
-                            }
-                                }).defaultIfEmpty(returnValue);
-                    }
-                }).collectList().block();
-        return returnValue;
-    }
-
-    public List<ConcurrentHashMap<String, Object>> bulkGet(Collection collection, List<String> keys, GetOptions getOptions) {
-        final ReactiveCollection reactiveCollection = collection.reactive();
-        List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(keys)
-                .flatMap(new Function<String, Publisher<ConcurrentHashMap<String, Object>>>() {
-                    public Publisher<ConcurrentHashMap<String, Object>> apply(String key) {
-                        final ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
-                        returnValue.put("id", key);
-                        returnValue.put("content", "");
-                        returnValue.put("error", "");
-                        returnValue.put("status", false);
-                        return reactiveCollection.get(key, getOptions)
-                            .map(new Function<GetResult, ConcurrentHashMap<String, Object>>() {
-                                public ConcurrentHashMap<String, Object> apply(GetResult optionalResult) {
-                                        returnValue.put("cas", optionalResult.cas());
-                                        returnValue.put("content", optionalResult.contentAsObject());
-                                        returnValue.put("status", true);
-                                    return returnValue;
-                                }
-                        }).onErrorResume(new Function<Throwable, Mono<ConcurrentHashMap<String, Object>>>() {
-                            public Mono<ConcurrentHashMap<String, Object>> apply(Throwable error) {
-                                returnValue.put("error", error);
-                                return Mono.just(returnValue);
-                            }
-                        }).defaultIfEmpty(returnValue);
-                    }
-                }).collectList().block();
-        return returnValue;
-    }
-
-    public List<ConcurrentHashMap<String, Object>> bulkDelete(Collection collection, List<String> keys, RemoveOptions removeOptions) {
-        final ReactiveCollection reactiveCollection = collection.reactive();
-        List<ConcurrentHashMap<String, Object>> returnValue = Flux.fromIterable(keys)
-                .flatMap(new Function<String, Publisher<ConcurrentHashMap<String, Object>>>() {
-                    public Publisher<ConcurrentHashMap<String, Object>> apply(String key){
-                        final ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
-
-                        return reactiveCollection.remove(key, removeOptions)
-                                .map(new Function<MutationResult, ConcurrentHashMap<String, Object>>() {
-                                    public ConcurrentHashMap<String, Object> apply(MutationResult result){
-                                        return null;
-                                    }
-                                }).onErrorResume(new Function<Throwable, Mono<ConcurrentHashMap<String, Object>>>() {
-                                    public Mono<ConcurrentHashMap<String, Object>> apply(Throwable error) {
-                                        returnValue.put("id", key);
-                                        returnValue.put("status", false);
                                         returnValue.put("error", error);
                                         return Mono.just(returnValue);
                             }

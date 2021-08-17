@@ -2,8 +2,8 @@ package com.couchbase.test.taskmanager;
 
 public abstract class Task implements Runnable{
 
-    String taskName;
-    protected Boolean result;
+    public String taskName;
+    public Boolean result;
 
     public Task(String taskName) {
         super();

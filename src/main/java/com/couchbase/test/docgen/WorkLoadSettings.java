@@ -6,7 +6,6 @@ import com.couchbase.test.docgen.DocRange;
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
 
-
 public class WorkLoadSettings extends WorkLoadBase {
     public String keyPrefix = "test_docs-";
     public int workers = 10;
@@ -30,6 +29,7 @@ public class WorkLoadSettings extends WorkLoadBase {
     public boolean gtm;
     public boolean expectDeleted;
     public boolean validate;
+    public int mutated;
 
     public DocRange dr;
 
@@ -39,7 +39,7 @@ public class WorkLoadSettings extends WorkLoadBase {
             int keySize, int docSize, int c, int r, int u, int d,
             int workers, int ops, String loadType,
             String keyType, String valueType,
-            boolean validate, boolean gtm, boolean deleted) {
+            boolean validate, boolean gtm, boolean deleted, int mutated) {
         super();
         this.keyPrefix = keyPrefix;
         this.keySize = keySize;
@@ -55,6 +55,7 @@ public class WorkLoadSettings extends WorkLoadBase {
         this.gtm = gtm;
         this.expectDeleted = deleted;
         this.validate = validate;
+        this.mutated = mutated;
     };
 
     public void setPersistTo(int persist_to) {

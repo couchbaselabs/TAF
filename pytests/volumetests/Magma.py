@@ -26,8 +26,19 @@ from custom_exceptions.exception import RebalanceFailedException
 import math
 import subprocess
 from math import ceil
-from Jython_tasks.task_manager import TaskManager
+from Jython_tasks.task_manager import TaskManager as local_tm
 import copy
+
+from com.couchbase.test.taskmanager import TaskManager
+from com.couchbase.test.sdk import Server, SDKClient
+from com.couchbase.test.sdk import SDKClient as NewSDKClient
+from com.couchbase.test.docgen import WorkLoadSettings,\
+    DocumentGenerator
+from com.couchbase.test.loadgen import WorkLoadGenerate
+from com.couchbase.test.docgen import DocRange
+from java.util import HashMap
+from couchbase.test.docgen import DRConstants
+from com.couchbase.test.key import SimpleKey
 
 
 class volume(BaseTestCase):
@@ -70,7 +81,7 @@ class volume(BaseTestCase):
                                        self.thread_to_use})
         self.log.critical("Total Doc-Tasks workers = %s" % self.thread_to_use)
         self.log.critical("Total Doc-Tasks = %s" % doc_tasks)
-        self.doc_loading_tm = TaskManager(number_of_threads=self.thread_to_use)
+        self.doc_loading_tm = local_tm(number_of_threads=self.thread_to_use)
         self.process_concurrency = self.input.param("pc", process_concurrency)
 
         self.rest = RestConnection(self.servers[0])
@@ -193,6 +204,9 @@ class volume(BaseTestCase):
         self.retry_exceptions = None
         self.ignore_exceptions = None
 
+        self.key_type = "SimpleKey"
+        self.ops_rate = self.input.param("ops_rate", 10000)
+
     def tearDown(self):
         self.check_dump_thread = False
         self.stop_crash = True
@@ -256,13 +270,10 @@ class volume(BaseTestCase):
                       expire_end=None, expire_start=None,
                       read_end=None, read_start=None):
         self.get_memory_footprint()
-        self.gen_delete = None
-        self.gen_create = None
-        self.gen_update = None
-        self.gen_expiry = None
-        self.gen_read = None
         self.create_end = 0
         self.create_start = 0
+        self.read_end = 0
+        self.read_start = 0
         self.update_end = 0
         self.update_start = 0
         self.delete_end = 0
@@ -272,6 +283,7 @@ class volume(BaseTestCase):
         self.initial_items = self.final_items
 
         doc_ops = doc_ops or self.doc_ops
+        self.mutations_to_validate = doc_ops
 
         if "read" in doc_ops:
             if read_start is not None:
@@ -281,17 +293,7 @@ class volume(BaseTestCase):
             if read_end is not None:
                 self.read_end = read_end
             else:
-                self.read_end = self.num_items*self.read_perc/100
-            self.gen_read = doc_generator(
-                self.key_prefix, self.read_start,
-                self.read_end,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                vbuckets=self.cluster.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size, mutate=self.mutate)
+                self.read_end = self.num_items
 
         if "update" in doc_ops:
             if update_start is not None:
@@ -301,20 +303,8 @@ class volume(BaseTestCase):
             if update_end is not None:
                 self.update_end = update_end
             else:
-                self.update_end = self.num_items*self.update_perc/100
+                self.update_end = self.num_items
             self.mutate += 1
-            self.gen_update = doc_generator(
-                self.key_prefix, self.update_start,
-                self.update_end,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                vbuckets=self.cluster.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size, mutate=self.mutate)
-            if self.parallel_reads:
-                self.gen_read = copy.deepcopy(self.gen_update)
 
         if "delete" in doc_ops:
             if delete_start is not None:
@@ -324,21 +314,7 @@ class volume(BaseTestCase):
             if delete_end is not None:
                 self.delete_end = delete_end
             else:
-                self.delete_end = self.start+(self.num_items *
-                                              self.delete_perc)/100
-            self.gen_delete = doc_generator(
-                self.key_prefix,
-                self.delete_start,
-                self.delete_end,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                vbuckets=self.cluster.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
-#             if self.parallel_reads:
-#                 self.gen_read = self.gen_delete
+                self.delete_end = self.end
             self.final_items -= (self.delete_end - self.delete_start) * self.num_collections * self.num_scopes
 
         if "expiry" in doc_ops:
@@ -347,26 +323,11 @@ class volume(BaseTestCase):
             if expire_start is not None:
                 self.expire_start = expire_start
             else:
-                self.expire_start = self.start+(self.num_items *
-                                                self.delete_perc)/100
+                self.expire_start = self.start + self.delete_end
             if expire_end is not None:
                 self.expire_end = expire_end
             else:
-                self.expire_end = self.start+self.num_items *\
-                                  (self.delete_perc + self.expiry_perc)/100
-            self.gen_expiry = doc_generator(
-                self.key_prefix,
-                self.expire_start,
-                self.expire_end,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                vbuckets=self.cluster.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
-            if self.parallel_reads:
-                self.gen_read = copy.deepcopy(self.gen_expiry)
+                self.expire_end = self.start + self.num_items
             self.final_items -= (self.expire_end - self.expire_start) * self.num_collections * self.num_scopes
 
         if "create" in doc_ops:
@@ -379,111 +340,89 @@ class volume(BaseTestCase):
             if create_end is not None:
                 self.create_end = create_end
             else:
-                self.create_end = self.start + self.num_items*self.create_perc/100
+                self.create_end = self.end + (self.expire_end - self.expire_start) + (self.delete_end - self.delete_start)
             self.end = self.create_end
 
-            self.gen_create = doc_generator(
-                self.key_prefix,
-                self.create_start, self.create_end,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                vbuckets=self.cluster.vbuckets,
-                key_size=self.key_size,
-                randomize_doc_size=self.randomize_doc_size,
-                randomize_value=self.randomize_value,
-                mix_key_size=self.mix_key_size)
             self.final_items += (abs(self.create_end - self.create_start)) * self.num_collections * self.num_scopes
 
-    def doc_loader(self, loader_spec):
-        task = self.task.async_load_gen_docs_from_spec(
-            self.cluster, self.doc_loading_tm, loader_spec,
-            self.sdk_client_pool,
-            batch_size=self.batch_size,
-            process_concurrency=self.process_concurrency,
-            print_ops_rate=True,
-            start_task=True,
-            track_failures=self.track_failures)
+        print "Read Start: %s" % self.read_start
+        print "Read End: %s" % self.read_end
+        print "Update Start: %s" % self.update_start
+        print "Update End: %s" % self.update_end
+        print "Delete Start: %s" % self.delete_start
+        print "Delete End: %s" % self.delete_end
+        print "Expiry End: %s" % self.expire_start
+        print "Expiry End: %s" % self.expire_end
+        print "Create Start: %s" % self.create_start
+        print "Create End: %s" % self.create_end
+        print "Final Start: %s" % self.start
+        print "Final End: %s" % self.end
 
-        return task
-
-    def _loader_dict(self):
-        loader_dict = dict()
-        ignore_exceptions = self.ignore_exceptions or []
-        retry_exceptions = self.retry_exceptions or [
-            SDKException.TimeoutException,
-            SDKException.AmbiguousTimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.UnambiguousTimeoutException,
-            SDKException.ServerOutOfMemoryException
-        ]
-        common_params = {"retry_exceptions": retry_exceptions,
-                         "ignore_exceptions": ignore_exceptions,
-                         "suppress_error_table": self.suppress_error_table,
-                         "durability_level": self.durability_level,
-                         "skip_read_success_results": False,
-                         "target_items": 5000,
-                         "skip_read_on_error": self.skip_read_on_error,
-                         "track_failures": self.track_failures,
-                         "ignore_exceptions": [],
-                         "sdk_timeout_unit": "seconds",
-                         "sdk_timeout": 60,
-                         "doc_ttl": 0,
-                         "doc_gen_type": "default"}
+    def data_load(self, cmd=dict()):
+        self.ops_rate = self.input.param("ops_rate", 2000)
+        master = Server(self.cluster.master.ip, self.cluster.master.port,
+                        self.cluster.master.rest_username, self.cluster.master.rest_password,
+                        str(self.cluster.master.memcached_port))
+        self.tm = TaskManager(self.process_concurrency)
+        self.loader_map = dict()
         for bucket in self.cluster.buckets:
-            loader_dict.update({bucket: dict()})
-            loader_dict[bucket].update({"scopes": dict()})
             for scope in bucket.scopes.keys():
-                loader_dict[bucket]["scopes"].update({scope: dict()})
-                loader_dict[bucket]["scopes"][scope].update({"collections":dict()})
                 for collection in bucket.scopes[scope].collections.keys():
                     if collection == "_default" and scope == "_default":
                         continue
-                    loader_dict[bucket]["scopes"][scope]["collections"].update({collection:dict()})
-                    if self.gen_update is not None:
-                        op_type = "update"
-                        common_params.update({"doc_gen": self.gen_update})
-                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
-                    if self.gen_create is not None:
-                        op_type = "create"
-                        common_params.update({"doc_gen": self.gen_create})
-                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
-                    if self.gen_delete is not None:
-                        op_type = "delete"
-                        common_params.update({"doc_gen": self.gen_delete})
-                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
-                    if self.gen_expiry is not None and self.maxttl:
-                        op_type = "update"
-                        common_params.update({"doc_gen": self.gen_expiry,
-                                              "doc_ttl": self.maxttl})
-                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
-                        common_params.update({"doc_ttl": 0})
-                    if self.gen_read is not None:
-                        ignore_exceptions = self.ignore_exceptions or [
-                            SDKException.TimeoutException,
-                            SDKException.AmbiguousTimeoutException,
-                            SDKException.RequestCanceledException,
-                            SDKException.UnambiguousTimeoutException,
-                            SDKException.ServerOutOfMemoryException
-                        ]
-                        retry_exceptions = []
-                        op_type = "read"
-                        common_params.update({"retry_exceptions": retry_exceptions,
-                                              "ignore_exceptions": ignore_exceptions,
-                                              "doc_gen": self.gen_read,
-                                              "skip_read_success_results": True,
-                                              "suppress_error_table": True})
-                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = common_params
-        self.loader_dict = loader_dict
+                    ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
+                                          cmd.get("keySize", self.key_size),
+                                          cmd.get("docSize", self.doc_size),
+                                          cmd.get("cr", self.create_perc),
+                                          cmd.get("rd", self.read_perc),
+                                          cmd.get("up", self.update_perc),
+                                          cmd.get("dl", self.delete_perc),
+                                          cmd.get("workers", self.process_concurrency),
+                                          cmd.get("ops", self.ops_rate),
+                                          cmd.get("loadType", None),
+                                          cmd.get("keyType", None),
+                                          cmd.get("valueType", None),
+                                          cmd.get("validate", False),
+                                          cmd.get("gtm", False),
+                                          cmd.get("deleted", False),
+                                          cmd.get("mutated", 0)
+                                          )
+                    hm = HashMap()
+                    hm.putAll({DRConstants.create_s: self.create_start,
+                               DRConstants.create_e: self.create_end,
+                               DRConstants.update_s: self.update_start,
+                               DRConstants.update_e: self.update_end,
+                               DRConstants.delete_s: self.delete_start,
+                               DRConstants.delete_e: self.delete_end,
+                               DRConstants.read_s: self.read_start,
+                               DRConstants.read_e: self.read_end})
+                    dr = DocRange(hm)
+                    ws.dr = dr
+                    dg = DocumentGenerator(ws, self.key_type, None)
+                    self.loader_map.update({bucket.name+scope+collection: dg})
 
-    def data_load(self):
-        self._loader_dict()
-        return self.doc_loader(self.loader_dict)
+        tasks = list()
+        i = self.process_concurrency
+        while i > 0:
+            for bucket in self.cluster.buckets:
+                for scope in bucket.scopes.keys():
+                    for collection in bucket.scopes[scope].collections.keys():
+                        if collection == "_default" and scope == "_default":
+                            continue
+                        client = NewSDKClient(master, bucket.name, scope, collection)
+                        client.initialiseSDK()
+                        taskName = "Loader_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, str(i), time.time())
+                        task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection], client, self.durability_level)
+                        tasks.append(task)
+                        self.tm.submit(task)
+                        i -= 1
+        return tasks
 
-    def wait_for_doc_load_completion(self, task, wait_for_stats=True):
-        self.doc_loading_tm.get_task_result(task)
-        self.bucket_util.validate_doc_loading_results(task)
-        self.assertTrue(task.result,
-                        "Doc ops failed for task: {}".format(task.thread_name))
+    def wait_for_doc_load_completion(self, tasks, wait_for_stats=True):
+        self.tm.getAllTaskResult()
+        for task in tasks:
+            self.assertTrue(task.result,
+                            "Validation failed for task: {}".format(task.taskName))
 
         if wait_for_stats:
             try:
@@ -502,20 +441,78 @@ class volume(BaseTestCase):
             gdb_shell.disconnect()
 
     def data_validation(self):
+        doc_ops = self.mutations_to_validate
         if self._data_validation:
-            temp = self.suppress_error_table
-            self.suppress_error_table = True
-            self._loader_dict()
             self.log.info("Validating Active/Replica Docs")
-            task = self.task.async_validate_docs_using_spec(
-                self.cluster, self.doc_loading_tm, self.loader_dict,
-                check_replica=False,
-                sdk_client_pool=self.sdk_client_pool,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
+            cmd = dict()
+            self.ops_rate = self.input.param("ops_rate", 2000)
+            master = Server(self.cluster.master.ip, self.cluster.master.port,
+                            self.cluster.master.rest_username, self.cluster.master.rest_password,
+                            str(self.cluster.master.memcached_port))
+            self.tm = TaskManager(self.process_concurrency)
+            self.loader_map = dict()
+            for bucket in self.cluster.buckets:
+                for scope in bucket.scopes.keys():
+                    for collection in bucket.scopes[scope].collections.keys():
+                        if collection == "_default" and scope == "_default":
+                            continue
+                        for op_type in doc_ops:
+                            cmd.update({"deleted": False})
+                            hm = HashMap()
+                            if op_type == "create":
+                                hm.putAll({DRConstants.read_s: self.create_start,
+                                           DRConstants.read_e: self.create_end})
+                            elif op_type == "update":
+                                hm.putAll({DRConstants.read_s: self.update_start,
+                                           DRConstants.read_e: self.update_end})
+                            elif op_type == "delete":
+                                hm.putAll({DRConstants.read_s: self.delete_start,
+                                           DRConstants.read_e: self.delete_end})
+                                cmd.update({"deleted": True})
+                            else:
+                                continue
+                            dr = DocRange(hm)
+                            ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
+                                                  cmd.get("keySize", self.key_size),
+                                                  cmd.get("docSize", self.doc_size),
+                                                  cmd.get("cr", 0),
+                                                  cmd.get("rd", 100),
+                                                  cmd.get("up", 0),
+                                                  cmd.get("dl", 0),
+                                                  cmd.get("workers", self.process_concurrency),
+                                                  cmd.get("ops", self.ops_rate),
+                                                  cmd.get("loadType", None),
+                                                  cmd.get("keyType", None),
+                                                  cmd.get("valueType", None),
+                                                  cmd.get("validate", True),
+                                                  cmd.get("gtm", False),
+                                                  cmd.get("deleted", False),
+                                                  cmd.get("mutated", 0))
+                            ws.dr = dr
+                            dg = DocumentGenerator(ws, self.key_type, None)
+                            self.loader_map.update({bucket.name+scope+collection+op_type: dg})
 
-            self.doc_loading_tm.get_task_result(task)
-            self.suppress_error_table = temp
+            tasks = list()
+            i = self.process_concurrency
+            while i > 0:
+                for bucket in self.cluster.buckets:
+                    for scope in bucket.scopes.keys():
+                        for collection in bucket.scopes[scope].collections.keys():
+                            if collection == "_default" and scope == "_default":
+                                continue
+                            for op_type in doc_ops:
+                                if op_type not in ["create", "update", "delete"]:
+                                    continue
+                                client = NewSDKClient(master, bucket.name, scope, collection)
+                                client.initialiseSDK()
+                                taskName = "Loader_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
+                                task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type], client, "NONE")
+                                tasks.append(task)
+                                self.tm.submit(task)
+                                i -= 1
+        self.tm.getAllTaskResult()
+        for task in tasks:
+            self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
     def get_bucket_dgm(self, bucket):
         self.rest_client = BucketHelper(self.cluster.master)
@@ -999,11 +996,11 @@ class volume(BaseTestCase):
 
     def PrintStep(self, msg=None):
         print("\n")
-        print("\t" + "#"*60)
-        print("\t" + "#")
-        print("\t" + "#  %s" % msg)
-        print("\t" + "#")
-        print("\t" + "#"*60)
+        print("#"*60)
+        print("#")
+        print("#  %s" % msg)
+        print("#")
+        print("#"*60)
         print("\n")
 
     def ClusterOpsVolume(self):
@@ -1027,10 +1024,17 @@ class volume(BaseTestCase):
             Create sequential: 0 - 10M
             Final Docs = 10M (0-10M, 10M seq items)
             '''
+            self.create_perc = 100
+            self.key_type = "SimpleKey"
             self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
-            self.generate_docs(doc_ops="create")
+            self.generate_docs(doc_ops=["create"],
+                               create_start=self.start, create_end=self.num_items)
             self.perform_load(validate_data=False)
 
+            self.PrintStep("Step 3.1: Update %s SimpleKey keys to create 50 percent fragmentation" % str(self.num_items))
+            self.generate_docs(doc_ops=["update"],
+                               update_start=self.start, update_end=self.end)
+            self.perform_load(validate_data=False)
             ###################################################################
             '''
             Existing:
@@ -1042,16 +1046,13 @@ class volume(BaseTestCase):
             Final Docs = 30M (0-20M, 20M Random)
             Nodes In Cluster = 3
             '''
-            temp = self.key_prefix
-            self.key_prefix = "random_keys"
-            self.create_perc = 100*2
-            self.PrintStep("Step 4: Create %s random keys" %
-                           str(self.num_items*self.create_perc/100))
+            self.PrintStep("Step 4: Create %s random keys" % str(self.num_items))
+            self.key_type = "RandomKey"
 
-            self.generate_docs(doc_ops="create")
+            self.generate_docs(doc_ops=["create"],
+                               create_start=self.end, create_end=self.end+self.num_items)
             self.perform_load(validate_data=False)
 
-            self.key_prefix = temp
             ###################################################################
             '''
             Existing:
@@ -1066,17 +1067,10 @@ class volume(BaseTestCase):
             Nodes In Cluster = 3
             '''
 
-            temp = self.key_prefix
-            self.key_prefix = "random_keys"
-            self.update_perc = 100*2
-            self.PrintStep("Step 5: Update %s random keys to create 50 percent\
-             fragmentation" % str(self.num_items*self.update_perc/100))
-            self.generate_docs(doc_ops="update")
-            self.perform_load(validate_data=False)
-
-            self.key_prefix = temp
             self.update_perc = 100
-            self.generate_docs(doc_ops="update")
+            self.PrintStep("Step 5: Update %s random keys to create 50 percent fragmentation" % str(self.num_items))
+            self.generate_docs(doc_ops=["update"],
+                               update_start=self.start, update_end=self.end)
             self.perform_load(validate_data=False)
 
             ###################################################################
@@ -1094,17 +1088,17 @@ class volume(BaseTestCase):
             Final Docs = 30M (Random: 0-10M, 20-30M, Sequential: 0-10M)
             Nodes In Cluster = 4
             '''
-
+            self.create_perc = 25
+            self.update_perc = 25
+            self.delete_perc = 25
+            self.expiry_perc = 25
+            self.read_perc = 25
             self.PrintStep("Step 6: Rebalance in with Loading of docs")
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
 
             self.key_prefix = "random_keys"
-            self.create_perc = 100
-            self.update_perc = 100
-            self.delete_perc = 50
-            self.expiry_perc = 50
-            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1128,11 +1122,7 @@ class volume(BaseTestCase):
             self.PrintStep("Step 7: Rebalance Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
 
-            self.create_perc = 100
-            self.update_perc = 100
-            self.delete_perc = 100
-            self.expiry_perc = 0
-            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1157,11 +1147,7 @@ class volume(BaseTestCase):
             self.PrintStep("Step 8: Rebalance In_Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
 
-            self.create_perc = 100
-            self.update_perc = 100
-            self.delete_perc = 0
-            self.expiry_perc = 100
-            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1187,11 +1173,7 @@ class volume(BaseTestCase):
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
 
-            self.create_perc = 100
-            self.update_perc = 100
-            self.delete_perc = 50
-            self.expiry_perc = 50
-            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1232,11 +1214,7 @@ class volume(BaseTestCase):
                                                        howmany=1)
 
             # Mark Node for failover
-            self.create_perc = 100
-            self.update_perc = 100
-            self.delete_perc = 0
-            self.expiry_perc = 100
-            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             tasks_info = self.data_load()
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
@@ -1309,7 +1287,7 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             tasks_info = self.data_load()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
@@ -1381,7 +1359,7 @@ class volume(BaseTestCase):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             tasks_info = self.data_load()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
@@ -1444,7 +1422,7 @@ class volume(BaseTestCase):
                 bucket_helper.change_bucket_props(
                     self.cluster.buckets[i], replicaNumber=2)
 
-            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             tasks_info = self.data_load()
 
@@ -1472,7 +1450,7 @@ class volume(BaseTestCase):
             for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
                     self.cluster.buckets[i], replicaNumber=1)
-            self.generate_docs(doc_ops=["update", "delete", "expiry", "create"])
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             self.set_num_writer_and_reader_threads(
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
@@ -1522,7 +1500,7 @@ class volume(BaseTestCase):
         self.skip_read_on_error = True
         self.suppress_error_table = True
 
-        self.doc_ops = "create"
+        self.doc_ops = ["create"]
         self.create_perc = 100
         for bucket in self.cluster.buckets:
             self.PrintStep("Step 1: Create %s items" % self.num_items)
@@ -1534,7 +1512,7 @@ class volume(BaseTestCase):
                 dgm = self.get_bucket_dgm(bucket)
                 self.perform_load(validate_data=False)
 
-        self.doc_ops = "read"
+        self.doc_ops = ["read"]
         self.read_perc = 100
         self.generate_docs(doc_ops=self.doc_ops)
         self.data_validation()
@@ -1754,6 +1732,15 @@ class volume(BaseTestCase):
         check_dump_th = threading.Thread(target=self.check_dump)
         check_dump_th.start()
         self.loop = 1
+        self.PrintStep("Step 3: Create %s items and checkout fragmentation" % str(self.num_items))
+        self.create_perc = 100
+        self.generate_docs(doc_ops=["create"],
+                           create_start=0,
+                           create_end=self.num_items)
+        self.perform_load(validate_data=False)
+        if self.end_step == 2:
+            exit(2)
+
         while self.loop <= self.iterations:
             #######################################################################
             '''
@@ -1761,17 +1748,9 @@ class volume(BaseTestCase):
             deletes: 0 - 10M
             Final Docs = 0
             '''
-            self.PrintStep("Step 3: Create %s items and Delete everything. \
-            checkout fragmentation" % str(self.num_items*self.create_perc/100))
-            self.create_perc = 100
-            self.delete_perc = 100
-            self.generate_docs(doc_ops="create")
-            self.perform_load(validate_data=False)
-            if self.end_step == 2:
-                exit(2)
-            self.generate_docs(doc_ops="delete",
-                               delete_start=self.start,
-                               delete_end=self.end)
+            self.PrintStep("Step 4: Starting parallel cruds")
+            self.create_perc, self.read_perc, self.update_perc, self.delete_perc = [100/len(self.doc_ops)]*4
+            self.generate_docs()
             self.perform_load(validate_data=True)
             if self.end_step == 3:
                 exit(3)
@@ -1780,48 +1759,8 @@ class volume(BaseTestCase):
             '''
             #######################################################################
             '''
-            creates: 0 - 10M
-            creates: 0 - 10M
-            Final Docs = 20M (0-20M)
-            '''
-            self.create_perc = 200
-            self.PrintStep("Step 4: Load %s items, sequential keys" %
-                           str(self.num_items*self.create_perc/100))
-            self.generate_docs(doc_ops="create",
-                               create_start=self.start,
-                               create_end=self.end*self.create_perc/100)
-            self.perform_load(validate_data=False)
-            if self.end_step == 4:
-                exit(4)
-            '''
-            fragmentation at this time: 0, total data: 2X, stale: 0
-            '''
-            #######################################################################
-            '''
-            update: 0 - 1M * 10
-            Final Docs = 20M (0-20M)
-            '''
-            self.update_perc = 100
-            self.PrintStep("Step 5: Update the first set of %s percent (%s) items \
-            %s times" % (str(self.update_perc),
-                         str(self.num_items*self.update_perc/100),
-                         str(self.step_iterations)))
-            _iter = 0
-            while _iter < self.step_iterations:
-                self.PrintStep("Step 5.%s: Update the first set of %s percent (%s) \
-                items %s times" % (str(_iter), str(self.update_perc),
-                                   str(self.num_items*self.update_perc/100),
-                                   str(self.step_iterations)))
-                self.generate_docs(doc_ops="update")
-                self.perform_load(crash=False, validate_data=True)
-                _iter += 1
-            if self.end_step == 5:
-                exit(5)
-            '''
-            fragmentation at this time: 50, total data: 2X, stale: X
-            '''
-            #######################################################################
-            '''
+            |----READ----|----UPDATE----|----DELETE----|----CREATE----|
+                 25%            25%           25%             25%
             Reverse Update: 10M - 9M
             Final Docs = 20M (0-20M)
             '''
@@ -1830,19 +1769,20 @@ class volume(BaseTestCase):
             self.PrintStep("Step 6: Reverse Update last set of %s percent (%s-%s) \
             items %s times" % (str(self.update_perc), str(self.num_items-1),
                                str(self.num_items+1 -
-                                   self.num_items*self.update_perc/100),
+                                   self.num_items),
                                str(self.step_iterations)))
             while _iter < self.step_iterations:
                 self.PrintStep("Step 6.%s: Reverse Update last set of %s percent \
                 (%s-%s) items %s times" % (str(_iter), str(self.update_perc),
                                            str(self.num_items+1),
                                            str(self.num_items+1 -
-                                               self.num_items*self.update_perc/100),
+                                               self.num_items),
                                            str(self.step_iterations)))
-                self.generate_docs(doc_ops="update",
-                                   update_start=-self.num_items+1,
-                                   update_end=self.num_items *
-                                   self.update_perc/100-self.num_items+1)
+                start = -self.update_end
+                end = -self.update_start
+                self.generate_docs(doc_ops=["update"],
+                                   update_start=start,
+                                   update_end=end)
                 self.perform_load(crash=False, validate_data=True)
                 _iter += 1
             if self.end_step == 6:
@@ -1856,11 +1796,12 @@ class volume(BaseTestCase):
             Final Docs = 30M (0-20M, 10M Random)
             '''
             temp = self.key_prefix
-            self.key_prefix = "random_keys"
+            self.key_type = "RandomKey"
             self.create_perc = 100
-            self.PrintStep("Step 7: Create %s random keys" %
-                           str(self.num_items*self.create_perc/100))
-            self.generate_docs(doc_ops="create")
+            self.PrintStep("Step 7: Create %s random keys" % str(self.num_items))
+            self.generate_docs(doc_ops=["create"],
+                               create_start=self.start,
+                               create_end=self.start + self.num_items)
             self.perform_load(crash=False, validate_data=True)
             self.key_prefix = temp
             '''
@@ -1873,18 +1814,17 @@ class volume(BaseTestCase):
             '''
             _iter = 0
             self.update_perc = 100
-            self.key_prefix = "random_keys"
             self.PrintStep("Step 8: Update all %s random items %s times" %
                            (str(self.num_items*self.update_perc/100),
                             str(self.step_iterations)))
             while _iter < self.step_iterations:
                 self.PrintStep("Step 8.%s: Update all %s random items %s times" %
                                (str(_iter),
-                                str(self.num_items*self.update_perc/100),
+                                str(self.num_items),
                                 str(self.step_iterations)))
-                self.generate_docs(doc_ops="update",
+                self.generate_docs(doc_ops=["update"],
                                    update_start=self.start,
-                                   update_end=self.end*self.update_perc/100)
+                                   update_end=self.end)
                 self.perform_load(crash=False, validate_data=True)
                 _iter += 1
             self.key_prefix = temp
@@ -1902,15 +1842,15 @@ class volume(BaseTestCase):
             self.key_prefix = "random_keys"
             self.delete_perc = 100
             self.PrintStep("Step 9: Delete/Re-Create all %s random items" %
-                           str(self.num_items*self.delete_perc/100))
-            self.generate_docs(doc_ops="delete")
-            self.suppress_error_table = True
+                           str(self.num_items))
+            self.generate_docs(doc_ops=["delete"],
+                               delete_start=self.start,
+                               delete_end=self.end)
             self.perform_load(crash=False, validate_data=True)
-            self.suppress_error_table = False
             '''
             fragmentation: 50, total data: 3X, stale: 1.5X
             '''
-            self.generate_docs(doc_ops="create",
+            self.generate_docs(doc_ops=["create"],
                                create_start=self.start,
                                create_end=self.end)
             self.perform_load(crash=False, validate_data=True)
@@ -1922,20 +1862,19 @@ class volume(BaseTestCase):
             Update: 0 - 1M
             Final Docs = 30M (0-20M, 10M Random)
             '''
-            self.update_perc = 10
+            self.create_perc, self.read_perc, self.update_perc, self.delete_perc = [100/len(self.doc_ops)]*4
             self.PrintStep("Step 10: Update %s percent(%s) items %s times and \
             crash during recovery" % (str(self.update_perc),
-                                      str(self.num_items*self.update_perc/100),
+                                      str(self.num_items),
                                       str(self.step_iterations)))
             _iter = 0
             while _iter < self.step_iterations and self.crashes:
                 self.PrintStep("Step 10.%s: Update %s percent(%s) items %s times \
                 and crash during recovery" % (str(_iter), str(self.update_perc),
-                                              str(self.num_items *
-                                                  self.update_perc/100),
+                                              str(self.num_items),
                                               str(self.step_iterations)))
-                self.generate_docs(doc_ops="update")
-                self.perform_load(crash=True, validate_data=True)
+                self.generate_docs(doc_ops=self.doc_ops)
+                self.perform_load(crash=True, validate_data=False)
                 _iter += 1
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets,

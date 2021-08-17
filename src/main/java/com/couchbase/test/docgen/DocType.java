@@ -156,6 +156,7 @@ public class DocType {
         private String body;
         private String gender;
         private String marital;
+        private int mutated;
 
         @JsonCreator
         public
@@ -166,6 +167,7 @@ public class DocType {
                 @JsonProperty("attributes") Attributes attributes,
                 @JsonProperty("gender") String gender,
                 @JsonProperty("marital") String marital,
+                @JsonProperty("mutated") int mutated,
                 @JsonProperty("body") String body) {
             this.name = name;
             this.age = age;
@@ -173,6 +175,7 @@ public class DocType {
             this.attributes = attributes;
             this.gender = gender;
             this.marital = marital;
+            this.mutated = mutated;
             this.body = body;
         }
 
@@ -213,6 +216,11 @@ public class DocType {
         @JsonGetter
         String marital() {
             return marital;
+        }
+        
+        @JsonGetter
+        int mutated() {
+            return mutated;
         }
     }
 }

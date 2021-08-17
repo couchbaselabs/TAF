@@ -36,9 +36,9 @@ abstract class KVGenerator{
         this.ws = ws;
         if(keyClass.equals(RandomKey.class.getSimpleName()))
             this.keyInstance = RandomKey.class;
-        else if(keyClass == ReverseKey.class.getName())
+        else if(keyClass == ReverseKey.class.getSimpleName())
             this.keyInstance = ReverseKey.class;
-        else if(keyClass == RandomSizeKey.class.getName())
+        else if(keyClass == RandomSizeKey.class.getSimpleName())
             this.keyInstance = RandomSizeKey.class;
         else
             this.keyInstance = SimpleKey.class;

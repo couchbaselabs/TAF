@@ -140,6 +140,9 @@ public class Loader {
         Option transaction_load = new Option("transaction_patterns", true, "Transaction load pattern");
         options.addOption(transaction_load);
 
+        Option durability = new Option("durability", true, "Durability Level");
+        options.addOption(durability);
+
         HelpFormatter formatter = new HelpFormatter();
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd;
@@ -171,7 +174,8 @@ public class Loader {
                 cmd.getOptionValue("valueType", null),
                 Boolean.parseBoolean(cmd.getOptionValue("validate", "false")),
                 Boolean.parseBoolean(cmd.getOptionValue("gtm", "false")),
-                Boolean.parseBoolean(cmd.getOptionValue("deleted", "false"))
+                Boolean.parseBoolean(cmd.getOptionValue("deleted", "false")),
+                Integer.parseInt(cmd.getOptionValue("mutated", "0"))
                 );
         HashMap<String, Integer> dr = new HashMap<String, Integer>();
         dr.put(DRConstants.create_s, Integer.parseInt(cmd.getOptionValue(DRConstants.create_s, "0")));
@@ -202,7 +206,7 @@ public class Loader {
                 SDKClient client = new SDKClient(master, cmd.getOptionValue("bucket"), "_default", "_default");
                 client.initialiseSDK();
                 String th_name = "Loader" + i;
-                tm.submit(new WorkLoadGenerate(th_name, dg, client));
+                tm.submit(new WorkLoadGenerate(th_name, dg, client, cmd.getOptionValue("durability", "None")));
                 TimeUnit.MILLISECONDS.sleep(500);
             } catch (Exception e) {
                 e.printStackTrace();
