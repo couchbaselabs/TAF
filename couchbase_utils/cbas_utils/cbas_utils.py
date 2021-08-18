@@ -827,7 +827,9 @@ class CbasUtil:
         self.log.debug("Expected Mutated Count: %s, Actual Mutated Count: %s"
                        % (expected_mutated_count, mutated_count))
 
-        if count != expected_count:
+        if count == expected_count and mutated_count == expected_mutated_count:
+            return True
+        elif count != expected_count:
             return False
         elif mutated_count == expected_mutated_count:
             return True
@@ -1585,8 +1587,12 @@ class CbasUtil:
                 if status == "success":
                     analytics_recovered = True
                     break
+                else:
+                    self.log.info("Service unavailable. Will retry..")
+                    time.sleep(2)
             except:
-                sleep(2, "Service unavailable. Will retry..")
+                self.log.info("Service unavailable. Will retry..")
+                time.sleep(2)
         return analytics_recovered
 
     # Backup Analytics metadata

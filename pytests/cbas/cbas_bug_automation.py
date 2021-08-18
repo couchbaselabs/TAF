@@ -1,20 +1,21 @@
 import datetime
 import json
 
-from bucket_utils.bucket_ready_functions import bucket_utils
+#from bucket_utils.bucket_ready_functions import bucket_utils
 from cbas.cbas_base import CBASBaseTest
 from couchbase_helper.documentgenerator import DocumentGenerator
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.tuq_generators import JsonGenerator
+from security_utils.security_utils import SecurityUtils
 
 
 class CBASBugAutomation(CBASBaseTest):
 
     def setUp(self):
         # Invoke CBAS setUp method
-        super(CBASBugAutomation, self).setUp()  
+        super(CBASBugAutomation, self).setUp()
 
     @staticmethod
     def generate_documents(start_at, end_at):
@@ -24,7 +25,7 @@ class CBASBugAutomation(CBASBaseTest):
         template = '{{ "number": {0}, "first_name": "{1}" , "profession":"{2}", "mutated":0}}'
         documents = DocumentGenerator('test_docs', template, age, first, profession, start=start_at, end=end_at)
         return documents
-    
+
     def test_multiple_cbas_data_set_creation(self):
 
         '''
@@ -595,3 +596,267 @@ class CBASBugAutomation(CBASBaseTest):
 
     def tearDown(self):
         super(CBASBugAutomation, self).tearDown()
+
+class CBASBugAutomation2(CBASBaseTest):
+
+    def setUp(self):
+        super(CBASBugAutomation2, self).setUp()
+        if self.default_bucket:
+            self.bucket_util.create_default_bucket(
+                bucket_type=self.bucket_type, ram_quota=self.bucket_size,
+                replica=self.num_replicas,
+                replica_index=self.bucket_replica_index,
+                storage=self.bucket_storage,
+                eviction_policy=self.bucket_eviction_policy)
+        self.update_nodes_in_cluster(self.cluster, self.rest, self.servers)
+        self.security_util = SecurityUtils(self.log)
+        self.do_rebalance = self.input.param("do_rebalance", False)
+        if not RestConnection(self.cluster.master).update_autofailover_settings(
+            False, 120, False):
+            self.fail("Disabling Auto-Failover")
+        self.log.info("================================================================")
+        self.log.info("SETUP has finished")
+        self.log.info("================================================================")
+
+    def tearDown(self):
+        self.log.info("================================================================")
+        self.log.info("TEARDOWN has started")
+        self.log.info("================================================================")
+        self.security_util.teardown_x509_certs(
+            self.cluster.servers, self.cluster.CACERTFILEPATH)
+        super(CBASBugAutomation2, self).tearDown()
+        self.log.info("================================================================")
+        self.log.info("Teardown has finished")
+        self.log.info("================================================================")
+
+    @staticmethod
+    def update_nodes_in_cluster(cluster, rest, servers):
+        node_ip = [i.ip for i in rest.node_statuses()]
+        for server in servers:
+            if server.ip in node_ip:
+                cluster.nodes_in_cluster.append(server)
+
+    def load_data_into_bucket(self, start, end, async_load=False):
+        self.log.info("Loading data into KV bucket")
+        load_task = self.bucket_util.async_load_bucket(
+            self.cluster, self.bucket_util.buckets[0],
+            CBASBugAutomation.generate_documents(start, end),
+            "create", 0, durability="", batch_size=self.batch_size,
+            suppress_error_table=True)
+        if not async_load:
+            self.task.jython_task_manager.get_task_result(load_task)
+
+    def validate_doc_count_for_datasets(self, expected_count):
+        self.log.info("Validating doc count in datasets")
+        result = True
+        for dataset in self.datasets:
+            result = result and self.cbas_util.validate_cbas_dataset_items_count(
+                dataset, expected_count, expected_mutated_count=0, num_tries=12)
+        return result
+
+    @staticmethod
+    def setup_certs(cluster, security_util):
+        security_util._reset_original(cluster.nodes_in_cluster)
+        security_util.generate_x509_certs(cluster)
+        security_util.upload_x509_certs(cluster, True)
+
+    def create_dataset(self, count):
+        ds_name =  "ds_{0}".format(count)
+        self.log.info("Creating dataset {0}".format(ds_name))
+        if not self.cbas_util.create_dataset_on_bucket(
+            self.bucket_util.buckets[0].name, ds_name):
+            self.fail("Dataset {0} creation failed".format(ds_name))
+        else:
+            self.datasets.append(ds_name)
+
+    def get_rebalanceIn_servers(self):
+        node_ip = [i.ip for i in self.rest.node_statuses()]
+        rebalanceServers = list()
+        for server in self.servers:
+            if not (server.ip in node_ip):
+                rebalanceServers.append(server)
+        return rebalanceServers
+
+    @staticmethod
+    def get_rebalanceOut_servers(rest, rebalanceInServers):
+        nodes = rest.node_statuses()
+        rebalanceOutServers = list()
+        for server in rebalanceInServers:
+            for node in nodes:
+                if node.ip == server.ip:
+                    rebalanceOutServers.append(node)
+        return rebalanceOutServers
+
+    def test_cbas_with_n2n_encryption_and_client_cert_auth(self):
+        self.log.info("Performing steps 1-2")
+        self.log.info("Initial Data loading in bucket")
+        total_doc_count = self.num_items
+        increment_count = 1000
+        self.load_data_into_bucket(0, total_doc_count, False)
+
+        self.datasets = list()
+        for i in range(1, self.input.param("no_of_ds", 1) + 1):
+            self.create_dataset(i)
+
+        self.log.info("Connecting Local Link")
+        if not self.cbas_util.connect_link():
+            self.fail("Error while connecting Local link")
+
+        if not self.validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 3-8")
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            self.cluster.nodes_in_cluster, level="control")
+        if not self.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        self.log.info("Setting up certificates")
+        self.setup_certs(self.cluster, self.security_util)
+
+        self.load_data_into_bucket(total_doc_count,
+                                   total_doc_count + increment_count, False)
+
+        total_doc_count += increment_count
+
+        i += 1
+        self.create_dataset(i)
+
+        if self.do_rebalance:
+            self.log.info("Rebalancing IN nodes")
+            rebalanceInServers = self.get_rebalanceIn_servers()
+            self.cluster_util.add_node(
+                node=rebalanceInServers[0], services=["kv", "n1ql"],
+                rebalance=False, wait_for_rebalance_completion=False)
+            self.cluster_util.add_node(
+                node=rebalanceInServers[1], services=["cbas"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            self.update_nodes_in_cluster(self.cluster, self.rest, self.servers)
+
+        if not self.validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 9-12")
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            self.cluster.nodes_in_cluster, level="all")
+        if not self.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        self.load_data_into_bucket(total_doc_count,
+                                   total_doc_count + increment_count, False)
+
+        total_doc_count += increment_count
+
+        i += 1
+        self.create_dataset(i)
+
+        if self.do_rebalance:
+            rebalanceOutServers = self.get_rebalanceOut_servers(
+                self.rest, rebalanceInServers)
+            self.log.info("Rebalancing OUT nodes %s %s" % (
+                rebalanceOutServers[0].ip, rebalanceOutServers[1].ip))
+            self.cluster_util.remove_all_nodes_then_rebalance(rebalanceOutServers)
+            self.update_nodes_in_cluster(self.cluster, self.rest, self.servers)
+
+        if not self.validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 13-17")
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            self.cluster.nodes_in_cluster, level="control")
+        if not self.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        if not self.cbas_util.drop_dataset(self.datasets.pop()):
+            self.fail("Error while dropping dataset")
+
+        self.load_data_into_bucket(total_doc_count,
+                                   total_doc_count + increment_count, False)
+
+        total_doc_count += increment_count
+
+        if self.do_rebalance:
+            self.log.info("Rebalancing IN nodes")
+            self.cluster_util.add_node(
+                node=rebalanceInServers[0], services=["kv", "n1ql"],
+                rebalance=False, wait_for_rebalance_completion=False)
+            self.cluster_util.add_node(
+                node=rebalanceInServers[1], services=["cbas"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            self.update_nodes_in_cluster(self.cluster, self.rest, self.servers)
+
+        if not self.validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 18-22")
+        self.log.info("Disabling node-to-node encryption and client cert auth")
+        self.security_util.disable_n2n_encryption_cli_on_nodes(self.cluster.servers)
+        if not self.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+        self.security_util.teardown_x509_certs(
+            self.cluster.servers, self.cluster.CACERTFILEPATH)
+
+        self.load_data_into_bucket(total_doc_count,
+                                   total_doc_count + increment_count, False)
+
+        total_doc_count += increment_count
+
+        i += 1
+        self.create_dataset(i)
+
+        if self.do_rebalance:
+            self.log.info("Rebalancing OUT nodes %s %s" % (
+                rebalanceOutServers[0].ip, rebalanceOutServers[1].ip))
+            self.cluster_util.remove_all_nodes_then_rebalance(rebalanceOutServers)
+            self.update_nodes_in_cluster(self.cluster, self.rest, self.servers)
+
+        if not self.validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 23-27")
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            self.cluster.nodes_in_cluster, level="all")
+        if not self.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        self.load_data_into_bucket(total_doc_count,
+                                   total_doc_count + increment_count, False)
+
+        total_doc_count += increment_count
+
+        i += 1
+        self.create_dataset(i)
+
+        if self.do_rebalance:
+            self.log.info("Rebalancing IN nodes")
+            self.cluster_util.add_node(
+                node=rebalanceInServers[0], services=["kv", "n1ql"],
+                rebalance=False, wait_for_rebalance_completion=False)
+            self.cluster_util.add_node(
+                node=rebalanceInServers[1], services=["cbas"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            self.update_nodes_in_cluster(self.cluster, self.rest, self.servers)
+
+        if not self.validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 28-32")
+        self.log.info("Setting up certificates")
+        self.setup_certs(self.cluster, self.security_util)
+
+        self.load_data_into_bucket(total_doc_count,
+                                   total_doc_count + increment_count, False)
+
+        total_doc_count += increment_count
+
+        if not self.cbas_util.drop_dataset(self.datasets.pop()):
+            self.fail("Error while dropping dataset")
+
+        if self.do_rebalance:
+            self.log.info("Rebalancing OUT nodes %s %s" % (
+                rebalanceOutServers[0].ip, rebalanceOutServers[1].ip))
+            self.cluster_util.remove_all_nodes_then_rebalance(rebalanceOutServers)
+            self.update_nodes_in_cluster(self.cluster, self.rest, self.servers)
+
+        if not self.validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")

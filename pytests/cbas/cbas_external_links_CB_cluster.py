@@ -12,6 +12,9 @@ from rbac_utils.Rbac_ready_functions import RbacUtils
 from security_utils.x509main import x509main
 from shutil import copytree
 from membase.api.rest_client import RestHelper
+from security_utils.security_utils import SecurityUtils
+from cbas.cbas_bug_automation import CBASBugAutomation2
+from membase.api.rest_client import RestConnection
 
 rbac_users_created = {}
 
@@ -233,40 +236,41 @@ class CBASExternalLinks(CBASBaseTest):
             self.get_link_property_dict(to_cluster)
 
         self.log.info("Creating link to remote cluster")
-        if not self.analytics_cluster.cbas_util.create_external_link_on_cbas(link_properties = self.link_info, username=username):
+        if not self.analytics_cluster.cbas_util.create_external_link_on_cbas(
+            link_properties=self.link_info, username=username):
             self.fail("link cration failed")
         self.link_created = True
 
         self.log.info("Loading sample bucket")
         if not to_cluster.bucket_util.load_sample_bucket(self.sample_bucket):
-            self.fail("Error while loading {0} bucket in remote cluster".format(self.sample_bucket.name))
+            self.fail("Error while loading {0} bucket in remote cluster".format(
+                self.sample_bucket.name))
 
         self.log.info("Creating dataset on link to remote cluster")
-        if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(cbas_bucket_name= self.sample_bucket.name,
-                                                                         cbas_dataset_name= self.cbas_dataset_name,
-                                                                         dataverse=self.link_info["dataverse"],
-                                                                         link_name="{0}.{1}".format(
-                                                                             self.link_info["dataverse"],
-                                                                             self.link_info["name"]),
-                                                                         username=username):
+        if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(
+            cbas_bucket_name= self.sample_bucket.name,
+            cbas_dataset_name= self.cbas_dataset_name,
+            dataverse=self.link_info["dataverse"],
+            link_name="{0}.{1}".format(self.link_info["dataverse"], self.link_info["name"]),
+            username=username):
             self.fail("Error while creating dataset")
         self.dataset_created = True
 
         if connect_link:
             self.log.info("Connectin remtoe link")
-            if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(self.link_info["dataverse"],
-                                                                             self.link_info["name"]),
-                                                                             username=username):
+            if not self.analytics_cluster.cbas_util.connect_link("{0}.{1}".format(
+                self.link_info["dataverse"], self.link_info["name"]), username=username):
                 self.fail("Error while connecting link")
             if wait_for_ingestion:
                 self.log.info("Waiting for data ingestion to complete")
-                if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete([self.cbas_dataset_name],
-                                                                                    self.sample_bucket.stats.expected_item_count,
-                                                                                    300):
+                if not self.analytics_cluster.cbas_util.wait_for_ingestion_complete(
+                    [self.cbas_dataset_name], self.sample_bucket.stats.expected_item_count, 300):
                     self.fail("Data Ingestion did not complete")
                 self.log.info("Setting primary index on dataset")
-                if set_primary_index and not self.set_primary_index(to_cluster.rest, self.sample_bucket.name):
-                    self.fail("Creating Primary index on bucket {0} FAILED".format(self.sample_bucket.name))
+                if set_primary_index and not self.set_primary_index(
+                    to_cluster.rest, self.sample_bucket.name):
+                    self.fail("Creating Primary index on bucket {0} FAILED".format(
+                        self.sample_bucket.name))
 
         return to_cluster
 
@@ -1575,7 +1579,6 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                   self.num_items):
             self.fail("Number of items in dataset do not match number of items in bucket")
 
-
     def test_analytics_cluster_when_rebalancing_in_cbas_node(self):
         '''
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
@@ -1620,7 +1623,6 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                   self.sample_bucket.stats.expected_item_count
                                                                                   + self.num_items, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
-
 
     def test_analytics_cluster_swap_rebalancing(self):
         '''
@@ -1735,7 +1737,6 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                   + self.num_items, 0):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
 
-
     def test_fail_over_cbas_node_followed_by_rebalance_out_or_add_back(self):
         """
         1. We have 2 clusters, local cluster, remote cluster and 4 nodes - 101, 102, 103, 104.
@@ -1803,47 +1804,466 @@ class CBASExternalLinks(CBASBaseTest):
                                                                                   timeout=400,
                                                                                   analytics_timeout=400):
             self.fail("No. of items in CBAS dataset do not match that in the CB bucket")
-    
-    
-    """def test_scan_consistency_with_kv_mutations(self):
-        
-        to_cluster = self.setup_datasets(wait_for_ingestion=True)
-        
-        self.log.info("Perform async doc operations on KV")
-        
-        kv_task = self.perform_doc_ops_in_cb_buckets(to_cluster, self.sample_bucket, "create", key=self.key, end_key=self.num_items * 4, 
-                                           batch_size=5000)
-        
-        self.log.info('Validate count')
-        query = 'select count(*) from %s' % self.cbas_dataset_name
-        dataset_count=0
-        import time
-        start_time = time.time()
-        output_with_scan = []
-        output_without_scan = []
-        while time.time() < start_time + 120:
-            try:
-                response_with_scan, _, _, results_with_scan, _ = self.analytics_cluster.cbas_util.execute_statement_on_cbas_util(query, 
-                                                                                                                            scan_consistency="request_plus", 
-                                                                                                                            scan_wait="1m")
-                self.assertEqual(response_with_scan, "success", "Query failed...")
-                output_with_scan.append(results_with_scan[0]['$1'])
-                
-                response_without_scan, _, _, results_without_scan, _ = self.analytics_cluster.cbas_util.execute_statement_on_cbas_util(query, 
-                                                                                                                                  scan_consistency='not_bounded')
-                self.assertEqual(response_without_scan, "success", "Query failed...")
-                output_without_scan.append(results_without_scan[0]['$1'])
-                
-                if results_without_scan[0]['$1'] == self.num_items * 4:
-                    break
-            except Exception as e:
-                self.log.info('Try again neglect failures...')
-        
-        self.log.info("Get KV ops result")
-        kv_task.get_result()
-        
-        self.log.info('Compare the output result length of count query with scan and with scan parameters')
-        self.assertTrue(len(set(output_with_scan)) < len(set(output_without_scan)), msg='Select query with scan consistency must take fewer results')
-        cbas_datasets = sorted(list(set(output_with_scan)))
-        count_n1ql = self.rest.query_tool('select count(*) from %s' % self.cb_bucket_name)['results'][0]['$1']
-        self.assertEqual(cbas_datasets[len(cbas_datasets)-1], count_n1ql, msg='KV-CBAS count mismatch. Actual %s, expected %s' % (dataset_count, count_n1ql))"""
+
+    """
+    1. Setup cluster
+    2. Create a few remtoe datasets in analytics
+    3. Make sure the ingestion happens and is continous
+
+    4. Now enable n2n and encrytionLevel = control. Enable client cert as well (x509 certs) on remote cluster.
+    5. Now create new remote dataset/delete and edit, ingestion should continue.
+    6. Make sure older data continue to ingest.
+    7. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    8. Make sure older data continue to ingest.
+
+    9. Now enable n2n and encrytionLevel = control. Enable client cert as well (x509 certs) on analytics cluster.
+    10. Now create new remote dataset/delete and edit, ingestion should continue.
+    11. Make sure older data continue to ingest.
+    12. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    13. Make sure older data continue to ingest.
+
+    14. Now change the encryptionLevel = all on remote cluster.
+    15. Now create new remote dataset/delete and edit, ingestion should continue.
+    16. Make sure older data continue to ingest.
+    17. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    18. Make sure older data continue to ingest.
+
+    19. Now change the encryptionLevel = all on local cluster.
+    20. Now create new remote dataset/delete and edit, ingestion should continue.
+    21. Make sure older data continue to ingest.
+    22. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    23. Make sure older data continue to ingest.
+
+    24. Now enable n2n and encrytionLevel = control on remote cluster.
+    25. Now create new remote dataset/delete and edit, ingestion should continue.
+    26. Make sure older data continue to ingest.
+    27. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    28. Make sure older data continue to ingest.
+
+    29. Now enable n2n and encrytionLevel = control. Enable client cert as well (x509 certs) on analytics cluster.
+    30. Now create new remote dataset/delete and edit, ingestion should continue.
+    31. Make sure older data continue to ingest.
+    32. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    33. Make sure older data continue to ingest.
+
+    34. Now disable n2n and client cert authentication on remote cluster.
+    35. Now create new remote dataset/delete and edit, ingestion should continue.
+    36. Make sure older data continue to ingest.
+    37. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    38. Make sure older data continue to ingest.
+
+    39. Now disable n2n and client cert authentication on analytics cluster.
+    40. Now create new remote dataset/delete and edit, ingestion should continue.
+    41. Make sure older data continue to ingest.
+    42. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    43. Make sure older data continue to ingest.
+
+    44. Now enable n2n and encrytionLevel = all on remote cluster.
+    45. Now create new remote dataset/delete and edit, ingestion should continue.
+    46. Make sure older data continue to ingest.
+    47. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    48. Make sure older data continue to ingest.
+
+    49. Now enable n2n and encrytionLevel = all on analytics cluster.
+    50. Now create new remote dataset/delete and edit, ingestion should continue.
+    51. Make sure older data continue to ingest.
+    52. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    53. Make sure older data continue to ingest.
+
+    54. Now client cert auth on remote cluster.
+    55. Now create new remote dataset/delete and edit, ingestion should continue.
+    56. Make sure older data continue to ingest.
+    57. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    58. Make sure older data continue to ingest.
+
+    59. Now client cert auth on analytics cluster.
+    60. Now create new remote dataset/delete and edit, ingestion should continue.
+    61. Make sure older data continue to ingest.
+    62. rebalance in/out for KV node on remote cluster and analytics nodes on local cluster.
+    63. Make sure older data continue to ingest.
+    """
+
+    def test_cbas_with_n2n_encryption_and_client_cert_auth(self):
+        total_doc_count = self.sample_bucket.stats.expected_item_count
+        increment_count = 1000
+        to_cluster = random.choice(self.to_clusters)
+        counter = 1
+        self.security_util = SecurityUtils(self.log)
+        do_rebalance = self.input.param("do_rebalance", False)
+        rebalanceInServers = self.get_rebalance_servers()
+
+        if not RestConnection(to_cluster.master).update_autofailover_settings(
+            False, 120, False):
+            self.fail("Disabling Auto-Failover")
+        if not RestConnection(self.analytics_cluster.master).update_autofailover_settings(
+            False, 120, False):
+            self.fail("Disabling Auto-Failover")
+
+        self.log.info("Performing steps 1-3")
+        self.setup_datasets(
+            username=None, to_cluster=to_cluster, get_link_info=True,
+            connect_link=True, wait_for_ingestion=True, set_primary_index=True)
+        datasets = [self.cbas_dataset_name]
+
+        def update_nodes_in_clusters():
+            CBASBugAutomation2.update_nodes_in_cluster(
+                to_cluster, to_cluster.rest, self.servers)
+            CBASBugAutomation2.update_nodes_in_cluster(
+                self.analytics_cluster, self.analytics_cluster.rest, self.servers)
+
+        def load_docs(start, end):
+            self.log.info("Loading data into remote KV bucket")
+            self.perform_doc_ops_in_all_cb_buckets(
+                operation="create", start_key=start, end_key=end, _async=False,
+                cluster=to_cluster, buckets=[self.sample_bucket], key=self.key)
+
+        def create_dataset(count):
+            ds_name =  "ds_{0}".format(count)
+            self.log.info("Creating remote dataset")
+            if not self.analytics_cluster.cbas_util.create_dataset_on_bucket(
+                cbas_bucket_name= self.sample_bucket.name,
+                cbas_dataset_name= ds_name,
+                dataverse=self.link_info["dataverse"],
+                link_name="{0}.{1}".format(
+                    self.link_info["dataverse"], self.link_info["name"])):
+                self.fail("Error while creating dataset")
+            else:
+                datasets.append(ds_name)
+                return count + 1
+
+        def validate_doc_count_for_datasets(expected_count):
+            self.log.info("Validating doc count in datasets")
+            result = True
+            for dataset in datasets:
+                result = result and self.analytics_cluster.cbas_util.validate_cbas_dataset_items_count(
+                    dataset, expected_count, expected_mutated_count=0, num_tries=12)
+            return result
+
+        update_nodes_in_clusters()
+
+        self.log.info("Performing steps 4-8")
+
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            to_cluster.nodes_in_cluster, level="control")
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        self.log.info("Setting up certificates")
+        CBASBugAutomation2.setup_certs(to_cluster, self.security_util)
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        counter = create_dataset(counter)
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing IN KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.add_node(
+                node=rebalanceInServers[0], services=["kv", "n1ql"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            self.analytics_cluster.cluster_util.add_node(
+                node=rebalanceInServers[1], services=["cbas"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 9-13")
+
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            self.analytics_cluster.nodes_in_cluster, level="control")
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        self.log.info("Setting up certificates")
+        CBASBugAutomation2.setup_certs(self.analytics_cluster, self.security_util)
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        counter = create_dataset(counter)
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing Out KV node on remote cluster and CBAS node on analytics cluster")
+            rebalanceOutServers = CBASBugAutomation2.get_rebalanceOut_servers(
+                to_cluster.rest, rebalanceInServers)
+            rebalanceOutServers.extend(CBASBugAutomation2.get_rebalanceOut_servers(
+                self.analytics_cluster.rest, rebalanceInServers))
+            to_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[0]])
+            self.analytics_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[1]])
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 14-18")
+
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            to_cluster.nodes_in_cluster, level="all")
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        if not self.analytics_cluster.cbas_util.drop_dataset(datasets.pop()):
+            self.fail("Error while dropping dataset")
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing IN KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.add_node(
+                node=rebalanceInServers[0], services=["kv", "n1ql"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            self.analytics_cluster.cluster_util.add_node(
+                node=rebalanceInServers[1], services=["cbas"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 19-23")
+
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            self.analytics_cluster.nodes_in_cluster, level="all")
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        counter = create_dataset(counter)
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing Out KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[0]])
+            self.analytics_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[1]])
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 24-28")
+
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            to_cluster.nodes_in_cluster, level="control")
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        counter = create_dataset(counter)
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing IN KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.add_node(
+                node=rebalanceInServers[0], services=["kv", "n1ql"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            self.analytics_cluster.cluster_util.add_node(
+                node=rebalanceInServers[1], services=["cbas"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 29-33")
+
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            self.analytics_cluster.nodes_in_cluster, level="control")
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        if not self.analytics_cluster.cbas_util.drop_dataset(datasets.pop()):
+            self.fail("Error while dropping dataset")
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing Out KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[0]])
+            self.analytics_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[1]])
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 34-38")
+
+        self.security_util.disable_n2n_encryption_cli_on_nodes(
+            to_cluster.nodes_in_cluster)
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        self.security_util.teardown_x509_certs(to_cluster.nodes_in_cluster,
+                                               to_cluster.CACERTFILEPATH)
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        counter = create_dataset(counter)
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing IN KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.add_node(
+                node=rebalanceInServers[0], services=["kv", "n1ql"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            self.analytics_cluster.cluster_util.add_node(
+                node=rebalanceInServers[1], services=["cbas"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 39-43")
+
+        self.security_util.disable_n2n_encryption_cli_on_nodes(
+            self.analytics_cluster.nodes_in_cluster)
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        self.security_util.teardown_x509_certs(
+            self.analytics_cluster.nodes_in_cluster,
+            self.analytics_cluster.CACERTFILEPATH)
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        counter = create_dataset(counter)
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing Out KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[0]])
+            self.analytics_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[1]])
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 44-48")
+
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            to_cluster.nodes_in_cluster, level="all")
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        if not self.analytics_cluster.cbas_util.drop_dataset(datasets.pop()):
+            self.fail("Error while dropping dataset")
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing IN KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.add_node(
+                node=rebalanceInServers[0], services=["kv", "n1ql"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            self.analytics_cluster.cluster_util.add_node(
+                node=rebalanceInServers[1], services=["cbas"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 49-53")
+
+        self.security_util.set_n2n_encryption_level_on_nodes(
+            self.analytics_cluster.nodes_in_cluster, level="all")
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        counter = create_dataset(counter)
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing Out KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[0]])
+            self.analytics_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[1]])
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 54-58")
+
+        self.log.info("Setting up certificates")
+        CBASBugAutomation2.setup_certs(to_cluster, self.security_util)
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        counter = create_dataset(counter)
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing IN KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.add_node(
+                node=rebalanceInServers[0], services=["kv", "n1ql"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            self.analytics_cluster.cluster_util.add_node(
+                node=rebalanceInServers[1], services=["cbas"],
+                rebalance=True, wait_for_rebalance_completion=True)
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.log.info("Performing steps 59-63")
+
+        self.log.info("Setting up certificates")
+        CBASBugAutomation2.setup_certs(self.analytics_cluster, self.security_util)
+        if not self.analytics_cluster.cbas_util.wait_for_cbas_to_recover(300):
+            self.fail("Analytics service Failed to recover")
+
+        load_docs(total_doc_count, total_doc_count + increment_count)
+        total_doc_count += increment_count
+
+        if not self.analytics_cluster.cbas_util.drop_dataset(datasets.pop()):
+            self.fail("Error while dropping dataset")
+
+        if do_rebalance:
+            self.log.info(
+                "Rebalancing Out KV node on remote cluster and CBAS node on analytics cluster")
+            to_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[0]])
+            self.analytics_cluster.cluster_util.remove_all_nodes_then_rebalance(
+                [rebalanceOutServers[1]])
+            update_nodes_in_clusters()
+
+        if not validate_doc_count_for_datasets(total_doc_count):
+            self.fail("Initial ingestion into datasets failed.")
+
+        self.security_util.teardown_x509_certs(to_cluster.nodes_in_cluster,
+                                               to_cluster.CACERTFILEPATH)
+        self.security_util.teardown_x509_certs(
+            self.analytics_cluster.nodes_in_cluster,
+            self.analytics_cluster.CACERTFILEPATH)
