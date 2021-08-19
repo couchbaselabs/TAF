@@ -8,9 +8,12 @@ import com.couchbase.client.java.kv.ReplicateTo;
 
 
 public class WorkLoadSettings extends WorkLoadBase {
+    public String keyPrefix = "test_docs-";
     public int workers = 10;
     public int ops = 40000;
     public int batchSize = ops/workers;
+    public int keySize = 15;
+    public int docSize = 256;
 
     public int creates = 0;
     public int reads = 0;

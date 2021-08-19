@@ -24,8 +24,7 @@ abstract class TransactionKVGenerator{
     protected Method keyMethod;
     protected Method valMethod;
 
-    public TransactionKVGenerator(TransactionalWorkLoadSettings ws,
-            String keyClass, String valClass) throws ClassNotFoundException {
+    public TransactionKVGenerator(TransactionalWorkLoadSettings ws, String keyClass, String valClass) throws ClassNotFoundException {
         super();
         this.ws = ws;
         if(keyClass.equals(RandomKey.class.getSimpleName()))
@@ -39,8 +38,8 @@ abstract class TransactionKVGenerator{
 
         this.valInstance = SimpleValue.class;
         try {
-            this.keys = keyInstance.getConstructor(WorkLoadBase.class).newInstance(ws);
-            this.vals = valInstance.getConstructor(WorkLoadBase.class).newInstance(ws);
+            this.keys = keyInstance.getConstructor(WorkLoadSettings.class).newInstance(ws);
+            this.vals = valInstance.getConstructor(WorkLoadSettings.class).newInstance(ws);
             this.keyMethod = this.keyInstance.getDeclaredMethod("next", int.class);
             this.valMethod = this.valInstance.getDeclaredMethod("next", String.class);
         } catch (InstantiationException e) {
