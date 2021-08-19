@@ -54,6 +54,8 @@ class volume(BaseTestCase):
         self.final_items = self.end
         self.create_end = 0
         self.create_start = 0
+        self.read_start = 0
+        self.read_end = 0
         self.update_end = 0
         self.update_start = 0
         self.delete_end = 0
@@ -69,6 +71,7 @@ class volume(BaseTestCase):
         self.num_scopes = self.input.param("num_scopes", 1)
         self.num_buckets = self.input.param("num_buckets", 1)
         self.doc_ops = self.input.param("doc_ops", "create")
+        self.mutation_perc = 100
         if self.doc_ops:
             self.doc_ops = self.doc_ops.split(':')
         self.max_tasks_per_collection = 8
@@ -204,7 +207,7 @@ class volume(BaseTestCase):
         self.retry_exceptions = None
         self.ignore_exceptions = None
 
-        self.key_type = "SimpleKey"
+        self.key_type = self.input.param("key_type", "SimpleKey")
         self.ops_rate = self.input.param("ops_rate", 10000)
 
     def tearDown(self):
@@ -293,7 +296,7 @@ class volume(BaseTestCase):
             if read_end is not None:
                 self.read_end = read_end
             else:
-                self.read_end = self.num_items
+                self.read_end = self.num_items * self.mutation_perc/100
 
         if "update" in doc_ops:
             if update_start is not None:
@@ -303,7 +306,7 @@ class volume(BaseTestCase):
             if update_end is not None:
                 self.update_end = update_end
             else:
-                self.update_end = self.num_items
+                self.update_end = self.num_items * self.mutation_perc/100
             self.mutate += 1
 
         if "delete" in doc_ops:
@@ -314,7 +317,7 @@ class volume(BaseTestCase):
             if delete_end is not None:
                 self.delete_end = delete_end
             else:
-                self.delete_end = self.end
+                self.delete_end = self.start + self.num_items * self.mutation_perc/100
             self.final_items -= (self.delete_end - self.delete_start) * self.num_collections * self.num_scopes
 
         if "expiry" in doc_ops:
@@ -323,11 +326,11 @@ class volume(BaseTestCase):
             if expire_start is not None:
                 self.expire_start = expire_start
             else:
-                self.expire_start = self.start + self.delete_end
+                self.expire_start = self.delete_end
             if expire_end is not None:
                 self.expire_end = expire_end
             else:
-                self.expire_end = self.start + self.num_items
+                self.expire_end = self.expiry_start + self.num_items * self.mutation_perc/100
             self.final_items -= (self.expire_end - self.expire_start) * self.num_collections * self.num_scopes
 
         if "create" in doc_ops:
@@ -1025,13 +1028,12 @@ class volume(BaseTestCase):
             Final Docs = 10M (0-10M, 10M seq items)
             '''
             self.create_perc = 100
-            self.key_type = "SimpleKey"
             self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
             self.generate_docs(doc_ops=["create"],
                                create_start=self.start, create_end=self.num_items)
             self.perform_load(validate_data=False)
 
-            self.PrintStep("Step 3.1: Update %s SimpleKey keys to create 50 percent fragmentation" % str(self.num_items))
+            self.PrintStep("Step 3.1: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
             self.generate_docs(doc_ops=["update"],
                                update_start=self.start, update_end=self.end)
             self.perform_load(validate_data=False)
@@ -1047,8 +1049,6 @@ class volume(BaseTestCase):
             Nodes In Cluster = 3
             '''
             self.PrintStep("Step 4: Create %s random keys" % str(self.num_items))
-            self.key_type = "RandomKey"
-
             self.generate_docs(doc_ops=["create"],
                                create_start=self.end, create_end=self.end+self.num_items)
             self.perform_load(validate_data=False)
@@ -1073,6 +1073,7 @@ class volume(BaseTestCase):
                                update_start=self.start, update_end=self.end)
             self.perform_load(validate_data=False)
 
+            self.mutation_perc = self.input.param("mutation_perc", 100)
             ###################################################################
             '''
             Existing:
@@ -1097,7 +1098,6 @@ class volume(BaseTestCase):
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
 
-            self.key_prefix = "random_keys"
             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             tasks = self.perform_load(wait_for_load=False)
 
@@ -1492,6 +1492,7 @@ class volume(BaseTestCase):
                         set(self.cluster.nodes_in_cluster) - set(servs_out))
             else:
                 self.log.info("Volume Test Run Complete")
+            self.init_doc_params()
 
     def ReadHeavyWorkload(self):
         #######################################################################

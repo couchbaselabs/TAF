@@ -107,7 +107,11 @@ public class WorkLoadGenerate extends Task{
                                 String b = om.writeValueAsString(trnx_docs.get(name));
                                 if(this.dg.ws.expectDeleted) {
                                     if(!a.contains(DocumentNotFoundException.class.getSimpleName())) {
+                                        System.out.println("Validation failed for key: " + name);
+                                        System.out.println("Actual Value - " + a);
+                                        System.out.println("Expected Value - " + b);
                                         this.sdk.disconnectCluster();
+                                        System.out.println(this.taskName + " is completed!");
                                         return;
                                     }
                                 } else if(!a.equals(b)){
@@ -115,6 +119,7 @@ public class WorkLoadGenerate extends Task{
                                     System.out.println("Actual Value - " + a);
                                     System.out.println("Expected Value - " + b);
                                     this.sdk.disconnectCluster();
+                                    System.out.println(this.taskName + " is completed!");
                                     return;
                                 }
                             } catch (JsonProcessingException e) {
@@ -125,7 +130,6 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.reads/100;
                 }
             }
-            System.out.println(this.taskName + ": " + ops);
             if(ops == 0)
                 break;
             else if(ops < dg.ws.ops/dg.ws.workers && flag) {
