@@ -36,14 +36,13 @@ import reactor.util.annotation.Nullable;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
-
 public class DocOps {
 
     public List<Result> bulkInsert(Collection collection, List<Tuple2<String, Object>> documents, InsertOptions insertOptions) {
         ReactiveCollection reactiveCollection = collection.reactive();
 
         List<Result> out = new ArrayList();
-        
+
         Flux.fromIterable(documents)
                 .flatMap(documentToInsert -> {
 
@@ -61,9 +60,9 @@ public class DocOps {
 
     public List<Result> bulkUpsert(Collection collection, List<Tuple2<String, Object>> documents,
             UpsertOptions upsertOptions) {
-    	ReactiveCollection reactiveCollection = collection.reactive();
-    	List<Result> out = new ArrayList();
-        
+        ReactiveCollection reactiveCollection = collection.reactive();
+        List<Result> out = new ArrayList();
+
         Flux.fromIterable(documents)
                 .flatMap(documentToInsert -> {
 
@@ -78,7 +77,7 @@ public class DocOps {
 
         return out;
     }
-    
+
     public List<Tuple2<String, Object>> bulkGets(Collection collection, List<Tuple2<String, Object>> documents, GetOptions getOptions) {
         final ReactiveCollection reactiveCollection = collection.reactive();
         List<Tuple2<String, Object>> returnValue = Flux.fromIterable(documents)
@@ -102,10 +101,10 @@ public class DocOps {
     }
 
     public List<Result> bulkDelete(Collection collection, List<String> keys, RemoveOptions removeOptions) {
-    	ReactiveCollection reactiveCollection = collection.reactive();
+        ReactiveCollection reactiveCollection = collection.reactive();
 
-    	List<Result> out = new ArrayList();
-        
+        List<Result> out = new ArrayList();
+
         Flux.fromIterable(keys)
                 .flatMap(key -> {
 
@@ -117,7 +116,7 @@ public class DocOps {
 
         return out;
     }
-    
+
     public List<ConcurrentHashMap<String, Object>> bulkReplace(Collection collection, List<Tuple2<String, Object>> documents,
             ReplaceOptions replaceOptions) {
         final ReactiveCollection reactiveCollection = collection.reactive();
@@ -180,17 +179,9 @@ public class DocOps {
         return returnValue;
     }
 
-    public MutationResult insert(Tuple2<String, Object> documentToInsert, Collection collection, DurabilityLevel level){
-        String k = documentToInsert.getT1();
-        Object v = documentToInsert.getT2();
+    public MutationResult insert(String k, Object v, Collection collection, InsertOptions options){
         try{
-            MutationResult mutationResult = collection.insert(
-                    k,
-                    v,
-                    InsertOptions.insertOptions()
-                    .timeout(Duration.ofSeconds(10))
-                    .durability(level)
-                    );
+            MutationResult mutationResult = collection.insert(k, v, options);
             return mutationResult;
         }
         catch(DocumentExistsException|DurabilityImpossibleException|
@@ -199,16 +190,9 @@ public class DocOps {
         }
     }
 
-    public MutationResult upsert(String id, Person person, Collection collection, DurabilityLevel level){
+    public MutationResult upsert(String k, Object v, Collection collection, UpsertOptions options){
         try{
-            MutationResult mutationResult = collection.upsert(
-                    id,
-                    person,
-                    UpsertOptions.upsertOptions()
-                    .timeout(Duration.ofMinutes(1))
-                    .expiry(Duration.ofDays(1))
-                    .durability(level)
-                    );
+            MutationResult mutationResult = collection.upsert(k, v, options);
             return mutationResult;
         }
         catch(TimeoutException|DocumentExistsException|DurabilityImpossibleException|
@@ -217,15 +201,9 @@ public class DocOps {
         }
     }
 
-    public MutationResult replace(String id, Person person, Collection collection, DurabilityLevel level, long cas) {
+    public MutationResult replace(String k, Object v, Collection collection, ReplaceOptions options) {
         try {
-                MutationResult mutationResult = collection.replace(
-                        id,
-                        person,
-                        ReplaceOptions.replaceOptions()
-                        .timeout(Duration.ofMinutes(1))
-                        .durability(level)
-                        .cas(cas));
+                MutationResult mutationResult = collection.replace(k, v, options);
                 return mutationResult;
         }
         catch(DocumentExistsException|DurabilityImpossibleException|
@@ -234,13 +212,9 @@ public class DocOps {
         }
     }
 
-    public MutationResult delete(String id, Collection collection, DurabilityLevel level){
+    public MutationResult delete(String k, Collection collection, RemoveOptions options){
         try{
-            MutationResult mutationResult = collection.remove(
-                    id, 
-                    RemoveOptions.removeOptions()
-                    .durability(level)
-                    .timeout(Duration.ofSeconds(10)));
+            MutationResult mutationResult = collection.remove(k, options);
             return mutationResult;
         }
         catch(DocumentExistsException|DurabilityImpossibleException|
@@ -249,8 +223,8 @@ public class DocOps {
         }
     }
 
-    public Person read(String id, Collection collection){
-        GetResult getResult = collection.get(id, GetOptions.getOptions().timeout(Duration.ofSeconds(10)));
+    public Person read(String k, Collection collection, GetOptions options){
+        GetResult getResult = collection.get(k, options);
         Person p = null;
         p = getResult.contentAs(Person.class);
         return p;

@@ -39,6 +39,8 @@ from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
 from couchbase.test.docgen import DRConstants
 from com.couchbase.test.key import SimpleKey
+from com.couchbase.client.core.error import DocumentExistsException,\
+    TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 
 
 class volume(BaseTestCase):
@@ -424,13 +426,47 @@ class volume(BaseTestCase):
     def wait_for_doc_load_completion(self, tasks, wait_for_stats=True):
         self.tm.getAllTaskResult()
         for task in tasks:
-            self.assertTrue(task.result,
-                            "Validation failed for task: {}".format(task.taskName))
-
+            task.result = True
+            for optype, failures in task.failedMutations.items():
+                for failure in failures:
+                    print("Test Retrying: " + failure.id() + " -> " + failure.err())
+                    if optype == "create":
+                        try:
+                            task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions);
+                            task.failedMutations.get(optype).remove(failure)
+                        except (ServerOutOfMemoryException, DocumentExistsException, TimeoutException) as e:
+                            print("Retry Create failed for key: " + failure.id())
+                            task.result = False
+                        except DocumentExistsException as e:
+                            pass
+                    if optype == "update":
+                        try:
+                            task.docops.upsert(failure.id(), failure.document(), task.sdk.connection, task.upsertOptions);
+                            task.failedMutations.get(optype).remove(failure)
+                        except (ServerOutOfMemoryException, TimeoutException) as e:
+                            print("Retry update failed for key: " + failure.id())
+                            task.result = False
+                        except DocumentExistsException as e:
+                            pass
+                    if optype == "delete":
+                        try:
+                            task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions);
+                            task.failedMutations.get(optype).remove(failure)
+                        except (ServerOutOfMemoryException, TimeoutException) as e:
+                            print("Retry delete failed for key: " + failure.id())
+                            task.result = False
+                        except DocumentNotFoundException as e:
+                            pass
+            try:
+                task.sdk.disconnectCluster()
+            except Exception as e:
+                print(e)
+            self.assertTrue(task.result, "Task Failed: {}".format(task.taskName))
         if wait_for_stats:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
+                self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items)
             except Exception as e:
                 self.get_gdb()
                 raise e

@@ -9,8 +9,8 @@ import com.couchbase.client.core.msg.kv.DurabilityLevel;
 public abstract class WorkLoadBase {
     public String keyPrefix = "test_docs-";
     public int keySize = 15;
-	int min_key_size = 10;
-	int max_key_size = min_key_size;
+    int min_key_size = 10;
+    int max_key_size = min_key_size;
 
     public int docSize = 256;
     public AtomicInteger itr;

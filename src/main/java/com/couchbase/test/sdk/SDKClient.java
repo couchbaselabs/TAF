@@ -26,6 +26,11 @@ public class SDKClient {
 
     public Collection connection;
 
+    public static ClusterEnvironment env = ClusterEnvironment.builder()
+//          .seedNodes(SeedNode.create(this.server.ip, Optional.of(Integer.parseInt(this.server.memcached_port)), Optional.of(Integer.parseInt(this.server.port))))
+          .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
+          .build();
+
     public SDKClient(Server master, String bucket, String scope, String collection) {
         super();
         this.master = master;
@@ -47,10 +52,6 @@ public class SDKClient {
 
     public void connectCluster(){
         try{
-            ClusterEnvironment env = ClusterEnvironment.builder()
-//                    .seedNodes(SeedNode.create(this.server.ip, Optional.of(Integer.parseInt(this.server.memcached_port)), Optional.of(Integer.parseInt(this.server.port))))
-                    .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
-                    .build();
             ClusterOptions cluster_options = ClusterOptions.clusterOptions(master.rest_username, master.rest_password).environment(env);
             this.cluster = Cluster.connect(master.ip, cluster_options);
             logger.info("Cluster connection is successful");
@@ -63,6 +64,9 @@ public class SDKClient {
     public void disconnectCluster(){
         // Disconnect and close all buckets
         this.cluster.disconnect();
+    }
+
+    public void shutdownEnv() {
         // Just close an environment
         this.cluster.environment().shutdown();
     }

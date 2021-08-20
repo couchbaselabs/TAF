@@ -217,7 +217,7 @@ public class DocType {
         String marital() {
             return marital;
         }
-        
+
         @JsonGetter
         int mutated() {
             return mutated;

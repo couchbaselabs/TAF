@@ -32,7 +32,6 @@ import com.couchbase.transactions.log.TransactionEvent;
 import com.couchbase.transactions.log.TransactionCleanupAttempt;
 import com.couchbase.transactions.log.TransactionCleanupEndRunEvent;
 
-
 public class Transaction {
     public TransactionConfig createTransactionConfig(int timeout, String durability) {
         TransactionConfigBuilder config = TransactionConfigBuilder.create().logDirectly(Event.Severity.VERBOSE);
