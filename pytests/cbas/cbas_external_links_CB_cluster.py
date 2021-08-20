@@ -2267,3 +2267,5 @@ class CBASExternalLinks(CBASBaseTest):
         self.security_util.teardown_x509_certs(
             self.analytics_cluster.nodes_in_cluster,
             self.analytics_cluster.CACERTFILEPATH)
+        self.dataset_created = False
+        self.link_created = False
