@@ -2267,5 +2267,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.security_util.teardown_x509_certs(
             self.analytics_cluster.nodes_in_cluster,
             self.analytics_cluster.CACERTFILEPATH)
+        for dataset in datasets:
+            if not self.analytics_cluster.cbas_util.drop_dataset(dataset):
+                self.fail("Error while dropping dataset")
         self.dataset_created = False
-        self.link_created = False
