@@ -51,7 +51,7 @@ class CbServer(object):
     ssl_port_map = {str(port): str(ssl_port),
                     str(capi_port): str(ssl_capi_port),
                     str(fts_port): str(ssl_fts_port),
-                    str(n1ql_port): str(n1ql_port),
+                    str(n1ql_port): str(ssl_n1ql_port),
                     str(index_port): str(ssl_index_port),
                     str(eventing_port): str(ssl_eventing_port),
                     str(cbas_port): str(ssl_cbas_port),
