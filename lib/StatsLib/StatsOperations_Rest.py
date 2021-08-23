@@ -4,6 +4,7 @@ import re
 import base64
 
 import testconstants
+from Cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
 from membase.api.rest_client import RestConnection as RestClientConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
@@ -16,18 +17,31 @@ class StatsHelper(RestConnection):
     def __init__(self, server):
         super(StatsHelper, self).__init__(server)
         self.server = server
-        self.base_url = "http://{0}:{1}".format(self.ip, 8091)
-        self.fts_base_url = "http://{0}:{1}".format(self.ip, 8092)
-        self.n1ql_base_url = "http://{0}:{1}".format(self.ip, 8093)
-        self.cbas_base_url = "http://{0}:{1}".format(self.ip, 8095)
-        self.eventing_base_url = "http://{0}:{1}".format(self.ip, 8096)
-        self.index_base_url = "http://{0}:{1}".format(self.ip, 9102)
+        protocol = "https" if CbServer.use_https else "http"
+        rest_port = CbServer.ssl_port_map.get(CbServer.port, CbServer.port) \
+            if CbServer.use_https else CbServer.port
+        fts_port = CbServer.ssl_port_map.get(CbServer.fts_port, CbServer.fts_port) \
+            if CbServer.use_https else CbServer.fts_port
+        n1ql_port = CbServer.ssl_port_map.get(CbServer.n1ql_port, CbServer.n1ql_port) \
+            if CbServer.use_https else CbServer.n1ql_port
+        cbas_port = CbServer.ssl_port_map.get(CbServer.cbas_port, CbServer.cbas_port) \
+            if CbServer.use_https else CbServer.cbas_port
+        eventing_port = CbServer.ssl_port_map.get(CbServer.eventing_port, CbServer.eventing_port) \
+            if CbServer.use_https else CbServer.eventing_port
+        index_port = CbServer.ssl_port_map.get(CbServer.index_port, CbServer.index_port) \
+            if CbServer.use_https else CbServer.index_port
+
+        self.base_url = "{0}://{1}:{2}".format(protocol, self.ip, rest_port)
+        self.fts_base_url = "{0}://{1}:{2}".format(protocol, self.ip, fts_port)
+        self.n1ql_base_url = "{0}://{1}:{2}".format(protocol, self.ip, n1ql_port)
+        self.cbas_base_url = "{0}://{1}:{2}".format(protocol, self.ip, cbas_port)
+        self.eventing_base_url = "{0}://{1}:{2}".format(protocol, self.ip, eventing_port)
+        self.index_base_url = "{0}://{1}:{2}".format(protocol, self.ip, index_port)
         self.memcached_ssl_base_url = "http://{0}:{1}".format(self.ip, 11207)
         # Prometheus scrapes from KV metrics from this port, and not 11210.
         # Look at: /opt/couchbase/var/lib/couchbase/config/prometheus.yaml for ports
         self.memcached_base_url = "http://{0}:{1}".format(self.ip, 11280)
         self.prometheus_base_url = "http://{0}:{1}".format(self.ip, 9123)
-
         self.rest = RestClientConnection(server)
 
         self.curl_path = "curl"
