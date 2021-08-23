@@ -4021,6 +4021,74 @@ class MutateDocsFromSpecTask(Task):
             bucket_thread.join(timeout=180)
         return tasks
 
+class CompareIndexKVData(Task):
+    def __init__(self, cluster, server, task_manager,
+                 sdk_client_pool, query, bucket, scope, collection,index_name,
+                 track_failures=True):
+        super(CompareIndexKVData, self).__init__(
+            "CompareIndexKVData_%s_%s" % (index_name,time.time()))
+        self.cluster = cluster
+        self.task_manager = task_manager
+        self.result = True
+        self.sdk_client_pool = sdk_client_pool
+        self.track_failures = track_failures
+        self.query = query
+        self.server = server
+        self.bucket = bucket
+        self.scope = scope
+        self.collection = collection
+
+    def call(self):
+        self.start_task()
+        try:
+            indexer_rest = GsiHelper(self.server, self.log)
+            self.log.info("starting call")
+            contentType = 'application/x-www-form-urlencoded'
+            connection = 'keep-alive'
+            status, content, header = indexer_rest.execute_query(server=self.server, query=self.query,
+                                                                 contentType=contentType,
+                                                                 connection=connection)
+            newContent = json.loads(content)
+            resultList = newContent['results']
+
+            if self.sdk_client_pool is not None:
+                self.client = \
+                    self.sdk_client_pool.get_client_for_bucket(self.bucket,
+                                                               self.scope.name,
+                                                               self.collection.name)
+            keys = self.create_list(resultList, 'id')
+            success, fail = self.client.get_multi(
+                        keys)
+            self.set_result(self.compareResult(success, resultList))
+        except Exception as e:
+            self.test_log.error(e)
+            self.set_exception(e)
+            return
+        self.complete_task()
+
+    def compareResult(self, kvList, indexList, field='body'):
+        if len(kvList) != len(indexList):
+            return False
+        size = len(kvList)
+        kvListItems = kvList.items()
+        for x in range(size-1, -1, -1):
+            isFound = False
+            for y in range(size):
+                if indexList[x]['id'] == kvListItems[y][0]:
+                    isFound = True
+                    if indexList[x][field] != json.loads(str(kvListItems[y][1]['value']))[field]:
+                        return False
+                    break
+            if not isFound:
+                return False
+        return True
+
+
+    def create_list(self, result, keyValue):
+        keys = list()
+        for key in result:
+            keys.append(key[keyValue])
+        return keys
 
 class ValidateDocsFromSpecTask(Task):
     def __init__(self, cluster, task_manager, loader_spec,

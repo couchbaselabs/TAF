@@ -2,7 +2,7 @@ import Jython_tasks.task as jython_tasks
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from Jython_tasks.task import MutateDocsFromSpecTask
-
+from Jython_tasks.task import CompareIndexKVData
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
 from global_vars import logger
@@ -1044,5 +1044,13 @@ class ServerTasks(object):
         _task = jython_tasks.ExecuteQueryTask(server, query,
                                               isIndexerQuery=isIndexerQuery, bucket=bucket, indexName=indexName,
                                               timeout=600)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
+    def compare_KV_Indexer_data(self, cluster, server, task_manager, query, sdk_client_pool, bucket, scope, collection,
+                                index_name):
+        _task = jython_tasks.CompareIndexKVData(cluster=cluster, server=server, task_manager=task_manager, query=query,
+                                                sdk_client_pool=sdk_client_pool, bucket=bucket, scope=scope,
+                                                collection=collection, index_name=index_name)
         self.jython_task_manager.add_new_task(_task)
         return _task

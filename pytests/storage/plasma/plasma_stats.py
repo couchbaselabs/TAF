@@ -2,7 +2,7 @@ import threading
 
 from Cb_constants import DocLoading
 from couchbase_helper.documentgenerator import doc_generator
-from index_utls.index_ready_functions import IndexUtils
+from index_utils.index_ready_functions import IndexUtils
 from membase.api.rest_client import RestConnection
 from gsiLib.gsiHelper import GsiHelper
 
@@ -184,7 +184,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
             query = "CREATE INDEX `%s` ON `%s`(`body`) with {\"num_replica\":%s}" % (indexName,
                                                                                      self.buckets[0].name,
                                                                                      self.num_replicas)
-            task = self.task.aysnc_execute_query(server=query_nodes_list[0], query=query, bucket=self.buckets[0],
+            task = self.task.async_execute_query(server=query_nodes_list[0], query=query, bucket=self.buckets[0],
                                                  indexName=indexName, isIndexerQuery=True)
             indexTask_list.append(task)
             indexDict[indexName] = query
@@ -201,7 +201,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
             queryString = self.randStr(Num=8)
             query = "select * from `%s` data USE INDEX (%s USING GSI) where body like '%%%s%%' limit 10" % (
                 self.buckets[0].name, indexDict.keys()[index_instance], queryString)
-            task = self.task.aysnc_execute_query(query_nodes_list[query_node_index], query, contentType, connection)
+            task = self.task.async_execute_query(query_nodes_list[query_node_index], query, contentType, connection)
             tasks_info.append(task)
 
         for taskInstance in tasks_info:
@@ -478,7 +478,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
                                                                         replica=self.num_replicas, defer=True,
                                                                         number_of_indexes_per_coll=self.index_count,
                                                                         count=1,
-                                                                        field='body', async=False)
+                                                                        field='body', sync=False)
 
         self.indexUtil.build_deferred_indexes(self.cluster, indexes_to_build)
         self.assertTrue(self.polling_for_All_Indexer_to_Ready(indexes_to_build),
@@ -549,7 +549,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
 
         newlyAddedIndexes, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster, new_bucket_list,
                                       replica=self.num_replicas, defer=False, number_of_indexes_per_coll=self.index_count, count=self.index_count + 1,
-                                      field='body', async=True)
+                                      field='body', sync=True)
 
         dropIndexTaskList, indexDict = self.indexUtil.async_drop_indexes(self.cluster, indexes_to_build, buckets=new_bucket_list)
 

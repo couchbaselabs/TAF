@@ -50,7 +50,7 @@ class IndexUtils:
 
     def create_gsi_on_each_collection(self, cluster, buckets=None, gsi_base_name=None,
                                       replica=0, defer=True, number_of_indexes_per_coll=1, count=1,
-                                      field='key', async=True):
+                                      field='key', sync=False):
         """
         Create gsi indexes on collections - according to number_of_indexes_per_coll
         """
@@ -85,20 +85,18 @@ class IndexUtils:
                                                 scope.name, collection.name, field,
                                                 defer, replica)
                         query_node_instance = x % query_nodes_count
-                        task = self.task.aysnc_execute_query(server=query_node_list[query_node_instance],
+                        task = self.task.async_execute_query(server=query_node_list[query_node_instance],
                                                              indexName=gsi_index_name, bucket=bucket,
                                                              query=create_index_query)
-                        if async:
-                            createIndexTasklist.append(task)
-                        else:
+                        if sync:
                             self.task_manager.get_task_result(task)
+                        else:
+                            createIndexTasklist.append(task)
                         if collection.name not in indexes_to_build[bucket.name][scope.name]:
                             indexes_to_build[bucket.name][scope.name][collection.name] = list()
                         indexes_to_build[bucket.name][scope.name][collection.name].append(gsi_index_name)
-        if async:
-            return indexes_to_build, createIndexTasklist
-        else:
-            return indexes_to_build
+
+        return indexes_to_build, createIndexTasklist
 
     def recreate_dropped_indexes(self, indexes_dropped):
         """
@@ -142,7 +140,7 @@ class IndexUtils:
                                            "USING GSI" \
                                            % (gsi_index_name, bucket, scope, collection)
                         query_node_index = x % query_nodes_count
-                        task = self.task.aysnc_execute_query(server=query_nodes_list[query_node_index],
+                        task = self.task.async_execute_query(server=query_nodes_list[query_node_index],
                                                              query=drop_index_query,
                                                              bucket=bucket,
                                                              indexName=gsi_index_name, isIndexerQuery=False)
@@ -197,6 +195,6 @@ class IndexUtils:
                         queryString = self.randStr(Num=8)
                         query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s like '%%%s%%' limit 10" % (
                             bucket, scope, collection, gsi_index_name, key, queryString)
-                        task = self.task.aysnc_execute_query(cluster.query_nodes[query_node_index], query)
+                        task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query)
                         query_tasks_info.append(task)
         return query_tasks_info

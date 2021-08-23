@@ -1,16 +1,21 @@
-from Cb_constants import constants
-from index_utls.index_ready_functions import IndexUtils
+import json
+from decimal import Decimal
+
+from Cb_constants import constants, CbServer
+from index_utils.index_ready_functions import IndexUtils
 from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
-import string, random, math
+import math
+
+from index_utils.plasma_stats_util import PlasmaStatsUtil
 from storage.storage_base import StorageBase
-from gsiLib.gsiHelper import GsiHelper
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
 
 class PlasmaBaseTest(StorageBase):
     def setUp(self):
         super(PlasmaBaseTest, self).setUp()
+        self.num_replicas = self.input.param("num_replicas", 1)
         self.retry_exceptions = list([SDKException.AmbiguousTimeoutException,
                                       SDKException.DurabilityImpossibleException,
                                       SDKException.DurabilityAmbiguousException])
@@ -27,6 +32,10 @@ class PlasmaBaseTest(StorageBase):
                 compression_settings=self.sdk_compression)
         self.initial_load()
         self.indexUtil = IndexUtils(server_task=self.task)
+        self.index_port = CbServer.index_port
+        self.in_mem_comp = self.input.param("in_mem_comp", None)
+        self.sweep_interval = self.input.param("sweep_interval", 120)
+        self.index_count = self.input.param("index_count", 2)
 
     def print_plasma_stats(self, plasmaDict, bucket, indexname):
         bucket_Index_key = bucket.name + ":" + indexname
@@ -72,8 +81,9 @@ class PlasmaBaseTest(StorageBase):
             for _, collection_data in scope_data.items():
                 for collection, gsi_index_names in collection_data.items():
                     for gsi_index_name in gsi_index_names:
-                        self.assertTrue(self.indexUtil.wait_for_indexes_to_go_online(self.cluster, buckets, gsi_index_name),
-                                        "Index {} is not up".format(gsi_index_name))
+                        self.assertTrue(
+                            self.indexUtil.wait_for_indexes_to_go_online(self.cluster, buckets, gsi_index_name),
+                            "Index {} is not up".format(gsi_index_name))
         return True
 
     def wait_for_indexer_service_to_Active(self, indexer_rest, indexer_nodes_list, time_out):
@@ -93,3 +103,89 @@ class PlasmaBaseTest(StorageBase):
                     break
                 else:
                     self.log.info("Indexer state is still {}".format(indexStatMap['indexer_state']))
+
+    def set_index_settings(self, setting_json, index_node):
+        plasma_obj = PlasmaStatsUtil(index_node, server_task=self.task)
+        api = plasma_obj.get_index_baseURL() + 'settings'
+        rest_client = RestConnection(index_node)
+        status, content, header = rest_client._http_request(api, 'POST', json.dumps(setting_json))
+        if not status:
+            raise Exception(content)
+        self.log.info("{0} set".format(setting_json))
+
+    def  mem_used_reached(self, exp_percent, plasma_obj_dict):
+        for plasma_obj in plasma_obj_dict.values():
+            index_stat = plasma_obj.get_all_index_stat_map()
+            percent = self.find_mem_used_percent(index_stat)
+            if (percent > exp_percent):
+                return False
+        return True
+
+    def find_mem_used_percent(self, index_stats_map):
+        mem_used_percent = int(
+            (Decimal(index_stats_map['memory_used_storage']) / index_stats_map['memory_total_storage']) * 100)
+        return mem_used_percent
+
+    def create_Stats_Obj_list(self):
+        stats_obj_dict = dict()
+        for node in self.cluster.index_nodes:
+            stat_obj = PlasmaStatsUtil(node, server_task=self.task, cluster=self.cluster)
+            stats_obj_dict[str(node.ip)] = stat_obj
+        return stats_obj_dict
+
+    def verify_compression_stat(self, index_nodes_list):
+        comp_stat_verified = True
+        for node in index_nodes_list:
+            plasma_stats_obj = PlasmaStatsUtil(node, server_task=self.task)
+            index_storage_stats = plasma_stats_obj.get_index_storage_stats()
+            for bucket in index_storage_stats.keys():
+                for index in index_storage_stats[bucket].keys():
+                    index_stat_map = index_storage_stats[bucket][index]
+                    if index_stat_map["MainStore"]["num_rec_compressed"] == 0:
+                        comp_stat_verified = False
+                    elif index_stat_map["MainStore"]["num_rec_compressed"] < 0:
+                        self.fail("Negative digit in compressed count")
+        return comp_stat_verified
+
+    def findBucket(self, bucket_name, cluster=None):
+        if cluster is None:
+            cluster = self.cluster
+        for bucket in cluster.buckets:
+            if bucket.name == bucket_name:
+                return bucket
+
+    def findScope(self, scope_name, bucket):
+        for _, scope in bucket.scopes.items():
+            if scope.name == scope_name:
+                return scope
+
+    def findCollection(self, collection_name, scope):
+        for _, collection in scope.collections.items():
+            if collection.name == collection_name:
+                return collection
+
+    def validate_index_data(self, indexMap, totalCount, field='body', offset=50):
+        query_len = len(self.cluster.query_nodes)
+        x = 0
+        query_task_list = list()
+        for bucket_name, bucket_data in indexMap.items():
+            bucket = self.findBucket(bucket_name)
+            for scope_name, collection_data in bucket_data.items():
+                scope = self.findScope(scope_name, bucket)
+                for collection_name, gsi_index_names in collection_data.items():
+                    collection = self.findCollection(collection_name, scope)
+                    tempCount = 0
+                    for gsi_index_name in gsi_index_names:
+                        while tempCount < totalCount:
+                            query = "select meta().id,%s from `%s`.`%s`.`%s` data USE INDEX (%s  USING GSI) where body is not missing order by meta().id limit %s offset %s" % (
+                                    field, bucket_name, scope_name, collection_name, gsi_index_name, offset, tempCount)
+                            query_node_index = x % query_len
+                            task = self.task.compare_KV_Indexer_data(self.cluster,
+                                                                         self.cluster.query_nodes[query_node_index],
+                                                                         self.task_manager, query, self.sdk_client_pool,
+                                                                         bucket, scope, collection, index_name=gsi_index_name
+                                                                         )
+                            query_task_list.append(task)
+                            x += 1
+                            tempCount += offset
+            return query_task_list
