@@ -128,18 +128,14 @@ class EnforceTls(CollectionBase):
         check if services obey TLS
         """
         self.enable_tls_encryption_cli_on_nodes(nodes=[self.cluster.master])
-        port_map = {"4369": None, "8091": "18091", "8092": "18092",
-                    "8093": "18093", "8094": "18094", "9100": None,
-                    "9101": None, "9102": "19102", "9103": None, "9104": None,
-                    "9105": None, "9110": None, "9111": None, "9112": None,
-                    "9113": None, "9114": None, "9115": None, "9116": None,
-                    "9117": None, "9118": None, "9120": None, "9121": None,
-                    "9122": None, "9130": "19130", "11209": None, "11210": "11207",
+        port_map = {"8091": "18091", "8092": "18092",
+                    "8093": "18093", "8094": "18094",
+                    "9102": "19102", "9130": "19130", "11209": "11206", "11210": "11207",
                     "21100": "21150", "8095": "18095", "8096": "18096", "8097": "18097",
                     "11211": "11207"}
-        # ToDO assertTrue on status
         status = self.cluster_util.check_if_services_obey_tls(servers=[self.cluster.master],
                                                               port_map=port_map)
+        self.assertTrue(status, "services did not obey tls")
 
     def test_check_tls_after_restarting_nodes(self):
         """
