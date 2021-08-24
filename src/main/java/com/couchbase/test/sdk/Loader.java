@@ -107,6 +107,9 @@ public class Loader {
         Option delete = new Option("dl", "delete", true, "Deletes%");
         options.addOption(delete);
 
+        Option expiry = new Option("ex", "expiry", true, "Expiry%");
+        options.addOption(expiry);
+
         Option read = new Option("rd", "read", true, "Reads%");
         options.addOption(read);
 
@@ -167,6 +170,7 @@ public class Loader {
                 Integer.parseInt(cmd.getOptionValue("rd", "0")),
                 Integer.parseInt(cmd.getOptionValue("up", "0")),
                 Integer.parseInt(cmd.getOptionValue("dl", "0")),
+                Integer.parseInt(cmd.getOptionValue("ex", "0")),
                 Integer.parseInt(cmd.getOptionValue("workers", "10")),
                 Integer.parseInt(cmd.getOptionValue("ops", "10000")),
                 cmd.getOptionValue("loadType", null),

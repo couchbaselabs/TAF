@@ -382,6 +382,7 @@ class volume(BaseTestCase):
                                           cmd.get("rd", self.read_perc),
                                           cmd.get("up", self.update_perc),
                                           cmd.get("dl", self.delete_perc),
+                                          cmd.get("ex", self.expiry_perc),
                                           cmd.get("workers", self.process_concurrency),
                                           cmd.get("ops", self.ops_rate),
                                           cmd.get("loadType", None),
@@ -397,6 +398,8 @@ class volume(BaseTestCase):
                                DRConstants.create_e: self.create_end,
                                DRConstants.update_s: self.update_start,
                                DRConstants.update_e: self.update_end,
+                               DRConstants.expiry_s: self.expire_start,
+                               DRConstants.expiry_e: self.expire_end,
                                DRConstants.delete_s: self.delete_start,
                                DRConstants.delete_e: self.delete_end,
                                DRConstants.read_s: self.read_start,
@@ -416,8 +419,12 @@ class volume(BaseTestCase):
                             continue
                         client = NewSDKClient(master, bucket.name, scope, collection)
                         client.initialiseSDK()
+                        self.sleep(1)
                         taskName = "Loader_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, str(i), time.time())
-                        task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection], client, self.durability_level)
+                        task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
+                                                client, self.durability_level,
+                                                self.maxttl, self.time_unit,
+                                                self.track_failures, 0)
                         tasks.append(task)
                         self.tm.submit(task)
                         i -= 1
@@ -429,12 +436,12 @@ class volume(BaseTestCase):
             task.result = True
             for optype, failures in task.failedMutations.items():
                 for failure in failures:
-                    print("Test Retrying: " + failure.id() + " -> " + failure.err())
+                    print("Test Retrying {}: {} -> {}".format(optype, failure.id(), failure.err().getClass().getSimpleName()))
                     if optype == "create":
                         try:
                             task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions);
-                            task.failedMutations.get(optype).remove(failure)
-                        except (ServerOutOfMemoryException, DocumentExistsException, TimeoutException) as e:
+#                             task.failedMutations.get(optype).remove(failure)
+                        except (ServerOutOfMemoryException, TimeoutException) as e:
                             print("Retry Create failed for key: " + failure.id())
                             task.result = False
                         except DocumentExistsException as e:
@@ -442,7 +449,7 @@ class volume(BaseTestCase):
                     if optype == "update":
                         try:
                             task.docops.upsert(failure.id(), failure.document(), task.sdk.connection, task.upsertOptions);
-                            task.failedMutations.get(optype).remove(failure)
+#                             task.failedMutations.get(optype).remove(failure)
                         except (ServerOutOfMemoryException, TimeoutException) as e:
                             print("Retry update failed for key: " + failure.id())
                             task.result = False
@@ -451,7 +458,7 @@ class volume(BaseTestCase):
                     if optype == "delete":
                         try:
                             task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions);
-                            task.failedMutations.get(optype).remove(failure)
+#                             task.failedMutations.get(optype).remove(failure)
                         except (ServerOutOfMemoryException, TimeoutException) as e:
                             print("Retry delete failed for key: " + failure.id())
                             task.result = False
@@ -518,6 +525,7 @@ class volume(BaseTestCase):
                                                   cmd.get("rd", 100),
                                                   cmd.get("up", 0),
                                                   cmd.get("dl", 0),
+                                                  cmd.get("ex", 0),
                                                   cmd.get("workers", self.process_concurrency),
                                                   cmd.get("ops", self.ops_rate),
                                                   cmd.get("loadType", None),
@@ -544,12 +552,21 @@ class volume(BaseTestCase):
                                     continue
                                 client = NewSDKClient(master, bucket.name, scope, collection)
                                 client.initialiseSDK()
-                                taskName = "Loader_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
-                                task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type], client, "NONE")
+                                self.sleep(1)
+                                taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
+                                task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
+                                                        client, "NONE",
+                                                        self.maxttl, self.time_unit,
+                                                        self.track_failures, 0)
                                 tasks.append(task)
                                 self.tm.submit(task)
                                 i -= 1
         self.tm.getAllTaskResult()
+        for task in tasks:
+            try:
+                task.sdk.disconnectCluster()
+            except Exception as e:
+                print(e)
         for task in tasks:
             self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
@@ -706,17 +723,17 @@ class volume(BaseTestCase):
             output = shell.execute_command(
                     "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
                     )[0][0].split('\n')[0]
-            shell.disconnect()
             self.log.debug("machine: {} - core(s): {}".format(server.ip,
                                                               output))
             for i in range(min(int(output), 64)):
                 grep_field = "rw_{}:magma".format(i)
-                _res = self.get_magma_stats(bucket, [server],
+                _res = self.get_magma_stats(bucket, shell,
                                             field_to_grep=grep_field)
                 fragmentation_values.append(float(_res[server.ip][grep_field]
                                                   ["Fragmentation"]))
                 stats.append(_res)
             result.update({server.ip: fragmentation_values})
+            shell.disconnect()
         res = list()
         for value in result.values():
             res.append(max(value))
@@ -729,20 +746,12 @@ class volume(BaseTestCase):
         self.log.info(stats)
         return False
 
-    def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
+    def get_magma_stats(self, bucket, shell=None, field_to_grep=None):
         magma_stats_for_all_servers = dict()
-        if servers is None:
-            servers = self.cluster.nodes_in_cluster
-        if type(servers) is not list:
-            servers = [servers]
-        for server in servers:
-            result = dict()
-            shell = RemoteMachineShellConnection(server)
-            cbstat_obj = Cbstats(shell)
-            result = cbstat_obj.magma_stats(bucket.name,
-                                            field_to_grep=field_to_grep)
-            shell.disconnect()
-            magma_stats_for_all_servers[server.ip] = result
+        cbstat_obj = Cbstats(shell)
+        result = cbstat_obj.magma_stats(bucket.name,
+                                        field_to_grep=field_to_grep)
+        magma_stats_for_all_servers[shell.ip] = result
         return magma_stats_for_all_servers
 
     def get_magma_disk_usage(self, bucket=None):
@@ -1334,9 +1343,9 @@ class volume(BaseTestCase):
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id,
                                             recoveryType="full")
-
+            self.sleep(30)
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [],
+                self.cluster.nodes_in_cluster, [], [],
                 retry_get_process_num=3000)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1351,12 +1360,12 @@ class volume(BaseTestCase):
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
-                self.cluster.servers[:self.nodes_in + self.nodes_init],
+                self.cluster.nodes_in_cluster,
                 self.cluster.buckets, path=None)
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=nodes, buckets=self.cluster.buckets,
+                servers=self.cluster.nodes_in_cluster,
+                buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster.vbuckets)
 
@@ -1409,8 +1418,9 @@ class volume(BaseTestCase):
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
 
+            self.sleep(30)
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [],
+                self.cluster.nodes_in_cluster, [], [],
                 retry_get_process_num=3000)
             self.set_num_writer_and_reader_threads(
                 num_writer_threads="disk_io_optimized",
@@ -1427,12 +1437,12 @@ class volume(BaseTestCase):
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
-                self.cluster.servers[:self.nodes_in + self.nodes_init],
+                self.cluster.nodes_in_cluster,
                 self.cluster.buckets, path=None)
-            nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=nodes, buckets=self.cluster.buckets,
+                servers=self.cluster.nodes_in_cluster,
+                buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster.vbuckets)
 
@@ -1490,7 +1500,7 @@ class volume(BaseTestCase):
             self.set_num_writer_and_reader_threads(
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
-            rebalance_task = self.task.async_rebalance(self.cluster.servers,
+            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
                                                        [], [],
                                                        retry_get_process_num=3000)
             tasks_info = self.data_load()
@@ -1775,6 +1785,10 @@ class volume(BaseTestCase):
                            create_start=0,
                            create_end=self.num_items)
         self.perform_load(validate_data=False)
+        self.generate_docs(doc_ops=["create"],
+                           create_start=self.end,
+                           create_end=self.end+self.num_items)
+        self.perform_load(validate_data=False)
         if self.end_step == 2:
             exit(2)
 
@@ -1815,7 +1829,7 @@ class volume(BaseTestCase):
                                            str(self.num_items+1 -
                                                self.num_items),
                                            str(self.step_iterations)))
-                start = -self.update_end
+                start = -self.update_end + 1
                 end = -self.update_start
                 self.generate_docs(doc_ops=["update"],
                                    update_start=start,
@@ -2078,7 +2092,7 @@ class volume(BaseTestCase):
         self.delete_perc = 100
         self.key_prefix = "random"
 
-        self.doc_ops = self.input.param("doc_ops", "expiry")
+        self.doc_ops = self.input.param("doc_ops", ["expiry"])
         self.generate_docs(doc_ops=self.doc_ops,
                            expire_start=0,
                            expire_end=self.num_items,

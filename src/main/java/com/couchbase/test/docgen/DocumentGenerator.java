@@ -76,6 +76,10 @@ abstract class KVGenerator{
         return this.ws.dr.updateItr.get() < this.ws.dr.update_e;
     }
 
+    public boolean has_next_expiry() {
+        return this.ws.dr.expiryItr.get() < this.ws.dr.expiry_e;
+    }
+
     public boolean has_next_delete() {
         return this.ws.dr.deleteItr.get() < this.ws.dr.delete_e;
     }
@@ -133,6 +137,19 @@ public class DocumentGenerator extends KVGenerator{
         return Tuples.of(k, v);
     }
 
+    public Tuple2<String, Object> nextExpiry() {
+        int temp = this.ws.dr.expiryItr.incrementAndGet();
+        String k = null;
+        Object v = null;
+            try {
+                k = (String) this.keyMethod.invoke(this.keys, temp);
+                v = (Object) this.valMethod.invoke(this.vals, k);
+            } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e1) {
+                e1.printStackTrace();
+            }
+        return Tuples.of(k, v);
+    }
+
     public List<Tuple2<String, Object>> nextInsertBatch() {
         List<Tuple2<String, Object>> docs = new ArrayList<Tuple2<String,Object>>();
         int count = 0;
@@ -158,6 +175,16 @@ public class DocumentGenerator extends KVGenerator{
         int count = 0;
         while (this.has_next_update() && count<ws.batchSize*ws.updates/100) {
             docs.add(this.nextUpdate());
+            count += 1;
+        }
+        return docs;
+    }
+
+    public List<Tuple2<String, Object>> nextExpiryBatch() {
+        List<Tuple2<String, Object>> docs = new ArrayList<Tuple2<String,Object>>();
+        int count = 0;
+        while (this.has_next_expiry() && count<ws.batchSize*ws.expiry/100) {
+            docs.add(this.nextExpiry());
             count += 1;
         }
         return docs;

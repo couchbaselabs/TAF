@@ -38,6 +38,13 @@ public class WorkLoadGenerate extends Task{
     public HashMap<String, List<Result>> failedMutations = new HashMap<String, List<Result>>();
     public boolean trackFailures = true;
     public int retryTimes = 0;
+    public int exp;
+    public String exp_unit;
+    public UpsertOptions upsertOptions;
+    public UpsertOptions expiryOptions;
+    public InsertOptions setOptions;
+    public RemoveOptions removeOptions;
+    public GetOptions getOptions;
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability) {
         super(taskName);
@@ -47,7 +54,7 @@ public class WorkLoadGenerate extends Task{
         this.durability = durability;
     }
 
-    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability, boolean trackFailures, int retryTimes) {
+    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability, int exp, String exp_unit, boolean trackFailures, int retryTimes) {
         super(taskName);
         this.dg = dg;
         this.docops = new DocOps();
@@ -55,6 +62,8 @@ public class WorkLoadGenerate extends Task{
         this.durability = durability;
         this.trackFailures = trackFailures;
         this.retryTimes = retryTimes;
+        this.exp = exp;
+        this.exp_unit = exp_unit;
     }
 
     @Override
@@ -65,16 +74,20 @@ public class WorkLoadGenerate extends Task{
         // Set Durability in WorkLoadSettings
         this.dg.ws.setDurabilityLevel(this.durability);
 
-        UpsertOptions upsertOptions = UpsertOptions.upsertOptions()
+        upsertOptions = UpsertOptions.upsertOptions()
                 .timeout(this.dg.ws.timeout)
                 .durability(this.dg.ws.durability);
-        InsertOptions setOptions = InsertOptions.insertOptions()
+        expiryOptions = UpsertOptions.upsertOptions()
+                .timeout(this.dg.ws.timeout)
+                .durability(this.dg.ws.durability)
+                .expiry(this.dg.ws.getDuration(this.exp, this.exp_unit));
+        setOptions = InsertOptions.insertOptions()
                 .timeout(this.dg.ws.timeout)
                 .durability(this.dg.ws.durability);
-        RemoveOptions removeOptions = RemoveOptions.removeOptions()
+        removeOptions = RemoveOptions.removeOptions()
                 .timeout(this.dg.ws.timeout)
                 .durability(this.dg.ws.durability);
-        GetOptions getOptions = GetOptions.getOptions()
+        getOptions = GetOptions.getOptions()
                 .timeout(this.dg.ws.timeout);
         int ops = 0;
         boolean flag = false;
@@ -105,6 +118,20 @@ public class WorkLoadGenerate extends Task{
                             failedMutations.get("update").addAll(result);
                         } catch (Exception e) {
                             failedMutations.put("update", result);
+                        }
+                }
+            }
+            if(dg.ws.expiry > 0) {
+                List<Tuple2<String, Object>> docs = dg.nextExpiryBatch();
+                if (docs.size()>0) {
+                    flag = true;
+                    List<Result> result = docops.bulkUpsert(this.sdk.connection, docs, expiryOptions);
+                    ops += dg.ws.batchSize*dg.ws.expiry/100;
+                    if(trackFailures)
+                        try {
+                            failedMutations.get("expiry").addAll(result);
+                        } catch (Exception e) {
+                            failedMutations.put("expiry", result);
                         }
                 }
             }
@@ -144,7 +171,7 @@ public class WorkLoadGenerate extends Task{
                                         System.out.println(this.taskName + " is completed!");
                                         return;
                                     }
-                                } else if(!a.equals(b)){
+                                } else if(!a.equals(b) && !a.contains("TimeoutException")){
                                     System.out.println("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
                                     System.out.println("Actual Value - " + a);
                                     System.out.println("Expected Value - " + b);
@@ -178,6 +205,7 @@ public class WorkLoadGenerate extends Task{
                 }
         }
         System.out.println(this.taskName + " is completed!");
+        this.result = true;
         if (retryTimes > 0 && failedMutations.size() > 0)
             for (Entry<String, List<Result>> optype: failedMutations.entrySet()) {
                 for (Result r: optype.getValue()) {
@@ -187,27 +215,34 @@ public class WorkLoadGenerate extends Task{
                         try {
                             docops.insert(r.id(), r.document(), this.sdk.connection, setOptions);
                             failedMutations.get(optype.getKey()).remove(r);
-                        } catch (DocumentExistsException|TimeoutException|ServerOutOfMemoryException e) {
+                        } catch (TimeoutException|ServerOutOfMemoryException e) {
+                            System.out.println("Retry Create failed for key: " + r.id());
+                            this.result = false;
+                        } catch (DocumentExistsException e) {
                             System.out.println("Retry Create failed for key: " + r.id());
                         }
                     case "update":
                         try {
                             docops.upsert(r.id(), r.document(), this.sdk.connection, upsertOptions);
                             failedMutations.get(optype.getKey()).remove(r);
-                        } catch (DocumentExistsException|TimeoutException|ServerOutOfMemoryException e) {
+                        } catch (TimeoutException|ServerOutOfMemoryException e) {
+                            System.out.println("Retry update failed for key: " + r.id());
+                            this.result = false;
+                        }  catch (DocumentExistsException e) {
                             System.out.println("Retry update failed for key: " + r.id());
                         }
                     case "delete":
                         try {
                             docops.delete(r.id(), this.sdk.connection, removeOptions);
                             failedMutations.get(optype.getKey()).remove(r);
-                        } catch (DocumentNotFoundException|TimeoutException|ServerOutOfMemoryException e) {
+                        } catch (TimeoutException|ServerOutOfMemoryException e) {
+                            System.out.println("Retry delete failed for key: " + r.id());
+                            this.result = false;
+                        } catch (DocumentNotFoundException e) {
                             System.out.println("Retry delete failed for key: " + r.id());
                         }
                     }
                 }
             }
-        if (failedMutations.size() == 0)
-            this.result = true;
     }
 }

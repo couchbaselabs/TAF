@@ -23,10 +23,8 @@ public class WorkLoadSettings extends WorkLoadBase {
     public int reads = 0;
     public int updates = 0;
     public int deletes = 0;
+    public int expiry = 0;
     public int workingSet = 100;
-
-    public PersistTo persist_to;
-    public ReplicateTo replicate_to;
 
     public String loadType;
     public String keyType = "SimpleKey";
@@ -46,7 +44,7 @@ public class WorkLoadSettings extends WorkLoadBase {
 
     /**** Constructors ****/
     public WorkLoadSettings(String keyPrefix,
-            int keySize, int docSize, int c, int r, int u, int d,
+            int keySize, int docSize, int c, int r, int u, int d, int e,
             int workers, int ops, String loadType,
             String keyType, String valueType,
             boolean validate, boolean gtm, boolean deleted, int mutated) {
@@ -58,6 +56,7 @@ public class WorkLoadSettings extends WorkLoadBase {
         this.reads = r;
         this.updates = u;
         this.deletes = d;
+        this.expiry = e;
         this.workers = workers;
         this.ops = ops;
 
@@ -94,43 +93,6 @@ public class WorkLoadSettings extends WorkLoadBase {
 
         // Create DocumentGenerator object
         this.doc_gen = new DocumentGenerator(this, this.keyType, this.valueType);
-    }
-
-    public void setPersistTo(int persist_to) {
-        switch(persist_to) {
-            case 0:
-                this.persist_to = PersistTo.NONE;
-                break;
-            case 1:
-                this.persist_to = PersistTo.ACTIVE;
-                break;
-            case 2:
-                this.persist_to = PersistTo.TWO;
-                break;
-            case 3:
-                this.persist_to = PersistTo.THREE;
-                break;
-            case 4:
-                this.persist_to = PersistTo.FOUR;
-                break;
-        }
-    }
-
-    public void setReplicateTo(int replicate_to) {
-        switch(replicate_to) {
-            case 0:
-                this.replicate_to = ReplicateTo.NONE;
-                break;
-            case 1:
-                this.replicate_to = ReplicateTo.ONE;
-                break;
-            case 2:
-                this.replicate_to = ReplicateTo.TWO;
-                break;
-            case 3:
-                this.replicate_to = ReplicateTo.THREE;
-                break;
-        }
     }
 
     private void create_transaction_load_pattern_per_worker(int start, int end, List<?> transaction_pattern) {

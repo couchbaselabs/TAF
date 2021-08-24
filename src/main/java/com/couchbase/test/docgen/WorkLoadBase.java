@@ -5,6 +5,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
+import com.couchbase.client.java.kv.PersistTo;
+import com.couchbase.client.java.kv.ReplicateTo;
 
 public abstract class WorkLoadBase {
     public String keyPrefix = "test_docs-";
@@ -17,11 +19,10 @@ public abstract class WorkLoadBase {
 
     public DurabilityLevel durability;
     public Duration timeout;
+    public PersistTo persist_to;
+    public ReplicateTo replicate_to;
 
-    public void setTimeoutDuration(Integer timeout, String time_unit) {
-        if(timeout == null)
-            return;
-
+    public Duration getDuration(Integer timeout, String time_unit) {
         ChronoUnit chrono_unit = ChronoUnit.MILLIS;
         time_unit = time_unit.toLowerCase();
         switch(time_unit) {
@@ -41,8 +42,14 @@ public abstract class WorkLoadBase {
                 chrono_unit = ChronoUnit.DAYS;
                 break;
         }
+        return Duration.of(timeout, chrono_unit);
+    }
 
-        this.timeout = Duration.of(timeout, chrono_unit);
+    public void setTimeoutDuration(Integer timeout, String time_unit) {
+        if(timeout == null)
+            return;
+
+        this.timeout = this.getDuration(timeout, time_unit);
     }
 
     public void setDurabilityLevel(String durabilityLevel) {
@@ -58,6 +65,43 @@ public abstract class WorkLoadBase {
                 break;
             case "PERSIST_TO_MAJORITY":
                 this.durability = DurabilityLevel.PERSIST_TO_MAJORITY;
+                break;
+        }
+    }
+    
+    public void setPersistTo(int persist_to) {
+        switch(persist_to) {
+            case 0:
+                this.persist_to = PersistTo.NONE;
+                break;
+            case 1:
+                this.persist_to = PersistTo.ACTIVE;
+                break;
+            case 2:
+                this.persist_to = PersistTo.TWO;
+                break;
+            case 3:
+                this.persist_to = PersistTo.THREE;
+                break;
+            case 4:
+                this.persist_to = PersistTo.FOUR;
+                break;
+        }
+    }
+
+    public void setReplicateTo(int replicate_to) {
+        switch(replicate_to) {
+            case 0:
+                this.replicate_to = ReplicateTo.NONE;
+                break;
+            case 1:
+                this.replicate_to = ReplicateTo.ONE;
+                break;
+            case 2:
+                this.replicate_to = ReplicateTo.TWO;
+                break;
+            case 3:
+                this.replicate_to = ReplicateTo.THREE;
                 break;
         }
     }
