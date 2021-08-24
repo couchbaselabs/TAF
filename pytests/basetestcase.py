@@ -162,6 +162,7 @@ class BaseTestCase(unittest.TestCase):
         self.dgm_batch = self.input.param("dgm_batch", 5000)
         self.ryow = self.input.param("ryow", False)
         self.check_persistence = self.input.param("check_persistence", False)
+        self.ops_rate = self.input.param("ops_rate", 10000)
         # End of client specific parameters
 
         # initial number of items in the cluster

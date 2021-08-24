@@ -1,5 +1,4 @@
 import threading
-import time
 
 from java.util.concurrent import Executors, TimeUnit, CancellationException
 from threading import InterruptedException

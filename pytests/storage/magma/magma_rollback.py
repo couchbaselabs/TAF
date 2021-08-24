@@ -15,7 +15,12 @@ from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import SDKException
+from sdk_client3 import SDKClient
+
+from reactor.util.function import Tuples
+from com.couchbase.test.docgen import WorkLoadSettings
+from com.couchbase.test.loadgen import TransactionWorkLoadGenerate
+from com.couchbase.test.transactions import Transaction
 
 
 class MagmaRollbackTests(MagmaBaseTest):
@@ -25,9 +30,63 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.vbucket_check = self.input.param("vbucket_check", True)
+        self.run_transactions = self.input.param("run_transactions", None)
+        self.transaction_tasks = list()
 
     def tearDown(self):
         super(MagmaRollbackTests, self).tearDown()
+
+    def _run_transaction(self):
+        transaction_app = Transaction()
+        trans_config = transaction_app.createTransactionConfig(
+            self.transaction_timeout,
+            self.sdk_timeout,
+            self.transaction_durability_level)
+
+        workload = dict()
+        workload["keyPrefix"] = "trans_basics"
+        workload["keySize"] = 20
+        workload["docSize"] = 256
+        workload["mutated"] = 0
+        workload["keyRange"] = Tuples.of(0, self.num_items)
+        workload["batchSize"] = 1
+        workload["workers"] = 2
+        workload["transaction_pattern"] = [
+            [CbServer.default_scope, CbServer.default_collection,
+             [["C", "R"]]]
+        ]
+
+        work_load = WorkLoadSettings(
+            workload["keyPrefix"],
+            workload["keySize"],
+            workload["docSize"],
+            workload["mutated"],
+            workload["keyRange"],
+            workload["batchSize"],
+            workload["transaction_pattern"],
+            workload["workers"])
+        work_load.setTransactionRollback(True)
+        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+        transaction_obj = transaction_app.createTransaction(client.cluster,
+                                                            trans_config)
+        for index, load_pattern in enumerate(work_load.transaction_pattern):
+            th_name = "Transaction_%s" % index
+            batch_size = load_pattern[0]
+            num_transactions = load_pattern[1]
+            trans_pattern = load_pattern[2]
+
+            task = TransactionWorkLoadGenerate(
+                th_name, client.cluster, client.bucketObj, transaction_obj,
+                work_load.doc_gen, batch_size, num_transactions, trans_pattern,
+                work_load.commit_transaction, work_load.rollback_transaction,
+                transaction_app)
+            self.transaction_tasks.append(task)
+            self.tm.submit(task)
+        self.tm.getAllTaskResult()
+        client.close()
+        result = \
+            self.check_fragmentation_using_magma_stats(self.cluster.buckets[0])
+        self.assertTrue(result, "Magma framentation error")
 
     def crash_sigkill(self, nodes=None):
         nodes = nodes or self.cluster.nodes_in_cluster

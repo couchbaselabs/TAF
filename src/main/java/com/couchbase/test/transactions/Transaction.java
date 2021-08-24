@@ -33,7 +33,7 @@ import com.couchbase.transactions.log.TransactionCleanupAttempt;
 import com.couchbase.transactions.log.TransactionCleanupEndRunEvent;
 
 public class Transaction {
-    public TransactionConfig createTransactionConfig(int timeout, String durability) {
+    public TransactionConfig createTransactionConfig(int trans_timeout, int kv_timeout, String durability) {
         TransactionConfigBuilder config = TransactionConfigBuilder.create().logDirectly(Event.Severity.VERBOSE);
         switch (durability) {
             case "MAJORITY":
@@ -51,7 +51,8 @@ public class Transaction {
         }
 
         config = config.cleanupWindow(Duration.of(60, ChronoUnit.SECONDS));
-        return config.expirationTime(Duration.of(timeout, ChronoUnit.SECONDS)).build();
+        config = config.keyValueTimeout(Duration.of(kv_timeout, ChronoUnit.SECONDS));
+        return config.expirationTime(Duration.of(trans_timeout, ChronoUnit.SECONDS)).build();
     }
 
     public Transactions createTransaction(Cluster cluster, TransactionConfig config) {

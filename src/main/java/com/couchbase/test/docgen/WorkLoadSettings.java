@@ -95,6 +95,14 @@ public class WorkLoadSettings extends WorkLoadBase {
         this.doc_gen = new DocumentGenerator(this, this.keyType, this.valueType);
     }
 
+    public void setTransactionCommit(Boolean commit_transaction) {
+        this.commit_transaction = commit_transaction;
+    }
+
+    public void setTransactionRollback(Boolean rollback_transaction) {
+        this.rollback_transaction = rollback_transaction;
+    }
+
     private void create_transaction_load_pattern_per_worker(int start, int end, List<?> transaction_pattern) {
         int total_docs_to_be_mutated = (end - start);
         float max_iterations = (float)(total_docs_to_be_mutated/this.batchSize) / this.workers;

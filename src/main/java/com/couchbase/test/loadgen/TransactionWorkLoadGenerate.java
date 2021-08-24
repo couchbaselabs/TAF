@@ -60,6 +60,8 @@ public class TransactionWorkLoadGenerate extends Task{
         this.num_transactions = num_transactions;
         this.load_pattern = load_pattern;
         this.trans_helper = trans_helper;
+        this.commit = commit;
+        this.rollback = rollback;
     }
 
     List<Tuple2<String, Object>> get_docs() {
@@ -70,7 +72,8 @@ public class TransactionWorkLoadGenerate extends Task{
         return docs;
     }
 
-    void run_transaction(Collection col_obj, List<Tuple2<String, Object>> docs, List<String> ops) {
+    void run_transaction(Collection col_obj, List<Tuple2<String, Object>> docs, List<String> ops,
+                         Boolean wait_for_cleanup) {
         List<LogDefer> res = new ArrayList<LogDefer>();
         long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
         Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
@@ -111,7 +114,10 @@ public class TransactionWorkLoadGenerate extends Task{
                     ctx.commit();
             });
 
-            if (this.commit != null && this.commit && !result.unstagingComplete()) {
+            if (wait_for_cleanup
+                    && this.rollback != true
+                    && (this.commit == null || this.commit)
+                    && !result.unstagingComplete()) {
                 long cleanup_timeout = trans_helper.get_cleanup_timeout(transaction, start_time);
                 trans_helper.waitForTransactionCleanupEvent(
                     this.cluster, result.attempts(), attempt_ids, cleanup_timeout);
@@ -122,12 +128,14 @@ public class TransactionWorkLoadGenerate extends Task{
             res = err.result().log().logs();
             if (res.toString().contains("DurabilityImpossibleException"))
                 System.out.println("DurabilityImpossibleException seen");
-            else
-                for (LogDefer e : ((TransactionFailed) err).result().log().logs())
-                    System.out.println(e);
-            long cleanup_timeout = trans_helper.get_cleanup_timeout(transaction, start_time);
-            trans_helper.waitForTransactionCleanupEvent(
-                this.cluster, err.result().attempts(), attempt_ids, cleanup_timeout);
+//             else
+//                 for (LogDefer e : ((TransactionFailed) err).result().log().logs())
+//                     System.out.println(e);
+            if (wait_for_cleanup) {
+                long cleanup_timeout = trans_helper.get_cleanup_timeout(transaction, start_time);
+                trans_helper.waitForTransactionCleanupEvent(
+                    this.cluster, err.result().attempts(), attempt_ids, cleanup_timeout);
+            }
         }
     }
 
@@ -147,7 +155,7 @@ public class TransactionWorkLoadGenerate extends Task{
 
         for(int transaction_index=0; transaction_index<this.num_transactions; transaction_index++) {
             docs = this.get_docs();
-            this.run_transaction(col_obj, docs, ops);
+            this.run_transaction(col_obj, docs, ops, true);
         }
     }
 }

@@ -19,7 +19,6 @@ from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.docgen import WorkLoadSettings,\
     DocumentGenerator
 from com.couchbase.test.loadgen import WorkLoadGenerate
-from com.couchbase.test.docgen import DocRange
 
 
 class StorageBase(BaseTestCase):
@@ -329,8 +328,7 @@ class StorageBase(BaseTestCase):
                               cmd.get("validate", False),
                               cmd.get("gtm", False),
                               cmd.get("deleted", False),
-                              cmd.get("mutated", 0)
-                              )
+                              cmd.get("mutated", 0))
         ws.dr = self.dr
         dg = DocumentGenerator(ws, "", None)
         tasks = list()
@@ -339,10 +337,14 @@ class StorageBase(BaseTestCase):
             for bucket in self.buckets:
                 for scope in bucket.scopes.keys():
                     for collection in self.collections:
-                        client = NewSDKClient(master, bucket.name, scope, collection)
+                        client = NewSDKClient(master, bucket.name,
+                                              scope, collection)
                         client.initialiseSDK()
-                        th_name = "Loader_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, str(i), time.time())
-                        task = WorkLoadGenerate(th_name, dg, client, self.durability_level)
+                        th_name = "Loader_%s_%s_%s_%s_%s" \
+                                  % (bucket.name, scope, collection,
+                                     str(i), time.time())
+                        task = WorkLoadGenerate(th_name, dg, client,
+                                                self.durability_level)
                         tasks.append(task)
                         self.tm.submit(task)
                         i -= 1
@@ -403,7 +405,7 @@ class StorageBase(BaseTestCase):
                 task_per_collection[collection] = list(task_info.keys())[0]
             if scope == CbServer.default_scope:
                 self.collections.remove(CbServer.default_collection)
-            docs_per_scope[scope]= task_per_collection
+            docs_per_scope[scope] = task_per_collection
         for task in tasks_info.keys():
             self.task_manager.get_task_result(task)
         if self.active_resident_threshold < 100:

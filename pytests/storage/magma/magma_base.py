@@ -220,7 +220,8 @@ class MagmaBaseTest(StorageBase):
         return magma_stats_for_all_servers
 
     def get_disk_usage(self, bucket, servers=None):
-        return self.magma_utils.get_disk_usage(self.cluster, bucket, self.data_path, servers)
+        return self.magma_utils.get_disk_usage(self.cluster, bucket,
+                                               self.data_path, servers)
 
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()
@@ -237,8 +238,7 @@ class MagmaBaseTest(StorageBase):
                 output = shell.execute_command(
                     "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
                     )[0][0].split('\n')[0]
-                self.log.debug("machine: {} - core(s): {}\
-                ".format(server.ip, output))
+                self.log.debug("%s - core(s): %s" % (server.ip, output))
                 for i in range(min(int(output), 64)):
                     grep_field = "rw_{}:magma".format(i)
                     _res = self.get_magma_stats(
@@ -253,12 +253,10 @@ class MagmaBaseTest(StorageBase):
             for value in result.values():
                 res.append(max(value))
             if (max(res)) <= 1.1 * (float(self.fragmentation)/100):
-                self.log.info("magma stats fragmentation result {} \
-                ".format(result))
+                self.log.info("magma stats fragmentation result %s" % result)
                 self.log.debug(stats)
                 return True
-        self.log.info("magma stats fragmentation result {} \
-        ".format(result))
+        self.log.info("magma stats fragmentation result %s" % result)
         self.log.info(stats)
         return False
 
