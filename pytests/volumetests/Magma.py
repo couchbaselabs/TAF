@@ -1337,13 +1337,13 @@ class volume(BaseTestCase):
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
-            self.sleep(10)
+            self.sleep(60, "Waiting for failover to finish and settle down cluster.")
             self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
             # Mark Node for full recovery
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id,
                                             recoveryType="full")
-            self.sleep(30)
+            self.sleep(60, "Waiting for full recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
                 self.cluster.nodes_in_cluster, [], [],
                 retry_get_process_num=3000)
@@ -1409,7 +1409,7 @@ class volume(BaseTestCase):
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
-            self.sleep(10)
+            self.sleep(60, "Waiting for failover to finish and settle down cluster.")
             self.rest.monitorRebalance()
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id,
@@ -1418,7 +1418,7 @@ class volume(BaseTestCase):
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
 
-            self.sleep(30)
+            self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
                 self.cluster.nodes_in_cluster, [], [],
                 retry_get_process_num=3000)
@@ -1500,7 +1500,7 @@ class volume(BaseTestCase):
             self.set_num_writer_and_reader_threads(
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
-            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
+            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in,
                                                        [], [],
                                                        retry_get_process_num=3000)
             tasks_info = self.data_load()
