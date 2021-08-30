@@ -6,9 +6,8 @@ Created on 04-Jun-2021
 
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
-from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
-from bucket_utils.bucket_ready_functions import BucketUtils
-from membase.api.rest_client import RestHelper, RestConnection
+from cluster_utils.cluster_ready_functions import CBCluster
+from membase.api.rest_client import RestConnection
 from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 from Cb_constants import CbServer
 from cbas_utils.cbas_utils_v2 import CbasUtil
@@ -18,7 +17,6 @@ from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
-import traceback
 
 
 class CBASBaseTest(BaseTestCase):

@@ -2253,7 +2253,12 @@ class Dataset_Util(Link_Util):
         Generates dataset objects.
         """
 
-        def create_object(bucket, scope, collection):
+        def create_object(
+                bucket, scope, collection, enabled_from_KV=enabled_from_KV,
+                remote_dataset=remote_dataset, link=link,
+                same_dv_for_link_and_dataset=same_dv_for_link_and_dataset,
+                dataset_cardinality=dataset_cardinality, name_length=name_length,
+                fixed_length=fixed_length,):
             if not scope:
                 scope = bucket_util.get_scope_obj(bucket, "_default")
             if not collection:

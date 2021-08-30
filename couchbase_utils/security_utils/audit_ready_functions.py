@@ -436,6 +436,8 @@ class audit:
         flag = True
         ignore = False
         for items in data:
+            if items not in expectedResult:
+                expectedResult[items] = data[items]
             if items == 'timestamp':
                 tempFlag = self.validateTimeStamp(data['timestamp'])
                 if (tempFlag is False):
