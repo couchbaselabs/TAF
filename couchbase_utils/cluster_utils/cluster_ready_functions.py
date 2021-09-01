@@ -238,8 +238,23 @@ class ClusterUtils:
         server_set = list()
         for node in RestConnection(cluster.master).node_statuses():
             for server in cluster.servers:
-                if server.ip == node.ip:
-                    server_set.append(server)
+                if ":" not in server.ip and ":" not in node.ip:
+                    """ server.ip maybe Ipv4 or hostname and node.ip is Ipv4 or hostname """
+                    if server.ip == node.ip:
+                        server_set.append(server)
+                elif ":" not in server.ip and ":" in node.ip:
+                    """ server.ip maybe Ipv4 or hostname and node.ip is raw Ipv6 """
+                    shell = RemoteMachineShellConnection(server)
+                    serverIP = shell.get_ip_address()
+                    self.log.info("get raw IP from hostname. Hostname: {0} ; its IPs: {1}" \
+                                      .format(server.ip, serverIP))
+                    if node.ip in serverIP:
+                        server_set.append(server)
+                    shell.disconnect()
+                elif ":" in server.ip and ":" in node.ip:
+                    """ both server.ip and node.ip are raw Ipv6 """
+                    if server.ip == node.ip:
+                        server_set.append(server)
         return server_set
 
     def change_checkpoint_params(self, cluster):
@@ -502,7 +517,7 @@ class ClusterUtils:
                     _ = rest.update_autofailover_settings(False, 120, False)
                     cli = CouchbaseCLI(node, node.rest_username,
                                        node.rest_password)
-                    output, err, result = cli.set_address_family_to_ipv6()
+                    output, err, result = cli.set_address_family("ipv6")
                     if not result:
                         raise Exception("Addr family was not changed to ipv6")
                     _ = rest.update_autofailover_settings(True, 120)
@@ -1270,3 +1285,76 @@ class ClusterUtils:
             shell.disconnect()
             deleted_keys_count_dict[node.ip] = int(output[0].strip('\n'))
         return deleted_keys_count_dict
+
+    def check_ip_family_enforcement(self, cluster, ip_family="ipv4_only"):
+        for server in ClusterUtils.get_nodes_in_cluster(cluster):
+            shell = RemoteMachineShellConnection(server)
+            if ip_family == "ipv4_only":
+                processes = shell.get_processes_binding_to_ip_family(ip_family="ipv6")
+            else:
+                processes = shell.get_processes_binding_to_ip_family(ip_family="ipv4")
+            self.log.info("{0} : {1} \n {2} \n\n".format(server.ip, len(processes), processes))
+            if len(processes) != 0:
+                return False
+        return True
+
+    def enable_disable_ip_address_family_type(
+            self, cluster, enable=True, ipv4_only=False, ipv6_only=False):
+
+        cli = CouchbaseCLI(
+            cluster.master, cluster.master.rest_username,
+            cluster.master.rest_password)
+
+        def check_enforcement(ipv4_only=ipv4_only, ipv6_only=ipv6_only):
+            if ipv4_only:
+                if not self.check_ip_family_enforcement(
+                    cluster, ip_family="ipv4_only"):
+                    return False, "Ports are still binding to the opposite ip-family"
+            if ipv6_only:
+                if not self.cluster_util.check_ip_family_enforcement(
+                    cluster, ip_family="ipv6_only"):
+                    return False, "Ports are still binding to the opposite ip-family"
+
+        if enable:
+            cli.setting_autofailover(0, 60)
+            if ipv4_only:
+                self.log.info("Enforcing IPv4")
+                _, _, success = cli.set_address_family("ipv4only")
+                if not success:
+                    return False, "Unable to change ip-family to ipv4only"
+            if ipv6_only:
+                self.log.info("Enforcing IPv6")
+                _, _, success = cli.set_address_family("ipv6only")
+                if not success:
+                    return False, "Unable to change ip-family to ipv6only"
+
+            cli.setting_autofailover(1, 60)
+            self.sleep(2)
+
+            status, msg = check_enforcement(ipv4_only, ipv6_only)
+            if not status:
+                return status, msg
+            else:
+                return True, ""
+        else:
+            status, msg = check_enforcement(ipv4_only, ipv6_only)
+            if not status:
+                return status, msg
+            else:
+                cli.setting_autofailover(0, 60)
+                if ipv4_only:
+                    cli.set_address_family("ipv4")
+                if ipv6_only:
+                    cli.set_address_family("ipv6")
+                stdout, stderr, success = cli.get_address_family()
+                cli.setting_autofailover(1, 60)
+                if ipv4_only:
+                    if stdout[0] == "Cluster using ipv4":
+                        return True, ""
+                    else:
+                        return False, "Failed to change IP family"
+                if ipv6_only:
+                    if stdout[0] == "Cluster using ipv6":
+                        return True, ""
+                    else:
+                        return False, "Failed to change IP family"

@@ -24,7 +24,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
-
+from couchbase_cli import CouchbaseCLI
 
 class BaseTestCase(unittest.TestCase):
     def setUp(self):
@@ -189,6 +189,8 @@ class BaseTestCase(unittest.TestCase):
                                                     False)
         self.use_https = self.input.param("use_https", False)
         self.enforce_tls = self.input.param("enforce_tls", False)
+        self.ipv4_only = self.input.param("ipv4_only", False)
+        self.ipv6_only = self.input.param("ipv6_only", False)
         if self.use_https:
             CbServer.use_https = True
             trust_all_certs()
@@ -363,6 +365,14 @@ class BaseTestCase(unittest.TestCase):
                     if not status:
                         self.fail("Services did not honor enforce tls")
 
+            # Enforce IPv4 or IPv6 or both
+            if self.ipv4_only or self.ipv6_only:
+                for _, cluster in self.cb_clusters.items():
+                    status, msg = self.cluster_util.enable_disable_ip_address_family_type(
+                        cluster, True, self.ipv4_only, self.ipv6_only)
+                    if not status:
+                        self.fail(msg)
+
             for cluster_name, cluster in self.cb_clusters.items():
                 self.modify_cluster_settings(cluster)
 
@@ -488,6 +498,11 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
+
+        if self.ipv4_only or self.ipv6_only:
+            for _, cluster in self.cb_clusters.items():
+                self.cluster_util.enable_disable_ip_address_family_type(
+                    cluster, False, self.ipv4_only, self.ipv6_only)
 
         # Disable n2n encryption on nodes of all clusters
         if self.use_https and self.enforce_tls:

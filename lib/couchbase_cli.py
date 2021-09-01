@@ -646,14 +646,6 @@ class CouchbaseCLI:
                 return True
         return False
 
-    def set_address_family_to_ipv6(self):
-        options = self._get_default_options()
-        remote_client = RemoteMachineShellConnection(self.server)
-        options += " --set --ipv6"
-        stdout, stderr = remote_client.couchbase_cli('ip-family', self.hostname, options)
-        remote_client.disconnect()
-        return stdout, stderr, self._was_success(stdout,"Cluster settings modified")
-
     def get_address_family(self):
         options = self._get_default_options()
         remote_client = RemoteMachineShellConnection(self.server)
@@ -661,3 +653,15 @@ class CouchbaseCLI:
         stdout, stderr = remote_client.couchbase_cli('ip-family', self.hostname, options)
         remote_client.disconnect()
         return stdout, stderr, self._was_success(stdout,"Cluster settings modified")
+
+    def set_address_family(self, ip_family):
+        options = self._get_default_options()
+        options += " --set"
+        options += " --{0}".format(ip_family)
+
+        remote_client = RemoteMachineShellConnection(self.server)
+        stdout, stderr = remote_client.couchbase_cli("ip-family",
+                                                     self.hostname, options)
+        remote_client.disconnect()
+        return stdout, stderr, self._was_success(
+            stdout, "Switched IP family of the cluster")

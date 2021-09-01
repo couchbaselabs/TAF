@@ -17,6 +17,7 @@ from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
+from couchbase_cli import CouchbaseCLI
 
 
 class CBASBaseTest(BaseTestCase):
@@ -52,6 +53,23 @@ class CBASBaseTest(BaseTestCase):
                 "nodes_init", 1).split("|")]
         else:
             temp_nodes_init = [self.input.param("nodes_init", 1)]
+
+        """ In case of multi cluster setup, if cluster address family needs to be
+        set, then this parameter is required """
+        if self.input.param("cluster_ip_family", ""):
+            cluster_ip_family = self.input.param("cluster_ip_family", "").split("|")
+            if cluster_ip_family[0] == "ipv4_only":
+                self.input.test_params.update({
+                "ipv4_only": True, "ipv6_only": False})
+            elif cluster_ip_family[0] == "ipv6_only":
+                self.input.test_params.update({
+                "ipv4_only": False, "ipv6_only": True})
+            elif cluster_ip_family[0] == "ipv4_ipv6":
+                self.input.test_params.update({
+                "ipv4_only": True, "ipv6_only": True})
+            else:
+                self.input.test_params.update({
+                "ipv4_only": False, "ipv6_only": False})
 
         super(CBASBaseTest, self).setUp()
         if self._testMethodDoc:
@@ -104,6 +122,20 @@ class CBASBaseTest(BaseTestCase):
 
             self.initialize_cluster(cluster_name, cluster,
                                     services=self.services_init[i][0])
+
+            if self.input.param("cluster_ip_family", ""):
+                # Enforce IPv4 or IPv6 or both
+                if cluster_ip_family[i] == "ipv4_only":
+                    status, msg = self.cluster_util.enable_disable_ip_address_family_type(
+                        cluster, True, True, False)
+                if cluster_ip_family[i] == "ipv6_only":
+                    status, msg = self.cluster_util.enable_disable_ip_address_family_type(
+                        cluster, True, False, True)
+                if cluster_ip_family[i] == "ipv4_ipv6":
+                    status, msg = self.cluster_util.enable_disable_ip_address_family_type(
+                        cluster, True, True, True)
+                if not status:
+                    self.fail(msg)
             self.modify_cluster_settings(cluster)
 
         self.available_servers = self.servers[end:]

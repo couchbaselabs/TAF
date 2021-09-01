@@ -39,7 +39,8 @@ from testconstants import LINUX_CAPI_INI, LINUX_DISTRIBUTION_NAME, \
 from testconstants import WIN_COUCHBASE_BIN_PATH, WIN_COUCHBASE_BIN_PATH_RAW, \
                           WIN_CB_PATH, WIN_PSSUSPEND, WIN_PROCESSES_KILLED, \
                           WIN_REGISTER_ID, WIN_TMP_PATH, WIN_TMP_PATH_RAW, \
-                          WIN_UNZIP, WIN_COUCHBASE_LOGS_PATH, WIN_MB_PATH
+                          WIN_UNZIP, WIN_COUCHBASE_LOGS_PATH, WIN_MB_PATH, \
+                          WIN_PROCESSES_SPAWNED
 
 from testconstants import RPM_DIS_NAME, SYSTEMD_SERVER
 from testconstants import NR_INSTALL_LOCATION_FILE
@@ -5059,6 +5060,29 @@ class RemoteMachineShellConnection:
         # change this
         output, error = self.execute_command("echo '{{dist_type,inet6_tcp}}.' > {0}".format(LINUX_DIST_CONFIG))
         self.log_command_output(output, error)
+
+    def get_processes_binding_to_ip_family(self, ip_family="ipv4"):
+        """ Get all the processes binding to a particular ip family"""
+        self.extract_remote_info()
+        if self.info.type.lower() == "windows":
+            if ip_family == "ipv4":
+                ip_family = "tcp"
+            else:
+                ip_family = "tcpv6"
+            output_win, error = self.execute_command(
+                "netstat -a -b -p {0} | grep exe | sort | uniq | sed \'s/\[//g; s/\]//g;\'".
+                format(ip_family), debug=True)
+            self.log_command_output(output_win, error, debug=True)
+            output = list()
+            for op in output_win:
+                op = op.strip()
+                if op in WIN_PROCESSES_SPAWNED:
+                    output.append(op)
+        else:
+            output, error = self.execute_command("lsof -i -P -n | grep LISTEN | grep couchbase| grep -i {0}".
+                                                 format(ip_family), debug=True)
+            self.log_command_output(output, error, debug=True)
+        return output
 
 
 class RemoteUtilHelper(object):

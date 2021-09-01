@@ -3598,6 +3598,43 @@ class RestConnection(object):
             raise Exception(content)
         return content
 
+    """ From 6.5.0, enable IPv6 on cluster/node needs 2 settings
+        default is set to IPv6
+        We need to disable auto failover first, then set network version
+        Then enable autofaiover again. """
+    def enable_ip_version(self, afamily='ipv6', afamilyOnly='false'):
+        self.log.info("Start enable {0} on this node {1}".format(
+            afamily, self.baseUrl))
+        self.update_autofailover_settings(False, 60)
+        params = urllib.urlencode({
+            'afamily': afamily, 'afamilyOnly': afamilyOnly, 'nodeEncryption': 'off'})
+        api = "{0}node/controller/enableExternalListener".format(self.baseUrl)
+        status, content, header = self._http_request(api, 'POST', params)
+        if status:
+            params = urllib.urlencode({
+                'afamily': afamily, 'afamilyOnly': afamilyOnly,
+                'nodeEncryption': 'off'})
+            api = "{0}node/controller/setupNetConfig".format(self.baseUrl)
+            status, content, header = self._http_request(api, 'POST', params)
+            if status:
+                self.log.info("Done enable {0} on this node {1}".format(
+                    afamily, self.baseUrl))
+            else:
+                self.log.error("Failed to set 'setupNetConfig' on this node {0}".format(
+                    self.baseUrl))
+                raise Exception(content)
+        else:
+            self.log.error("Failed to set 'enableExternalListener' on this node {0}".format(
+                self.baseUrl))
+            raise Exception(content)
+        if afamilyOnly == 'true':
+            api = "{0}node/controller/disableUnusedExternalListeners".format(self.baseUrl)
+            status, _, _ = self._http_request(api, 'POST', params)
+            if not status:
+                self.log.error("Failed to set 'disableUnusedExternalListeners' on this node {0}".format(
+                    self.baseUrl))
+        self.update_autofailover_settings(True, 60)
+
 class MembaseServerVersion:
     def __init__(self, implementationVersion='', componentsVersion=''):
         self.implementationVersion = implementationVersion
