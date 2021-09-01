@@ -480,6 +480,84 @@ class MagmaDiskFull(MagmaBaseTest):
             self.assertTrue(len(task.fail) == 0,
                             "Doc ops failed for task: {}".format(task.thread_name))
 
+    def test_crash_during_write_failures(self):
+        self.log.info("===== test_crash_during_write_failures starts===")
+        self.graceful = self.input.param("graceful", True)
+        self.wal_write = self.input.param("wal_write", True)
+        wait_warmup = self.input.param("wait_warmup", True)
+        self.change_access_mode()
+        self.compute_docs_ranges()
+        if not self.wal_write:
+            self.change_access_mode(dest="wal")
+        self.doc_ops = "create"
+        self.create_start = self.init_items_per_collection
+        self.create_end = self.init_items_per_collection * 2
+        self.generate_docs()
+        tasks_info = dict()
+        for collection in self.collections:
+            tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
+                                               self.ignore_exceptions,
+                                               scope=CbServer.default_scope,
+                                               collection=collection,
+                                               suppress_error_table=True,
+                                               skip_read_on_error=True,
+                                               _sync=False,
+                                               doc_ops=self.doc_ops,
+                                               track_failures=False)
+            tasks_info.update(tem_tasks_info.items())
+        self.crash_th = threading.Thread(target=self.crash,
+                                         kwargs=dict(graceful=self.graceful,
+                                                     wait=wait_warmup))
+        self.crash_th.start()
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+        self.stop_crash = True
+        self.crash_th.join()
+
+    def test_wal_replay(self):
+        self.log.info("===== test_wal_replay starts===")
+        self.graceful = self.input.param("graceful", True)
+        items = self.init_items_per_collection
+        self.change_access_mode()
+        self.doc_ops = "create:update"
+        self.create_start = items
+        self.create_end = items + 50000
+        self.update_start = 0
+        self.update_end = 50000
+        count = 0
+        while count < self.test_itr:
+            self.generate_docs()
+            tasks_info = dict()
+            self.log.info("WAL Replay Iteration == {}".format(count+1))
+            for collection in self.collections:
+                tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
+                                               self.ignore_exceptions,
+                                               scope=CbServer.default_scope,
+                                               collection=collection,
+                                               suppress_error_table=True,
+                                               skip_read_on_error=True,
+                                               _sync=False,
+                                               doc_ops=self.doc_ops,
+                                               track_failures=False)
+                tasks_info.update(tem_tasks_info.items())
+                for task in tasks_info:
+                    self.task_manager.get_task_result(task)
+                self.create_start = self.create_end
+                self.create_end = self.create_end + 50000
+                self.update_start = self.update_end
+                self.update_end = self.update_start + 50000
+                items = self.create_end
+                self.change_access_mode(mod="777")
+                for node in self.cluster.nodes_in_cluster:
+                    shell = RemoteMachineShellConnection(node)
+                if self.graceful:
+                    shell.restart_couchbase()
+                else:
+                    shell.kill_memcached()
+                self.validate_data("update", self.gen_update)
+                self.validate_data("create", self.gen_create)
+                count += 1
+
     def test_disk_full_reduce_replica(self):
         self.gen_read = copy.deepcopy(self.gen_create)
         self.doc_ops = "create"

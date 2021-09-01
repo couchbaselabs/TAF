@@ -161,6 +161,49 @@ class MagmaCrashTests(MagmaBaseTest):
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
         self.validate_seq_itr()
 
+    def test_wal_replay(self):
+        self.log.info("===== test_wal_replay starts===")
+        items = self.init_items_per_collection
+        self.doc_ops = "create:update"
+        self.create_start = items
+        self.create_end = items + self.init_items_per_collection
+        self.update_start = 0
+        self.update_end = self.init_items_per_collection
+        count = 0
+        while count < self.test_itr:
+            self.generate_docs()
+            tasks_info = dict()
+            self.log.info("WAL Replay Iteration == {}".format(count+1))
+            for collection in self.collections:
+                tem_tasks_info = self.loadgen_docs(self.retry_exceptions,
+                                               self.ignore_exceptions,
+                                               scope=CbServer.default_scope,
+                                               collection=collection,
+                                               suppress_error_table=True,
+                                               skip_read_on_error=True,
+                                               _sync=False,
+                                               doc_ops=self.doc_ops,
+                                               track_failures=False)
+                tasks_info.update(tem_tasks_info.items())
+                for task in tasks_info:
+                    self.task_manager.get_task_result(task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster, self.cluster.buckets)
+                for node in self.cluster.nodes_in_cluster:
+                    shell = RemoteMachineShellConnection(node)
+                if self.graceful:
+                    shell.restart_couchbase()
+                else:
+                    shell.kill_memcached()
+                self.create_start = self.create_end
+                self.create_end = self.create_end + self.init_items_per_collection
+                self.update_start = self.update_end
+                self.update_end = self.update_start + self.init_items_per_collection
+                items = self.create_end
+                self.validate_data("update", self.gen_update)
+                self.validate_data("create", self.gen_create)
+                count += 1
+
     def test_crash_before_upserts(self):
         self.log.info("test_update_multi starts")
         self.change_swap_space(self.cluster.nodes_in_cluster)

@@ -901,6 +901,20 @@ class StorageBase(BaseTestCase):
             self.sleep(5)
             shell.disconnect()
 
+    def change_access_mode(self, nodes=None, mod="000", dest="seqIndex"):
+        nodes = nodes or self.cluster.nodes_in_cluster
+        if type(nodes) is not list:
+            nodes = [nodes]
+        for node in nodes:
+            paths = None
+            shell = RemoteMachineShellConnection(node)
+            paths, _ = shell.execute_command("find {} -name {}".format(self.data_path,
+                                                                       dest))
+            self.log.info("Paths type is {}".format(type(paths)))
+            for path in paths:
+                shell.execute_command("chmod {} {}".format(mod, path))
+            shell.disconnect()
+
     def set_metadata_purge_interval(self, value,
                                     buckets=[], node=None):
         self.log.info("Changing the bucket properties by changing {0} to {1}".
