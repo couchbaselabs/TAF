@@ -1314,6 +1314,7 @@ class ClusterUtils:
                 if not self.cluster_util.check_ip_family_enforcement(
                     cluster, ip_family="ipv6_only"):
                     return False, "Ports are still binding to the opposite ip-family"
+            return True, ""
 
         if enable:
             cli.setting_autofailover(0, 60)
@@ -1329,7 +1330,7 @@ class ClusterUtils:
                     return False, "Unable to change ip-family to ipv6only"
 
             cli.setting_autofailover(1, 60)
-            self.sleep(2)
+            sleep(2)
 
             status, msg = check_enforcement(ipv4_only, ipv6_only)
             if not status:
@@ -1346,7 +1347,7 @@ class ClusterUtils:
                     cli.set_address_family("ipv4")
                 if ipv6_only:
                     cli.set_address_family("ipv6")
-                stdout, stderr, success = cli.get_address_family()
+                stdout, _, success = cli.get_address_family()
                 cli.setting_autofailover(1, 60)
                 if ipv4_only:
                     if stdout[0] == "Cluster using ipv4":

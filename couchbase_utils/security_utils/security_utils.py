@@ -30,19 +30,29 @@ class SecurityUtils():
         self.encryption_type = encryption_type
         self.key_length = key_length
 
-    def upload_x509_certs(self, servers):
+    def upload_x509_certs(self, cluster=None, servers=None, setup_once=False):
         """
         1. Uploads root certs and client-cert settings on servers
         2. Uploads node certs on servers
         """
+        if cluster:
+            servers = cluster.servers
+
         self.log.info("Uploading root cert to servers {0}".format(servers))
-        for server in servers:
-            x509main(server).setup_master(
+
+        if setup_once:
+            cluster.x509.setup_master(
                 self.client_cert_state, self.paths, self.prefixs, self.delimeters)
+        else:
+            for server in cluster.servers:
+                x509main(server).setup_master(
+                    self.client_cert_state, self.paths, self.prefixs, self.delimeters)
         self.log.info("Sleeping before uploading node certs to nodes {0}".format(
             servers))
         time.sleep(5)
         x509main().setup_cluster_nodes_ssl(servers, reload_cert=True)
+        if cluster:
+            copytree(cluster.x509.CACERTFILEPATH, cluster.CACERTFILEPATH)
 
     def generate_x509_certs(self, cluster):
         """
