@@ -37,6 +37,18 @@ spec = {
         MetaCrudParams.SubDocCrud.LOOKUP_PER_COLLECTION: 0,
     },
 
+    # Doc_loading task options
+    MetaCrudParams.DOC_TTL: 0,
+    MetaCrudParams.DURABILITY_LEVEL: "",
+    MetaCrudParams.SDK_TIMEOUT: 120, # Default is 60
+    MetaCrudParams.SDK_TIMEOUT_UNIT: "seconds",
+    MetaCrudParams.TARGET_VBUCKETS: "all",
+    MetaCrudParams.SKIP_READ_ON_ERROR: True,
+    MetaCrudParams.SUPPRESS_ERROR_TABLE: True,
+    # The below is to skip populating success dictionary for reads
+    MetaCrudParams.SKIP_READ_SUCCESS_RESULTS: True, # Default is False
+
+
     MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
     MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",
     MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all"

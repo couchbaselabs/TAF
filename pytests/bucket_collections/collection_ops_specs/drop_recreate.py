@@ -61,9 +61,13 @@ spec = {
     # Doc_loading task options
     MetaCrudParams.DOC_TTL: 0,
     MetaCrudParams.DURABILITY_LEVEL: "",
-    MetaCrudParams.SDK_TIMEOUT: 60,
+    MetaCrudParams.SDK_TIMEOUT: 120, # Default is 60
     MetaCrudParams.SDK_TIMEOUT_UNIT: "seconds",
-    MetaCrudParams.SKIP_READ_ON_ERROR: False,
+    MetaCrudParams.TARGET_VBUCKETS: "all",
+    MetaCrudParams.SKIP_READ_ON_ERROR: True,
+    MetaCrudParams.SUPPRESS_ERROR_TABLE: True,
+    # The below is to skip populating success dictionary for reads
+    MetaCrudParams.SKIP_READ_SUCCESS_RESULTS: True, # Default is False
 
     MetaCrudParams.RETRY_EXCEPTIONS: [],
     MetaCrudParams.IGNORE_EXCEPTIONS: [],
