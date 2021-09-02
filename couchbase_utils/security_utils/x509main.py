@@ -1,4 +1,7 @@
 import logging
+
+from Cb_constants import CbServer
+
 log = logging.getLogger("x509")
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection

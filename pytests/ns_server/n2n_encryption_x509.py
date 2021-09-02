@@ -1,6 +1,7 @@
 import copy
 import random
 
+from Cb_constants import CbServer
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.security_utils.x509main import x509main
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
@@ -10,6 +11,8 @@ from pytests.bucket_collections.collections_base import CollectionBase
 class N2nEncryptionX509(CollectionBase):
     def setUp(self):
         super(N2nEncryptionX509, self).setUp()
+        CbServer.use_https = False  # set it to False initially
+        self.log.info("Setting use_https to False")
 
         self.x509enable = self.input.param("x509enable", True)
         if self.x509enable:
@@ -181,8 +184,10 @@ class N2nEncryptionX509(CollectionBase):
         for level in ["disable", self.n2n_encryption_level]:
             add_nodes = random.sample(self.available_servers, self.nodes_in)
             if self.x509enable:
+                if CbServer.use_https:
+                    CbServer.use_https = False
                 self.upload_x509_certs(servers=add_nodes)
-            if level in ["control", "all"]:
+            if level in ["strict", "control", "all"]:
                 self.set_n2n_encryption_level_on_nodes(nodes=[self.cluster.master],
                                                        level=level)
             self.log.info("Performing rebalance operation with x509: {0}, n2nencryption: {1}".
