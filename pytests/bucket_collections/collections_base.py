@@ -39,7 +39,7 @@ class CollectionBase(ClusterSetup):
         self.batch_size = self.input.param("batch_size", 200)
         self.process_concurrency = self.input.param("process_concurrency", 1)
         self.retry_get_process_num = \
-            self.input.param("retry_get_process_num", 25)
+            self.input.param("retry_get_process_num", 200)
 
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
