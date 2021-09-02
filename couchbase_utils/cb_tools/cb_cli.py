@@ -1,8 +1,8 @@
 import json
 
+from security_config import trust_all_certs
 from BucketLib.bucket import Bucket
 from cb_tools.cb_tools_base import CbCmdBase
-
 from Cb_constants import CbServer
 
 
@@ -104,6 +104,7 @@ class CbCli(CbCmdBase):
         if len(error) != 0:
             raise Exception(str(error))
         CbServer.n2n_encryption = True
+        CbServer.use_https = False
         return output
 
     def disable_n2n_encryption(self):
@@ -115,6 +116,7 @@ class CbCli(CbCmdBase):
         if len(error) != 0:
             raise Exception(str(error))
         CbServer.n2n_encryption = False
+        CbServer.use_https = False
         return output
 
     def set_n2n_encryption_level(self, level="all"):
@@ -125,6 +127,11 @@ class CbCli(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
+        if level != "strict":
+            CbServer.use_https = False
+        else:
+            CbServer.use_https = True
+            trust_all_certs()
         return output
 
     def get_n2n_encryption_level(self):
