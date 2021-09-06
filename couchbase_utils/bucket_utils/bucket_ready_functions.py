@@ -2354,7 +2354,7 @@ class BucketUtils(ScopeUtils):
         for remote_conn in shell_conn_list1 + shell_conn_list2:
             remote_conn.disconnect()
 
-    def verify_stats_all_buckets(self, cluster, items, timeout=500):
+    def verify_stats_all_buckets(self, cluster, items, timeout=600):
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(cluster),
             cluster.buckets,
@@ -2404,7 +2404,7 @@ class BucketUtils(ScopeUtils):
     def _wait_for_stats_all_buckets(self, cluster, buckets, expected_val=0,
                                     comparison_condition='==',
                                     check_ep_items_remaining=False,
-                                    timeout=500,
+                                    timeout=600,
                                     cbstat_cmd="checkpoint",
                                     stat_name="num_items_for_persistence"):
         """
@@ -4599,7 +4599,7 @@ class BucketUtils(ScopeUtils):
         if not status:
             raise Exception("Collections stat validation failed")
 
-    def validate_docs_per_collections_all_buckets(self, cluster, timeout=300):
+    def validate_docs_per_collections_all_buckets(self, cluster, timeout=600):
         self.log.info("Validating collection stats and item counts")
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(cluster),

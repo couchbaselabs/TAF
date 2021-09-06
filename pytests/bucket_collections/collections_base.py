@@ -178,7 +178,11 @@ class CollectionBase(ClusterSetup):
         ttl_buckets = [
             "multi_bucket.buckets_for_rebalance_tests_with_ttl",
             "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
-            "volume_templates.buckets_for_volume_tests_with_ttl"]
+            "volume_templates.buckets_for_volume_tests_with_ttl",
+            "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_256",
+            "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_512",
+            "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_1024",
+        ]
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,

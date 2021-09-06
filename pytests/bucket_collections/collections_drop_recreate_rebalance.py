@@ -98,7 +98,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             self.cluster.master = self.master = self.cluster.servers[self.nodes_failover]
         self.rest = RestConnection(self.cluster.master)
 
-    def wait_for_failover_or_assert(self, expected_failover_count, timeout=180):
+    def wait_for_failover_or_assert(self, expected_failover_count, timeout=300):
         time_start = time.time()
         time_max_end = time_start + timeout
         actual_failover_count = 0
@@ -173,8 +173,8 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             doc_loading_spec = self.spec_for_drop_recreate()
             try:
                 _ = BucketUtils.perform_tasks_from_spec(self.cluster,
-                                                             self.cluster.buckets,
-                                                             doc_loading_spec)
+                                                        self.cluster.buckets,
+                                                        doc_loading_spec)
             except Exception as e:
                 self.data_load_exception = e
                 raise

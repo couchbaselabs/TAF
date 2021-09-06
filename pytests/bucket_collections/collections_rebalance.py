@@ -345,7 +345,7 @@ class CollectionsRebalance(CollectionBase):
                                                      self.cluster.buckets)
 
     def forced_failover_operation(self, known_nodes=None, failover_nodes=None,
-                                  wait_for_pending=120):
+                                  wait_for_pending=300):
         self.log.info("Updating all bucket's replica = %s"
                       % self.updated_num_replicas)
         self.bucket_util.update_all_bucket_replicas(self.cluster,
@@ -366,7 +366,7 @@ class CollectionsRebalance(CollectionBase):
         return operation
 
     def rebalance_operation(self, rebalance_operation, known_nodes=None, add_nodes=None, remove_nodes=None,
-                            failover_nodes=None, wait_for_pending=120, tasks=None):
+                            failover_nodes=None, wait_for_pending=300, tasks=None):
         self.log.info("Starting rebalance operation of type : {0}".format(rebalance_operation))
         step_count = self.step_count
         if rebalance_operation == "rebalance_out":
