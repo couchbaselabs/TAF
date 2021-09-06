@@ -16,7 +16,7 @@ spec = {
     Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
     Bucket.priority: Bucket.Priority.LOW,
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
-    Bucket.maxTTL: 600,
+    Bucket.maxTTL: 1200,
     Bucket.storageBackend: Bucket.StorageBackend.couchstore,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.ACTIVE,
@@ -31,9 +31,9 @@ spec = {
         "bucket1": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 20,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 2500,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 500,
             Bucket.ramQuotaMB: 2000,
-            Bucket.maxTTL: 900,
+            Bucket.maxTTL: 1200,
         },
         "bucket2": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
@@ -41,7 +41,7 @@ spec = {
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 250,
             Bucket.ramQuotaMB: 1000,
             Bucket.storageBackend: Bucket.StorageBackend.magma,
-            Bucket.maxTTL: 1000,
+            Bucket.maxTTL: 1200,
         }
     }
 }
