@@ -279,9 +279,10 @@ class CollectionsNetworkSplit(CollectionBase):
             task = self.data_load(async_load=True)
             if self.allow_unsafe:
                 # just rebalance the cluster as nodes were already removed during qf
-                result = self.task.rebalance(self.known_nodes, [], [])
+                result = self.task.rebalance(self.known_nodes, [], [], retry_get_process_num=self.retry_get_process_num)
             else:
-                result = self.task.rebalance(self.known_nodes, [], self.nodes_failover)
+                result = self.task.rebalance(self.known_nodes, [], self.nodes_failover,
+                                             retry_get_process_num=self.retry_get_process_num)
             self.assertTrue(result, "Rebalance failed")
             self.wait_for_async_data_load_to_complete(task)
             # self.data_validation_collection()
@@ -292,7 +293,7 @@ class CollectionsNetworkSplit(CollectionBase):
             for failover_node in self.failover_nodes:
                 self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
             task = self.data_load(async_load=True)
-            result = self.task.rebalance(self.known_nodes, [], [])
+            result = self.task.rebalance(self.known_nodes, [], [], retry_get_process_num=self.retry_get_process_num)
             self.assertTrue(result, "Rebalance-in failed")
             self.wait_for_async_data_load_to_complete(task)
             # self.data_validation_collection()
@@ -327,7 +328,7 @@ class CollectionsNetworkSplit(CollectionBase):
         post_qf_ids = self.populate_uids(base_name="post_qf")
         self.validate_uids(pre_qf_ids, post_qf_ids)
         task = self.data_load(async_load=True)
-        result = self.task.rebalance(otp_nodes, [], [])
+        result = self.task.rebalance(otp_nodes, [], [], retry_get_process_num=self.retry_get_process_num)
         self.assertTrue(result, "Rebalance failed")
         self.wait_for_async_data_load_to_complete(task)
         self.remove_network_split()

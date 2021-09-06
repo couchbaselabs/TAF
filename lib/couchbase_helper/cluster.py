@@ -613,7 +613,7 @@ class ServerTasks(object):
 
     def rebalance(self, servers, to_add, to_remove,
                   use_hostnames=False, services=None,
-                  check_vbucket_shuffling=True):
+                  check_vbucket_shuffling=True, retry_get_process_num=25):
         """
         Synchronously rebalances a cluster
 
@@ -631,7 +631,8 @@ class ServerTasks(object):
             servers, to_add, to_remove,
             use_hostnames=use_hostnames,
             services=services,
-            check_vbucket_shuffling=check_vbucket_shuffling)
+            check_vbucket_shuffling=check_vbucket_shuffling,
+            retry_get_process_num=retry_get_process_num)
         self.jython_task_manager.get_task_result(_task)
         return _task.result
 
