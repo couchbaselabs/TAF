@@ -21,6 +21,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.nodes_swap = self.input.param("nodes_swap", 0)
         self.recovery_type = self.input.param("recovery_type", "delta")
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 2)
+        self.sleep_between_collections_crud = self.input.param("sleep_between_collections_crud", None)
         self.cluster_util.set_rebalance_moves_per_nodes(
             self.cluster.master,
             rebalanceMovesPerNode=self.rebalance_moves_per_node)
@@ -179,6 +180,10 @@ class CollectionsDropRecreateRebalance(CollectionBase):
                 self.data_load_exception = e
                 raise
             cycles = cycles + 1
+            # TODO : This sleep is intentionally added. See MB-47533
+            # TODO : Needs to be reverted when MB-47810 is fixed
+            if self.sleep_between_collections_crud:
+                time.sleep(self.sleep_between_collections_crud)
         end_time = time.time()
         elapsed_time = end_time - start_time
         self.print_spec_details(self.spec_for_drop_recreate(), cycles, elapsed_time)
