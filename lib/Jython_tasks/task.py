@@ -360,7 +360,7 @@ class RebalanceTask(Task):
                 # if ServerUnavailableException
                 if progress == -100:
                     self.retry_get_progress += 1
-                if self.previous_progress != progress:
+                elif self.previous_progress != progress:
                     self.previous_progress = progress
                     self.retry_get_progress = 0
                 else:
@@ -375,14 +375,14 @@ class RebalanceTask(Task):
             if self.rest.is_cluster_mixed():
                 """ for mix cluster, rebalance takes longer """
                 self.test_log.debug("Rebalance in mix cluster")
-                self.retry_get_process_num = 40
+                self.retry_get_process_num *= 2
             # we need to wait for status to be 'none'
             # (i.e. rebalance actually finished and not just 'running' and at 100%)
             # before we declare ourselves done
             if progress != -1 and status != 'none':
                 if self.retry_get_progress < self.retry_get_process_num:
                     self.log.debug("Wait before next rebalance progress check")
-                    sleep(5, log_type="infra")
+                    sleep(10, log_type="infra")
                     self.poll = True
                 else:
                     self.result = False
