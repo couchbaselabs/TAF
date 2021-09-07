@@ -47,6 +47,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                                                                    self.nodes_in]
         self.servers_to_remove = self.cluster.servers[self.nodes_init -
                                                       self.nodes_out:self.nodes_init]
+        self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
 
         if self.spec_name is not None:
             try:
@@ -99,7 +100,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         # Set up cluster
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
+        self.task.rebalance([self.cluster.master], nodes_init, [], retry_get_process_num=self.retry_get_process_num)
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
 
         self.over_ride_spec_params = \
@@ -254,7 +255,7 @@ class AutoFailoverBaseTest(BaseTestCase):
     def set_up_cluster(self):
         nodes_init = self.cluster.servers[1:self.nodes_init] \
                      if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
+        self.task.rebalance([self.cluster.master], nodes_init, [], retry_get_process_num=self.retry_get_process_num)
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         if self.auto_reprovision:
             self.bucket_util.create_default_bucket(
@@ -952,7 +953,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.cluster.servers[:self.nodes_init], None)
         self.task.rebalance(self.cluster.servers[:1],
                             self.cluster.servers[1:self.nodes_init],
-                            [], services=self.services)
+                            [], services=self.services, retry_get_process_num=self.retry_get_process_num)
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.bucket_util.add_rbac_user(self.cluster.master)
 

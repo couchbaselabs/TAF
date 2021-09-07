@@ -100,7 +100,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(5)
         rebalance_task = self.task.async_rebalance(self.servers,
                                                    self.servers_to_add,
-                                                   self.servers_to_remove)
+                                                   self.servers_to_remove,
+                                                   retry_get_process_num=self.retry_get_process_num)
         self.sleep(2)
         self._multi_node_failover()
         tasks = self.subsequent_load_gen()
@@ -139,7 +140,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(5)
         rebalance_success = self.task.rebalance(self.servers,
                                                 self.servers_to_add,
-                                                self.servers_to_remove)
+                                                self.servers_to_remove,
+                                                retry_get_process_num=self.retry_get_process_num)
         if not rebalance_success:
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")

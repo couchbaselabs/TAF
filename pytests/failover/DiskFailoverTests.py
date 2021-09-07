@@ -191,7 +191,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             task = self.data_load_from_spec(async_load=True)
         rebalance_success = self.task.rebalance(self.servers,
                                                 self.servers_to_add,
-                                                self.servers_to_remove)
+                                                self.servers_to_remove,
+                                                retry_get_process_num=self.retry_get_process_num)
         if not rebalance_success:
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")

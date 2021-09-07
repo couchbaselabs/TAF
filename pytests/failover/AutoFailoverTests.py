@@ -115,7 +115,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.wait_for_async_data_load_to_complete(task)
         rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [])
+            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
@@ -179,7 +179,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         self.sleep(60)
         rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [])
+            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
@@ -228,7 +228,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.servers,
             self.servers_to_add,
             self.servers_to_remove,
-            check_vbucket_shuffling=False)
+            check_vbucket_shuffling=False,
+            retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             self.disable_firewall()
@@ -243,7 +244,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.wait_for_async_data_load_to_complete(task)
         self.sleep(60)
         rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [])
+            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
@@ -331,7 +332,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if self.failover_orchestrator:
             init_nodes = self.cluster.servers[1:self.nodes_init]
         rebalance = self.task.async_rebalance(
-            init_nodes, [], [])
+            init_nodes, [], [], retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
@@ -414,7 +415,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.wait_for_async_data_load_to_complete(task)
         rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [])
+            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
@@ -492,7 +493,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.wait_for_async_data_load_to_complete(task)
         rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [])
+            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
