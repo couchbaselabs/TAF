@@ -34,10 +34,10 @@ public class RandomKey extends SimpleKey{
         this.randomStringLength = randomString.length();
     }
 
-    public String next(int doc_index) {
+    public String next(long doc_index) {
         Random random_obj = new Random();
         random_obj.setSeed(doc_index);
-        String counter = Integer.toString(doc_index);
+        String counter = Long.toString(doc_index);
         return this.get_random_string(ws.keySize - counter.length()-1, random_obj) + "-" +counter;
     }
 

@@ -641,7 +641,7 @@ class OPD:
     def check_fragmentation_using_kv_stats(self, bucket, servers=None):
         result = dict()
         if servers is None:
-            servers = self.cluster.kv_nodes
+            servers = self.cluster.kv_nodes + [self.cluster.master]
         if type(servers) is not list:
             servers = [servers]
         for server in servers:
@@ -652,11 +652,30 @@ class OPD:
             result.update({server.ip: frag_val})
         self.log.info("KV stats fragmentation values {}".format(result))
 
+#     def dump_magma_stats(self, server, bucket, shard, kvstore):
+#         shell = RemoteMachineShellConnection(server)
+#         data_path = RestConnection(server).get_data_path()
+#         self.stop_stats = False
+#         while not self.stop_stats:
+#             for bucket in self.cluster.buckets:
+#                 self.log.info(self.get_magma_stats(bucket, shell, "rw_0:magma"))
+#                 self.dump_seq_index(shell, data_path, bucket.name, shard, kvstore)
+#             self.sleep(300)
+#         shell.disconnect()
+# 
+#     def dump_seq_index(self, shell, data_path, bucket, shard, kvstore):
+#         magma_path = os.path.join(data_path, bucket, "magma.{}")
+#         magma = magma_path.format(shard)
+#         cmd = '/opt/couchbase/bin/magma_dump {}'.format(magma)
+#         cmd += ' --kvstore {} --tree seq'.format(kvstore)
+#         result = shell.execute_command(cmd)[0]
+#         self.log.info("Seq Tree for {}:{}:{}:{}: \n{}".format(shell.ip, bucket, shard, kvstore, result))
+
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()
         stats = list()
         if servers is None:
-            servers = self.cluster.kv_nodes
+            servers = self.cluster.kv_nodes + [self.cluster.master]
         if type(servers) is not list:
             servers = [servers]
         for server in servers:
@@ -676,6 +695,7 @@ class OPD:
                 stats.append(_res)
             result.update({server.ip: fragmentation_values})
             shell.disconnect()
+        self.log.info(stats[0])
         res = list()
         for value in result.values():
             res.append(max(value))
@@ -685,7 +705,6 @@ class OPD:
             return True
         self.log.info("magma stats fragmentation result {} \
         ".format(result))
-        self.log.info(stats)
         return False
 
     def get_magma_stats(self, bucket, shell=None, field_to_grep=None):
@@ -727,7 +746,8 @@ class OPD:
         while expected_progress < 80:
             expected_progress = 20 * i
             reached = RestHelper(rest).rebalance_reached(expected_progress,
-                                                         wait_step=10)
+                                                         wait_step=10,
+                                                         num_retry=3600)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
 
@@ -751,14 +771,14 @@ class OPD:
                         result,
                         "CRASH | CRITICAL | WARN messages found in cb_logs")
                 try:
-                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.task_manager.get_task_result(rebalance_task)
                 except RebalanceFailedException:
                     pass
                 if rebalance.result:
                     self.log.error("Rebalance passed/finished which is not expected")
                     self.log.info("Rebalance % after rebalance finished = {}".
                                   format(expected_progress))
-                    break
+                    return None
                 else:
                     self.log.info("Restarting Rebalance after killing at {}".
                                   format(expected_progress))
@@ -775,7 +795,7 @@ class OPD:
         self.stop_crash = False
         self.crash_count = 0
         if not nodes:
-            nodes = self.cluster.kv_nodes
+            nodes = self.cluster.kv_nodes + [self.cluster.master]
 
         while not self.stop_crash:
             self.get_memory_footprint()
@@ -793,7 +813,7 @@ class OPD:
     def kill_memcached(self, servers=None, num_kills=1,
                        graceful=False, wait=True):
         if not servers:
-            servers = self.cluster.kv_nodes
+            servers = self.cluster.kv_nodes + [self.cluster.master]
 
         for _ in xrange(num_kills):
             self.sleep(5, "Sleep for 5 seconds between continuous memc kill")
@@ -807,7 +827,7 @@ class OPD:
 
                 shell.disconnect()
 
-        result = self.check_coredump_exist(self.cluster.kv_nodes)
+        result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if result:
             self.stop_crash = True
             self.task_manager.abort_all_tasks()
@@ -841,9 +861,8 @@ class OPD:
                                           num_writer_threads="default",
                                           num_reader_threads="default",
                                           num_storage_threads="default"):
-        for node in self.cluster.kv_nodes:
-            bucket_helper = BucketHelper(node)
-            bucket_helper.update_memcached_settings(
-                num_writer_threads=num_writer_threads,
-                num_reader_threads=num_reader_threads,
-                num_storage_threads=num_storage_threads)
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_helper.update_memcached_settings(
+            num_writer_threads=num_writer_threads,
+            num_reader_threads=num_reader_threads,
+            num_storage_threads=num_storage_threads)

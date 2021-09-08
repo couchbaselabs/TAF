@@ -16,7 +16,7 @@ from com.couchbase.client.java.query import QueryOptions,\
     QueryScanConsistency, QueryStatus
 from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutException
 from com.couchbase.client.core.error import RequestCanceledException,\
-    CouchbaseException
+    CouchbaseException, InternalServerFailureException
 from string import ascii_uppercase, ascii_lowercase
 from encodings.punycode import digits
 from remote.remote_util import RemoteMachineShellConnection
@@ -26,13 +26,13 @@ letters = ascii_uppercase + ascii_lowercase + digits
 queries = ['select name from {}.{}.{} where age between 30 and 50 limit 10;',
            'select age, count(*) from {}.{}.{} where marital = "M" group by age order by age limit 10;',
            'select v.name, animal from {}.{}.{} as v unnest animals as animal where v.attributes.hair = "Burgundy" limit 10;',
-           'select v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies WHEN hobby.type != "Jewerly" END from {}.{}.{} as v where v.attributes.hair = "Burgundy" limit 10;',
+           'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {}{}{} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 10;',
            'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {}.{}.{} WHERE gender is not MISSING limit 10;']
 indexes = ['create index {}{} on {}.{}.{}(age) where age between 30 and 50 WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}.{}.{}(marital,age) WITH  {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}.{}.{}(attributes.hair) WITH  {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}.{}.{}(hobby.type, attributes.hair) WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}.{}.{}(gender) WITH  {{ "defer_build": true, "num_replica": 0 }};']
+           'create index {}{} on {}.{}.{}(marital,age) WITH {{ "defer_build": true, "num_replica": 0 }};',
+           'create index {}{} on {}.{}.{}(ALL `animals`,`attributes`.`hair`,`name`) where attributes.hair = "Burgundy" WITH {{ "defer_build": true, "num_replica": 0 }};',
+           'CREATE INDEX {}{} ON {}.{}.{}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true, "num_replica": 0 }};',
+           'create index {}{} on {}.{}.{}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true, "num_replica": 0 }};']
 
 
 class DoctorN1QL():
@@ -66,7 +66,6 @@ class DoctorN1QL():
                     for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
                         self.idx_q = indexes[i % len(indexes)].format("idx", i, b.name, s, c)
                         self.indexes.update({"idx"+str(i): (self.idx_q, b.name, s, c)})
-                        sleep(2)
                         self.queries.append(queries[i % len(indexes)].format(b.name, s, c))
                         i += 1
                         if i >= self.num_indexes:
@@ -88,7 +87,11 @@ class DoctorN1QL():
         for index, b_s_c in self.indexes.items():
             build_query = "BUILD INDEX on `%s`.`%s`.`%s`(%s) USING GSI" % (b_s_c[1], b_s_c[2], b_s_c[3], index)
             time.sleep(1)
-            self.execute_statement_on_n1ql(build_query)
+            try:
+                self.execute_statement_on_n1ql(build_query)
+            except Exception as e:
+                print(e)
+                print("Failed %s" % build_query)
 
     def drop_indexes(self):
         for index, b_s_c in self.indexes.items():
@@ -211,7 +214,11 @@ class DoctorN1QL():
                 metrics = response["metrics"]
             else:
                 metrics = None
-            return response["status"], metrics, errors, results, handle
+            if "status" in response:
+                status = response["status"]
+            else:
+                status = None
+            return status, metrics, errors, results, handle
 
         except Exception as e:
             raise Exception(str(e))
@@ -245,6 +252,8 @@ class DoctorN1QL():
             else:
                 raise Exception("N1QL query failed")
 
+        except InternalServerFailureException as e:
+            raise Exception(e)
         except TimeoutException as e:
             raise Exception(e)
         except RequestCanceledException as e:

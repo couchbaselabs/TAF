@@ -17,8 +17,8 @@ public class SimpleKey {
         this.ws = ws;
     }
 
-    public String next(int doc_index) {
-        int counterSize = Integer.toString(Math.abs(doc_index)).length();
+    public String next(long doc_index) {
+        int counterSize = Long.toString(Math.abs(doc_index)).length();
         int padd = this.ws.keySize - this.ws.keyPrefix.length() - counterSize;
         return this.ws.keyPrefix + this.padding.substring(0, padd) + Math.abs(doc_index);
     }

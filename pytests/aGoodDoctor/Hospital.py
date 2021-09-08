@@ -233,7 +233,12 @@ class Murphy(BaseTestCase, OPD):
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
-
+#         stat_th = threading.Thread(target=self.dump_magma_stats,
+#                                    kwargs=dict(server=self.cluster.master,
+#                                                bucket=self.cluster.buckets[0],
+#                                                shard=0,
+#                                                kvstore=0))
+#         stat_th.start()
         '''
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)
@@ -264,6 +269,8 @@ class Murphy(BaseTestCase, OPD):
                            update_start=self.start,
                            update_end=self.end)
         self.perform_load(validate_data=False)
+#         self.stop_stats = False
+#         stat_th.join()
 
         if self.index_nodes:
             self.drIndexService.create_indexes()
@@ -395,6 +402,11 @@ class Murphy(BaseTestCase, OPD):
                            update_end=self.end)
         self.perform_load(validate_data=False)
 
+        if self.index_nodes:
+            self.drIndexService.create_indexes()
+            self.drIndexService.build_indexes()
+            self.drIndexService.start_query_load()
+
         self.rebl_nodes = self.input.param("rebl_nodes", 0)
         self.max_rebl_nodes = self.input.param("max_rebl_nodes", 1)
         self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
@@ -425,8 +437,9 @@ class Murphy(BaseTestCase, OPD):
             else:
                 rebalance_task = self.abort_rebalance(rebalance_task, "kill_memcached")
 
-            self.task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            if rebalance_task is not None:
+                self.task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
 
             self.PrintStep("Step 5: Crash Magma/memc with Loading of docs")
@@ -447,8 +460,9 @@ class Murphy(BaseTestCase, OPD):
             else:
                 rebalance_task = self.abort_rebalance(rebalance_task, "kill_memcached")
 
-            self.task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            if rebalance_task is not None:
+                self.task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
 
             th = threading.Thread(target=self.crash_memcached,
@@ -468,8 +482,9 @@ class Murphy(BaseTestCase, OPD):
             else:
                 rebalance_task = self.abort_rebalance(rebalance_task, "kill_memcached")
 
-            self.task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            if rebalance_task is not None:
+                self.task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
 
             th = threading.Thread(target=self.crash_memcached,
@@ -490,8 +505,9 @@ class Murphy(BaseTestCase, OPD):
             else:
                 rebalance_task = self.abort_rebalance(rebalance_task, "kill_memcached")
 
-            self.task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            if rebalance_task is not None:
+                self.task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
 
             th = threading.Thread(target=self.crash_memcached,

@@ -181,21 +181,21 @@ public class Loader {
                 Boolean.parseBoolean(cmd.getOptionValue("deleted", "false")),
                 Integer.parseInt(cmd.getOptionValue("mutated", "0"))
                 );
-        HashMap<String, Integer> dr = new HashMap<String, Integer>();
-        dr.put(DRConstants.create_s, Integer.parseInt(cmd.getOptionValue(DRConstants.create_s, "0")));
-        dr.put(DRConstants.create_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.create_e, "0")));
-        dr.put(DRConstants.read_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.read_s, "0")));
-        dr.put(DRConstants.read_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.read_e, "0")));
-        dr.put(DRConstants.update_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.update_s, "0")));
-        dr.put(DRConstants.update_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.update_e, "0")));
-        dr.put(DRConstants.delete_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.delete_s, "0")));
-        dr.put(DRConstants.delete_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.delete_e, "0")));
-        dr.put(DRConstants.touch_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.touch_s, "0")));
-        dr.put(DRConstants.touch_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.touch_e, "0")));
-        dr.put(DRConstants.replace_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.replace_s, "0")));
-        dr.put(DRConstants.replace_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.replace_e, "0")));
-        dr.put(DRConstants.expiry_s ,Integer.parseInt(cmd.getOptionValue(DRConstants.expiry_s, "0")));
-        dr.put(DRConstants.expiry_e ,Integer.parseInt(cmd.getOptionValue(DRConstants.expiry_e, "0")));
+        HashMap<String, Number> dr = new HashMap<String, Number>();
+        dr.put(DRConstants.create_s, Long.parseLong(cmd.getOptionValue(DRConstants.create_s, "0L")));
+        dr.put(DRConstants.create_e ,Long.parseLong(cmd.getOptionValue(DRConstants.create_e, "0L")));
+        dr.put(DRConstants.read_s ,Long.parseLong(cmd.getOptionValue(DRConstants.read_s, "0L")));
+        dr.put(DRConstants.read_e ,Long.parseLong(cmd.getOptionValue(DRConstants.read_e, "0L")));
+        dr.put(DRConstants.update_s ,Long.parseLong(cmd.getOptionValue(DRConstants.update_s, "0L")));
+        dr.put(DRConstants.update_e ,Long.parseLong(cmd.getOptionValue(DRConstants.update_e, "0L")));
+        dr.put(DRConstants.delete_s ,Long.parseLong(cmd.getOptionValue(DRConstants.delete_s, "0L")));
+        dr.put(DRConstants.delete_e ,Long.parseLong(cmd.getOptionValue(DRConstants.delete_e, "0L")));
+        dr.put(DRConstants.touch_s ,Long.parseLong(cmd.getOptionValue(DRConstants.touch_s, "0L")));
+        dr.put(DRConstants.touch_e ,Long.parseLong(cmd.getOptionValue(DRConstants.touch_e, "0L")));
+        dr.put(DRConstants.replace_s ,Long.parseLong(cmd.getOptionValue(DRConstants.replace_s, "0L")));
+        dr.put(DRConstants.replace_e ,Long.parseLong(cmd.getOptionValue(DRConstants.replace_e, "0L")));
+        dr.put(DRConstants.expiry_s ,Long.parseLong(cmd.getOptionValue(DRConstants.expiry_s, "0L")));
+        dr.put(DRConstants.expiry_e ,Long.parseLong(cmd.getOptionValue(DRConstants.expiry_e, "0L")));
 
         DocRange range = new DocRange(dr);
         ws.dr = range;

@@ -50,11 +50,11 @@ def run(command, server):
     return output, error
 
 
-def execute(cmd="free -m"):
+def execute(cmd="df -h | grep data"):
     cluster_env = ClusterEnvironment.builder().ioConfig(IoConfig.numKvConnections(25)).timeoutConfig(TimeoutConfig.builder().connectTimeout(Duration.ofSeconds(20)).kvTimeout(Duration.ofSeconds(10)))
     cluster_options = ClusterOptions.clusterOptions("Administrator", "esabhcuoc").environment(cluster_env.build())
     cluster = Cluster.connect("172.23.104.162", cluster_options)
-    STATEMENT = "select meta().id from `QE-server-pool` where os='centos' and '12hrreg' in poolId or 'regression' in poolId or 'magmareg' in poolId;"
+    STATEMENT = "select meta().id from `QE-server-pool` where os='centos' and 'magmareg' in poolId;"
     result = cluster.query(STATEMENT);
 
     count = 1
@@ -77,6 +77,8 @@ try:
         execute(swapiness_cmd)
     if "ulimit" in param.lower():
         execute(ulimit_cmd)
+    else:
+        execute()
 except:
     execute()
 

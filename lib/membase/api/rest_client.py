@@ -85,12 +85,12 @@ class RestHelper(object):
         nodes = self.rest.node_statuses(timeout)
         return all(node.status == 'healthy' for node in nodes)
 
-    def rebalance_reached(self, percentage=100, wait_step=2):
+    def rebalance_reached(self, percentage=100, wait_step=2, num_retry=40):
         start = time.time()
         progress = 0
         previous_progress = 0
         retry = 0
-        while progress is not -1 and progress < percentage and retry < 40:
+        while progress is not -1 and progress < percentage and retry < num_retry:
             # -1 is error , -100 means could not retrieve progress
             progress = self.rest._rebalance_progress()
             if progress == -100:
@@ -109,7 +109,7 @@ class RestHelper(object):
             self.test_log.error("Rebalance progress: {0}".format(progress))
 
             return False
-        elif retry >= 40:
+        elif retry >= num_retry:
             self.test_log.error("Rebalance stuck at {0}%".format(progress))
             return False
         else:

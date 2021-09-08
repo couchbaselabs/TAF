@@ -4,7 +4,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.couchbase.test.key.RandomKey;
 import com.couchbase.test.key.RandomSizeKey;
@@ -47,7 +47,7 @@ abstract class KVGenerator{
         try {
             this.keys = keyInstance.getConstructor(WorkLoadSettings.class).newInstance(ws);
             this.vals = valInstance.getConstructor(WorkLoadSettings.class).newInstance(ws);
-            this.keyMethod = this.keyInstance.getDeclaredMethod("next", int.class);
+            this.keyMethod = this.keyInstance.getDeclaredMethod("next", long.class);
             this.valMethod = this.valInstance.getDeclaredMethod("next", String.class);
         } catch (InstantiationException e) {
             e.printStackTrace();
@@ -87,7 +87,7 @@ abstract class KVGenerator{
     abstract Tuple2<String, Object> next();
 
     void resetRead() {
-        this.ws.dr.readItr =  new AtomicInteger(this.ws.dr.read_s);
+        this.ws.dr.readItr =  new AtomicLong(this.ws.dr.read_s);
     }
 }
 
@@ -99,7 +99,7 @@ public class DocumentGenerator extends KVGenerator{
     }
 
     public Tuple2<String, Object> next() {
-        int temp = this.ws.dr.createItr.incrementAndGet();
+        long temp = this.ws.dr.createItr.incrementAndGet();
         String k = null;
         Object v = null;
             try {
@@ -112,7 +112,7 @@ public class DocumentGenerator extends KVGenerator{
     }
 
     public Tuple2<String, Object> nextRead() {
-        int temp = this.ws.dr.readItr.incrementAndGet();
+    	long temp = this.ws.dr.readItr.incrementAndGet();
         String k = null;
         Object v = null;
             try {
@@ -125,7 +125,7 @@ public class DocumentGenerator extends KVGenerator{
     }
 
     public Tuple2<String, Object> nextUpdate() {
-        int temp = this.ws.dr.updateItr.incrementAndGet();
+        long temp = this.ws.dr.updateItr.incrementAndGet();
         String k = null;
         Object v = null;
             try {
@@ -138,7 +138,7 @@ public class DocumentGenerator extends KVGenerator{
     }
 
     public Tuple2<String, Object> nextExpiry() {
-        int temp = this.ws.dr.expiryItr.incrementAndGet();
+        long temp = this.ws.dr.expiryItr.incrementAndGet();
         String k = null;
         Object v = null;
             try {
@@ -192,7 +192,7 @@ public class DocumentGenerator extends KVGenerator{
 
     public List<String> nextDeleteBatch() {
         int count = 0;
-        int temp;
+        long temp;
         List<String> docs = new ArrayList<String>();
         while (this.has_next_delete() && count<ws.batchSize*ws.deletes/100) {
             try {
