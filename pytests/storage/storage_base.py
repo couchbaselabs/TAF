@@ -111,7 +111,11 @@ class StorageBase(BaseTestCase):
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         self.buckets = self.cluster.buckets
-
+        # Setting reader and writer threads
+        self.num_writer_threads = self.input.param("num_writer_threads", "disk_io_optimized")
+        self.num_reader_threads = self.input.param("num_reader_threads", "disk_io_optimized")
+        self.num_storage_threads = self.input.param("num_storage_threads", "default")
+        self.set_writer_reader_storage_threads()
         # sel.num_collections=1 signifies only default collection
         self.num_collections = self.input.param("num_collections", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
@@ -958,3 +962,10 @@ class StorageBase(BaseTestCase):
             data_path = data_path.replace("c:/Program Files",
                                            "/cygdrive/c/Program\ Files")
         return data_path
+
+    def set_writer_reader_storage_threads(self):
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_helper.update_memcached_settings(
+            num_writer_threads=self.num_writer_threads,
+            num_reader_threads=self.num_reader_threads,
+            num_storage_threads=self.num_storage_threads)
