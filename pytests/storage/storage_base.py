@@ -859,7 +859,7 @@ class StorageBase(BaseTestCase):
                                     wait_time=self.wait_timeout * 5)
                         if not result:
                             msg = "warm-up couldn't complete in %s seconds" %\
-                                (self.wait_timeout * 5)
+                                (self.wait_timeout * 8)
                             self.log.critical(msg)
                             self.task.jython_task_manager.abort_all_tasks()
                             self.stop_crash = True
