@@ -164,22 +164,19 @@ class DCPSeqItr(MagmaBaseTest):
         num_drop_collections = self.input.param("num_drop_collections", 0)
         self.crud_ops = self.input.param("crud_ops", True)
         self.collections.remove(CbServer.default_collection)
-        self.scopes.remove(CbServer.default_scope)
         collections = copy.deepcopy(self.collections)
         scopes = copy.deepcopy(self.scopes)
 
         if self.drop_scopes:
-            expected_item_count =   ((self.init_items_per_collection * (self.num_collections-1)) + self.init_items_per_collection) * ((len(self.scopes) - num_drop_scopes))
-            self.log.info("expected item count is {}".format(expected_item_count))
+            scopes.remove(CbServer.default_scope)
             for scope_name in scopes[0:num_drop_scopes]:
                 self.bucket_util.drop_scope(self.cluster.master, self.bucket, scope_name)
                 self.scopes.remove(scope_name)
+                scopes.remove(scope_name)
             scopes.append(CbServer.default_scope)
         elif self.drop_collections:
             if num_drop_collections == self.num_collections:
                 num_drop_collections -= 1
-            expected_item_count = self.init_items_per_collection * ((self.num_scopes * ((self.num_collections-1) - num_drop_collections)) + 1)
-            self.log.info("expected item count is {}".format(expected_item_count))
             for scope_name in self.scopes:
                 self.log.info("scope name {}".format(scope_name))
                 for collection_name in collections[0:num_drop_collections]:
@@ -190,7 +187,6 @@ class DCPSeqItr(MagmaBaseTest):
             for collection_name in collections[0:num_drop_collections]:
                 self.collections.remove(collection_name)
         self.log.info("collection is {}".format(collections))
-        scopes.append(CbServer.default_scope)
         if self.crud_ops:
             self.compute_doc_count()
             self.generate_docs(doc_ops=self.doc_ops)
@@ -208,8 +204,8 @@ class DCPSeqItr(MagmaBaseTest):
                                           collection=collection)
                     if collection == CbServer.default_collection:
                         self.collections.remove(CbServer.default_collection)
-            expected_item_count = self.items * ((len(scopes) * ((self.num_collections-1) - num_drop_collections)) + 1)
-            self.log.info("expected item count after cruds is  {}".format(expected_item_count))
+        expected_item_count = self.items * ((len(scopes) * ((self.num_collections -1) - num_drop_collections))+1)
+        self.log.info("expected item count {}".format(expected_item_count))
         # stream dcp events and verify events
         output_string = self.dcp_util.get_dcp_event()
         actual_item_count = len(list(filter(lambda x: 'CMD_MUTATION' in x, output_string)))
