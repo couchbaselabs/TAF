@@ -12,6 +12,9 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from BucketLib.bucket import Bucket
+from collections_helper.collections_spec_constants import \
+    MetaConstants, MetaCrudParams
 
 from java.lang import Exception as Java_base_exception
 
