@@ -936,6 +936,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.data_location = "{0}/data".format(self.disk_location)
         self.disk_timeout = self.input.param("disk_timeout", 120)
         self.read_loadgen = self.input.param("read_loadgen", False)
+        self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
         self.log.info("Cleanup the cluster and set the data location "
                       "to the one specified by the test.")
         for server in self.cluster.servers:
