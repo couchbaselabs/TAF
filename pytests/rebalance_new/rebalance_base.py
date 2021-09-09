@@ -40,6 +40,7 @@ class RebalanceBaseTest(BaseTestCase):
                                                     False)
         self.items = self.num_items
         self.logs_folder = self.input.param("logs_folder")
+        self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
         node_ram_ratio = self.bucket_util.base_bucket_ratio(
             self.cluster.servers)
         info = self.rest.get_nodes_self()
@@ -61,7 +62,7 @@ class RebalanceBaseTest(BaseTestCase):
 
         if nodes_init:
             result = self.task.rebalance([self.cluster.master], nodes_init, [],
-                                         services=services)
+                                         services=services, retry_get_process_num=self.retry_get_process_num)
             self.assertTrue(result, "Initial rebalance failed")
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.check_replica = self.input.param("check_replica", False)
@@ -203,12 +204,17 @@ class RebalanceBaseTest(BaseTestCase):
         super(RebalanceBaseTest, self).tearDown()
 
     def collection_setup(self):
+        self.over_ride_spec_params = self.input.param("override_spec_params", "").split(";")
         self.log.info("Creating buckets from spec")
         # Create bucket(s) and add rbac user
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
+
+        # Process params to over_ride values if required
+        self.over_ride_bucket_template_params(buckets_spec)
+        self.over_ride_doc_loading_template_params(doc_loading_spec)
 
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
@@ -253,6 +259,46 @@ class RebalanceBaseTest(BaseTestCase):
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
+
+    def over_ride_bucket_template_params(self, bucket_spec):
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            # Blindly override the following params
+            bucket_spec[Bucket.evictionPolicy] = \
+                Bucket.EvictionPolicy.FULL_EVICTION
+        else:
+            for key, val in self.input.test_params.items():
+                if key == "replicas":
+                    bucket_spec[Bucket.replicaNumber] = self.num_replicas
+                elif key == "bucket_size":
+                    bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
+                elif key == "num_items":
+                    bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                        self.num_items
+                elif key == "remove_default_collection":
+                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
+                        self.input.param(key)
+                elif key == "bucket_storage":
+                    bucket_spec[Bucket.storageBackend] = self.bucket_storage
+                elif key == "compression_mode":
+                    bucket_spec[Bucket.compressionMode] = self.compression_mode
+                elif key == "flushEnabled":
+                    bucket_spec[Bucket.flushEnabled] = int(self.flush_enabled)
+                elif key == "bucket_type":
+                    bucket_spec[Bucket.bucketType] = self.bucket_type
+
+    def over_ride_doc_loading_template_params(self, target_spec):
+        for key, value in self.input.test_params.items():
+            if key == "durability":
+                target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
+                    self.durability_level
+            elif key == "sdk_timeout":
+                target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
+            elif key == "doc_size":
+                target_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_SIZE] \
+                    = self.doc_size
+            elif key == "randomize_value":
+                target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
+                    = self.randomize_value
 
     def shuffle_nodes_between_zones_and_rebalance(self, to_remove=None):
         """
@@ -532,11 +578,13 @@ class RebalanceBaseTest(BaseTestCase):
         if rebalance_operation == "rebalance_out":
             task = self.task.async_rebalance(
                 self.servers[:self.nodes_init], [],
-                [self.servers[self.nodes_init - 1]])
+                [self.servers[self.nodes_init - 1]],
+                retry_get_process_num=self.retry_get_process_num)
         elif rebalance_operation == "rebalance_in":
             task = self.task.async_rebalance(
                 self.servers[:self.nodes_init],
-                [self.servers[self.nodes_init]], [])
+                [self.servers[self.nodes_init]], [],
+                retry_get_process_num=self.retry_get_process_num)
         elif rebalance_operation == "swap_rebalance":
             self.rest.add_node(self.cluster.master.rest_username,
                                self.cluster.master.rest_password,
@@ -544,12 +592,13 @@ class RebalanceBaseTest(BaseTestCase):
                                self.servers[self.nodes_init].port)
             task = self.task.async_rebalance(
                 self.servers[:self.nodes_init], [],
-                [self.servers[self.nodes_init - 1]])
+                [self.servers[self.nodes_init - 1]],
+                retry_get_process_num=self.retry_get_process_num)
         elif rebalance_operation == "graceful_failover":
             task = self.task.async_failover([self.cluster.master],
                                             failover_nodes=[self.servers[1]],
                                             graceful=True,
-                                            wait_for_pending=120)
+                                            wait_for_pending=300)
         return task
 
     def delete_rebalance_test_condition(self, test_failure_condition):

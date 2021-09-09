@@ -428,13 +428,13 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         if rebalance_operation == "rebalance_out":
             operation = self.task.async_rebalance(
                 self.cluster_util.get_nodes_in_cluster(self.cluster),
-                [], self.cluster.servers[1:])
+                [], self.cluster.servers[1:], retry_get_process_num=self.retry_get_process_num)
             self.__update_cbcollect_expected_node_failures(
                 self.cluster.servers[1:], "out_node")
         elif rebalance_operation == "rebalance_in":
             operation = self.task.async_rebalance(
                 self.cluster_util.get_nodes_in_cluster(self.cluster),
-                [self.cluster.servers[self.nodes_init]], [])
+                [self.cluster.servers[self.nodes_init]], [], retry_get_process_num=self.retry_get_process_num)
             self.__update_cbcollect_expected_node_failures(
                 [self.cluster.servers[self.nodes_init]], "in_node")
         elif rebalance_operation == "swap_rebalance":
@@ -444,7 +444,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                                self.cluster.servers[self.nodes_init].port)
             operation = self.task.async_rebalance(
                 self.cluster_util.get_nodes_in_cluster(self.cluster),
-                [], [self.cluster.servers[self.nodes_init - 1]])
+                [], [self.cluster.servers[self.nodes_init - 1]], retry_get_process_num=self.retry_get_process_num)
             self.__update_cbcollect_expected_node_failures(
                 [self.cluster.servers[self.nodes_init]], "in_node")
             self.__update_cbcollect_expected_node_failures(
@@ -454,7 +454,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             operation = self.task.async_failover(
                 [self.cluster.master],
                 failover_nodes=[self.cluster.servers[1]],
-                graceful=True, wait_for_pending=120)
+                graceful=True, wait_for_pending=300)
         return operation
 
     def _induce_error(self, error_condition):
