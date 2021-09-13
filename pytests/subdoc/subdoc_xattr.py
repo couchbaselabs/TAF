@@ -2661,6 +2661,52 @@ class XattrTests(SubdocBaseTest):
 
         self.txn.apply_transitions(workloads[workload])
 
+    def test_shadow_fragmentation(self):
+        """ Test disk usage does not exceed sensible amounts at 50%
+        fragmentation """
+        # Creates shadow documents
+        self.txn.staged_insert()
+
+        # The cost of storing the initial documents
+        initial_cost = self.average_kvstore_usage()
+
+        # Perform a staged replace to bring fragmentation to 50%
+        self.txn.staged_replace()
+
+        timeout = time.time() + 30
+        while time.time() < timeout:
+            # The cost of storing the additional documents
+            update_cost = self.average_kvstore_usage()
+            self.log.info("Initial cost: {} Update cost: {}".format(initial_cost, update_cost))
+            if update_cost <= initial_cost * 2.5:
+                return
+
+        self.fail("The update cost exceeded the initial cost.")
+
+    def test_shadow_metadata_purge(self):
+        """ Tests metadata purging results in the disk space being released """
+        # Creates shadow documents
+        self.txn.staged_insert()
+
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, [self.bucket])
+
+        # Set the metadata purge interval to 120 seconds.
+        # The autoCompactionDefined field must be set to true, otherwise the
+        # metadata purge interval will reset back to 3 days.
+        self.bucket_util.modify_fragmentation_config(self.cluster, {})
+        self.bucket_util.set_metadata_purge_interval(self.cluster,
+            0.0014, [self.bucket], self.cluster.master)
+
+        self.sleep(120, "Waiting for the metadata purge interval to pass.")
+
+        # Trigger manual compaction
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+
+        update_cost = self.average_kvstore_usage()
+
+        # Check disk usage is 0 at the magma level
+        self.assertEqual(update_cost, 0)
+
 
 class TxnTransition:
     """ Represents the state transitions for documents. """
@@ -2685,6 +2731,9 @@ class TxnTransition:
 
         # The xattribute to use
         self.path = 'just_a_path'
+
+        # The document padding size
+        self.doc_size = base.doc_size
 
         # The document key prefix
         self.doc_prefix = base.doc_prefix
