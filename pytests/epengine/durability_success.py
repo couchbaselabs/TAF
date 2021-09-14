@@ -8,6 +8,10 @@ from error_simulation.disk_error import DiskError
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 
+from java.util import Collections
+from java.lang import String
+from com.couchbase.client.java.kv import LookupInMacro, LookupInSpec
+
 
 class DurabilitySuccessTests(DurabilityTestsBase):
     def setUp(self):
@@ -602,3 +606,60 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             shell.disconnect()
 
         self.validate_test_failure()
+
+    def test_ops_on_same_key(self):
+        """
+        1. Set key
+        2. Delete a key
+        3. Set the same key
+        4. Validate the rev_id for the key is maintained
+
+        Ref: MB-48179
+        """
+        if self.durability_level in ["", Bucket.DurabilityLevel.NONE]:
+            self.fail("Test supported only for sync_write scenarios")
+
+        crud_pattern = self.input.param("crud_pattern", "async:sync:async")
+        crud_pattern = crud_pattern.split(":")
+        rev_ids = dict()
+
+        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+
+        # Async create of keys
+        for i in range(self.num_items):
+            key = self.key + str(i)
+            durability = ""
+            if crud_pattern[0] == "sync":
+                durability = self.durability_level
+            client.crud(DocLoading.Bucket.DocOps.CREATE, key, {},
+                        durability=durability)
+
+        # Sync delete of keys
+        for i in range(self.num_items):
+            key = self.key + str(i)
+            durability = ""
+            if crud_pattern[1] == "sync":
+                durability = self.durability_level
+            client.crud(DocLoading.Bucket.DocOps.DELETE, key,
+                        durability=durability)
+
+        # Async create of keys
+        for i in range(self.num_items):
+            key = self.key + str(i)
+            durability = ""
+            if crud_pattern[2] == "sync":
+                durability = self.durability_level
+            client.crud(DocLoading.Bucket.DocOps.CREATE, key, {},
+                        durability=durability)
+            result = client.collection.lookupIn(
+                key, Collections.singletonList(LookupInSpec.get(
+                    LookupInMacro.REV_ID).xattr()))
+            rev_ids[key] = int(result.contentAs(0, String))
+        client.close()
+
+        # Rev_id validation
+        for i in range(self.num_items):
+            key = self.key + str(i)
+            if rev_ids[key] != 3:
+                self.fail("Rev id mismatch for key '%s'. RevId: %s"
+                          % (key, rev_ids[key]))
