@@ -116,7 +116,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
-
+        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
@@ -189,6 +189,18 @@ class AutoFailoverBaseTest(BaseTestCase):
             elif key == "randomize_value":
                 target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
                     = self.randomize_value
+
+    def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
+        retry_exceptions = list()
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        retry_exceptions.append(SDKException.DocumentNotFoundException)
+        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        if self.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def bareSetUp(self):
         super(AutoFailoverBaseTest, self).setUp()
@@ -988,7 +1000,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
-
+        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
             self.init_sdk_pool_object()

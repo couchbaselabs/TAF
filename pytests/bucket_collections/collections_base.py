@@ -10,7 +10,7 @@ from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
-
+from sdk_exceptions import SDKException
 from java.lang import Exception as Java_base_exception
 
 
@@ -142,7 +142,7 @@ class CollectionBase(ClusterSetup):
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
-
+        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
@@ -306,3 +306,15 @@ class CollectionBase(ClusterSetup):
                             sdk_client_pool=self.sdk_client_pool,
                             is_sub_doc=is_sub_doc)
                         self.task_manager.get_task_result(task)
+
+    def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
+        retry_exceptions = list()
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        retry_exceptions.append(SDKException.DocumentNotFoundException)
+        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        if self.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions

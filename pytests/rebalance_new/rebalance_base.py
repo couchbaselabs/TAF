@@ -20,7 +20,10 @@ from java.lang import Exception as Java_base_exception
 
 retry_exceptions = list([SDKException.AmbiguousTimeoutException,
                          SDKException.DurabilityImpossibleException,
-                         SDKException.DurabilityAmbiguousException])
+                         SDKException.DurabilityAmbiguousException,
+                         SDKException.TimeoutException,
+                         SDKException.ServerOutOfMemoryException,
+                         SDKException.DocumentNotFoundException])
 
 
 class RebalanceBaseTest(BaseTestCase):
@@ -214,7 +217,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
-
+        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
@@ -302,6 +305,18 @@ class RebalanceBaseTest(BaseTestCase):
             elif key == "randomize_value":
                 target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
                     = self.randomize_value
+
+    def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
+        retry_exceptions = list()
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        retry_exceptions.append(SDKException.DocumentNotFoundException)
+        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        if self.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def shuffle_nodes_between_zones_and_rebalance(self, to_remove=None):
         """
