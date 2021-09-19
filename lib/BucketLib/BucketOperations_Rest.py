@@ -305,7 +305,6 @@ class BucketHelper(RestConnection):
             Bucket.storageBackend: bucket_params.get('storageBackend'),
             Bucket.conflictResolutionType:
                 bucket_params.get('conflictResolutionType'),
-            Bucket.threadsNumber: Bucket.Priority.LOW,
             Bucket.durabilityMinLevel:  bucket_params.get('durability_level')}
 
         server_info = dict({"ip": self.ip, "port": self.port,
@@ -328,7 +327,7 @@ class BucketHelper(RestConnection):
            bucket_params.get('storageBackend') == Bucket.StorageBackend.magma:
             init_params["fragmentationPercentage"] = bucket_params.get("fragmentationPercentage")
         if init_params[Bucket.priority] == "high":
-            init_params[Bucket.threadsNumber] = Bucket.Priority.HIGH
+            init_params[Bucket.threadsNumber] = 8
         init_params.pop(Bucket.priority)
 
         if bucket_params.get("bucketType") == Bucket.Type.MEMCACHED:

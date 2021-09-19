@@ -166,8 +166,8 @@ class Bucket(object):
         OFF = "off"
 
     class Priority(object):
-        LOW = 3
-        HIGH = 8
+        LOW = "low"
+        HIGH = "high"
 
     class FlushBucket(object):
         DISABLED = 0
