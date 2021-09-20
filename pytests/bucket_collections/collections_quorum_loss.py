@@ -101,8 +101,9 @@ class CollectionsQuorumLoss(CollectionBase):
                                                         self.cluster.buckets,
                                                         doc_loading_spec,
                                                         mutation_num=0,
-                                                        async_load=async_load,
-                                                        batch_size=self.batch_size)
+                                                        batch_size=self.batch_size,
+                                                        process_concurrency=self.process_concurrency,
+                                                        async_load=async_load)
         return tasks
 
     def servers_to_fail(self):

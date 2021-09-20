@@ -217,15 +217,17 @@ class RebalanceBaseTest(BaseTestCase):
             self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
-        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
+        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
 
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
 
+        # Prints bucket stats before doc_ops
+        self.bucket_util.print_bucket_stats(self.cluster)
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
             self.init_sdk_pool_object()
@@ -249,7 +251,9 @@ class RebalanceBaseTest(BaseTestCase):
                 self.cluster,
                 self.cluster.buckets,
                 doc_loading_spec,
-                mutation_num=0)
+                mutation_num=0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency)
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 

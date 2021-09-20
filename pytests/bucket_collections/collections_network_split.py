@@ -253,7 +253,8 @@ class CollectionsNetworkSplit(CollectionBase):
                                                         doc_loading_spec,
                                                         mutation_num=0,
                                                         async_load=async_load,
-                                                        batch_size=self.batch_size)
+                                                        batch_size=self.batch_size,
+                                                        process_concurrency=self.process_concurrency)
         return tasks
 
     def test_collections_crud_with_network_split(self):

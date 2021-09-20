@@ -53,7 +53,9 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 = doc_load_percent
         return self.bucket_util.run_scenario_from_spec(
             self.task, self.cluster, self.cluster.buckets, loading_spec,
-            mutation_num=0, async_load=True)
+            mutation_num=0, batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            async_load=True)
 
     def tasks_result(self, mutation_task):
         self.log.info("Waiting for data load to finish")

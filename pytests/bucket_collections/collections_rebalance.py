@@ -807,6 +807,7 @@ class CollectionsRebalance(CollectionBase):
                                                         mutation_num=0,
                                                         async_load=async_load,
                                                         batch_size=self.batch_size,
+                                                        process_concurrency=self.process_concurrency,
                                                         validate_task=(not self.skip_validations))
         return tasks
 

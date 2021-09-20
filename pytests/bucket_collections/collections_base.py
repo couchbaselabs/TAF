@@ -249,7 +249,8 @@ class CollectionBase(ClusterSetup):
                 self.cluster.buckets,
                 new_data_load_template,
                 mutation_num=0,
-                batch_size=self.batch_size)
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency)
         if doc_loading_task.result is False:
             self.fail("Extra doc loading task failed")
 

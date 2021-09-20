@@ -46,6 +46,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             self.cluster.buckets,
             doc_loading_spec,
             mutation_num=0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
             async_load=async_load)
         return tasks
 

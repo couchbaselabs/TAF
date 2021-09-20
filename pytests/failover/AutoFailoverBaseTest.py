@@ -120,7 +120,8 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
-
+        # Prints bucket stats before doc_ops
+        self.bucket_util.print_bucket_stats(self.cluster)
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
             self.init_sdk_pool_object()
@@ -138,7 +139,9 @@ class AutoFailoverBaseTest(BaseTestCase):
                 self.cluster,
                 self.cluster.buckets,
                 doc_loading_spec,
-                mutation_num=0)
+                mutation_num=0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency)
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
@@ -1018,7 +1021,9 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 self.cluster,
                 self.cluster.buckets,
                 doc_loading_spec,
-                mutation_num=0)
+                mutation_num=0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency)
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
