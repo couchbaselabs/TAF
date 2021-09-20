@@ -5,6 +5,7 @@ Created on 31-May-2021
 '''
 import os
 
+from cb_tools.cbstats import Cbstats
 from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -57,3 +58,33 @@ class MagmaUtils:
         self.log.debug("Total Disk usage for seqTree is {}MB".format(seqTree))
         disk_usage.extend([kvstore, wal, keyTree, seqTree])
         return disk_usage
+
+    def get_magma_data_size(self, server, bucket_name):
+        """ The size of the data the user stored in bytes. """
+        remote = RemoteMachineShellConnection(server)
+        result = Cbstats(remote).all_stats(bucket_name)["ep_magma_logical_data_size"]
+        remote.disconnect()
+        return int(result)
+
+    def get_magma_disk_size(self, server, bucket_name):
+        """ The space occupied by the data in bytes. """
+        remote = RemoteMachineShellConnection(server)
+        result = Cbstats(remote).all_stats(bucket_name)["ep_magma_logical_disk_size"]
+        remote.disconnect()
+        return int(result)
+
+    def check_disk_usage(self, servers, buckets, fragmentation):
+        """ Returns true if the disk usage exceeds the expected disk usage
+        percentage. """
+        for server in servers:
+            for bucket in buckets:
+                data_size = self.get_magma_data_size(server, bucket.name)
+                disk_size = self.get_magma_disk_size(server, bucket.name)
+                calc_frag = (disk_size - data_size) / float(data_size)
+
+            self.log.info("Data size:{} Disk size:{} Calc Frag:{}".format(data_size, disk_size, calc_frag))
+
+            if (calc_frag > fragmentation):
+                return False
+
+        return True

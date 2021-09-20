@@ -166,6 +166,33 @@ class FunctionCallTask(Task):
         return result
 
 
+class TimerTask(Task):
+    """ A task that repeats the given function `f` with arguments `args` and
+    key-word arguments `kwds` at the given `interval` """
+
+
+    def __init__(self, f, args=(), kwds={}, interval=5):
+        """ The constructor.
+
+        Args:
+            f (function): The function to call.
+            args (tuple): A tuple of arguments for the function `f`.
+            kwds (dict): A dictionary of keyword arguments for the function `f`.
+            interval (int): The time to wait in between function calls.
+        """
+        super(TimerTask, self).__init__("TimerTask: function:{} Args:{} Kwds:{} Interval:{}".format(f, args, kwds, interval))
+        self.f, self.args, self.kwds = f, args, kwds
+
+    def call(self):
+        """ Calls the function f """
+        self.start_task()
+        while True:
+            result = self.f(*self.args, **self.kwds)
+            self.sleep(interval)
+        self.complete_task()
+        return result
+
+
 class RebalanceTask(Task):
 
     def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,

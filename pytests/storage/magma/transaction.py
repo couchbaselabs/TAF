@@ -3,6 +3,7 @@ import time
 from Cb_constants import CbServer
 from sdk_client3 import SDKClient
 from storage.magma.magma_base import MagmaBaseTest
+from Jython_tasks.task import TimerTask
 
 from java.util import HashMap
 from reactor.util.function import Tuples
@@ -31,8 +32,22 @@ class TransactionTests(MagmaBaseTest):
         for pattern in transaction_pattern:
             self.transaction_pattern.append(pattern.split("_"))
 
+        # A list of tasks that will be stopped at the end of the test
+        self.tasks = []
+
+        # Start periodic magma disk check task that runs every 5 seconds
+        self.tasks.append(TimerTask(self.periodic_disk_check, args=[], kwds={}, interval=5))
+        self.task_manager.add_new_task(self.tasks[-1])
+
     def tearDown(self):
+        for task in self.tasks:
+            self.tasks.stop_task(task)
         super(TransactionTests, self).tearDown()
+
+    def periodic_disk_check(self):
+        """ Check data size to disk size does not exceed fragmentation. """
+        self.log.info("Checking disk usage")
+        self.assertTrue(self.magma_utils.check_disk_usage(self.cluster.servers, self.cluster.buckets, self.fragmentation))
 
     def load_docs(self, num_workers, cmd=dict(), mutated=0):
         master = Server(self.cluster.master.ip, self.cluster.master.port,
