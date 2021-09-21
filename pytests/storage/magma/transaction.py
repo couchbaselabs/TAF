@@ -32,6 +32,9 @@ class TransactionTests(MagmaBaseTest):
         for pattern in transaction_pattern:
             self.transaction_pattern.append(pattern.split("_"))
 
+        # Requires doc_size to be 4096 and the data to be random
+        self.final_disk_check = self.input.param("final_disk_check", False)
+
         # A list of tasks that will be stopped at the end of the test
         self.tasks = []
 
@@ -41,13 +44,40 @@ class TransactionTests(MagmaBaseTest):
 
     def tearDown(self):
         for task in self.tasks:
-            self.tasks.stop_task(task)
+            self.task_manager.stop_task(task)
         super(TransactionTests, self).tearDown()
 
     def periodic_disk_check(self):
         """ Check data size to disk size does not exceed fragmentation. """
         self.log.info("Checking disk usage")
         self.assertTrue(self.magma_utils.check_disk_usage(self.cluster.servers, self.cluster.buckets, self.fragmentation))
+
+    def final_fragmentation_check(self, items):
+        """ Checks the disk usage is at most 2.8x the esimated data size once
+        the transactional documents have been loaded.
+
+        Requires additional data is loaded requires no additional items are
+        loaded.
+
+        Args:
+            items (int): The number of documents produced by the transaction.
+        """
+        for bucket in self.cluster.buckets:
+            # Fetch the size of the kvstore files
+            kvstore, _, _, _ = \
+            self.magma_utils.get_disk_usage(self.cluster, bucket,
+                    "/opt/couchbase/var/lib/couchbase/data/", servers=self.servers)
+
+            # The size of the data the user expected to store in mb
+            data_size = (items * self.doc_size)
+
+            # Add transaction ATR records (assume 1024 ATR records of 100 bytes each)
+            data_size += 1024 * 100
+
+            self.log.info("Estimated data size {}".format(data_size))
+
+            # The kvstore size should be less than or equal to the data_size * 2.8 at 50% fragmentation
+            self.assertLessEqual(kvstore , data_size * 2.8)
 
     def load_docs(self, num_workers, cmd=dict(), mutated=0):
         master = Server(self.cluster.master.ip, self.cluster.master.port,
@@ -110,12 +140,14 @@ class TransactionTests(MagmaBaseTest):
             self.sdk_timeout,
             self.transaction_durability_level)
 
+        transaction_items = self.input.param("transaction_items", 1000)
+
         workload = dict()
         workload["keyPrefix"] = "transactions"
         workload["keySize"] = self.key_size
         workload["docSize"] = self.doc_size
         workload["mutated"] = 0
-        workload["keyRange"] = Tuples.of(0, self.num_items)
+        workload["keyRange"] = Tuples.of(0, transaction_items)
         workload["batchSize"] = 1
         workload["workers"] = 3
         workload["transaction_pattern"] = [
@@ -154,3 +186,8 @@ class TransactionTests(MagmaBaseTest):
         result = \
             self.check_fragmentation_using_magma_stats(self.cluster.buckets[0])
         self.assertTrue(result, "Magma framentation error")
+
+        # The final disk check requires randomized documents of size of 4096
+        # and no additional documents should be loaded.
+        if self.final_disk_check:
+            self.final_fragmentation_check(transaction_items)
