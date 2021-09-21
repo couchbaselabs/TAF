@@ -600,7 +600,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         crud_pattern = crud_pattern.split(":")
         rev_ids = dict()
 
-        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+        client = SDKClient([self.cluster.master], self.bucket_util.buckets[0])
 
         # Async create of keys
         for i in range(self.num_items):
