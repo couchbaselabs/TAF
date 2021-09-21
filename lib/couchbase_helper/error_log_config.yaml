@@ -38,6 +38,11 @@ file_name_patterns:
   - file: 'babysitter.log'
     grep_for:
       - string: ' CRITICAL '
+        exclude_patterns:
+          - 'Rollback point not found'
+          - 'No space left on device'
+          - 'Permission denied'
+          - 'write traffic will be disabled for this node'
 
   - file: 'indexer.log*'
     grep_for:
