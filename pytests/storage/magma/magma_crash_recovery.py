@@ -54,21 +54,19 @@ class MagmaCrashTests(MagmaBaseTest):
         self.graceful = self.input.param("graceful", False)
         self.ops_rate = self.input.param("ops_rate", 10000)
         self.log.info("====test_crash_during_ops starts====")
-        hm = HashMap()
-        hm.putAll({DRConstants.create_s: 0,
-                   DRConstants.create_e: self.init_items_per_collection})
-        self.dr = DocRange(hm)
-        self.new_loader({}, True)
+        self.create_start = 0
+        self.create_end = self.init_items_per_collection
+
+        self.new_loader(wait=True)
 
         self.multiplier = self.input.param("multiplier", 2)
 
-        hm.putAll({DRConstants.create_s: self.init_items_per_collection,
-                   DRConstants.create_e: self.init_items_per_collection*self.multiplier,
-                   DRConstants.delete_s: 0,
-                   DRConstants.delete_e: self.init_items_per_collection/2,
-                   DRConstants.read_s: self.init_items_per_collection/2,
-                   DRConstants.read_e: self.init_items_per_collection})
-        self.dr = DocRange(hm)
+        self.create_start = self.init_items_per_collection,
+        self.create_end = self.init_items_per_collection*self.multiplier,
+        self.delete_start = 0,
+        self.delete_end = self.init_items_per_collection/2,
+        self.read_start = self.init_items_per_collection/2,
+        self.read_end = self.init_items_per_collection
 
         self.create_perc = self.input.param("create_perc", 0)
         self.read_perc = self.input.param("read_perc", 0)

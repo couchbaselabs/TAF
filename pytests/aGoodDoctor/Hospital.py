@@ -305,6 +305,7 @@ class Murphy(BaseTestCase, OPD):
                                                 nodes_out=0,
                                                 services=[service]*self.rebl_nodes,
                                                 retry_get_process_num=3000)
+                self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
@@ -316,6 +317,7 @@ class Murphy(BaseTestCase, OPD):
                                                 nodes_out=self.rebl_nodes,
                                                 services=[service],
                                                 retry_get_process_num=3000)
+                self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
@@ -327,6 +329,7 @@ class Murphy(BaseTestCase, OPD):
                                                 nodes_out=self.rebl_nodes,
                                                 services=[service]*self.rebl_nodes,
                                                 retry_get_process_num=3000)
+                self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
@@ -338,6 +341,7 @@ class Murphy(BaseTestCase, OPD):
                                                 nodes_out=self.rebl_nodes,
                                                 services=[service]*(self.rebl_nodes+1),
                                                 retry_get_process_num=3000)
+                self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
@@ -349,6 +353,7 @@ class Murphy(BaseTestCase, OPD):
                                                 nodes_out=self.rebl_nodes+1,
                                                 services=[service]*self.rebl_nodes,
                                                 retry_get_process_num=3000)
+                self.sleep(60, "Sleep for 60s for rebalance to start")
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
