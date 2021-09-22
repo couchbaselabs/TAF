@@ -320,6 +320,8 @@ class StorageBase(BaseTestCase):
         for bucket in self.cluster.buckets:
             for scope in bucket.scopes.keys():
                 for collection in bucket.scopes[scope].collections.keys():
+                    if collection == "_default" and scope == "_default":
+                        continue
                     ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
                                           cmd.get("keySize", self.key_size),
                                           cmd.get("docSize", self.doc_size),
@@ -394,7 +396,7 @@ class StorageBase(BaseTestCase):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
                 if self.track_failures:
-                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.init_items_per_collection*self.num_collections)
+                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.init_items_per_collection*self.num_scopes*(self.num_collections-1))
             except Exception as e:
                 raise e
 
@@ -416,6 +418,8 @@ class StorageBase(BaseTestCase):
             for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
                     for collection in bucket.scopes[scope].collections.keys():
+                        if collection == "_default" and scope == "_default":
+                            continue
                         client = NewSDKClient(master, bucket.name, scope, collection)
                         client.initialiseSDK()
                         self.sleep(1)
@@ -430,8 +434,8 @@ class StorageBase(BaseTestCase):
 
         if wait:
             self.doc_loading_tm.getAllTaskResult()
-            self.retry_failures(tasks)
             self.printOps.end_task()
+            self.retry_failures(tasks)
         else:
             return tasks
 

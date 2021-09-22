@@ -61,11 +61,11 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.multiplier = self.input.param("multiplier", 2)
 
-        self.create_start = self.init_items_per_collection,
-        self.create_end = self.init_items_per_collection*self.multiplier,
-        self.delete_start = 0,
-        self.delete_end = self.init_items_per_collection/2,
-        self.read_start = self.init_items_per_collection/2,
+        self.create_start = self.init_items_per_collection
+        self.create_end = self.init_items_per_collection*self.multiplier
+        self.delete_start = 0
+        self.delete_end = self.init_items_per_collection/2
+        self.read_start = self.init_items_per_collection/2
         self.read_end = self.init_items_per_collection
 
         self.create_perc = self.input.param("create_perc", 0)
@@ -75,7 +75,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 0)
 
         self.new_loader({
-            "gtm": False,
+            "gtm": True,
             "validate": False
              }
         )
