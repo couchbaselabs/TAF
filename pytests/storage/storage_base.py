@@ -19,6 +19,7 @@ from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.docgen import WorkLoadSettings,\
     DocumentGenerator
 from com.couchbase.test.loadgen import WorkLoadGenerate
+from Jython_tasks.task import PrintBucketStats
 
 
 class StorageBase(BaseTestCase):
@@ -196,6 +197,7 @@ class StorageBase(BaseTestCase):
         self.expiry_start = None
         self.expiry_end = None
         self.mutate = 0
+        self.validate = False
         self.init_items_per_collection = self.num_items
         '''
            --For DGM test
@@ -313,6 +315,10 @@ class StorageBase(BaseTestCase):
                         str(self.cluster.master.memcached_port))
         self.tm = TaskManager(self.process_concurrency)
 
+        for bucket in self.cluster.buckets:
+            self.printOps = PrintBucketStats(self.cluster, bucket,
+                                             monitor_stats=["doc_ops"], sleep=1)
+            self.task_manager.add_new_task(self.printOps)
         ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
                               cmd.get("keySize", self.key_size),
                               cmd.get("docSize", self.doc_size),
@@ -320,12 +326,13 @@ class StorageBase(BaseTestCase):
                               cmd.get("rd", self.read_perc),
                               cmd.get("up", self.update_perc),
                               cmd.get("dl", self.delete_perc),
+                              cmd.get("ex", self.expiry_perc),
                               cmd.get("workers", self.process_concurrency),
                               cmd.get("ops", self.ops_rate),
                               cmd.get("loadType", None),
                               cmd.get("keyType", None),
                               cmd.get("valueType", None),
-                              cmd.get("validate", False),
+                              cmd.get("validate", self.validate),
                               cmd.get("gtm", False),
                               cmd.get("deleted", False),
                               cmd.get("mutated", 0))
@@ -340,16 +347,20 @@ class StorageBase(BaseTestCase):
                         client = NewSDKClient(master, bucket.name,
                                               scope, collection)
                         client.initialiseSDK()
+                        self.sleep(1)
                         th_name = "Loader_%s_%s_%s_%s_%s" \
                                   % (bucket.name, scope, collection,
                                      str(i), time.time())
                         task = WorkLoadGenerate(th_name, dg, client,
-                                                self.durability_level)
+                                                self.durability_level,
+                                                self.maxttl, self.time_unit,
+                                                self.track_failures, 0)
                         tasks.append(task)
                         self.tm.submit(task)
                         i -= 1
         if wait:
             self.tm.getAllTaskResult()
+            self.printOps.end_task()
 
     def initial_load(self):
         self.create_start = 0
