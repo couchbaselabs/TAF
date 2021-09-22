@@ -364,12 +364,14 @@ class GsiHelper(RestConnection):
             sleep(2, "Wait before next indexer stats query")
         return index_completed
 
-    def polling_create_index_status(self, bucket=None, index=None, timeout=300):
+    def polling_create_index_status(self, bucket=None, index=None, timeout=600):
+        self.log.info("Starting polling for index:"+str(index))
         for x in range(timeout):
             result = self.index_status()
-            if result[bucket.name].has_key(index):
-                if result[bucket.name][index]['status'] == 'Ready':
-                    return True
+            if bucket.name in result:
+                if result[bucket.name].has_key(index):
+                    if result[bucket.name][index]['status'] == 'Ready':
+                        return True
             sleep(1)
             self.log.info("Index {} not found with iteration {}".format(index, str(x)))
         return False

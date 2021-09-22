@@ -30,7 +30,7 @@ class PlasmaStatsUtil(IndexUtils):
         ip = node.ip
         port = constants.index_port
         baseURL = generic_url % (ip, port)
-        self.log.info("Index URL is {}".format(baseURL))
+        self.log.debug("Index URL is {}".format(baseURL))
         return baseURL
 
     def get_index_storage_stats(self, index_node=None, timeout=120):

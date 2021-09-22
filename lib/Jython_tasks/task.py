@@ -4050,10 +4050,10 @@ class MutateDocsFromSpecTask(Task):
 
 class CompareIndexKVData(Task):
     def __init__(self, cluster, server, task_manager,
-                 sdk_client_pool, query, bucket, scope, collection,index_name,
+                 sdk_client_pool, query, bucket, scope, collection,index_name,offset,
                  track_failures=True):
         super(CompareIndexKVData, self).__init__(
-            "CompareIndexKVData_%s_%s" % (index_name,time.time()))
+            "CompareIndexKVData_%s_%s_%s" % (index_name, offset, time.time()))
         self.cluster = cluster
         self.task_manager = task_manager
         self.result = True
@@ -6510,9 +6510,9 @@ class DropDataversesTask(Task):
         self.complete_task()
 
 class ExecuteQueryTask(Task):
-    def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=300):
+    def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600):
         super(ExecuteQueryTask, self).__init__("ExecuteQueriesTask_%sstarted%s"
-                                               % (query, time.time()))
+                                               % (indexName, time.time()))
         self.server = server
         self.query = query
         self.timeout = timeout
@@ -6524,8 +6524,9 @@ class ExecuteQueryTask(Task):
         self.isIndexerQuery = isIndexerQuery
     def call(self):
         self.start_task()
+        indexer_rest = GsiHelper(self.server, self.log)
+        isException = False
         try:
-            indexer_rest = GsiHelper(self.server, self.log)
             self.log.info("starting call")
             contentType = 'application/x-www-form-urlencoded'
             connection = 'keep-alive'
@@ -6535,12 +6536,16 @@ class ExecuteQueryTask(Task):
             newContent = json.loads(content)
             self.log.info("Content is:"+str(newContent))
             self.set_result(status)
-            if self.isIndexerQuery:
-                result = indexer_rest.polling_create_index_status(self.bucket, index=self.index_name,
-                                                                  timeout=self.timeout)
-                self.set_result(result)
+            self.log.info("check isIndexQuery status"+str(self.isIndexerQuery))
         except Exception as e:
-            self.test_log.error(e)
-            self.set_exception(e)
-            return
+            self.log.info("Got exception:{0} with index name {1}".format(str(e), self.index_name))
+            isException = True
+
+        if self.isIndexerQuery:
+            self.log.info("Waiting for polling status:" + self.index_name)
+            result = indexer_rest.polling_create_index_status(self.bucket, index=self.index_name,
+                                                              timeout=self.timeout)
+            self.set_result(result)
+        if isException:
+            self.set_result(False)
         self.complete_task()

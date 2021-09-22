@@ -1359,3 +1359,32 @@ class ClusterUtils:
                         return True, ""
                     else:
                         return False, "Failed to change IP family"
+    """
+          Method to perform operation against indexer id obj
+          arguments: 
+                   a. timeout
+                   b. operation to perform i.e. compactAll, evictAll, persistAll and compressAll
+          return: void
+      """
+
+    def indexer_id_ops(self, node, ops='compactAll', timeout=120):
+        generic_url = "http://%s:%s/"
+        ip = node.ip
+        port = constants.index_port
+        indexUrl = generic_url % (ip, port)
+        api = "{0}plasmaDiag".format(indexUrl)
+        command = {'Cmd': 'listDBs'}
+        rest = RestConnection(node)
+        status, content, header = rest._http_request(api, 'POST', json.dumps(command), timeout=timeout)
+        for l in list(iter(str(content).splitlines())):
+            try:
+                x, id = l.split(" : ")
+                if id:
+                    self.log.info("Triggering {ops} for instance id {id}")
+                    self.log.info("Triggering %s for instance id %s" % (ops, id))
+                    compact_command = {'Cmd': ops, 'Args': [int(id)]}
+                    status, content, header = rest._http_request(api, 'POST', json.dumps(compact_command))
+                    if not status:
+                        self.log.error("Failed to trigger compaction :%s" % content)
+            except ValueError:
+                pass

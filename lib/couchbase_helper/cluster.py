@@ -1031,7 +1031,7 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(task)
         return task
 
-    def async_execute_query(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=300):
+    def async_execute_query(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600):
         """
                 Synchronously runs query
                 Parameters:
@@ -1043,14 +1043,14 @@ class ServerTasks(object):
                 """
         _task = jython_tasks.ExecuteQueryTask(server, query,
                                               isIndexerQuery=isIndexerQuery, bucket=bucket, indexName=indexName,
-                                              timeout=600)
+                                              timeout=timeout)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
     def compare_KV_Indexer_data(self, cluster, server, task_manager, query, sdk_client_pool, bucket, scope, collection,
-                                index_name):
+                                index_name,offset):
         _task = jython_tasks.CompareIndexKVData(cluster=cluster, server=server, task_manager=task_manager, query=query,
                                                 sdk_client_pool=sdk_client_pool, bucket=bucket, scope=scope,
-                                                collection=collection, index_name=index_name)
+                                                collection=collection, index_name=index_name, offset=offset)
         self.jython_task_manager.add_new_task(_task)
         return _task

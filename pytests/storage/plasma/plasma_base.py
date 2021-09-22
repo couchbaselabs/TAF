@@ -10,7 +10,7 @@ import math
 from index_utils.plasma_stats_util import PlasmaStatsUtil
 from storage.storage_base import StorageBase
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
-
+from gsiLib.gsiHelper import GsiHelper
 
 class PlasmaBaseTest(StorageBase):
     def setUp(self):
@@ -21,6 +21,7 @@ class PlasmaBaseTest(StorageBase):
                                       SDKException.DurabilityAmbiguousException])
         max_clients = min(self.task_manager.number_of_threads, 20)
         self.sdk_timeout = self.input.param("sdk_timeout", 60)
+        self.moi_snapshot_interval = self.input.param("moi_snapshot_interval", 120)
         self.init_sdk_pool_object()
         self.log.info("Creating SDK clients for client_pool")
         max_clients = min(self.task_manager.number_of_threads, 20)
@@ -69,8 +70,8 @@ class PlasmaBaseTest(StorageBase):
             output, error = indexerkill_shell.kill_indexer()
             # output, error = remote_client.execute_command("pkill -f indexer")
             self.log.info("Output value is:" + str(output))
+            self.log.info("Counter value is {0} and max count is {1}".format(str(counter), str(timeout)))
             indexerkill_shell.disconnect()
-            counter = 0
             self.sleep(1)
         self.log.info("Kill indexer process for node: {} completed".format(str(server.ip)))
 
@@ -121,6 +122,17 @@ class PlasmaBaseTest(StorageBase):
                 return False
         return True
 
+    def get_plasma_index_stat_value(self, plasma_stat_field, plasma_obj_dict):
+        field_value_list = list()
+        for plasma_obj in plasma_obj_dict.values():
+            index_stat = plasma_obj.get_index_storage_stats()
+            for bucket in index_stat.keys():
+                for index in index_stat[bucket].keys():
+                    self.log.debug("index name is:"+str(index))
+                    index_stat_map = index_stat[bucket][index]
+                    field_value_list.append(index_stat_map["MainStore"][plasma_stat_field])
+        return field_value_list
+
     def find_mem_used_percent(self, index_stats_map):
         mem_used_percent = int(
             (Decimal(index_stats_map['memory_used_storage']) / index_stats_map['memory_total_storage']) * 100)
@@ -164,7 +176,7 @@ class PlasmaBaseTest(StorageBase):
             if collection.name == collection_name:
                 return collection
 
-    def validate_index_data(self, indexMap, totalCount, field='body', offset=50):
+    def validate_index_data(self, indexMap, totalCount, field='body', limit=50):
         query_len = len(self.cluster.query_nodes)
         x = 0
         query_task_list = list()
@@ -174,18 +186,36 @@ class PlasmaBaseTest(StorageBase):
                 scope = self.findScope(scope_name, bucket)
                 for collection_name, gsi_index_names in collection_data.items():
                     collection = self.findCollection(collection_name, scope)
-                    tempCount = 0
+                    offset = 0
                     for gsi_index_name in gsi_index_names:
-                        while tempCount < totalCount:
+                        while offset < totalCount:
                             query = "select meta().id,%s from `%s`.`%s`.`%s` data USE INDEX (%s  USING GSI) where body is not missing order by meta().id limit %s offset %s" % (
-                                    field, bucket_name, scope_name, collection_name, gsi_index_name, offset, tempCount)
+                                    field, bucket_name, scope_name, collection_name, gsi_index_name, limit, offset)
                             query_node_index = x % query_len
                             task = self.task.compare_KV_Indexer_data(self.cluster,
                                                                          self.cluster.query_nodes[query_node_index],
                                                                          self.task_manager, query, self.sdk_client_pool,
-                                                                         bucket, scope, collection, index_name=gsi_index_name
-                                                                         )
+                                                                         bucket, scope, collection, index_name=gsi_index_name,
+                                                                         offset=offset)
                             query_task_list.append(task)
                             x += 1
-                            tempCount += offset
+                            offset += limit
             return query_task_list
+
+    def perform_plasma_mem_ops(self,ops='compactAll'):
+        for index_node in self.cluster.index_nodes:
+            self.cluster_util.indexer_id_ops(node=index_node, ops=ops)
+
+    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, timeout=30):
+        isFound = False
+        for count in range(timeout):
+            field_value_list = self.get_plasma_index_stat_value(field, stat_obj_list)
+            for field_value in field_value_list:
+                if field_value == value:
+                    isFound = True
+                    break
+            if isFound:
+                break
+            else:
+                self.sleep(10, "waiting to settle down the plasma stat value")
+        return isFound

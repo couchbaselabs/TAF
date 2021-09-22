@@ -74,8 +74,8 @@ class IndexUtils:
                 for _, collection in scope.collections.items():
                     for tempCount in range(count, number_of_indexes_per_coll):
                         if gsi_base_name is None:
-                            gsi_index_name = bucket.name.replace(".","") + "_" + scope.name + "_" + collection.name + "_" + str(
-                                tempCount)
+                            gsi_index_name = bucket.name.replace(".", "") + "_" + scope.name + "_" +\
+                                             collection.name + "_" + str(tempCount)
                         else:
                             gsi_index_name = gsi_base_name + str(tempCount)
                         create_index_query = "CREATE INDEX `%s` " \
@@ -85,9 +85,12 @@ class IndexUtils:
                                                 scope.name, collection.name, field,
                                                 defer, replica)
                         query_node_instance = x % query_nodes_count
+                        self.log.debug("sending query:"+create_index_query)
+                        self.log.debug("Sending index name:"+gsi_index_name)
                         task = self.task.async_execute_query(server=query_node_list[query_node_instance],
-                                                             indexName=gsi_index_name, bucket=bucket,
-                                                             query=create_index_query)
+                                                             query=create_index_query,
+                                                             isIndexerQuery=True, bucket=bucket,
+                                                             indexName=gsi_index_name)
                         if sync:
                             self.task_manager.get_task_result(task)
                         else:
@@ -171,7 +174,7 @@ class IndexUtils:
         stop_time = start_time + timeout
         self.indexer_rest = GsiHelper(cluster.master, self.log)
         for bucket in buckets:
-            if gsi_index_name.find(bucket.name.replace(".","")) > -1:
+            if gsi_index_name.find(bucket.name.replace(".", "")) > -1:
                 while True:
                     if self.indexer_rest.polling_create_index_status(bucket=bucket, index=gsi_index_name) is True:
                         return True
@@ -193,8 +196,8 @@ class IndexUtils:
                     for gsi_index_name in gsi_index_names:
                         query_node_index = x % query_len
                         queryString = self.randStr(Num=8)
-                        query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s like '%%%s%%' limit 10" % (
-                            bucket, scope, collection, gsi_index_name, key, queryString)
+                        query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s is not missing;" % (
+                            bucket, scope, collection, gsi_index_name, key)
                         task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query)
                         query_tasks_info.append(task)
         return query_tasks_info
