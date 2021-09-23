@@ -73,6 +73,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.update_perc = self.input.param("update_perc", 0)
         self.delete_perc = self.input.param("delete_perc", 0)
         self.expiry_perc = self.input.param("expiry_perc", 0)
+        self.track_failures = False
 
         self.new_loader({"gtm": True, "validate": False})
         self.graceful = self.input.param("graceful", False)

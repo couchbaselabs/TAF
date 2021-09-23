@@ -401,7 +401,7 @@ class StorageBase(BaseTestCase):
                 raise e
 
     def new_loader(self, cmd=dict(), wait=False):
-        self._loader_dict_new()
+        self._loader_dict_new(cmd)
         self.doc_loading_tm = TaskManager(self.process_concurrency)
         self.ops_rate = self.input.param("ops_rate", 2000)
         master = Server(self.cluster.master.ip, self.cluster.master.port,
