@@ -716,34 +716,6 @@ class Murphy(BaseTestCase, OPD):
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
 
-        self.create_perc = 100
-        self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
-        self.generate_docs(doc_ops=["create"],
-                           create_start=0,
-                           create_end=self.num_items)
-        self.perform_load(validate_data=False)
-
-        self.PrintStep("Step 2: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
-        self.update_perc = 100
-        self.generate_docs(doc_ops=["update"],
-                           update_start=self.start,
-                           update_end=self.end)
-        self.perform_load(validate_data=False)
-
-        self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
-        self.generate_docs(doc_ops=["create"],
-                           create_start=self.num_items,
-                           create_end=self.num_items*2)
-        self.perform_load(validate_data=False)
-
-        self.PrintStep("Step 4: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
-        self.update_perc = 100
-        self.generate_docs(doc_ops=["update"],
-                           update_start=self.start,
-                           update_end=self.end)
-        self.perform_load(validate_data=False)
-        #######################################################################
-
         def end_step_checks(tasks):
             self.wait_for_doc_load_completion(tasks)
             self.data_validation()
@@ -759,6 +731,32 @@ class Murphy(BaseTestCase, OPD):
 
         self.loop = 0
         while self.loop < self.iterations:
+            self.create_perc = 100
+            self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
+            self.generate_docs(doc_ops=["create"],
+                               create_start=0,
+                               create_end=self.num_items)
+            self.perform_load(validate_data=False)
+
+            self.PrintStep("Step 2: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
+            self.update_perc = 100
+            self.generate_docs(doc_ops=["update"],
+                               update_start=self.start,
+                               update_end=self.end)
+            self.perform_load(validate_data=False)
+
+            self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
+            self.generate_docs(doc_ops=["create"],
+                               create_start=self.num_items,
+                               create_end=self.num_items*2)
+            self.perform_load(validate_data=False)
+
+            self.PrintStep("Step 4: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
+            self.update_perc = 100
+            self.generate_docs(doc_ops=["update"],
+                               update_start=self.start,
+                               update_end=self.end)
+            self.perform_load(validate_data=False)
             ###################################################################
             '''
             Existing:
