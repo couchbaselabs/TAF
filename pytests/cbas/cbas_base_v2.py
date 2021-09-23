@@ -496,6 +496,10 @@ class CBASBaseTest(BaseTestCase):
             elif over_ride_param == "num_items":
                 bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
                     self.num_items
+            elif over_ride_param == "bucket_type":
+                bucket_spec[Bucket.bucketType] = self.bucket_type
+            elif over_ride_param == "bucket_eviction_policy":
+                bucket_spec[Bucket.evictionPolicy] = self.bucket_eviction_policy
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:

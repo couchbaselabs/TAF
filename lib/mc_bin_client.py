@@ -45,7 +45,7 @@ class MemcachedError(exceptions.Exception):
 
     def __init__(self, status, msg):
         error_msg = error_to_str(status)
-        supermsg = 'Memcached error #' + status + ' ' + error_msg
+        supermsg = 'Memcached error #' + str(status) + ' ' + error_msg
         if msg: supermsg += ":  " + msg
         exceptions.Exception.__init__(self, supermsg)
 

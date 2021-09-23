@@ -1,689 +1,584 @@
-import json
-import time
+import random
 
 from BucketLib.BucketOperations import BucketHelper
-from cb_tools.cbstats import Cbstats
-from cbas_base import CBASBaseTest
-from couchbase_helper.documentgenerator import doc_generator
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from cbas.cbas_base_v2 import CBASBaseTest
+from collections_helper.collections_spec_constants import MetaCrudParams
+from TestInput import TestInputSingleton
+from com.couchbase.client.java.json import JsonObject
+from couchbase_helper.documentgenerator import DocumentGenerator
+from CbasLib.CBASOperations import CBASHelper
 
 
 class CBASBucketOperations(CBASBaseTest):
+
     def setUp(self):
+        self.input = TestInputSingleton.input
+        if "services_init" not in self.input.test_params:
+            self.input.test_params.update(
+                {"services_init": "kv:n1ql:index-cbas-kv"})
+        if "nodes_init" not in self.input.test_params:
+            self.input.test_params.update(
+                {"nodes_init": "3"})
+        if "cbas_spec" not in self.input.test_params:
+            self.input.test_params.update(
+                {"cbas_spec": "local_datasets"})
+
+        if "bucket_spec" not in self.input.test_params:
+            self.input.test_params.update(
+                {"bucket_spec": "analytics.default"})
+        self.input.test_params.update(
+            {"cluster_kv_infra": "bkt_spec"})
+        if "override_spec_params" not in self.input.test_params:
+            self.input.test_params.update(
+                {"override_spec_params": "num_items"})
+        else:
+            temp = self.input.test_params.get("override_spec_params")
+            self.input.test_params.update(
+                {"override_spec_params": temp + ";num_items"})
+
         super(CBASBucketOperations, self).setUp()
 
-        ''' Considering all the scenarios where:
-        1. There can be 1 KV and multiple cbas nodes
-           (and tests wants to add all cbas into cluster.)
-        2. There can be 1 KV and multiple cbas nodes
-           (and tests wants only 1 cbas node)
-        3. There can be only 1 node running KV,CBAS service.
-        NOTE: Cases pending where there are nodes which are running only cbas.
-              For that service check on nodes is needed.
-        '''
+        # Since all the test cases are being run on 1 cluster only
+        self.cluster = self.cb_clusters.values()[0]
+        self.disconnect_link = self.input.param('disconnect_link', False)
 
-        if self.bucket_time_sync:
-            self.bucket_util._set_time_sync_on_buckets(self.cluster,
-                                                       ["default"])
-
-        self.cluster_util.print_cluster_stats(self.cluster)
-        self.bucket_util.print_bucket_stats(self.cluster)
+        self.setup_cbas_for_test()
+        self.log_setup_status(self.__class__.__name__, "Finished",
+                              stage=self.setUp.__name__)
 
     def tearDown(self):
-        self.cleanup_cbas()
+        self.log_setup_status(self.__class__.__name__, "Started",
+                              stage=self.tearDown.__name__)
         super(CBASBucketOperations, self).tearDown()
-
-    def setup_for_test(self, skip_data_loading=False):
-        if not skip_data_loading:
-            # Load Couchbase bucket first
-            self.perform_doc_ops_in_all_cb_buckets(
-                "create",
-                0,
-                self.num_items,
-                durability=self.durability_level)
-            self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                      self.num_items)
-
-        if self.test_abort_snapshot:
-            self.log.info("Creating sync_write aborts before dataset creation")
-            for server in self.cluster_util.get_kv_nodes(self.cluster):
-                ssh_shell = RemoteMachineShellConnection(server)
-                cbstats = Cbstats(ssh_shell)
-                replica_vbs = cbstats.vbucket_list(
-                    self.cluster.buckets[0].name,
-                    "replica")
-                load_gen = doc_generator("test_abort_key", 0, self.num_items,
-                                         target_vbucket=replica_vbs)
-                success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen],
-                    self.cluster.buckets[0],
-                    self.durability_level,
-                    "update", "all_aborts")
-                if not success:
-                    self.log_failure("Simulating aborts failed")
-                ssh_shell.disconnect()
-
-            self.validate_test_failure()
-
-        # Create dataset on the CBAS bucket
-        self.cbas_util.create_dataset_on_bucket(
-            cbas_bucket_name=self.cb_bucket_name,
-            cbas_dataset_name=self.cbas_dataset_name)
-
-        if self.test_abort_snapshot:
-            self.log.info("Creating sync_write aborts after dataset creation")
-            for server in self.cluster_util.get_kv_nodes(self.cluster):
-                ssh_shell = RemoteMachineShellConnection(server)
-                cbstats = Cbstats(ssh_shell)
-                replica_vbs = cbstats.vbucket_list(
-                    self.cluster.buckets[0].name,
-                    "replica")
-                load_gen = doc_generator("test_abort_key", 0, self.num_items,
-                                         target_vbucket=replica_vbs)
-                success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen],
-                    self.cluster.buckets[0],
-                    self.durability_level,
-                    "update", "all_aborts")
-                if not success:
-                    self.log_failure("Simulating aborts failed")
-                ssh_shell.disconnect()
-
-            self.validate_test_failure()
-
-        # Create indexes on the CBAS bucket
-        self.create_secondary_indexes = \
-            self.input.param("create_secondary_indexes", True)
-        if self.create_secondary_indexes:
-            self.index_fields = "profession:string,number:bigint"
-            create_idx_statement = "create index {0} on {1}({2});".format(
-                self.index_name, self.cbas_dataset_name, self.index_fields)
-            status, metrics, errors, results, _ = \
-                self.cbas_util.execute_statement_on_cbas_util(
-                    create_idx_statement)
-
-            self.assertTrue(status == "success", "Create Index query failed")
-
-            self.assertTrue(
-                self.cbas_util.verify_index_created(
-                    self.index_name,
-                    self.index_fields.split(","),
-                    self.cbas_dataset_name)[0])
-
-        # Connect to Bucket
-        self.cbas_util.connect_to_bucket(
-            cbas_bucket_name=self.cbas_bucket_name,
-            cb_bucket_password=self.cb_bucket_password)
-
-        if self.test_abort_snapshot:
-            self.log.info("Creating sync_write aborts after dataset connect")
-            for server in self.cluster_util.get_kv_nodes(self.cluster):
-                ssh_shell = RemoteMachineShellConnection(server)
-                cbstats = Cbstats(ssh_shell)
-                replica_vbs = cbstats.vbucket_list(
-                    self.cluster.buckets[0].name,
-                    "replica")
-                load_gen = doc_generator("test_abort_key", 0, self.num_items,
-                                         target_vbucket=replica_vbs)
-                success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen],
-                    self.cluster.buckets[0],
-                    self.durability_level,
-                    "update", "all_aborts")
-                if not success:
-                    self.log_failure("Simulating aborts failed")
-                ssh_shell.disconnect()
-
-            self.validate_test_failure()
-
-        if not skip_data_loading:
-            # Validate no. of items in CBAS dataset
-            if not self.cbas_util.validate_cbas_dataset_items_count(
-                    self.cbas_dataset_name,
-                    self.num_items):
-                self.fail("No. of items in CBAS dataset do not match "
-                          "that in the CB bucket")
-
-    def load_docs_in_cb_bucket_before_cbas_connect(self):
-        self.setup_for_test()
-
-    def load_docs_in_cb_bucket_before_and_after_cbas_connect(self):
-        self.setup_for_test()
-
-        # Load more docs in Couchbase bucket.
-        self.perform_doc_ops_in_all_cb_buckets(
-            "create",
-            self.num_items,
-            self.num_items * 2)
-        self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                  self.num_items*2)
-
-        if self.test_abort_snapshot:
-            self.log.info("Creating sync_write aborts after dataset connect")
-            for server in self.cluster_util.get_kv_nodes(self.cluster):
-                ssh_shell = RemoteMachineShellConnection(server)
-                cbstats = Cbstats(ssh_shell)
-                replica_vbs = cbstats.vbucket_list(
-                    self.cluster.buckets[0].name,
-                    "replica")
-                load_gen = doc_generator("test_abort_key",
-                                         self.num_items,
-                                         self.num_items,
-                                         target_vbucket=replica_vbs)
-                success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen],
-                    self.cluster.buckets[0],
-                    self.durability_level,
-                    "update", "all_aborts")
-                if not success:
-                    self.log_failure("Simulating aborts failed")
-                ssh_shell.disconnect()
-
-            self.validate_test_failure()
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items * 2):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def load_docs_in_cb_bucket_after_cbas_connect(self):
-        self.setup_for_test(skip_data_loading=True)
-
-        # Load Couchbase bucket first.
-        self.perform_doc_ops_in_all_cb_buckets(
-            "create",
-            0,
-            self.num_items)
-        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def delete_some_docs_in_cb_bucket(self):
-        self.setup_for_test()
-
-        # Delete some docs in Couchbase bucket.
-        self.perform_doc_ops_in_all_cb_buckets(
-            "delete",
-            0,
-            self.num_items / 2)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items / 2):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def delete_all_docs_in_cb_bucket(self):
-        self.setup_for_test()
-
-        # Delete all docs in Couchbase bucket.
-        self.perform_doc_ops_in_all_cb_buckets(
-            "delete",
-            0,
-            self.num_items)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name, 0):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def update_some_docs_in_cb_bucket(self):
-        self.setup_for_test()
-
-        # Update some docs in Couchbase bucket
-        self.perform_doc_ops_in_all_cb_buckets(
-            "update",
-            0,
-            self.num_items / 10,
-            mutation_num=1)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items,
-                self.num_items / 10):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def update_all_docs_in_cb_bucket(self):
-        self.setup_for_test()
-
-        # Update all docs in Couchbase bucket
-        self.perform_doc_ops_in_all_cb_buckets(
-            "update",
-            0,
-            self.num_items, mutation_num=1)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items,
-                self.num_items):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def create_update_delete_cb_bucket_then_cbas_connect(self):
-        self.setup_for_test()
-
-        # Disconnect from bucket
-        self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
-
-        # Perform Create, Update, Delete ops in the CB bucket
-        self.perform_doc_ops_in_all_cb_buckets(
-            "create",
-            self.num_items,
-            self.num_items * 2)
-        self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                  self.num_items*2)
-        self.perform_doc_ops_in_all_cb_buckets(
-            "update",
-            0,
-            self.num_items,
-            mutation_num=1)
-        self.perform_doc_ops_in_all_cb_buckets(
-            "delete",
-            0,
-            self.num_items / 2)
-
-        # Connect to Bucket
-        self.cbas_util.connect_to_bucket(
-            cbas_bucket_name=self.cbas_bucket_name,
-            cb_bucket_password=self.cb_bucket_password)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items * 3 / 2,
-                self.num_items / 2):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def create_update_delete_cb_bucket_with_cbas_connected(self):
-        self.setup_for_test()
-
-        # Perform Create, Update, Delete ops in the CB bucket
-        self.perform_doc_ops_in_all_cb_buckets(
-            "create",
-            self.num_items,
-            self.num_items * 2)
-        self.perform_doc_ops_in_all_cb_buckets(
-            "update",
-            0,
-            self.num_items,
-            mutation_num=1)
-        self.perform_doc_ops_in_all_cb_buckets(
-            "delete",
-            0,
-            self.num_items / 2)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items * 3 / 2,
-                self.num_items / 2):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def flush_cb_bucket_with_cbas_connected(self):
-        self.setup_for_test()
-
-        # Flush the CB bucket
-        BucketHelper(self.cluster.master).flush_bucket(self.cb_bucket_name)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name, 0):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def flush_cb_bucket_then_cbas_connect(self):
-        self.setup_for_test()
-
-        # Disconnect from bucket
-        self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
-
-        # Flush the CB bucket
-        BucketHelper(self.cluster.master).flush_bucket(self.cb_bucket_name)
-
-        # Connect to Bucket
-        self.cbas_util.connect_to_bucket(
-            cbas_bucket_name=self.cbas_bucket_name,
-            cb_bucket_password=self.cb_bucket_password)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name, 0):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def delete_cb_bucket_with_cbas_connected(self):
-        self.setup_for_test()
-
-        # Delete the CB bucket
-        self.cluster.bucket_delete(server=self.cluster.master,
-                                   bucket=self.cb_bucket_name)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name, 0):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def delete_cb_bucket_then_cbas_connect(self):
-        self.setup_for_test()
-
-        # Disconnect from bucket
-        self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
-
-        # Delete the CB bucket
-        self.cluster.bucket_delete(server=self.cluster.master,
-                                   bucket=self.cb_bucket_name)
-
-        # Connect to Bucket
-        self.cbas_util.connect_to_bucket(
-            cbas_bucket_name=self.cbas_bucket_name,
-            cb_bucket_password=self.cb_bucket_password)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name, 0):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    """
-    cbas.cbas_bucket_operations.CBASBucketOperations:
-      delete_kv_bucket_then_drop_dataset_without_disconnecting_link,
-      cb_bucket_name=default,cbas_bucket_name=default_cbas,
-      cbas_dataset_name=ds,num_items=10000
-    """
-    def delete_kv_bucket_then_drop_dataset_without_disconnecting_link(self):
-        # setup test
-        self.setup_for_test()
-
-        # Delete the KV bucket
-        deleted = BucketHelper(self.cluster.master).delete_bucket()
-        self.assertTrue(deleted, "Deletion of KV bucket failed")
-
-        # Check Bucket state
-        start_time = time.time()
-        while start_time + 120 > time.time():
-            status, content, _ = self.cbas_util.fetch_bucket_state_on_cbas()
-            self.assertTrue(status, msg="Fetch bucket state failed")
-            content = json.loads(content)
-            self.log.info(content)
-            if content['buckets'][0]['state'] == "disconnected":
-                break
-            self.sleep(1)
-
-        # Drop dataset with out disconnecting the Link
-        self.sleep(2, message="Sleeping 2 seconds after bucket disconnect")
-        self.assertTrue(self.cbas_util.drop_dataset(self.cbas_dataset_name),
-                        msg="Failed to drop dataset")
-
-    def compact_cb_bucket_with_cbas_connected(self):
-        self.setup_for_test()
-
-        # Compact the CB bucket
-        BucketHelper(self.cluster.master).flush_bucket(self.cb_bucket_name)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
-
-    def compact_cb_bucket_then_cbas_connect(self):
-        self.setup_for_test()
-
-        # Disconnect from bucket
-        self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
-
-        # Compact the CB bucket
-        BucketHelper(self.cluster.master).compact_bucket(self.cb_bucket_name)
-
-        # Connect to Bucket
-        self.cbas_util.connect_to_bucket(
-            cbas_bucket_name=self.cbas_bucket_name,
-            cb_bucket_password=self.cb_bucket_password)
-
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items):
-            self.fail("No. of items in CBAS dataset do not match"
-                      "that in the CB bucket")
-
-    def test_ingestion_resumes_on_reconnect(self):
-        self.setup_for_test()
-
-        self.perform_doc_ops_in_all_cb_buckets(
-            "update",
-            0,
-            self.num_items / 4,
-            mutation_num=1)
-
-        self.cbas_util.validate_cbas_dataset_items_count(
-            self.cbas_dataset_name,
-            self.num_items,
-            self.num_items / 4)
-
-        # Disconnect from bucket
-        self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
-
-        self.perform_doc_ops_in_all_cb_buckets(
-            "update",
-            self.num_items / 4,
-            self.num_items / 2,
-            mutation_num=1)
-
-        # Connect to Bucket and sleep for 2s to allow ingestion to start
-        self.cbas_util.connect_to_bucket(
-            cbas_bucket_name=self.cbas_bucket_name,
-            cb_bucket_password=self.cb_bucket_password)
-
-        self.sleep(5)
-
-        # Validate no. of items in CBAS dataset
-        count, mutated_count = self.cbas_util.get_num_items_in_cbas_dataset(
-            self.cbas_dataset_name)
-
-        if not (self.num_items / 4 < mutated_count):
-            self.fail("Count after bucket connect = %s. "
-                      "Ingestion has restarted." % mutated_count)
+        self.log_setup_status(self.__class__.__name__, "Finished",
+                              stage=self.tearDown.__name__)
+
+    def setup_cbas_for_test(self, update_spec={}, sub_spec_name="dataset"):
+        if not update_spec:
+            update_spec = {
+                "no_of_dataverses": self.input.param('no_of_dv', 1),
+                "no_of_datasets_per_dataverse": self.input.param('ds_per_dv', 1),
+                "no_of_synonyms": 0,
+                "no_of_indexes": self.input.param('no_of_idx', 1),
+                "max_thread_count": self.input.param('no_of_threads', 1),
+                "creation_methods": ["cbas_collection", "cbas_dataset"]}
+        if self.cbas_spec_name:
+            self.cbas_spec = self.cbas_util.get_cbas_spec(
+                self.cbas_spec_name)
+            if update_spec:
+                self.cbas_util.update_cbas_spec(
+                    self.cbas_spec, update_spec, sub_spec_name)
+            cbas_infra_result = self.cbas_util.create_cbas_infra_from_spec(
+                self.cluster, self.cbas_spec, self.bucket_util,
+                wait_for_ingestion=True)
+            if not cbas_infra_result[0]:
+                self.fail(
+                    "Error while creating infra from CBAS spec -- " +
+                    cbas_infra_result[1])
+
+    def CRUD_on_KV_docs(self, operations=["create"]):
+        if self.disconnect_link:
+            self.connect_disconnect_all_local_links(disconnect=True)
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+            self.doc_spec_name)
+        mutation_num = 0
+        doc_loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+        doc_loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 0
+        doc_loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 0
+        if "create" in operations:
+            doc_loading_spec["doc_crud"][
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 100
+        if "update_some" in operations:
+            doc_loading_spec["doc_crud"][
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 50
+            mutation_num = 1
+        if "update_all" in operations:
+            doc_loading_spec["doc_crud"][
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 100
+            mutation_num = 1
+        if "delete_some" in operations:
+            doc_loading_spec["doc_crud"][
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 50
+        if "delete_all" in operations:
+            doc_loading_spec["doc_crud"][
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 100
+        self.load_data_into_buckets(
+            self.cluster, doc_loading_spec=doc_loading_spec, async_load=False,
+            validate_task=True, mutation_num=mutation_num)
+
+    def connect_disconnect_all_local_links(self, disconnect=False):
+        if disconnect:
+            for dataverse in self.cbas_util.dataverses:
+                if not self.cbas_util.disconnect_link(
+                        self.cluster, "{0}.Local".format(dataverse)):
+                    self.fail("Error while disconnecting Local link for "
+                              "dataverse {0}".format(dataverse))
         else:
-            self.log.info("Count after bucket connect = %s", mutated_count)
+            for dataverse in self.cbas_util.dataverses:
+                if not self.cbas_util.connect_link(
+                        self.cluster, "{0}.Local".format(dataverse)):
+                    self.fail("Error while reconnecting Local link for "
+                              "dataverse {0}".format(dataverse))
+
+    def test_kv_doc_loading_before_dataset_disconnect(self):
+        self.CRUD_on_KV_docs(["create"])
+        if not self.cbas_util.validate_docs_in_all_datasets(
+                self.cluster, self.bucket_util, timeout=600):
+            self.fail(
+                "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_kv_doc_loading_after_dataset_disconnect_and_then_reconnect_dataset(self):
+        self.CRUD_on_KV_docs(["create"])
+        self.connect_disconnect_all_local_links(disconnect=False)
+        if not self.cbas_util.validate_docs_in_all_datasets(
+                self.cluster, self.bucket_util, timeout=600):
+            self.fail(
+                "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_delete_some_docs_in_KV_before_dataset_disconnect(self):
+        self.CRUD_on_KV_docs(["delete_some"])
+        if not self.cbas_util.validate_docs_in_all_datasets(
+                self.cluster, self.bucket_util, timeout=600):
+            self.fail(
+                "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_delete_some_docs_in_KV_after_dataset_disconnect_and_then_reconnect_dataset(self):
+        self.CRUD_on_KV_docs(["delete_some"])
+        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.validate_docs_in_all_datasets(
+                self.cluster, self.bucket_util, timeout=600):
+            self.fail(
+                "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_delete_all_docs_in_KV_before_dataset_disconnect(self):
+        self.CRUD_on_KV_docs(["delete_all"])
+        if not self.cbas_util.validate_docs_in_all_datasets(
+                self.cluster, self.bucket_util, timeout=600):
+            self.fail(
+                "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_delete_all_docs_in_KV_after_dataset_disconnect_and_then_reconnect_dataset(self):
+        self.CRUD_on_KV_docs(["delete_all"])
+        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.validate_docs_in_all_datasets(
+                self.cluster, self.bucket_util, timeout=600):
+            self.fail(
+                "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_update_some_docs_in_KV_before_dataset_disconnect(self):
+        self.CRUD_on_KV_docs(["update_some"])
+        self.cbas_util.refresh_dataset_item_count(self.bucket_util)
+        datasets = self.cbas_util.list_all_dataset_objs()
+
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, dataset.num_of_items,
+                    expected_mutated_count=dataset.num_of_items/2,
+                    num_tries=12, timeout=300, analytics_timeout=300):
+                self.fail(
+                    "Dataset mutated doc count does not match the actual "
+                    "mutated doc count in associated KV collection")
+
+    def test_update_some_docs_in_KV_after_dataset_disconnect_and_then_reconnect_dataset(
+            self):
+        self.CRUD_on_KV_docs(["update_some"])
+        self.connect_disconnect_all_local_links(disconnect=True)
+        self.cbas_util.refresh_dataset_item_count(self.bucket_util)
+        datasets = self.cbas_util.list_all_dataset_objs()
+
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, dataset.num_of_items,
+                    expected_mutated_count=dataset.num_of_items / 2,
+                    num_tries=12, timeout=300, analytics_timeout=300):
+                self.fail(
+                    "Dataset mutated doc count does not match the actual "
+                    "mutated doc count in associated KV collection")
+
+    def test_update_all_docs_in_KV_before_dataset_disconnect(self):
+        self.CRUD_on_KV_docs(["update_all"])
+        self.cbas_util.refresh_dataset_item_count(self.bucket_util)
+        datasets = self.cbas_util.list_all_dataset_objs()
+
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, dataset.num_of_items,
+                    expected_mutated_count=dataset.num_of_items,
+                    num_tries=12, timeout=300, analytics_timeout=300):
+                self.fail(
+                    "Dataset mutated doc count does not match the actual "
+                    "mutated doc count in associated KV collection")
+
+    def test_update_all_docs_in_KV_after_dataset_disconnect_and_then_reconnect_dataset(
+            self):
+        self.CRUD_on_KV_docs(["update_all"])
+        self.connect_disconnect_all_local_links(disconnect=True)
+        self.cbas_util.refresh_dataset_item_count(self.bucket_util)
+        datasets = self.cbas_util.list_all_dataset_objs()
+
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, dataset.num_of_items,
+                    expected_mutated_count=dataset.num_of_items,
+                    num_tries=12, timeout=300, analytics_timeout=300):
+                self.fail(
+                    "Dataset mutated doc count does not match the actual "
+                    "mutated doc count in associated KV collection")
+
+    def test_CRUD_on_KV_before_dataset_disconnect(self):
+        self.CRUD_on_KV_docs(["update_all", "delete_some", "create"])
+        self.cbas_util.refresh_dataset_item_count(self.bucket_util)
+        datasets = self.cbas_util.list_all_dataset_objs()
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, dataset.num_of_items,
+                    expected_mutated_count=dataset.num_of_items,
+                    num_tries=12, timeout=300, analytics_timeout=300):
+                self.fail(
+                    "Dataset mutated doc count does not match the actual "
+                    "mutated doc count in associated KV collection")
+
+    def test_CRUD_on_KV_after_dataset_disconnect_and_then_reconnect_dataset(
+            self):
+        self.CRUD_on_KV_docs(["update_all", "delete_some", "create"])
+        self.connect_disconnect_all_local_links(disconnect=True)
+        self.cbas_util.refresh_dataset_item_count(self.bucket_util)
+        datasets = self.cbas_util.list_all_dataset_objs()
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, dataset.num_of_items,
+                    expected_mutated_count=dataset.num_of_items,
+                    num_tries=12, timeout=300, analytics_timeout=300):
+                self.fail(
+                    "Dataset mutated doc count does not match the actual "
+                    "mutated doc count in associated KV collection")
+
+    def test_KV_bucket_flush_before_dataset_disconnect(self):
+        if self.input.param('flush_all_bucket', False):
+            if not self.bucket_util.flush_all_buckets(self.cluster):
+                self.fail("Flushing of buckets failed")
+            datasets = self.cbas_util.list_all_dataset_objs()
+        else:
+            datasets = list()
+            bucket = self.cluster.buckets[0]
+            if not self.bucket_util.flush_bucket(self.cluster, bucket):
+                self.fail("Flushing of buckets failed")
+            for dataset in self.cbas_util.list_all_dataset_objs():
+                if dataset.kv_bucket.name == bucket.name:
+                    datasets.append(dataset)
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, 0):
+                self.fail(
+                    "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_KV_bucket_flush_after_dataset_disconnect_and_then_reconnect_dataset(self):
+        self.connect_disconnect_all_local_links(disconnect=False)
+        if self.input.param('flush_all_bucket', False):
+            if not self.bucket_util.flush_all_buckets(self.cluster):
+                self.fail("Flushing of buckets failed")
+            datasets = self.cbas_util.list_all_dataset_objs()
+        else:
+            datasets = list()
+            bucket = self.cluster.buckets[0]
+            if not self.bucket_util.flush_bucket(self.cluster, bucket):
+                self.fail("Flushing of buckets failed")
+            for dataset in self.cbas_util.list_all_dataset_objs():
+                if dataset.kv_bucket.name == bucket.name:
+                    datasets.append(dataset)
+        self.connect_disconnect_all_local_links(disconnect=True)
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, 0):
+                self.fail(
+                    "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_delete_kv_bucket_before_dataset_disconnect(self):
+        if self.input.param('delete_all_bucket', False):
+            try:
+                self.bucket_util.delete_all_buckets(self.cluster)
+            except Exception as e:
+                self.fail(str(e))
+            datasets = self.cbas_util.list_all_dataset_objs()
+        else:
+            datasets = list()
+            bucket = self.cluster.buckets[0]
+            if not self.bucket_util.delete_bucket(
+                    self.cluster, bucket, wait_for_bucket_deletion=True):
+                self.fail("Deleting of bucket failed")
+            for dataset in self.cbas_util.list_all_dataset_objs():
+                if dataset.kv_bucket.name == bucket.name:
+                    datasets.append(dataset)
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, 0):
+                self.fail(
+                    "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_delete_KV_bucket_after_dataset_disconnect_and_then_reconnect_dataset(
+            self):
+        self.connect_disconnect_all_local_links(disconnect=False)
+        if self.input.param('delete_all_bucket', False):
+            try:
+                self.bucket_util.delete_all_buckets(self.cluster)
+            except Exception as e:
+                self.fail(str(e))
+            datasets = self.cbas_util.list_all_dataset_objs()
+        else:
+            datasets = list()
+            bucket = self.cluster.buckets[0]
+            if not self.bucket_util.delete_bucket(
+                    self.cluster, bucket, wait_for_bucket_deletion=True):
+                self.fail("Deleting of bucket failed")
+            for dataset in self.cbas_util.list_all_dataset_objs():
+                if dataset.kv_bucket.name == bucket.name:
+                    datasets.append(dataset)
+        self.connect_disconnect_all_local_links(disconnect=True)
+        for dataset in datasets:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, 0):
+                self.fail(
+                    "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_delete_kv_collection_before_dataset_disconnect(self):
+        datasets = self.cbas_util.list_all_dataset_objs()
+        ds_to_be_deleted = random.sample(datasets, len(datasets)/2)
+        for ds in ds_to_be_deleted:
+            if not self.bucket_util.drop_collection(
+                    self.cluster.master, ds.kv_bucket,
+                    scope_name=ds.kv_scope.name,
+                    collection_name=ds.kv_collection.name):
+                self.fail("Failed to delete collection {0}.{1}.{2}".format(
+                    ds.kv_bucket.name, ds.kv_scope.name, ds.kv_collection.name
+                ))
+        for dataset in ds_to_be_deleted:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, 0):
+                self.fail(
+                    "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_delete_KV_collection_after_dataset_disconnect_and_then_reconnect_dataset(
+            self):
+        self.connect_disconnect_all_local_links(disconnect=True)
+        datasets = self.cbas_util.list_all_dataset_objs()
+        ds_to_be_deleted = random.sample(datasets, len(datasets) / 2)
+        for ds in ds_to_be_deleted:
+            if not self.bucket_util.drop_collection(
+                    self.cluster.master, ds.kv_bucket,
+                    scope_name=ds.kv_scope.name,
+                    collection_name=ds.kv_collection.name):
+                self.fail("Failed to delete collection {0}.{1}.{2}".format(
+                    ds.kv_bucket.name, ds.kv_scope.name, ds.kv_collection.name
+                ))
+        self.connect_disconnect_all_local_links(disconnect=False)
+        for dataset in ds_to_be_deleted:
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, 0):
+                self.fail(
+                    "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_compact_KV_bucket_before_dataset_disconnect(self):
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+
+        # Validate no. of items in CBAS dataset
+        if not self.cbas_util.validate_docs_in_all_datasets(
+                self.cluster, self.bucket_util, timeout=600):
+            self.fail(
+                "Dataset doc count does not match the actual doc count in associated KV collection")
+
+    def test_compact_kv_bucket_after_dataset_disconnect_and_then_reconnect_dataset(self):
+        self.connect_disconnect_all_local_links(disconnect=True)
+        self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+        self.connect_disconnect_all_local_links(disconnect=False)
+        # Validate no. of items in CBAS dataset
+        if not self.cbas_util.validate_docs_in_all_datasets(
+                self.cluster, self.bucket_util, timeout=600):
+            self.fail(
+                "Dataset doc count does not match the actual doc count in associated KV collection")
 
     def test_ingestion_after_kv_rollback(self):
-        self.setup_for_test()
+        try:
+            for kv_node in self.cluster.kv_nodes:
+                for bucket in self.cluster.buckets:
+                    self.log.info("Stopping persistence on {0} for bucket {1}"
+                                  "".format(kv_node.ip, bucket.name))
+                    mem_client = MemcachedClientHelper.direct_client(
+                        kv_node, bucket)
+                    mem_client.stop_persistence()
 
-        # Stop Persistence on Node A & Node B
-        self.log.info("Stopping persistence on NodeA & NodeB")
-        mem_client = MemcachedClientHelper.direct_client(self.input.servers[0],
-                                                         self.cb_bucket_name)
-        mem_client.stop_persistence()
-        mem_client = MemcachedClientHelper.direct_client(self.input.servers[1],
-                                                         self.cb_bucket_name)
-        mem_client.stop_persistence()
+            # Perform Create, Update, Delete ops in the CB bucket
+            self.log.info("Performing Mutations")
+            first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
+            profession = ['doctor', 'lawyer']
 
-        # Perform Create, Update, Delete ops in the CB bucket
-        self.log.info("Performing Mutations")
-        self.perform_doc_ops_in_all_cb_buckets(
-            "delete",
-            0,
-            self.num_items / 2)
+            template_obj = JsonObject.create()
+            template_obj.put("number", 0)
+            template_obj.put("first_name", "")
+            template_obj.put("profession", "")
+            template_obj.put("mutated", 0)
+            template_obj.put("mutation_type", "ADD")
+            doc_gen = DocumentGenerator(
+                "test_docs", template_obj, start=0, end=1000,
+                randomize=False, first_name=first, profession=profession,
+                number=range(70))
 
-        # Validate no. of items in CBAS dataset
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name,
-                self.num_items / 2, 0):
-            self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
+            try:
+                self.bucket_util.sync_load_all_buckets(
+                    self.cluster, doc_gen, "create", 0,
+                    batch_size=1000,
+                    durability=self.durability_level,
+                    suppress_error_table=True)
+            except Exception as e:
+                self.fail("Following error occurred while loading bucket - {"
+                          "0}".format(str(e)))
 
-        # Count no. of items in CB & CBAS Buckets
-        items_in_cb_bucket = self.bucket_util.get_item_count_mc(
-            self.cluster.master,
-            self.cb_bucket_name)
-        items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(
-            self.cbas_dataset_name)
-        self.log.info("Before Rollback --- # docs in CB bucket: %s, "
-                      "# docs in CBAS bucket : %s",
-                      items_in_cb_bucket, items_in_cbas_bucket)
+            datasets = list()
+            for dataset in self.cbas_util.list_all_dataset_objs():
+                if dataset.kv_scope and dataset.kv_scope.name == \
+                        "_default" and dataset.kv_collection.name\
+                        == "_default":
+                    dataset.num_of_items = dataset.num_of_items + 1000
+                    datasets.append(dataset)
 
-        if items_in_cb_bucket != items_in_cbas_bucket:
-            self.fail("Before Rollback: # Items in CBAS bucket does not match "
-                      "that in the CB bucket")
+            for dataset in datasets:
+                if not self.cbas_util.validate_cbas_dataset_items_count(
+                        self.cluster, dataset.full_name, dataset.num_of_items):
+                    raise Exception("Dataset doc count does not match the "
+                                    "actual doc count in associated KV collection")
 
-        # Kill memcached on Node A so that Node B becomes master
-        self.log.info("Kill Memcached process on NodeA")
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        shell.kill_memcached()
+            # Kill memcached on Master Node so that another KV node becomes master
+            self.log.info("Kill Memcached process on Master node")
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            shell.kill_memcached()
 
-        # Start persistence on Node B
-        self.log.info("Starting persistence on NodeB")
-        mem_client = MemcachedClientHelper.direct_client(self.input.servers[1],
-                                                         self.cb_bucket_name)
-        mem_client.start_persistence()
+            failover_nodes = list()
+            # Start persistence on Node
+            for kv_node in self.cluster.kv_nodes:
+                if kv_node.ip != self.cluster.master.ip:
+                    failover_nodes.append(kv_node)
+                    for bucket in self.cluster.buckets:
+                        self.log.info("Starting persistence on {0} for bucket {1}"
+                                      "".format(kv_node.ip, bucket.name))
+                        mem_client = MemcachedClientHelper.direct_client(
+                            kv_node, bucket)
+                        mem_client.start_persistence()
 
-        # Failover Node B
-        self.log.info("Failing over NodeB")
-        self.sleep(10)
-        failover_task = self._cb_cluster.async_failover(
-            self.input.servers,
-            [self.input.servers[1]])
-        failover_task.result()
+            # Failover Nodes on which persistence was started
+            self.log.info("Failing over Nodes - {0}".format(str(failover_nodes)))
+            result = self.task.failover(
+                servers=self.cluster.servers, failover_nodes=failover_nodes,
+                graceful=False, use_hostnames=False, wait_for_pending=0,
+                allow_unsafe=False, all_at_once=False)
+            self.log.info(str(result))
 
-        # Wait for Failover & CBAS rollback to complete
-        self.sleep(120)
+            # Wait for Failover & CBAS rollback to complete
+            self.sleep(120)
 
-        # Count no. of items in CB & CBAS Buckets
-        items_in_cb_bucket = self.bucket_util.get_item_count_mc(
-            self.cluster.master,
-            self.cb_bucket_name)
-        items_in_cbas_bucket, _ = self.cbas_util.get_num_items_in_cbas_dataset(
-            self.cbas_dataset_name)
-        self.log.info("After Rollback --- # docs in CB bucket: %s, "
-                      "# docs in CBAS bucket : %s",
-                      items_in_cb_bucket, items_in_cbas_bucket)
+            bucket_wise_collection_item_count = dict()
+            for bucket in self.cluster.buckets:
+                bucket_wise_collection_item_count[
+                    bucket.name] = self.bucket_util.get_doc_count_per_collection(
+                    self.cluster, bucket)
+            self.log.info(str(bucket_wise_collection_item_count))
 
-        if items_in_cb_bucket != items_in_cbas_bucket:
-            self.fail("After Rollback: # Items in CBAS bucket does not match "
-                      "that in the CB bucket")
+            # Verify the doc count in datasets
+            for dataset in self.cbas_util.list_all_dataset_objs():
+                if not self.cbas_util.validate_cbas_dataset_items_count(
+                        self.cluster, dataset.full_name,
+                        bucket_wise_collection_item_count[
+                            dataset.kv_bucket.name][dataset.kv_scope.name][
+                            dataset.kv_collection.name]["items"]):
+                    raise Exception(
+                        "Dataset doc count does not match the actual doc count "
+                        "in associated KV collection after KV roll back")
+        except Exception as e:
+            for kv_node in self.cluster.kv_nodes:
+                for bucket in self.cluster.buckets:
+                    self.log.info("Starting persistence on {0} for bucket {1}"
+                                  "".format(kv_node.ip, bucket.name))
+                    mem_client = MemcachedClientHelper.direct_client(
+                        kv_node, bucket)
+                    mem_client.start_persistence()
+            self.fail(str(e))
 
-    '''
-    cbas.cbas_bucket_operations.CBASBucketOperations:
-      test_bucket_flush_while_index_are_created,cb_bucket_name=default,
-      cbas_bucket_name=default_bucket,cbas_dataset_name=default_ds,
-      items=100000,index_fields=profession:String-first_name:String
-    '''
+
     def test_bucket_flush_while_index_are_created(self):
-        self.log.info("Add documents, create CBAS buckets, "
-                      "dataset and validate count")
-        self.setup_for_test()
 
-        self.log.info('Disconnect CBAS bucket')
-        self.cbas_util.disconnect_from_bucket(self.cbas_bucket_name)
+        self.connect_disconnect_all_local_links(disconnect=True)
 
         self.log.info('Create secondary index in Async')
         index_fields = self.input.param("index_fields", None)
         index_fields = index_fields.replace('-', ',')
-        query = "create index {0} on {1}({2});" \
-            .format("sec_idx", self.cbas_dataset_name, index_fields)
+        dataset = self.cbas_util.list_all_dataset_objs()[0]
+        query = "create index sec_idx on {0}({1});" \
+            .format(dataset.full_name, index_fields)
         create_index_task = self.task.async_cbas_query_execute(
-            self.cluster.master, self.cbas_util, None, query, 'default')
+            self.cluster, self.cbas_util, "/analytics/service", query)
 
         self.log.info('Flush bucket while index are getting created')
         # Flush the CB bucket
-        BucketHelper(self.cluster.master).flush_bucket(self.cb_bucket_name)
+        if not self.bucket_util.flush_bucket(self.cluster, dataset.kv_bucket,
+                                             skip_resetting_num_items=False):
+            self.fail("Flushing of bucket failed")
 
         self.log.info('Get result on index creation')
         self.task_manager.get_task_result(create_index_task)
 
-        self.log.info('Connect back cbas bucket')
-        self.cbas_util.connect_to_bucket(self.cbas_bucket_name)
+        self.log.info('Reconnect Links')
+        self.connect_disconnect_all_local_links()
 
         self.log.info('Validate no. of items in CBAS dataset')
         if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name, 0):
+                self.cluster, dataset.full_name, 0):
             self.fail("No. of items in CBAS dataset do not match "
-                      "that in the CB bucket")
+                      "that in the KV bucket")
 
-    '''
-    cbas.cbas_bucket_operations.CBASBucketOperations:
-      test_kill_memcached_impact_on_bucket,num_items=100000,
-      bucket_type=ephemeral
-    '''
     def test_kill_memcached_impact_on_bucket(self):
-        self.log.info('Add documents, create CBAS buckets, '
-                      'dataset and validate count')
-        self.setup_for_test()
 
         self.log.info('Kill memcached service in all cluster nodes')
         for node in self.cluster.servers:
             RemoteMachineShellConnection(node).kill_memcached()
 
         self.log.info('Validate document count')
-        _ = self.rest.query_tool(
-            'select count(*) from %s'
-            % self.cb_bucket_name)['results'][0]['$1']
-        self.cbas_util.validate_cbas_dataset_items_count(
-            self.cbas_dataset_name, 0)
+        if not self.cbas_util.validate_docs_in_all_datasets(
+                self.cluster, self.bucket_util, timeout=600):
+            self.fail(
+                "Dataset doc count does not match the actual doc count in associated KV collection")
 
-    '''
-    cbas.cbas_bucket_operations.CBASBucketOperations:
-      test_restart_kv_server_impact_on_bucket,num_items=100000,
-      bucket_type=ephemeral
-    '''
     def test_restart_kv_server_impact_on_bucket(self):
-        self.log.info('Add documents, create CBAS buckets, '
-                      'dataset and validate count')
-        self.setup_for_test()
 
         self.log.info('Restart couchbase')
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.reboot_server_and_wait_for_cb_run(self.cluster_util,
                                                 self.cluster.master)
 
+        dataset = self.cbas_util.list_all_dataset_objs()[0]
         self.log.info('Validate document count')
-        count_n1ql = self.rest.query_tool(
+        count_n1ql = self.cluster.rest.query_tool(
             'select count(*) from %s'
-            % self.cb_bucket_name)['results'][0]['$1']
-        self.cbas_util.validate_cbas_dataset_items_count(
-            self.cbas_dataset_name, count_n1ql)
+            % CBASHelper.format_name(dataset.kv_bucket.name))["results"][0][
+            "$1"]
+        if not self.cbas_util.validate_cbas_dataset_items_count(
+                self.cluster, dataset.full_name, count_n1ql):
+            self.fail("No. of items in CBAS dataset do not match "
+                      "that in the KV bucket")
 
 
-class CBASEphemeralBucketOperations(CBASBaseTest):
-    def setUp(self, add_default_cbas_node=True):
-        super(CBASEphemeralBucketOperations, self).setUp(add_default_cbas_node)
+class CBASEphemeralBucketOperations(CBASBucketOperations):
 
-        self.log.info("Create Ephemeral bucket")
+    def setUp(self):
+        super(CBASEphemeralBucketOperations, self).setUp()
         self.bucket_ram = self.input.param("bucket_size", 100)
-        self.bucket_util.create_default_bucket(
-            self.cluster,
-            bucket_type=self.bucket_type,
-            ram_quota=self.bucket_size,
-            replica=self.num_replicas,
-            conflict_resolution=self.bucket_conflict_resolution_type,
-            replica_index=self.bucket_replica_index,
-            storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy)
-
-        self.cluster_util.print_cluster_stats(self.cluster)
-        self.bucket_util.print_bucket_stats(self.cluster)
-        self.log.info("Fetch RAM document load percentage")
-        self.document_ram_percentage = \
-            self.input.param("document_ram_percentage", 0.90)
+        self.document_ram_percentage = self.input.param(
+            "document_ram_percentage", 0.90)
+        self.bucket_name = self.cluster.buckets[0].name
 
     def load_document_until_ram_percentage(self):
         self.start = 0
@@ -693,16 +588,35 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         mem_cap = (self.document_ram_percentage
                    * self.bucket_ram
                    * 1000000)
+
+        first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
+        profession = ['doctor', 'lawyer']
+
+        template_obj = JsonObject.create()
+        template_obj.put("number", 0)
+        template_obj.put("first_name", "")
+        template_obj.put("profession", "")
+        template_obj.put("mutated", 0)
+        template_obj.put("mutation_type", "ADD")
+
         while True:
             self.log.info("Add documents to bucket")
-            self.perform_doc_ops_in_all_cb_buckets(
-                "create",
-                self.start,
-                self.end,
-                durability=self.durability_level)
+
+            doc_gen = DocumentGenerator(
+                "test_docs", template_obj, start=self.start, end=self.end,
+                randomize=False, first_name=first, profession=profession,
+                number=range(70))
+
+            try:
+                self.bucket_util.sync_load_all_buckets(
+                    self.cluster, doc_gen, "create", 0, batch_size=doc_batch_size,
+                    durability=self.durability_level, suppress_error_table=True)
+            except Exception as e:
+                self.fail("Following error occurred while loading bucket - {"
+                          "0}".format(str(e)))
 
             self.log.info("Calculate available free memory")
-            bucket_json = bucket_helper.get_bucket_json(self.cb_bucket_name)
+            bucket_json = bucket_helper.get_bucket_json(self.bucket_name)
             mem_used = 0
             for node_stat in bucket_json["nodes"]:
                 mem_used += node_stat["interestingStats"]["mem_used"]
@@ -715,30 +629,16 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
             else:
                 break
 
-    """
-    cbas.cbas_bucket_operations.CBASEphemeralBucketOperations:
-      test_no_eviction_impact_on_cbas,default_bucket=False,num_items=0,
-      bucket_type=ephemeral,eviction_policy=noEviction,
-      cb_bucket_name=default,cbas_dataset_name=ds,bucket_ram=100,
-      document_ram_percentage=0.85
-    """
     def test_no_eviction_impact_on_cbas(self):
-
-        self.log.info("Create dataset")
-        self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name,
-                                                self.cbas_dataset_name)
-
-        self.log.info("Connect to Local link")
-        self.cbas_util.connect_link()
 
         self.log.info("Add documents until ram percentage")
         self.load_document_until_ram_percentage()
 
         self.log.info("Fetch current document count")
         target_bucket = None
-        self.bucket_util.get_all_buckets(self.cluster)
-        for tem_bucket in self.cluster.buckets:
-            if tem_bucket.name == self.cb_bucket_name:
+        buckets = self.bucket_util.get_all_buckets(self.cluster)
+        for tem_bucket in buckets:
+            if tem_bucket.name == self.bucket_name:
                 target_bucket = tem_bucket
                 break
         item_count = target_bucket.stats.itemCount
@@ -749,10 +649,9 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         i = item_count
         op_result = {"status": True}
         while op_result["status"] is True:
-            op_result = client.crud("create",
-                                    "key-id" + str(i),
-                                    '{"name":"dave"}',
-                                    durability=self.durability_level)
+            op_result = client.crud(
+                "create", "key-id" + str(i), '{"name":"dave"}',
+                durability=self.durability_level)
             i += 1
 
         if SDKException.AmbiguousTimeoutException not in op_result["error"] \
@@ -766,8 +665,8 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
 
         self.log.info("Fetch item count")
         target_bucket = None
-        self.bucket_util.get_all_buckets(self.cluster)
-        for tem_bucket in self.cluster.buckets:
+        buckets = self.bucket_util.get_all_buckets(self.cluster)
+        for tem_bucket in buckets:
             if tem_bucket.name == self.cb_bucket_name:
                 target_bucket = tem_bucket
                 break
@@ -779,34 +678,24 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.log.info("Validate document count on CBAS")
         count_n1ql = self.rest.query_tool(
             'select count(*) from %s'
-            % self.cb_bucket_name)['results'][0]['$1']
-        self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(
-            self.cbas_dataset_name, count_n1ql),
-            msg="Count mismatch on CBAS")
+            % self.bucket_name)['results'][0]['$1']
 
-    """
-    cbas.cbas_bucket_operations.CBASEphemeralBucketOperations:
-      test_nru_eviction_impact_on_cbas,default_bucket=False,num_items=0,
-      bucket_type=ephemeral,eviction_policy=nruEviction,
-      cb_bucket_name=default,cbas_dataset_name=ds,bucket_ram=100,
-      document_ram_percentage=0.80
-    """
+        dataset = self.cbas_util.list_all_dataset_objs()[0]
+        if not self.cbas_util.validate_cbas_dataset_items_count(
+                self.cluster, dataset.full_name, count_n1ql):
+            self.fail("No. of items in CBAS dataset do not match "
+                      "that in the KV bucket")
+
     def test_nru_eviction_impact_on_cbas(self):
-        self.log.info("Create dataset")
-        self.cbas_util.create_dataset_on_bucket(self.cb_bucket_name,
-                                                self.cbas_dataset_name)
-
-        self.log.info("Connect to Local link")
-        self.cbas_util.connect_link()
 
         self.log.info("Add documents until ram percentage")
         self.load_document_until_ram_percentage()
 
         self.log.info("Fetch current document count")
         target_bucket = None
-        self.bucket_util.get_all_buckets(self.cluster)
-        for tem_bucket in self.cluster.buckets:
-            if tem_bucket.name == self.cb_bucket_name:
+        buckets = self.bucket_util.get_all_buckets(self.cluster)
+        for tem_bucket in buckets:
+            if tem_bucket.name == self.bucket_name:
                 target_bucket = tem_bucket
                 break
 
@@ -836,16 +725,16 @@ class CBASEphemeralBucketOperations(CBASBaseTest):
         self.log.info("Validate document count on CBAS")
         count_n1ql = self.rest.query_tool(
             'select count(*) from %s'
-            % self.cb_bucket_name)['results'][0]['$1']
-        if self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name, count_n1ql):
-            pass
-        else:
+            % self.bucket_name)['results'][0]['$1']
+        dataset = self.cbas_util.list_all_dataset_objs()[0]
+        if not self.cbas_util.validate_cbas_dataset_items_count(
+                self.cluster, dataset.full_name, count_n1ql):
             self.log.info("Document count mismatch might be due to ejection "
                           "of documents on KV. Retry again")
             count_n1ql = self.rest.query_tool(
                 'select count(*) from %s'
-                % self.cb_bucket_name)['results'][0]['$1']
-            self.assertTrue(self.cbas_util.validate_cbas_dataset_items_count(
-                self.cbas_dataset_name, count_n1ql),
-                msg="Count mismatch on CBAS")
+                % self.bucket_name)['results'][0]['$1']
+            if not self.cbas_util.validate_cbas_dataset_items_count(
+                    self.cluster, dataset.full_name, count_n1ql):
+                self.fail("No. of items in CBAS dataset do not match "
+                          "that in the KV bucket")

@@ -3863,6 +3863,9 @@ class RemoteMachineShellConnection:
                 if not o:
                     raise Exception("Node not yet reachable")
                 break
+            except JSchException:
+                sleep(10, "Node not reachable, retry after 10 secs",
+                      log_type="infra")
             except Exception:
                 sleep(10, "Node not reachable, retry after 10 secs",
                       log_type="infra")
