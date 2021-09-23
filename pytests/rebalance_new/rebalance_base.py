@@ -73,7 +73,10 @@ class RebalanceBaseTest(BaseTestCase):
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.check_replica = self.input.param("check_replica", False)
         self.spec_name = self.input.param("bucket_spec", None)
-
+        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
+        if self.disk_optimized_thread_settings:
+            self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
+                                                   num_reader_threads="disk_io_optimized")
         self.bucket_util.add_rbac_user(self.cluster.master)
         # Buckets creation and initial data load done by bucket_spec
         if self.spec_name is not None:
@@ -207,14 +210,32 @@ class RebalanceBaseTest(BaseTestCase):
 
     def tearDown(self):
         self.cluster_util.print_cluster_stats(self.cluster)
+        if self.disk_optimized_thread_settings:
+            self.set_num_writer_and_reader_threads(num_writer_threads="default",
+                                                   num_reader_threads="default")
         super(RebalanceBaseTest, self).tearDown()
 
     def collection_setup(self):
         self.over_ride_spec_params = self.input.param("override_spec_params", "").split(";")
         self.log.info("Creating buckets from spec")
-        # Create bucket(s) and add rbac user
-        buckets_spec = self.bucket_util.get_bucket_template_from_package(
-            self.spec_name)
+        # Create bucket(s)
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            # get the TTL value
+            buckets_spec_from_conf = \
+                self.bucket_util.get_bucket_template_from_package(
+                    self.spec_name)
+            bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
+            # Blindly override the bucket spec if the backend storage is magma.
+            # So, Bucket spec in conf file will not take any effect.
+            self.spec_name = "single_bucket.bucket_for_magma_collections"
+            magma_bucket_spec = \
+                self.bucket_util.get_bucket_template_from_package(
+                    self.spec_name)
+            magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
+            buckets_spec = magma_bucket_spec
+        else:
+            buckets_spec = self.bucket_util.get_bucket_template_from_package(
+                self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
         # Process params to over_ride values if required
@@ -309,6 +330,13 @@ class RebalanceBaseTest(BaseTestCase):
             elif key == "randomize_value":
                 target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
                     = self.randomize_value
+
+    def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default",
+                                          num_storage_threads="default"):
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
+                                                num_reader_threads=num_reader_threads,
+                                                num_storage_threads=num_storage_threads)
 
     def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
         retry_exceptions = list()

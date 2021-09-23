@@ -57,16 +57,11 @@ class CollectionsRebalance(CollectionBase):
             # so for now we are setting scrape_timeout same as scrape_interval
             StatsHelper(self.cluster.master).change_scrape_timeout(self.scrape_interval)
             StatsHelper(self.cluster.master).change_scrape_interval(self.scrape_interval)
-
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", None)
         if self.rebalance_moves_per_node:
             self.cluster_util.set_rebalance_moves_per_nodes(
                 self.cluster.master,
                 rebalanceMovesPerNode=self.rebalance_moves_per_node)
-        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
-        if self.disk_optimized_thread_settings:
-            self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                   num_reader_threads="disk_io_optimized")
         self.N1ql_txn = self.input.param("N1ql_txn", False)
         if self.N1ql_txn:
             self.num_stmt_txn = self.input.param("num_stmt_txn", 5)
@@ -89,9 +84,6 @@ class CollectionsRebalance(CollectionBase):
             self.cluster_util.set_rebalance_moves_per_nodes(
                 self.cluster.master,
                 rebalanceMovesPerNode=4)
-        if self.disk_optimized_thread_settings:
-            self.set_num_writer_and_reader_threads(num_writer_threads="default",
-                                                   num_reader_threads="default")
         super(CollectionsRebalance, self).tearDown()
 
     def setup_N1ql_txn(self):
@@ -246,14 +238,6 @@ class CollectionsRebalance(CollectionBase):
         for bucket in self.cluster.buckets:
             self.compaction_tasks.append(self.task.async_compact_bucket(
                 self.cluster.master, bucket))
-
-    def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default",
-                                          num_storage_threads="default"):
-        for node in self.cluster_util.get_kv_nodes(self.cluster):
-            bucket_helper = BucketHelper(node)
-            bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
-                                                    num_reader_threads=num_reader_threads,
-                                                    num_storage_threads=num_storage_threads)
 
     def set_ephemeral_purge_age_and_interval(self, ephemeral_metadata_purge_age=0,
                                              ephemeral_metadata_purge_interval=1):

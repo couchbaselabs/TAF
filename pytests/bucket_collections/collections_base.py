@@ -58,6 +58,10 @@ class CollectionBase(ClusterSetup):
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
+        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
+        if self.disk_optimized_thread_settings:
+            self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
+                                                   num_reader_threads="disk_io_optimized")
 
         try:
             self.collection_setup()
@@ -89,6 +93,9 @@ class CollectionBase(ClusterSetup):
         if self.validate_docs_count_during_teardown:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
+        if self.disk_optimized_thread_settings:
+            self.set_num_writer_and_reader_threads(num_writer_threads="default",
+                                                   num_reader_threads="default")
         super(CollectionBase, self).tearDown()
 
     @staticmethod
@@ -319,3 +326,10 @@ class CollectionBase(ClusterSetup):
             retry_exceptions.append(SDKException.DurabilityAmbiguousException)
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
+
+    def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default",
+                                          num_storage_threads="default"):
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
+                                                num_reader_threads=num_reader_threads,
+                                                num_storage_threads=num_storage_threads)

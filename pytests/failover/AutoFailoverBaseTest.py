@@ -48,7 +48,10 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.servers_to_remove = self.cluster.servers[self.nodes_init -
                                                       self.nodes_out:self.nodes_init]
         self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
-
+        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
+        if self.disk_optimized_thread_settings:
+            self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
+                                                   num_reader_threads="disk_io_optimized")
         if self.spec_name is not None:
             try:
                 self.collectionSetUp()
@@ -108,8 +111,24 @@ class AutoFailoverBaseTest(BaseTestCase):
 
         # Create bucket(s) and add rbac user
         self.bucket_util.add_rbac_user(self.cluster.master)
-        buckets_spec = self.bucket_util.get_bucket_template_from_package(
-            self.spec_name)
+        # Create bucket(s)
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            # get the TTL value
+            buckets_spec_from_conf = \
+                self.bucket_util.get_bucket_template_from_package(
+                    self.spec_name)
+            bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
+            # Blindly override the bucket spec if the backend storage is magma.
+            # So, Bucket spec in conf file will not take any effect.
+            self.spec_name = "single_bucket.bucket_for_magma_collections"
+            magma_bucket_spec = \
+                self.bucket_util.get_bucket_template_from_package(
+                    self.spec_name)
+            magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
+            buckets_spec = magma_bucket_spec
+        else:
+            buckets_spec = self.bucket_util.get_bucket_template_from_package(
+                self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
 
@@ -237,6 +256,13 @@ class AutoFailoverBaseTest(BaseTestCase):
                                                       self.nodes_out:self.nodes_init]
         self.get_vbucket_info_from_failover_nodes()
 
+    def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default",
+                                          num_storage_threads="default"):
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
+                                                num_reader_threads=num_reader_threads,
+                                                num_storage_threads=num_storage_threads)
+
     def tearDown(self):
         self.log.info("============AutoFailoverBaseTest teardown============")
         self._get_params()
@@ -248,6 +274,9 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.rest = RestConnection(self.orchestrator)
         self.rest.reset_autofailover()
         self.disable_autofailover()
+        if self.disk_optimized_thread_settings:
+            self.set_num_writer_and_reader_threads(num_writer_threads="default",
+                                                   num_reader_threads="default")
         super(AutoFailoverBaseTest, self).tearDown()
 
     def _loadgen(self):
@@ -952,6 +981,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.disk_timeout = self.input.param("disk_timeout", 120)
         self.read_loadgen = self.input.param("read_loadgen", False)
         self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
+
         self.log.info("Cleanup the cluster and set the data location "
                       "to the one specified by the test.")
         for server in self.cluster.servers:
@@ -972,7 +1002,10 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                             [], services=self.services, retry_get_process_num=self.retry_get_process_num)
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.bucket_util.add_rbac_user(self.cluster.master)
-
+        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
+        if self.disk_optimized_thread_settings:
+            self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
+                                                   num_reader_threads="disk_io_optimized")
         if self.spec_name is None:
             if self.read_loadgen:
                 self.bucket_size = 100
@@ -996,8 +1029,24 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.log.info("=========Finished Diskautofailover base setup=========")
 
     def collectionSetUp(self):
-        buckets_spec = self.bucket_util.get_bucket_template_from_package(
-            self.spec_name)
+        # Create bucket(s)
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            # get the TTL value
+            buckets_spec_from_conf = \
+                self.bucket_util.get_bucket_template_from_package(
+                    self.spec_name)
+            bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
+            # Blindly override the bucket spec if the backend storage is magma.
+            # So, Bucket spec in conf file will not take any effect.
+            self.spec_name = "single_bucket.bucket_for_magma_collections"
+            magma_bucket_spec = \
+                self.bucket_util.get_bucket_template_from_package(
+                    self.spec_name)
+            magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
+            buckets_spec = magma_bucket_spec
+        else:
+            buckets_spec = self.bucket_util.get_bucket_template_from_package(
+                self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
         self.bucket_util.create_buckets_using_json_data(self.cluster,
