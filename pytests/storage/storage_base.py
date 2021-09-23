@@ -203,7 +203,7 @@ class StorageBase(BaseTestCase):
         self.expiry_end = 0
         self.mutate = 0
         self.validate = False
-        self.key_type = self.input.param("key_type", "RandonKey")
+        self.key_type = self.input.param("key_type", "RandomKey")
         self.init_items_per_collection = self.num_items
         '''
            --For DGM test
