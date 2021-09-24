@@ -919,6 +919,7 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.nodes_in_cluster = list(
                 set(self.cluster.nodes_in_cluster) - set(servs_out))
             self.available_servers += servs_out
+            self.cluster.kv_nodes = list(set(self.cluster.kv_nodes) - set(servs_out))
             end_step_checks(tasks)
 
             self.bucket_util.compare_failovers_logs(
@@ -1150,23 +1151,9 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(result, "Flush bucket failed!")
                 self.sleep(600)
                 if len(self.cluster.nodes_in_cluster) > self.nodes_init:
-                    nodes_cluster = self.cluster.nodes_in_cluster[:]
-                    nodes_cluster.remove(self.cluster.master)
-                    servs_out = random.sample(
-                        nodes_cluster,
-                        int(len(self.cluster.nodes_in_cluster)
-                            - self.nodes_init))
-                    rebalance_task = self.task.async_rebalance(
-                        self.cluster.servers[:self.nodes_init], [], servs_out,
-                        retry_get_process_num=3000)
-
-                    self.task.jython_task_manager.get_task_result(
-                        rebalance_task)
+                    rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.nodes_in_cluster)- self.nodes_init))
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
-
-                    self.available_servers += servs_out
-                    self.cluster.nodes_in_cluster = list(
-                        set(self.cluster.nodes_in_cluster) - set(servs_out))
             else:
                 self.log.info("Volume Test Run Complete")
             self.init_doc_params()

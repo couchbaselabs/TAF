@@ -384,33 +384,18 @@ class OPD:
             for optype, failures in task.failedMutations.items():
                 for failure in failures:
                     print("Test Retrying {}: {} -> {}".format(optype, failure.id(), failure.err().getClass().getSimpleName()))
-                    if optype == "create":
-                        try:
-                            task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions);
-#                             task.failedMutations.get(optype).remove(failure)
-                        except (ServerOutOfMemoryException, TimeoutException) as e:
-                            print("Retry Create failed for key: {} - {}".format(failure.id(), e))
-                            task.result = False
-                        except DocumentExistsException as e:
-                            pass
-                    if optype == "update":
-                        try:
-                            task.docops.upsert(failure.id(), failure.document(), task.sdk.connection, task.upsertOptions);
-#                             task.failedMutations.get(optype).remove(failure)
-                        except (ServerOutOfMemoryException, TimeoutException) as e:
-                            print("Retry Update failed for key: {} - {}".format(failure.id(), e))
-                            task.result = False
-                        except DocumentExistsException as e:
-                            pass
-                    if optype == "delete":
-                        try:
-                            task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions);
-#                             task.failedMutations.get(optype).remove(failure)
-                        except (ServerOutOfMemoryException, TimeoutException) as e:
-                            print("Retry Delete failed for key: {} - {}".format(failure.id(), e))
-                            task.result = False
-                        except DocumentNotFoundException as e:
-                            pass
+                    try:
+                        if optype == "create":
+                            task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions)
+                        if optype == "update":
+                            task.docops.upsert(failure.id(), failure.document(), task.sdk.connection, task.upsertOptions)
+                        if optype == "delete":
+                            task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions)
+                    except (ServerOutOfMemoryException, TimeoutException) as e:
+                        print("Retry {} failed for key: {} - {}".format(optype, failure.id(), e))
+                        task.result = False
+                    except (DocumentNotFoundException, DocumentExistsException) as e:
+                        pass
             try:
                 task.sdk.disconnectCluster()
             except Exception as e:

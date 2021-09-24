@@ -99,7 +99,7 @@ public class WorkLoadGenerate extends Task{
                     flag = true;
                     List<Result> result = docops.bulkInsert(this.sdk.connection, docs, setOptions);
                     ops += dg.ws.batchSize*dg.ws.creates/100;
-                    if(trackFailures)
+                    if(trackFailures && result.size()>0)
                         try {
                             failedMutations.get("create").addAll(result);
                         } catch (Exception e) {
@@ -113,7 +113,7 @@ public class WorkLoadGenerate extends Task{
                     flag = true;
                     List<Result> result = docops.bulkUpsert(this.sdk.connection, docs, upsertOptions);
                     ops += dg.ws.batchSize*dg.ws.updates/100;
-                    if(trackFailures)
+                    if(trackFailures && result.size()>0)
                         try {
                             failedMutations.get("update").addAll(result);
                         } catch (Exception e) {
@@ -127,7 +127,7 @@ public class WorkLoadGenerate extends Task{
                     flag = true;
                     List<Result> result = docops.bulkUpsert(this.sdk.connection, docs, expiryOptions);
                     ops += dg.ws.batchSize*dg.ws.expiry/100;
-                    if(trackFailures)
+                    if(trackFailures && result.size()>0)
                         try {
                             failedMutations.get("expiry").addAll(result);
                         } catch (Exception e) {
@@ -141,7 +141,7 @@ public class WorkLoadGenerate extends Task{
                     flag = true;
                     List<Result> result = docops.bulkDelete(this.sdk.connection, docs, removeOptions);
                     ops += dg.ws.batchSize*dg.ws.deletes/100;
-                    if(trackFailures)
+                    if(trackFailures && result.size()>0)
                         try {
                             failedMutations.get("delete").addAll(result);
                         } catch (Exception e) {
