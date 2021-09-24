@@ -50,7 +50,7 @@ class MagmaCrashTests(MagmaBaseTest):
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
-    def test_crash_during_ops_exp(self):
+    def test_crash_during_ops_new(self):
         self.graceful = self.input.param("graceful", False)
         self.ops_rate = self.input.param("ops_rate", 10000)
         self.log.info("====test_crash_during_ops starts====")
@@ -58,15 +58,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
 
         self.new_loader(wait=True)
-
-        self.multiplier = self.input.param("multiplier", 2)
-
-        self.create_start = self.init_items_per_collection
-        self.create_end = self.init_items_per_collection*self.multiplier
-        self.delete_start = 0
-        self.delete_end = self.init_items_per_collection/2
-        self.read_start = self.init_items_per_collection/2
-        self.read_end = self.init_items_per_collection
+        self.compute_docs_ranges()
 
         self.create_perc = self.input.param("create_perc", 0)
         self.read_perc = self.input.param("read_perc", 0)
@@ -81,6 +73,35 @@ class MagmaCrashTests(MagmaBaseTest):
         self.crash_th = threading.Thread(target=self.crash,
                                          kwargs=dict(graceful=self.graceful,
                                                      wait=wait_warmup))
+        self.crash_th.start()
+        self.doc_loading_tm.getAllTaskResult()
+        self.stop_crash = True
+        self.crash_th.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
+
+    def test_crash_during_recovery_new(self):
+        self.graceful = self.input.param("graceful", False)
+        self.ops_rate = self.input.param("ops_rate", 10000)
+        self.log.info("====test_crash_during_recovery_new starts====")
+        self.create_start = 0
+        self.create_end = self.init_items_per_collection
+
+        self.new_loader(wait=True)
+        self.compute_docs_ranges()
+
+        self.create_perc = self.input.param("create_perc", 0)
+        self.read_perc = self.input.param("read_perc", 0)
+        self.update_perc = self.input.param("update_perc", 0)
+        self.delete_perc = self.input.param("delete_perc", 0)
+        self.expiry_perc = self.input.param("expiry_perc", 0)
+        self.track_failures = False
+
+        self.new_loader({
+             "gtm": True,
+             "validate": False
+              }
+         )
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
         self.crash_th.start()
         self.doc_loading_tm.getAllTaskResult()
         self.stop_crash = True

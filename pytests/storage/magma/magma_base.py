@@ -95,6 +95,11 @@ class MagmaBaseTest(StorageBase):
         self.multiplier = self.input.param("multiplier", 1)
         doc_ops = doc_ops or self.doc_ops
         ops_len = len(doc_ops.split(":"))
+        if "read" in doc_ops:
+            self.read_start = 0
+            self.read_end = self.init_items_per_collection
+            if ops_len > 1:
+                ops_len -= 1
 
         if "create" in doc_ops:
             ops_len -= 1
@@ -130,6 +135,8 @@ class MagmaBaseTest(StorageBase):
             self.expiry_start = (2 * self.init_num_items) // 3
             self.expiry_end = self.init_num_items * self.multiplier
 
+        self.read_start = self.update_start
+        self.read_end = self.update_end
     def validate_seq_itr(self):
         if self.dcp_services and self.num_collections == 1:
             index_build_q = "SELECT state FROM system:indexes WHERE name='{}';"
