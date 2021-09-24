@@ -14,7 +14,7 @@ class MagmaUtils:
     def __init__(self):
         self.log = logger.get("test")
 
-    def get_disk_usage(self, cluster, bucket, data_path, servers=None):
+    def get_disk_usage(self, cluster, bucket, data_path, servers=None, units='mb'):
         """ Returns magma disk usage.
 
         Args:
@@ -36,22 +36,27 @@ class MagmaUtils:
         wal = 0
         keyTree = 0
         seqTree = 0
+
+        units_to_flag = {'mb': '-cm', 'kb': '-ck', 'b': '-cb'}
+
+        if units not in units_to_flag:
+            raise ValueError("The units must be in {}".format(units_to_flag.keys()))
+
+        flag = units_to_flag[units]
+
+        def get_command(glob):
+            path = os.path.join(data_path, bucket.name, glob)
+            return "du {} {} | tail -1 | awk '{{print $1}}'".format(flag, path)
+
         for server in servers:
             shell = RemoteMachineShellConnection(server)
-            kvstore += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(data_path,
-                             bucket.name, "magma.*/kv*"))[0][0].split('\n')[0])
-            wal += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(data_path,
-                             bucket.name, "magma.*/wal"))[0][0].split('\n')[0])
-            keyTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(data_path,
-                             bucket.name, "magma.*/kv*/rev*/key*"))[0][0].split('\n')[0])
-            seqTree += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
-            " % os.path.join(data_path,
-                             bucket.name, "magma.*/kv*/rev*/seq*"))[0][0].split('\n')[0])
+            kvstore += int(shell.execute_command(get_command("magma.*/kv*"))[0][0].split('\n')[0])
+            wal += int(shell.execute_command(get_command("magma.*/wal"))[0][0].split('\n')[0])
+            keyTree += int(shell.execute_command(get_command("magma.*/kv*/rev*/key*"))[0][0].split('\n')[0])
+            seqTree += int(shell.execute_command(get_command("magma.*/kv*/rev*/seq*"))[0][0].split('\n')[0])
             shell.disconnect()
-        self.log.info("Disk usage stats for bucekt {} is below".format(bucket.name))
+
+        self.log.info("Disk usage stats for bucket {} is below".format(bucket.name))
         self.log.info("Total Disk usage for kvstore is {}MB".format(kvstore))
         self.log.debug("Total Disk usage for wal is {}MB".format(wal))
         self.log.debug("Total Disk usage for keyTree is {}MB".format(keyTree))
