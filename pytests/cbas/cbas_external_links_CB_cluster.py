@@ -4,7 +4,7 @@ Created on 13-May-2020
 @author: umang.agrawal
 """
 from TestInput import TestInputSingleton
-from cbas.cbas_base_v2 import CBASBaseTest
+from cbas.cbas_base import CBASBaseTest
 import random, json, copy, time
 from threading import Thread
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
@@ -15,7 +15,7 @@ from membase.api.rest_client import RestHelper
 from cbas_utils.cbas_utils import Dataset
 from Cb_constants import CbServer
 from CbasLib.CBASOperations import CBASHelper
-from cbas_utils.cbas_utils_v2 import CBASRebalanceUtil
+from cbas_utils.cbas_utils import CBASRebalanceUtil
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from security_utils.security_utils import SecurityUtils
 

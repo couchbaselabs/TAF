@@ -4,8 +4,8 @@ TO-DO : Extend this to support remote cluster rebalance operations also, once cb
 '''
 
 from TestInput import TestInputSingleton
-from cbas.cbas_base_v2 import CBASBaseTest
-from cbas_utils.cbas_utils_v2 import CBASRebalanceUtil
+from cbas.cbas_base import CBASBaseTest
+from cbas_utils.cbas_utils import CBASRebalanceUtil
 
 
 class CBASRebalance(CBASBaseTest):

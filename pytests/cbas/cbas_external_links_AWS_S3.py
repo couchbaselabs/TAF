@@ -6,10 +6,10 @@ from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from threading import Thread
 from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
 from couchbase_helper.tuq_helper import N1QLHelper
-from cbas.cbas_base_v2 import CBASBaseTest
+from cbas.cbas_base import CBASBaseTest
 from TestInput import TestInputSingleton
 from CbasLib.CBASOperations import CBASHelper
-from cbas_utils.cbas_utils_v2 import CBASRebalanceUtil
+from cbas_utils.cbas_utils import CBASRebalanceUtil
 
 rbac_users_created = {}
 

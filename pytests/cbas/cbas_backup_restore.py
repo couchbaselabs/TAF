@@ -1,6 +1,6 @@
 import random
 
-from cbas.cbas_base_v2 import CBASBaseTest
+from cbas.cbas_base import CBASBaseTest
 from Jython_tasks.task import CreateDatasetsTask, DropDatasetsTask, \
     CreateSynonymsTask, DropSynonymsTask, DropDataversesTask, \
     CreateCBASIndexesTask, DropCBASIndexesTask, CreateUDFTask, DropUDFTask

@@ -5,7 +5,7 @@ from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
-from cbas.cbas_base_v2 import CBASBaseTest
+from cbas.cbas_base import CBASBaseTest
 from collections_helper.collections_spec_constants import MetaCrudParams
 from TestInput import TestInputSingleton
 from com.couchbase.client.java.json import JsonObject

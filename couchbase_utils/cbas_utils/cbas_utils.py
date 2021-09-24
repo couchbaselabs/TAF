@@ -1,49 +1,79 @@
 """
-Created on Nov 15, 2017
+Created on 08-Dec-2020
 
-@author: riteshagarwal
+@author: Umang
+
+Very Important Note - All the CBAS DDLs currently run sequentially, thus the code for
+executing DDLs is hard coded to run on a single thread. If this changes in future, we can just
+remove this hard coded value.
 """
-
 import json
-import threading
+import urllib
 import time
 from threading import Thread
-import string,random
-import urllib
+import threading
+import string
+import random
+import importlib
 import copy
+import requests
 
-from CbasLib.CBASOperations import CBASHelper
-from common_lib import sleep
+from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
-from remote.remote_util import RemoteMachineShellConnection
+from CbasLib.CBASOperations import CBASHelper
+from CbasLib.cbas_entity import Dataverse, CBAS_Scope, Link, Dataset, \
+    CBAS_Collection, Synonym, CBAS_Index
+from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
+from common_lib import sleep
+from Queue import Queue
+from BucketLib.BucketOperations import BucketHelper
+from sdk_exceptions import SDKException
+from collections_helper.collections_spec_constants import MetaConstants, \
+    MetaCrudParams
+from Jython_tasks.task import Task, RunQueriesTask
 
 
-class CbasUtil:
-    def __init__(self, master, cbas_node, server_task=None):
+class BaseUtil(object):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
         self.log = logger.get("test")
-        self.cbas_node = cbas_node
-        self.master = master
         self.task = server_task
-        self.cbas_helper = CBASHelper(master, cbas_node)
 
-    def createConn(self, bucket, username=None, password=None):
-        self.cbas_helper.createConn(bucket, username, password)
+    def createConn(self, cluster, bucket, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper.createConn(bucket, username, password)
 
-    def closeConn(self):
-        self.cbas_helper.closeConn()
+    def closeConn(self, cluster):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper.closeConn()
 
-    def execute_statement_on_cbas_util(self, statement, mode=None, rest=None,
+    def execute_statement_on_cbas_util(self, cluster, statement, mode=None,
                                        timeout=120, client_context_id=None,
                                        username=None, password=None,
-                                       analytics_timeout=120, time_out_unit="s",
+                                       analytics_timeout=120,
+                                       time_out_unit="s",
                                        scan_consistency=None, scan_wait=None):
         """
         Executes a statement on CBAS using the REST API using REST Client
+        :param statement str, statement to execute on analytics workbench
+        :param mode str, cli, rest, jdk
+        :param timeout int, timeout is second for REST API request
+        :param client_context_id str
+        :param username str
+        :param password str
+        :param analytics_timeout int, timeout for analytics workbench
+        :param time_out_unit i,
+        :param scan_consistency str
+        :param scan_wait str
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         pretty = "true"
         try:
             self.log.debug("Running query on cbas: %s" % statement)
-            response = self.cbas_helper.execute_statement_on_cbas(
+            response = cbas_helper.execute_statement_on_cbas(
                 statement, mode, pretty, timeout, client_context_id,
                 username, password,
                 analytics_timeout=analytics_timeout,
@@ -82,19 +112,28 @@ class CbasUtil:
         except Exception as e:
             raise Exception(str(e))
 
-    def execute_parameter_statement_on_cbas_util(self, statement, mode=None,
-                                                 rest=None, timeout=120,
+    def execute_parameter_statement_on_cbas_util(self, cluster, statement, mode=None,
+                                                 timeout=120,
                                                  client_context_id=None,
                                                  username=None, password=None,
                                                  analytics_timeout=120,
-                                                 parameters=[]):
+                                                 parameters={}):
         """
         Executes a statement on CBAS using the REST API using REST Client
+        :param statement str, statement to execute on analytics workbench
+        :param mode str, cli, rest, jdk
+        :param timeout int, timeout is second for REST API request
+        :param client_context_id str
+        :param username str
+        :param password str
+        :param analytics_timeout int, timeout for analytics workbench
+        :param parameters dict,
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         pretty = "true"
         try:
             self.log.debug("Running query on cbas: %s" % statement)
-            response = self.cbas_helper.execute_parameter_statement_on_cbas(
+            response = cbas_helper.execute_parameter_statement_on_cbas(
                 statement, mode, pretty, timeout, client_context_id,
                 username, password,
                 analytics_timeout=analytics_timeout, parameters=parameters)
@@ -131,101 +170,551 @@ class CbasUtil:
         except Exception, e:
             raise Exception(str(e))
 
-    def create_dataverse_on_cbas(self, dataverse_name=None,
-                                 username=None,
-                                 password=None,
-                                 validate_error_msg=False,
-                                 expected_error=None,
-                                 expected_error_code=None):
+    def validate_error_in_response(self, status, errors, expected_error=None,
+                                   expected_error_code=None):
+        """
+        Validates the error response against the expected one.
+        :param status str, status returned by REST API call
+        :param errors list, errors returned by REST API call
+        :param expected_error str, error to match
+        :param expected_error_code str, error code to match
+        """
+        if status != "success":
+            actual_error = errors[0]["msg"]
+            if expected_error not in actual_error:
+                self.log.debug("Error message mismatch. Expected: %s, got: %s"
+                               % (expected_error, actual_error))
+                return False
+            self.log.debug("Error message matched. Expected: %s, got: %s"
+                           % (expected_error, actual_error))
+            if expected_error_code is not None:
+                if expected_error_code != errors[0]["code"]:
+                    self.log.debug("Error code mismatch. Expected: %s, got: %s"
+                                   % (expected_error_code, errors[0]["code"]))
+                    return False
+                self.log.info("Error code matched. Expected: %s, got: %s"
+                              % (expected_error_code, errors[0]["code"]))
+            return True
+        return False
 
-        if dataverse_name == "Default" or dataverse_name is None:
-            cmd = "create dataverse Default;"
+    @staticmethod
+    def generate_name(name_cardinality=1, max_length=30, fixed_length=False,
+                      name_key=None):
+        """
+        Creates a name based on name_cadinality.
+        :param name_cardinality: int, accepted values are -
+            0 - Creates string 'Default'
+            1 - Creates a string of random letters and digits of format
+            "exampleString"
+            2 - Creates a string of random letters and digits of format
+            "exampleString.exampleString"
+            3 - Creates a string of random letters and digits of format
+            "exampleString.exampleString.exampleString"
+            4 - Creates string 'Metadata'
+        :param max_length: int, number of characters in the name.
+        :param fixed_length: bool, If True, creates a name with length equals to no_of_char
+        specified, otherwise creates a name with length upto no_of_char specified.
+        :param name_key str, if specified, it will generate name with the name_key
+        """
+        random.seed(time.time())
+        if 0 < name_cardinality < 3:
+            if name_key:
+                return ".".join(name_key for i in range(name_cardinality))
+            else:
+                max_name_len = max_length / name_cardinality
+                if fixed_length:
+                    return '.'.join(''.join(random.choice(
+                        string.ascii_letters + string.digits)
+                                            for _ in range(max_name_len))
+                                    for _ in range(name_cardinality))
+                else:
+                    return '.'.join(''.join(random.choice(
+                        string.ascii_letters + string.digits)
+                                            for _ in range(
+                        random.randint(1, max_name_len)))
+                                    for _ in range(name_cardinality))
+        else:
+            return None
+
+    @staticmethod
+    def get_cbas_spec(module_name):
+        """
+        Fetches the cbas_specs from spec file mentioned.
+        :param module_name str, name of the module from where the specs have to be fetched
+        """
+        spec_package = importlib.import_module(
+            'pytests.cbas.cbas_templates.' +
+            module_name)
+        return copy.deepcopy(spec_package.spec)
+
+    @staticmethod
+    def update_cbas_spec(cbas_spec, updated_specs, sub_spec_name=None):
+        """
+        Updates new dataverse spec in the overall cbas spec.
+        :param cbas_spec dict, cbas spec dict
+        :param dataverse_spec dict, dataverse spec dict
+        """
+        for key, value in updated_specs.iteritems():
+            if key in cbas_spec:
+                cbas_spec[key] = value
+
+            if sub_spec_name:
+                if key in cbas_spec[sub_spec_name]:
+                    cbas_spec[sub_spec_name][key] = value
+
+    def run_jobs_in_parallel(self, jobs, results, thread_count,
+                             async_run=False):
+
+        def consume_from_queue(jobs, results):
+            while not jobs.empty():
+                job = jobs.get()
+                try:
+                    results.append(job[0](**job[1]))
+                except Exception as e:
+                    self.log.error(str(e))
+                    results.append(False)
+                finally:
+                    jobs.task_done()
+
+        # start worker threads
+        if jobs.qsize() < thread_count:
+            thread_count = jobs.qsize()
+        for tc in range(1, thread_count + 1):
+            worker = Thread(
+                target=consume_from_queue,
+                name="cbas_worker_{0}".format(str(tc)),
+                args=(jobs, results,))
+            worker.start()
+        if not async_run:
+            jobs.join()
+
+    @staticmethod
+    def get_kv_entity(cluster, bucket_util, bucket_cardinality=1,
+                      include_buckets=[], exclude_buckets=[],
+                      include_scopes=[], exclude_scopes=[],
+                      include_collections=[], exclude_collections=[]):
+        bucket = None
+        while not bucket:
+            bucket = random.choice(cluster.buckets)
+            if include_buckets and bucket.name not in include_buckets:
+                bucket = None
+            if exclude_buckets and bucket.name in exclude_buckets:
+                bucket = None
+        if bucket_cardinality > 1:
+            scope = None
+            while not scope:
+                scope = random.choice(bucket_util.get_active_scopes(bucket))
+                if include_scopes and scope.name not in include_scopes:
+                    scope = None
+                if exclude_scopes and scope.name in exclude_scopes:
+                    scope = None
+            if bucket_cardinality > 2:
+                collection = None
+                while not collection:
+                    collection = random.choice(
+                        bucket_util.get_active_collections(bucket, scope.name))
+                    if include_collections and collection.name not in include_collections:
+                        collection = None
+                    if exclude_collections and collection.name in exclude_collections:
+                        collection = None
+                return bucket, scope, collection
+            else:
+                return bucket, scope, None
+        else:
+            return bucket, None, None
+
+
+class Dataverse_Util(BaseUtil):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
+        super(Dataverse_Util, self).__init__(server_task)
+        # Initiate dataverses dict with Dataverse object for Default dataverse
+        self.dataverses = dict()
+        default_dataverse_obj = Dataverse()
+        self.dataverses[default_dataverse_obj.name] = default_dataverse_obj
+
+    def validate_dataverse_in_metadata(
+            self, cluster, dataverse_name, username=None,
+            password=None, timeout=120, analytics_timeout=120):
+        """
+        Validates whether a dataverse is present in Metadata.Dataverse
+        :param dataverse_name: str, Name of the dataverse which has to be validated.
+        :param username : str
+        :param password : str
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        :return boolean
+        """
+        self.log.debug("Validating dataverse entry in Metadata")
+        cmd = "select value dv from Metadata.`Dataverse` as dv where\
+         dv.DataverseName = \"{0}\";".format(
+            CBASHelper.metadata_format(dataverse_name))
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if status == "success":
+            if results:
+                return True
+            else:
+                return False
+        else:
+            return False
+
+    def create_dataverse(self, cluster, dataverse_name, username=None,
+                         password=None, validate_error_msg=False,
+                         expected_error=None, expected_error_code=None,
+                         if_not_exists=False, analytics_scope=False,
+                         timeout=120, analytics_timeout=120):
+        """
+        Creates dataverse.
+        :param dataverse_name: str, Name of the dataverse which has to be created.
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param if_not_exists bool, use IfNotExists flag to check dataverse exists before creation,
+        if a dataverse exists the query return successfully without creating any dataverse.
+        :param analytics_scope bool, If True, will use create analytics scope syntax
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        """
+        if analytics_scope:
+            cmd = "create analytics scope %s" % dataverse_name
+            obj = CBAS_Scope(dataverse_name)
         else:
             cmd = "create dataverse %s" % dataverse_name
+            obj = Dataverse(dataverse_name)
 
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd,
-                                                username=username,
-                                                password=password)
+        if if_not_exists:
+            cmd += " if not exists"
+
+        cmd += ";"
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error,
-                                                   expected_error_code)
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
                 return False
             else:
+                if not self.get_dataverse_obj(dataverse_name):
+                    self.dataverses[obj.name] = obj
                 return True
 
-    def drop_dataverse_on_cbas(self, dataverse_name=None,
-                               username=None,
-                               password=None,
-                               validate_error_msg=False,
-                               expected_error=None,
-                               expected_error_code=None):
-        if dataverse_name:
-            cmd = "drop dataverse %s;" % dataverse_name
-        else:
-            cmd = "drop dataverse Default;"
-
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd,
-                                                username=username,
-                                                password=password)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error,
-                                                   expected_error_code)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def create_link_on_cbas(self, link_name=None,
-                            ip_address=None,
-                            username=None,
-                            password=None,
-                            validate_error_msg=False,
-                            expected_error=None,
-                            expected_error_code=None):
-
-        if link_name == "Local" or link_name is None:
-            cmd = "create link Local"
-        else:
-            cmd = "create link %s WITH {'nodes': %s, 'user': %s, 'password': %s}"\
-                  % (link_name, ip_address, username, password)
-
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd,
-                                                username=username,
-                                                password=password)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error,
-                                                   expected_error_code)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def create_external_link_on_cbas(self, link_properties, username=None, password=None, timeout=120,
-                                     validate_error_msg=False, expected_error=None, expected_error_code=None):
+    def drop_dataverse(self, cluster, dataverse_name, username=None, password=None,
+                       validate_error_msg=False, expected_error=None,
+                       expected_error_code=None, if_exists=False,
+                       analytics_scope=False, timeout=120,
+                       analytics_timeout=120,
+                       delete_dataverse_obj=True,
+                       disconnect_local_link=False):
         """
-        Create an external link to AWS S3 service or an external couchbase server.
-        :param username : used for authentication while calling API.
-        :param password : used for authentication while calling API.
-        :param timeout : timeout for API response
-        :param validate_error_msg : boolean, If set to true, it will compare the error raised while creating the link
-        with the error msg or error code passed.
-        :param expected_error : str, expected error string
-        :param expected_error_code: str, expected error code
-        :param link_properties: dict, contains all the properties required to create a link.
+        Drops the dataverse.
+        :param dataverse_name: str, Name of the dataverse which has to be dropped.
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param if_exists bool, use IfExists flag to check dataverse exists before deletion,
+        if a dataverse does not exists the query return successfully without deleting any dataverse.
+        :param analytics_scope bool, If True, will use create analytics scope syntax
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        :param delete_dataverse_obj bool, deletes dropped dataverse's object from dataverse list
+        """
+        if disconnect_local_link:
+            link_cmd = "disconnect link {0}.Local".format(dataverse_name)
+            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+                cluster, link_cmd, username=username, password=password, timeout=timeout,
+                analytics_timeout=analytics_timeout)
+            if status != "success":
+                return False
+
+        if analytics_scope:
+            cmd = "drop analytics scope %s" % dataverse_name
+        else:
+            cmd = "drop dataverse %s" % dataverse_name
+
+        if if_exists:
+            cmd += " if exists"
+        cmd += ";"
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error,
+                                                   expected_error_code)
+        else:
+            if status != "success":
+                return False
+            else:
+                if delete_dataverse_obj:
+                    obj = self.get_dataverse_obj(dataverse_name)
+                    if obj:
+                        del self.dataverses[obj.name]
+                return True
+
+    def create_analytics_scope(self, cluster, cbas_scope_name, username=None,
+                               password=None,
+                               validate_error_msg=False, expected_error=None,
+                               expected_error_code=None, if_not_exists=False,
+                               timeout=120, analytics_timeout=120):
+        """
+        Creates analytics scope. This method is synthetic sugar for creating
+        dataverse in analytics.
+        :param cbas_scope_name: str, Name of the cbas_scope which has to be created.
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param if_not_exists bool, use IfNotExists flag to check dataverse exists before creation,
+        if a dataverse exists the query return successfully without creating any dataverse.
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        :return boolean
+        """
+        return self.create_dataverse(cluster, cbas_scope_name, username, password,
+                                     validate_error_msg, expected_error,
+                                     expected_error_code, if_not_exists, True,
+                                     timeout, analytics_timeout)
+
+    def drop_analytics_scope(self, cluster, cbas_scope_name, username=None,
+                             password=None,
+                             validate_error_msg=False, expected_error=None,
+                             expected_error_code=None, if_exists=False,
+                             timeout=120, analytics_timeout=120):
+        """
+        Drops the dataverse.
+        :param cbas_scope_name: str, Name of the cbas_scope which has to be dropped.
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param if_exists bool, use IfExists flag to check dataverse exists before deletion,
+        if a dataverse does not exists the query return successfully without deleting any dataverse.
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        :return boolean
+        """
+        return self.drop_dataverse(cluster, cbas_scope_name, username, password,
+                                   validate_error_msg,
+                                   expected_error, expected_error_code,
+                                   if_exists, True,
+                                   timeout, analytics_timeout)
+
+    def get_dataverse_obj(self, dataverse_name):
+        """
+        Return Dataverse/CBAS_scope object if dataverse with the required
+        name already exists.
+        :param dataverse_name str, fully qualified dataverse_name
+        """
+        return self.dataverses.get(dataverse_name, None)
+
+    @staticmethod
+    def get_dataverse_spec(cbas_spec):
+        """
+        Fetches dataverse specific specs from spec file mentioned.
+        :param cbas_spec dict, cbas spec dictonary.
+        """
+        return cbas_spec.get("dataverse", {})
+
+    def create_dataverse_from_spec(self, cluster, cbas_spec):
+        self.log.info("Creating dataverses based on CBAS Spec")
+
+        dataverse_spec = self.get_dataverse_spec(cbas_spec)
+        results = list()
+
+        if cbas_spec.get("no_of_dataverses", 1) > 1:
+            for i in range(1, cbas_spec.get("no_of_dataverses", 1)):
+                if dataverse_spec.get("name_key",
+                                      "random").lower() == "random":
+                    if dataverse_spec.get("cardinality", 0) == 0:
+                        name = self.generate_name(
+                            name_cardinality=random.choice([1, 2]))
+                    elif dataverse_spec.get("cardinality") == 1:
+                        name = self.generate_name(name_cardinality=1)
+                    elif dataverse_spec.get("cardinality") == 2:
+                        name = self.generate_name(name_cardinality=2)
+                else:
+                    name_key = dataverse_spec.get("name_key") + "_{0}".format(
+                        str(i))
+                    if dataverse_spec.get("cardinality", 0) == 0:
+                        name = self.generate_name(
+                            name_cardinality=random.choice([1, 2]),
+                            name_key=name_key)
+                    elif dataverse_spec.get("cardinality") == 1:
+                        name = name_key
+                    elif dataverse_spec.get("cardinality") == 2:
+                        name = self.generate_name(
+                            name_cardinality=2, name_key=name_key)
+
+                if dataverse_spec.get("creation_method",
+                                      "all").lower() == "all":
+                    dataverse = random.choice([Dataverse, CBAS_Scope])(name)
+                elif dataverse_spec.get(
+                        "creation_method").lower() == "dataverse":
+                    dataverse = Dataverse(name)
+                elif dataverse_spec.get(
+                        "creation_method").lower() == "analytics_scope":
+                    dataverse = CBAS_Scope(name)
+
+                if isinstance(dataverse, CBAS_Scope):
+                    analytics_scope = True
+                elif isinstance(dataverse, Dataverse):
+                    analytics_scope = False
+                results.append(
+                    self.create_dataverse(
+                        cluster, dataverse.name,
+                        if_not_exists=True,
+                        analytics_scope=analytics_scope,
+                        timeout=cbas_spec.get("api_timeout", 120),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 120)
+                    )
+                )
+
+            return all(results)
+        return True
+
+    def get_dataverses(self, cluster, retries=10):
+        dataverses_created = []
+        dataverse_query = "select value regexp_replace(dv.DataverseName,\"/\"," \
+            "\".\") from Metadata.`Dataverse` as dv where dv.DataverseName <> \"Metadata\";"
+        while not dataverses_created and retries:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                cluster, dataverse_query, mode="immediate", timeout=300,
+                analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                dataverses_created = list(
+                    map(lambda dv: dv.encode('utf-8'), results))
+                break
+            sleep(12, "Wait for atleast one dataverse to be created")
+            retries -= 1
+        return dataverses_created
+
+
+class Link_Util(Dataverse_Util):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
+        super(Link_Util, self).__init__(server_task)
+
+    def validate_link_in_metadata(self, cluster, link_name, dataverse_name,
+                                  link_type="Local", username=None, password=None,
+                                  is_active=False, timeout=120, analytics_timeout=120):
+        """
+        Validates whether a link is present in Metadata.Link
+        :param link_name: str, Name of the link to be validated.
+        :param dataverse_name: str, dataverse name where the link is present
+        :param link_type: str, type of link, valid values are Local, s3 or couchbase
+        :param username : str
+        :param password : str
+        :param is_active : bool, verifies whether the link is active or not, valid only for
+        Local and couchbase links
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        """
+        self.log.debug("Validating link entry in Metadata")
+        cmd = "select value lnk from Metadata.`Link` as lnk where\
+         lnk.DataverseName = \"{0}\" and lnk.Name = \"{1}\"".format(
+            CBASHelper.metadata_format(dataverse_name),
+            CBASHelper.unformat_name(link_name))
+
+        if link_type != "Local":
+            cmd += " and lnk.`Type` = \"{0}\"".format((link_type).upper())
+        cmd += ";"
+
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if status == "success":
+            if results:
+                if is_active:
+                    if (link_type).lower() != "s3" and results[0]["IsActive"]:
+                        return True
+                    else:
+                        return False
+                else:
+                    return True
+            else:
+                return False
+        else:
+            return False
+
+    def is_link_active(self, cluster, link_name, dataverse_name,
+                       link_type="Local", username=None, password=None,
+                       timeout=120, analytics_timeout=120):
+        """
+        Validates whether a link is active or not. Valid only for
+        Local and couchbase links
+        :param link_name: str, Name of the link whose status has to be checked.
+        :param dataverse_name: str, dataverse name where the link is present
+        :param link_type: str, type of link, valid values are Local, s3 or couchbase
+        :param username : str
+        :param password : str
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        """
+        return self.validate_link_in_metadata(
+            cluster, link_name, dataverse_name, link_type,
+            username, password, True, timeout, analytics_timeout)
+
+    def create_link_on_cbas(self, cluster, link_name=None, username=None,
+                            password=None, validate_error_msg=False,
+                            expected_error=None, expected_error_code=None,
+                            timeout=120, analytics_timeout=120):
+        """
+        This method will fail in all the scenarios. It is only
+        there to test negative scenario.
+        """
+        cmd = "create link {0};"
+
+        if not link_name:
+            link_name = "Local"
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def create_link(self, cluster, link_properties, username=None, password=None,
+                    validate_error_msg=False, expected_error=None,
+                    expected_error_code=None, create_if_not_exists=False,
+                    timeout=120, analytics_timeout=120, create_dataverse=True):
+        """
+        Creates Link.
+        :param link_properties: dict, parameters required for creating link.
         Common for both AWS and couchbase link.
         <Required> name : name of the link to be created.
-        <Required> dataverse : name of the dataverse under which the link has to be created.
+        <Required> scope : name of the dataverse under which the link has to be created.
         <Required> type : s3/couchbase
+
         For links to external couchbase cluster.
         <Required> hostname : The hostname of the link
         <Optional> username : The username for host authentication. Required if encryption is set to
@@ -239,45 +728,109 @@ class CbasUtil:
         Required only if encryption is set to "full" and username and password is not used.
         <Optional> clientKey : The client key for user authentication.
         Required only if encryption is set to "full" and username and password is not used.
+
         For links to AWS S3
         <Required> accessKeyId : The access key of the link
         <Required> secretAccessKey : The secret key of the link
         <Required> region : The region of the link
         <Optional> serviceEndpoint : The service endpoint of the link.
         Note - please use the exact key names as provided above in link properties dict.
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param create_if_not_exists bool, check link exists before creation
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
         """
-        link_prop = copy.deepcopy(link_properties)
-        params = dict()
-        uri = ""
-        if "dataverse" in link_prop:
-            uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                CBASHelper.unformat_name(link_prop["dataverse"])), safe=""))
-            del link_prop["dataverse"]
-        if "scope" in link_prop:
-            uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                CBASHelper.unformat_name(link_prop["scope"])), safe=""))
-            del link_prop["scope"]
-        if "name" in link_prop:
-            uri += "/{0}".format(urllib.quote(
-                CBASHelper.unformat_name(link_prop["name"]), safe=""))
-            del link_prop["name"]
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        self.log.info(
+            "Creating link - {0}.{1}".format(
+                link_properties["dataverse"], link_properties["name"]))
+        exists = False
+        if create_if_not_exists:
+            exists = self.validate_link_in_metadata(
+                cluster, link_properties["name"], link_properties["dataverse"],
+                link_properties["type"], username, password)
 
-        for key, value in link_prop.iteritems():
-            if value:
-                if isinstance(value, unicode):
-                    params[key] = str(value)
-                else:
-                    params[key] = value
-        params = urllib.urlencode(params)
-        status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
-            method="POST", uri=uri, params=params, timeout=timeout, username=username, password=password)
+        if not exists:
+            # If dataverse does not exits
+            if create_dataverse and not self.create_dataverse(
+                cluster, CBASHelper.format_name(link_properties["dataverse"]),
+                if_not_exists=True, timeout=timeout,
+                analytics_timeout=analytics_timeout):
+                return False
+
+            link_prop = copy.deepcopy(link_properties)
+            params = dict()
+            uri = ""
+            if "dataverse" in link_prop:
+                uri += "/{0}".format(urllib.quote_plus(CBASHelper.metadata_format(
+                    link_prop["dataverse"]), safe=""))
+                del link_prop["dataverse"]
+            if "name" in link_prop:
+                uri += "/{0}".format(urllib.quote_plus(
+                    CBASHelper.unformat_name(link_prop["name"]), safe=""))
+                del link_prop["name"]
+
+            for key, value in link_prop.iteritems():
+                if value:
+                    if isinstance(value, unicode):
+                        params[key] = str(value)
+                    else:
+                        params[key] = value
+            params = urllib.urlencode(params)
+            status, status_code, content, errors = cbas_helper.analytics_link_operations(
+                method="POST", uri=uri, params=params, timeout=timeout,
+                username=username, password=password)
+            if validate_error_msg:
+                return self.validate_error_in_response(
+                    status, errors, expected_error, expected_error_code)
+            return status
+        else:
+            return exists
+
+    def drop_link(self, cluster, link_name, username=None, password=None,
+                  validate_error_msg=False, expected_error=None,
+                  expected_error_code=None, if_exists=False,
+                  timeout=120, analytics_timeout=120):
+        """
+        Drop Link.
+        :param link_name: str, Name of the link to be dropped.
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param if_exists bool, check link exists before creation
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        """
+        cmd = "drop link %s" % link_name
+
+        if if_exists:
+            cmd += " if exists"
+        cmd += ";"
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
-        return status
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
 
-    def get_link_info(self, dataverse=None, link_name=None, link_type=None,
+    def get_link_info(self, cluster, dataverse=None, link_name=None, link_type=None,
                       username=None, password=None, timeout=120, restapi=True,
-                      validate_error_msg=False, expected_error=None, expected_error_code=None):
+                      validate_error_msg=False, expected_error=None,
+                      expected_error_code=None):
         """
         Fetch the list of links based on parameters passed.
         :param dataverse (optional) Dataverse name where the links reside.
@@ -293,29 +846,35 @@ class CbasUtil:
         :param restapi : True, if you want to create link using rest API. False, if you
         want to create link using DDL.
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if restapi:
             params = dict()
             uri = ""
             if dataverse:
-                uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                    CBASHelper.unformat_name(dataverse)), safe=""))
+                uri += "/{0}".format(urllib.quote_plus(
+                    CBASHelper.metadata_format(dataverse), safe=""))
             if link_name:
-                uri += "/{0}".format(urllib.quote(
+                uri += "/{0}".format(urllib.quote_plus(
                     CBASHelper.unformat_name(link_name), safe=""))
             if link_type:
                 params["type"] = link_type
             params = urllib.urlencode(params)
-            status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
-                method="GET", uri=uri, params=params, timeout=timeout, username=username, password=password)
+            status, status_code, content, errors = cbas_helper.analytics_link_operations(
+                method="GET", uri=uri, params=params, timeout=timeout,
+                username=username, password=password)
             if validate_error_msg:
-                return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
+                return self.validate_error_in_response(
+                    status, errors, expected_error, expected_error_code)
             if status:
                 return content
 
-    def update_external_link_properties(self, link_properties, username=None, password=None, timeout=120,
-                                        validate_error_msg=False, expected_error=None, expected_error_code=None):
+    def update_external_link_properties(
+            self, cluster, link_properties, username=None, password=None,
+            timeout=120, validate_error_msg=False, expected_error=None,
+            expected_error_code=None):
         """
         Update all the link properties with the new values.
+        :param link_properties: dict, parameters required for creating link.
         :param username : used for authentication while calling API.
         :param password : used for authentication while calling API.
         :param timeout : timeout for API response
@@ -323,42 +882,15 @@ class CbasUtil:
         with the error msg or error code passed.
         :param expected_error : str, expected error string
         :param expected_error_code: str, expected error code
-        :param link_properties: dict, contains all the properties required to create a link.
-        Common for both AWS and couchbase link.
-        <Required> name : name of the link to be created.
-        <Required> dataverse : name of the dataverse under which the link has to be created.
-        <Required> type : s3/couchbase
-        For links to external couchbase cluster.
-        <Required> hostname : The hostname of the link
-        <Optional> username : The username for host authentication. Required if encryption is set to
-        "none" or "half. Optional if encryption is set to "full".
-        <Optional> password : The password for host authentication. Required if encryption is set to
-        "none" or "half. Optional if encryption is set to "full".
-        <Required> encryption : The link secure connection type ('none', 'full' or 'half')
-        <Optional> certificate : The root certificate of target cluster for authentication.
-        Required only if encryption is set to "full"
-        <Optional> clientCertificate : The user certificate for authentication.
-        Required only if encryption is set to "full" and username and password is not used.
-        <Optional> clientKey : The client key for user authentication.
-        Required only if encryption is set to "full" and username and password is not used.
-        For links to AWS S3
-        <Required> accessKeyId : The access key of the link
-        <Required> secretAccessKey : The secret key of the link
-        <Required> region : The region of the link
-        <Optional> serviceEndpoint : The service endpoint of the link.
-        Note - please use the exact key names as provided above in link properties dict.
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         link_prop = copy.deepcopy(link_properties)
         params = dict()
         uri = ""
         if "dataverse" in link_prop:
             uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                CBASHelper.unformat_name(link_prop["dataverse"])), safe=""))
+                link_prop["dataverse"]), safe=""))
             del link_prop["dataverse"]
-        if "scope" in link_prop:
-            uri += "/{0}".format(urllib.quote(CBASHelper.metadata_format(
-                CBASHelper.unformat_name(link_prop["scope"])), safe=""))
-            del link_prop["scope"]
         if "name" in link_prop:
             uri += "/{0}".format(urllib.quote(
                 CBASHelper.unformat_name(link_prop["name"]), safe=""))
@@ -371,74 +903,425 @@ class CbasUtil:
                 else:
                     params[key] = value
         params = urllib.urlencode(params)
-        status, status_code, content, errors = self.cbas_helper.analytics_link_operations(
-            method="PUT", uri=uri, params=params, timeout=timeout, username=username, password=password)
+        status, status_code, content, errors = cbas_helper.analytics_link_operations(
+            method="PUT", uri=uri, params=params, timeout=timeout, username=username,
+            password=password)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors, expected_error, expected_error_code)
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
         return status
 
-    def drop_link_on_cbas(self, link_name=None,
-                          username=None,
-                          password=None,
-                          validate_error_msg=False,
-                          expected_error=None,
-                          expected_error_code=None):
-        if link_name:
-            cmd = "drop link %s;" % link_name
-        else:
-            cmd = "drop link Local;"
+    def connect_link(self, cluster, link_name, validate_error_msg=False,
+                     with_force=False, username=None, password=None,
+                     expected_error=None, expected_error_code=None, timeout=120,
+                     analytics_timeout=120):
+        """
+        Connects a Link
+        :param link_name: str, Name of the link to be connected.
+        :param with_force: bool, use force flag while connecting a link
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        """
+        cmd_connect_bucket = "connect link %s" % link_name
 
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd,
-                                                username=username,
-                                                password=password)
+        if with_force is True:
+            cmd_connect_bucket += " with {'force':true}"
+
+        retry_attempt = 5
+        connect_bucket_failed = True
+        while connect_bucket_failed and retry_attempt > 0:
+            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+                cluster, cmd_connect_bucket, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout)
+
+            if errors:
+                # Below errors are to be fixed in Alice, until they are fixed retry is only option
+                actual_error = errors[0]["msg"]
+                if "Failover response The vbucket belongs to another server" in actual_error or "Bucket configuration doesn't contain a vbucket map" in actual_error:
+                    retry_attempt -= 1
+                    self.log.debug("Retrying connecting of bucket")
+                    sleep(10)
+                else:
+                    self.log.debug("Not a vbucket error, so don't retry")
+                    connect_bucket_failed = False
+            else:
+                connect_bucket_failed = False
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error,
-                                                   expected_error_code)
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
                 return False
             else:
                 return True
 
-    def create_dataset_on_bucket(self, cbas_bucket_name, cbas_dataset_name,
-                                 where_field=None, where_value = None,
-                                 validate_error_msg=False, username = None,
-                                 password = None, expected_error=None, dataverse=None, compress_dataset=False,
-                                 link_name=None, timeout=120, analytics_timeout=120):
+    def disconnect_link(self, cluster, link_name, validate_error_msg=False,
+                        username=None, password=None, expected_error=None,
+                        expected_error_code=None, timeout=120, analytics_timeout=120):
         """
-        Creates a shadow dataset on a CBAS bucket
+        Disconnects a link
+        :param link_name: str, Name of the link to be disconnected.
+        :param disconnect_if_connected: bool, use force flag while connecting a link
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
         """
-        if '`' not in cbas_bucket_name:
-            cbas_bucket_name = "`"+cbas_bucket_name+"`"
-
-        cmd_create_dataset = "create dataset {0} ".format(cbas_dataset_name)
-        if compress_dataset:
-            cmd_create_dataset = cmd_create_dataset + "with {'storage-block-compression': {'scheme': 'snappy'}} "
-
-        cmd_create_dataset = cmd_create_dataset + "on {0} ".format(cbas_bucket_name)
-
-        if link_name:
-            cmd_create_dataset += "at {0} ".format(link_name)
-
-        if where_field and where_value:
-            cmd_create_dataset = cmd_create_dataset + "WHERE `{0}`=\"{1}\";".format(where_field, where_value)
-        else:
-            cmd_create_dataset = cmd_create_dataset + ";"
-
-            #cmd_create_dataset = "create dataset {0} on {1};".format(
-        #    cbas_dataset_name, cbas_bucket_name)
-        #if where_field and where_value:
-        #    cmd_create_dataset = "create dataset {0} on {1} WHERE `{2}`=\"{3}\";".format(
-        #        cbas_dataset_name, cbas_bucket_name, where_field, where_value)
-
-        if dataverse is not None:
-            dataverse_prefix = 'use ' + dataverse + ';\n'
-            cmd_create_dataset = dataverse_prefix + cmd_create_dataset
+        cmd_disconnect_link = 'disconnect link %s;' % link_name
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd_create_dataset, username=username, password=password,timeout=timeout,
+            cluster, cmd_disconnect_link, username=username, password=password,
+            timeout=timeout, analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    @staticmethod
+    def get_link_spec(cbas_spec):
+        """
+        Fetches link specific specs from spec file mentioned.
+        :param cbas_spec dict, cbas spec dictonary.
+        """
+        return cbas_spec.get("link", {})
+
+    def create_link_from_spec(self, cluster, cbas_spec):
+        self.log.info("Creating Links based on CBAS Spec")
+
+        link_spec = self.get_link_spec(cbas_spec)
+        results = list()
+
+        if cbas_spec.get("no_of_links", 0) > 0:
+
+            if cbas_spec.get("percent_of_remote_links", 0) == cbas_spec.get(
+                    "percent_of_external_links", 0) or cbas_spec.get(
+                "percent_of_remote_links", 0) + cbas_spec.get(
+                "percent_of_external_links", 0) > 100:
+                no_of_remote_links = cbas_spec.get("no_of_links") // 2
+                no_of_external_links = cbas_spec.get("no_of_links") // 2
+            else:
+                no_of_remote_links = (cbas_spec.get("no_of_links") * cbas_spec.get(
+                    "percent_of_remote_links")) // 100
+                no_of_external_links = (cbas_spec.get("no_of_links") * cbas_spec.get(
+                    "percent_of_external_links")) // 100
+
+            for i in range(1, cbas_spec.get("no_of_links") + 1):
+                if link_spec.get("name_key", "random").lower() == "random":
+                    name = self.generate_name(name_cardinality=1)
+                else:
+                    name = link_spec.get("name_key") + "_{0}".format(str(i))
+
+                dataverse = None
+                while not dataverse:
+                    dataverse = random.choice(self.dataverses.values())
+                    if link_spec.get("include_dataverses",
+                                     []) and CBASHelper.unformat_name(
+                        dataverse.name) not in link_spec.get(
+                        "include_dataverses"):
+                        dataverse = None
+                    if link_spec.get("exclude_dataverses",
+                                     []) and CBASHelper.unformat_name(
+                        dataverse.name) in link_spec.get(
+                        "exclude_dataverses"):
+                        dataverse = None
+
+                link = Link(
+                    name=name, dataverse_name=dataverse.name,
+                    properties=random.choice(link_spec.get("properties", [{}])))
+
+                if link.link_type == "s3":
+                    if no_of_external_links > 0:
+                        no_of_external_links -= 1
+                    else:
+                        while link.link_type == "s3":
+                            link = Link(
+                                name=name, dataverse_name=dataverse.name,
+                                properties=random.choice(link_spec.get("properties")))
+                        no_of_remote_links -= 1
+                elif link.link_type == "couchbase":
+                    if no_of_remote_links > 0:
+                        no_of_remote_links -= 1
+                    else:
+                        while link.link_type == "couchbase":
+                            link = Link(
+                                name=name, dataverse_name=dataverse.name,
+                                properties=random.choice(link_spec.get("properties")))
+                        no_of_external_links -= 1
+                if not self.create_link(
+                        cluster, link.properties, create_if_not_exists=True,
+                        timeout=cbas_spec.get("api_timeout", 120),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
+                    results.append(False)
+                else:
+                    dataverse.links[link.name] = link
+                    results.append(True)
+
+            return all(results)
+        return True
+
+    def get_link_obj(self, cluster, link_name, link_type=None, dataverse_name=None):
+        """
+        Return Link object if the link with the required name already exists.
+        If dataverse_name or link_type is not mentioned then it will return first
+        link found with the link_name.
+        :param link_name str, name of the link whose object has to returned.
+        :param link_type str, s3 or couchbase
+        :param dataverse_name str, name of the dataverse where the link is present
+        """
+        if not dataverse_name:
+            cmd = "select value lnk from Metadata.`Link` as lnk where lnk.Name = \"{0}\"".format(
+                CBASHelper.unformat_name(link_name))
+
+            if link_type:
+                cmd += " and lnk.`Type` = \"{0}\"".format((link_type).upper())
+            cmd += ";"
+
+            self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+                cluster, cmd)
+            if status == "success":
+                if results:
+                    dataverse_name = CBASHelper.format_name(
+                        results[0]["DataverseName"])
+                    link_type = results[0]["Type"]
+                else:
+                    return None
+            else:
+                return None
+
+        dataverse_obj = self.get_dataverse_obj(dataverse_name)
+        link = dataverse_obj.links.get(link_name, None)
+        if link and link_type:
+            if link_type.lower() == link.link_type:
+                return link
+            else:
+                return None
+        return link
+
+    def list_all_link_objs(self, link_type=None):
+        """
+        Returns list of all link objects across all the dataverses.
+        :param link_type str, s3 or couchbase, if None returns all link types
+        """
+        link_objs = list()
+        for dataverse in self.dataverses.values():
+            if not link_type:
+                link_objs.extend(dataverse.links.values())
+            else:
+                for link in dataverse.links.values():
+                    if link.link_type == link_type.lower():
+                        link_objs.append(link)
+        return link_objs
+
+    def create_link_obj(
+            self, cluster, link_type, dataverse=None, link_cardinality=1,
+            hostname=None, username=None, password=None, encryption=None,
+            certificate=None, clientCertificate=None, clientKey=None,
+            accessKeyId=None, secretAccessKey=None, regions=[],
+            serviceEndpoint=None, no_of_objs=1, name_length=30,
+            fixed_length=False):
+        """
+        Generates Link objects.
+        """
+        count = 0
+        while count < no_of_objs:
+            if not dataverse:
+                if link_cardinality > 1:
+                    dataverse_name = CBASHelper.format_name(self.generate_name(
+                        name_cardinality=link_cardinality - 1,
+                        max_length=name_length - 1,
+                        fixed_length=fixed_length))
+                    if not self.create_dataverse(
+                        cluster, dataverse_name, if_not_exists=True):
+                        raise Exception("Error while creating dataverse")
+                    dataverse = self.get_dataverse_obj(dataverse_name)
+                else:
+                    dataverse = self.get_dataverse_obj("Default")
+
+            if link_type.lower() == "s3":
+                link = Link(
+                    name=self.generate_name(
+                        name_cardinality=1, max_length=name_length,
+                        fixed_length=fixed_length),
+                    dataverse_name=dataverse.name,
+                    properties={"type": "s3", "accessKeyId":accessKeyId,
+                                "secretAccessKey":secretAccessKey,
+                                "region":random.choice(regions),
+                                "serviceEndpoint":serviceEndpoint})
+            elif link_type.lower() == "couchbase":
+                link = Link(
+                    name=self.generate_name(
+                        name_cardinality=1, max_length=name_length,
+                        fixed_length=fixed_length),
+                    dataverse_name=dataverse.name,
+                    properties={"type": "couchbase", "hostname":hostname,
+                                "username":username, "password":password,
+                                "encryption":encryption,
+                                "certificate":certificate,
+                                "clientCertificate":clientCertificate,
+                                "clientKey":clientKey})
+            dataverse.links[link.name] = link
+            count += 1
+
+    def validate_get_link_info_response(
+            self, cluster, link_properties, username=None, password=None,
+            timeout=120, restapi=True):
+        response = self.get_link_info(
+            cluster, link_properties["dataverse"], link_properties["name"],
+            link_properties["type"], username=username, password=password,
+            timeout=timeout, restapi=restapi)
+        if "secretAccessKey" in link_properties:
+            link_properties["secretAccessKey"] = "<redacted sensitive entry>"
+        entry_present = False
+        for r in response:
+            while not entry_present:
+                if link_properties.viewitems() <= r.viewitems():
+                    entry_present = True
+            if entry_present:
+                break
+        return entry_present
+
+
+class Dataset_Util(Link_Util):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
+        super(Dataset_Util, self).__init__(server_task)
+
+    def validate_dataset_in_metadata(
+            self, cluster, dataset_name, dataverse_name=None, username=None,
+            password=None, timeout=120, analytics_timeout=120, **kwargs):
+        """
+        validates metadata information about a dataset with entry in Metadata.Dataset collection.
+        :param dataset_name str, name of the dataset to be validated.
+        :param dataverse_name str, name of the dataverse where the dataset is present.
+        :param username : str
+        :param password : str
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        :param **kwargs dict, other Metadata attributes that needs to be validated.
+        """
+        self.log.debug("Validating dataset entry in Metadata")
+        cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE DatasetName="{0}"'.format(
+            CBASHelper.unformat_name(dataset_name))
+        if dataverse_name:
+            cmd += ' and DataverseName = "{0}"'.format(
+                CBASHelper.metadata_format(dataverse_name))
+        cmd += ";"
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if status == "success" and results:
+            for result in results:
+                if result["DatasetType"] == "INTERNAL":
+                    for key, value in kwargs.items():
+                        if value != result.get(key, ''):
+                            self.log.error(
+                                "Data Mismatch. Expected - {0} /t Actual - {1}".format(
+                                    result.get(key, ''), value))
+                            return False
+                elif result["DatasetType"] == "EXTERNAL":
+                    for prop in results["ExternalDetails"]["Properties"]:
+                        if prop["Name"] == "container":
+                            actual_link_name = prop["Value"]
+                        if prop["Name"] == "name":
+                            actual_bucket_name = prop["Value"]
+                    if actual_link_name != kwargs["link_name"]:
+                        self.log.error(
+                            "Link name mismatch. Expected - {0} /t Actual - {1}".format(
+                                kwargs["link_name"], actual_link_name))
+                        return False
+                    if actual_bucket_name != kwargs["bucket_name"]:
+                        self.log.error(
+                            "Bucket name mismatch. Expected - {0} /t Actual - {1}".format(
+                                kwargs["bucket_name"], actual_bucket_name))
+                        return False
+            return True
+        else:
+            return False
+
+    def create_dataset(
+            self, cluster, dataset_name, kv_entity, dataverse_name=None,
+            if_not_exists=False, compress_dataset=False, with_clause=None,
+            link_name=None, where_clause=None, validate_error_msg=False,
+            username=None, password=None, expected_error=None, timeout=120,
+            analytics_timeout=120, analytics_collection=False):
+        """
+        Creates a dataset/analytics collection on a KV bucket.
+        :param dataset_name str, fully qualified dataset name.
+        :param kv_entity str, fully qualified KV entity name, can be only bucket name or
+        bucket.scope.collection.
+        :param dataverse_name str, Dataverse where dataset is to be created.
+        :param if_not_exists bool, if this flag is set then, if a dataset with same name is present
+        in the same dataverse, then the create statement will pass without creating a new dataset.
+        :param compress_dataset bool, use to set compression policy for dataset.
+        :param with_clause str, use to set other conditions apart from compress dataset, can be of format
+        { "merge-policy": {"name": <>, "parameters": {"max-mergable-component-size": <>,"max-tolerance-component-count": <>}}}
+        :param link_name str, used only while creating dataset on remote cluster, specifies link to be used to ingest data.
+        :param where_clause str, used to filter content while ingesting docs from KV, format - `field_name`="field_value"
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        :param analytics_collection bool, If True, will use create analytics collection syntax
+        """
+        if dataverse_name and not self.create_dataverse(
+                cluster, dataverse_name=dataverse_name, username=username,
+                password=password, if_not_exists=True, timeout=timeout,
+                analytics_timeout=analytics_timeout):
+            return False
+
+        if analytics_collection:
+            cmd = "create analytics collection"
+        else:
+            cmd = "create dataset"
+
+        if if_not_exists:
+            cmd += " if not exists"
+
+        if dataverse_name:
+            cmd += " {0}.{1}".format(dataverse_name, dataset_name)
+        else:
+            cmd += " {0}".format(dataset_name)
+
+        if compress_dataset:
+            cmd += " with {'storage-block-compression': {'scheme': 'snappy'}}"
+
+        if with_clause:
+            cmd += " " + with_clause
+
+        cmd += " on {0}".format(kv_entity)
+
+        if link_name:
+            cmd += " at {0}".format(link_name)
+
+        if where_clause:
+            cmd += " where " + where_clause
+
+        cmd += ";"
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
@@ -449,65 +1332,59 @@ class CbasUtil:
             else:
                 return True
 
-    def create_dataset_on_bucket_merge_policy(
-            self, cbas_bucket_name, cbas_dataset_name,
-            where_field=None,
-            where_value=None,
-            validate_error_msg=False,
-            username=None,
-            password=None,
-            expected_error=None,
-            merge_policy="no-merge",
-            max_mergable_component_size=16384,
-            max_tolerance_component_count=2):
+    def create_analytics_collection(
+            self, cluster, dataset_name, kv_entity, dataverse_name=None,
+            if_not_exists=False, compress_dataset=False, with_clause=None,
+            link_name=None, where_clause=None, validate_error_msg=False,
+            username=None, password=None, expected_error=None,
+            timeout=120, analytics_timeout=120):
         """
-        Creates a shadow dataset on a CBAS bucket
+        Creates a analytics collection which is syntactic sugar for creating datasets.
+        :param dataset_name str, fully qualified dataset name.
+        :param kv_entity str, fully qualified KV entity name, can be only bucket name or
+        bucket.scope.collection.
+        :param dataverse_name str, Dataverse where dataset is to be created.
+        :param if_not_exists bool, if this flag is set then, if a dataset with same name is present
+        in the same dataverse, then the create statement will pass without creating a new dataset.
+        :param compress_dataset bool, use to set compression policy for dataset.
+        :param with_clause str, use to set other conditions apart from compress dataset, can be of format
+        { "merge-policy": {"name": <>, "parameters": {"max-mergable-component-size": <>,"max-tolerance-component-count": <>}}}
+        :param link_name str, used only while creating dataset on remote cluster, specifies link to be used to ingest data.
+        :param where_clause str, used to filter content while ingesting docs from KV, format - `field_name`="field_value"
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
         """
-        if merge_policy == "no-merge":
-            cmd_create_dataset = 'create dataset %s with { "merge-policy": {"name": "%s"}} on %s;'\
-            % (cbas_dataset_name, merge_policy, cbas_bucket_name)
-            if where_field and where_value:
-                cmd_create_dataset = 'create dataset %s with { "merge-policy": {"name": "%s" }} on %s WHERE `%s`=\"%s\";'%(
-                    cbas_dataset_name, merge_policy, cbas_bucket_name, where_field, where_value)
-        else:
-            cmd_create_dataset = 'create dataset %s with { "merge-policy": {"name": "%s", "parameters": {"max-mergable-component-size": %s, "max-tolerance-component-count": %s}}} on %s;'\
-            %(cbas_dataset_name, merge_policy, max_mergable_component_size, max_tolerance_component_count, cbas_bucket_name)
-            if where_field and where_value:
-                cmd_create_dataset = 'create dataset %s with { "merge-policy": {"name": "%s", "parameters": {"max-mergable-component-size": %s,"max-tolerance-component-count": %s}}} on %s WHERE `%s`=\"%s\";'%(
-                                        cbas_dataset_name, merge_policy,
-                                        max_mergable_component_size, max_tolerance_component_count,
-                                        cbas_bucket_name, where_field, where_value)
+        return self.create_dataset(
+            cluster, dataset_name, kv_entity, dataverse_name, if_not_exists,
+            compress_dataset, with_clause, link_name, where_clause,
+            validate_error_msg, username, password, expected_error,
+            timeout, analytics_timeout, True)
 
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd_create_dataset,
-                                                username=username,
-                                                password=password)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def create_dataset_on_external_resource(self, cbas_dataset_name, aws_bucket_name, link_name,
-                                            object_construction_def=None, dataverse="Default",
-                                            path_on_aws_bucket=None, file_format="json", redact_warning=None,
-                                            header=None, null_string=None, include=None, exclude=None,
-                                            validate_error_msg=False, username = None,
-                                            password = None, expected_error=None, expected_error_code=None,
-                                            links_dataverse="Default"):
+    def create_dataset_on_external_resource(
+            self, cluster, dataset_name, aws_bucket_name, link_name,
+            if_not_exists=False, dataverse_name=None, object_construction_def=None,
+            path_on_aws_bucket=None, file_format="json", redact_warning=None,
+            header=None, null_string=None, include=None, exclude=None,
+            validate_error_msg=False, username=None, password=None,
+            expected_error=None, expected_error_code=None,
+            timeout=120, analytics_timeout=120, create_dv=True):
         """
         Creates a dataset for an external resource like AWS S3 bucket.
         Note - No shadow dataset is created for this type of external datasets.
-        :param cbas_dataset_name (str) : Name for the dataset to be created.
+        :param dataset_name (str) : Name for the dataset to be created.
         :param aws_bucket_name (str): AWS S3 bucket to which this dataset is to be linked. S3 bucket should be in
         the same region as the link, that is used to create this dataset.
+        :param dataverse_name str, Dataverse where dataset is to be created.
+        :param if_not_exists bool, if this flag is set then, if a dataset with same name is present
+        in the same dataverse, then the create statement will pass without creating a new dataset.
         :param link_name (str): external link to AWS S3
         :param object_construction_def (str): It defines how the data read will be parsed.
         Required only for csv and tsv formats.
-        :param dataverse (str): Name of the dataverse where dataset is to be created.
         :param path_on_aws_bucket (str): Relative path in S3 bucket, from where the files will be read.
         :param file_format (str): Type of files to read. Valid values - json, csv and tsv
         :param redact_warning (bool): internal information like e.g. filenames are redacted from warning messages.
@@ -515,30 +1392,40 @@ class CbasUtil:
         the expected behaviour is that the first record (the header) is skipped.
         False means every csv, tsv file does not have a header.
         :param null_string (str): a string that represents the NULL value if the field accepts NULLs.
+        :param include str, include filter
+        :param exclude str, exclude filter
         :param validate_error_msg (bool): validate errors that occur while creating dataset.
         :param username (str):
         :param password (str):
         :param expected_error (str):
         :param expected_error_code (str):
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
         :return True/False
 
         """
-        if dataverse != "Default":
-            cmd_create_dataset = "CREATE EXTERNAL DATASET {0}.{1}".format(
-                dataverse, cbas_dataset_name)
+        if create_dv and dataverse_name and not self.create_dataverse(
+            cluster, dataverse_name=dataverse_name, username=username,
+            password=password, if_not_exists=True):
+            return False
+
+        cmd = "CREATE EXTERNAL DATASET"
+
+        if if_not_exists:
+            cmd += " if not exists"
+
+        if dataverse_name:
+            cmd += " {0}.{1}".format(dataverse_name, dataset_name)
         else:
-            cmd_create_dataset = "CREATE EXTERNAL DATASET {0}".format(cbas_dataset_name)
+            cmd += " {0}".format(dataset_name)
 
         if object_construction_def:
-            cmd_create_dataset += "({0})".format(object_construction_def)
+            cmd += "({0})".format(object_construction_def)
 
-        if links_dataverse != "Default":
-            cmd_create_dataset += " ON `{0}` AT {1}.{2}".format(aws_bucket_name, links_dataverse, link_name)
-        else:
-            cmd_create_dataset += " ON `{0}` AT {1}".format(aws_bucket_name, link_name)
+        cmd += " ON `{0}` AT {1}".format(aws_bucket_name, link_name)
 
         if path_on_aws_bucket is not None:
-            cmd_create_dataset += " USING \"{0}\"".format(path_on_aws_bucket)
+            cmd += " USING \"{0}\"".format(path_on_aws_bucket)
 
         with_parameters = dict()
         with_parameters["format"] = file_format
@@ -558,58 +1445,11 @@ class CbasUtil:
         if exclude is not None:
             with_parameters["exclude"] = exclude
 
-        cmd_create_dataset += " WITH {0};".format(json.dumps(with_parameters))
+        cmd += " WITH {0};".format(json.dumps(with_parameters))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd_create_dataset, username=username, password=password)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error, expected_error_code)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def connect_link(self, link_name="Local",
-                     validate_error_msg=False,
-                     with_force=False,
-                     username=None,
-                     password=None,
-                     expected_error=None,
-                     expected_error_code=None,
-                     timeout=120,
-                     analytics_timeout=120):
-        """
-        Connects to a Link
-        """
-        cmd_connect_bucket = "connect link %s" % link_name
-
-        if with_force is True:
-            cmd_connect_bucket += " with {'force':true}"
-
-        retry_attempt = 5
-        connect_bucket_failed = True
-        while connect_bucket_failed and retry_attempt > 0:
-            status, metrics, errors, results, _ = \
-                self.execute_statement_on_cbas_util(cmd_connect_bucket,
-                                                    username=username,
-                                                    password=password,
-                                                    timeout=timeout,
-                                                    analytics_timeout=analytics_timeout)
-
-            if errors:
-                # Below errors are to be fixed in Alice, until they are fixed retry is only option
-                actual_error = errors[0]["msg"]
-                if "Failover response The vbucket belongs to another server" in actual_error or "Bucket configuration doesn't contain a vbucket map" in actual_error:
-                    retry_attempt -= 1
-                    self.log.debug("Retrying connecting of bucket")
-                    sleep(10)
-                else:
-                    self.log.debug("Not a vbucket error, so don't retry")
-                    connect_bucket_failed = False
-            else:
-                connect_bucket_failed = False
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
                                                    expected_error,
@@ -620,111 +1460,96 @@ class CbasUtil:
             else:
                 return True
 
-    def disconnect_link(self, link_name="Local",
-                        disconnect_if_connected=False,
-                        validate_error_msg=False,
-                        username=None,
-                        password=None,
-                        expected_error=None,
-                        expected_error_code=None):
+    def drop_dataset(
+            self, cluster, dataset_name, username=None, password=None,
+            validate_error_msg=False, expected_error=None, expected_error_code=None,
+            if_exists=False, analytics_collection=False, timeout=120,
+            analytics_timeout=120):
         """
-        Disconnects from a CBAS bucket
+        Drops the dataset.
+        :param dataset_name: str, dataset to be droppped
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param if_exists bool, use IfExists flag to check dataverse exists before deletion,
+        if a dataverse does not exists the query return successfully without deleting any dataverse.
+        :param analytics_collection bool, If True, will use create analytics collection syntax
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
         """
-        if disconnect_if_connected:
-            cmd_disconnect_link = 'disconnect link %s if connected;' \
-                                  % link_name
-        else:
-            cmd_disconnect_link = 'disconnect link %s;' % link_name
 
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd_disconnect_link,
-                                                username=username,
-                                                password=password)
+        if analytics_collection:
+            cmd = "drop analytics collection %s" % dataset_name
+        else:
+            cmd = "drop dataset %s" % dataset_name
+
+        if if_exists:
+            cmd += " if exists"
+        cmd += ";"
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error,
-                                                   expected_error_code)
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
                 return False
             else:
                 return True
 
-    def connect_to_bucket(self, cbas_bucket_name=None, cb_bucket_password=None,
-                          validate_error_msg=False,
-                          cb_bucket_username="Administrator",
-                          username=None, password=None, expected_error=None):
+    def drop_analytics_collection(
+            self, cluster, dataset_name, username=None, password=None,
+            validate_error_msg=False, expected_error=None, expected_error_code=None,
+            if_exists=False, timeout=120, analytics_timeout=120):
         """
-        Connects to a CBAS bucket
+        Drop a analytics collection which is syntactic sugar for dropping datasets.
+        :param dataset_name: str, dataset to be droppped
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param if_exists bool, use IfExists flag to check dataverse exists before deletion,
+        if a dataverse does not exists the query return successfully without deleting any dataverse.
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
         """
-        cmd_connect_bucket = "connect link Local;"
+        return self.drop_dataset(
+            cluster, dataset_name, username, password, validate_error_msg,
+            expected_error, expected_error_code, if_exists, True, timeout,
+            analytics_timeout)
 
-        retry_attempt = 5
-        connect_bucket_failed = True
-        while connect_bucket_failed and retry_attempt > 0:
-            status, metrics, errors, results, _ = \
-                self.execute_statement_on_cbas_util(cmd_connect_bucket,
-                                                    username=username,
-                                                    password=password)
-
-            if errors:
-                # Below errors are to be fixed in Alice, until they are fixed retry is only option
-                actual_error = errors[0]["msg"]
-                if "Failover response The vbucket belongs to another server" \
-                        in actual_error \
-                        or "Bucket configuration doesn't contain a vbucket map" in actual_error:
-                    retry_attempt -= 1
-                    self.log.debug("Retrying connecting of bucket")
-                    sleep(10)
-                else:
-                    self.log.debug("Not a vbucket error, so don't retry")
-                    connect_bucket_failed = False
-            else:
-                connect_bucket_failed = False
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def disconnect_from_bucket(self, cbas_bucket_name=None,
-                               disconnect_if_connected=False,
-                               validate_error_msg=False, username=None,
-                               password=None, expected_error=None):
+    def enable_analytics_from_KV(
+            self, cluster, kv_entity_name, compress_dataset=False,
+            validate_error_msg=False, expected_error=None, username=None,
+            password=None, timeout=120, analytics_timeout=120):
         """
-        Disconnects from a CBAS bucket
+        Enables analytics directly from KV.
+        :param kv_entity_name: string, can be fully quantified collection name
+        (bucket.scope.collection) or a bucket name.
+        :param compress_cbas_collection: boolean, to enable compression on created dataset.
+        :param validate_error_msg: boolean,
+        :param expected_error: string,
+        :param username: string,
+        :param password: string,
+        :param timeout: int,
+        :param analytics_timeout: int,
         """
+        cmd = "Alter collection {0} enable analytics ".format(kv_entity_name)
+        if compress_dataset:
+            cmd = cmd + "with {'storage-block-compression': {'scheme': 'snappy'}}"
+        cmd = cmd + ";"
 
-        cmd_disconnect_bucket = 'disconnect link Local;'
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd_disconnect_bucket,
-                                                username=username,
-                                                password=password)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def drop_dataset(self, cbas_dataset_name, dataverse="Default", validate_error_msg=False,
-                     username=None, password=None, expected_error=None):
-        """
-        Drop dataset from CBAS
-        """
-        if dataverse == "Default":
-            cmd_drop_dataset = "drop dataset {0};".format(cbas_dataset_name)
-        else:
-            cmd_drop_dataset = "drop dataset {0}.{1};".format(dataverse, cbas_dataset_name)
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd_drop_dataset,
-                                                username=username,
-                                                password=password)
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
                                                    expected_error)
@@ -734,19 +1559,77 @@ class CbasUtil:
             else:
                 return True
 
-    def drop_cbas_bucket(self, cbas_bucket_name, validate_error_msg=False,
-                         username=None, password=None, expected_error=None):
+    def disable_analytics_from_KV(
+            self, cluster, kv_entity_name, validate_error_msg=False,
+            expected_error=None, username=None, password=None,
+            timeout=120, analytics_timeout=120):
         """
-        Drop a CBAS bucket
+        Disables analytics directly from KV.
+        :param kv_entity_name: string, can be fully quantified collection name
+        (bucket.scope.collection) or a bucket name.
+        :param validate_error_msg: boolean,
+        :param expected_error: string,
+        :param username: string,
+        :param password: string,
+        :param timeout: int,
+        :param analytics_timeout: int,
         """
-        return True
+        cmd = "Alter collection {0} disable analytics;".format(kv_entity_name)
 
-    def wait_for_ingestion_complete(self, cbas_dataset_names, num_items,
-                                    timeout=300):
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def get_num_items_in_cbas_dataset(
+            self, cluster, dataset_name, timeout=300, analytics_timeout=300):
+        """
+        Gets the count of docs in the cbas dataset
+        """
+        total_items = -1
+        mutated_items = -1
+        cmd_get_num_items = "select count(*) from %s;" % dataset_name
+        cmd_get_num_mutated_items = "select count(*) from %s where mutated>0;" \
+                                    % dataset_name
+
+        status, metrics, errors, results, _ = \
+            self.execute_statement_on_cbas_util(
+                cluster, cmd_get_num_items, timeout=timeout,
+                analytics_timeout=analytics_timeout)
+        if status != "success":
+            self.log.error("Query failed")
+        else:
+            self.log.debug("No. of items in CBAS dataset {0} : {1}"
+                           .format(dataset_name, results[0]['$1']))
+            total_items = results[0]['$1']
+
+        status, metrics, errors, results, _ = \
+            self.execute_statement_on_cbas_util(
+                cluster, cmd_get_num_mutated_items,
+                timeout=timeout, analytics_timeout=analytics_timeout)
+        if status != "success":
+            self.log.error("Query failed")
+        else:
+            self.log.debug("No. of items mutated in CBAS dataset {0}: {1}"
+                           .format(dataset_name, results[0]['$1']))
+            mutated_items = results[0]['$1']
+
+        return total_items, mutated_items
+
+    def wait_for_ingestion_complete(
+            self, cluster, dataset_names, num_items, timeout=300):
 
         total_items = 0
-        for ds_name in cbas_dataset_names:
-            total_items += self.get_num_items_in_cbas_dataset(ds_name)[0]
+        for ds_name in dataset_names:
+            total_items += self.get_num_items_in_cbas_dataset(cluster, ds_name)[0]
 
         counter = 0
         while timeout > counter:
@@ -760,61 +1643,41 @@ class CbasUtil:
             else:
                 sleep(2)
                 total_items = 0
-                for ds_name in cbas_dataset_names:
-                    total_items += self.get_num_items_in_cbas_dataset(ds_name)[0]
+                for ds_name in dataset_names:
+                    total_items += self.get_num_items_in_cbas_dataset(
+                        cluster, ds_name)[0]
                 counter += 2
+
+        self.log.error("datasets: {0} ds-items: {1} kv-items: {2}".format(
+            dataset_names, total_items, num_items))
 
         return False
 
-    def get_num_items_in_cbas_dataset(self, dataset_name, timeout=300,
-                                      analytics_timeout=300):
-        """
-        Gets the count of docs in the cbas dataset
-        """
-        total_items = -1
-        mutated_items = -1
-        cmd_get_num_items = "select count(*) from %s;" % dataset_name
-        cmd_get_num_mutated_items = "select count(*) from %s where mutated>0;"\
-                                    % dataset_name
+    def wait_for_ingestion_all_datasets(self, cluster, bucket_util, timeout=600):
 
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(
-                cmd_get_num_items,
-                timeout=timeout,
-                analytics_timeout=analytics_timeout)
-        if status != "success":
-            self.log.error("Query failed")
-        else:
-            self.log.debug("No. of items in CBAS dataset {0} : {1}"
-                           .format(dataset_name, results[0]['$1']))
-            total_items = results[0]['$1']
+        self.refresh_dataset_item_count(bucket_util)
+        jobs = Queue()
+        results = []
+        datasets = self.list_all_dataset_objs()
+        if len(datasets) > 0:
+            self.log.info("Waiting for data to be ingested into datasets")
+            for dataset in datasets:
+                jobs.put((
+                    self.wait_for_ingestion_complete,
+                    {"cluster": cluster, "dataset_names": [dataset.full_name],
+                     "num_items": dataset.num_of_items, "timeout": timeout}))
+        self.run_jobs_in_parallel(jobs, results, 15, async_run=False)
+        return all(results)
 
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(
-                cmd_get_num_mutated_items,
-                timeout=timeout,
-                analytics_timeout=analytics_timeout)
-        if status != "success":
-            self.log.error("Query failed")
-        else:
-            self.log.debug("No. of items mutated in CBAS dataset {0}: {1}"
-                           .format(dataset_name, results[0]['$1']))
-            mutated_items = results[0]['$1']
-
-        return total_items, mutated_items
-
-    def validate_cbas_dataset_items_count(self, dataset_name, expected_count,
-                                          expected_mutated_count=0,
-                                          num_tries=12,
-                                          timeout=300,
-                                          analytics_timeout=300):
+    def validate_cbas_dataset_items_count(
+            self, cluster, dataset_name, expected_count, expected_mutated_count=0,
+            num_tries=12, timeout=300, analytics_timeout=300):
         """
         Compares the count of CBAS dataset total
         and mutated items with the expected values.
         """
         count, mutated_count = self.get_num_items_in_cbas_dataset(
-            dataset_name,
-            timeout=timeout,
+            cluster, dataset_name, timeout=timeout,
             analytics_timeout=analytics_timeout)
         tries = num_tries
         if expected_mutated_count:
@@ -822,16 +1685,14 @@ class CbasUtil:
                    or mutated_count != expected_mutated_count) and tries > 0:
                 sleep(10)
                 count, mutated_count = self.get_num_items_in_cbas_dataset(
-                    dataset_name,
-                    timeout=timeout,
+                    cluster, dataset_name, timeout=timeout,
                     analytics_timeout=analytics_timeout)
                 tries -= 1
-        else :
+        else:
             while count != expected_count and tries > 0:
                 sleep(10)
                 count, mutated_count = self.get_num_items_in_cbas_dataset(
-                    dataset_name,
-                    timeout=timeout,
+                    cluster, dataset_name, timeout=timeout,
                     analytics_timeout=analytics_timeout)
                 tries -= 1
 
@@ -847,25 +1708,1766 @@ class CbasUtil:
         else:
             return False
 
-    def delete_request(self, client_context_id, username=None, password=None):
+    def get_dataset_compression_type(self, cluster, dataset_name):
+        query = "select raw BlockLevelStorageCompression.DatasetCompressionScheme from Metadata.`Dataset` where DatasetName='{0}';".format(
+            CBASHelper.unformat_name(dataset_name))
+        _, _, _, ds_compression_type, _ = self.execute_statement_on_cbas_util(
+            cluster, query)
+        ds_compression_type = ds_compression_type[0]
+        if ds_compression_type is not None:
+            ds_compression_type = ds_compression_type.encode('ascii', 'ignore')
+        self.log.info(
+            "Compression Type for Dataset {0} is {1}".format(dataset_name,
+                                                             ds_compression_type))
+
+        return ds_compression_type
+
+    def get_dataset_obj(self, cluster, dataset_name, dataverse_name=None):
+        """
+        Return Dataset/CBAS_collection object if the dataset with the required name already exists.
+        If dataverse_name is not mentioned then it will return first dataset found with the dataset_name.
+        :param dataset_name str, name of the dataset whose object has to returned.
+        :param dataverse_name str, name of the dataverse where the dataset is present
+        """
+        if not dataverse_name:
+            cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE DatasetName="{0}";'.format(
+                CBASHelper.unformat_name(dataset_name))
+            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+                cluster, cmd)
+            if status == "success" and results:
+                dataverse_name = CBASHelper.format_name(
+                    results[0]["DataverseName"])
+            else:
+                return None
+
+        dataverse_obj = self.get_dataverse_obj(dataverse_name)
+        return dataverse_obj.datasets.get(dataset_name, None)
+
+    def list_all_dataset_objs(self, dataset_source=None):
+        """
+        Returns list of all Dataset/CBAS_Collection objects across all the dataverses.
+        """
+        dataset_objs = list()
+        for dataverse in self.dataverses.values():
+            if not dataset_source:
+                dataset_objs.extend(dataverse.datasets.values())
+            else:
+                for dataset in dataverse.datasets.values():
+                    if dataset.dataset_source == dataset_source:
+                        dataset_objs.append(dataset)
+        return dataset_objs
+
+    @staticmethod
+    def get_dataset_spec(cbas_spec):
+        """
+        Fetches link specific specs from spec file mentioned.
+        :param cbas_spec dict, cbas spec dictonary.
+        """
+        return cbas_spec.get("dataset", {})
+
+    def create_dataset_from_spec(self, cluster, cbas_spec, bucket_util):
+        self.log.info("Creating Datasets based on CBAS Spec")
+
+        dataset_spec = self.get_dataset_spec(cbas_spec)
+
+        if cbas_spec.get("no_of_datasets_per_dataverse", 0) > 0:
+            results = list()
+
+            remote_link_objs = set()
+            external_link_objs = set()
+            if cbas_spec.get("no_of_links", 0) > 0:
+                # Return false if both include and exclude link types are same.
+                if dataset_spec.get(
+                    "include_link_types", "all") == dataset_spec.get(
+                        "exclude_link_types", None):
+                    return False
+
+                if dataset_spec.get(
+                    "include_link_types", "all").lower() == "all" and not dataset_spec.get(
+                        "exclude_link_types", None):
+                    remote_link_objs |= set(self.list_all_link_objs("couchbase"))
+                    external_link_objs |= set(self.list_all_link_objs("s3"))
+                else:
+                    if dataset_spec.get(
+                            "include_link_types").lower() == "s3" or dataset_spec.get(
+                        "exclude_link_types").lower() == "couchbase":
+                        external_link_objs |= set(
+                            self.list_all_link_objs("s3"))
+                    elif dataset_spec.get(
+                            "include_link_types").lower() == "couchbase" or dataset_spec.get(
+                        "exclude_link_types").lower() == "s3":
+                        remote_link_objs |= set(
+                            self.list_all_link_objs("couchbase"))
+
+                if dataset_spec.get("include_links", []):
+                    for link_name in dataset_spec["include_links"]:
+                        link_obj = self.get_link_obj(
+                            cluster, CBASHelper.format_name(link_name))
+                        if link_obj.link_type == "s3":
+                            external_link_objs |= set([link_obj])
+                        else:
+                            remote_link_objs |= set([link_obj])
+
+                if dataset_spec.get("exclude_links", []):
+                    for link_name in dataset_spec["exclude_links"]:
+                        link_obj = self.get_link_obj(
+                            cluster, CBASHelper.format_name(link_name))
+                        if link_obj.link_type == "s3":
+                            external_link_objs -= set([link_obj])
+                        else:
+                            remote_link_objs -= set([link_obj])
+            remote_link_objs = list(remote_link_objs)
+            external_link_objs = list(external_link_objs)
+
+            if cbas_spec.get("no_of_dataverses", 1) == 0:
+                cbas_spec["no_of_dataverses"] = 1
+            total_no_of_datasets = cbas_spec.get("no_of_dataverses",
+                                                 1) * cbas_spec.get(
+                "no_of_datasets_per_dataverse",
+                0)
+            if cbas_spec.get("percent_of_local_datasets", 0) == cbas_spec.get(
+                    "percent_of_remote_datasets", 0) == cbas_spec.get(
+                "percent_of_external_datasets",
+                0) or cbas_spec.get(
+                "percent_of_local_datasets", 0) + cbas_spec.get(
+                "percent_of_remote_datasets", 0) + cbas_spec.get(
+                "percent_of_external_datasets", 0) > 100:
+                no_of_external_datasets = total_no_of_datasets // 3
+                no_of_remote_datasets = total_no_of_datasets // 3
+                no_of_local_datasets = total_no_of_datasets // 3
+            else:
+                no_of_external_datasets = (total_no_of_datasets * cbas_spec.get(
+                    "percent_of_external_datasets", 0)) // 100
+                no_of_remote_datasets = (total_no_of_datasets * cbas_spec.get(
+                    "percent_of_remote_datasets")) // 100
+                no_of_local_datasets = total_no_of_datasets - no_of_external_datasets - no_of_remote_datasets
+
+            for dataverse in self.dataverses.values():
+                if dataset_spec.get(
+                    "include_dataverses", []) and CBASHelper.unformat_name(
+                        dataverse.name) not in dataset_spec["include_dataverses"]:
+                    dataverse = None
+                if dataset_spec.get(
+                    "exclude_dataverses", []) and CBASHelper.unformat_name(
+                        dataverse.name) in dataset_spec["exclude_dataverses"]:
+                    dataverse = None
+
+                if dataverse:
+                    for i in range(1, cbas_spec.get(
+                        "no_of_datasets_per_dataverse", 1) + 1):
+                        dataset_obj = None
+                        if dataset_spec.get(
+                            "name_key", "random").lower() == "random":
+                            name = self.generate_name(name_cardinality=1)
+                        else:
+                            name = dataset_spec["name_key"] + "_{0}".format(
+                                str(i))
+
+                        if dataset_spec.get(
+                            "datasource", "all").lower() == "all":
+                            datasource = random.choice(["internal", "external"])
+                        else:
+                            datasource = dataset_spec["datasource"].lower()
+
+                        if datasource == "external":
+                            if no_of_external_datasets > 0:
+                                no_of_external_datasets -= 1
+                            else:
+                                datasource = "internal"
+
+                        if not dataset_spec.get("creation_methods", []):
+                            dataset_spec["creation_methods"] = [
+                                "cbas_collection", "cbas_dataset",
+                                "enable_cbas_from_kv"]
+
+                        if datasource == "internal" and (
+                                no_of_local_datasets > 0 or no_of_remote_datasets > 0):
+                            if len(remote_link_objs) > 0:
+                                remote_dataset = random.choice(
+                                    ["True", "False"])
+                            else:
+                                remote_dataset = False
+
+                            if remote_dataset:
+                                if no_of_remote_datasets > 0:
+                                    no_of_remote_datasets -= 1
+                                else:
+                                    remote_dataset = False
+                            else:
+                                if no_of_local_datasets > 0:
+                                    no_of_local_datasets -= 1
+                                else:
+                                    remote_dataset = True
+
+                            if dataset_spec.get("bucket_cardinality", 0) == 0:
+                                bucket_cardinality = random.choice([1, 3])
+                            else:
+                                bucket_cardinality = dataset_spec[
+                                    "bucket_cardinality"]
+
+                            enabled_from_KV = False
+                            if remote_dataset:
+                                while True:
+                                    creation_method = random.choice(
+                                        dataset_spec["creation_methods"])
+                                    if creation_method != "enable_cbas_from_kv":
+                                        break
+                                bucket, scope, collection = self.get_kv_entity(
+                                    cluster, bucket_util, bucket_cardinality,
+                                    dataset_spec.get("include_buckets", []),
+                                    dataset_spec.get("exclude_buckets", []),
+                                    dataset_spec.get("include_scopes", []),
+                                    dataset_spec.get("exclude_scopes", []),
+                                    dataset_spec.get("include_collections", []),
+                                    dataset_spec.get("exclude_collections", []))
+                                link_name = random.choice(
+                                    remote_link_objs).full_name
+                                if collection:
+                                    num_of_items = collection.num_items
+                                else:
+                                    num_of_items = bucket_util.get_collection_obj(
+                                        bucket_util.get_scope_obj(
+                                            bucket, "_default"), "_default").num_items
+                            else:
+                                creation_method = random.choice(
+                                    dataset_spec["creation_methods"])
+                                bucket, scope, collection = self.get_kv_entity(
+                                    cluster,  bucket_util, bucket_cardinality,
+                                    dataset_spec.get("include_buckets", []),
+                                    dataset_spec.get("exclude_buckets", []),
+                                    dataset_spec.get("include_scopes", []),
+                                    dataset_spec.get("exclude_scopes", []),
+                                    dataset_spec.get("include_collections", []),
+                                    dataset_spec.get("exclude_collections", []))
+                                link_name = None
+                                if creation_method == "enable_cbas_from_kv":
+                                    enabled_from_KV = True
+                                    temp_scope = scope
+                                    temp_collection = collection
+                                    if not scope:
+                                        temp_scope = bucket_util.get_scope_obj(
+                                            bucket, "_default")
+                                        temp_collection = bucket_util.get_collection_obj(
+                                            temp_scope, "_default")
+                                        # Check Synonym with name bucket name is present in Default dataverse or not
+                                        cmd = "select value sy from Metadata.`Synonym` as sy where \
+                                        sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\";".format(
+                                            bucket.name, "Default")
+
+                                        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+                                            cluster, cmd)
+                                        if status == "success":
+                                            if results:
+                                                enabled_from_KV = False
+                                        else:
+                                            enabled_from_KV = False
+
+                                    temp_dataverse_name = CBASHelper.format_name(
+                                        bucket.name, temp_scope.name)
+                                    temp_dataverse_obj = self.get_dataverse_obj(
+                                        temp_dataverse_name)
+                                    if temp_dataverse_obj:
+                                        if temp_dataverse_obj.datasets.get(
+                                                CBASHelper.format_name(
+                                                    temp_collection.name),
+                                                None):
+                                            enabled_from_KV = False
+                                    if enabled_from_KV:
+                                        if not scope:
+                                            synonym_obj = Synonym(
+                                                bucket.name, temp_collection.name,
+                                                temp_dataverse_name,
+                                                dataverse_name="Default")
+                                            self.dataverses[
+                                                "Default"].synonyms[
+                                                synonym_obj.name] = synonym_obj
+                                        scope = temp_scope
+                                        collection = temp_collection
+                                        name = collection.name
+                                        dataverse = Dataverse(
+                                            temp_dataverse_name)
+                                        self.dataverses[
+                                            temp_dataverse_name] = dataverse
+                                    else:
+                                        creation_method = random.choice(
+                                            ["cbas_collection",
+                                             "cbas_dataset"])
+                                if collection:
+                                    num_of_items = collection.num_items
+                                else:
+                                    num_of_items = bucket_util.get_collection_obj(
+                                        bucket_util.get_scope_obj(bucket, "_default"),
+                                        "_default").num_items
+
+                            if creation_method == "cbas_collection":
+                                dataset_obj = CBAS_Collection(
+                                    name=name, dataverse_name=dataverse.name,
+                                    link_name=link_name, dataset_source="internal",
+                                    dataset_properties={}, bucket=bucket,
+                                    scope=scope, collection=collection,
+                                    enabled_from_KV=enabled_from_KV,
+                                    num_of_items=num_of_items)
+                            else:
+                                dataset_obj = Dataset(
+                                    name=name, dataverse_name=dataverse.name,
+                                    link_name=link_name, dataset_source="internal",
+                                    dataset_properties={}, bucket=bucket,
+                                    scope=scope, collection=collection,
+                                    enabled_from_KV=enabled_from_KV,
+                                    num_of_items=num_of_items)
+                        elif datasource == "external" and no_of_external_datasets > 0:
+                            if len(external_link_objs) == 0:
+                                return False
+                            link = random.choice(external_link_objs)
+                            while True:
+                                dataset_properties = random.choice(
+                                    dataset_spec.get(
+                                        "external_dataset_properties", [{}]))
+                                if link.properties[
+                                    "region"] == dataset_properties.get(
+                                    "region", None):
+                                    break
+                            dataset_obj = Dataset(
+                                name=name, dataverse_name=dataverse.name,
+                                link_name=link.full_name, dataset_source="external",
+                                dataset_properties=dataset_properties,
+                                bucket=None, scope=None, collection=None,
+                                enabled_from_KV=False)
+
+                        if dataset_obj:
+                            dataverse_name = dataset_obj.dataverse_name
+                            if dataverse_name == "Default":
+                                dataverse_name = None
+                            if dataset_obj.dataset_source == "internal":
+                                if dataset_obj.enabled_from_KV:
+                                    results.append(
+                                        self.enable_analytics_from_KV(
+                                            cluster, dataset_obj.full_kv_entity_name,
+                                            False, False, None, None, None,
+                                            timeout=cbas_spec.get(
+                                                "api_timeout", 120),
+                                            analytics_timeout=cbas_spec.get(
+                                                "cbas_timeout", 120)))
+                                else:
+                                    if isinstance(dataset_obj,
+                                                  CBAS_Collection):
+                                        analytics_collection = True
+                                    elif isinstance(dataset_obj, Dataset):
+                                        analytics_collection = False
+                                    results.append(
+                                        self.create_dataset(
+                                            cluster, dataset_obj.name,
+                                            dataset_obj.full_kv_entity_name,
+                                            dataverse_name,
+                                            False, False, None,
+                                            dataset_obj.link_name, None, False,
+                                            None, None, None,
+                                            timeout=cbas_spec.get(
+                                                "api_timeout", 120),
+                                            analytics_timeout=cbas_spec.get(
+                                                "cbas_timeout", 120),
+                                            analytics_collection=
+                                            analytics_collection))
+                            else:
+                                results.append(
+                                    self.create_dataset_on_external_resource(
+                                        cluster, dataset_obj.name,
+                                        dataset_obj.dataset_properties[
+                                            "aws_bucket_name"],
+                                        dataset_obj.link_name, False,
+                                        dataverse_name,
+                                        dataset_obj.dataset_properties[
+                                            "object_construction_def"],
+                                        dataset_obj.dataset_properties[
+                                            "path_on_aws_bucket"],
+                                        dataset_obj.dataset_properties[
+                                            "file_format"],
+                                        dataset_obj.dataset_properties[
+                                            "redact_warning"],
+                                        dataset_obj.dataset_properties[
+                                            "header"],
+                                        dataset_obj.dataset_properties[
+                                            "null_string"],
+                                        dataset_obj.dataset_properties[
+                                            "include"],
+                                        dataset_obj.dataset_properties[
+                                            "exclude"],
+                                        False, None, None, None, None,
+                                        timeout=cbas_spec.get(
+                                            "api_timeout", 120),
+                                        analytics_timeout=cbas_spec.get(
+                                            "cbas_timeout", 120)))
+                            if results[-1]:
+                                dataverse.datasets[
+                                    dataset_obj.name] = dataset_obj
+
+            return all(results)
+        return True
+
+    def create_datasets_on_all_collections(
+            self, cluster, bucket_util, cbas_name_cardinality=1,
+            kv_name_cardinality=1, remote_datasets=False, creation_methods=None):
+        """
+        Create datasets on every collection across all the buckets and scopes.
+        :param bucket_util obj, bucket_util obj to perform operations on KV bucket.
+        :param cbas_name_cardinality int, no of parts in dataset name. valid value 1,2,3
+        :param kv_name_cardinality int, no of parts in KV entity name. Valid values 1 or 3.
+        :param remote_datasets bool, if True create remote datasets using remote links.
+        :param creation_methods list, support values are "cbas_collection","cbas_dataset","enable_cbas_from_kv"
+        """
+        self.log.info("Creating Datasets on all KV collections")
+        jobs = Queue()
+        results = list()
+
+        if not creation_methods:
+            creation_methods = ["cbas_collection", "cbas_dataset",
+                                "enable_cbas_from_kv"]
+
+        if remote_datasets:
+            remote_link_objs = self.list_all_link_objs("couchbase")
+            creation_methods.remove("enable_cbas_from_kv")
+
+        def dataset_creation(bucket, scope, collection):
+            creation_method = random.choice(creation_methods)
+
+            if remote_datasets:
+                link_name = random.choice(remote_link_objs).full_name
+            else:
+                link_name = None
+
+            name = self.generate_name(name_cardinality=1)
+
+            if creation_method == "enable_cbas_from_kv":
+                enabled_from_KV = True
+                dataverse = Dataverse(bucket.name + "." + scope.name)
+                self.dataverses[dataverse.name] = dataverse
+                name = CBASHelper.format_name(collection.name)
+            else:
+                enabled_from_KV = False
+                if cbas_name_cardinality > 1:
+                    dataverse = Dataverse(
+                        self.generate_name(cbas_name_cardinality - 1))
+                    self.dataverses[dataverse.name] = dataverse
+                else:
+                    dataverse = self.get_dataverse_obj("Default")
+
+            num_of_items = collection.num_items
+
+            if creation_method == "cbas_collection":
+                dataset_obj = CBAS_Collection(
+                    name=name, dataverse_name=dataverse.name,
+                    link_name=link_name,
+                    dataset_source="internal", dataset_properties={},
+                    bucket=bucket, scope=scope, collection=collection,
+                    enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
+            else:
+                dataset_obj = Dataset(
+                    name=name, dataverse_name=dataverse.name,
+                    link_name=link_name,
+                    dataset_source="internal", dataset_properties={},
+                    bucket=bucket, scope=scope, collection=collection,
+                    enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
+
+            dataverse_name = dataverse.name
+
+            if dataverse_name == "Default":
+                dataverse_name = None
+
+            if dataset_obj.enabled_from_KV:
+
+                if kv_name_cardinality > 1:
+                    results.append(
+                        self.enable_analytics_from_KV(
+                            cluster, dataset_obj.full_kv_entity_name, False,
+                            False, None, None, None, 120, 120))
+                else:
+                    results.append(
+                        self.enable_analytics_from_KV(
+                            cluster, dataset_obj.get_fully_qualified_kv_entity_name(1),
+                            False, False, None, None, None, 120, 120))
+            else:
+
+                if isinstance(dataset_obj, CBAS_Collection):
+                    analytics_collection = True
+                elif isinstance(dataset_obj, Dataset):
+                    analytics_collection = False
+
+                if kv_name_cardinality > 1 and cbas_name_cardinality > 1:
+                    results.append(
+                        self.create_dataset(
+                            cluster, dataset_obj.name,
+                            dataset_obj.full_kv_entity_name,
+                            dataverse_name, False, False, None,
+                            dataset_obj.link_name, None, False, None, None,
+                            None, 120, 120, analytics_collection))
+                elif kv_name_cardinality > 1 and cbas_name_cardinality == 1:
+                    results.append(
+                        self.create_dataset(
+                            cluster, dataset_obj.name,
+                            dataset_obj.full_kv_entity_name,
+                            None, False, False, None, dataset_obj.link_name,
+                            None, False, None, None, None, 120, 120,
+                            analytics_collection))
+                elif kv_name_cardinality == 1 and cbas_name_cardinality > 1:
+                    results.append(
+                        self.create_dataset(
+                            cluster, dataset_obj.name,
+                            dataset_obj.get_fully_qualified_kv_entity_name(1),
+                            dataverse_name, False, False, None,
+                            dataset_obj.link_name, None, False, None, None,
+                            None, 120, 120, analytics_collection))
+                else:
+                    results.append(
+                        self.create_dataset(
+                            cluster, dataset_obj.name,
+                            dataset_obj.get_fully_qualified_kv_entity_name(1),
+                            None, False, False, None, dataset_obj.link_name,
+                            None, False, None, None,
+                            None, 120, 120, analytics_collection))
+
+            if results[-1]:
+                dataverse.datasets[dataset_obj.name] = dataset_obj
+
+        for bucket in cluster.buckets:
+            if kv_name_cardinality > 1:
+                for scope in bucket_util.get_active_scopes(bucket):
+                    for collection in bucket_util.get_active_collections(
+                            bucket,
+                            scope.name):
+                        dataset_creation(bucket, scope, collection)
+            else:
+                scope = bucket_util.get_scope_obj(bucket, "_default")
+                dataset_creation(bucket, scope,
+                                 bucket_util.get_collection_obj(scope,
+                                                                "_default"))
+
+        return all(results)
+
+    def create_dataset_obj(
+            self, cluster, bucket_util, dataset_cardinality=1, bucket_cardinality=1,
+            enabled_from_KV=False, for_all_kv_entities=False,
+            remote_dataset=False, link=None, same_dv_for_link_and_dataset=False,
+            name_length=30, fixed_length=False, exclude_bucket=[],
+            exclude_scope=[], exclude_collection=[], no_of_objs=1):
+        """
+        Generates dataset objects.
+        """
+
+        def create_object(
+                bucket, scope, collection, enabled_from_KV=enabled_from_KV,
+                remote_dataset=remote_dataset, link=link,
+                same_dv_for_link_and_dataset=same_dv_for_link_and_dataset,
+                dataset_cardinality=dataset_cardinality, name_length=name_length,
+                fixed_length=fixed_length,):
+            if not scope:
+                scope = bucket_util.get_scope_obj(bucket, "_default")
+            if not collection:
+                collection = bucket_util.get_collection_obj(scope, "_default")
+
+            if enabled_from_KV:
+                dataverse_name = bucket.name + "." + scope.name
+                dataset_name = collection.name
+            else:
+                dataverse_name = None
+
+                if remote_dataset:
+                    if not link:
+                        link = random.choice(self.list_all_link_objs(
+                            link_type="couchbase"))
+
+                if same_dv_for_link_and_dataset and link:
+                    dataverse_name = link.dataverse_name
+                else:
+                    if dataset_cardinality > 1:
+                        dataverse_name = self.generate_name(
+                            name_cardinality=dataset_cardinality - 1,
+                            max_length=name_length - 1,
+                            fixed_length=fixed_length)
+                dataset_name = self.generate_name(
+                    name_cardinality=1, max_length=name_length,
+                    fixed_length=fixed_length)
+
+            if dataverse_name:
+                dataverse_name = CBASHelper.unformat_name(dataverse_name)
+                dataverse_obj = self.get_dataverse_obj(dataverse_name)
+                if not dataverse_obj:
+                    dataverse_obj = Dataverse(dataverse_name)
+                    self.dataverses[dataverse_name] = dataverse_obj
+            else:
+                dataverse_obj = self.get_dataverse_obj("Default")
+
+            if collection:
+                num_of_items = collection.num_items
+            else:
+                num_of_items = 0
+
+            if link:
+                link_name = link.full_name
+            else:
+                link_name=None
+
+            dataset_obj = Dataset(
+                name=dataset_name, dataverse_name=dataverse_name,
+                link_name=link_name,
+                dataset_source="internal", dataset_properties={},
+                bucket=bucket, scope=scope, collection=collection,
+                enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
+
+            self.log.info("Adding Dataset object for - {0}".format(
+                dataset_obj.full_name))
+
+            dataverse_obj.datasets[dataset_obj.name] = dataset_obj
+
+            if enabled_from_KV:
+                if collection.name == "_default":
+                    dataverse_obj.synonyms[bucket.name] = Synonym(
+                        bucket.name, collection.name, dataverse_name,
+                        dataverse_name="Default",
+                        synonym_on_synonym=False)
+
+        if for_all_kv_entities:
+            for bucket in cluster.buckets:
+
+                if bucket.name in exclude_bucket:
+                    continue
+
+                if bucket_cardinality == 1:
+                    create_object(bucket, None, None)
+                else:
+                    active_scopes = bucket_util.get_active_scopes(bucket)
+                    for scope in active_scopes:
+                        if scope.is_dropped or scope.name in exclude_scope:
+                            continue
+
+                        active_collections = bucket_util.get_active_collections(
+                            bucket, scope.name, only_names=False)
+                        for collection in active_collections:
+                            if collection.is_dropped or collection.name in exclude_collection:
+                                continue
+                            create_object(bucket, scope, collection)
+        else:
+            for _ in range(no_of_objs):
+                bucket = random.choice(cluster.buckets)
+                while bucket.name in exclude_bucket:
+                    bucket = random.choice(cluster.buckets)
+
+                if bucket_cardinality == 1:
+                    create_object(bucket, None, None)
+                else:
+                    active_scopes = bucket_util.get_active_scopes(bucket)
+                    scope = random.choice(active_scopes)
+                    while scope.is_dropped or (scope.name in exclude_scope):
+                        scope = random.choice(active_scopes)
+
+                    active_collections = bucket_util.get_active_collections(
+                        bucket, scope.name, only_names=False)
+                    collection = random.choice(active_collections)
+                    while collection.is_dropped or (
+                        collection.name in exclude_collection):
+                        collection = random.choice(active_collections)
+
+                    for scope in active_scopes:
+                        if scope.is_dropped or scope.name in exclude_scope:
+                            continue
+                    create_object(bucket, scope, collection)
+
+    def create_external_dataset_obj(
+            self, cluster, aws_bucket_names, same_dv_for_link_and_dataset=False,
+            dataset_cardinality=1, object_construction_def=None,
+            path_on_aws_bucket=None, file_format="json", redact_warning=None,
+            header=None, null_string=None, include=None, exclude=None,
+            name_length=30, fixed_length=False, no_of_objs=1):
+        """
+        Creates a Dataset object for external datasets.
+        :param aws_bucket_names: dict, format {"aws_bucket_name":"region"}
+        """
+        for _ in range(no_of_objs):
+            aws_bucket = random.choice(aws_bucket_names.keys())
+
+            all_links = self.list_all_link_objs("s3")
+            link = random.choice(all_links)
+            while all_links and (
+                link.properties["region"] != aws_bucket_names[aws_bucket]):
+                all_links.remove(link)
+                link = random.choice(self.list_all_link_objs("s3"))
+
+            if same_dv_for_link_and_dataset:
+                dataverse = self.get_dataverse_obj(link.dataverse_name)
+            else:
+                if dataset_cardinality > 1:
+                    dataverse_name = CBASHelper.format_name(self.generate_name(
+                        name_cardinality=dataset_cardinality - 1,
+                        max_length=name_length - 1,
+                        fixed_length=fixed_length))
+                    if not self.create_dataverse(cluster, dataverse_name,
+                                                 if_not_exists=True):
+                        raise Exception("Error while creating dataverse")
+                    dataverse = self.get_dataverse_obj(dataverse_name)
+                else:
+                    dataverse = self.get_dataverse_obj("Default")
+
+            dataset = Dataset(
+                name=self.generate_name(name_cardinality=1, max_length=name_length,
+                                        fixed_length=fixed_length),
+                dataverse_name=dataverse.name, link_name=link.full_name,
+                dataset_source="external", dataset_properties={})
+            dataset.dataset_properties["aws_bucket_name"] = aws_bucket
+            dataset.dataset_properties["object_construction_def"] = object_construction_def
+            dataset.dataset_properties["path_on_aws_bucket"] = path_on_aws_bucket
+            dataset.dataset_properties["file_format"] = file_format
+            dataset.dataset_properties["redact_warning"] = redact_warning
+            dataset.dataset_properties["header"] = header
+            dataset.dataset_properties["null_string"] = null_string
+            dataset.dataset_properties["include"] = include
+            dataset.dataset_properties["exclude"] = exclude
+
+            dataverse.datasets[dataset.name] = dataset
+
+    def validate_docs_in_all_datasets(
+            self, cluster, bucket_util, timeout=600):
+        self.refresh_dataset_item_count(bucket_util)
+        datasets = self.list_all_dataset_objs()
+        jobs = Queue()
+        results = list()
+
+        for dataset in datasets:
+            jobs.put((self.wait_for_ingestion_complete,
+                      {"cluster": cluster,
+                       "dataset_names": [dataset.full_name],
+                       "num_items": dataset.num_of_items, "timeout": timeout}))
+
+        self.run_jobs_in_parallel(jobs, results, 50, async_run=False)
+        return all(results)
+
+    def refresh_dataset_item_count(self, bucket_util):
+        datasets = self.list_all_dataset_objs()
+        for dataset in datasets:
+            if dataset.kv_collection:
+                dataset.num_of_items = dataset.kv_collection.num_items
+            else:
+                if dataset.link_name:
+                    dataset.num_of_items = bucket_util.get_collection_obj(
+                        bucket_util.get_scope_obj(dataset.kv_bucket, "_default"),
+                        "_default").num_items
+                else:
+                    dataset.num_of_items = bucket_util.get_collection_obj(
+                        bucket_util.get_scope_obj(dataset.kv_bucket, "_default"),
+                        "_default").num_items
+
+    def get_datasets(self, cluster, retries=10, fields=[]):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        datasets_created = []
+        datasets_query = "select value regexp_replace(ds.DataverseName,\"/\",\".\") || " \
+              "\".\" || ds.DatasetName from Metadata.`Dataset` as ds " \
+              "where ds.DataverseName  <> \"Metadata\";"
+        if fields:
+            datasets_query = 'SELECT * ' \
+                             'FROM Metadata.`Dataset` d ' \
+                             'WHERE d.DataverseName <> "Metadata"'
+        while not datasets_created and retries:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                cluster, datasets_query, mode="immediate", timeout=300,
+                analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                if fields:
+                    results = cbas_helper.get_json(json_data=results)
+                    for result in results:
+                        ds = result['d']
+                        datasets_created.append(
+                            {field: ds[field] for field in fields})
+                else:
+                    datasets_created = list(
+                        map(lambda dv: dv.encode('utf-8'), results))
+                break
+            sleep(12, "Wait for atleast one dataset to be created")
+            retries -= 1
+        return datasets_created
+
+
+class Synonym_Util(Dataset_Util):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
+        super(Synonym_Util, self).__init__(server_task)
+
+    def validate_synonym_in_metadata(
+            self, cluster, synonym_name, synonym_dataverse_name, cbas_entity_name,
+            cbas_entity_dataverse_name, username=None, password=None):
+        """
+        Validates whether an entry for Synonym is present in Metadata.Synonym.
+        :param synonym_name : str, Synonym which has to be validated.
+        :param synonym_dataverse_name : str, dataverse where the synonym is present
+        :param cbas_entity_name : str, name of the cbas object on which the synonym is based.
+        :param cbas_entity_dataverse_name : str, name of the dataverse where the cbas object on
+        which the synonym is based.
+        :param username : str
+        :param password : str
+        :return boolean
+        """
+        self.log.debug("Validating Synonym entry in Metadata")
+        cmd = "select value sy from Metadata.`Synonym` as sy where \
+        sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\";".format(
+            CBASHelper.unformat_name(synonym_name),
+            CBASHelper.metadata_format(synonym_dataverse_name))
+
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password)
+        if status == "success":
+            for result in results:
+                if result['ObjectDataverseName'] == CBASHelper.metadata_format(
+                    cbas_entity_dataverse_name) and result[
+                        'ObjectName'] == CBASHelper.unformat_name(
+                    cbas_entity_name):
+                    return True
+            return False
+        else:
+            return False
+
+    def create_analytics_synonym(
+            self, cluster, synonym_full_name, cbas_entity_full_name,
+            if_not_exists=False, validate_error_msg=False, expected_error=None,
+            username=None, password=None, timeout=120, analytics_timeout=120):
+        """
+        Creates an analytics synonym on a dataset.
+        :param synonym_full_name : str, Fully qualified Synonym which has to be created.
+        :param cbas_entity_full_name : str, Fully qualified name of the cbas object for
+        which the synonym is to be created.
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param username : str
+        :param password : str
+        :param timeout : str
+        :param analytics_timeout : str
+        """
+        cmd = "create analytics synonym {0}".format(synonym_full_name)
+
+        if if_not_exists:
+            cmd += " If Not Exists"
+
+        cmd += " for {0};".format(cbas_entity_full_name)
+
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def drop_analytics_synonym(
+            self, cluster, synonym_full_name, if_exists=False,
+            validate_error_msg=False, expected_error=None, username=None,
+            password=None, timeout=120, analytics_timeout=120):
+        """
+        Drop an analytics synonym.
+        :param synonym_full_name : str, Fully qualified Synonym which has to be dropped.
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param username : str
+        :param password : str
+        :param timeout : str
+        :param analytics_timeout : str
+        """
+
+        cmd = "drop analytics synonym {0}".format(synonym_full_name)
+
+        if if_exists:
+            cmd += " if exists;"
+        else:
+            cmd += ";"
+
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def validate_synonym_doc_count(
+            self, cluster, synonym_full_name, cbas_entity_full_name,
+            validate_error_msg=False, expected_error=None,
+            timeout=300, analytics_timeout=300):
+        """
+        Validate that doc count in synonym is same as the dataset on which it was created.
+        :param synonym_full_name : str, Fully qualified Synonym name whose count needs to be validated.
+        :param cbas_entity_full_name : str, Fully qualified name of the cbas object for
+        which the synonym was created.
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param timeout : int
+        :param analytics_timeout : int
+        """
+
+        cmd_get_num_items = "select count(*) from %s;"
+
+        synonym_status, metrics, errors, synonym_results, _ = \
+            self.execute_statement_on_cbas_util(
+                cluster, cmd_get_num_items % synonym_full_name,
+                timeout=timeout,
+                analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(synonym_status, errors,
+                                                   expected_error)
+        else:
+            if synonym_status != "success":
+                self.log.error("Querying synonym failed")
+                synonym_results = 0
+            else:
+                self.log.debug("No. of items in synonym {0} : {1}"
+                               .format(synonym_full_name,
+                                       synonym_results[0]['$1']))
+                synonym_results = synonym_results[0]['$1']
+
+            dataset_status, metrics, errors, dataset_results, _ = \
+                self.execute_statement_on_cbas_util(
+                    cluster, cmd_get_num_items % cbas_entity_full_name,
+                    timeout=timeout,
+                    analytics_timeout=analytics_timeout)
+            if dataset_status != "success":
+                self.log.error("Querying dataset failed")
+                dataset_results = 0
+            else:
+                self.log.debug("No. of items in dataset {0} : {1}"
+                               .format(cbas_entity_full_name,
+                                       dataset_results[0]['$1']))
+                dataset_results = dataset_results[0]['$1']
+
+            if dataset_results != synonym_results:
+                return False
+            return True
+
+    def get_synonym_obj(self, cluster, synonym_name, synonym_dataverse=None,
+                        cbas_entity_name=None, cbas_entity_dataverse=None):
+        """
+        Return Synonym object if the synonym with the required name already exists.
+        If synonym_dataverse or cbas_entity_name or cbas_entity_dataverse is not mentioned
+        then it will return first synonym found with the synonym_name.
+        :param synonym_name str, name of the synonym whose object has to returned.
+        :param synonym_dataverse str, name of the dataverse where the synonym is present
+        :param cbas_entity_name str, name of the cbas_entity on which the synonym was created.
+        :param cbas_entity_dataverse str, name of the dataverse where the cbas_entity is present
+        """
+        if not synonym_dataverse:
+            cmd = "select value sy from Metadata.`Synonym` as sy where \
+            sy.SynonymName = \"{0}\"".format(
+                CBASHelper.unformat_name(synonym_name))
+            if cbas_entity_name:
+                cmd += " and sy.ObjectName = \"{0}\"".format(
+                    CBASHelper.unformat_name(cbas_entity_name))
+            if cbas_entity_dataverse:
+                cmd += " and sy.ObjectDataverseName = \"{0}\"".format(
+                    CBASHelper.unformat_name(cbas_entity_dataverse))
+            cmd += ";"
+            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+                cluster, cmd)
+            if status == "success" and results:
+                synonym_dataverse = CBASHelper.format_name(
+                    results[0]["DataverseName"])
+            else:
+                return None
+
+        dataverse_obj = self.get_dataverse_obj(synonym_dataverse)
+        return dataverse_obj.synonyms.get(synonym_name, None)
+
+    def list_all_synonym_objs(self):
+        """
+        Returns list of all Synonym objects across all the dataverses.
+        """
+        synonym_objs = list()
+        for dataverse in self.dataverses.values():
+            synonym_objs.extend(dataverse.synonyms.values())
+        return synonym_objs
+
+    @staticmethod
+    def get_synonym_spec(cbas_spec):
+        """
+        Fetches link specific specs from spec file mentioned.
+        :param cbas_spec dict, cbas spec dictonary.
+        """
+        return cbas_spec["synonym"]
+
+    def create_synonym_from_spec(self, cluster, cbas_spec):
+        self.log.info("Creating Synonyms based on CBAS Spec")
+
+        synonym_spec = self.get_synonym_spec(cbas_spec)
+
+        if cbas_spec.get("no_of_synonyms", 0) > 0:
+
+            results = list()
+            all_cbas_entities = self.list_all_dataset_objs() + self.list_all_synonym_objs()
+            for i in range(1, cbas_spec["no_of_synonyms"] + 1):
+                if synonym_spec.get("name_key", "random").lower() == "random":
+                    name = self.generate_name(name_cardinality=1)
+                else:
+                    name = synonym_spec["name_key"] + "_{0}".format(str(i))
+
+                dataverse = None
+                while not dataverse:
+                    dataverse = random.choice(self.dataverses.values())
+                    if synonym_spec[
+                        "include_dataverses"] and CBASHelper.unformat_name(
+                        dataverse.name) not in synonym_spec[
+                        "include_dataverses"]:
+                        dataverse = None
+                    if synonym_spec[
+                        "exclude_dataverses"] and CBASHelper.unformat_name(
+                        dataverse.name) in synonym_spec[
+                        "exclude_dataverses"]:
+                        dataverse = None
+
+                cbas_entity = None
+                while not cbas_entity:
+                    cbas_entity = random.choice(all_cbas_entities)
+                    if synonym_spec["include_datasets"] or synonym_spec[
+                        "include_synonyms"]:
+                        if CBASHelper.unformat_name(cbas_entity.name) not in \
+                                synonym_spec["include_datasets"] + \
+                                synonym_spec["include_synonyms"]:
+                            cbas_entity = None
+                    if synonym_spec["exclude_datasets"] or synonym_spec[
+                        "exclude_synonyms"]:
+                        if CBASHelper.unformat_name(cbas_entity.name) in \
+                                synonym_spec["exclude_datasets"] + \
+                                synonym_spec["exclude_synonyms"]:
+                            cbas_entity = None
+
+                if isinstance(cbas_entity, Synonym):
+                    synonym_on_synonym = True
+                else:
+                    synonym_on_synonym = False
+                synonym = Synonym(name=name, cbas_entity_name=cbas_entity.name,
+                                  cbas_entity_dataverse=cbas_entity.dataverse_name,
+                                  dataverse_name=dataverse.name,
+                                  synonym_on_synonym=synonym_on_synonym)
+
+                if not self.create_analytics_synonym(
+                        cluster, synonym.full_name, synonym.cbas_entity_full_name,
+                        if_not_exists=False, validate_error_msg=False,
+                        expected_error=None, username=None, password=None,
+                        timeout=cbas_spec.get("api_timeout", 120),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
+                    results.append(False)
+                else:
+                    dataverse.synonyms[synonym.name] = synonym
+                    results.append(True)
+            return all(results)
+        return True
+
+    def get_synonyms(self, cluster, retries=10):
+        synonyms_created = []
+        synonyms_query = "select value regexp_replace(syn.DataverseName,\"/\",\".\") " \
+              "|| \".\" || syn.SynonymName from Metadata.`Synonym` as syn " \
+              "where syn.DataverseName <> \"Metadata\";"
+        while not synonyms_created and retries:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                cluster, synonyms_query, mode="immediate", timeout=300,
+                analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                results = list(
+                    map(lambda result: result.encode('utf-8').split("."),
+                        results))
+                synonyms_created = list(
+                    map(lambda result: CBASHelper.format_name(*result),
+                        results))
+                break
+            sleep(12, "Wait for atleast one synonym to be created")
+            retries -= 1
+        return synonyms_created
+
+    def get_dataset_obj_for_synonym(
+            self, cluster, synonym_name, synonym_dataverse=None,
+            cbas_entity_name=None, cbas_entity_dataverse=None):
+
+        def inner_func(
+                synonym_name, synonym_dataverse,
+                cbas_entity_name, cbas_entity_dataverse):
+            syn_obj = self.get_synonym_obj(
+                cluster, synonym_name, synonym_dataverse,
+                cbas_entity_name, cbas_entity_dataverse)
+            while syn_obj.synonym_on_synonym:
+                syn_obj = inner_func(
+                    syn_obj.cbas_entity_name, syn_obj.cbas_entity_dataverse,
+                    None, None)
+            return syn_obj
+
+        final_obj = inner_func(
+            synonym_name, synonym_dataverse,
+            cbas_entity_name, cbas_entity_dataverse)
+        return self.get_dataset_obj(
+                cluster, final_obj.cbas_entity_name, final_obj.cbas_entity_dataverse)
+
+
+class Index_Util(Synonym_Util):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
+        super(Index_Util, self).__init__(server_task)
+
+    def verify_index_created(self, cluster, index_name, dataset_name, indexed_fields):
+        """
+        Validate in cbas index entry in Metadata.Index.
+        :param index_name str, name of the index to be validated.
+        :param dataset_name str, name of the dataset on which the index was created.
+        :param indexed_fields list, list of indexed fields.
+        """
+        result = True
+        statement = "select * from Metadata.`Index` where DatasetName='{0}' and IsPrimary=False" \
+            .format(CBASHelper.unformat_name(dataset_name))
+        status, metrics, errors, content, _ = \
+            self.execute_statement_on_cbas_util(cluster, statement)
+        if status != "success":
+            result = False
+            self.log.debug("Index not created. Metadata query status = %s",
+                           status)
+        else:
+            index_found = False
+            for idx in content:
+                if idx["Index"]["IndexName"] == CBASHelper.unformat_name(
+                        index_name):
+                    index_found = True
+                    field_names = []
+                    for index_field in indexed_fields:
+                        if "meta()".lower() in index_field:
+                            field_names.append(index_field.split(".")[1])
+                        else:
+                            field_names.append(str(index_field.split(":")[0]))
+                            field_names.sort()
+                    self.log.debug(field_names)
+
+                    actual_field_names = []
+                    for index_field in idx["Index"]["SearchKey"]:
+                        if type(index_field) is list:
+                            index_field = ".".join(index_field)
+                        actual_field_names.append(str(index_field))
+                        actual_field_names.sort()
+                    self.log.debug(actual_field_names)
+
+                    if field_names != actual_field_names:
+                        result = False
+                        self.log.debug("Index fields not correct")
+                    break
+            result &= index_found
+        return result, content
+
+    def verify_index_used(self, cluster, statement, index_used=False, index_name=None):
+        """
+        Validate whether an index was used while executing the query.
+        :param statement str, query to be executed.
+        :param index_used bool, verify whether index was used or not.
+        :param index_name str, name of the index that should have been used while
+        executing the query.
+        """
+        statement = 'EXPLAIN %s' % statement
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, statement)
+        if status == 'success':
+            if not errors:
+                if index_used:
+                    if ("index-search" in str(results)) and (
+                            "data-scan" not in str(results)):
+                        self.log.info(
+                            "INDEX-SEARCH is found in EXPLAIN hence indexed data will be scanned to serve %s" % statement)
+                        if index_name:
+                            if CBASHelper.unformat_name(index_name) in str(
+                                    results):
+                                return True
+                            else:
+                                return False
+                        return True
+                    else:
+                        return False
+                else:
+                    if ("index-search" not in str(results)) and (
+                            "data-scan" in str(results)):
+                        self.log.info(
+                            "DATA-SCAN is found in EXPLAIN hence index is not used to serve %s" % statement)
+                        return True
+                    else:
+                        return False
+            else:
+                return False
+        else:
+            return False
+
+    def create_cbas_index(self, cluster, index_name, indexed_fields, dataset_name,
+                          analytics_index=False, validate_error_msg=False,
+                          expected_error=None, username=None, password=None,
+                          timeout=120, analytics_timeout=120):
+        """
+        Create index on dataset.
+        :param index_name str, name of the index to be created.
+        :param dataset_name str, name of the dataset on which the index was created.
+        :param indexed_fields list, list of indexed fields.
+        :param analytics_index bool, If True, then use create analytics index syntax
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param username : str
+        :param password : str
+        :param timeout : str
+        :param analytics_timeout : str
+        """
+        index_fields = ""
+        for index_field in indexed_fields:
+            index_fields += index_field + ","
+        index_fields = index_fields[:-1]
+
+        if analytics_index:
+            create_idx_statement = "create analytics index {0} on {1}({2});".format(
+                index_name, dataset_name, index_fields)
+        else:
+            create_idx_statement = "create index {0} on {1}({2});".format(
+                index_name, dataset_name, index_fields)
+
+        self.log.debug("Executing cmd - \n{0}\n".format(create_idx_statement))
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, create_idx_statement, username=username, password=password,
+            timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def drop_cbas_index(self, cluster, index_name, dataset_name, analytics_index=False,
+                        validate_error_msg=False, expected_error=None,
+                        username=None, password=None,
+                        timeout=120, analytics_timeout=120):
+        """
+        Drop index on dataset.
+        :param index_name str, name of the index to be created.
+        :param dataset_name str, name of the dataset on which the index was created.
+        :param analytics_index bool, If True, then use create analytics index syntax
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param username : str
+        :param password : str
+        :param timeout : str
+        :param analytics_timeout : str
+        """
+
+        if analytics_index:
+            drop_idx_statement = "drop analytics index {0}.{1};".format(
+                dataset_name, index_name)
+        else:
+            drop_idx_statement = "drop index {0}.{1};".format(
+                dataset_name, index_name)
+
+        self.log.debug("Executing cmd - \n{0}\n".format(drop_idx_statement))
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, drop_idx_statement, username=username, password=password,
+            timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def get_index_obj(self, cluster, index_name, dataset_name=None,
+                      dataset_dataverse=None):
+        """
+        Return CBAS_index object if the index with the required name already exists.
+        If dataset_name or dataset_dataverse is not mentioned then it will return
+        first index found with the index_name.
+        :param index_name str, name of the index whose object has to returned.
+        :param dataset_dataverse str, name of the dataverse where the dataset on which
+        the index was created is present
+        :param dataset_name str, name of the dataset on which the index was created.
+        """
+        cmd = "select value idx from Metadata.`Index` as idx where idx.IsPrimary=False and idx.IndexName='{0}'".format(
+            CBASHelper.unformat_name(index_name))
+        if dataset_name:
+            cmd += " and idx.DatasetName = \"{0}\"".format(
+                CBASHelper.unformat_name(dataset_name))
+        if dataset_dataverse:
+            cmd += " and idx.DataverseName = \"{0}\"".format(
+                CBASHelper.unformat_name(dataset_dataverse))
+        cmd += ";"
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd)
+        if status == "success" and results:
+            dataset_dataverse = CBASHelper.format_name(
+                results[0]["DataverseName"])
+            dataset_name = CBASHelper.format_name(results[0]["DatasetName"])
+        else:
+            return None
+
+        dataset_obj = self.get_dataset_obj(cluster, dataset_name, dataset_dataverse)
+        return dataset_obj.indexes.get(index_name, None)
+
+    def list_all_index_objs(self):
+        """
+        Returns list of all Synonym objects across all the dataverses.
+        """
+        index_objs = list()
+        for dataset in self.list_all_dataset_objs():
+            index_objs.extend(dataset.indexes.values())
+        return index_objs
+
+    @staticmethod
+    def get_index_spec(cbas_spec):
+        """
+        Fetches link specific specs from spec file mentioned.
+        :param cbas_spec dict, cbas spec dictonary.
+        """
+        return cbas_spec["index"]
+
+    def create_index_from_spec(self, cluster, cbas_spec):
+        self.log.info(
+            "Creating Secondary indexes on datasets based on CBAS spec")
+
+        index_spec = self.get_index_spec(cbas_spec)
+
+        if cbas_spec.get("no_of_indexes", 0) > 0:
+            results = list()
+            for i in range(1, cbas_spec["no_of_indexes"] + 1):
+                if index_spec.get("name_key", "random").lower() == "random":
+                    name = self.generate_name(name_cardinality=1)
+                else:
+                    name = index_spec["name_key"] + "_{0}".format(str(i))
+
+                dataverse = None
+                while not dataverse:
+                    dataverse = random.choice(self.dataverses.values())
+                    if index_spec.get("include_dataverses",
+                                      []) and CBASHelper.unformat_name(
+                        dataverse.name) not in index_spec[
+                        "include_dataverses"]:
+                        dataverse = None
+                    if index_spec.get("exclude_dataverses",
+                                      []) and CBASHelper.unformat_name(
+                        dataverse.name) in index_spec["exclude_dataverses"]:
+                        dataverse = None
+                    if len(dataverse.datasets) == 0:
+                        dataverse = None
+
+                dataset = None
+                while not dataset:
+                    dataset = random.choice(dataverse.datasets.values())
+                    if index_spec.get("include_datasets",
+                                      []) and CBASHelper.unformat_name(
+                        dataset.name) not in index_spec["include_datasets"]:
+                        dataset = None
+                    if index_spec.get("exclude_datasets",
+                                      []) and CBASHelper.unformat_name(
+                        dataset.name) in index_spec["exclude_datasets"]:
+                        dataset = None
+
+                index = CBAS_Index(name=name, dataset_name=dataset.name,
+                                   dataverse_name=dataverse.name,
+                                   indexed_fields=random.choice(
+                                       index_spec.get("indexed_fields", [])))
+
+                if index_spec.get("creation_method", "all") == "all":
+                    creation_method = random.choice(["cbas_index", "index"])
+                else:
+                    creation_method = index_spec["creation_method"].lower()
+                if creation_method == "cbas_index":
+                    index.analytics_index = True
+                else:
+                    index.analytics_index = False
+
+                if not self.create_cbas_index(
+                    cluster, index_name=index.name,
+                    indexed_fields=index.indexed_fields,
+                    dataset_name=index.full_dataset_name,
+                    analytics_index=index.analytics_index,
+                    validate_error_msg=False, expected_error=None, username=None,
+                    password=None, timeout=cbas_spec.get("api_timeout", 120),
+                    analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
+                    results.append(False)
+                else:
+                    dataset.indexes[index.name] = index
+                    results.append(True)
+
+            return all(results)
+        return True
+
+    def get_indexes(self, cluster, retries=10):
+        indexes_created = []
+        indexes_query = "select value regexp_replace(idx.DataverseName,\"/\",\".\") " \
+              "|| \".\" || idx.DatasetName || \".\" || idx.IndexName " \
+              "from Metadata.`Index` as idx where idx.DataverseName <> \"Metadata\""
+        while not indexes_created and retries:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                cluster, indexes_query, mode="immediate", timeout=300,
+                analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                indexes_created = list(
+                    map(lambda idx: idx.encode('utf-8'), results))
+                break
+            sleep(12, "Wait for atleast one index to be created")
+            retries -= 1
+        return indexes_created
+
+
+class UDFUtil(Index_Util):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
+        super(UDFUtil, self).__init__(server_task)
+
+    def create_udf(self, cluster, name, dataverse=None, or_replace=False,
+                   parameters=[], body=None, if_not_exists=False,
+                   query_context=False, use_statement=False,
+                   validate_error_msg=False, expected_error=None,
+                   username=None, password=None, timeout=120,
+                   analytics_timeout=120):
+        """
+        Create CBAS User Defined Functions
+        :param name str, name of the UDF to be created.
+        :param dataverse str, name of the dataverse in which the UDF will be created.
+        :param or_replace Bool, Whether to use 'or replace' flag or not.
+        :param parameters list/None, if None then the create UDF is passed
+        without function parenthesis.
+        :param body str/None, if None then no function body braces are passed.
+        :param if_not_exists bool, whether to use "if not exists" flag
+        :param query_context bool, whether to use query_context while
+        executing query using REST API calls
+        :param use_statement bool, Whether to use 'Use' statement while
+        executing query.
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param username : str
+        :param password : str
+        :param timeout : int
+        :param analytics_timeout : int
+        """
+        param = {}
+        create_udf_statement = ""
+        if use_statement:
+            create_udf_statement += 'use ' + dataverse + ';\n'
+        create_udf_statement += "create"
+        if or_replace:
+            create_udf_statement += " or replace"
+        create_udf_statement += " analytics function "
+        if dataverse and not query_context and not use_statement:
+            create_udf_statement += "{0}.".format(dataverse)
+        create_udf_statement += name
+        # The below "if" is for a negative test scenario where we do not put
+        # function parenthesis.
+        if parameters is not None:
+            param_string = ",".join(parameters)
+            create_udf_statement += "({0})".format(param_string)
+        if if_not_exists:
+            create_udf_statement += " if not exists "
+        if body:
+            create_udf_statement += "{" + body + "}"
+
+        if query_context:
+            if dataverse:
+                param["query_context"] = "default:{0}".format(dataverse)
+            else:
+                param["query_context"] = "default:Default"
+
+        self.log.debug("Executing cmd - \n{0}\n".format(create_udf_statement))
+
+        status, metrics, errors, results, \
+        _ = self.execute_parameter_statement_on_cbas_util(
+            cluster, create_udf_statement, timeout=timeout, username=username,
+            password=password, analytics_timeout=analytics_timeout,
+            parameters=param)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def drop_udf(self, cluster, name, dataverse, parameters=[], if_exists=False,
+                 use_statement=False, query_context=False,
+                 validate_error_msg=False, expected_error=None,
+                 username=None, password=None, timeout=120,
+                 analytics_timeout=120):
+        """
+        Drop UDF.
+        :param name str, name of the UDF to be created.
+        :param dataverse str, name of the dataverse in which the UDF will be created.
+        :param parameters list/None, if None then the create UDF is passed
+        without function parenthesis.
+        :param if_exists bool, whether to use "if exists" flag
+        :param query_context bool, whether to use query_context while
+        executing query using REST API calls
+        :param use_statement bool, Whether to use 'Use' statement while
+        executing query.
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param username : str
+        :param password : str
+        :param timeout : str
+        :param analytics_timeout : str
+        """
+        param = {}
+        drop_udf_statement = ""
+        if use_statement:
+            drop_udf_statement += 'use ' + dataverse + ';\n'
+        drop_udf_statement += "drop analytics function "
+        if dataverse and not query_context and not use_statement:
+            drop_udf_statement += "{0}.".format(dataverse)
+        drop_udf_statement += name
+        # The below "if" is for a negative test scenario where we do not put
+        # function parenthesis.
+        if parameters is not None:
+            param_string = ",".join(parameters)
+            drop_udf_statement += "({0})".format(param_string)
+        if if_exists:
+            drop_udf_statement += " if exists"
+
+        if query_context:
+            if dataverse:
+                param["query_context"] = "default:{0}".format(dataverse)
+            else:
+                param["query_context"] = "default:Default"
+
+        self.log.debug("Executing cmd - \n{0}\n".format(drop_udf_statement))
+
+        status, metrics, errors, results, \
+        _ = self.execute_parameter_statement_on_cbas_util(
+            cluster, drop_udf_statement, timeout=timeout, username=username,
+            password=password, analytics_timeout=analytics_timeout,
+            parameters=param)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def get_udf_obj(self, cluster, name, dataverse_name=None, parameters=[]):
+        """
+        Return CBAS_UDF object if the UDF with the required name already
+        exists.
+        If dataverse_name is not mentioned then it will return first
+        CBAS_UDF found with the name.
+        If parameters is None, then it will return UDF with name and dataverse.
+        :param name str, name of the UDF whose object has to returned.
+        :param dataverse_name str, name of the dataverse under which UDF was created.
+        :param parameters List/None, parameters passed during creating
+        function.
+        """
+        cmd = "select value func from Metadata.`Function` as func where " \
+              "func.Name=`{0}`".format(CBASHelper.unformat_name(name))
+        if dataverse_name:
+            cmd += " and func.DataverseName = \"{0}\"".format(
+                CBASHelper.unformat_name(dataverse_name))
+        if parameters is not None:
+            if "..." in parameters:
+                parameters.remove("...")
+                parameters.append("args")
+            cmd += " and Params = {0}".format(json.dumps(parameters))
+        cmd += ";"
+
+        status, metrics, errors, results, \
+        _ = self.execute_statement_on_cbas_util(cluster, cmd)
+
+        if status == "success" and results:
+            dataverse_name = CBASHelper.format_name(
+                results[0]["DataverseName"])
+            function_name = CBASHelper.format_name(results[0]["Name"])
+        else:
+            return None
+
+        dataverse_obj = self.get_dataverse_obj(dataverse_name)
+        return dataverse_obj.udfs[function_name]
+
+    def list_all_udf_objs(self):
+        """
+        Returns list of all CBAS_UDF objects across all the dataverses.
+        """
+        return [udf for dataverse in self.dataverses.values() for udf in
+                dataverse.udfs.values()]
+
+    def validate_udf_in_metadata(
+            self, cluster, udf_name, udf_dataverse_name, parameters, body,
+            dataset_dependencies=[], udf_dependencies=[], synonym_dependencies=[]):
+        """
+        Validates whether an entry for UDF is present in Metadata.Function.
+        :param udf_name : str, UDF which has to be validated.
+        :param udf_dataverse_name : str, dataverse where the UDF is present
+        :param parameters : list, list of parameters used while creating UDF
+        :param body : str, body of the UDF
+        :param dataset_dependencies : list, list of lists with each inner
+        list of format [dataset's_dataverse_name, dataset_name]
+        :param udf_dependencies : list, list of lists with each inner
+        list of format [udf_dataverse_name, udf_name, udf_arity]
+        :param synonym_dependencies : list, list of lists with each inner
+        list of format [synonym_dataverse_name, synonym_name]
+        :return boolean
+        """
+        self.log.info("Validating UDF entry in Metadata")
+        cmd = "select value func from Metadata.`Function` as func where " \
+              "Name=\"{0}\" and DataverseName=\"{1}\"".format(
+                  CBASHelper.unformat_name(udf_name),
+                  CBASHelper.metadata_format(udf_dataverse_name))
+
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, \
+        _ = self.execute_statement_on_cbas_util(cluster, cmd)
+
+        if parameters and parameters[0] == "...":
+            arity = -1
+            parameters[0] = "args"
+        else:
+            arity = len(parameters)
+            parameters = [CBASHelper.unformat_name(param) for param in parameters]
+
+        if status == "success":
+            response = []
+            for result in results:
+                if int(result["Arity"]) != arity:
+                    self.log.error("Expected Value : {0}\tActual Value : {1}"
+                                   .format(arity, result["Arity"]))
+                    response.append(False)
+                    continue
+                if result["Definition"] != body:
+                    self.log.error("Expected Value : {0}\tActual Value : {1}"
+                                   .format(body, result["Definition"]))
+                    response.append(False)
+                    continue
+                if result["Params"] != parameters:
+                    self.log.error("Expected Value : {0}\tActual Value : {1}"
+                                   .format(parameters, result["Params"]))
+                    response.append(False)
+                    continue
+
+                for dataset_dependency in dataset_dependencies:
+                    if dataset_dependency not in result["Dependencies"][0]:
+                        self.log.error(
+                            "Expected Value : {0}\tActual Value : {1}".format(
+                                dataset_dependencies, result[
+                                    "Dependencies"][0]))
+                        response.append(False)
+                        continue
+                for synonym_dependency in synonym_dependencies:
+                    if synonym_dependency not in result["Dependencies"][3]:
+                        self.log.error(
+                            "Expected Value : {0}\tActual Value : {1}".format(
+                                synonym_dependencies, result[
+                                    "Dependencies"][0]))
+                        response.append(False)
+                        continue
+                for udf_dependency in udf_dependencies:
+                    if udf_dependency not in result["Dependencies"][1]:
+                        self.log.error(
+                            "Expected Value : {0}\tActual Value : {1}".format(
+                                udf_dependencies, result["Dependencies"][1]))
+                        response.append(False)
+                        continue
+                response.append(True)
+            if response:
+                return any(response)
+            else:
+                return False
+        else:
+            return False
+
+    def verify_function_execution_result(
+            self, cluster, func_name, func_parameters, expected_result=None,
+            validate_error_msg=False, expected_error=None, username=None,
+            password=None, timeout=120, analytics_timeout=120):
+        cmd = "{0}({1})".format(func_name, ",".join([str(param) for param in func_parameters]))
+        self.log.info("Executing function {0}".format(cmd))
+        status, metrics, errors, results, \
+        _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, timeout=timeout, username=username, password=password,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                if results[0] != expected_result:
+                    self.log.error(
+                        "Expected Result : {0}\tActual Result : {1}".format(
+                            expected_result, results[0]
+                        ))
+                    return False
+                else:
+                    return True
+
+    def get_udfs(self, cluster, retries=10):
+        udfs_created = []
+        udf_query = "select value(fn) from Metadata.`Function` as fn"
+        while not udfs_created and retries:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                cluster, udf_query, mode="immediate", timeout=300, analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                for r in results:
+                    dv_name = ".".join(r["DataverseName"].split("/"))
+                    if int(r["Arity"]) == -1:
+                        param = ["..."]
+                    else:
+                        param = r["Params"]
+                    udfs_created.append([dv_name, r["Name"], param])
+                break
+            sleep(10, "Wait for atleast one index to be created")
+            retries -= 1
+        return udfs_created
+
+
+class CbasUtil(UDFUtil):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
+        super(CbasUtil, self).__init__(server_task)
+
+    def delete_request(self, cluster, client_context_id, username=None, password=None):
         """
         Deletes a request from CBAS
         """
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         try:
             if client_context_id is None:
                 payload = "client_context_id=None"
             else:
                 payload = "client_context_id=" + client_context_id
 
-            status = self.cbas_helper.delete_active_request_on_cbas(payload,
-                                                                    username,
-                                                                    password)
+            status = cbas_helper.delete_active_request_on_cbas(
+                payload, username, password)
             self.log.info(status)
             return status
         except Exception, e:
             raise Exception(str(e))
 
-    def retrieve_request_status_using_handle(self, server, handle, shell=None):
+    def retrieve_request_status_using_handle(self, cluster, server, handle, shell=None):
         """
         Retrieves status of a request from /analytics/status endpoint
         """
@@ -873,10 +3475,9 @@ class CbasUtil:
             shell = RemoteMachineShellConnection(server)
 
         output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-            .format(handle,
-                    self.cbas_node.rest_username,
-                    self.cbas_node.rest_password))
+            """curl -g -v {0} -u {1}:{2}""".format(
+                handle, cluster.cbas_cc_node.rest_username,
+                cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -897,17 +3498,16 @@ class CbasUtil:
         self.log.debug("status=%s, handle=%s" % (status, handle))
         return status, handle
 
-    def retrieve_result_using_handle(self, server, handle):
+    def retrieve_result_using_handle(self, cluster, server, handle):
         """
         Retrieves result from the /analytics/results endpoint
         """
         shell = RemoteMachineShellConnection(server)
 
         output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-            .format(handle,
-                    self.cbas_node.rest_username,
-                    self.cbas_node.rest_password))
+            """curl -g -v {0} -u {1}:{2}""".format(
+                handle, cluster.cbas_cc_node.rest_username,
+                cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -932,62 +3532,35 @@ class CbasUtil:
             items = match.groups()
 
             if items[1] == "s":
-                return float(items[0])*1000
+                return float(items[0]) * 1000
             if items[1] == "ms":
                 return float(items[0])
             if items[1] == "m":
-                return float(items[0])*1000*60
+                return float(items[0]) * 1000 * 60
             if items[1] == "h":
-                return float(items[0])*1000*60*60
+                return float(items[0]) * 1000 * 60 * 60
         else:
             return None
 
-    def validate_error_in_response(self, status, errors, expected_error=None,
-                                   expected_error_code=None):
-        """
-        Validates the error response against the expected one.
-        """
-        if status != "success":
-            actual_error = errors[0]["msg"]
-            if expected_error not in actual_error:
-                self.log.debug("Error message mismatch. Expected: %s, got: %s"
-                               % (expected_error, actual_error))
-                return False
-            self.log.debug("Error message matched. Expected: %s, got: %s"
-                           % (expected_error, actual_error))
-            if expected_error_code is not None:
-                if expected_error_code != errors[0]["code"]:
-                    self.log.debug("Error code mismatch. Expected: %s, got: %s"
-                                   % (expected_error_code, errors[0]["code"]))
-                    return False
-                self.log.info("Error code matched. Expected: %s, got: %s"
-                              % (expected_error_code, errors[0]["code"]))
-            return True
-        return False
-
-    def async_query_execute(self, statement, mode, num_queries):
+    def async_query_execute(self, cluster, statement, mode, num_queries):
         """
         Asynchronously run queries
         """
         self.log.debug("Executing %s queries concurrently", num_queries)
 
         cbas_base_url = "http://{0}:8095/analytics/service" \
-                        .format(self.cbas_node.ip)
+            .format(cluster.cbas_cc_node.ip)
 
         pretty = "true"
         tasks = []
         for count in range(0, num_queries):
-            tasks.append(self.cluster.async_cbas_query_execute(self.master,
-                                                               self.cbas_node,
-                                                               cbas_base_url,
-                                                               statement,
-                                                               mode,
-                                                               pretty))
+            tasks.append(self.task.async_cbas_query_execute(
+                cluster, self, cbas_base_url, statement))
         return tasks
 
-    def _run_concurrent_queries(self, query, mode, num_queries, rest=None,
-                                batch_size=100, timeout=300,
-                                analytics_timeout=300, wait_for_execution=True):
+    def _run_concurrent_queries(
+            self, cluster, query, mode, num_queries, rest=None, batch_size=100,
+            timeout=300, analytics_timeout=300, wait_for_execution=True):
         self.failed_count = 0
         self.success_count = 0
         self.rejected_count = 0
@@ -999,13 +3572,10 @@ class CbasUtil:
         # Run queries concurrently
         self.log.debug("Running queries concurrently now...")
         threads = []
-        if rest:
-            self.cbas_util = rest
         for i in range(0, num_queries):
-            threads.append(Thread(target=self._run_query,
-                                  name="query_thread_{0}".format(i),
-                                  args=(query, mode, rest, False, 0, timeout,
-                                        analytics_timeout)))
+            threads.append(Thread(
+                target=self._run_query, name="query_thread_{0}".format(i),
+                args=(cluster, query, mode, rest, False, 0, timeout, analytics_timeout)))
         i = 0
         for thread in threads:
             # Send requests in batches, and sleep for 5 seconds before sending another batch of queries.
@@ -1021,25 +3591,25 @@ class CbasUtil:
 
             self.log.debug("%s queries submitted, %s failed, %s passed, "
                            "%s rejected, %s cancelled, %s timeout"
-                           % (num_queries, self.failed_count, self.success_count,
-                              self.rejected_count, self.cancel_count,
-                              self.timeout_count))
-            if self.failed_count+self.error_count != 0:
+                           % (
+                               num_queries, self.failed_count,
+                               self.success_count,
+                               self.rejected_count, self.cancel_count,
+                               self.timeout_count))
+            if self.failed_count + self.error_count != 0:
                 raise Exception("Queries Failed:%s , Queries Error Out:%s"
                                 % (self.failed_count, self.error_count))
         return self.handles
 
-    def _run_query(self, query, mode, rest=None, validate_item_count=False,
+    def _run_query(self, cluster, query, mode, rest=None, validate_item_count=False,
                    expected_count=0, timeout=300, analytics_timeout=300):
         # Execute query (with sleep induced)
         name = threading.currentThread().getName()
         client_context_id = name
-        if rest:
-            self.cbas_util = rest
         try:
             status, metrics, errors, results, handle = \
                 self.execute_statement_on_cbas_util(
-                    query, mode=mode, rest=rest, timeout=timeout,
+                    cluster, query, mode=mode, timeout=timeout,
                     client_context_id=client_context_id,
                     analytics_timeout=analytics_timeout)
             # Validate if the status of the request is success, and if the count matches num_items
@@ -1108,161 +3678,92 @@ class CbasUtil:
                     "Error 500 : Capacity cannot meet job requirement")
                 self.rejected_count += 1
             else:
-                self.error_count +=1
+                self.error_count += 1
                 self.log.error(str(e))
 
-    def verify_index_created(self, index_name, index_fields, dataset):
-        result = True
+    def retrieve_cc_ip_from_master(self, cluster):
 
-        statement = "select * from Metadata.`Index` where DatasetName='{0}' and IsPrimary=False"\
-                    .format(dataset)
-        status, metrics, errors, content, _ = \
-            self.execute_statement_on_cbas_util(statement)
-        if status != "success":
-            result = False
-            self.log.debug("Index not created. Metadata query status = %s",
-                           status)
-        else:
-            index_found = False
-            for index in content:
-                if index["Index"]["IndexName"] == index_name:
-                    index_found = True
-                    field_names = []
-                    for index_field in index_fields:
-                        if "meta()".lower() in index_field:
-                            field_names.append(index_field.split(".")[1])
-                        else:
-                            field_names.append(str(index_field.split(":")[0]))
-                            field_names.sort()
-                    self.log.debug(field_names)
-                    actual_field_names = []
-                    for index_field in index["Index"]["SearchKey"]:
-                        if type(index_field) is list:
-                            index_field = ".".join(index_field)
-                        actual_field_names.append(str(index_field))
-                        actual_field_names.sort()
-
-                    actual_field_names.sort()
-                    self.log.debug(actual_field_names)
-                    if field_names != actual_field_names:
-                        result = False
-                        self.log.debug("Index fields not correct")
-                    break
-            result &= index_found
-        return result, content
-
-    def retrieve_cc_ip(self,shell=None):
-
-        if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
-        url = self.cbas_helper.cbas_base_url + "/analytics/cluster"
-        output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-            .format(url,
-                    self.cbas_node.rest_username,
-                    self.cbas_node.rest_password))
-
-        response = ""
-        for line in output:
-            response = response + line
+        response = self.fetch_analytics_cluster_response(cluster.master)
         if response:
-            response = json.loads(response)
+            cc_node_id = ""
+            cc_node_ip = ""
+            if 'ccNodeId' in response:
+                cc_node_id = response['ccNodeId']
+            if 'nodes' in response:
+                nodes = response['nodes']
+                for node in nodes:
+                    if node["nodeId"] == cc_node_id:
+                        cc_node_ip = node['nodeName'].split(":")[0]
+                        break
 
-        if not shell:
-            shell.disconnect()
+            return cc_node_ip
+        else:
+            return response
 
-        cc_node_id = ""
-        cc_node_ip = ""
-        cc_node_config_url = None
-        if 'ccNodeId' in response:
-            cc_node_id = response['ccNodeId']
-        if 'nodes' in response:
-            nodes = response['nodes']
-            for node in nodes:
-                if node["nodeId"] == cc_node_id:
-                    cc_node_config_url = node['configUri']
-                    cc_node_ip = node['nodeName'][:-5]
-                    break
-
-        self.log.debug("cc_config_urls=%s, ccNodeId=%s, ccNodeIP=%s"
-                       % (cc_node_config_url, cc_node_id, cc_node_ip))
-        return cc_node_ip
-
-    def retrieve_nodes_config(self, only_cc_node_url=True, shell=None):
+    def retrieve_nodes_config(self, cluster, only_cc_node_url=True):
         """
         Retrieves status of a request from /analytics/status endpoint
         """
-        if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
-        url = self.cbas_helper.cbas_base_url + "/analytics/cluster"
-        output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-            .format(url,
-                    self.cbas_node.rest_username,
-                    self.cbas_node.rest_password))
-
-        response = ""
-        for line in output:
-            response = response + line
+        response = self.fetch_analytics_cluster_response(cluster.master)
         if response:
-            response = json.loads(response)
+            cc_node_id = ""
+            nodes = None
+            cc_node_config_url = None
+            if 'ccNodeId' in response:
+                cc_node_id = response['ccNodeId']
+            if 'nodes' in response:
+                nodes = response['nodes']
+                for node in nodes:
+                    if only_cc_node_url and node["nodeId"] == cc_node_id:
+                        # node['apiBase'] will not be present in pre-6.5.0 clusters,
+                        # hence the check
+                        if 'apiBase' in node:
+                            cc_node_config_url = node['apiBase'] + response[
+                                'nodeConfigUri']
+                        else:
+                            cc_node_config_url = node['configUri']
+                        break
 
-        if not shell:
-            shell.disconnect()
+            self.log.debug("cc_config_urls=%s, ccNodeId=%s"
+                           % (cc_node_config_url, cc_node_id))
+            self.log.debug("Nodes: %s" % nodes)
+            return nodes, cc_node_id, cc_node_config_url
+        else:
+            return None,None,None
 
-        cc_node_id = ""
-        nodes = None
-        cc_node_config_url=None
-        if 'ccNodeId' in response:
-            cc_node_id = response['ccNodeId']
-        if 'nodes' in response:
-            nodes = response['nodes']
-            for node in nodes:
-                if only_cc_node_url and node["nodeId"] == cc_node_id:
-                    # node['apiBase'] will not be present in pre-6.5.0 clusters,
-                    #hence the check
-                    if 'apiBase' in node:
-                        cc_node_config_url = node['apiBase'] + response['nodeConfigUri']
-                    else:
-                        cc_node_config_url = node['configUri']
-                    break
-
-        self.log.debug("cc_config_urls=%s, ccNodeId=%s"
-                       % (cc_node_config_url, cc_node_id))
-        self.log.debug("Nodes: %s" % nodes)
-        return nodes, cc_node_id, cc_node_config_url
-
-    def fetch_analytics_cluster_response(self, shell=None):
+    def fetch_analytics_cluster_response(self, master_node):
         """
         Retrieves response from /analytics/status endpoint
         """
-        if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
-        url = self.cbas_helper.cbas_base_url + "/analytics/cluster"
-        output, error = shell.execute_command(
-            "curl -g -v {0} -u {1}:{2}"
-            .format(url,
-                    self.cbas_node.rest_username,
-                    self.cbas_node.rest_password))
-        response = ""
-        for line in output:
-            response = response + line
-        if response:
-            response = json.loads(response)
-        return response
+        url = "http://{0}:8091/_p/cbas/analytics/cluster".format(master_node.ip)
+        response = requests.get(url, auth=(
+            master_node.rest_username, master_node.rest_password))
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
 
-    def retrieve_analyticsHttpAdminListen_address_port(self, node_config_url,
-                                                       shell=None):
+    def is_analytics_running(self, cluster, timeout=600):
+        end_time = time.time() + timeout
+        self.log.info("Waiting for analytics service to come up")
+        while end_time > time.time():
+            response = self.fetch_analytics_cluster_response(cluster.master)
+            if response and response["state"] == "ACTIVE":
+                return True
+            time.sleep(10)
+        return False
+
+    def retrieve_analyticsHttpAdminListen_address_port(
+            self, cluster, node_config_url, shell=None):
         """
         Retrieves status of a request from /analytics/status endpoint
         """
         if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
+            shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
         output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-            .format(node_config_url,
-                    self.cbas_node.rest_username,
-                    self.cbas_node.rest_password))
+            """curl -g -v {0} -u {1}:{2}""".format(
+                node_config_url, cluster.cbas_cc_node.rest_username,
+                cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -1281,29 +3782,28 @@ class CbasUtil:
                 response['analyticsHttpAdminPublicAddress']
             if analytics_http_admin_listen_addr.find(":") != -1:
                 analytics_http_admin_listen_addr = \
-                    '['+analytics_http_admin_listen_addr+']'
+                    '[' + analytics_http_admin_listen_addr + ']'
         if 'analyticsHttpAdminListenPort' in response:
             analytics_http_admin_listen_port = \
                 response['analyticsHttpAdminPublicPort']
 
-        return analytics_http_admin_listen_addr,\
+        return analytics_http_admin_listen_addr, \
                analytics_http_admin_listen_port
 
-    def retrive_replica_from_storage_data(self,
-                                          analytics_http_admin_listen_addr,
-                                          analytics_http_admin_listen_port,
-                                          shell=None):
+    def retrive_replica_from_storage_data(
+            self, cluster, analytics_http_admin_listen_addr,
+            analytics_http_admin_listen_port, shell=None):
         url = "http://{0}:{1}/analytics/node/storage" \
-              .format(analytics_http_admin_listen_addr,
-                      analytics_http_admin_listen_port)
+            .format(analytics_http_admin_listen_addr,
+                    analytics_http_admin_listen_port)
 
         if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
+            shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
         output, error = shell.execute_command(
             """curl -g -v {0} -u {1}:{2}"""
-            .format(url,
-                    self.cbas_node.rest_username,
-                    self.cbas_node.rest_password))
+                .format(url,
+                        cluster.cbas_cc_node.rest_username,
+                        cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -1320,51 +3820,51 @@ class CbasUtil:
                 return partition['replicas']
         return []
 
-    def get_replicas_info(self, shell=None):
+    def get_replicas_info(self, cluster, shell=None):
         cc__metadata_replicas_info = []
         start_time = time.time()
         cc_node_id = None
         nodes = []
         while (not cc_node_id or not nodes) and start_time + 60 > time.time():
             nodes, cc_node_id, cc_config_url = \
-                self.retrieve_nodes_config(shell)
+                self.retrieve_nodes_config(cluster)
         if cc_config_url:
             address, port = \
                 self.retrieve_analyticsHttpAdminListen_address_port(
-                    cc_config_url, shell)
+                    cluster, cc_config_url, shell)
             cc__metadata_replicas_info = \
-                self.retrive_replica_from_storage_data(address, port, shell)
+                self.retrive_replica_from_storage_data(
+                    cluster, address, port, shell)
 
         return cc__metadata_replicas_info
 
-    def get_num_partitions(self, shell=None):
+    def get_num_partitions(self, cluster, shell=None):
         partitons = dict()
         nodes, cc_node_id, cc_config_url = \
-            self.retrieve_nodes_config(shell=shell)
+            self.retrieve_nodes_config(cluster)
         for node in nodes:
             address, port = \
                 self.retrieve_analyticsHttpAdminListen_address_port(
-                    node['apiBase']+"/analytics/node/config",
-                    shell)
+                    cluster, node['apiBase'] + "/analytics/node/config", shell)
             partitons[node['nodeName']] = \
-                self.retrieve_number_of_partitions(address, port, shell)
+                self.retrieve_number_of_partitions(cluster, address, port, shell)
 
         return partitons
 
-    def retrieve_number_of_partitions(self, analytics_http_admin_listen_addr,
-                                      analytics_http_admin_listen_port,
-                                      shell=None):
+    def retrieve_number_of_partitions(
+            self, cluster, analytics_http_admin_listen_addr,
+            analytics_http_admin_listen_port, shell=None):
         url = "http://{0}:{1}/analytics/node/storage" \
             .format(analytics_http_admin_listen_addr,
                     analytics_http_admin_listen_port)
 
         if not shell:
-            shell = RemoteMachineShellConnection(self.cbas_node)
+            shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
         output, error = shell.execute_command(
             """curl -g -v {0} -u {1}:{2}"""
-            .format(url,
-                    self.cbas_node.rest_username,
-                    self.cbas_node.rest_password))
+                .format(url,
+                        cluster.cbas_cc_node.rest_username,
+                        cluster.cbas_cc_node.rest_password))
 
         response = ""
         for line in output:
@@ -1378,105 +3878,98 @@ class CbasUtil:
 
         return len(response)
 
-    def set_log_level_on_cbas(self, log_level_dict, timeout=120, username=None,
-                              password=None):
-
+    def set_log_level_on_cbas(self, cluster, log_level_dict, timeout=120,
+                              username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         payload = ""
         for component, level in log_level_dict.items():
             payload += '{ "level": "' + level + '", "name": "' + component + '" },'
         payload = payload.rstrip(",")
         params = '{ "loggers": [ ' + payload + ' ] }'
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="PUT", params=params,
-                logger_name=None,
-                timeout=timeout, username=username,
+            cbas_helper.operation_log_level_on_cbas(
+                method="PUT", params=params, logger_name=None,
+                timeout=timeout, username=username, password=password)
+        return status, content, response
+
+    def set_specific_log_level_on_cbas(
+            self, cluster, logger_name, log_level, timeout=120, username=None,
+            password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = \
+            cbas_helper.operation_log_level_on_cbas(
+                method="PUT", params=None, logger_name=logger_name,
+                log_level=log_level, timeout=timeout, username=username,
                 password=password)
         return status, content, response
 
-    def set_specific_log_level_on_cbas(self, logger_name, log_level,
-                                       timeout=120, username=None,
-                                       password=None):
+    def get_log_level_on_cbas(self, cluster, timeout=120, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="PUT", params=None,
-                logger_name=logger_name, log_level=log_level,
-                timeout=timeout, username=username,
-                password=password)
-        return status, content, response
-
-    def get_log_level_on_cbas(self, timeout=120, username=None, password=None):
-        status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="GET", params="",
-                logger_name=None,
-                timeout=timeout,
+            cbas_helper.operation_log_level_on_cbas(
+                method="GET", params="", logger_name=None, timeout=timeout,
                 username=username, password=password)
         return status, content, response
 
-    def get_specific_cbas_log_level(self, logger_name, timeout=120,
+    def get_specific_cbas_log_level(self, cluster, logger_name, timeout=120,
                                     username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="GET", params=None,
-                logger_name=logger_name,
-                timeout=timeout,
-                username=username, password=password)
+            cbas_helper.operation_log_level_on_cbas(
+                method="GET", params=None, logger_name=logger_name,
+                timeout=timeout, username=username, password=password)
         return status, content, response
 
-    def delete_all_loggers_on_cbas(self, timeout=120, username=None,
+    def delete_all_loggers_on_cbas(self, cluster, timeout=120, username=None,
                                    password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="DELETE", params="",
-                logger_name=None,
-                timeout=timeout,
-                username=username, password=password)
+            cbas_helper.operation_log_level_on_cbas(
+                method="DELETE", params="", logger_name=None,
+                timeout=timeout, username=username, password=password)
         return status, content, response
 
-    def delete_specific_cbas_log_level(self, logger_name, timeout=120,
+    def delete_specific_cbas_log_level(self, cluster, logger_name, timeout=120,
                                        username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_log_level_on_cbas(
-                method="DELETE", params=None,
-                logger_name=logger_name,
-                timeout=timeout,
-                username=username, password=password)
+            cbas_helper.operation_log_level_on_cbas(
+                method="DELETE", params=None, logger_name=logger_name,
+                timeout=timeout, username=username, password=password)
         return status, content, response
 
-    def update_config_on_cbas(self, config_name=None, config_value=None,
+    def update_config_on_cbas(self, cluster, config_name=None, config_value=None,
                               username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if config_name and config_value:
             params = '{"' + config_name + '":' + str(config_value) + '}'
         else:
             raise ValueError("Missing config name and/or config value")
-        status, content, response = self.cbas_helper.operation_config_on_cbas(
-            method="PUT", params=params,
+        status, content, response = cbas_helper.operation_config_on_cbas(
+            method="PUT", params=params, username=username, password=password)
+        return status, content, response
+
+    def fetch_config_on_cbas(self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = cbas_helper.operation_config_on_cbas(
+            method="GET", username=username, password=password)
+        return status, content, response
+
+    def fetch_cbas_stats(self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = cbas_helper.fetch_cbas_stats(
             username=username, password=password)
         return status, content, response
 
-    def fetch_config_on_cbas(self, config_name=None, config_value=None,
-                             username=None, password=None):
-        status, content, response = \
-            self.cbas_helper.operation_config_on_cbas(method="GET",
-                                                      username=username,
-                                                      password=password)
-        return status, content, response
-
-    def fetch_cbas_stats(self, username=None, password=None):
-        status, content, response = self.cbas_helper.fetch_cbas_stats(
-            username=username, password=password)
-        return status, content, response
-
-    def log_concurrent_query_outcome(self, node_in_test, handles):
+    def log_concurrent_query_outcome(self, cluster, node_in_test, handles):
         run_count = 0
         fail_count = 0
         success_count = 0
         aborted_count = 0
         shell = RemoteMachineShellConnection(node_in_test)
         for handle in handles:
-            status, hand = self.retrieve_request_status_using_handle(
-                node_in_test, handle, shell)
+            status, handle = self.retrieve_request_status_using_handle(
+                cluster, node_in_test, handle, shell)
             if status == "running":
                 run_count += 1
                 self.log.debug("query with handle %s is running." % handle)
@@ -1495,102 +3988,108 @@ class CbasUtil:
         self.log.debug("%s queued jobs are Successful." % success_count)
         self.log.debug("%s queued jobs are Aborted." % aborted_count)
 
-    def update_service_parameter_configuration_on_cbas(self, config_map=None,
-                                                       username=None,
-                                                       password=None):
+    def update_service_parameter_configuration_on_cbas(
+            self, cluster, config_map=None, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if config_map:
             params = json.dumps(config_map)
         else:
             raise ValueError("Missing config map")
         status, content, response = \
-            self.cbas_helper.operation_service_parameters_configuration_cbas(
-                method="PUT", params=params,
-                username=username, password=password)
+            cbas_helper.operation_service_parameters_configuration_cbas(
+                method="PUT", params=params, username=username, password=password)
         return status, content, response
 
-    def fetch_service_parameter_configuration_on_cbas(self, username=None,
-                                                      password=None):
+    def fetch_service_parameter_configuration_on_cbas(
+            self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_service_parameters_configuration_cbas(
+            cbas_helper.operation_service_parameters_configuration_cbas(
                 method="GET", username=username, password=password)
         return status, content, response
 
-    def update_node_parameter_configuration_on_cbas(self, config_map=None,
-                                                    username=None,
-                                                    password=None):
+    def update_node_parameter_configuration_on_cbas(
+            self, cluster, config_map=None, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if config_map:
             params = json.dumps(config_map)
         else:
             raise ValueError("Missing config map")
         status, content, response = \
-            self.cbas_helper.operation_node_parameters_configuration_cbas(
-                method="PUT", params=params,
-                username=username, password=password)
+            cbas_helper.operation_node_parameters_configuration_cbas(
+                method="PUT", params=params, username=username, password=password)
         return status, content, response
 
-    def fetch_node_parameter_configuration_on_cbas(self, username=None,
-                                                   password=None):
+    def fetch_node_parameter_configuration_on_cbas(
+            self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.operation_node_parameters_configuration_cbas(
+            cbas_helper.operation_node_parameters_configuration_cbas(
                 method="GET", username=username, password=password)
         return status, content, response
 
-    def restart_analytics_cluster_uri(self, username=None, password=None):
+    def restart_analytics_cluster_uri(self, cluster, username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.restart_analytics_cluster_uri(username=username,
+            cbas_helper.restart_analytics_cluster_uri(username=username,
                                                            password=password)
         return status, content, response
 
-    def restart_analytics_node_uri(self, node_id, port=8095,
+    def restart_analytics_node_uri(self, cluster, node_id, port=8095,
                                    username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.restart_analytics_node_uri(node_id, port,
-                                                        username=username,
-                                                        password=password)
+            cbas_helper.restart_analytics_node_uri(
+                node_id, port, username=username, password=password)
         return status, content, response
 
-    def fetch_bucket_state_on_cbas(self):
+    def fetch_bucket_state_on_cbas(self, cluster):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.fetch_bucket_state_on_cbas(method="GET",
-                                                        username=None,
-                                                        password=None)
+            cbas_helper.fetch_bucket_state_on_cbas(
+                method="GET", username=None, password=None)
         return status, content, response
 
-    def fetch_pending_mutation_on_cbas_node(self, node_ip, port=9110,
+    def fetch_pending_mutation_on_cbas_node(self, cluster, node_ip, port=9110,
                                             username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.fetch_pending_mutation_on_cbas_node(
+            cbas_helper.fetch_pending_mutation_on_cbas_node(
                 node_ip, port, method="GET",
                 username=username, password=password)
         return status, content, response
 
-    def fetch_pending_mutation_on_cbas_cluster(self, port=9110,
+    def fetch_pending_mutation_on_cbas_cluster(self, cluster, port=9110,
                                                username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         status, content, response = \
-            self.cbas_helper.fetch_pending_mutation_on_cbas_cluster(
+            cbas_helper.fetch_pending_mutation_on_cbas_cluster(
                 port, method="GET", username=username, password=password)
         return status, content, response
 
-    def fetch_dcp_state_on_cbas(self, data_set, data_verse="Default",
+    def fetch_dcp_state_on_cbas(self, cluster, data_set, data_verse="Default",
                                 username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if not data_set:
             raise ValueError("dataset is required field")
-        status, content, response = self.cbas_helper.fetch_dcp_state_on_cbas(
+        status, content, response = cbas_helper.fetch_dcp_state_on_cbas(
             data_set, method="GET", dataverse=data_verse,
             username=username, password=password)
         return status, content, response
 
-    def get_analytics_diagnostics(self, cbas_node, timeout=120):
-        response = self.cbas_helper.get_analytics_diagnostics(cbas_node,
+    def get_analytics_diagnostics(self, cluster, cbas_node, timeout=120):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        response = cbas_helper.get_analytics_diagnostics(cbas_node,
                                                               timeout=timeout)
         return response
 
-    def set_global_compression_type(self, compression_type="snappy",
+    def set_global_compression_type(self, cluster, compression_type="snappy",
                                     username=None, password=None):
-        return self.cbas_helper.set_global_compression_type(compression_type,
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        return cbas_helper.set_global_compression_type(compression_type,
                                                             username, password)
 
-    def wait_for_cbas_to_recover(self, timeout=180):
+    def wait_for_cbas_to_recover(self, cluster, timeout=180):
         """
         Returns True if analytics service is recovered/available.
         False if service is unavailable despite waiting for specified "timeout" period.
@@ -1599,7 +4098,8 @@ class CbasUtil:
         cluster_recover_start_time = time.time()
         while time.time() < cluster_recover_start_time + timeout:
             try:
-                status, _, _, _, _ = self.execute_statement_on_cbas_util("set `import-private-functions` `true`;ping()")
+                status, _, _, _, _ = self.execute_statement_on_cbas_util(
+                    cluster, "set `import-private-functions` `true`;ping()")
                 if status == "success":
                     analytics_recovered = True
                     break
@@ -1608,952 +4108,808 @@ class CbasUtil:
         return analytics_recovered
 
     # Backup Analytics metadata
-    def backup_cbas_metadata(self, bucket_name='default',
-                             username=None, password=None):
-        response = self.cbas_helper.backup_cbas_metadata(bucket_name,
-                                                         username=username,
-                                                         password=password)
+    def backup_cbas_metadata(
+            self, cluster, bucket_name='default', username=None,
+            password=None, include="", exclude=""):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        response = cbas_helper.backup_cbas_metadata(
+            bucket_name, username=username, password=password, include=include,
+            exclude=exclude)
         return response.json()
 
     # Restore Analytics metadata
-    def restore_cbas_metadata(self, metadata, bucket_name='default',
+    def restore_cbas_metadata(self, cluster, metadata, bucket_name='default',
                               username=None, password=None):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
         if metadata is None:
             raise ValueError("Missing metadata")
-        response = self.cbas_helper.restore_cbas_metadata(metadata,
-                                                          bucket_name,
-                                                          username=username,
-                                                          password=password)
+        response = cbas_helper.restore_cbas_metadata(
+            metadata, bucket_name, username=username, password=password)
         return response.json()
 
-    def get_ds_compression_type(self, ds):
-        query = "select raw BlockLevelStorageCompression.DatasetCompressionScheme from Metadata.`Dataset` where DatasetName='{0}';".format(ds)
-        _, _, _, ds_compression_type, _ = self.execute_statement_on_cbas_util(query)
-        ds_compression_type = ds_compression_type[0]
-        if ds_compression_type is not None:
-            ds_compression_type = ds_compression_type.encode('ascii', 'ignore')
-        self.log.info("Compression Type for Dataset {0} is {1}".format(ds, ds_compression_type))
-
-        return ds_compression_type
-
-    def validate_dataset_in_metadata(self, dataset_name, dataverse,
-                                     username=None, password=None, **kwargs):
+    def create_cbas_infra_from_spec(self, cluster, cbas_spec, bucket_util,
+                                    wait_for_ingestion=True):
         """
-        validates metadata information about a dataset with entry in Metadata.Dataset collection.
+        Method creates CBAS infra based on the spec data.
+        :param cbas_spec dict, spec to create CBAS infra.
+        :param local_bucket_util bucket_util_obj, bucket util object of local cluster.
+        :param remote_bucket_util bucket_util_obj, bucket util object of remote cluster.
+        :param wait_for_ingestion bool
         """
-        self.log.debug("Validating dataset entry in Metadata")
-        cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE DatasetName="{0}" \
-        and DataverseName = "{1}";'.format(
-            CBASHelper.unformat_name(dataset_name),
-            CBASHelper.metadata_format(CBASHelper.unformat_name(dataverse)))
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password)
-        if status == "success" and results:
-            for result in results:
-                if result["DatasetType"] == "INTERNAL":
-                    for key,value in kwargs.items():
-                        if value != result.get(key, ''):
-                            self.log.error("Data Mismatch. Expected - {0} /t Actual - {1}".format(
-                                result.get(key, ''), value))
-                            return False
-                elif result["DatasetType"] == "EXTERNAL":
-                    for prop in results["ExternalDetails"]["Properties"]:
-                        if prop["Name"] == "container":
-                            actual_link_name = prop["Value"]
-                        if prop["Name"] == "name":
-                            actual_bucket_name = prop["Value"]
-                    if actual_link_name != kwargs["link_name"]:
-                        self.log.error("Link name mismatch. Expected - {0} /t Actual - {1}".format(
-                            kwargs["link_name"], actual_link_name))
-                        return False
-                    if actual_bucket_name != kwargs["bucket_name"]:
-                        self.log.error("Bucket name mismatch. Expected - {0} /t Actual - {1}".format(
-                            kwargs["bucket_name"], actual_bucket_name))
-                        return False
-            return True
-        else:
-            return False
+        if not self.create_dataverse_from_spec(cluster, cbas_spec):
+            return False, "Failed at create dataverse"
+        if not self.create_link_from_spec(cluster, cbas_spec):
+            return False, "Failed at create link from spec"
+        if not self.create_dataset_from_spec(cluster, cbas_spec, bucket_util):
+            return False, "Failed at create dataset from spec"
 
-    def validate_dataverse_in_metadata(self, dataverse, username=None, password=None):
-        """
-        Validates whether a dataverse is present in Metadata.Dataverse
-        :param dataverse : str, Name of the dataverse, which has to be validated.
-        :param username : str
-        :param password : str
-        :return boolean
-        """
-        self.log.debug("Validating dataverse entry in Metadata")
-        cmd = "select value dv from Metadata.`Dataverse` as dv where\
-         dv.DataverseName = \"{0}\";".format(
-            CBASHelper.metadata_format(CBASHelper.unformat_name(dataverse)))
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password)
-        if status == "success":
-            if results:
-                return True
-            else:
-                return False
-        else:
-            return False
+        jobs = Queue()
+        results = list()
 
-    def create_analytics_scope(self, scope_name=None,
-                               username=None, password=None,
-                               validate_error_msg=False,
-                               expected_error=None,
-                               expected_error_code=None):
-        """
-        Creates analytics scope. This method is synthetic sugar for creating
-        dataverse in analytics.
-        :param scope_name: str, name of the scope to be created. Supports 1-part and 2-part names.
-        :param username: str
-        :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised
-        with expected error msg and code.
-        :param expected_error: str
-        :param expected_error_code: str
-        :return boolean
-        """
-
-        if not scope_name:
-            cmd = "create analytics scope Default;"
-        else:
-            cmd = "create analytics scope %s" % scope_name
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd,
-                                                username=username,
-                                                password=password)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error,
-                                                   expected_error_code)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def drop_analytics_scope(self, scope_name=None,
-                             username=None, password=None,
-                             validate_error_msg=False,
-                             expected_error=None,
-                             expected_error_code=None):
-        """
-        Creates analytics scope. This method is synthetic sugar for creating
-        dataverse in analytics.
-        :param scope_name: str, name of the scope to be created. Supports 1-part and 2-part names.
-        :param username: str
-        :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised
-        with expected error msg and code.
-        :param expected_error: str
-        :param expected_error_code: str
-        :return boolean
-        """
-        if scope_name:
-            cmd = "drop analytics scope %s;" % scope_name
-        else:
-            cmd = "drop analytics scope Default;"
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd,
-                                                username=username,
-                                                password=password)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error,
-                                                   expected_error_code)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def create_analytics_collection(
-            self, KV_entity_name, cbas_collection_name, where_field=None,
-            where_value = None, validate_error_msg=False, expected_error=None,
-            dataverse=None, compress_dataset=False, link_name=None,
-            username = None, password = None, timeout=120, analytics_timeout=120):
-        """
-        Creates a analytics collection which is syntactic sugar for creating datasets.
-        :param KV_bucket_name: string, name of the KV entity on which dataset is to be created.
-        Can be bucket name or collection name.
-        :param cbas_collection_name: string, name of the analytics collection to be created.
-        :param where field: string, name of the filters to be applied while creating cbas collections.
-        :param where_value: string, value of the filters to be applied while creating cbas collections.
-        :param validating_error_msg: boolean, if True, then validate error occurred during
-        cbas collection creation.
-        :param expected_error: string, error msg to be validated.
-        :param dataverse: string, dataverse name under which the cbas collection needs to be created.
-        :param compress_cbas_collection: boolean
-        :param link_name: string, name of the link to create cbas collection on.
-        :param username: string,
-        :param password: string,
-        :param timeout: int,
-        :param analytics_timeout: int,
-        """
-
-        cmd_create_dataset = "create analytics collection {0} ".format(cbas_collection_name)
-        if compress_dataset:
-            cmd_create_dataset = cmd_create_dataset + "with {'storage-block-compression': {'scheme': 'snappy'}} "
-
-        cmd_create_dataset = cmd_create_dataset + "on {0} ".format(KV_entity_name)
-
-        if link_name:
-            cmd_create_dataset = cmd_create_dataset + "at {0} ".format(link_name)
-
-        if where_field and where_value:
-            cmd_create_dataset = cmd_create_dataset + "WHERE `{0}`=\"{1}\";".format(where_field, where_value)
-        else:
-            cmd_create_dataset = cmd_create_dataset + ";"
-
-        if dataverse is not None:
-            dataverse_prefix = 'use ' + dataverse + ';\n'
-            cmd_create_dataset = dataverse_prefix + cmd_create_dataset
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd_create_dataset))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd_create_dataset, username=username, password=password,timeout=timeout,
-            analytics_timeout=analytics_timeout)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def drop_analytics_collection(self, cbas_collection_name,
-                                  dataverse="Default", validate_error_msg=False,
-                                  expected_error=None, username=None, password=None):
-        """
-        Drop a analytics collection which is syntactic sugar for dropping datasets.
-        :param cbas_collection_name: string, name of the analytics collection to be created.
-        :param dataverse: string, dataverse name under which the cbas collection needs to be created.
-        :param validating_error_msg: boolean, if True, then validate error occurred during
-        cbas collection creation.
-        :param expected_error: string, error msg to be validated.
-        :param username: string,
-        :param password: string,
-        """
-        if dataverse == "Default":
-            cmd_drop_dataset = "drop analytics collection {0};".format(cbas_collection_name)
-        else:
-            cmd_drop_dataset = "drop analytics collection {0}.{1};".format(dataverse, cbas_collection_name)
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd_drop_dataset))
-        status, metrics, errors, results, _ = \
-            self.execute_statement_on_cbas_util(cmd_drop_dataset,
-                                                username=username,
-                                                password=password)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def enable_analytics_from_KV(self, kv_entity_name, compress_dataset=False,
-                                 validate_error_msg=False,
-                                 expected_error=None, username=None, password=None,
-                                 timeout=120, analytics_timeout=120):
-        """
-        Enables analytics directly from KV.
-        :param kv_entity_name: string, can be fully quantified collection name
-        (bucket.scope.collection) or a bucket name.
-        :param compress_cbas_collection: boolean, to enable compression on created dataset.
-        :param validate_error_msg: boolean,
-        :param expected_error: string,
-        :param username: string,
-        :param password: string,
-        :param timeout: int,
-        :param analytics_timeout: int,
-        """
-        cmd = "Alter collection {0} enable analytics ".format(kv_entity_name)
-        if compress_dataset:
-            cmd = cmd + "with {'storage-block-compression': {'scheme': 'snappy'}}"
-        cmd = cmd + ";"
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
-            analytics_timeout=analytics_timeout)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def disable_analytics_from_KV(self, kv_entity_name,
-                                 validate_error_msg=False,
-                                 expected_error=None, username=None, password=None,
-                                 timeout=120, analytics_timeout=120):
-        """
-        Disables analytics directly from KV.
-        :param kv_entity_name: string, can be fully quantified collection name
-        (bucket.scope.collection) or a bucket name.
-        :param validate_error_msg: boolean,
-        :param expected_error: string,
-        :param username: string,
-        :param password: string,
-        :param timeout: int,
-        :param analytics_timeout: int,
-        """
-        cmd = "Alter collection {0} disable analytics;".format(kv_entity_name)
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
-            analytics_timeout=analytics_timeout)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def validate_synonym_in_metadata(self, synonym, synonym_dataverse,
-                                     object_dataverse, object_name,
-                                     username=None, password=None):
-        """
-        Validates whether an entry for Synonym is present in Metadata.Synonym.
-        :param synonym : str, Name of the Synonym, which has to be validated.
-        :param synonym_dataverse : str, Name of the dataverse under which the synonym is created
-        :param object_dataverse : str, Name of the object's dataverse on which the synonym was created.
-        :param object_name : str, Name of the object on which the synonym was created.
-        :param username : str
-        :param password : str
-        :return boolean
-        """
-        self.log.debug("Validating Synonym entry in Metadata")
-        cmd = "select value sy from Metadata.`Synonym` as sy where \
-        sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\";".format(
-            synonym,synonym_dataverse)
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password)
-        if status == "success":
-            for result in results:
-                if result['ObjectDataverseName'] == object_dataverse and result['ObjectName'] == object_name:
-                    return True
-            return False
-        else:
-            return False
-
-    def create_analytics_synonym(self, synonym_name, object_name,
-                                 synonym_dataverse=None, object_dataverse=None,
-                                 if_not_exists=False,
-                                 validate_error_msg=False, expected_error=None,
-                                 username=None, password=None,
-                                 timeout=120, analytics_timeout=120):
-        """
-        Creates an analytics synonym on a dataset.
-        :param synonym_name : str, Name of the Synonym, which has to be created.
-        :param object_name : str, Name of the dataset on which the synonym is to be created.
-        :param synonym_dataverse : str, Name of the dataverse under which the synonym is to be created
-        :param object_dataverse : str, Name of the dataset's dataverse on which the synonym is to be created.
-        :param validate_error_msg : boolean, validate error while creating synonym
-        :param expected_error : str, error msg
-        :param username : str
-        :param password : str
-        :param timeout : str
-        :param analytics_timeout : str
-        """
-        cmd = "create analytics synonym "
-
-        if synonym_dataverse:
-            cmd += "{0}.".format(synonym_dataverse)
-
-        cmd += "{0} ".format(synonym_name)
-
-        if if_not_exists:
-            cmd += "If Not Exists "
-
-        cmd += "for "
-
-        if object_dataverse:
-            cmd += "{0}.".format(object_dataverse)
-
-        cmd += "{0};".format(object_name)
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password,timeout=timeout,
-            analytics_timeout=analytics_timeout)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def drop_analytics_synonym(self, synonym_name, synonym_dataverse=None,
-                               validate_error_msg=False, expected_error=None,
-                               username=None, password=None,
-                               timeout=120, analytics_timeout=120):
-        """
-        Drop an analytics synonym.
-        :param synonym_name : str, Name of the Synonym, which has to be dropped.
-        :param synonym_dataverse : str, Name of the dataverse under which the synonym is present.
-        :param validate_error_msg : boolean, validate error while creating synonym
-        :param expected_error : str, error msg
-        :param username : str
-        :param password : str
-        :param timeout : str
-        :param analytics_timeout : str
-        """
-
-        cmd = "drop analytics synonym "
-
-        if synonym_dataverse:
-            cmd += "{0}.".format(synonym_dataverse)
-
-        cmd += "{0};".format(synonym_name)
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password,timeout=timeout,
-            analytics_timeout=analytics_timeout)
-        if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
-        else:
-            if status != "success":
-                return False
-            else:
-                return True
-
-    def validate_synonym_doc_count(self, full_synonym_name, full_dataset_name,
-                                   validate_error_msg=False, expected_error=None,
-                                   timeout=300, analytics_timeout=300):
-        """
-        Validate that doc count in synonym is same as the dataset on which it was created.
-        :param full_synonym_name : str, Name of the Synonym
-        :param full_dataset_name : str, Name of the dataset on which the synonym was created.
-        :param validate_error_msg : boolean, validate error while creating synonym
-        :param expected_error : str, error msg
-        :param timeout : int
-        :param analytics_timeout : int
-        """
-
-        cmd_get_num_items = "select count(*) from %s;"
-
-        synonym_status, metrics, errors, synonym_results, _ = \
-            self.execute_statement_on_cbas_util(
-                cmd_get_num_items % full_synonym_name,
-                timeout=timeout,
-                analytics_timeout=analytics_timeout)
-        if validate_error_msg:
-            return self.validate_error_in_response(synonym_status, errors,
-                                                   expected_error)
-        else:
-            if synonym_status != "success":
-                self.log.error("Querying synonym failed")
-                synonym_results = 0
-            else:
-                self.log.debug("No. of items in synonym {0} : {1}"
-                               .format(full_synonym_name, synonym_results[0]['$1']))
-                synonym_results = synonym_results[0]['$1']
-
-            dataset_status, metrics, errors, dataset_results, _ = \
-                self.execute_statement_on_cbas_util(
-                    cmd_get_num_items % full_dataset_name,
-                    timeout=timeout,
-                    analytics_timeout=analytics_timeout)
-            if dataset_status != "success":
-                self.log.error("Querying dataset failed")
-                dataset_results = 0
-            else:
-                self.log.debug("No. of items in dataset {0} : {1}"
-                               .format(full_dataset_name, dataset_results[0]['$1']))
-                dataset_results = dataset_results[0]['$1']
-
-            if dataset_results != synonym_results:
-                return False
-            return True
-
-    def is_link_active(self, link_name, dataverse_name, link_type="Local",
-                       username=None, password=None, timeout=120, analytics_timeout=120):
-        """
-        Validates whether a link is active or not. Valid only for
-        Local and couchbase links
-        :param link_name: str, Name of the link to be validated.
-        :param dataverse_name: str, dataverse name where the link is present
-        :param link_type: str, type of link, valid values are Local, s3 or couchbase
-        :param username : str
-        :param password : str
-        :param timeout int, REST API timeout
-        :param analytics_timeout int, analytics query timeout
-        """
-        self.log.debug("Validating link entry in Metadata")
-        cmd = "select value lnk from Metadata.`Link` as lnk where\
-         lnk.DataverseName = \"{0}\" and lnk.Name = \"{1}\"".format(
-            CBASHelper.unformat_name(dataverse_name),
-            CBASHelper.unformat_name(link_name))
-
-        if link_type != "Local":
-            cmd += " and lnk.`Type` = \"{0}\"".format((link_type).upper())
-        cmd += ";"
-
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cmd, username=username, password=password, timeout=timeout,
-            analytics_timeout=analytics_timeout)
-        if status == "success":
-            if results:
-                if (link_type).lower() != "s3" and results[0]["IsActive"]:
-                    return True
+        # Connect link only when remote links are present, Local link is connected by default and
+        # external links are not required to be connected.
+        remote_links = self.list_all_link_objs("couchbase")
+        if len(remote_links) > 0:
+            self.log.info("Connecting all remote Links")
+            for link in remote_links:
+                if not self.connect_link(
+                        cluster, link.full_name,
+                        timeout=cbas_spec.get("api_timeout", 120),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
+                    results.append(False)
                 else:
-                    return False
+                    results.append(True)
+
+        if not all(results):
+            return False, "Failed at connect_link"
+
+        results = []
+
+        if wait_for_ingestion:
+            # Wait for data ingestion only for datasets based on either local KV source or remote KV source,
+            internal_datasets = self.list_all_dataset_objs(
+                dataset_source="internal")
+            self.refresh_dataset_item_count(bucket_util)
+            if len(internal_datasets) > 0:
+                self.log.info("Waiting for data to be ingested into datasets")
+                for dataset in internal_datasets:
+                    jobs.put((
+                        self.wait_for_ingestion_complete,
+                        {"cluster": cluster,
+                         "dataset_names": [dataset.full_name],
+                         "num_items": dataset.num_of_items,
+                         "timeout": cbas_spec.get("api_timeout", 120)}))
+            self.run_jobs_in_parallel(jobs, results,
+                                      cbas_spec["max_thread_count"],
+                                      async_run=False)
+            if not all(results):
+                return False, "Failed at wait for ingestion"
+
+        self.log.info("Creating Synonyms based on CBAS Spec")
+        if not self.create_synonym_from_spec(cluster, cbas_spec):
+            return False, "Could not create synonym"
+
+        self.log.info("Creating Indexes based on CBAS Spec")
+        if not self.create_index_from_spec(cluster, cbas_spec):
+            return False, "Failed at create index from spec"
+
+        return True, "Success"
+
+    def delete_cbas_infra_created_from_spec(
+            self, cluster, cbas_spec, expected_index_drop_fail=True,
+            expected_synonym_drop_fail=True, expected_dataset_drop_fail=True,
+            expected_link_drop_fail=True, expected_dataverse_drop_fail=True,
+            delete_dataverse_object=True):
+
+        results = list()
+
+        def retry_func(obj, func_name, func_params):
+            retry = 0
+            result = False
+            while retry < 3 and not result:
+                result = func_name(**func_params)
+                retry += 1
+            if not result:
+                if hasattr(obj, "full_name"):
+                    results.append(obj.full_name)
+                else:
+                    results.append(obj.name)
+
+        def print_failures(name, list_of_failures):
+            self.log.error("Failed to drop following {0} -".format(name))
+            self.log.error(str(list_of_failures))
+
+        self.log.info("Dropping all the indexes")
+        for index in self.list_all_index_objs():
+            retry_func(
+                index, self.drop_cbas_index,
+                {"cluster": cluster, "index_name": index.name,
+                 "dataset_name": index.full_dataset_name,
+                 "analytics_index": index.analytics_index,
+                 "timeout": cbas_spec.get("api_timeout", 120),
+                 "analytics_timeout": cbas_spec.get("cbas_timeout", 120)}
+            )
+        if any(results):
+            if expected_index_drop_fail:
+                print_failures("Secondary Indexes", results)
+                results = []
             else:
                 return False
-        else:
-            return False
+        self.log.info("Dropping all the synonyms")
+        for synonym in self.list_all_synonym_objs():
+            retry_func(
+                synonym, self.drop_analytics_synonym,
+                {"cluster":cluster, "synonym_full_name": synonym.full_name,
+                 "if_exists": True, "timeout": cbas_spec.get("api_timeout", 120),
+                 "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+        if any(results):
+            if expected_synonym_drop_fail:
+                print_failures("Synonyms", results)
+                results = []
+            else:
+                return False
+        self.log.info("Dropping all the Datasets")
+        for dataset in self.list_all_dataset_objs():
+            dataset_name = dataset.full_name
 
+            if dataset.dataverse_name == "Default":
+                dataset_name = dataset.name
 
-class Dataset:
-    """
-    This class has helper methods to create datasets and synonyms on randomly select
-    KV buckets or collections.
-    """
+            if isinstance(dataset, CBAS_Collection):
+                retry_func(
+                    dataset, self.drop_dataset,
+                    {"cluster": cluster, "dataset_name": dataset_name,
+                     "if_exists": True, "analytics_collection": True,
+                     "timeout": cbas_spec.get("api_timeout", 120),
+                     "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+            else:
+                retry_func(
+                    dataset, self.drop_dataset,
+                    {"cluster": cluster, "dataset_name": dataset_name,
+                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 120),
+                     "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+        if any(results):
+            if expected_dataset_drop_fail:
+                print_failures("Datasets", results)
+                results = []
+            else:
+                return False
 
-    def __init__(self,
-                 bucket_util,
-                 cbas_util,
-                 consider_default_KV_scope=True,
-                 consider_default_KV_collection=True,
-                 dataset_name_cardinality=1,
-                 bucket_cardinality=1,
-                 random_dataset_name=True,
-                 exclude_bucket=[],
-                 exclude_scope=[],
-                 exclude_collection=[],
-                 set_kv_entity=True
-                 ):
+        self.log.info("Disconnecting and Dropping all the Links")
+        for link in self.list_all_link_objs():
+            retry_func(
+                link, self.disconnect_link,
+                {"cluster":cluster, "link_name": link.full_name,
+                 "timeout": cbas_spec.get("api_timeout", 120),
+                 "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+            try:
+                results.pop()
+            except:
+                retry_func(
+                    link, self.drop_link,
+                    {"cluster":cluster, "link_name": link.full_name,
+                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 120),
+                     "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+            else:
+                results.append(link.full_name)
+
+        if any(results):
+            if expected_link_drop_fail:
+                print_failures("Links", results)
+                results = []
+            else:
+                return False
+
+        self.log.info("Dropping all the Dataverses")
+        for dataverse in self.dataverses.values():
+            if dataverse.name != "Default":
+                if isinstance(dataverse, CBAS_Scope):
+                    retry_func(
+                        dataverse, self.drop_dataverse,
+                        {"cluster":cluster, "dataverse_name": dataverse.name,
+                         "if_exists": True, "analytics_scope": True,
+                         "delete_dataverse_obj": delete_dataverse_object,
+                         "timeout": cbas_spec.get("api_timeout", 120),
+                         "analytics_timeout": cbas_spec.get("cbas_timeout",
+                                                            120)})
+                else:
+                    retry_func(
+                        dataverse, self.drop_dataverse,
+                        {"cluster":cluster, "dataverse_name": dataverse.name,
+                         "if_exists": True,
+                         "delete_dataverse_obj": delete_dataverse_object,
+                         "timeout": cbas_spec.get("api_timeout", 120),
+                         "analytics_timeout": cbas_spec.get("cbas_timeout",
+                                                            120)})
+
+        if any(results):
+            if expected_dataverse_drop_fail:
+                print_failures("Dataverses", results)
+            else:
+                return False
+        return True
+
+    def kill_cbas_process(self, cluster, cbas_nodes=[]):
+        results = {}
+        if not cbas_nodes:
+            cbas_nodes = [cluster.cbas_cc_node]
+        for cbas_node in cbas_nodes:
+            cbas_shell = RemoteMachineShellConnection(cbas_node)
+            output, error = cbas_shell.kill_cbas()
+            results[cbas_node.ip] = (output, error)
+            cbas_shell.disconnect()
+        return results
+
+    def start_kill_processes_task(self, cluster, cluster_util, cbas_kill_count=0,
+                                  memcached_kill_count=0, interval=5):
+        if not cbas_kill_count and not memcached_kill_count:
+            return None
+        process_kill_task = KillProcessesInLoopTask(
+            cluster, self, cluster_util, cbas_kill_count, memcached_kill_count,
+            interval)
+        self.task.jython_task_manager.add_new_task(process_kill_task)
+        return process_kill_task
+
+    def wait_for_processes(self, servers, processes=[], timeout=600):
+        results = {}
+        for server in servers:
+            shell_helper = RemoteMachineHelper(RemoteMachineShellConnection(
+                server))
+            results[server.ip] = []
+            for process in processes:
+                process_running = shell_helper.is_process_running(process)
+                process_timeout = time.time() + timeout
+                while process_running is None and \
+                        time.time() <= process_timeout:
+                    time.sleep(1)
+                    process_running = shell_helper.is_process_running(process)
+                results[server.ip].append(process_running)
+            time.sleep(20)
+        return results
+
+    def start_connect_disconnect_links_task(self, cluster, links,
+                                            run_infinitely=False, interval=5):
+        if not links:
+            return None
+        links_task = DisconnectConnectLinksTask(
+            cluster, self, links, run_infinitely, interval)
+        self.task.jython_task_manager.add_new_task(links_task)
+        return links_task
+
+    def cleanup_cbas(self, cluster):
         """
-        :param bucket_util: object, object of BucketUtil class.
-        :param cbas_util: object, object of CBASUtil class.
-        :param consider_default_KV_scope: boolean, if set to False, skips
-        _default KV scope of the selected bucket while choosing collection to
-        create dataset on.
-        :param consider_default_KV_collection: boolean, if set to False, skips
-        _default KV collection of the selected bucket while choosing collection to
-        create dataset on.
-        :param dataset_name_cardinality: int, number of parts in dataset name.
-        Valid values are 1,2,3
-        :param bucket_cardinality: int, number of parts in KV entity name.
-        Valid values are 1,2,3
-        :param random_dataset_name: boolean, if True, create a random dataset name based
-        on dataset_name_cardinality, otherwise it is set to KV entity name.
+        Drops all Dataverses, Datasets, Indexes, UDFs, Synonyms and Links
+        """
+        try:
+            # Drop all indexes
+            for idx in self.get_indexes(cluster):
+                idx = idx.split(".")
+                if not self.drop_cbas_index(cluster, idx[-1], ".".join(idx[:-1])):
+                    self.log.error("Unable to drop Index {0}".format(idx))
+
+            # Disconnect all links
+            links = [".".join(l["scope"].split("/") + [l["name"]]) for l in self.get_link_info(
+                cluster)]
+            for lnk in links:
+                if not self.disconnect_link(cluster, lnk):
+                    self.log.error("Unable to disconnect Link {0}".format(lnk))
+
+            for syn in self.get_synonyms(cluster):
+                if not self.drop_analytics_synonym(cluster, syn):
+                    self.log.error("Unable to drop Synonym {0}".format(syn))
+
+            for udf in self.get_udfs(cluster):
+                if not self.drop_udf(cluster, udf[1], udf[0], udf[2]):
+                    self.log.error("Unable to drop UDF {0}".format(udf[1]))
+
+            for ds in self.get_datasets(cluster):
+                if not self.drop_dataset(cluster, ds):
+                    self.log.error("Unable to drop Dataset {0}".format(ds))
+
+            for lnk in links:
+                if not self.drop_link(cluster, lnk):
+                    self.log.error("Unable to drop Link {0}".format(lnk))
+
+            for dv in self.get_dataverses(cluster).remove("Default"):
+                if not self.drop_dataverse(cluster, dv):
+                    self.log.error("Unable to drop Dataverse {0}".format(dv))
+        except Exception as e:
+            self.log.info(e.message)
+
+
+class DisconnectConnectLinksTask(Task):
+    def __init__(self, cluster, cbas_util, links, run_infinitely=False, interval=5):
+        super(DisconnectConnectLinksTask, self).__init__(
+            "DisconnectConnectLinksTask")
+        self.cluster = cluster
+        self.cbas_util = cbas_util
+        self.links = links
+        self.run_infinitely = run_infinitely
+        self.results = []
+        self.interval = interval
+
+    def call(self):
+        self.start_task()
+        try:
+            while True:
+                for link in self.links:
+                    dv, name = link.split(".")
+                    if self.cbas_util.is_link_active(self.cluster, name, dv):
+                        disconnect_result = self.cbas_util.disconnect_link(
+                            self.cluster, link)
+                        self.sleep(self.interval)
+                        connect_result = self.cbas_util.connect_link(
+                            self.cluster, link, with_force=True)
+                    else:
+                        connect_result = self.cbas_util.connect_link(
+                            self.cluster, link, with_force=True)
+                        self.sleep(self.interval)
+                        disconnect_result = self.cbas_util.disconnect_link(
+                            self.cluster, link)
+                    self.sleep(self.interval)
+                    self.results.append(connect_result and disconnect_result)
+                if not self.run_infinitely:
+                    break
+        except Exception as e:
+            self.set_exception(e)
+            return
+        self.result = all(self.results)
+        self.complete_task()
+
+
+class KillProcessesInLoopTask(Task):
+    def __init__(self, cluster, cbas_util, cluster_util, cbas_kill_count=0,
+                 memcached_kill_count=0, interval=5, timeout=600):
+        super(KillProcessesInLoopTask, self).__init__(
+            "KillProcessesInLoopTask")
+        self.cluster = cluster
+        self.cbas_util = cbas_util
+        self.cluster_util = cluster_util
+        self.cbas_kill_count = cbas_kill_count
+        self.memcached_kill_count = memcached_kill_count
+        self.interval = interval
+        self.timeout = timeout
+
+    def call(self):
+        self.start_task()
+        try:
+            for _ in range(self.cbas_kill_count + self.memcached_kill_count):
+                if self.cbas_kill_count > 0:
+                    output = self.cbas_util.kill_cbas_process(
+                        self.cluster, self.cluster.servers)
+                    self.cbas_kill_count -= 1
+                    self.log.info(str(output))
+                if self.memcached_kill_count > 0:
+                    self.cluster_util.kill_memcached(self.cluster)
+                    self.memcached_kill_count -= 1
+                self.sleep(self.interval)
+        except Exception as e:
+            self.set_exception(e)
+            return
+        self.complete_task()
+
+
+class CBASRebalanceUtil(object):
+
+    def __init__(self, cluster_util, bucket_util, task, vbucket_check=True,
+                 cbas_util=None):
+        """
+        :param master cluster's master node object
+        :param cbas_node CBAS node object
+        :param server_task task object
         """
         self.log = logger.get("test")
+        self.cluster_util = cluster_util
         self.bucket_util = bucket_util
+        self.task = task
+        self.vbucket_check = vbucket_check
         self.cbas_util = cbas_util
-        self.bucket_cardinality = bucket_cardinality
-        if set_kv_entity:
-            exclude_scope = list()
-            exclude_collection = list()
-            if not consider_default_KV_scope:
-                exclude_scope.append("_default")
-            if not consider_default_KV_collection:
-                exclude_collection.append("_default")
-            self.set_kv_entity(*self.get_random_kv_entity(
-                self.bucket_util, self.bucket_cardinality,
-                exclude_bucket,exclude_scope,exclude_collection))
 
-        if random_dataset_name:
-            self.full_dataset_name = Dataset.format_name(
-                self.create_name_with_cardinality(dataset_name_cardinality))
+        self.query_threads = list()
+
+    def wait_for_rebalance_task_to_complete(self, task):
+        self.task.jython_task_manager.get_task_result(task)
+        return task.result
+
+    def rebalance(self, cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
+                  cbas_nodes_out=0, available_servers=[], exclude_nodes=[]):
+        if kv_nodes_out > 0:
+            cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
+                cluster, service_type="kv", get_all_nodes=True,
+                servers=cluster.nodes_in_cluster)
         else:
-            self.full_dataset_name = self.get_fully_quantified_kv_entity_name(dataset_name_cardinality)
+            cluster_kv_nodes = []
 
-        self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name,
-                                                                      strip_back_qoutes=True)
-
-    def set_kv_entity(self, kv_bucket_obj=None, kv_scope_obj=None, kv_collection_obj=None):
-        """
-        Set dataset object's properties.
-        :param kv_bucket_obj: KV bucket object
-        :param kv_scope_obj: KV scope object
-        :param kv_collection_obj: KV collection object
-        """
-        if kv_bucket_obj:
-            self.kv_bucket_obj = kv_bucket_obj
-        if kv_scope_obj:
-            self.kv_scope_obj = kv_scope_obj
-        if kv_collection_obj:
-            self.kv_collection_obj = kv_collection_obj
-
-    def set_dataset_name(self, dataset_name):
-        """
-        Set dataset object's name property
-        """
-        self.name = dataset_name
-
-    def set_dataverse_name(self, dataverse_name):
-        """
-        Set dataset object's dataverse property
-        """
-        self.dataverse = dataverse_name
-
-    def set_bucket_cardinality(self, bucket_cardinality):
-        """
-        Set dataset object's bucket_cardinality property
-        """
-        self.bucket_cardinality = bucket_cardinality
-
-    @staticmethod
-    def split_dataverse_dataset_name(full_dataset_name, strip_back_qoutes=False):
-        """
-        This method splits multipart dataset name into dataverse and dataset name.
-        :param full_dataset_name: string, multipart dataset name
-        :param strip_back_qoutes: boolean, strips "`" from each part of dataset name
-        """
-        full_dataset_name_split = full_dataset_name.split(".")
-        if strip_back_qoutes:
-            full_dataset_name_split = [x.strip("`") for x in full_dataset_name_split]
-        if len(full_dataset_name_split) > 1:
-            dataset_name = full_dataset_name_split[-1]
-            dataverse_name = ".".join(full_dataset_name_split[:-1])
+        if cbas_nodes_out > 0:
+            cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
+                cluster, service_type="cbas", get_all_nodes=True,
+                servers=cluster.nodes_in_cluster)
         else:
-            dataset_name = full_dataset_name_split[0]
-            dataverse_name = "Default"
-        return dataverse_name, dataset_name
+            cluster_cbas_nodes = []
+
+        for node in exclude_nodes:
+            try:
+                cluster_kv_nodes.remove(node)
+            except:
+                pass
+            try:
+                cluster_cbas_nodes.remove(node)
+            except:
+                pass
+
+        servs_in = random.sample(available_servers, kv_nodes_in + cbas_nodes_in)
+        servs_out = random.sample(cluster_kv_nodes, kv_nodes_out) + random.sample(
+            cluster_cbas_nodes, cbas_nodes_out)
+
+        if kv_nodes_in == kv_nodes_out:
+            self.vbucket_check = False
+
+        services = list()
+        if kv_nodes_in > 0:
+            services += ["kv"] * kv_nodes_in
+        if cbas_nodes_in > 0:
+            services += ["cbas"] * cbas_nodes_in
+
+        rebalance_task = self.task.async_rebalance(
+            cluster.nodes_in_cluster, servs_in, servs_out,
+            check_vbucket_shuffling=self.vbucket_check,
+            retry_get_process_num=200, services=services)
+
+        available_servers = [servs for servs in available_servers if
+                             servs not in servs_in]
+        available_servers += servs_out
+
+        cluster.nodes_in_cluster.extend(servs_in)
+        cluster.nodes_in_cluster = list(
+            set(cluster.nodes_in_cluster) - set(servs_out))
+        return rebalance_task, available_servers
+
+    def start_parallel_queries(self, cluster, run_kv_queries, run_cbas_queries,
+                               parallelism=3):
+        queries = ["SELECT COUNT (*) FROM {0};"]
+        n1ql_query_task = None
+        cbas_query_task = None
+        if run_kv_queries:
+            n1ql_helper = N1QLHelper(
+                use_rest=True, buckets=cluster.buckets, log=self.log,
+                n1ql_port=cluster.master.n1ql_port, server=cluster.master)
+            n1ql_query_task = RunQueriesTask(
+                cluster, queries, self.task.jython_task_manager,
+                n1ql_helper, query_type="n1ql", parallelism=parallelism,
+                run_infinitely=True, is_prepared=False, record_results=True)
+            self.task.jython_task_manager.add_new_task(n1ql_query_task)
+        if run_cbas_queries:
+            cbas_query_task = RunQueriesTask(
+                cluster, queries, self.task.jython_task_manager,
+                self.cbas_util, query_type="cbas", parallelism=parallelism,
+                run_infinitely=True, is_prepared=False, record_results=True)
+            self.task.jython_task_manager.add_new_task(cbas_query_task)
+        return n1ql_query_task, cbas_query_task
+
+    def stop_parallel_queries(self, n1ql_query_task, cbas_query_task):
+        if cbas_query_task:
+            self.log.info("Stopping CBAS queries")
+            self.task.jython_task_manager.stop_task(cbas_query_task)
+        if n1ql_query_task:
+            self.log.info("Stopping N1QL queries")
+            self.task.jython_task_manager.stop_task(n1ql_query_task)
+
+    def set_retry_exceptions(self, doc_loading_spec, durability_level=None):
+        """
+        Exceptions for which mutations need to be retried during
+        topology changes
+        """
+        retry_exceptions = list()
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        if durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     @staticmethod
-    def format_name(*args):
+    def set_ignore_exceptions(doc_loading_spec):
         """
-        This method encloses each part of the name separated by "." with "`"
+        Exceptions to be ignored.
+        Ignoring DocumentNotFoundExceptions because there could be race conditons
+        eg: reads or deletes before creates
         """
-        return '.'.join(('`' +  _ + '`') for name in args for _ in name.split("."))
+        ignore_exceptions = list()
+        ignore_exceptions.append(SDKException.DocumentNotFoundException)
+        doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
 
-    @staticmethod
-    def format_name_for_error(check_for_special_char_in_name=False,
-                              *args):
-        full_name = list()
-        for name in args:
-            for _ in name.split("."):
-                _ = _.strip("`")
-                if _[0].isdigit() or (
-                    check_for_special_char_in_name and "-" in _):
-                    full_name.append("`{0}`".format(_))
-                else:
-                    full_name.append(_)
-        return '.'.join(full_name)
+    def wait_for_data_load_to_complete(self, task, skip_validations):
+        self.task.jython_task_manager.get_task_result(task)
+        if not skip_validations:
+            self.bucket_util.validate_doc_loading_results(task)
+        return task.result
 
-    @staticmethod
-    def metadata_format(name):
-        name = name.split(".")
-        return "/".join(x.strip("`") for x in name)
+    def data_load_collection(
+            self, cluster, doc_spec_name, skip_validations, async_load=True,
+            skip_read_success_results=True, percentage_per_collection=100,
+            durability_level=None):
+        doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+            doc_spec_name)
+        self.set_retry_exceptions(doc_loading_spec, durability_level)
+        self.set_ignore_exceptions(doc_loading_spec)
+        doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = durability_level
+        doc_loading_spec[
+            MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = skip_read_success_results
+        doc_loading_spec[MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = \
+            skip_read_success_results
+        doc_loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = \
+            percentage_per_collection
+        task = self.bucket_util.run_scenario_from_spec(
+            self.task, cluster, cluster.buckets,
+            doc_loading_spec, mutation_num=0, async_load=async_load)
+        if not async_load:
+            if not skip_validations:
+                self.bucket_util.validate_doc_loading_results(task)
+            return task.result
+        return task
 
-    def get_fully_quantified_dataset_name(self):
-        """
-        Returns fully quantified dataset name.
-        """
-        if self.dataverse in "Default":
-            return Dataset.format_name(self.name)
-        else:
-            return Dataset.format_name(self.dataverse, self.name)
-
-    def get_fully_quantified_dataverse_name(self):
-        """
-        Returns fully quantified dataverse name to which dataset belongs.
-        """
-        return Dataset.format_name(self.dataverse)
-
-    def get_fully_quantified_kv_entity_name(self, cardinality=1):
-        """
-        Returns fully quantified KV collection or bucket name.
-        """
-        if cardinality == 1:
-            return Dataset.format_name(self.kv_bucket_obj.name)
-        elif cardinality == 2:
-            return Dataset.format_name(self.kv_bucket_obj.name,
-                                       self.kv_scope_obj.name)
-        elif cardinality == 3:
-            return Dataset.format_name(self.kv_bucket_obj.name,
-                                       self.kv_scope_obj.name,
-                                       self.kv_collection_obj.name)
-
-    @staticmethod
-    def get_random_kv_entity(bucket_util,
-                             bucket_cardinality=1,
-                             exclude_bucket=[],
-                             exclude_scope=[],
-                             exclude_collection=[]):
-        """
-        Returns KV entity name based on cardinality.
-        :param cardinality: int, accepted values are - 1,2,3
-        :return bucket, scope and collection object.
-        """
-        bucket = random.choice(bucket_util.buckets)
-        while bucket.name in exclude_bucket:
-            bucket = random.choice(bucket_util.buckets)
-        if bucket_cardinality == 1:
-            scope = bucket_util.get_scope_obj(bucket, "_default")
-            collection = bucket_util.get_collection_obj(scope, "_default")
-        else:
-            scope = random.choice(
-                bucket_util.get_active_scopes(bucket))
-            while scope.name in exclude_scope:
-                scope = random.choice(bucket_util.get_active_scopes(bucket))
-            collection = random.choice(bucket_util.get_active_collections(
-                bucket, scope.name))
-            while collection.name in exclude_collection:
-                collection = random.choice(bucket_util.get_active_collections(
-                    bucket, scope.name))
-        return bucket, scope, collection
-
-    @staticmethod
-    def create_name_with_cardinality(name_cardinality=0, max_length=30,
-                                     fixed_length=False):
-        """
-        Creates a name based on name_cadinality.
-        :param name_cardinality: int, accepted values are -
-            0 - Creates string 'Default'
-            1 - Creates a string of random letters and digits of format
-            "exampleString"
-            2 - Creates a string of random letters and digits of format
-            "exampleString.exampleString"
-            3 - Creates a string of random letters and digits of format
-            "exampleString.exampleString.exampleString"
-            4 - Creates string 'Metadata'
-        :param max_length: int, number of characters in the name.
-        :param fixed_length: bool, If True, creates a name with length equals to no_of_char
-        specified, otherwise creates a name with length upto no_of_char specified.
-        """
-        if name_cardinality == 0:
-            return "Default"
-        elif name_cardinality == 4:
-            return "Metadata"
-        elif name_cardinality > 4:
-            return None
-        else:
-            max_name_len = max_length/name_cardinality
-            if fixed_length:
-                return '.'.join(''.join(random.choice(
-                    string.ascii_letters + string.digits)
-                    for _ in range(max_name_len))
-                    for _ in range(name_cardinality))
-            else:
-                return '.'.join(''.join(random.choice(
-                    string.ascii_letters + string.digits)
-                    for _ in range(random.randint(1,max_name_len)))
-                    for _ in range(name_cardinality))
-
-    @staticmethod
-    def get_item_count_in_collection(bucket_util, bucket,
-                                     scope_name="_default",
-                                     collection_name="_default"):
-        """
-        This is a temporary method, use collection stat when
-        https://issues.couchbase.com/browse/MB-38392 is resolved.
-        """
-        for collection in bucket_util.get_active_collections(
-            bucket, scope_name):
-            if collection.name == collection_name:
-                return collection.num_items
-        return 0
-
-    def setup_dataset(self, dataset_creation_method="cbas_dataset",
-                      validate_metadata=True,
-                      validate_doc_count=True,
-                      create_dataverse=True,
-                      validate_error=False, error_msg=None,
-                      compress_dataset=False,
-                      username=None, password=None,
-                      timeout=120, analytics_timeout=120,
-                      link_name=None):
-
-        if self.dataverse and self.dataverse != "Default" and create_dataverse:
-            self.log.info("Creating Dataverse {0}".format(self.dataverse))
-            if not self.cbas_util.create_dataverse_on_cbas(
-                dataverse_name=self.get_fully_quantified_dataverse_name()):
-                self.log.error("Creation of Dataverse {0} failed".format(self.dataverse))
-                return False
-
-        if dataset_creation_method == "cbas_collection":
-            self.log.info("Creating analytics collection {0}".format(self.full_dataset_name))
-            if not self.cbas_util.create_analytics_collection(
-                KV_entity_name=self.get_fully_quantified_kv_entity_name(self.bucket_cardinality),
-                cbas_collection_name=self.get_fully_quantified_dataset_name(),
-                validate_error_msg=validate_error,
-                expected_error=error_msg,
-                username=username, password=password,
-                compress_dataset=compress_dataset,
-                timeout=timeout, analytics_timeout=analytics_timeout,link_name=link_name):
-                self.log.error("Error creating analytics collection {0}".format(self.full_dataset_name))
-                return False
-        elif dataset_creation_method == "cbas_dataset":
-            self.log.info("Creating dataset {0}".format(self.full_dataset_name))
-            if not self.cbas_util.create_dataset_on_bucket(
-                self.get_fully_quantified_kv_entity_name(self.bucket_cardinality),
-                self.get_fully_quantified_dataset_name(),
-                validate_error_msg=validate_error,
-                expected_error=error_msg,
-                username=username, password=password,
-                compress_dataset=compress_dataset,
-                timeout=timeout, analytics_timeout=analytics_timeout,
-                link_name=link_name):
-                self.log.error("Error creating dataset {0}".format(self.full_dataset_name))
-                return False
-        elif dataset_creation_method == "enable_cbas_from_kv":
-            self.log.info("Enabling Analytics on {0}".format(
-                self.get_fully_quantified_kv_entity_name(self.bucket_cardinality)))
-            self.full_dataset_name = self.get_fully_quantified_kv_entity_name(3)
-            self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name,
-                                                                          True)
-            if not self.cbas_util.enable_analytics_from_KV(
-                self.get_fully_quantified_kv_entity_name(self.bucket_cardinality),
-                compress_dataset=compress_dataset,
-                validate_error_msg=validate_error,
-                expected_error=error_msg, username=username, password=password,
-                timeout=timeout, analytics_timeout=analytics_timeout):
-                self.log.error("Error enabling analytics on {0}".format(self.full_dataset_name))
-                return False
-
-        if not validate_error:
-            if validate_metadata:
-                self.log.info("Validating Metadata entries")
-                if self.bucket_cardinality == 1 and dataset_creation_method != "enable_cbas_from_kv":
-                    if not self.cbas_util.validate_dataset_in_metadata(
-                        self.name, self.dataverse, BucketName=self.kv_bucket_obj.name):
-                        return False
-                else:
-                    if not self.cbas_util.validate_dataset_in_metadata(
-                        self.name, self.dataverse, BucketName=self.kv_bucket_obj.name,
-                        ScopeName=self.kv_scope_obj.name,
-                        CollectionName=self.kv_collection_obj.name):
-                        return False
-
-            if validate_doc_count:
-                self.log.info("Validating item count")
-                if not self.cbas_util.validate_cbas_dataset_items_count(
-                    self.get_fully_quantified_dataset_name(),
-                    self.get_item_count_in_collection(
-                        self.bucket_util,self.kv_bucket_obj,
-                        self.kv_scope_obj.name, self.kv_collection_obj.name)):
-                        return False
-
-        return True
-
-    def teardown_dataset(self, dataset_drop_method = "cbas_collection",
-                         validate_error=False, error_msg=None,
-                         validate_metadata=True,
-                         username=None, password=None
-                         ):
-        if dataset_drop_method == "cbas_collection":
-            self.log.info("Dropping analytics collection {0}".format(self.full_dataset_name))
-            if not self.cbas_util.drop_analytics_collection(
-                cbas_collection_name=self.get_fully_quantified_dataset_name(),
-                validate_error_msg=validate_error,
-                expected_error=error_msg,
-                username=username, password=password):
-                self.log.error("Error Dropping analytics collection {0}".format(self.full_dataset_name))
-                return False
-        elif dataset_drop_method == "cbas_dataset":
-            self.log.info("Dropping dataset {0}".format(self.full_dataset_name))
-            if not self.cbas_util.drop_dataset(
-                cbas_dataset_name=self.get_fully_quantified_dataset_name(),
-                validate_error_msg=validate_error,
-                username=username, password=password, expected_error=error_msg):
-                self.log.error("Error dropping dataset {0}".format(self.full_dataset_name))
-                return False
-        elif dataset_drop_method == "disable_cbas_from_kv":
-            self.full_dataset_name = self.get_fully_quantified_kv_entity_name(3)
-            self.dataverse, self.name = self.split_dataverse_dataset_name(self.full_dataset_name,True)
-            self.log.info("Disabling Analytics on {0}".format(self.full_dataset_name))
-            if not self.cbas_util.disable_analytics_from_KV(
-                kv_entity_name=self.full_dataset_name,
-                validate_error_msg=validate_error,
-                expected_error=error_msg, username=username, password=password):
-                self.log.error("Error disabling analytics on {0}".format(self.full_dataset_name))
-                return False
-
-        if (not validate_error) and validate_metadata:
-            self.log.info("Validating Metadata entries")
-            if self.cbas_util.validate_dataset_in_metadata(
-                self.name, self.dataverse,
-                BucketName=self.get_fully_quantified_kv_entity_name(1)):
-                self.log.error("Dropped dataset entry still present in Metadata")
-                return False
-        return True
-
-    def setup_synonym(self, new_synonym_name=False,
-                      synonym_dataverse="Default",
-                      validate_error_msg=False,
-                      expected_error=None,
-                      validate_metadata=True,
-                      validate_doc_count=True,
-                      if_not_exists=False):
-
-        if new_synonym_name:
-            self.synonym_name = self.create_name_with_cardinality(1)
-        else:
-            self.synonym_name = self.name
-
-        if synonym_dataverse == "dataset":
-            self.synonym_dataverse = self.dataverse
-        elif synonym_dataverse == "new":
-            self.synonym_dataverse = self.create_name_with_cardinality(2)
-            # create dataverse if it does not exists.
-            if not self.cbas_util.validate_dataverse_in_metadata(
-                self.synonym_dataverse) and not \
-                self.cbas_util.create_dataverse_on_cbas(
-                dataverse_name=self.format_name(self.synonym_dataverse)):
-                self.log.error("Creation of Dataverse {0} failed".format(
-                    self.synonym_dataverse))
-                return False
-        elif synonym_dataverse == "Default":
-            self.synonym_dataverse = "Default"
-
-        self.log.info("Creating synonym")
-        if not self.cbas_util.create_analytics_synonym(
-            synonym_name=self.format_name(self.synonym_name),
-            object_name=self.full_dataset_name,
-            synonym_dataverse=self.format_name(self.synonym_dataverse),
-            validate_error_msg=validate_error_msg,
-            expected_error=expected_error,
-            if_not_exists=if_not_exists):
-            self.log.error("Error while creating synonym {0} on dataset {1}".format(
-                self.synonym_name, self.full_dataset_name))
-            return False
-
-        if not validate_error_msg:
-            if validate_metadata:
-                self.log.info("Validating created Synonym entry in Metadata")
-                if not self.cbas_util.validate_synonym_in_metadata(
-                    synonym=self.synonym_name,
-                    synonym_dataverse=self.synonym_dataverse,
-                    object_dataverse=self.dataverse, object_name=self.name):
-                    self.log.error("Synonym metadata entry not created")
-                    return False
-
-            if validate_doc_count:
+    def data_validation_collection(self, cluster, skip_validations=True,
+                                   doc_and_collection_ttl=False):
+        retry_count = 0
+        while retry_count < 10:
+            try:
+                self.bucket_util._wait_for_stats_all_buckets(
+                    cluster, cluster.buckets)
+            except:
+                retry_count = retry_count + 1
                 self.log.info(
-                    "Validating whether querying synonym return expected result")
-                if not self.cbas_util.validate_synonym_doc_count(
-                    full_synonym_name=self.format_name(
-                        self.synonym_dataverse,self.synonym_name),
-                    full_dataset_name=self.full_dataset_name):
-                    self.log.error(
-                        "Doc count in Synonym does not match with dataset on which it was created.")
-                    return False
-        return True
+                    "ep-queue hasn't drained yet. Retry count: {0}".format(
+                        retry_count))
+            else:
+                break
+        if retry_count == 10:
+            self.log.info("Attempting last retry for ep-queue to drain")
+            self.bucket_util._wait_for_stats_all_buckets(
+                cluster, cluster.buckets)
+        if doc_and_collection_ttl:
+            self.bucket_util._expiry_pager(cluster, val=5)
+            self.log.info("wait for doc/collection maxttl to finish")
+            time.sleep(400)
+            items = 0
+            self.bucket_util._wait_for_stats_all_buckets(
+                cluster, cluster.buckets)
+            bucket_helper_obj = BucketHelper(cluster.master)
+            for bucket in cluster.buckets:
+                items = items + bucket_helper_obj.get_active_key_count(
+                    bucket)
+            if items != 0:
+                raise Exception("doc count!=0, TTL + rebalance failed")
+        else:
+            if not skip_validations:
+                self.bucket_util.validate_docs_per_collections_all_buckets(cluster)
+
+    def get_failover_count(self, cluster):
+        cluster_status = cluster.rest.cluster_status()
+        failover_count = 0
+        # check for inactiveFailed
+        for node in cluster_status['nodes']:
+            if node['clusterMembership'] == "inactiveFailed":
+                failover_count += 1
+        return failover_count
+
+    def wait_for_failover_or_assert(self, cluster, expected_failover_count,
+                                    timeout=7200):
+        # Timeout is kept large for graceful failover
+        time_start = time.time()
+        time_max_end = time_start + timeout
+        actual_failover_count = 0
+        while time.time() < time_max_end:
+            actual_failover_count = self.get_failover_count(cluster)
+            if actual_failover_count == expected_failover_count:
+                break
+            time.sleep(20)
+        time_end = time.time()
+        if actual_failover_count != expected_failover_count:
+            self.log.info(cluster.rest.print_UI_logs())
+
+        if actual_failover_count == expected_failover_count:
+            self.log.info("{0} nodes failed over as expected in {1} seconds"
+                          .format(actual_failover_count,
+                                  time_end - time_start))
+        else:
+            raise Exception(
+                "{0} nodes failed over, expected : {1}".format(
+                    actual_failover_count, expected_failover_count))
+
+    def failover(self, cluster, failover_type="Hard", action="RebalanceOut",
+                 service_type="cbas", timeout=7200, available_servers=[],
+                 exclude_nodes=[]):
+
+        self.log.info("{0} Failover a node and {1} that node".format(
+            failover_type, action))
+
+        if "kv" in service_type:
+            cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
+                cluster, service_type="kv", get_all_nodes=True,
+                servers=cluster.nodes_in_cluster)
+        else:
+            cluster_kv_nodes = []
+
+        if "cbas" in service_type:
+            cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
+                cluster, service_type="cbas", get_all_nodes=True,
+                servers=cluster.nodes_in_cluster)
+        else:
+            cluster_cbas_nodes = []
+
+        for node in exclude_nodes:
+            try:
+                cluster_kv_nodes.remove(node)
+            except:
+                pass
+            try:
+                cluster_cbas_nodes.remove(node)
+            except:
+                pass
+
+        failover_count = 0
+        kv_failover_nodes = []
+        cbas_failover_nodes = []
+        success_kv_failed_over = False
+        success_cbas_failed_over = False
+
+        # Mark Node for failover
+        if failover_type == "Graceful":
+            chosen = self.cluster_util.pick_nodes(
+                cluster.master, howmany=1,
+                target_node=cluster_kv_nodes[0],
+                exclude_nodes=exclude_nodes)
+            success_kv_failed_over = cluster.rest.fail_over(
+                chosen[0].id, graceful=True)
+            failover_count += 1
+            kv_failover_nodes.extend(chosen)
+        else:
+            if "kv" in service_type:
+                chosen = self.cluster_util.pick_nodes(
+                    cluster.master, howmany=1,
+                    target_node=cluster_kv_nodes[0], exclude_nodes=exclude_nodes)
+                success_kv_failed_over = cluster.rest.fail_over(
+                    chosen[0].id, graceful=False)
+                failover_count += 1
+                kv_failover_nodes.extend(chosen)
+            if "cbas" in service_type and cluster_cbas_nodes:
+                chosen = self.cluster_util.pick_nodes(
+                    cluster.master, howmany=1, target_node=cluster_cbas_nodes[0],
+                    exclude_nodes=exclude_nodes)
+                success_cbas_failed_over = cluster.rest.fail_over(
+                    chosen[0].id, graceful=False)
+                failover_count += 1
+                cbas_failover_nodes.extend(chosen)
+        time.sleep(300)
+        self.wait_for_failover_or_assert(cluster, failover_count, timeout)
+
+        # Perform the action
+        if action == "RebalanceOut":
+            nodes = cluster.rest.node_statuses()
+            cluster.rest.rebalance(
+                otpNodes=[node.id for node in nodes],
+                ejectedNodes=[node.id for node in
+                              (kv_failover_nodes + cbas_failover_nodes)]
+            )
+            # self.sleep(600)
+            if not cluster.rest.monitorRebalance(stop_if_loop=False):
+                raise Exception("Rebalance failed")
+            servs_out = [node for node in cluster.nodes_in_cluster for
+                         fail_node in (
+                                 kv_failover_nodes + cbas_failover_nodes) if
+                         node.ip == fail_node.ip]
+            cluster.nodes_in_cluster = list(
+                set(cluster.nodes_in_cluster) - set(servs_out))
+            available_servers += servs_out
+            time.sleep(10)
+        else:
+            if action == "FullRecovery":
+                if success_kv_failed_over:
+                    cluster.rest.set_recovery_type(
+                        otpNode=kv_failover_nodes[0].id, recoveryType="full")
+                if success_cbas_failed_over:
+                    cluster.rest.set_recovery_type(
+                        otpNode=cbas_failover_nodes[0].id, recoveryType="full")
+            elif action == "DeltaRecovery":
+                if success_kv_failed_over:
+                    cluster.rest.set_recovery_type(
+                        otpNode=kv_failover_nodes[0].id, recoveryType="delta")
+            rebalance_task = self.task.async_rebalance(
+                cluster.nodes_in_cluster, [], [], retry_get_process_num=200)
+            if not self.wait_for_rebalance_task_to_complete(rebalance_task):
+                raise Exception(
+                    "Rebalance failed while doing recovery after failover")
+            time.sleep(10)
+        return available_servers
+
+
+class BackupUtils(object):
+
+    def __init__(self):
+        pass
+
+    def _configure_backup(self, cluster, archive, repo, disable_analytics,
+                          exclude, include):
+
+        shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
+        shell.log.info('Delete previous backups')
+        command = 'rm -rf %s' % archive
+        o, r = shell.execute_command(command)
+        shell.log_command_output(o, r)
+
+        shell.log.info('Configure backup')
+        configure_bkup_cmd = '{0}cbbackupmgr config -a {1} -r {2}'.format(
+            shell.return_bin_path_based_on_os(shell.return_os_type()),
+            archive, repo)
+        configure_bkup_cmd = self._build_backup_cmd_with_optional_parameters(
+            disable_analytics, exclude, include, [], configure_bkup_cmd)
+        o, r = shell.execute_command(configure_bkup_cmd)
+        shell.log_command_output(o, r)
+        shell.disconnect()
+
+    def cbbackupmgr_backup_cbas(
+            self, cluster, archive='/tmp/backups', repo='example',
+            disable_analytics=False, exclude=[], include=[],
+            username="Administrator", password="password", skip_configure_bkup=False):
+
+        shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
+        if not skip_configure_bkup:
+            self._configure_backup(
+                cluster, archive, repo, disable_analytics, exclude, include)
+
+        bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5}'.format(
+            shell.return_bin_path_based_on_os(shell.return_os_type()),
+            archive, repo, cluster.cbas_cc_node.ip, username, password)
+        o, r = shell.execute_command(bkup_cmd)
+        shell.log_command_output(o, r)
+        shell.disconnect()
+        return o
+
+    def cbbackupmgr_restore_cbas(
+            self, cluster, archive='/tmp/backups', repo='example',
+            disable_analytics=False, exclude=[], include=[], mappings=[],
+            username="Administrator", password="password"):
+
+        shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
+        shell.log.info('Restore backup using cbbackupmgr')
+        restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5} --force-updates'.format(
+            shell.return_bin_path_based_on_os(shell.return_os_type()),
+            archive, repo, cluster.cbas_cc_node.ip, username, password)
+        restore_cmd = self._build_backup_cmd_with_optional_parameters(
+            disable_analytics, exclude, include, mappings, restore_cmd)
+        o, r = shell.execute_command(restore_cmd)
+        shell.log_command_output(o, r)
+        shell.disconnect()
+        return o
+
+    def _build_backup_cmd_with_optional_parameters(
+            self, disable_analytics, exclude, include, mappings, command):
+        if disable_analytics:
+            command = command + ' --disable-analytics'
+        if exclude:
+            command = command + ' --exclude-data ' + ",".join(exclude)
+        if include:
+            command = command + ' --include-data ' + ",".join(include)
+        if mappings:
+            command = command + ' --map-data ' + ",".join(mappings)
+        return command
+
+    def rest_backup_cbas(self, cluster, username=None, password=None, bucket="",
+                         include="", exclude="", level="cluster"):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = cbas_helper.backup_cbas(
+            username=username, password=password, bucket=bucket,
+            include=include, exclude=exclude, level=level)
+        return status, cbas_helper.get_json(content), response
+
+    def rest_restore_cbas(self, cluster, username=None, password=None, bucket="",
+                          include=[], exclude=[], remap="", level="cluster",
+                          backup={}):
+        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        status, content, response = cbas_helper.restore_cbas(
+            username=username, password=password, bucket=bucket,
+            include=include, exclude=exclude, remap=remap,
+            level=level, backup=backup)
+        return status, cbas_helper.get_json(content), response

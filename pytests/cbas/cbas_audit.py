@@ -5,7 +5,7 @@ Created on 30-Aug-2021
 '''
 import json
 
-from cbas.cbas_base_v2 import CBASBaseTest
+from cbas.cbas_base import CBASBaseTest
 from security_utils.audit_ready_functions import audit
 from rbac_utils.Rbac_ready_functions import RbacUtils
 from TestInput import TestInputSingleton
