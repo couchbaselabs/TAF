@@ -112,7 +112,7 @@ public class DocumentGenerator extends KVGenerator{
     }
 
     public Tuple2<String, Object> nextRead() {
-    	long temp = this.ws.dr.readItr.incrementAndGet();
+        long temp = this.ws.dr.readItr.incrementAndGet();
         String k = null;
         Object v = null;
             try {

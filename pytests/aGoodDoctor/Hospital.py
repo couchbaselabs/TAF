@@ -140,6 +140,15 @@ class Murphy(BaseTestCase, OPD):
         self.rest = RestConnection(self.cluster.master)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
+        self.max_commit_points = self.input.param("max_commit_points", None)
+        props = "magma"
+
+        if self.max_commit_points is not None:
+            props += ";magma_max_checkpoints={}".format(self.max_commit_points)
+            self.log.debug("props== {}".format(props))
+            self.bucket_util.update_bucket_props(
+                    "backend", props,
+                    self.cluster, self.cluster.buckets)
 
         server = self.rest.get_nodes_self()
         if self.cbas_nodes:
@@ -206,6 +215,31 @@ class Murphy(BaseTestCase, OPD):
 
     def SteadyStateVolume(self):
         self.loop = 1
+        self.create_perc = 100
+        self.PrintStep("Step 1: Create %s items: %s" % (self.num_items, self.key_type))
+        self.generate_docs(doc_ops=["create"],
+                           create_start=0,
+                           create_end=self.num_items)
+        self.perform_load(validate_data=False)
+
+        self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
+        self.generate_docs(doc_ops=["create"],
+                           create_start=self.num_items,
+                           create_end=self.num_items*2)
+        self.perform_load(validate_data=False)
+
+        if self.index_nodes:
+            self.drIndexService.create_indexes()
+            self.drIndexService.build_indexes()
+            self.drIndexService.start_query_load()
+
+        stat_th = threading.Thread(target=self.dump_magma_stats,
+                                   kwargs=dict(server=self.cluster.master,
+                                               bucket=self.cluster.buckets[0],
+                                               shard=0,
+                                               kvstore=0))
+        stat_th.start()
+
         while self.loop <= self.iterations:
             #######################################################################
             '''
@@ -213,32 +247,17 @@ class Murphy(BaseTestCase, OPD):
             deletes: 0 - 10M
             Final Docs = 0
             '''
-            self.PrintStep("Step 3: Create %s items and Delete everything. \
-            checkout fragmentation" % str(self.num_items*self.create_perc/100))
-            self.create_perc = 100
-            self.delete_perc = 100
-            self.generate_docs(doc_ops="create")
-            self.perform_load(validate_data=False)
-
-            self.generate_docs(doc_ops="delete",
-                               delete_start=self.start,
-                               delete_end=self.end)
+            self.generate_docs()
             self.perform_load(validate_data=True)
 
     def test_rebalance(self):
         self.loop = 1
         self.skip_read_on_error = True
         self.suppress_error_table = True
-        self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
-#         stat_th = threading.Thread(target=self.dump_magma_stats,
-#                                    kwargs=dict(server=self.cluster.master,
-#                                                bucket=self.cluster.buckets[0],
-#                                                shard=0,
-#                                                kvstore=0))
-#         stat_th.start()
+
         '''
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)

@@ -612,7 +612,7 @@ class OPD:
             if bucket.storageBackend == Bucket.StorageBackend.magma:
                 self.get_magma_disk_usage(bucket)
                 self.check_fragmentation_using_magma_stats(bucket)
-                self.check_fragmentation_using_kv_stats(bucket)
+            self.check_fragmentation_using_kv_stats(bucket)
 
     def PrintStep(self, msg=None):
         print "\n"
@@ -637,24 +637,24 @@ class OPD:
             result.update({server.ip: frag_val})
         self.log.info("KV stats fragmentation values {}".format(result))
 
-#     def dump_magma_stats(self, server, bucket, shard, kvstore):
-#         shell = RemoteMachineShellConnection(server)
-#         data_path = RestConnection(server).get_data_path()
-#         self.stop_stats = False
-#         while not self.stop_stats:
-#             for bucket in self.cluster.buckets:
-#                 self.log.info(self.get_magma_stats(bucket, shell, "rw_0:magma"))
-#                 self.dump_seq_index(shell, data_path, bucket.name, shard, kvstore)
-#             self.sleep(300)
-#         shell.disconnect()
-# 
-#     def dump_seq_index(self, shell, data_path, bucket, shard, kvstore):
-#         magma_path = os.path.join(data_path, bucket, "magma.{}")
-#         magma = magma_path.format(shard)
-#         cmd = '/opt/couchbase/bin/magma_dump {}'.format(magma)
-#         cmd += ' --kvstore {} --tree seq'.format(kvstore)
-#         result = shell.execute_command(cmd)[0]
-#         self.log.info("Seq Tree for {}:{}:{}:{}: \n{}".format(shell.ip, bucket, shard, kvstore, result))
+    def dump_magma_stats(self, server, bucket, shard, kvstore):
+        shell = RemoteMachineShellConnection(server)
+        data_path = RestConnection(server).get_data_path()
+        self.stop_stats = False
+        while not self.stop_stats:
+            for bucket in self.cluster.buckets:
+                self.log.info(self.get_magma_stats(bucket, shell, "rw_0:magma"))
+                self.dump_seq_index(shell, data_path, bucket.name, shard, kvstore)
+            self.sleep(600)
+        shell.disconnect()
+ 
+    def dump_seq_index(self, shell, data_path, bucket, shard, kvstore):
+        magma_path = os.path.join(data_path, bucket, "magma.{}")
+        magma = magma_path.format(shard)
+        cmd = '/opt/couchbase/bin/magma_dump {}'.format(magma)
+        cmd += ' --kvstore {} --tree seq'.format(kvstore)
+        result = shell.execute_command(cmd)[0]
+        self.log.info("Seq Tree for {}:{}:{}:{}: \n{}".format(shell.ip, bucket, shard, kvstore, result))
 
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()

@@ -16,6 +16,7 @@ import com.couchbase.client.core.error.DocumentExistsException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.core.error.ServerOutOfMemoryException;
 import com.couchbase.client.core.error.TimeoutException;
+import com.couchbase.client.core.retry.RetryStrategy;
 import com.couchbase.client.java.kv.GetOptions;
 import com.couchbase.client.java.kv.InsertOptions;
 import com.couchbase.client.java.kv.RemoveOptions;
@@ -40,6 +41,7 @@ public class WorkLoadGenerate extends Task{
     public int retryTimes = 0;
     public int exp;
     public String exp_unit;
+    public String retryStrategy;
     public UpsertOptions upsertOptions;
     public UpsertOptions expiryOptions;
     public InsertOptions setOptions;
@@ -66,6 +68,20 @@ public class WorkLoadGenerate extends Task{
         this.exp_unit = exp_unit;
     }
 
+    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability,
+            int exp, String exp_unit, boolean trackFailures, int retryTimes, String retryStrategy) {
+        super(taskName);
+        this.dg = dg;
+        this.docops = new DocOps();
+        this.sdk = client;
+        this.durability = durability;
+        this.trackFailures = trackFailures;
+        this.retryTimes = retryTimes;
+        this.exp = exp;
+        this.exp_unit = exp_unit;
+        this.retryStrategy = retryStrategy;
+    }
+
     @Override
     public void run() {
         System.out.println("Starting " + this.taskName);
@@ -73,22 +89,28 @@ public class WorkLoadGenerate extends Task{
         this.dg.ws.setTimeoutDuration(30, "seconds");
         // Set Durability in WorkLoadSettings
         this.dg.ws.setDurabilityLevel(this.durability);
+        this.dg.ws.setRetryStrategy(this.retryStrategy);
 
         upsertOptions = UpsertOptions.upsertOptions()
                 .timeout(this.dg.ws.timeout)
-                .durability(this.dg.ws.durability);
+                .durability(this.dg.ws.durability)
+                .retryStrategy(this.dg.ws.retryStrategy);
         expiryOptions = UpsertOptions.upsertOptions()
                 .timeout(this.dg.ws.timeout)
                 .durability(this.dg.ws.durability)
-                .expiry(this.dg.ws.getDuration(this.exp, this.exp_unit));
+                .expiry(this.dg.ws.getDuration(this.exp, this.exp_unit))
+                .retryStrategy(this.dg.ws.retryStrategy);
         setOptions = InsertOptions.insertOptions()
                 .timeout(this.dg.ws.timeout)
-                .durability(this.dg.ws.durability);
+                .durability(this.dg.ws.durability)
+                .retryStrategy(this.dg.ws.retryStrategy);
         removeOptions = RemoveOptions.removeOptions()
                 .timeout(this.dg.ws.timeout)
-                .durability(this.dg.ws.durability);
+                .durability(this.dg.ws.durability)
+                .retryStrategy(this.dg.ws.retryStrategy);
         getOptions = GetOptions.getOptions()
-                .timeout(this.dg.ws.timeout);
+                .timeout(this.dg.ws.timeout)
+                .retryStrategy(this.dg.ws.retryStrategy);
         int ops = 0;
         boolean flag = false;
         while(true) {

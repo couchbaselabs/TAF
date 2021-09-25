@@ -5,6 +5,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
+import com.couchbase.client.core.retry.BestEffortRetryStrategy;
+import com.couchbase.client.core.retry.FailFastRetryStrategy;
+import com.couchbase.client.core.retry.RetryStrategy;
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
 
@@ -21,6 +24,7 @@ public abstract class WorkLoadBase {
     public Duration timeout;
     public PersistTo persist_to;
     public ReplicateTo replicate_to;
+    public RetryStrategy retryStrategy;
 
     public Duration getDuration(Integer timeout, String time_unit) {
         ChronoUnit chrono_unit = ChronoUnit.MILLIS;
@@ -52,6 +56,16 @@ public abstract class WorkLoadBase {
         this.timeout = this.getDuration(timeout, time_unit);
     }
 
+    public void setRetryStrategy(String retryStrategy) {
+        if (retryStrategy != null)
+            retryStrategy = retryStrategy.toUpperCase();
+        if (retryStrategy == "FAIL_FAST")
+            this.retryStrategy = FailFastRetryStrategy.INSTANCE;
+        else
+            this.retryStrategy = BestEffortRetryStrategy.INSTANCE;
+
+    }
+
     public void setDurabilityLevel(String durabilityLevel) {
         switch(durabilityLevel) {
             case "NONE":
@@ -68,7 +82,7 @@ public abstract class WorkLoadBase {
                 break;
         }
     }
-    
+
     public void setPersistTo(int persist_to) {
         switch(persist_to) {
             case 0:
