@@ -13,6 +13,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from sdk_constants.java_client import SDKConstants
 from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.docgen import WorkLoadSettings,\
@@ -124,6 +125,10 @@ class StorageBase(BaseTestCase):
         # sel.num_collections=1 signifies only default collection
         self.num_collections = self.input.param("num_collections", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
+
+        # SDK retry Strategy
+        self.sdk_retry_strategy = self.input.param("sdk_retry_strategy",
+                                                   SDKConstants.RetryStrategy.BEST_EFFORT)
 
         # Creation of scopes of num_scopes is > 1
         scope_prefix = "Scope"
@@ -415,7 +420,8 @@ class StorageBase(BaseTestCase):
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
                                                 client, self.durability_level,
                                                 self.maxttl, self.time_unit,
-                                                self.track_failures, 0)
+                                                self.track_failures, 0,
+                                                self.sdk_retry_strategy)
                         tasks.append(task)
                         self.doc_loading_tm.submit(task)
                         i -= 1

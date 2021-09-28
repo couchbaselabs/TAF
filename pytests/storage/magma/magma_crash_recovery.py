@@ -32,8 +32,6 @@ class MagmaCrashTests(MagmaBaseTest):
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
         self.crash_th = None
-        self.sdk_retry_strategy = self.input.param("sdk_retry_strategy",
-                                                   SDKConstants.RetryStrategy.FAIL_FAST)
 
     def tearDown(self):
         self.stop_crash = True
@@ -59,6 +57,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.new_loader(wait=True)
         self.compute_docs_ranges()
+        self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
 
         self.create_perc = self.input.param("create_perc", 0)
         self.read_perc = self.input.param("read_perc", 0)
@@ -88,6 +87,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.new_loader(wait=True)
         self.compute_docs_ranges()
+        self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
 
         self.create_perc = self.input.param("create_perc", 0)
         self.read_perc = self.input.param("read_perc", 0)
@@ -110,6 +110,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)
+        self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
         wait_warmup = self.input.param("wait_warmup", True)
         self.log.info("====test_crash_during_ops starts====")
 
@@ -144,6 +145,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.validate_seq_itr()
 
     def test_crash_during_recovery(self):
+        self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
         self.compute_docs_ranges()
         tasks_info = dict()
 
