@@ -1402,8 +1402,10 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 ttl_to_check = ttl
         self.sleep(ttl_dict[ttl_to_check] + 60,
                    "waiting for maxTTL to complete")
+
         self.log.info("Validating item count")
         datasets = self.cbas_util.list_all_dataset_objs()
+
         for dataset in datasets:
             mutated_items = dataset.kv_collection.num_items - (
                     100 * dataset.kv_collection.num_items) / (
@@ -1554,7 +1556,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 if func_name == self.cbas_util.wait_for_ingestion_complete:
                     jobs.put((func_name, {
                         "cluster":self.cluster,
-                        "dataset_names": dataset.full_name,
+                        "dataset_name": dataset.full_name,
                         "num_items": dataset.num_of_items}))
                 elif func_name == self.cbas_util.create_cbas_index:
                     index = CBAS_Index(

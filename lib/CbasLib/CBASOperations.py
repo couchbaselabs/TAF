@@ -15,7 +15,7 @@ else:
 
 
 class CBASHelper(CbasLib):
-    
+
     @staticmethod
     def format_name(*args):
         """
@@ -31,7 +31,7 @@ class CBASHelper(CbasLib):
                     else:
                         full_name.append(_)
         return '.'.join(full_name)
-    
+
     @staticmethod
     def unformat_name(*args):
         '''
@@ -40,7 +40,7 @@ class CBASHelper(CbasLib):
         full_name = list()
         for name in args:
             for _ in name.split("."):
-                _ = _.replace("`","")
+                _ = _.replace("`", "")
                 full_name.append(_)
         return '.'.join(full_name)
 

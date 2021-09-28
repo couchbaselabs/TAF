@@ -9,11 +9,7 @@ import random, json, copy, time
 from threading import Thread
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from rbac_utils.Rbac_ready_functions import RbacUtils
-from security_utils.x509main import x509main
-from shutil import copytree
 from membase.api.rest_client import RestHelper
-from cbas_utils.cbas_utils import Dataset
-from Cb_constants import CbServer
 from CbasLib.CBASOperations import CBASHelper
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
@@ -38,9 +34,13 @@ class CBASExternalLinks(CBASBaseTest):
             self.input.test_params.update(
                 {"nodes_init": "2|2"})
 
-        if "bucket_spec" not in self.input.test_params:
-            self.input.test_params.update(
-                {'bucket_spec': "analytics.single_bucket"})
+        if self.input.param('setup_infra', True):
+            if "bucket_spec" not in self.input.test_params:
+                self.input.test_params.update(
+                    {'bucket_spec': "analytics.single_bucket"})
+            if "cluster_kv_infra" not in self.input.test_params:
+                self.input.test_params.update(
+                    {"cluster_kv_infra": "None|bkt_spec"})
 
         # Randomly choose name cardinality of links and datasets.
         if "link_cardinality" not in self.input.test_params:
@@ -67,6 +67,8 @@ class CBASExternalLinks(CBASBaseTest):
         self.cert_uri = self.input.param('uri', None)
         self.encryption_type = self.input.param('encryption_type', "")
         self.key_length = self.input.param("key_length", 1024)
+
+        self.use_new_ddl_format = self.input.param('use_new_ddl_format', False)
 
         self.security_util = SecurityUtils(
             self.log, client_cert_state=self.client_cert_state,
@@ -120,16 +122,16 @@ class CBASExternalLinks(CBASBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
 
-    def setup_certs(self):
+    def setup_certs(self, cluster):
         """
         Setup method for setting up root, node and client certs for all the clusters.
         """
         self.log.info("Setting up certificates")
-        for cluster in self.cb_clusters.values():
-            self.security_util._reset_original(cluster.nodes_in_cluster)
-            self.security_util.generate_x509_certs(cluster)
-            self.security_util.upload_x509_certs(
-                cluster=cluster, setup_once=self.input.param("setup_once", True))
+        self.security_util._reset_original(cluster.nodes_in_cluster)
+        self.security_util.generate_x509_certs(cluster)
+        self.sleep(60)
+        self.security_util.upload_x509_certs(
+            cluster=cluster, setup_once=self.input.param("setup_once", True))
         self.setup_certs_status = True
 
     def read_file(self, file_path):
@@ -175,7 +177,7 @@ class CBASExternalLinks(CBASBaseTest):
         link_objs = self.cbas_util.list_all_link_objs(link_type="couchbase")
 
         if setup_cert:
-            self.setup_certs()
+            self.setup_certs(to_cluster)
             if encryption in ["full1", "full2"]:
                 for link in link_objs:
                     link.properties["certificate"] = self.read_file(
@@ -215,11 +217,12 @@ class CBASExternalLinks(CBASBaseTest):
         if create_datasets:
             for dataset_obj in self.cbas_util.list_all_dataset_objs():
                 if not self.cbas_util.create_dataset(
-                    self.analytics_cluster, dataset_obj.name,
-                    kv_entity=dataset_obj.full_kv_entity_name,
-                    dataverse_name=dataset_obj.dataverse_name,
-                    link_name=dataset_obj.link_name,
-                    username=username):
+                        self.analytics_cluster, dataset_obj.name,
+                        kv_entity=dataset_obj.full_kv_entity_name,
+                        dataverse_name=dataset_obj.dataverse_name,
+                        link_name=dataset_obj.link_name,
+                        username=username,
+                        analytics_collection=self.use_new_ddl_format):
                     self.fail("Dataset creation failed")
 
         if connect_link:
@@ -1133,20 +1136,21 @@ class CBASExternalLinks(CBASBaseTest):
             try:
                 self.log.info(testcase["description"])
                 if not self.cbas_util.create_dataset(
-                    self.analytics_cluster, dataset.name,
-                    kv_entity=dataset.full_kv_entity_name,
-                    dataverse_name=dataset.dataverse_name,
-                    link_name=dataset.link_name,
-                    validate_error_msg=testcase.get("validate_error_msg", False),
-                    expected_error=testcase.get("expected_error", None),
-                    username=testcase.get("username", self.analytics_username)):
+                        self.analytics_cluster, dataset.name,
+                        kv_entity=dataset.full_kv_entity_name,
+                        dataverse_name=dataset.dataverse_name,
+                        link_name=dataset.link_name,
+                        validate_error_msg=testcase.get("validate_error_msg", False),
+                        expected_error=testcase.get("expected_error", None),
+                        username=testcase.get("username", self.analytics_username),
+                        analytics_collection=self.use_new_ddl_format):
                     raise Exception("Error while creating dataset")
 
                 if not testcase.get("validate_error_msg", False):
                     if not self.cbas_util.validate_dataset_in_metadata(
-                        self.analytics_cluster. dataset.name,
-                        dataset.dataverse_name, link_name=dataset.link_name,
-                        bucket_name=dataset.kv_bucket.name):
+                            self.analytics_cluster. dataset.name,
+                            dataset.dataverse_name, link_name=dataset.link_name,
+                            bucket_name=dataset.kv_bucket.name):
                         raise Exception(
                             "Dataset entry not present in Metadata.Dataset collection")
                     if not self.cbas_util.drop_dataset(
@@ -1242,10 +1246,11 @@ class CBASExternalLinks(CBASBaseTest):
                 self.log.info(testcase["description"])
                 if create_dataset:
                     if not self.cbas_util.create_dataset(
-                        self.analytics_cluster, dataset.name,
-                        kv_entity=dataset.full_kv_entity_name,
-                        dataverse_name=dataset.dataverse_name,
-                        link_name=dataset.link_name):
+                            self.analytics_cluster, dataset.name,
+                            kv_entity=dataset.full_kv_entity_name,
+                            dataverse_name=dataset.dataverse_name,
+                            link_name=dataset.link_name,
+                            analytics_collection=self.use_new_ddl_format):
                         raise Exception("Error while creating dataset")
                     else:
                         create_dataset = False
@@ -1494,7 +1499,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Allow ingestion to complete
         result = self.cbas_util.wait_for_ingestion_complete(
-            self.analytics_cluster, [dataset.full_name], dataset.num_of_items)
+            self.analytics_cluster, dataset.full_name, dataset.num_of_items)
 
         if not self.input.param("has_bucket_access", False) and result:
             self.fail("Data Ingestion started when it should not.")
@@ -1542,7 +1547,8 @@ class CBASExternalLinks(CBASBaseTest):
             kv_entity=dataset.full_kv_entity_name,
             dataverse_name=dataset.dataverse_name, link_name=dataset.link_name,
             validate_error_msg=self.input.param("validate_error", False),
-            expected_error=self.input.param("expected_error", None))
+            expected_error=self.input.param("expected_error", None),
+            analytics_collection=self.use_new_ddl_format)
 
         self.cluster_util.stop_firewall_on_node(to_cluster, to_cluster.master)
         if not result:
@@ -1585,7 +1591,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Link connection Failed.")
 
         if not self.cbas_util.wait_for_ingestion_complete(
-            self.analytics_cluster, [dataset.full_name], dataset.num_of_items):
+            self.analytics_cluster, dataset.full_name, dataset.num_of_items):
             self.fail("Data Ingestion did not resume")
 
     def test_data_ingestion_resumes_when_network_up_before_timeout(self):
@@ -1622,7 +1628,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         # Allow ingestion to complete
         if not self.cbas_util.wait_for_ingestion_complete(
-            self.analytics_cluster, [dataset.full_name], dataset.num_of_items):
+            self.analytics_cluster, dataset.full_name, dataset.num_of_items):
             self.fail("Data Ingestion did not resume")
 
     def test_reconnecting_link_after_timeout_due_to_network_failure(self):
@@ -1660,7 +1666,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.fail("Link connection failed")
 
         if not self.cbas_util.wait_for_ingestion_complete(
-            self.analytics_cluster, [dataset.full_name], dataset.num_of_items):
+            self.analytics_cluster, dataset.full_name, dataset.num_of_items):
             self.fail("Data Ingestion did not resume")
 
     def test_dataset_behaviour_on_remote_bucket_deletion(self):
@@ -1691,7 +1697,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.sleep(10)
 
         if not self.cbas_util.wait_for_ingestion_complete(
-            self.analytics_cluster, [dataset.full_name], 0):
+            self.analytics_cluster, dataset.full_name, 0):
             self.fail("Data Ingestion did not resume")
 
     def test_dataset_behaviour_on_remote_bucket_deletion_and_recreation(self):
@@ -1770,7 +1776,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.cbas_util.refresh_dataset_item_count(self.bucket_util)
         if not self.cbas_util.wait_for_ingestion_complete(
-            self.analytics_cluster, [dataset.full_name], dataset.num_of_items):
+            self.analytics_cluster, dataset.full_name, dataset.num_of_items):
             self.fail("Data Ingestion did not complete")
 
         query_statement = "select count(*) from {0} where mutated>0;"
@@ -1806,7 +1812,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.cbas_util.refresh_dataset_item_count(self.bucket_util)
         if not self.cbas_util.wait_for_ingestion_complete(
-            self.analytics_cluster, [dataset.full_name], dataset.num_of_items):
+            self.analytics_cluster, dataset.full_name, dataset.num_of_items):
             self.fail("Data Ingestion did not complete")
 
     def test_analytics_cluster_while_rebalancing_remote_cluster(self):
@@ -2123,12 +2129,13 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Creating dataset on link to remote cluster")
         if not self.cbas_util.create_dataset(
-            self.analytics_cluster, dataset_obj.name,
-            kv_entity=dataset_obj.full_kv_entity_name,
-            dataverse_name=dataset_obj.dataverse_name,
-            link_name=dataset_obj.link_name,
-            validate_error_msg=self.input.param('validate_error', False),
-            expected_error=error_msg):
+                self.analytics_cluster, dataset_obj.name,
+                kv_entity=dataset_obj.full_kv_entity_name,
+                dataverse_name=dataset_obj.dataverse_name,
+                link_name=dataset_obj.link_name,
+                validate_error_msg=self.input.param('validate_error', False),
+                expected_error=error_msg,
+                analytics_collection=self.use_new_ddl_format):
             raise Exception("Error while creating dataset")
 
         if self.input.param('validate_error', False):

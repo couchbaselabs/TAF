@@ -1656,7 +1656,7 @@ class Dataset_Util(Link_Util):
             for dataset in datasets:
                 jobs.put((
                     self.wait_for_ingestion_complete,
-                    {"cluster": cluster, "dataset_names": dataset.full_name,
+                    {"cluster": cluster, "dataset_name": dataset.full_name,
                      "num_items": dataset.num_of_items, "timeout": timeout}))
         self.run_jobs_in_parallel(jobs, results, 15, async_run=False)
         return all(results)
@@ -2421,7 +2421,7 @@ class Dataset_Util(Link_Util):
 
         for dataset in datasets:
             jobs.put((self.wait_for_ingestion_complete,
-                      {"cluster": cluster, "dataset_names": dataset.full_name,
+                      {"cluster": cluster, "dataset_name": dataset.full_name,
                        "num_items": dataset.num_of_items, "timeout": timeout}))
 
         self.run_jobs_in_parallel(jobs, results, 50, async_run=False)
@@ -4168,7 +4168,7 @@ class CbasUtil(UDFUtil):
                     jobs.put((
                         self.wait_for_ingestion_complete,
                         {"cluster": cluster,
-                         "dataset_names": dataset.full_name,
+                         "dataset_name": dataset.full_name,
                          "num_items": dataset.num_of_items,
                          "timeout": cbas_spec.get("api_timeout", 120)}))
             self.run_jobs_in_parallel(jobs, results,

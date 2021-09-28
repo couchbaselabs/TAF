@@ -4,7 +4,7 @@ from cbas.cbas_base import CBASBaseTest
 from Jython_tasks.task import CreateDatasetsTask, DropDatasetsTask, \
     CreateSynonymsTask, DropSynonymsTask, DropDataversesTask, \
     CreateCBASIndexesTask, DropCBASIndexesTask, CreateUDFTask, DropUDFTask
-from cbas_utils.cbas_utils_v2 import BackupUtils
+from cbas_utils.cbas_utils import BackupUtils
 from remote.remote_util import RemoteMachineShellConnection
 from TestInput import TestInputSingleton
 import urllib
