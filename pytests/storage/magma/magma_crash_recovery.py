@@ -58,6 +58,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.new_loader(wait=True)
         self.compute_docs_ranges()
         self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
+        self.ops_rate = self.ops_rate*2
 
         self.create_perc = self.input.param("create_perc", 0)
         self.read_perc = self.input.param("read_perc", 0)
@@ -88,6 +89,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.new_loader(wait=True)
         self.compute_docs_ranges()
         self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
+        self.ops_rate = self.ops_rate*2
 
         self.create_perc = self.input.param("create_perc", 0)
         self.read_perc = self.input.param("read_perc", 0)

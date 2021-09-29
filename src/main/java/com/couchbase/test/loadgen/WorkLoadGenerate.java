@@ -86,7 +86,7 @@ public class WorkLoadGenerate extends Task{
     public void run() {
         System.out.println("Starting " + this.taskName);
         // Set timeout in WorkLoadSettings
-        this.dg.ws.setTimeoutDuration(30, "seconds");
+        this.dg.ws.setTimeoutDuration(60, "seconds");
         // Set Durability in WorkLoadSettings
         this.dg.ws.setDurabilityLevel(this.durability);
         this.dg.ws.setRetryStrategy(this.retryStrategy);
