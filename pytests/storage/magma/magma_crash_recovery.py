@@ -67,7 +67,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.track_failures = False
 
-        self.new_loader({"gtm": True, "validate": False})
+        self.new_loader()
         self.graceful = self.input.param("graceful", False)
         wait_warmup = self.input.param("wait_warmup", True)
         self.crash_th = threading.Thread(target=self.crash,
@@ -98,11 +98,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.track_failures = False
 
-        self.new_loader({
-             "gtm": True,
-             "validate": False
-              }
-         )
+        self.new_loader()
         self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
         self.crash_th.start()
         self.doc_loading_tm.getAllTaskResult()
