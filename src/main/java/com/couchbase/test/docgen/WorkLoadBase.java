@@ -59,7 +59,7 @@ public abstract class WorkLoadBase {
     public void setRetryStrategy(String retryStrategy) {
         if (retryStrategy != null)
             retryStrategy = retryStrategy.toUpperCase();
-        if (retryStrategy == "FAIL_FAST")
+        if (retryStrategy.equals("FAIL_FAST"))
             this.retryStrategy = FailFastRetryStrategy.INSTANCE;
         else
             this.retryStrategy = BestEffortRetryStrategy.INSTANCE;
