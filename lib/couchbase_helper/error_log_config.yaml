@@ -55,7 +55,6 @@ file_name_patterns:
       - string: 'Encounter planner error'
       - string: 'corruption'
       - string: 'processFlushAbort'
-      - string: 'Failed to initialize metadata provider'
       - string: 'found missing page'
       - string: 'invalid last page'
       - string: 'Storage corrupted and unrecoverable'
