@@ -57,13 +57,9 @@ public abstract class WorkLoadBase {
     }
 
     public void setRetryStrategy(String retryStrategy) {
-        if (retryStrategy != null)
-            retryStrategy = retryStrategy.toUpperCase();
-        if (retryStrategy.equals("FAIL_FAST"))
+        this.retryStrategy = BestEffortRetryStrategy.INSTANCE;
+        if (retryStrategy != null && retryStrategy.toUpperCase().equals("FAIL_FAST"))
             this.retryStrategy = FailFastRetryStrategy.INSTANCE;
-        else
-            this.retryStrategy = BestEffortRetryStrategy.INSTANCE;
-
     }
 
     public void setDurabilityLevel(String durabilityLevel) {
