@@ -450,6 +450,7 @@ class Murphy(BaseTestCase, OPD):
                            expire_start=self.num_items*2,
                            expire_end=self.num_items*20
                            )
+        self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
         self.perform_load(wait_for_load=False)
         while self.loop <= self.iterations:
             ###################################################################
@@ -737,6 +738,7 @@ class Murphy(BaseTestCase, OPD):
 
         def end_step_checks(tasks):
             self.wait_for_doc_load_completion(tasks)
+            self.ops_rate = self.input.param("ops_rate", self.ops_rate)
             self.data_validation()
 
             self.print_stats()
@@ -776,6 +778,7 @@ class Murphy(BaseTestCase, OPD):
                                update_start=self.start,
                                update_end=self.end)
             self.perform_load(validate_data=False)
+            self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             ###################################################################
             '''
             Existing:

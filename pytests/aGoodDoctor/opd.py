@@ -523,7 +523,6 @@ class OPD:
     def perform_load(self, crash=False, num_kills=1, wait_for_load=True,
                      validate_data=True):
         self._loader_dict()
-        self.ops_rate = self.input.param("ops_rate", 2000)
         master = Server(self.cluster.master.ip, self.cluster.master.port,
                         self.cluster.master.rest_username, self.cluster.master.rest_password,
                         str(self.cluster.master.memcached_port))
