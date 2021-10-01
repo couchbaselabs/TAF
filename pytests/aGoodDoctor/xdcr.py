@@ -9,18 +9,28 @@ import time
 class DoctorXDCR():
 
     def __init__(self, cluster, cluster_util, bucket_util, num_repl=10):
-        self.xdcr_cluster = cluster
-        self.cluster_util = cluster_util
-        self.bucket_util = bucket_util
+        self.dstn_cluster = cluster
+        self.dstn_cluster_util = cluster_util
+        self.dstn_bucket_util = bucket_util
         self.num_repl = num_repl
+        '''
+        1. Create destination cluster here
+        2. Create buckets, scopes, collection in destination cluster
+        '''
 
     def discharge_XDCR(self):
         pass
 
-    def create_replications(self):
+    def create_replications(self, src_cluster):
+        '''
+        Create replication in the src cluster to replicate data to dstn cluster
+        '''
         pass
 
-    def drop_replications(self):
+    def drop_replications(self, src_cluster):
+        '''
+        Drop replication in the src cluster
+        '''
         pass
 
     def monitor_replication(self, duration=0, print_duration=600):
