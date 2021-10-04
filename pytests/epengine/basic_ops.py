@@ -195,7 +195,8 @@ class basic_ops(ClusterSetup):
         def_bucket = self.cluster.buckets[0]
         ignore_exceptions = list()
         retry_exceptions = list()
-        supported_d_levels = self.bucket_util.get_supported_durability_levels()
+        supported_d_levels = self.bucket_util.get_supported_durability_levels(
+            minimum_level=Bucket.DurabilityLevel.MAJORITY)
 
         # Stat validation reference variables
         verification_dict = dict()
