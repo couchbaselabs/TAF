@@ -2,6 +2,9 @@ import os
 import re
 import traceback
 import unittest
+
+import global_vars
+from SystemEventLogLib.Events import EventHelper
 from security_config import trust_all_certs
 from collections import OrderedDict
 
@@ -23,6 +26,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
+
 
 class BaseTestCase(unittest.TestCase):
     def setUp(self):
@@ -201,6 +205,8 @@ class BaseTestCase(unittest.TestCase):
         # Initiate logging variables
         self.log = logger.get("test")
         self.infra_log = logger.get("infra")
+        global_vars.system_event_logs = EventHelper()
+        self.events = global_vars.system_event_logs
 
         self.cleanup_pcaps()
         self.collect_pcaps = self.input.param("collect_pcaps", False)
@@ -223,6 +229,8 @@ class BaseTestCase(unittest.TestCase):
         self.stop_server_on_crash = self.input.param("stop_server_on_crash",
                                                      False)
         self.collect_data = self.input.param("collect_data", False)
+        self.validate_system_event_logs = \
+            self.input.param("validate_sys_event_logs", False)
 
         # Configure loggers
         self.log.setLevel(self.log_level)
@@ -318,6 +326,7 @@ class BaseTestCase(unittest.TestCase):
                     self.skip_buckets_handle:
                 self.log.warning("Cluster operation in setup will be skipped")
                 self.primary_index_created = True
+                self.events.set_test_start_time()
                 self.log_setup_status("BaseTestCase", "finished")
                 return
             # avoid clean up if the previous test has been tear down
@@ -375,6 +384,7 @@ class BaseTestCase(unittest.TestCase):
             for cluster_name, cluster in self.cb_clusters.items():
                 self.modify_cluster_settings(cluster)
 
+            self.events.set_test_start_time()
             self.log_setup_status("BaseTestCase", "finished")
 
             if not self.skip_init_check_cbserver:
@@ -494,6 +504,12 @@ class BaseTestCase(unittest.TestCase):
             remote_client.disconnect()
 
     def tearDown(self):
+        # Perform system event log validation and get failures (if any)
+        sys_event_validation_failure = None
+        if self.validate_system_event_logs:
+            sys_event_validation_failure = \
+                self.events.validate(self.cluster.master)
+
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
@@ -528,6 +544,10 @@ class BaseTestCase(unittest.TestCase):
             self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
             self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
+
+        # Fail test in case of sys_event_logging failure
+        if (not self.is_test_failed()) and sys_event_validation_failure:
+            self.fail(sys_event_validation_failure)
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
@@ -1070,4 +1090,3 @@ class ClusterSetup(BaseTestCase):
             autoCompactionDefined="false",
             fragmentation_percentage=50,
             bucket_name=bucket_name)
-

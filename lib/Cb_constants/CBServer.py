@@ -73,3 +73,6 @@ class CbServer(object):
     # Count excluding the default scope/collection
     max_scopes = 1200
     max_collections = 1200
+
+    # Max supported system_event_logs
+    max_sys_event_logs = 10000
