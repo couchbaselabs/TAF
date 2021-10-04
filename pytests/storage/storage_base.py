@@ -210,6 +210,7 @@ class StorageBase(BaseTestCase):
         self.validate = False
         self.key_type = self.input.param("key_type", "RandomKey")
         self.init_items_per_collection = self.num_items
+        self.doc_loading_tm = None
         '''
            --For DGM test
                   -self.init_items_per collection will overwrite in
@@ -897,7 +898,7 @@ class StorageBase(BaseTestCase):
         self.stop_crash = False
         self.crash_failure = False
         count = kill_itr
-        loop_itr = 0
+        self.loop_itr = 0
         msg = None
 
         nodes = nodes or self.cluster.nodes_in_cluster
@@ -908,11 +909,15 @@ class StorageBase(BaseTestCase):
             connections.update({node: shell})
 
         while not self.stop_crash:
-            loop_itr += 1
+            if self.loop_itr > 50:
+                self.doc_loading_tm.abortAllTasks()
+                self.task.jython_task_manager.abort_all_tasks()
+                self.stop_crash = True
+            self.loop_itr += 1
             sleep = random.randint(30, 60)
             self.sleep(sleep,
                        "Iteration:{} waiting for {} sec to kill memcached on all nodes".
-                       format(loop_itr, sleep))
+                       format(self.loop_itr, sleep))
 
             for node, shell in connections.items():
                 if "kv" in node.services:

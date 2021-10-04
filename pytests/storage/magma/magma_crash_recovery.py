@@ -78,6 +78,11 @@ class MagmaCrashTests(MagmaBaseTest):
         self.stop_crash = True
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
+        for node in self.cluster.nodes_in_cluster:
+            if "kv" in node.services:
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    [node], self.cluster.buckets[0],
+                    wait_time=self.wait_timeout * 5))
 
     def test_crash_during_recovery_new(self):
         self.graceful = self.input.param("graceful", False)
@@ -105,6 +110,11 @@ class MagmaCrashTests(MagmaBaseTest):
         self.stop_crash = True
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
+        for node in self.cluster.nodes_in_cluster:
+            if "kv" in node.services:
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    [node], self.cluster.buckets[0],
+                    wait_time=self.wait_timeout * 5))
 
     def test_crash_during_ops(self):
         self.graceful = self.input.param("graceful", False)
@@ -140,6 +150,11 @@ class MagmaCrashTests(MagmaBaseTest):
         self.stop_crash = True
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
+        for node in self.cluster.nodes_in_cluster:
+            if "kv" in node.services:
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    [node], self.cluster.buckets[0],
+                    wait_time=self.wait_timeout * 5))
         self.validate_seq_itr()
 
     def test_crash_during_recovery(self):
@@ -170,6 +185,11 @@ class MagmaCrashTests(MagmaBaseTest):
         self.stop_crash = True
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
+        for node in self.cluster.nodes_in_cluster:
+            if "kv" in node.services:
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    [node], self.cluster.buckets[0],
+                    wait_time=self.wait_timeout * 5))
         self.validate_seq_itr()
 
     def test_wal_replay(self):
