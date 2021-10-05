@@ -51,6 +51,7 @@ class CollectionsRebalance(CollectionBase):
         self.dgm_ttl_test = self.input.param("dgm_ttl_test", False)  # if dgm with ttl
         self.dgm = self.input.param("dgm", "100")  # Initial dgm threshold, for dgm test; 100 means no dgm
         self.scrape_interval = self.input.param("scrape_interval", None)
+        self.sleep_before_validation_of_ttl = self.input.param("sleep_before_validation_of_ttl", 400)
         if self.scrape_interval:
             self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
             # scrape_timeout cannot be greater than scrape_interval,
@@ -867,7 +868,7 @@ class CollectionsRebalance(CollectionBase):
         if not self.skip_validations:
             if self.data_load_spec == "ttl_load" or self.data_load_spec == "ttl_load1":
                 self.bucket_util._expiry_pager(self.cluster)
-                self.sleep(400, "wait for maxttl to finish")
+                self.sleep(self.sleep_before_validation_of_ttl, "wait for maxttl to finish")
                 # Compact buckets to delete non-resident expired items
                 self.compact_all_buckets()
                 self.wait_for_compaction_to_complete()
