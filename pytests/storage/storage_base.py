@@ -910,7 +910,6 @@ class StorageBase(BaseTestCase):
 
         while not self.stop_crash:
             if self.loop_itr > 50:
-                self.doc_loading_tm.abortAllTasks()
                 self.task.jython_task_manager.abort_all_tasks()
                 self.stop_crash = True
             self.loop_itr += 1
