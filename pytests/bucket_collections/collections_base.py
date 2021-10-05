@@ -189,6 +189,14 @@ class CollectionBase(ClusterSetup):
             "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_256",
             "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_512",
             "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_1024",
+            "magma_dgm.5_percent_dgm.5_node_1_replica_magma_ttl_256_single_bucket",
+            "magma_dgm.5_percent_dgm.5_node_1_replica_magma_ttl_512_single_bucket",
+            "magma_dgm.10_percent_dgm.5_node_2_replica_magma_ttl_256",
+            "magma_dgm.10_percent_dgm.5_node_2_replica_magma_ttl_512",
+            "magma_dgm.10_percent_dgm.5_node_2_replica_magma_ttl_1024",
+            "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_256",
+            "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_512",
+            "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_1024",
         ]
 
         # Verify initial doc load count
