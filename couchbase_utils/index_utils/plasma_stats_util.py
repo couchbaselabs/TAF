@@ -37,11 +37,13 @@ class PlasmaStatsUtil(IndexUtils):
         if index_node is None:
             index_node = self.index_node
         api = self.get_index_baseURL() + 'stats/storage'
+        self.log.info("api is:"+str(api))
         rest_client = RestConnection(index_node)
         status, content, header = rest_client._http_request(api, timeout=timeout)
         if not status:
             raise Exception(content)
         json_parsed = json.loads(content)
+        self.log.debug("Stats: {}".format(json_parsed))
         index_storage_stats = {}
         for index_stats in json_parsed:
             bucket = index_stats["Index"].split(":")[0]
@@ -104,5 +106,3 @@ class PlasmaStatsUtil(IndexUtils):
                     index_map[bucket][scope_name][collection_name][index_name] = dict()
                 index_map[bucket][scope_name][collection_name][index_name][stats_name] = val
         return index_map
-
-

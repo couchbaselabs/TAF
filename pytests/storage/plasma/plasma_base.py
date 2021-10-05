@@ -37,6 +37,7 @@ class PlasmaBaseTest(StorageBase):
         self.in_mem_comp = self.input.param("in_mem_comp", None)
         self.sweep_interval = self.input.param("sweep_interval", 120)
         self.index_count = self.input.param("index_count", 2)
+        self.counter = self.input.param("counter", 30)
 
     def print_plasma_stats(self, plasmaDict, bucket, indexname):
         bucket_Index_key = bucket.name + ":" + indexname
@@ -131,11 +132,14 @@ class PlasmaBaseTest(StorageBase):
                     self.log.debug("index name is:"+str(index))
                     index_stat_map = index_stat[bucket][index]
                     field_value_list.append(index_stat_map["MainStore"][plasma_stat_field])
+                    self.log.debug("field is:"+str(plasma_stat_field))
+                    self.log.debug("field value is: {}".format(index_stat_map["MainStore"][plasma_stat_field]))
         return field_value_list
 
     def find_mem_used_percent(self, index_stats_map):
         mem_used_percent = int(
             (Decimal(index_stats_map['memory_used_storage']) / index_stats_map['memory_total_storage']) * 100)
+        self.log.debug("mem used percent is {}".format(mem_used_percent))
         return mem_used_percent
 
     def create_Stats_Obj_list(self):
@@ -179,16 +183,24 @@ class PlasmaBaseTest(StorageBase):
     def validate_index_data(self, indexMap, totalCount, field='body', limit=50):
         query_len = len(self.cluster.query_nodes)
         x = 0
+        self.log.debug("Inside validate index")
+        self.log.debug("total count is {}".format(totalCount))
+        self.log.debug("limit is {}".format(limit))
         query_task_list = list()
         for bucket_name, bucket_data in indexMap.items():
             bucket = self.findBucket(bucket_name)
+            self.log.debug("bucket name is:".format(bucket.name))
             for scope_name, collection_data in bucket_data.items():
                 scope = self.findScope(scope_name, bucket)
+                self.log.debug("bucket name is:".format(scope_name))
                 for collection_name, gsi_index_names in collection_data.items():
                     collection = self.findCollection(collection_name, scope)
                     offset = 0
                     for gsi_index_name in gsi_index_names:
                         while offset < totalCount:
+                            self.log.debug("Inside validate index")
+                            self.log.info("offset is:"+str(offset))
+                            self.log.info("limit is:"+str(totalCount))
                             query = "select meta().id,%s from `%s`.`%s`.`%s` data USE INDEX (%s  USING GSI) where body is not missing order by meta().id limit %s offset %s" % (
                                     field, bucket_name, scope_name, collection_name, gsi_index_name, limit, offset)
                             query_node_index = x % query_len
@@ -206,14 +218,23 @@ class PlasmaBaseTest(StorageBase):
         for index_node in self.cluster.index_nodes:
             self.cluster_util.indexer_id_ops(node=index_node, ops=ops)
 
-    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, timeout=30):
+    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='equal', timeout=30):
         isFound = False
         for count in range(timeout):
             field_value_list = self.get_plasma_index_stat_value(field, stat_obj_list)
             for field_value in field_value_list:
-                if field_value == value:
-                    isFound = True
-                    break
+                if ops == 'equal':
+                    if field_value == value:
+                        isFound = True
+                        break
+                elif ops == 'greater':
+                    if field_value > value:
+                        isFound = True
+                        break
+                else:
+                    if field_value < value:
+                        isFound = True
+                        break
             if isFound:
                 break
             else:

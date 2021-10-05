@@ -155,6 +155,27 @@ class IndexUtils:
                         x += 1
         return dropIndexTaskList, indexes_dropped
 
+    def delete_docs_with_field(self, cluster, indexMap, field='body', sync=True):
+        """
+        Drop gsi indexes
+        Returns dropped indexes dict and task list
+        """
+
+        self.log.info("Deleting documents")
+        x = 0
+        query_len = len(cluster.query_nodes)
+        for bucket, bucket_data in indexMap.items():
+            for scope, collection_data in bucket_data.items():
+                for collection, gsi_index_names in collection_data.items():
+                    query = "delete from `%s`.`%s`.`%s` where %s is not missing;" % (
+                            bucket, scope, collection, field)
+                    query_node_index = x % query_len
+                    task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query)
+                    if sync:
+                        self.task_manager.get_task_result(task)
+                    x += 1
+
+
     def run_cbq_query(self, query, n1ql_node=None, timeout=1300):
         """
         To run cbq queries
@@ -186,7 +207,6 @@ class IndexUtils:
         return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(Num))
 
     def run_full_scan(self, cluster, indexesDict, key):
-        x = 0
         query_tasks_info = list()
         x = 0
         query_len = len(cluster.query_nodes)
@@ -200,4 +220,5 @@ class IndexUtils:
                             bucket, scope, collection, gsi_index_name, key)
                         task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query)
                         query_tasks_info.append(task)
+                        x += 1
         return query_tasks_info

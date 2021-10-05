@@ -63,43 +63,63 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         a. indexer.plasma.backIndex.enableInMemoryCompression
         b. indexer.plasma.mainIndex.enableInMemoryCompression
     2. Perform delete operation
-    3. Wait for pages to merge
-    4. Verify using stat - 'merges' > 0, as pages should merge after delete 
-    5. Trigger compression and verify num_compressed_pages stat >0
-    6. Run full scan and validate the result
+    3. Perform compaction
+    4. Add more document
+    5. Wait for pages to merge
+    6. Verify using stat - 'merges' > 0, as pages should merge after delete 
+    7. Trigger compression and verify num_compressed_pages stat >0
+    8. Run full scan and validate the result
     '''
 
     def test_merges_data_integrity(self):
         field = 'body'
+        self.counter = self.input.param("counter", 30)
+        self.items_add = self.input.param("items_add", 500)
+        stat_obj_list = self.create_Stats_Obj_list()
         indexMap, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
                                                                                      replica=self.num_replicas,
                                                                                      defer=False,
                                                                                      number_of_indexes_per_coll=self.index_count,
                                                                                      field=field, sync=False)
+        self.query_limit = self.input.param("query_limit", 50)
+        self.mem_used = self.input.param("mem_used", 50)
+        self.time_out = self.input.param("time_out", 60)
+        start = self.init_items_per_collection
         for taskInstance in createIndexTasklist:
             self.task.jython_task_manager.get_task_result(taskInstance)
-        self.num_item_per_coll = self.input.param("num_item_per_coll", 150)
-        compare_task = self.validate_index_data(indexMap, self.num_item_per_coll, field)
-        for taskInstance in compare_task:
-            self.task.jython_task_manager.get_task_result(taskInstance)
         self.log.debug("initial_items_in_each_collection {}".format(self.init_items_per_collection))
-        self.delete_start = 0
-        self.delete_perc = self.input.param("delete_perc", 50)
-        self.delete_end = int(self.delete_perc * .01 * self.init_items_per_collection)
-        self.log.info("Delete items count is:"+str(self.delete_end))
-        self.gen_create = None
-        self.generate_docs(doc_ops="delete")
-        data_load_task = self.data_load()
-        self.wait_for_doc_load_completion(data_load_task)
-        stat_obj_list = self.create_Stats_Obj_list()
-        self.counter = self.input.param("counter",30)
+        field_value_list = self.get_plasma_index_stat_value("merges", stat_obj_list)
+        self.delete_by_query = self.input.param("delete_by_query", True)
+
+        if self.delete_by_query:
+            self.indexUtil.delete_docs_with_field(self.cluster, indexMap)
+            self.log.debug("After delete")
+        else:
+            self.delete_start = 0
+            self.delete_perc = self.input.param("delete_perc", 100)
+            self.delete_end = int(self.delete_perc * .01 * self.init_items_per_collection)
+            self.log.info("Delete items count is:" + str(self.delete_end))
+            self.gen_create = None
+            self.generate_docs(doc_ops="delete")
+            data_load_task = self.data_load()
+            self.wait_for_doc_load_completion(data_load_task)
+        field_value_list = self.get_plasma_index_stat_value("merges", stat_obj_list)
         self.time_out = self.input.param("time_out", 60)
         self.perform_plasma_mem_ops("compactAll")
+
+        # performing more mutations by adding more documents
+        self.log.debug("Adding more documents")
+        self.create_start = self.init_items_per_collection
+        self.create_end = 2 * self.init_items_per_collection
+        self.gen_delete = None
+        self.generate_docs(doc_ops="create")
+        data_load_task = self.data_load()
+        self.wait_for_doc_load_completion(data_load_task)
         isMerge = False
         for count in range(self.counter):
             field_value_list = self.get_plasma_index_stat_value("merges", stat_obj_list)
             for field_instance in field_value_list:
-                self.log.info("Field Value instance is:"+str(field_instance))
+                self.log.info("Field Value instance is:" + str(field_instance))
             for field_value in field_value_list:
                 if field_value > 0:
                     isMerge = True
@@ -109,22 +129,32 @@ class PlasmaMemCompTest(PlasmaBaseTest):
             else:
                 self.sleep(self.counter, "waiting for merge to go more than 0")
         self.assertTrue(isMerge, "Merge has not been started")
-        self.perform_plasma_mem_ops("persistAll")
-        self.create_start = self.init_items_per_collection
-        self.create_end = 2 * self.init_items_per_collection
+        self.modified_moi_snapshot_interval = self.input.param("modified_moi_snapshot_interval", 15000)
+        self.set_index_settings({"indexer.settings.persisted_snapshot.moi.interval": self.modified_moi_snapshot_interval},
+                                self.cluster.query_nodes[0])
+        i = 0
+        self.create_start = self.create_end
         self.gen_delete = None
-        self.generate_docs(doc_ops="create")
-        data_load_task = self.data_load()
-        self.wait_for_doc_load_completion(data_load_task)
 
+        while (self.mem_used_reached(self.mem_used, self.create_Stats_Obj_list())):
+            self.create_start +=  (i * self.items_add)
+            self.create_end = self.create_start + self.items_add
+            self.generate_docs(doc_ops="create")
+            self.log.debug("Tried items to load items from {} to {}".format(self.create_start, self.create_end))
+            data_load_task = self.data_load()
+            self.wait_for_doc_load_completion(data_load_task)
+            i += 1
         # Perform explicit compress operation
+        self.log.debug("triggering compress All operation")
         self.perform_plasma_mem_ops("compressAll")
         for count in range(self.counter):
             if self.verify_compression_stat(self.cluster.index_nodes):
                 break
             else:
                 self.sleep(self.counter, "waiting for compression to complete")
-        mem_comp_compare_task = self.validate_index_data(indexMap, self.init_items_per_collection)
+        self.log.info("query limit is:"+str(self.query_limit))
+        self.log.info("total is:"+str(self.init_items_per_collection))
+        mem_comp_compare_task = self.validate_index_data(indexMap=indexMap, totalCount=self.create_end, field=field, limit=self.query_limit)
         for taskInstance in mem_comp_compare_task:
             self.task.jython_task_manager.get_task_result(taskInstance)
 
@@ -264,11 +294,12 @@ class PlasmaMemCompTest(PlasmaBaseTest):
             self.kill_indexer(node, 1)
         self.delete_start = 0
         self.delete_perc = self.input.param("delete_perc", 100)
-        self.delete_end = self.delete_perc * .01 * self.init_items_per_collection
+        self.delete_end = int(self.delete_perc * .01 * self.init_items_per_collection)
         self.gen_create = None
         self.generate_docs(doc_ops="delete")
         data_load_task = self.data_load()
         self.wait_for_doc_load_completion(data_load_task)
+        self.gen_delete = None
         self.sleep(600, "waiting before triggering mutation")
         self.gen_delete = None
         self.create_start = 0
@@ -290,3 +321,41 @@ class PlasmaMemCompTest(PlasmaBaseTest):
                 break
             else:
                 self.sleep(self.counter, "waiting for total record value to come down")
+
+    """
+    1. Enable compression
+        a. indexer.plasma.backIndex.enableInMemoryCompression
+        b. indexer.plasma.mainIndex.enableInMemoryCompression
+    2. Trigger compression
+    3. Validate num_compressed_pages > 0
+    4. Trigger compaction
+    5. Validate compacts stats > 0 and num_compressed_page should be less than step 3.
+    6. Run full scan and validate the result
+    """
+    def test_compaction(self):
+        field = 'body'
+        stat_obj_list = self.create_Stats_Obj_list()
+        indexMap, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
+                                                                                     replica=self.num_replicas,
+                                                                                     defer=False,
+                                                                                     number_of_indexes_per_coll=self.index_count,
+                                                                                     field=field, sync=False)
+        for taskInstance in createIndexTasklist:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+
+        indexer_rest = GsiHelper(self.cluster.master, self.log)
+        # Perform explicit compress operation
+        self.perform_plasma_mem_ops("compressAll")
+        for count in range(self.counter):
+            if self.verify_compression_stat(self.cluster.index_nodes):
+                break
+            else:
+                self.sleep(self.counter, "waiting for compression to complete")
+
+        compressed_items = self.get_plasma_index_stat_value("num_rec_compressed", stat_obj_list)
+        # Perform explicit compaction operation
+        self.perform_plasma_mem_ops("compactAll")
+        isItem_compacted = False
+        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list,"compacts", 0, ops='greater'), "compaction not triggering")
+        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "num_rec_compressed", compressed_items, ops='greater'),
+                        "compression not coming down after compaction")

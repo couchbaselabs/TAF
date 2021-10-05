@@ -1380,7 +1380,6 @@ class ClusterUtils:
             try:
                 x, id = l.split(" : ")
                 if id:
-                    self.log.info("Triggering {ops} for instance id {id}")
                     self.log.info("Triggering %s for instance id %s" % (ops, id))
                     compact_command = {'Cmd': ops, 'Args': [int(id)]}
                     status, content, header = rest._http_request(api, 'POST', json.dumps(compact_command))
