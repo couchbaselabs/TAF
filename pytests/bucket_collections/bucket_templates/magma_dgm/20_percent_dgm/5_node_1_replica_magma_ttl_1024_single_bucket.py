@@ -10,7 +10,7 @@ spec = {
     MetaConstants.NUM_ITEMS_PER_COLLECTION: 1,
 
     Bucket.bucketType: Bucket.Type.MEMBASE,
-    Bucket.replicaNumber: Bucket.ReplicaNum.TWO,
+    Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
     Bucket.ramQuotaMB: 256,
     Bucket.replicaIndex: 1,
     Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
