@@ -10,7 +10,7 @@ spec = {
     MetaConstants.NUM_ITEMS_PER_COLLECTION: 1,
 
     Bucket.bucketType: Bucket.Type.MEMBASE,
-    Bucket.replicaNumber: Bucket.ReplicaNum.TWO,
+    Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
     Bucket.ramQuotaMB: 256,
     Bucket.replicaIndex: 1,
     Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
@@ -24,8 +24,8 @@ spec = {
         "default": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 10,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 81400,
-            Bucket.ramQuotaMB: 256,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 122100,
+            Bucket.ramQuotaMB: 1024,
             Bucket.storageBackend: Bucket.StorageBackend.magma,
             Bucket.priority: Bucket.Priority.HIGH
         }
