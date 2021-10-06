@@ -33,6 +33,7 @@ class StorageBase(BaseTestCase):
         super(StorageBase, self).setUp()
         self.rest = RestConnection(self.cluster.master)
         self.data_path = self.fetch_data_path()
+        self._data_validation = self.input.param("data_validation", True)
 
         # Bucket Params
         self.vbuckets = self.input.param("vbuckets", self.cluster.vbuckets)
@@ -211,6 +212,7 @@ class StorageBase(BaseTestCase):
         self.key_type = self.input.param("key_type", "RandomKey")
         self.init_items_per_collection = self.num_items
         self.doc_loading_tm = None
+        self.num_items_per_collection = copy.deepcopy(self.init_items_per_collection)
         '''
            --For DGM test
                   -self.init_items_per collection will overwrite in
@@ -321,11 +323,13 @@ class StorageBase(BaseTestCase):
             except Exception as e:
                 raise e
 
-    def _loader_dict_new(self, cmd={}):
+    def _loader_dict_new(self, cmd={}, scopes=None, collections=None):
         self.loader_map = dict()
         for bucket in self.cluster.buckets:
-            for scope in bucket.scopes.keys():
-                for collection in bucket.scopes[scope].collections.keys():
+            scopes_keys = scopes or bucket.scopes.keys()
+            for scope in scopes_keys:
+                collections_keys = collections or bucket.scopes[scope].collections.keys()
+                for collection in collections_keys:
                     if collection == "_default" and scope == "_default":
                         continue
                     ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
@@ -390,11 +394,11 @@ class StorageBase(BaseTestCase):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
                 if self.track_failures:
-                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.init_items_per_collection*self.num_scopes*(self.num_collections-1))
+                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items_per_collection*self.num_scopes*(self.num_collections-1))
             except Exception as e:
                 raise e
 
-    def new_loader(self, cmd=dict(), wait=False):
+    def new_loader(self, cmd=dict(), wait=False, scopes=None, collections=None):
         self._loader_dict_new(cmd)
         self.doc_loading_tm = TaskManager(self.process_concurrency)
         self.ops_rate = self.input.param("ops_rate", 2000)
@@ -410,8 +414,10 @@ class StorageBase(BaseTestCase):
 
         while i > 0:
             for bucket in self.cluster.buckets:
-                for scope in bucket.scopes.keys():
-                    for collection in bucket.scopes[scope].collections.keys():
+                scopes_keys = scopes or bucket.scopes.keys()
+                for scope in scopes_keys:
+                    collections_keys = collections or bucket.scopes[scope].collections.keys()
+                    for collection in collections_keys:
                         if collection == "_default" and scope == "_default":
                             continue
                         client = NewSDKClient(master, bucket.name, scope, collection)
@@ -433,6 +439,94 @@ class StorageBase(BaseTestCase):
             self.retry_failures(tasks)
         else:
             return tasks
+
+    def data_validation(self, scopes=None, collections=None):
+        doc_ops = self.doc_ops.split(":")
+        if self._data_validation:
+            self.log.info("Validating Active/Replica Docs")
+            cmd = dict()
+            self.ops_rate = self.input.param("ops_rate", 2000)
+            master = Server(self.cluster.master.ip, self.cluster.master.port,
+                            self.cluster.master.rest_username, self.cluster.master.rest_password,
+                            str(self.cluster.master.memcached_port))
+            self.loader_map = dict()
+            for bucket in self.cluster.buckets:
+                scopes_keys = scopes or bucket.scopes.keys()
+                for scope in scopes_keys:
+                    collections_keys = collections or bucket.scopes[scope].collections.keys()
+                    self.log.info("scope is {}".format(scope))
+                    for collection in collections_keys:
+                        self.log.info("collection is {}".format(collection))
+                        if collection == "_default" and scope == "_default":
+                            continue
+                        for op_type in doc_ops:
+                            cmd.update({"deleted": False})
+                            hm = HashMap()
+                            if op_type == "create":
+                                hm.putAll({DRConstants.read_s: self.create_start,
+                                           DRConstants.read_e: self.create_end})
+                            elif op_type == "update":
+                                hm.putAll({DRConstants.read_s: self.update_start,
+                                           DRConstants.read_e: self.update_end})
+                            elif op_type == "delete":
+                                hm.putAll({DRConstants.read_s: self.delete_start,
+                                           DRConstants.read_e: self.delete_end})
+                                cmd.update({"deleted": True})
+                            else:
+                                continue
+                            dr = DocRange(hm)
+                            ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
+                                                  cmd.get("keySize", self.key_size),
+                                                  cmd.get("docSize", self.doc_size),
+                                                  cmd.get("cr", 0),
+                                                  cmd.get("rd", 100),
+                                                  cmd.get("up", 0),
+                                                  cmd.get("dl", 0),
+                                                  cmd.get("ex", 0),
+                                                  cmd.get("workers", self.process_concurrency),
+                                                  cmd.get("ops", self.ops_rate),
+                                                  cmd.get("loadType", None),
+                                                  cmd.get("keyType", None),
+                                                  cmd.get("valueType", None),
+                                                  cmd.get("validate", True),
+                                                  cmd.get("gtm", False),
+                                                  cmd.get("deleted", False),
+                                                  cmd.get("mutated", 0))
+                            ws.dr = dr
+                            dg = DocumentGenerator(ws, self.key_type, None)
+                            self.loader_map.update({bucket.name+scope+collection+op_type: dg})
+            self.log.info("loader_map is {}".format(self.loader_map))
+
+            tasks = list()
+            i = self.process_concurrency
+            while i > 0:
+                for bucket in self.cluster.buckets:
+                    for scope in bucket.scopes.keys():
+                        for collection in bucket.scopes[scope].collections.keys():
+                            if collection == "_default" and scope == "_default":
+                                continue
+                            for op_type in doc_ops:
+                                if op_type not in ["create", "update", "delete"]:
+                                    continue
+                                client = NewSDKClient(master, bucket.name, scope, collection)
+                                client.initialiseSDK()
+                                self.sleep(1)
+                                taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
+                                task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
+                                                        client, "NONE",
+                                                        self.maxttl, self.time_unit,
+                                                        self.track_failures, 0)
+                                tasks.append(task)
+                                self.doc_loading_tm.submit(task)
+                                i -= 1
+        self.doc_loading_tm.getAllTaskResult()
+        for task in tasks:
+            try:
+                task.sdk.disconnectCluster()
+            except Exception as e:
+                print(e)
+        for task in tasks:
+            self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
     def initial_load(self):
         self.create_start = 0

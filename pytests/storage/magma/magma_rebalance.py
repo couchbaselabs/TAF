@@ -662,54 +662,48 @@ class MagmaRebalance(MagmaBaseTest):
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None
         rebalance = None
-        scope_name = CbServer.default_scope
-        self.log.info("Doing collection data load {0} {1}".format(self.data_load_stage, rebalance_operation))
-        start = self.init_items_per_collection
-        self.compute_docs_ranges(start)
-        self.generate_docs(doc_ops=self.doc_ops, target_vbucket=None)
+
+        self.create_start = 0
+        self.create_end = self.init_items_per_collection
+        self.log.info("Initial loading with new loader starts")
+        self.new_loader(wait=True)
+        self.compute_docs_ranges()
+        self.create_perc = self.input.param("create_perc", 0)
+        self.read_perc = self.input.param("read_perc", 0)
+        self.update_perc = self.input.param("update_perc", 0)
+        self.delete_perc = self.input.param("delete_perc", 0)
+        self.expiry_perc = self.input.param("expiry_perc", 0)
         collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
         self.log.info("collections list is {}".format(collections))
+        if self.num_collections_to_drop > 0:
+            self.collections.remove(CbServer.default_collection)
+            collections = self.collections[(self.num_collections_to_drop):]
+            collections_to_drop = self.collections[:self.num_collections_to_drop]
+            self.collections.append(CbServer.default_collection)
+            self.log.debug("collections list after dropping collections {}".format(collections))
+            self.log.debug("collections_to_drop {}".format(collections_to_drop))
 
         if self.data_load_stage == "before":
-            tasks_info = dict()
-            if self.num_collections_to_drop > 0:
-                self.collections.remove(CbServer.default_collection)
-                collections = self.collections[(self.num_collections_to_drop):]
-                collections_to_drop = self.collections[:self.num_collections_to_drop]
-                #collections.append(CbServer.default_collection)
-                self.collections.append(CbServer.default_collection)
-                self.log.debug("collections list after dropping collections {}".format(collections))
-                self.log.debug("collections_to_drop {}".format(collections_to_drop))
-            for scope_name in self.scopes:
-                for collection in collections:
-                    tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
-                                                     ignore_exceptions=self.ignore_exceptions,
-                                                     scope=scope_name,
-                                                     collection=collection,
-                                                     _sync=False)
-                    tasks_info.update(tem_tasks_in.items())
-            tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
-                                             ignore_exceptions=self.ignore_exceptions,
-                                             scope=CbServer.default_scope,
-                                             collection=CbServer.default_collection,
-                                             _sync=False)
-            tasks_info.update(tem_tasks_in.items())
-            collections.append(CbServer.default_collection)
+            self.log.info("Data loading before rebalance stage")
+            loader_tasks = self.new_loader(scopes=self.scopes, collections=collections)
+
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
-                    self.log.info("Collection to be dropped {}".format(collection))
-                    for bucket in self.cluster.buckets:
-                        self.bucket_util.drop_collection(self.cluster.master, bucket,
-                                                     scope_name=scope_name,
-                                                     collection_name=collection)
-                        self.cluster.buckets[self.cluster.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
+                    for scope_name in self.scopes:
+                        self.log.info("scope = {}, Collection to be dropped {}".format(scope_name, collection))
+                        for bucket in self.cluster.buckets:
+                            self.bucket_util.drop_collection(self.cluster.master, bucket,
+                                                             scope_name=scope_name,
+                                                             collection_name=collection)
+                            self.cluster.buckets[self.cluster.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
                     self.collections.remove(collection)
+                    self.log.info("collection count in scope {}is {}".format(scope_name, len(self.collections)))
+                self.num_collections = len(self.collections)
+                self.log.info("Num collections after dropping collections are {}".format(self.num_collections))
                 #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
 
-        if self.dgm_test:
-            self.load_to_dgm()
         if rebalance_operation == "rebalance_in":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_in",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
@@ -767,153 +761,50 @@ class MagmaRebalance(MagmaBaseTest):
                                                        )
         if self.data_load_stage == "during":
             self.sleep(10, "wait for rebalance to start")
-            tasks_info = dict()
-            if self.num_collections_to_drop > 0:
-                self.collections.remove(CbServer.default_collection)
-                collections = self.collections[(self.num_collections_to_drop):]
-                collections_to_drop = self.collections[:self.num_collections_to_drop]
-                collections.append(CbServer.default_collection)
-                self.collections.append(CbServer.default_collection)
-                self.log.debug("collections list after dropping collections {}".format(collections))
-                self.log.debug("collections_to_drop {}".format(collections_to_drop))
-            for collection in collections:
-                tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
-                                                 ignore_exceptions=self.ignore_exceptions,
-                                                 scope=scope_name,
-                                                 collection=collection,
-                                                 _sync=False)
-                tasks_info.update(tem_tasks_in.items())
+            self.log.info("Data loading during rebalance")
+            loader_tasks = self.new_loader(scopes=self.scopes, collections=collections)
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
-                    self.log.info("Collection to be dropped {}".format(collection))
-                    for bucket in self.cluster.buckets:
-                        self.bucket_util.drop_collection(self.cluster.master, bucket,
+                    for scope_name in self.scopes:
+                        self.log.info("scope = {}, Collection to be dropped {}".format(scope_name, collection))
+                        for bucket in self.cluster.buckets:
+                            self.bucket_util.drop_collection(self.cluster.master, bucket,
                                                      scope_name=scope_name,
                                                      collection_name=collection)
                         self.cluster.buckets[self.cluster.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
                     self.collections.remove(collection)
+                    self.log.info("collection count in scope {}is {}".format(scope_name, len(self.collections)))
+                self.num_collections = len(self.collections)
                 #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
         if not self.warmup:
             self.wait_for_rebalance_to_complete(rebalance)
-        if self.data_load_stage == "before" or self.data_load_stage == "during":
-            for task in tasks_info:
-                self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
-            self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.sleep(30, "sleep before validation")
-            validate_task_info = dict()
-            for op_type in self.doc_ops.split(":"):
-                if op_type == "create":
-                    kv_gen = self.gen_create
-                elif op_type == "update":
-                    kv_gen = self.gen_update
-                elif op_type == "delete":
-                    kv_gen = self.gen_delete
-                elif op_type == "expiry":
-                    op_type = "delete"
-                    kv_gen = self.gen_expiry
-                elif op_type == "read":
-                    kv_gen = self.gen_read
-                temp_validate_task_info = self.validate_data(op_type, kv_gen, _sync=False)
-                validate_task_info.update(temp_validate_task_info.items())
-
-            for task in validate_task_info:
-                self.task_manager.get_task_result(task)
-
         if self.data_load_stage == "after":
-            tasks_info = dict()
-            if self.num_collections_to_drop > 0:
-                self.collections.remove(CbServer.default_collection)
-                collections = self.collections[(self.num_collections_to_drop):]
-                collections_to_drop = self.collections[:self.num_collections_to_drop]
-                collections.append(CbServer.default_collection)
-                self.collections.append(CbServer.default_collection)
-                self.log.debug("collections list after dropping collections {}".format(collections))
-                self.log.debug("collections_to_drop {}".format(collections_to_drop))
-            for collection in collections:
-                tem_tasks_in = self.loadgen_docs(retry_exceptions=self.retry_exceptions,
-                                                 ignore_exceptions=self.ignore_exceptions,
-                                                 scope=scope_name,
-                                                 collection=collection,
-                                                 _sync=False)
-                tasks_info.update(tem_tasks_in.items())
+            self.log.info("Data loading after rebalance")
+            loader_tasks = self.new_loader(scopes=self.scopes, collections=collections)
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
-                    self.log.info("Collection to be dropped {}".format(collection))
-                    for bucket in self.cluster.buckets:
-                        self.bucket_util.drop_collection(self.cluster.master, bucket,
-                                                     scope_name=scope_name,
-                                                     collection_name=collection)
+                    for scope_name in self.scopes:
+                        self.log.info("Collection to be dropped {}".format(collection))
+                        for bucket in self.cluster.buckets:
+                            self.bucket_util.drop_collection(self.cluster.master, bucket,
+                                                             scope_name=scope_name,
+                                                             collection_name=collection)
                         self.cluster.buckets[self.cluster.buckets.index(bucket)].scopes[scope_name].collections.pop(collection)
                     self.collections.remove(collection)
+                self.log.info("collection count in scope {}is {}".format(scope_name, len(self.collections)))
+                self.num_collections = len(self.collections)
                 #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
-
-            for task in tasks_info:
-                self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info, self.cluster)
-            self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.sleep(30, "sleep before validation")
-            validate_task_info = dict()
-            for op_type in self.doc_ops.split(":"):
-                if op_type == "create":
-                    kv_gen = self.gen_create
-                elif op_type == "update":
-                    kv_gen = self.gen_update
-                elif op_type == "delete":
-                    kv_gen = self.gen_delete
-                elif op_type == "expiry":
-                    op_type = "delete"
-                    kv_gen = self.gen_expiry
-                elif op_type == "read":
-                    kv_gen = self.gen_read
-                temp_validate_task_info = self.validate_data(op_type, kv_gen, _sync=False)
-                validate_task_info.update(temp_validate_task_info.items())
-
-            for task in validate_task_info:
-                self.task_manager.get_task_result(task)
-
-    def compute_docs_ranges(self, start):
-        self.divisor = self.input.param("divisor", 2)
-        ops_len = len(self.doc_ops.split(":"))
-
-        self.create_start = start
-        self.create_end = start + start // self.divisor
-
-        if "create" in self.doc_ops:
-            self.create_end = start + start // self.divisor
-
-        if ops_len == 1:
-            self.update_start = 0
-            self.update_end = start
-            self.expiry_start = 0
-            self.expiry_end = start
-            self.delete_start = 0
-            self.delete_end = start
-        elif ops_len == 2:
-            self.update_start = 0
-            self.update_end = start // 2
-            self.delete_start = start // 2
-            self.delete_end = start
-
-            if "expiry" in self.doc_ops:
-                self.delete_start = 0
-                self.delete_end = start // 2
-                self.expiry_start = start // 2
-                self.expiry_end = start
-        else:
-            self.update_start = 0
-            self.update_end = start // 3
-            self.delete_start = start // 3
-            self.delete_end = (2 * start) // 3
-            self.expiry_start = (2 * start) // 3
-            self.expiry_end = start
+        self.doc_loading_tm.getAllTaskResult()
+        self.retry_failures(loader_tasks)
+        self.sleep(30, "sleep before validation")
+        self.data_validation(scopes=self.scopes, collections=collections)
 
     def test_data_load_collections_with_rebalance_in(self):
+        self.log.info("====test_data_load_collections_with_rebalance_in starts====")
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in")
 
     def test_data_load_collections_with_rebalance_out(self):
