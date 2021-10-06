@@ -24,10 +24,14 @@ class BasicOps(DurabilityTestsBase):
     def test_basic_ops(self):
         """
         Basic test for Sub-doc CRUD operations
+
+        A test in which `self.num_items` documents are created. Half of the
+        documents are updated or deleted depending on the supplied `op_type`.
         """
         doc_op = self.input.param("op_type", None)
         def_bucket = self.cluster.buckets[0]
-        supported_d_levels = self.bucket_util.get_supported_durability_levels()
+        supported_d_levels = \
+        self.bucket_util.get_supported_durability_levels(minimum_level=Bucket.DurabilityLevel.NONE)
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -53,7 +57,7 @@ class BasicOps(DurabilityTestsBase):
             self.target_vbucket = [self.target_vbucket]
 
         self.log.info("Creating doc_generator..")
-        # Load basic docs into bucket
+        # Insert `self.num_items` documents
         doc_create = sub_doc_generator(
             self.key, 0, self.num_items,
             key_size=self.key_size,
@@ -76,10 +80,14 @@ class BasicOps(DurabilityTestsBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
 
+        # The documents that could not be inserted
+        insert_failures = len(task.fail.keys())
+
         # Update verification_dict and validate
-        verification_dict["ops_update"] += self.num_items
+        verification_dict["ops_update"] += self.num_items - insert_failures
         if self.durability_level in supported_d_levels:
-            verification_dict["sync_write_committed_count"] += self.num_items
+            verification_dict["sync_write_committed_count"] += self.num_items - insert_failures
+            verification_dict["sync_write_aborted_count"] += insert_failures
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(self.cluster),
@@ -116,12 +124,16 @@ class BasicOps(DurabilityTestsBase):
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
+
+            # The documents keys for which the update failed
+            update_failures = len(task.fail.keys())
+
             verification_dict["ops_update"] += \
-                (sub_doc_gen.end - sub_doc_gen.start
-                 + len(task.fail.keys()))
+                num_item_start_for_crud - update_failures
+
             if self.durability_level in supported_d_levels:
                 verification_dict["sync_write_committed_count"] += \
-                    num_item_start_for_crud
+                    num_item_start_for_crud - update_failures
 
             # Edit doc_gen template to read the mutated value as well
             sub_doc_gen.template = \
@@ -133,25 +145,22 @@ class BasicOps(DurabilityTestsBase):
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
+            # A set of expected values following a read operation
+            expected_values = {'StateUpdate', 2, 'LastNameUpdate',
+                              'TypeChange', 'CityUpdate', 'FirstNameUpdate'}
+
             op_failed_tbl = TableView(self.log.error)
             op_failed_tbl.set_headers(["Update failed key", "Value"])
+
+            # If the values of attributes does not match the
+            # expected value, append op to list of failed ops.
             for key, value in task.success.items():
-                doc_value = value["value"]
-                failed_row = [key, doc_value]
-                if doc_value[0] != 2:
-                    op_failed_tbl.add_row(failed_row)
-                elif doc_value[1] != "LastNameUpdate":
-                    op_failed_tbl.add_row(failed_row)
-                elif doc_value[2] != "TypeChange":
-                    op_failed_tbl.add_row(failed_row)
-                elif doc_value[3] != "CityUpdate":
-                    op_failed_tbl.add_row(failed_row)
-                elif json.loads(str(doc_value[4])) != ["get", "up"]:
-                    op_failed_tbl.add_row(failed_row)
+                if expected_values != set(value["value"]):
+                    op_failed_tbl.add_row([key, value["value"]])
 
             op_failed_tbl.display("Update failed for keys:")
-            if len(op_failed_tbl.rows) != 0:
-                self.fail("Update failed for few keys")
+            # Expect the non-updated values to match the update failures
+            self.assertEqual(len(op_failed_tbl.rows), update_failures, "")
         elif doc_op == DocLoading.Bucket.SubDocOps.REMOVE:
             self.log.info("Performing 'remove' mutation over the sub-docs")
             task = self.task.async_load_gen_sub_docs(
@@ -162,12 +171,15 @@ class BasicOps(DurabilityTestsBase):
                 timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
+            # The number of documents that could not be removed
+            remove_failures = len(task.fail.keys())
+
             verification_dict["ops_update"] += \
-                (sub_doc_gen.end - sub_doc_gen.start
-                 + len(task.fail.keys()))
+                num_item_start_for_crud - remove_failures
+
             if self.durability_level in supported_d_levels:
                 verification_dict["sync_write_committed_count"] += \
-                    num_item_start_for_crud
+                    num_item_start_for_crud - remove_failures
 
             # Edit doc_gen template to read the mutated value as well
             sub_doc_gen.template = sub_doc_gen.template \
@@ -182,21 +194,16 @@ class BasicOps(DurabilityTestsBase):
             op_failed_tbl = TableView(self.log.error)
             op_failed_tbl.set_headers(["Delete failed key", "Value"])
 
-            for key, value in task.success.items():
-                doc_value = value["value"]
-                failed_row = [key, doc_value]
-                if doc_value[0] != 2:
-                    op_failed_tbl.add_row(failed_row)
-                for index in range(1, len(doc_value)):
-                    if doc_value[index] != "PATH_NOT_FOUND":
-                        op_failed_tbl.add_row(failed_row)
-
+            # Collect read operations that failed
             for key, value in task.fail.items():
-                op_failed_tbl.add_row([key, value["value"]])
+                op_failed_tbl.add_row([key, value["error"]])
 
-            op_failed_tbl.display("Delete failed for keys:")
-            if len(op_failed_tbl.rows) != 0:
-                self.fail("Delete failed for few keys")
+            op_failed_tbl.display("Delete succeeded for keys:")
+
+            # Expect the reads to have failed indicating the sub-documents are
+            # no longer accessible.
+            self.assertEqual(len(op_failed_tbl.rows),
+                             num_item_start_for_crud, "Delete failed for few keys")
         else:
             self.log.warning("Unsupported doc_operation")
 
