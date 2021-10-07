@@ -8,9 +8,11 @@ Created on Mar 14, 2019
 import json as pyJson
 import logging
 
+import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory \
+    as InsecureTrustManagerFactory
 from com.couchbase.client.core.env import \
     SeedNode, \
-    TimeoutConfig
+    TimeoutConfig,SecurityConfig
 from com.couchbase.client.core.error import \
     CasMismatchException, \
     ConfigException, \
@@ -57,7 +59,7 @@ from reactor.util.function import Tuples
 import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
 import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 
-from Cb_constants import ClusterRun
+from Cb_constants import ClusterRun, CbServer
 from couchbase_helper.durability_helper import DurabilityHelper
 
 
@@ -96,7 +98,10 @@ class SDKClient(object):
                 self.scheme = "http"
             else:
                 self.hosts.append(server.ip)
-                self.scheme = "couchbase"
+                if CbServer.use_https:
+                    self.scheme = "couchbases"
+                else:
+                    self.scheme = "couchbase"
 
         self.__create_conn()
         SDKClient.sdk_connections += 1
@@ -116,6 +121,9 @@ class SDKClient(object):
                 .timeoutConfig(TimeoutConfig.builder()
                                .connectTimeout(Duration.ofSeconds(20))
                                .kvTimeout(Duration.ofSeconds(10)))
+            if CbServer.use_https:
+                cluster_env = cluster_env.securityConfig(SecurityConfig.enableTls(True).
+                                                         trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
 
             cluster_options = \
                 ClusterOptions \
@@ -134,9 +142,11 @@ class SDKClient(object):
                                 Optional.of(int(self.servers[0][1])))))
                         cluster_options = \
                             cluster_options.seedNodes(master_seed)
-                    self.cluster = Cluster.connect(
-                            ", ".join(self.hosts).replace(" ", ""),
-                            cluster_options)
+                    connection_string = "{0}://{1}".format(self.scheme, ", ".
+                                                           join(self.hosts).
+                                                           replace(" ", ""))
+                    self.cluster = Cluster.connect(connection_string,
+                                                   cluster_options)
                     break
                 except ConfigException as e:
                     self.log.error("Exception during cluster connection: %s"

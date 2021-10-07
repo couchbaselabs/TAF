@@ -268,7 +268,11 @@ class BucketHelper(RestConnection):
         api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/', bucket)
         status, _, header = self._http_request(api, 'DELETE')
 
-        if int(header['status']) == 500:
+        if "status" in header:
+            status_code = header['status']
+        else:
+            status_code = header.status_code
+        if int(status_code) == 500:
             # According to http://docs.couchbase.com/couchbase-manual-2.5/cb-rest-api/#deleting-buckets
             # the cluster will return with 500 if it failed to nuke
             # the bucket on all of the nodes within 30 secs

@@ -10,10 +10,20 @@ import traceback
 import socket
 import time
 from TestInput import TestInputSingleton
-from Cb_constants import constants
+from Cb_constants import constants, CbServer
 
 from membase.api import httplib2
 from membase.api.exception import ServerUnavailableException
+
+import requests
+
+try:
+    requests.packages.urllib3.disable_warnings()
+except:
+    pass
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class RestConnection(object):
@@ -90,13 +100,23 @@ class RestConnection(object):
                 self.hostname = serverInfo.hostname
             if hasattr(serverInfo, 'services'):
                 self.services = serverInfo.services
+        if CbServer.use_https:
+            port = CbServer.ssl_port
+            index_port = CbServer.ssl_index_port
+            query_port = CbServer.ssl_n1ql_port
+            fts_port = CbServer.ssl_fts_port
+            eventing_port = CbServer.ssl_eventing_port
         self.input = TestInputSingleton.input
         if self.input is not None:
             """ from watson, services param order and format:
                 new_services=fts-kv-index-n1ql """
             self.services_node_init = self.input.param("new_services", None)
 
-        generic_url = "http://%s:%s/"
+        http_url = "http://%s:%s/"
+        https_url = "https://%s:%s/"
+        generic_url = http_url
+        if CbServer.use_https:
+            generic_url = https_url
         url_host = "%s" % self.ip
         if self.hostname:
             url_host = "%s" % self.hostname
@@ -155,7 +175,7 @@ class RestConnection(object):
             username = self.username
         if password is None:
             password = self.password
-        authorization = base64.encodestring('%s:%s' % (username, password))
+        authorization = base64.encodestring('%s:%s' % (username, password)).rstrip("\n")
         return {'Content-Type': 'application/json',
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': 'close',
@@ -170,10 +190,61 @@ class RestConnection(object):
                 return "auth: " + base64.decodestring(val[6:])
         return ""
 
+    def _urllib_request(self, api, method='GET', params='', headers=None,
+                        timeout=300, verify=False, session=None):
+        if session is None:
+            session = requests.Session()
+        end_time = time.time() + timeout
+        while True:
+            try:
+                if method == "GET":
+                    response = session.get(api, params=params, headers=headers,
+                                           timeout=timeout, verify=verify)
+                elif method == "POST":
+                    response = session.post(api, data=params, headers=headers,
+                                            timeout=timeout, verify=verify)
+                elif method == "DELETE":
+                    response = session.delete(api, data=params, headers=headers,
+                                              timeout=timeout, verify=verify)
+                elif method == "PUT":
+                    response = session.put(api, data=params, headers=headers,
+                                           timeout=timeout, verify=verify)
+                status = response.status_code
+                content = response.content
+                if status in [200, 201, 202]:
+                    return True, content, response
+                else:
+                    self.log.error(response.reason)
+                    return False, content, response
+            except requests.exceptions.HTTPError as errh:
+                self.log.error("HTTP Error {0}".format(errh))
+            except requests.exceptions.ConnectionError as errc:
+                if "Illegal state exception" in str(errc):
+                    # Known ssl bug, retry
+                    pass
+                else:
+                    self.log.error("Error Connecting {0}".format(errc))
+                if time.time() > end_time:
+                    raise ServerUnavailableException(ip=self.ip)
+            except requests.exceptions.Timeout as errt:
+                self.log.error("Timeout Error: {0}".format(errt))
+                if time.time() > end_time:
+                    raise ServerUnavailableException(ip=self.ip)
+            except requests.exceptions.RequestException as err:
+                self.log.error("Something else: {0}".format(err))
+                if time.time() > end_time:
+                    raise ServerUnavailableException(ip=self.ip)
+            time.sleep(3)
+
     def _http_request(self, api, method='GET', params='', headers=None,
                       timeout=120):
         if not headers:
             headers = self._create_headers()
+        if CbServer.use_https:
+            status, content, response = \
+                self._urllib_request(api, method=method, params=params, headers=headers,
+                                     timeout=timeout, verify=False)
+            return status, content, response
         end_time = time.time() + timeout
         while True:
             try:
@@ -235,6 +306,6 @@ class RestConnection(object):
 
     def get_headers_for_content_type_json(self):
         authorization = base64.encodestring('%s:%s'
-                                            % (self.username, self.password))
+                                            % (self.username, self.password)).rstrip("\n")
         return {'Content-type': 'application/json',
                 'Authorization': 'Basic %s' % authorization}

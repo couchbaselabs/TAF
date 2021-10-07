@@ -2,12 +2,17 @@ from BucketLib.bucket import Bucket
 from cb_tools.cb_tools_base import CbCmdBase
 import json
 
+from Cb_constants import CbServer
+from security_config import trust_all_certs
+
 
 class CbCli(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
                  password="password", no_ssl_verify=None):
         CbCmdBase.__init__(self, shell_conn, "couchbase-cli",
                            username=username, password=password)
+        if no_ssl_verify is None:
+            no_ssl_verify = CbServer.use_https
         self.cli_flags = ""
         if no_ssl_verify:
             self.cli_flags += " --no-ssl-verify"
@@ -21,10 +26,11 @@ class CbCli(CbCmdBase):
         :return:
         """
         cmd = "%s bucket-create -c %s:%s -u %s -p %s" \
-              % (self.cbstatCmd, self.shellConn.ip, self.port,
+              % (self.cbstatCmd, "localhost", self.port,
                  self.username, self.password)
         if wait:
             cmd += " --wait"
+        cmd += self.cli_flags
         for key, value in bucket_dict.items():
             option = None
             if key == Bucket.name:
@@ -64,8 +70,9 @@ class CbCli(CbCmdBase):
 
     def delete_bucket(self, bucket_name):
         cmd = "%s bucket-delete -c %s:%s -u %s -p %s --bucket %s" \
-              % (self.cbstatCmd, self.shellConn.ip, self.port,
+              % (self.cbstatCmd, "localhost", self.port,
                  self.username, self.password, bucket_name)
+        cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
@@ -79,8 +86,9 @@ class CbCli(CbCmdBase):
         """
         cmd = "echo 'y' | %s enable-developer-preview --enable " \
               "-c %s:%s -u %s -p %s" \
-              % (self.cbstatCmd, self.shellConn.ip, self.port,
+              % (self.cbstatCmd, "localhost", self.port,
                  self.username, self.password)
+        cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception("\n".join(error))
@@ -95,6 +103,8 @@ class CbCli(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
+        CbServer.n2n_encryption = True
+        CbServer.use_https = False
         return output
 
     def disable_n2n_encryption(self):
@@ -105,6 +115,8 @@ class CbCli(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
+        CbServer.n2n_encryption = False
+        CbServer.use_https = False
         return output
 
     def set_n2n_encryption_level(self, level="all"):
@@ -115,6 +127,11 @@ class CbCli(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
+        if level != "strict":
+            CbServer.use_https = False
+        else:
+            CbServer.use_https = True
+            trust_all_certs()
         return output
 
     def get_n2n_encryption_level(self):

@@ -4,6 +4,7 @@ Binary memcached test client.
 
 Copyright (c) 2007  Dustin Sallings <dustin@spy.net>
 """
+import ssl
 
 import array
 import exceptions
@@ -14,6 +15,7 @@ import socket
 import struct
 import zlib
 
+from Cb_constants import CbServer
 from memcacheConstants import REQ_MAGIC_BYTE, RES_MAGIC_BYTE
 from memcacheConstants import REQ_PKT_FMT, RES_PKT_FMT, MIN_RECV_PACKET, REQ_PKT_SD_EXTRAS, SUBDOC_FLAGS_MKDIR_P
 from memcacheConstants import SET_PKT_FMT, DEL_PKT_FMT, INCRDECR_RES_FMT, INCRDECR_RES_WITH_UUID_AND_SEQNO_FMT, META_CMD_FMT
@@ -65,6 +67,8 @@ class MemcachedClient(object):
     def __init__(self, host='127.0.0.1', port=11211, timeout=30):
         self.host = host
         self.port = port
+        if CbServer.use_https:
+            self.port = CbServer.ssl_memcached_port
         self.timeout = timeout
         self._createConn()
         self.r = random.Random()
@@ -75,6 +79,10 @@ class MemcachedClient(object):
             # IPv4
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            if CbServer.use_https:
+                print("Sumedh creating unverfied context")
+                context = ssl._create_unverified_context()
+                self.s = context.wrap_socket(self.s, server_hostname=self.host)
             return self.s.connect_ex((self.host, self.port))
         else:
             # IPv6

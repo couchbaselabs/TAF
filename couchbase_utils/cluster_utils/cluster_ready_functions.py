@@ -11,7 +11,7 @@ import os
 
 import testconstants
 from couchbase_cli import CouchbaseCLI
-from Cb_constants import constants
+from Cb_constants import constants, CbServer
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from table_view import TableView
@@ -942,6 +942,47 @@ class ClusterUtils:
                 if len(picked) == howmany:
                     break
         return picked
+
+    def check_if_services_obey_tls(self, servers, port_map=CbServer.ssl_port_map):
+        """
+        Parameters:
+        servers - list of servers on which to check
+        port_map (optional) - a dict with key as non-ssl port
+            and its value as tls-port. If not given, it will take the port map from
+            CbServer.ssl_port_map
+        Returns False if
+        a. the non-ssl port is open on any other address other than localhost
+        b. the tls port is not open on all (*) addresses
+        else True
+        """
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            # service should listen on non-ssl port only on localhost/no-address
+            for port in port_map.keys():
+                addresses = shell.get_port_recvq(port)
+                for address in addresses:
+                    expected_address = "127.0.0.1:" + port + '\n'
+                    if address != expected_address:
+                        self.log.error(" On Server {0} Expected {1} Actual {2}".
+                                       format(server.ip, expected_address, address))
+                        shell.disconnect()
+                        return False
+            # service should listen on tls_port(if there is one) for all outside addresses
+            for port in port_map.keys():
+                ssl_port = CbServer.ssl_port_map.get(port)
+                if ssl_port is None:
+                    continue
+                addresses = shell.get_port_recvq(ssl_port)
+                for address in addresses:
+                    expected_address = ["*:" + ssl_port + '\n',
+                                        "0.0.0.0:" + ssl_port + '\n']
+                    if address not in expected_address:
+                        self.log.error("Server {0} Expected {1} Actual {2}".
+                                       format(server, expected_address, address))
+                        shell.disconnect()
+                        return False
+            shell.disconnect()
+            return True
 
     def check_for_panic_and_mini_dumps(self, servers):
         panic_str = "panic"

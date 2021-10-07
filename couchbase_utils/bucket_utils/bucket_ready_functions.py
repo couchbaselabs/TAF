@@ -21,6 +21,7 @@ from collections import defaultdict
 import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
+from Cb_constants import CbServer
 from Jython_tasks.task import ViewCreateTask, ViewDeleteTask, ViewQueryTask, \
     BucketCreateTask, PrintOpsRate
 from SecurityLib.rbac import RbacUtil
@@ -2125,6 +2126,9 @@ class BucketUtils:
                     node.moxi = ports["proxy"]
                 if "direct" in ports:
                     node.memcached = ports["direct"]
+                    if CbServer.use_https:
+                        node.memcached = int(CbServer.ssl_port_map.get(str(node.memcached),
+                                                                       str(node.memcached)))
             if "hostname" in nodeDictionary:
                 value = str(nodeDictionary["hostname"])
                 node.ip = value[:value.rfind(":")]
