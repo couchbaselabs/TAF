@@ -16,7 +16,7 @@ spec = {
     Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
     Bucket.priority: Bucket.Priority.LOW,
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
-    Bucket.maxTTL: 1200,
+    Bucket.maxTTL: 1100,
     Bucket.storageBackend: Bucket.StorageBackend.couchstore,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.ACTIVE,
