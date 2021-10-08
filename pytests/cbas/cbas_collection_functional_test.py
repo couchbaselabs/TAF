@@ -596,7 +596,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                         "dataverse_name": obj.dataverse_name}))
                 elif func_name == self.cbas_util.wait_for_ingestion_complete:
                     jobs.put((func_name, {
-                        "cluster":self.cluster, "dataset_names": [obj.full_name],
+                        "cluster":self.cluster, "dataset_name": obj.full_name,
                         "num_items": obj.num_of_items}))
                 elif func_name == self.cbas_util.validate_synonym_in_metadata:
                     jobs.put((func_name, {
@@ -779,8 +779,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 dataverse_name=dataset.dataverse_name):
                 self.fail("Error while validating the datasets in Metadata")
             if not self.cbas_util.wait_for_ingestion_complete(
-                self.cluster, dataset_names=[dataset.full_name],
-                num_items=dataset.num_of_items):
+                    self.cluster, dataset_name=dataset.full_name,
+                    num_items=dataset.num_of_items):
                 self.fail("Data ingestion into the datasets did not complete")
         if self.input.param('verify_synonym', False):
             if not self.cbas_util.validate_synonym_in_metadata(
@@ -976,7 +976,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             dataverse_name=ds_obj.dataverse_name):
             self.fail("Error creating dataset {0}".format(ds_obj.name))
         if not self.cbas_util.wait_for_ingestion_complete(
-            self.cluster, [ds_obj.full_name], ds_obj.num_of_items):
+            self.cluster, ds_obj.full_name, ds_obj.num_of_items):
             self.fail("Data ingestion into dataset failed.")
         if self.input.param('synonym_dataverse', "new") == "new":
             dv_name = CBASHelper.format_name(self.cbas_util.generate_name(2))
@@ -1032,7 +1032,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                     dataverse_name=ds_obj.dataverse_name):
                     self.fail("Error creating dataset {0}".format(ds_obj.name))
                 if not self.cbas_util.wait_for_ingestion_complete(
-                    self.cluster, [ds_obj.full_name], ds_obj.num_of_items):
+                    self.cluster, ds_obj.full_name, ds_obj.num_of_items):
                     self.fail("data ingestion into dataset failed.")
         if self.input.param("action_on_synonym", None):
             self.log.info("Dropping Synonym")
@@ -1049,15 +1049,15 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if not self.input.param('validate_error', False):
             for obj in synonym_objs:
                 if not self.cbas_util.validate_synonym_in_metadata(
-                    self.cluster, obj.name, obj.dataverse_name,
-                    obj.cbas_entity_name, obj.cbas_entity_dataverse):
+                        self.cluster, obj.name, obj.dataverse_name,
+                        obj.cbas_entity_name, obj.cbas_entity_dataverse):
                     self.fail("Error while validating synonym in Metadata")
                 if not self.cbas_util.validate_synonym_doc_count(
-                    self.cluster, obj.full_name, obj.cbas_entity_full_name,
-                    validate_error_msg=self.input.param(
-                        'validate_query_error', False),
-                    expected_error=self.input.param('query_error', '').format(
-                        obj.name,obj.dataverse_name)):
+                        self.cluster, obj.full_name, obj.cbas_entity_full_name,
+                        validate_error_msg=self.input.param('validate_query_error', False),
+                        expected_error=self.input.param('query_error','').format(
+                            CBASHelper.unformat_name(obj.name),
+                            CBASHelper.unformat_name(obj.dataverse_name))):
                     self.fail(
                         "Error while validating synonym doc count for synonym")
         self.log.info("Test finished")
@@ -1116,8 +1116,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
         if self.input.param('dangling_synonym', False):
             if not self.cbas_util.wait_for_ingestion_complete(
-                self.cluster, [dataset_objs[0].full_name],
-                dataset_objs[0].num_of_items):
+                    self.cluster, dataset_objs[0].full_name,
+                    dataset_objs[0].num_of_items):
                 self.fail("Data ingestion failed")
         else:
             if not self.cbas_util.wait_for_ingestion_all_datasets(
@@ -1225,7 +1225,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.cluster, self.bucket_util, cbas_name_cardinality=3,
             kv_name_cardinality=3, remote_datasets=False):
             self.fail("Error while creating datasets")
-        dataset_objs = self.cbas_util_v2.list_all_dataset_objs()
+        dataset_objs = self.cbas_util.list_all_dataset_objs()
         bucket = random.choice(self.cluster.buckets)
         self.bucket_flush_and_validate(bucket)
         for dataset_obj in dataset_objs:
@@ -1366,7 +1366,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if docTTL:
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
                 "initial_load")
-            doc_loading_spec["doc_ttl"] = docTTL
+            doc_loading_spec[MetaCrudParams.DOC_TTL] = docTTL
         self.collectionSetUp(self.cluster, True, buckets_spec, doc_loading_spec)
         #inserting docs parallel
         if self.parallel_load_percent:
@@ -1381,49 +1381,64 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.fail("Dataset creation failed")
         self.stop_query_task()
         self.wait_for_data_load_task()
+        self.bucket_util.print_bucket_stats(self.cluster)
         if not self.cbas_util.wait_for_ingestion_all_datasets(
             self.cluster, self.bucket_util):
             self.fail("Ingestion failed")
         self.bucket_util._expiry_pager(self.cluster)
-        sleep_time = max(docTTL, collectionTTL, bucketTTL) + 30
-        self.sleep(sleep_time, "waiting for maxTTL to complete")
+        ttl_dict = {
+            "docTTL": docTTL,
+            "bucketTTL": bucketTTL,
+            "collectionTTL": collectionTTL
+        }
+        for ttl in ttl_dict:
+            if ttl_dict[ttl] == 0:
+                del ttl_dict[ttl]
+        ttl_to_check = None
+        for ttl in ttl_dict:
+            if not ttl_to_check:
+                ttl_to_check = ttl
+            elif ttl_dict[ttl] < ttl_dict[ttl_to_check]:
+                ttl_to_check = ttl
+        self.sleep(ttl_dict[ttl_to_check] + 60,
+                   "waiting for maxTTL to complete")
         self.log.info("Validating item count")
         datasets = self.cbas_util.list_all_dataset_objs()
         for dataset in datasets:
             mutated_items = dataset.kv_collection.num_items - (
                     100 * dataset.kv_collection.num_items) / (
                     100 + self.parallel_load_percent)
-            if docTTL:
+            if ttl_to_check == "docTTL":
                 if not self.cbas_util.validate_cbas_dataset_items_count(
-                    self.cluster, dataset.full_name, 0):
+                        self.cluster, dataset.full_name, 0):
                     self.fail(
                         "Docs are still present in the dataset even after "
                         "DocTTl reached")
-            elif bucketTTL:
+            elif ttl_to_check == "bucketTTL":
                 if dataset.kv_bucket.name == selected_bucket:
                     if not self.cbas_util.validate_cbas_dataset_items_count(
-                        self.cluster, dataset.full_name, 0):
+                            self.cluster, dataset.full_name, 0):
                         self.fail(
                             "Docs are still present in the dataset even "
                             "after bucketTTl reached")
                 else:
                     if not self.cbas_util.validate_cbas_dataset_items_count(
-                        self.cluster, dataset.full_name, dataset.num_of_items,
-                        mutated_items):
+                            self.cluster, dataset.full_name,
+                            dataset.num_of_items, mutated_items):
                         self.fail(
                             "Docs are deleted from datasets when it should "
                             "not have been deleted")
-            else:
+            elif ttl_to_check == "collectionTTL":
                 if dataset.full_kv_entity_name == selected_collection:
                     if not self.cbas_util.validate_cbas_dataset_items_count(
-                        self.cluster, dataset.full_name, 0):
+                            self.cluster, dataset.full_name, 0):
                         self.fail(
                             "Docs are still present in the dataset even "
                             "after CollectionTTl reached")
                 else:
                     if not self.cbas_util.validate_cbas_dataset_items_count(
-                        self.cluster, dataset.full_name, dataset.num_of_items,
-                        mutated_items):
+                            self.cluster, dataset.full_name,
+                            dataset.num_of_items, mutated_items):
                         self.fail(
                             "Docs are deleted from datasets when it should "
                             "not have been deleted")
@@ -1539,7 +1554,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 if func_name == self.cbas_util.wait_for_ingestion_complete:
                     jobs.put((func_name, {
                         "cluster":self.cluster,
-                        "dataset_names": [dataset.full_name],
+                        "dataset_names": dataset.full_name,
                         "num_items": dataset.num_of_items}))
                 elif func_name == self.cbas_util.create_cbas_index:
                     index = CBAS_Index(
