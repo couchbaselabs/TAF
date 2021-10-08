@@ -46,6 +46,14 @@ spec = {
                             Bucket.maxTTL: 0
                         }
                     }
+                },
+                "_default": {
+                    "collections": {
+                        "collection1": {
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
+                            Bucket.maxTTL: 0
+                        }
+                    }
                 }
             }
         },
@@ -70,6 +78,14 @@ spec = {
                             Bucket.maxTTL: 0
                         },
                         "collection2": {
+                            MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
+                            Bucket.maxTTL: 0
+                        }
+                    }
+                },
+                "_default": {
+                    "collections": {
+                        "collection1": {
                             MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
                             Bucket.maxTTL: 0
                         }

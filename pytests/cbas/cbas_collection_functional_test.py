@@ -727,8 +727,6 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             dataset.kv_bucket.name = "invalid"
             error_msg = error_msg.format("invalid")
         elif self.input.param('remove_default_collection', False):
-            bucket_cardinality = 1
-            dataset.kv_collection.name = "_default"
             error_msg = error_msg.format(
                 dataset.get_fully_qualified_kv_entity_name(3))
         # Creating synonym before enabling analytics from KV
@@ -1530,7 +1528,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             indexed_fields=self.input.param('index_fields', None))
         expected_error = "Cannot find analytics collection with name {0} in analytics scope {" \
                          "1}".format(
-            CBASHelper.unformat_name(synonym.name), synonym.dataverse_name)
+            CBASHelper.unformat_name(synonym.name),
+            CBASHelper.unformat_name(synonym.dataverse_name))
         if not self.cbas_util.create_cbas_index(
             self.cluster, index.name, index.indexed_fields, index.full_dataset_name,
                 analytics_index=self.input.param('analytics_index', False),
@@ -1805,6 +1804,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.start_data_load_task(
             percentage_per_collection=self.parallel_load_percent)
         cbas_kill_count = self.input.param("cbas_kill_count", 0)
+        memcached_kill_count = self.input.param("memcached_kill_count", 0)
         if not cbas_kill_count:
             self.start_query_task()
         # Wait for create dataset task to finish
@@ -1814,7 +1814,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.fail("Datasets creation failed")
         self.wait_for_data_load_task()
         kill_process_task = self.cbas_util.start_kill_processes_task(
-            self.cluster, self.cluster_util, cbas_kill_count, self.memcached_kill_count)
+            self.cluster, self.cluster_util, cbas_kill_count, memcached_kill_count)
         self.stop_query_task()
         if kill_process_task:
             self.task_manager.get_task_result(kill_process_task)
