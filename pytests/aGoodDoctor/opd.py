@@ -45,9 +45,10 @@ class OPD:
         self.PrintStep("RAM FootPrint: %s" % str(mem))
         return mem
 
-    def create_required_buckets(self):
+    def create_required_buckets(self, cluster):
         self.log.info("Get the available memory quota")
-        self.info = self.rest.get_nodes_self()
+        rest = RestConnection(cluster.master)
+        self.info = rest.get_nodes_self()
 
         # threshold_memory_vagrant = 100
         kv_memory = self.info.memoryQuota - 100
@@ -57,8 +58,8 @@ class OPD:
         self.bucket_expiry = self.input.param("bucket_expiry", 0)
         ramQuota = self.input.param("ramQuota", kv_memory)
         buckets = ["GleamBookUsers"]*self.num_buckets
-        self.bucket_type = self.bucket_type.split(';')*self.num_buckets
-        self.compression_mode = self.compression_mode.split(';')*self.num_buckets
+        bucket_type = self.bucket_type.split(';')*self.num_buckets
+        compression_mode = self.compression_mode.split(';')*self.num_buckets
         self.bucket_eviction_policy = self.bucket_eviction_policy
         for i in range(self.num_buckets):
             bucket = Bucket(
@@ -68,18 +69,54 @@ class OPD:
                  Bucket.replicaNumber: self.num_replicas,
                  Bucket.storageBackend: self.bucket_storage,
                  Bucket.evictionPolicy: self.bucket_eviction_policy,
-                 Bucket.bucketType: self.bucket_type[i],
+                 Bucket.bucketType: bucket_type[i],
                  Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
-                 Bucket.compressionMode: self.compression_mode[i],
+                 Bucket.compressionMode: compression_mode[i],
                  Bucket.fragmentationPercentage: self.fragmentation})
-            self.bucket_util.create_bucket(self.cluster, bucket)
+            self.bucket_util.create_bucket(cluster, bucket)
 
         # rebalance the new buckets across all nodes.
         self.log.info("Rebalance Starts")
-        self.nodes = self.rest.node_statuses()
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                            ejectedNodes=[])
-        self.rest.monitorRebalance()
+        self.nodes = rest.node_statuses()
+        rest.rebalance(otpNodes=[node.id for node in self.nodes],
+                       ejectedNodes=[])
+        rest.monitorRebalance()
+
+    def create_required_collections(self, cluster, num_scopes, num_collections):
+        self.scope_name = self.input.param("scope_name", "_default")
+        if self.scope_name != "_default":
+            self.bucket_util.create_scope(cluster,
+                                          self.bucket,
+                                          {"name": self.scope_name})
+        if num_scopes > 1:
+            self.scope_prefix = self.input.param("scope_prefix",
+                                                 "VolumeScope")
+            for bucket in cluster.buckets:
+                for i in range(num_scopes):
+                    scope_name = self.scope_prefix + str(i)
+                    self.log.info("Creating scope: %s"
+                                  % (scope_name))
+                    self.bucket_util.create_scope(cluster.master,
+                                                  bucket,
+                                                  {"name": scope_name})
+                    self.sleep(0.5)
+            self.num_scopes += 1
+        for bucket in cluster.buckets:
+            for scope in bucket.scopes.keys():
+                if num_collections > 1:
+                    self.collection_prefix = self.input.param("collection_prefix",
+                                                              "VolumeCollection")
+
+                    for i in range(num_collections):
+                        collection_name = self.collection_prefix + str(i)
+                        self.bucket_util.create_collection(cluster.master,
+                                                           bucket,
+                                                           scope,
+                                                           {"name": collection_name})
+                        self.sleep(0.5)
+
+        self.collections = cluster.buckets[0].scopes[self.scope_name].collections.keys()
+        self.log.debug("Collections list == {}".format(self.collections))
 
     def stop_purger(self, tombstone_purge_age=60):
         """

@@ -9,9 +9,11 @@ from Cb_constants.CBServer import CbServer
 from membase.api.rest_client import RestConnection
 from aGoodDoctor.cbas import DoctorCBAS
 from aGoodDoctor.n1ql import DoctorN1QL
+from aGoodDoctor.xdcr import DoctorXDCR
 from fts_utils.fts_ready_functions import FTSUtils
 from aGoodDoctor.opd import OPD
 from BucketLib.BucketOperations import BucketHelper
+from cluster_utils.cluster_ready_functions import CBCluster
 import threading
 import random
 
@@ -42,13 +44,16 @@ class Murphy(BaseTestCase, OPD):
         self.init_doc_params()
 
         self.num_collections = self.input.param("num_collections", 1)
+        self.xdcr_collections = self.input.param("xdcr_collections", self.num_collections)
         self.num_scopes = self.input.param("num_scopes", 1)
+        self.xdcr_scopes = self.input.param("xdcr_scopes", self.num_scopes)
         self.num_buckets = self.input.param("num_buckets", 1)
         self.kv_nodes = self.nodes_init
         self.cbas_nodes = self.input.param("cbas_nodes", 0)
         self.fts_nodes = self.input.param("fts_nodes", 0)
         self.index_nodes = self.input.param("index_nodes", 0)
         self.query_nodes = self.input.param("query_nodes", 0)
+        self.xdcr_remote_nodes = self.input.param("xdcr_remote_nodes", 0)
         self.num_indexes = self.input.param("num_indexes", 0)
         self.mutation_perc = 100
         self.doc_ops = self.input.param("doc_ops", "create")
@@ -92,51 +97,33 @@ class Murphy(BaseTestCase, OPD):
                 [self.cluster.master] + nodes_init)
         else:
             self.cluster.nodes_in_cluster.extend([self.cluster.master])
-
         self.available_servers = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
         self.cluster.kv_nodes = self.cluster.nodes_in_cluster[:]
         self.cluster.kv_nodes.remove(self.cluster.master)
         self.cluster_util.set_metadata_purge_interval(self.cluster.master)
+        if self.xdcr_remote_nodes > 0:
+            self.assertTrue(self.xdcr_remote_nodes <= len(self.available_servers),
+                            "Only {0} nodes available, cannot create XDCR remote with {1} nodes".format(
+                                len(self.available_servers), self.xdcr_remote_nodes))
+            remote_nodes = self.available_servers[0:self.xdcr_remote_nodes]
+            self.available_servers = self.available_servers[self.xdcr_remote_nodes:]
+            self.PrintStep("Step 1*: Create a %s node XDCR remote cluster" % self.xdcr_remote_nodes)
+            self.xdcr_remote_cluster = CBCluster(name="remote", servers=remote_nodes,
+                                                 vbuckets=self.vbuckets)
+            self.task.rebalance([self.xdcr_remote_cluster.master], remote_nodes[1:], [])
+            self.xdcr_remote_cluster.nodes_in_cluster.extend(
+                [self.xdcr_remote_cluster.master] + remote_nodes)
         #######################################################################
         self.PrintStep("Step 2: Create required buckets and collections.")
-        self.create_required_buckets()
+        self.create_required_buckets(self.cluster)
+        self.create_required_collections(self.cluster, self.num_scopes, self.num_collections)
+        if self.xdcr_remote_nodes > 0:
+            self.PrintStep("Step 2*: Create required buckets and collections on XDCR remote.")
+            self.create_required_buckets(cluster=self.xdcr_remote_cluster)
+            # Increase number of collections to increase number of replicated docs
+            self.create_required_collections(self.xdcr_remote_cluster, self.xdcr_scopes, self.xdcr_collections)
+            self.drXDCR = DoctorXDCR(self.cluster, self.xdcr_remote_cluster)
 
-        self.scope_name = self.input.param("scope_name",
-                                           CbServer.default_scope)
-        if self.scope_name != CbServer.default_scope:
-            self.bucket_util.create_scope(self.cluster.master,
-                                          self.bucket,
-                                          {"name": self.scope_name})
-
-        if self.num_scopes > 1:
-            self.scope_prefix = self.input.param("scope_prefix",
-                                                 "VolumeScope")
-            for bucket in self.cluster.buckets:
-                for i in range(self.num_scopes):
-                    scope_name = self.scope_prefix + str(i)
-                    self.log.info("Creating scope: %s"
-                                  % (scope_name))
-                    self.bucket_util.create_scope(self.cluster.master,
-                                                  bucket,
-                                                  {"name": scope_name})
-                    self.sleep(0.5)
-            self.num_scopes += 1
-        for bucket in self.cluster.buckets:
-            for scope in bucket.scopes.keys():
-                if self.num_collections > 1:
-                    self.collection_prefix = self.input.param("collection_prefix",
-                                                              "VolumeCollection")
-
-                    for i in range(self.num_collections):
-                        collection_name = self.collection_prefix + str(i)
-                        self.bucket_util.create_collection(self.cluster.master,
-                                                           bucket,
-                                                           scope,
-                                                           {"name": collection_name})
-                        self.sleep(0.5)
-
-        self.collections = self.cluster.buckets[0].scopes[self.scope_name].collections.keys()
-        self.log.debug("Collections list == {}".format(self.collections))
         self.rest = RestConnection(self.cluster.master)
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
@@ -216,6 +203,7 @@ class Murphy(BaseTestCase, OPD):
     def SteadyStateVolume(self):
         self.loop = 1
         self.create_perc = 100
+
         self.PrintStep("Step 1: Create %s items: %s" % (self.num_items, self.key_type))
         self.generate_docs(doc_ops=["create"],
                            create_start=0,
@@ -232,6 +220,11 @@ class Murphy(BaseTestCase, OPD):
             self.drIndexService.create_indexes()
             self.drIndexService.build_indexes()
             self.drIndexService.start_query_load()
+
+        if self.xdcr_remote_nodes:
+            self.drXDCR.create_remote_ref("magma_xdcr")
+            for bucket in self.cluster.buckets:
+                self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
         stat_th = threading.Thread(target=self.dump_magma_stats,
                                    kwargs=dict(server=self.cluster.master,
@@ -295,6 +288,11 @@ class Murphy(BaseTestCase, OPD):
             self.drIndexService.create_indexes()
             self.drIndexService.build_indexes()
             self.drIndexService.start_query_load()
+
+        if self.xdcr_remote_nodes:
+            self.drXDCR.create_remote_ref("magma_xdcr")
+            for bucket in self.cluster.buckets:
+                self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
         self.rebl_nodes = self.input.param("rebl_nodes", 0)
         self.max_rebl_nodes = self.input.param("max_rebl_nodes", 1)
@@ -430,6 +428,11 @@ class Murphy(BaseTestCase, OPD):
             self.drIndexService.create_indexes()
             self.drIndexService.build_indexes()
             self.drIndexService.start_query_load()
+
+        if self.xdcr_remote_nodes:
+            self.drXDCR.create_remote_ref("magma_xdcr")
+            for bucket in self.cluster.buckets:
+                self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
         self.rebl_nodes = self.input.param("rebl_nodes", 0)
         self.max_rebl_nodes = self.input.param("max_rebl_nodes", 1)
