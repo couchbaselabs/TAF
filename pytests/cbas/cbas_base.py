@@ -117,11 +117,12 @@ class CBASBaseTest(BaseTestCase):
             cluster.nodes_in_cluster.append(cluster.master)
             cluster.kv_nodes.append(cluster.master)
 
-            if "cbas" in cluster.master.services:
-                cluster.cbas_nodes.append(cluster.master)
-
             self.initialize_cluster(cluster_name, cluster,
                                     services=self.services_init[i][0])
+            cluster.master.services = self.services_init[i][0].replace(":", ",")
+
+            if "cbas" in cluster.master.services:
+                cluster.cbas_nodes.append(cluster.master)
 
             if self.input.param("cluster_ip_family", ""):
                 # Enforce IPv4 or IPv6 or both
@@ -273,7 +274,7 @@ class CBASBaseTest(BaseTestCase):
             self.bucket_util.add_rbac_user(cluster.master)
 
             # Wait for analytics service to be up.
-            if hasattr(cluster, "cbas_util"):
+            if hasattr(cluster, "cbas_cc_node"):
                 if not self.cbas_util.is_analytics_running(cluster):
                     self.fail("Analytics service did not come up even after 10\
                      mins of wait after initialisation")
@@ -373,25 +374,25 @@ class CBASBaseTest(BaseTestCase):
                         self.fail(
                             "Error while setting service mem quota %s for %s"
                             % (service_mem_dict[service][1], service))
-                if set_cbas_mem and memory_quota_available >= \
-                        service_mem_dict["cbas"][1]:
-                    if "cbas" in cluster_services:
-                        if cluster_info.__getattribute__(
-                                CbServer.Settings.CBAS_MEM_QUOTA) >= memory_quota_available:
+                if set_cbas_mem:
+                    if memory_quota_available >= service_mem_dict["cbas"][1]:
+                        if "cbas" in cluster_services:
+                            if cluster_info.__getattribute__(
+                                    CbServer.Settings.CBAS_MEM_QUOTA) >= memory_quota_available:
+                                self.log.info(
+                                    "Setting {0} memory quota for CBAS".format(
+                                        memory_quota_available))
+                                cluster.rest.set_service_mem_quota(
+                                    {CbServer.Settings.CBAS_MEM_QUOTA: memory_quota_available})
+                        else:
                             self.log.info(
                                 "Setting {0} memory quota for CBAS".format(
                                     memory_quota_available))
                             cluster.rest.set_service_mem_quota(
                                 {CbServer.Settings.CBAS_MEM_QUOTA: memory_quota_available})
                     else:
-                        self.log.info(
-                            "Setting {0} memory quota for CBAS".format(
-                                memory_quota_available))
-                        cluster.rest.set_service_mem_quota(
-                            {CbServer.Settings.CBAS_MEM_QUOTA: memory_quota_available})
-                else:
-                    self.fail("Error while setting service memory quota {0} "
-                              "for CBAS".format(memory_quota_available))
+                        self.fail("Error while setting service memory quota {0} "
+                                  "for CBAS".format(memory_quota_available))
 
     def collectionSetUp(
             self, cluster, load_data=True, buckets_spec=None,

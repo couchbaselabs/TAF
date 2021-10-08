@@ -216,7 +216,7 @@ class BaseUtil(object):
         specified, otherwise creates a name with length upto no_of_char specified.
         :param name_key str, if specified, it will generate name with the name_key
         """
-        random.seed(time.time())
+        random.seed(round(time.time()*1000))
         if 0 < name_cardinality < 3:
             if name_key:
                 return ".".join(name_key for i in range(name_cardinality))
@@ -1625,31 +1625,23 @@ class Dataset_Util(Link_Util):
         return total_items, mutated_items
 
     def wait_for_ingestion_complete(
-            self, cluster, dataset_names, num_items, timeout=300):
-
-        total_items = 0
-        for ds_name in dataset_names:
-            total_items += self.get_num_items_in_cbas_dataset(cluster, ds_name)[0]
+            self, cluster, dataset_name, num_items, timeout=300):
 
         counter = 0
         while timeout > counter:
-            self.log.debug("Total items in CB Bucket to be ingested "
-                           "in CBAS datasets %s"
-                           % num_items)
-            if num_items == total_items:
-                self.log.debug("Data ingestion completed in %s seconds."
-                               % counter)
+            self.log.debug("Total items in KV Bucket to be ingested "
+                           "in CBAS datasets %s" % num_items)
+            if num_items == self.get_num_items_in_cbas_dataset(cluster, dataset_name)[0]:
+                self.log.debug("Data ingestion completed in %s seconds." %
+                               counter)
                 return True
             else:
                 sleep(2)
-                total_items = 0
-                for ds_name in dataset_names:
-                    total_items += self.get_num_items_in_cbas_dataset(
-                        cluster, ds_name)[0]
                 counter += 2
 
-        self.log.error("datasets: {0} ds-items: {1} kv-items: {2}".format(
-            dataset_names, total_items, num_items))
+        self.log.error("Dataset: {0} kv-items: {1} ds-items: {2}".format(
+            dataset_name, num_items,
+            self.get_num_items_in_cbas_dataset(cluster, dataset_name)[0]))
 
         return False
 
@@ -1664,7 +1656,7 @@ class Dataset_Util(Link_Util):
             for dataset in datasets:
                 jobs.put((
                     self.wait_for_ingestion_complete,
-                    {"cluster": cluster, "dataset_names": [dataset.full_name],
+                    {"cluster": cluster, "dataset_names": dataset.full_name,
                      "num_items": dataset.num_of_items, "timeout": timeout}))
         self.run_jobs_in_parallel(jobs, results, 15, async_run=False)
         return all(results)
@@ -1700,8 +1692,9 @@ class Dataset_Util(Link_Util):
                        % (expected_count, count))
         self.log.debug("Expected Mutated Count: %s, Actual Mutated Count: %s"
                        % (expected_mutated_count, mutated_count))
-
-        if count != expected_count:
+        if count == expected_count and mutated_count == expected_mutated_count:
+            return True
+        elif count != expected_count:
             return False
         elif mutated_count == expected_mutated_count:
             return True
@@ -2258,12 +2251,11 @@ class Dataset_Util(Link_Util):
                 remote_dataset=remote_dataset, link=link,
                 same_dv_for_link_and_dataset=same_dv_for_link_and_dataset,
                 dataset_cardinality=dataset_cardinality, name_length=name_length,
-                fixed_length=fixed_length,):
+                fixed_length=fixed_length):
             if not scope:
                 scope = bucket_util.get_scope_obj(bucket, "_default")
             if not collection:
                 collection = bucket_util.get_collection_obj(scope, "_default")
-
             if enabled_from_KV:
                 dataverse_name = bucket.name + "." + scope.name
                 dataset_name = collection.name
@@ -2366,9 +2358,6 @@ class Dataset_Util(Link_Util):
                         collection.name in exclude_collection):
                         collection = random.choice(active_collections)
 
-                    for scope in active_scopes:
-                        if scope.is_dropped or scope.name in exclude_scope:
-                            continue
                     create_object(bucket, scope, collection)
 
     def create_external_dataset_obj(
@@ -2432,8 +2421,7 @@ class Dataset_Util(Link_Util):
 
         for dataset in datasets:
             jobs.put((self.wait_for_ingestion_complete,
-                      {"cluster": cluster,
-                       "dataset_names": [dataset.full_name],
+                      {"cluster": cluster, "dataset_names": dataset.full_name,
                        "num_items": dataset.num_of_items, "timeout": timeout}))
 
         self.run_jobs_in_parallel(jobs, results, 50, async_run=False)
@@ -4103,8 +4091,12 @@ class CbasUtil(UDFUtil):
                 if status == "success":
                     analytics_recovered = True
                     break
+                else:
+                    self.log.info("Service unavailable. Will retry..")
+                    time.sleep(2)
             except:
-                sleep(2, "Service unavailable. Will retry..")
+                self.log.info("Service unavailable. Will retry..")
+                time.sleep(2)
         return analytics_recovered
 
     # Backup Analytics metadata
@@ -4176,7 +4168,7 @@ class CbasUtil(UDFUtil):
                     jobs.put((
                         self.wait_for_ingestion_complete,
                         {"cluster": cluster,
-                         "dataset_names": [dataset.full_name],
+                         "dataset_names": dataset.full_name,
                          "num_items": dataset.num_of_items,
                          "timeout": cbas_spec.get("api_timeout", 120)}))
             self.run_jobs_in_parallel(jobs, results,

@@ -53,6 +53,10 @@ class SecurityUtils():
         x509main().setup_cluster_nodes_ssl(servers, reload_cert=True)
         if cluster:
             copytree(cluster.x509.CACERTFILEPATH, cluster.CACERTFILEPATH)
+            shell = RemoteMachineShellConnection(x509main.SLAVE_HOST)
+            self.log.info("Removing folder {0} from slave".format(
+                cluster.x509.CACERTFILEPATH))
+            shell.execute_command("rm -rf " + cluster.x509.CACERTFILEPATH)
 
     def generate_x509_certs(self, cluster):
         """
@@ -120,6 +124,7 @@ class SecurityUtils():
             cb_cli.enable_n2n_encryption()
             cb_cli.set_n2n_encryption_level(level=level)
             shell_conn.disconnect()
+        time.sleep(10)
 
     def disable_n2n_encryption_cli_on_nodes(self, nodes):
         self.set_n2n_encryption_level_on_nodes(nodes=nodes, level="control")
@@ -130,3 +135,4 @@ class SecurityUtils():
             o = cb_cli.disable_n2n_encryption()
             self.log.info(o)
             shell_conn.disconnect()
+        time.sleep(10)
