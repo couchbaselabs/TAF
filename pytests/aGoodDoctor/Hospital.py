@@ -456,6 +456,7 @@ class Murphy(BaseTestCase, OPD):
             ###################################################################
             self.PrintStep("Step 4: Rebalance in with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+            self.sleep(60, "Sleep for 60s for rebalance to start")
 
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
@@ -479,6 +480,7 @@ class Murphy(BaseTestCase, OPD):
             ###################################################################
             self.PrintStep("Step 5: Rebalance Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
+            self.sleep(60, "Sleep for 60s for rebalance to start")
 
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
@@ -501,6 +503,7 @@ class Murphy(BaseTestCase, OPD):
             ###################################################################
             self.PrintStep("Step 6: Rebalance In_Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
+            self.sleep(60, "Sleep for 60s for rebalance to start")
 
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
@@ -524,6 +527,7 @@ class Murphy(BaseTestCase, OPD):
             self.PrintStep("Step 7: Swap with Loading of docs")
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
+            self.sleep(60, "Sleep for 60s for rebalance to start")
 
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
@@ -556,7 +560,7 @@ class Murphy(BaseTestCase, OPD):
             # Failover Node
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
-            self.sleep(10)
+            self.sleep(30)
             self.rest.monitorRebalance()
 
             # Rebalance out failed over node
@@ -594,7 +598,7 @@ class Murphy(BaseTestCase, OPD):
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
-            self.sleep(10)
+            self.sleep(30)
             self.rest.monitorRebalance()
 
             # Mark Node for full recovery
@@ -629,7 +633,7 @@ class Murphy(BaseTestCase, OPD):
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
-            self.sleep(10)
+            self.sleep(30)
             self.rest.monitorRebalance()
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id,
@@ -659,6 +663,7 @@ class Murphy(BaseTestCase, OPD):
                     self.cluster.buckets[i], replicaNumber=2)
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+            self.sleep(60, "Sleep for 60s for rebalance to start")
 
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
