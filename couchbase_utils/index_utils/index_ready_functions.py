@@ -50,7 +50,7 @@ class IndexUtils:
 
     def create_gsi_on_each_collection(self, cluster, buckets=None, gsi_base_name=None,
                                       replica=0, defer=True, number_of_indexes_per_coll=1, count=1,
-                                      field='key', sync=False):
+                                      field='key', sync=False, timeout=600):
         """
         Create gsi indexes on collections - according to number_of_indexes_per_coll
         """
@@ -90,7 +90,7 @@ class IndexUtils:
                         task = self.task.async_execute_query(server=query_node_list[query_node_instance],
                                                              query=create_index_query,
                                                              isIndexerQuery=True, bucket=bucket,
-                                                             indexName=gsi_index_name)
+                                                             indexName=gsi_index_name, timeout= timeout)
                         if sync:
                             self.task_manager.get_task_result(task)
                         else:
@@ -206,7 +206,7 @@ class IndexUtils:
     def randStr(self, Num=10):
         return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(Num))
 
-    def run_full_scan(self, cluster, indexesDict, key):
+    def run_full_scan(self, cluster, indexesDict, key, is_sync=False):
         query_tasks_info = list()
         x = 0
         query_len = len(cluster.query_nodes)
@@ -215,10 +215,18 @@ class IndexUtils:
                 for collection, gsi_index_names in collection_data.items():
                     for gsi_index_name in gsi_index_names:
                         query_node_index = x % query_len
-                        queryString = self.randStr(Num=8)
                         query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s is not missing;" % (
                             bucket, scope, collection, gsi_index_name, key)
+                        self.log.debug("Query is {}".format(query))
                         task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query)
                         query_tasks_info.append(task)
+                        if is_sync:
+                            self.log.debug("Is sync is true")
+                            if x == query_len - 1:
+                                self.log.debug("Getting status for each query")
+                                for task in query_tasks_info:
+                                    self.task_manager.get_task_result(task)
+                                self.log.debug("Resetting the list")
+                                query_tasks_info = list()
                         x += 1
         return query_tasks_info

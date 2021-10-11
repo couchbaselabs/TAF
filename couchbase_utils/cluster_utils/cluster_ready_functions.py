@@ -1367,12 +1367,13 @@ class ClusterUtils:
           return: void
       """
 
-    def indexer_id_ops(self, node, ops='compactAll', timeout=120):
+    def indexer_id_ops(self, node, ops='compactAll', timeout=120, sleep_time=5):
         generic_url = "http://%s:%s/"
         ip = node.ip
         port = constants.index_port
         indexUrl = generic_url % (ip, port)
         api = "{0}plasmaDiag".format(indexUrl)
+        self.log.debug("Api used {}".format(api))
         command = {'Cmd': 'listDBs'}
         rest = RestConnection(node)
         status, content, header = rest._http_request(api, 'POST', json.dumps(command), timeout=timeout)
@@ -1381,9 +1382,13 @@ class ClusterUtils:
                 x, id = l.split(" : ")
                 if id:
                     self.log.info("Triggering %s for instance id %s" % (ops, id))
-                    compact_command = {'Cmd': ops, 'Args': [int(id)]}
+                    compact_command = {'Cmd': ops, 'Args': [id]}
+                    self.log.debug("compact command {}".format(compact_command))
                     status, content, header = rest._http_request(api, 'POST', json.dumps(compact_command))
+                    self.log.debug("Triggering passed with status as {}".format(status))
+                    sleep(sleep_time, "waiting in between before triggering another ops")
                     if not status:
                         self.log.error("Failed to trigger compaction :%s" % content)
             except ValueError:
+                self.log.error("Issue with rest connection with plasma")
                 pass

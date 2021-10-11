@@ -38,6 +38,7 @@ class PlasmaBaseTest(StorageBase):
         self.sweep_interval = self.input.param("sweep_interval", 120)
         self.index_count = self.input.param("index_count", 2)
         self.counter = self.input.param("counter", 30)
+        self.query_limit = self.input.param("query_limit", 50)
 
     def print_plasma_stats(self, plasmaDict, bucket, indexname):
         bucket_Index_key = bucket.name + ":" + indexname
@@ -124,17 +125,17 @@ class PlasmaBaseTest(StorageBase):
         return True
 
     def get_plasma_index_stat_value(self, plasma_stat_field, plasma_obj_dict):
-        field_value_list = list()
+        field_value_map = dict()
         for plasma_obj in plasma_obj_dict.values():
             index_stat = plasma_obj.get_index_storage_stats()
             for bucket in index_stat.keys():
                 for index in index_stat[bucket].keys():
                     self.log.debug("index name is:"+str(index))
                     index_stat_map = index_stat[bucket][index]
-                    field_value_list.append(index_stat_map["MainStore"][plasma_stat_field])
+                    field_value_map[index] = index_stat_map["MainStore"][plasma_stat_field]
                     self.log.debug("field is:"+str(plasma_stat_field))
                     self.log.debug("field value is: {}".format(index_stat_map["MainStore"][plasma_stat_field]))
-        return field_value_list
+        return field_value_map
 
     def find_mem_used_percent(self, index_stats_map):
         mem_used_percent = int(
@@ -149,6 +150,66 @@ class PlasmaBaseTest(StorageBase):
             stats_obj_dict[str(node.ip)] = stat_obj
         return stats_obj_dict
 
+    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='equal', timeout=30):
+        isFound = False
+        for count in range(timeout):
+            field_value_list = self.get_plasma_index_stat_value(field, stat_obj_list)
+            for field_value in field_value_list.values():
+                field_value = int(field_value)
+                self.log.debug("field value: {} and expected value: {}".format(field_value, value))
+                if ops == 'equal':
+                    self.log.debug("Equal operation")
+                    if field_value == value:
+                        isFound = True
+                        break
+                elif ops == 'greater':
+                    self.log.debug("greater operation")
+                    if field_value > value:
+                        isFound = True
+                        break
+                else:
+                    self.log.debug("lesser operation")
+                    if field_value < value:
+                        isFound = True
+                        break
+            if isFound:
+                break
+            else:
+                self.sleep(10, "waiting to settle down the plasma stat value")
+        return isFound
+
+    def compare_plasma_stat_field_value(self, stat_obj_list, field, value_map, ops='equal', timeout=30):
+        isCompare = False
+        for key in value_map.keys():
+            for count in range(timeout):
+                field_value_map = self.get_plasma_index_stat_value(field, stat_obj_list)
+                isCompare = False
+                self.log.debug("Actual field value: {}".format(value_map[key]))
+                self.log.debug("Comparing field value: {}".format(field_value_map[key]))
+                if ops == 'equal':
+                    if field_value_map[key] == value_map[key]:
+                         isCompare = True
+                         break
+                elif ops == 'greater':
+                    if field_value_map[key] > value_map[key]:
+                        isCompare = True
+                        break
+                elif ops == 'lesser':
+                    if field_value_map[key] < value_map[key]:
+                        isCompare = True
+                        break
+                else:
+                    self.log.info("Operation {} not supported".format(ops))
+                    return False
+                if isCompare:
+                    break
+                else:
+                    self.sleep(10, "waiting to settle down the plasma stat value")
+            if not isCompare:
+                return isCompare
+
+        return isCompare
+
     def verify_compression_stat(self, index_nodes_list):
         comp_stat_verified = True
         for node in index_nodes_list:
@@ -158,6 +219,7 @@ class PlasmaBaseTest(StorageBase):
                 for index in index_storage_stats[bucket].keys():
                     index_stat_map = index_storage_stats[bucket][index]
                     if index_stat_map["MainStore"]["num_rec_compressed"] == 0:
+                        self.log.debug("num_rec_compressed value is 0")
                         comp_stat_verified = False
                     elif index_stat_map["MainStore"]["num_rec_compressed"] < 0:
                         self.fail("Negative digit in compressed count")
@@ -180,7 +242,7 @@ class PlasmaBaseTest(StorageBase):
             if collection.name == collection_name:
                 return collection
 
-    def validate_index_data(self, indexMap, totalCount, field='body', limit=50):
+    def validate_index_data(self, indexMap, totalCount, field='body', limit=500):
         query_len = len(self.cluster.query_nodes)
         x = 0
         self.log.debug("Inside validate index")
@@ -196,13 +258,15 @@ class PlasmaBaseTest(StorageBase):
                 for collection_name, gsi_index_names in collection_data.items():
                     collection = self.findCollection(collection_name, scope)
                     offset = 0
+                    self.log.debug("Total count is: {}".format(totalCount))
                     for gsi_index_name in gsi_index_names:
                         while offset < totalCount:
                             self.log.debug("Inside validate index")
                             self.log.info("offset is:"+str(offset))
-                            self.log.info("limit is:"+str(totalCount))
+                            self.log.info("limit is:"+str(limit))
                             query = "select meta().id,%s from `%s`.`%s`.`%s` data USE INDEX (%s  USING GSI) where body is not missing order by meta().id limit %s offset %s" % (
                                     field, bucket_name, scope_name, collection_name, gsi_index_name, limit, offset)
+                            self.log.debug("Executed query is {}".format(query))
                             query_node_index = x % query_len
                             task = self.task.compare_KV_Indexer_data(self.cluster,
                                                                          self.cluster.query_nodes[query_node_index],
@@ -218,25 +282,45 @@ class PlasmaBaseTest(StorageBase):
         for index_node in self.cluster.index_nodes:
             self.cluster_util.indexer_id_ops(node=index_node, ops=ops)
 
-    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='equal', timeout=30):
-        isFound = False
-        for count in range(timeout):
-            field_value_list = self.get_plasma_index_stat_value(field, stat_obj_list)
-            for field_value in field_value_list:
-                if ops == 'equal':
-                    if field_value == value:
-                        isFound = True
-                        break
-                elif ops == 'greater':
-                    if field_value > value:
-                        isFound = True
-                        break
-                else:
-                    if field_value < value:
-                        isFound = True
-                        break
-            if isFound:
-                break
-            else:
-                self.sleep(10, "waiting to settle down the plasma stat value")
-        return isFound
+    def verify_bucket_count_with_index_count(self, query=None,
+                                              buckets=None):
+        """
+        :param query_definitions: Query definition
+        :param buckets: List of bucket objects to verify
+        :return:
+        """
+        count = 0
+        if not buckets:
+            buckets = self.cluster.buckets
+        while not self._verify_items_count() and count < 15:
+            self.log.info("All Items Yet to be Indexed...")
+            self.sleep(10)
+            count += 1
+        if not self._verify_items_count():
+            raise Exception("All Items didn't get Indexed...")
+        indexer_rest = GsiHelper(self.cluster.servers[0], self.log)
+        bucket_map = self.bucket_util.get_buckets_itemCount(self.cluster)
+        for bucket in buckets:
+            bucket_count = bucket_map[bucket.name]
+            status, content, header = indexer_rest.execute_query(server=self.cluster.query_nodes[0], query=query)
+            index_count = int(content)
+            self.assertTrue(int(index_count) == int(bucket_count),
+                        "Bucket {0}, mismatch in item count for index :{1} : expected {2} != actual {3} ".format
+                        (bucket.name, query.index_name, bucket_count, index_count))
+        self.log.info("Items Indexed Verified with bucket count...")
+
+    def _verify_items_count(self):
+        """
+        Compares Items indexed count is sample
+        as items in the bucket.
+        """
+        index_map = self.cluster_util.get_index_stats()
+        for bucket_name in index_map.keys():
+            self.log.info("Bucket: {0}".format(bucket_name))
+            for index_name, index_val in index_map[bucket_name].iteritems():
+                self.log.info("Index: {0}".format(index_name))
+                self.log.info("number of docs pending: {0}".format(index_val["num_docs_pending"]))
+                self.log.info("number of docs queued: {0}".format(index_val["num_docs_queued"]))
+                if index_val["num_docs_pending"] and index_val["num_docs_queued"]:
+                    return False
+        return True

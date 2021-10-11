@@ -6512,7 +6512,7 @@ class DropDataversesTask(Task):
 class ExecuteQueryTask(Task):
     def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600):
         super(ExecuteQueryTask, self).__init__("ExecuteQueriesTask_%sstarted%s"
-                                               % (indexName, time.time()))
+                                               % (query, time.time()))
         self.server = server
         self.query = query
         self.timeout = timeout
@@ -6534,7 +6534,7 @@ class ExecuteQueryTask(Task):
                                                                  contentType=contentType,
                                                                  connection=connection, isIndexerQuery=self.isIndexerQuery)
             newContent = json.loads(content)
-            self.log.info("Content is:"+str(newContent))
+            self.log.debug("Status of the query {}".format(status))
             self.set_result(status)
             self.log.info("check isIndexQuery status"+str(self.isIndexerQuery))
         except Exception as e:

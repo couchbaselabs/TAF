@@ -43,7 +43,6 @@ class PlasmaStatsUtil(IndexUtils):
         if not status:
             raise Exception(content)
         json_parsed = json.loads(content)
-        self.log.debug("Stats: {}".format(json_parsed))
         index_storage_stats = {}
         for index_stats in json_parsed:
             bucket = index_stats["Index"].split(":")[0]
