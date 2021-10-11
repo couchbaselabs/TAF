@@ -1023,6 +1023,9 @@ class ClusterSetup(BaseTestCase):
         services = services[1:] \
             if services is not None and len(services) > 1 else None
 
+        # Add master node to the nodes_in_cluster list
+        self.cluster.nodes_in_cluster.extend([self.cluster.master])
+
         # Rebalance-in nodes_init servers
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
@@ -1036,8 +1039,7 @@ class ClusterSetup(BaseTestCase):
                     self.fetch_cb_collect_logs()
                 self.fail("Initial rebalance failed")
 
-            self.cluster.nodes_in_cluster.extend([self.cluster.master]
-                                                 + nodes_init)
+            self.cluster.nodes_in_cluster.extend(nodes_init)
 
         # Add basic RBAC users
         self.bucket_util.add_rbac_user(self.cluster.master)
