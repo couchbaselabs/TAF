@@ -3635,6 +3635,46 @@ class RestConnection(object):
                     self.baseUrl))
         self.update_autofailover_settings(True, 60)
 
+    def load_trusted_CAs(self):
+        """
+        Instructs the cluster to load trusted CAs(.pem files) from the node's inbox/CA folder
+        """
+        status, content, header = self._http_request(self.baseUrl +
+                                                     "node/controller/loadTrustedCAs", 'POST')
+        return status, content
+
+    def reload_certificate(self, params=''):
+        """ Reload certificate
+
+        Call this function after uploading a certificate to the cluster to activate the new certificate.
+        """
+        headers = self._create_capi_headers()
+        status, content, header = self._http_request(self.baseUrl + "node/controller/reloadCertificate",
+                                                     'POST',
+                                                     headers=headers,
+                                                     params=params)
+        return status, content
+
+    def get_trusted_CAs(self):
+        """
+        Get all (default + uploaded) trusted CA certs information
+        """
+        status, content, header = self._http_request(self.baseUrl
+                                                     + "/pools/default/trustedCAs", 'GET')
+        return status, content
+
+    def delete_trusted_CA(self, ca_id):
+        """
+
+        Deletes a trusted CA from the cluster, given its ID
+        """
+        status, content, header = self._http_request(self.baseUrl
+                                                     + "/pools/default/trustedCAs/"
+                                                     + str(ca_id),
+                                                     'DELETE')
+        return status, content
+
+
 class MembaseServerVersion:
     def __init__(self, implementationVersion='', componentsVersion=''):
         self.implementationVersion = implementationVersion

@@ -1,0 +1,988 @@
+import base64
+import importlib
+import json
+import random
+import os
+import copy
+import string
+import time
+from ast import literal_eval
+
+import requests
+from global_vars import logger
+from membase.api import httplib2
+import commands
+from membase.api.rest_client import RestConnection
+
+from shutil import copyfile
+
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
+
+
+class ServerInfo():
+
+    def __init__(self,
+                 ip,
+                 port,
+                 ssh_username,
+                 ssh_password,
+                 memcached_port,
+                 ssh_key=''):
+        self.ip = ip
+        self.ssh_username = ssh_username
+        self.ssh_password = ssh_password
+        self.port = port
+        self.ssh_key = ssh_key
+        self.memcached_port = memcached_port
+
+
+class x509main:
+    WININSTALLPATH = "C:/Program Files/Couchbase/Server/var/lib/couchbase/"
+    LININSTALLPATH = "/opt/couchbase/var/lib/couchbase/"
+    MACINSTALLPATH = "/Users/couchbase/Library/Application Support/Couchbase/var/lib/couchbase/"
+    CACERTFILEPATH = "/tmp/multiple_certs_test_random" + str(random.randint(1, 100)) + "/"
+    CHAINFILEPATH = "inbox"
+    TRUSTEDCAPATH = "CA"
+    SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase', 11210)
+    CLIENT_CERT_AUTH_JSON = 'client_cert_auth1.json'
+    CLIENT_CERT_AUTH_TEMPLATE = 'client_cert_config_template.txt'
+    IP_ADDRESS = '172.16.1.174'  # dummy ip address
+    ROOT_CA_CONFIG = "./couchbase_utils/security_utils/x509_extension_files/config"
+    CA_EXT = "./couchbase_utils/security_utils/x509_extension_files/ca.ext"
+    SERVER_EXT = "./couchbase_utils/security_utils/x509_extension_files/server.ext"
+    CLIENT_EXT = "./couchbase_utils/security_utils/x509_extension_files/client.ext"
+    ALL_CAs_PATH = CACERTFILEPATH + "all/"  # a dir to store the combined root ca .pem files
+    ALL_CAs_PEM_NAME = "all_ca.pem"  # file name of the CA bundle
+
+    root_ca_names = []  # list of active root certs
+    manifest = {}  # active CA manifest
+    node_ca_map = {}  # {<node_ip>: {signed_by: <int_ca_name>, path: <node_ca_dir>}}
+    client_ca_map = {}  # {<client_ca_name>:  {signed_by: <int_ca_name>, path: <client_ca_dir>}}
+    private_key_passphrase_map = {}  # {<node_ip>:<plain_passw>}
+    ca_count = 0  # total count of active root certs
+
+    def __init__(self,
+                 host=None,
+                 wildcard_dns=None,
+                 client_cert_state="enable",
+                 paths="subject.cn:san.dnsname:san.uri",
+                 prefixs="www.cb-:us.:www.", delimeter=".:.:.",
+                 client_ip="172.16.1.174", dns=None, uri=None,
+                 alt_names="default",
+                 standard="pkcs8",
+                 encryption_type="aes256",
+                 key_length=1024,
+                 passphrase_type="plain",
+                 passphrase_script_path="default",
+                 passphrase_script_args=None,
+                 passhprase_url="https://testingsomething.free.beeceptor.com/",
+                 passphrase_plain="default",
+                 passphrase_load_timeout=5000,
+                 https_opts=None):
+        if https_opts is None:
+            self.https_opts = {"verifyPeer": 'false'}
+        self.log = logger.get("test")
+        if host is not None:
+            self.host = host
+            self.install_path = self._get_install_path(self.host)
+        self.slave_host = x509main.SLAVE_HOST
+
+        # Node cert settings
+        self.wildcard_dns = wildcard_dns
+
+        # Client cert settings
+        self.client_cert_state = client_cert_state  # enable/disable/mandatory
+        self.paths = paths.split(":")  # client cert's SAN paths
+        self.prefixs = prefixs.split(":")  # client cert's SAN prefixes
+        self.delimeters = delimeter.split(":")  # client cert's SAN delimiters
+        self.client_ip = client_ip  # a dummy client ip name.
+        self.dns = dns  # client cert's san.dns
+        self.uri = uri  # client cert's san.uri
+        self.alt_names = alt_names  # either 'default' or 'non-default' SAN names
+
+        # Node private key settings
+        self.standard = standard  # PKCS standard; currently supports PKCS#1 & PKCS#8
+        if encryption_type in ["none", "None", "", None]:
+            encryption_type = None
+        # encryption pkcs#5 v2 algo for private key in case of PKCS#8. Can be put to None
+        self.encryption_type = encryption_type
+        self.key_length = key_length
+        # Node private key passphrase settings
+        self.passphrase_type = passphrase_type  # 'script'/'rest'/'plain'
+        self.passphrase_script_path = passphrase_script_path  # path on node to store the bash script
+        self.passphrase_script_args = passphrase_script_args
+        self.passphrase_url = passhprase_url
+        self.passphrase_plain = passphrase_plain
+        self.passphrase_load_timeout = passphrase_load_timeout
+
+    # Get the install path for different operating systems
+    def _get_install_path(self, host):
+        shell = RemoteMachineShellConnection(host)
+        os_type = shell.extract_remote_info().distribution_type
+        self.log.info("OS type is {0}".format(os_type))
+        if os_type == 'windows':
+            install_path = x509main.WININSTALLPATH
+        elif os_type == 'Mac':
+            install_path = x509main.MACINSTALLPATH
+        else:
+            install_path = x509main.LININSTALLPATH
+        return install_path
+
+    @staticmethod
+    def get_data_path(node):
+        """Gets couchbase log directory, even for cluster_run
+                """
+        _, dir = RestConnection(node).diag_eval(
+            'filename:absname(element(2, application:'
+            'get_env(ns_server,path_config_datadir))).')
+        dir = dir.strip('"')
+        return str(dir)
+
+    @staticmethod
+    def import_spec_file(spec_file):
+        spec_package = importlib.import_module(
+            'couchbase_utils.security_utils.multiple_CAs_spec.' +
+            spec_file)
+        return copy.deepcopy(spec_package.spec)
+
+    def create_directory(self, dir_name):
+        shell = RemoteMachineShellConnection(self.slave_host)
+        shell.execute_command("mkdir " + dir_name)
+        shell.disconnect()
+
+    def remove_directory(self, dir_name):
+        shell = RemoteMachineShellConnection(self.slave_host)
+        shell.execute_command("rm -rf " + dir_name)
+        shell.disconnect()
+
+    def delete_inbox_folder_on_server(self, server=None):
+        if server is None:
+            server = self.host
+        shell = RemoteMachineShellConnection(server)
+        final_path = self.install_path + x509main.CHAINFILEPATH
+        shell.execute_command("rm -rf " + final_path)
+        shell.disconnect()
+
+    def create_inbox_folder_on_server(self, server=None):
+        if server is None:
+            server = self.host
+        shell = RemoteMachineShellConnection(server)
+        final_path = self.install_path + x509main.CHAINFILEPATH
+        shell.create_directory(final_path)
+        shell.disconnect()
+
+    def create_CA_folder_on_server(self, server=None):
+        if server is None:
+            server = self.host
+        shell = RemoteMachineShellConnection(server)
+        final_path = self.install_path + x509main.CHAINFILEPATH \
+                     + "/" + x509main.TRUSTEDCAPATH
+        shell.create_directory(final_path)
+        shell.disconnect()
+
+    @staticmethod
+    def copy_file_from_slave_to_server(server, src, dst):
+        shell = RemoteMachineShellConnection(server)
+        shell.copy_file_local_to_remote(src, dst)
+        shell.disconnect()
+
+    @staticmethod
+    def get_a_root_cert(root_ca_name=None):
+        """
+        (returns): path to ca.pem
+
+        (param):root_ca_name - a valid root_ca_name (optional)
+            if not give a root_ca_name, it will return path to ca.pem
+            of a random trusted CA
+        """
+        if root_ca_name is None:
+            root_ca_name = random.choice(x509main.root_ca_names)
+        return x509main.CACERTFILEPATH + root_ca_name + "/ca.pem"
+
+    @staticmethod
+    def get_node_cert(server):
+        """
+        returns pkey.key, chain.pem,  ie;
+        node's cert's key and cert
+        """
+
+        node_ca_key_path = x509main.node_ca_map[str(server.ip)]["path"] + \
+                           server.ip + ".key"
+        node_ca_path = x509main.node_ca_map[str(server.ip)]["path"] + \
+                       "long_chain" + server.ip + ".pem"
+        return node_ca_key_path, node_ca_path
+
+    @staticmethod
+    def get_node_private_key_passphrase_script(server):
+        """
+        Given a server object,
+        returns the path of the bash script(which prints pkey passphrase for that node) on slave
+        """
+        return x509main.node_ca_map[str(server.ip)]["path"] + "passphrase.sh"
+
+    def get_client_cert(self, int_ca_name):
+        """
+        returns client's cert and key
+        """
+        client_ca_name = "client_" + int_ca_name
+        client_ca_key_path = x509main.client_ca_map[str(client_ca_name)]["path"] + \
+                             self.client_ip + ".key"
+        client_ca_path = x509main.client_ca_map[str(client_ca_name)]["path"] + \
+                         "long_chain" + self.client_ip + ".pem"
+        return client_ca_path, client_ca_key_path
+
+    def create_ca_bundle(self):
+        """
+        Creates/updates a pem file with all trusted CAs combined
+        """
+        self.remove_directory(dir_name=x509main.ALL_CAs_PATH)
+        self.create_directory(dir_name=x509main.ALL_CAs_PATH)
+        cat_cmd = "cat "
+        for root_ca, root_ca_manifest in x509main.manifest.items():
+            root_ca_dir_path = root_ca_manifest["path"]
+            root_ca_path = root_ca_dir_path + "ca.pem"
+            cat_cmd = cat_cmd + root_ca_path + " "
+        cat_cmd = cat_cmd + "> " + x509main.ALL_CAs_PATH + x509main.ALL_CAs_PEM_NAME
+        shell = RemoteMachineShellConnection(self.slave_host)
+        shell.execute_command(cat_cmd)
+        shell.disconnect()
+
+    def convert_to_pkcs8(self, node_ip, key_path, node_ca_dir):
+        """
+        converts pkcs#1 key to encrypted/un-encrypted pkcs#8 key
+        with the same name as pkcs#1 key
+
+        :node_ip: ip_addr of the node
+        :key_path: pkcs#1 key path on slave
+        :node_ca_dir: node's dir which contains related cert documents.
+        """
+        tmp_encrypted_key_path = node_ca_dir + "enckey.key"
+        shell = RemoteMachineShellConnection(self.slave_host)
+        if self.encryption_type:
+            if self.passphrase_type == "plain":
+                if self.passphrase_plain != "default":
+                    passw = self.passphrase_plain
+                else:
+                    # generate passw
+                    passw = ''.join(random.choice(string.ascii_uppercase + string.digits)
+                                    for _ in range(20))
+                    x509main.private_key_passphrase_map[str(node_ip)] = passw
+            elif self.passphrase_type == "script":
+                # generate passw
+                passw = ''.join(random.choice(string.ascii_uppercase + string.digits)
+                                for _ in range(20))
+                # create bash file with "echo <passw>"
+                # TODo also support creating bash file that takes args
+                passphrase_path = node_ca_dir + "passphrase.sh"
+                bash_content = "#!/bin/bash\n"
+                bash_content = bash_content + "echo '" + passw + "'"
+                with open(passphrase_path, "w") as fh:
+                    fh.write(bash_content)
+                os.chmod(passphrase_path, 0o777)
+            else:
+                response = requests.get(self.passphrase_url)
+                passw = response.content.decode('utf-8')
+
+            # convert cmd
+            convert_cmd = "openssl pkcs8 -in " + key_path + " -passout pass:" + passw + \
+                          " -topk8 -v2 " + self.encryption_type + \
+                          " -out " + tmp_encrypted_key_path
+            output, error = shell.execute_command(convert_cmd)
+            self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        else:
+            convert_cmd = "openssl pkcs8 -in " + key_path + \
+                          " -topk8 -nocrypt -out " + tmp_encrypted_key_path
+            output, error = shell.execute_command(convert_cmd)
+            self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        # delete old pkcs1 key & rename encrypted key
+        del_cmd = "rm -rf " + key_path
+        output, error = shell.execute_command(del_cmd)
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+        mv_cmd = "mv " + tmp_encrypted_key_path + " " + key_path
+        output, error = shell.execute_command(mv_cmd)
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+        shell.disconnect()
+
+    def generate_root_certificate(self, root_ca_name, cn_name=None):
+        root_ca_dir = x509main.CACERTFILEPATH + root_ca_name + "/"
+        self.create_directory(root_ca_dir)
+
+        root_ca_key_path = root_ca_dir + "ca.key"
+        root_ca_path = root_ca_dir + "ca.pem"
+        config_path = x509main.ROOT_CA_CONFIG
+
+        shell = RemoteMachineShellConnection(self.slave_host)
+        # create ca.key
+        output, error = shell.execute_command("openssl genrsa " +
+                                              " -out " + root_ca_key_path +
+                                              " " + str(self.key_length))
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+        if cn_name is None:
+            cn_name = root_ca_name
+        # create ca.pem
+        output, error = shell.execute_command("openssl req -config " + config_path +
+                                              " -new -x509 -days 3650" +
+                                              " -sha256 -key " + root_ca_key_path +
+                                              " -out " + root_ca_path +
+                                              " -subj '/C=UA/O=MyCompany/CN=" + cn_name + "'")
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        x509main.ca_count += 1
+        x509main.root_ca_names.append(root_ca_name)
+        x509main.manifest[root_ca_name] = dict()
+        x509main.manifest[root_ca_name]["path"] = root_ca_dir
+        x509main.manifest[root_ca_name]["intermediate"] = dict()
+        shell.disconnect()
+
+    def generate_intermediate_certificate(self, root_ca_name, int_ca_name):
+        root_ca_dir = x509main.CACERTFILEPATH + root_ca_name + "/"
+        int_ca_dir = root_ca_dir + int_ca_name + "/"
+        self.create_directory(int_ca_dir)
+
+        root_ca_key_path = root_ca_dir + "ca.key"
+        root_ca_path = root_ca_dir + "ca.pem"
+        int_ca_key_path = int_ca_dir + "int.key"
+        int_ca_csr_path = int_ca_dir + "int.csr"
+        int_ca_path = int_ca_dir + "int.pem"
+
+        shell = RemoteMachineShellConnection(self.slave_host)
+        # create int CA private key
+        output, error = shell.execute_command("openssl genrsa " +
+                                              " -out " + int_ca_key_path +
+                                              " " + str(self.key_length))
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        # create int CA csr
+        output, error = shell.execute_command("openssl req -new -key " + int_ca_key_path +
+                                              " -out " + int_ca_csr_path +
+                                              " -subj '/C=UA/O=MyCompany/OU=Servers/CN=ClientAndServerSigningCA'")
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        # create int CA pem
+        output, error = shell.execute_command("openssl x509 -req -in " + int_ca_csr_path +
+                                              " -CA " + root_ca_path +
+                                              " -CAkey " + root_ca_key_path +
+                                              " -CAcreateserial -CAserial " +
+                                              int_ca_dir + "rootCA.srl" +
+                                              " -extfile " + x509main.CA_EXT +
+                                              " -out " + int_ca_path + " -days 365 -sha256")
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        x509main.manifest[root_ca_name]["intermediate"][int_ca_name] = dict()
+        x509main.manifest[root_ca_name]["intermediate"][int_ca_name]["path"] = int_ca_dir
+        x509main.manifest[root_ca_name]["intermediate"][int_ca_name]["nodes"] = dict()
+        x509main.manifest[root_ca_name]["intermediate"][int_ca_name]["clients"] = dict()
+        shell.disconnect()
+
+    def generate_node_certificate(self, root_ca_name, int_ca_name, node_ip):
+        root_ca_dir = x509main.CACERTFILEPATH + root_ca_name + "/"
+        int_ca_dir = root_ca_dir + int_ca_name + "/"
+        node_ca_dir = root_ca_dir + node_ip + "_" + int_ca_name + "/"
+        self.create_directory(node_ca_dir)
+
+        int_ca_key_path = int_ca_dir + "int.key"
+        int_ca_path = int_ca_dir + "int.pem"
+        node_ca_key_path = node_ca_dir + node_ip + ".key"
+        node_ca_csr_path = node_ca_dir + node_ip + ".csr"
+        node_ca_path = node_ca_dir + node_ip + ".pem"
+        node_chain_ca_path = node_ca_dir + "long_chain" + node_ip + ".pem"
+
+        # check if the ip address is ipv6 raw ip address, remove [] brackets
+        if "[" in node_ip:
+            node_ip = node_ip.replace("[", "").replace("]", "")
+        # modify the extensions file to fill IP/DNS of the node
+        temp_cert_extensions_file = "./couchbase_utils/security_utils/x509_extension_files/server2.ext"
+        copyfile(x509main.SERVER_EXT, temp_cert_extensions_file)
+        fin = open(temp_cert_extensions_file, "a+")
+        if ".com" in node_ip and self.wildcard_dns is None:
+            fin.write("\nsubjectAltName = DNS:{0}".format(node_ip))
+        elif self.wildcard_dns:
+            fin.write("\nsubjectAltName = DNS:{0}".format(self.wildcard_dns))
+        else:
+            fin.write("\nsubjectAltName = IP:{0}".format(node_ip))
+        fin.close()
+        # print file contents for easy debugging
+        fout = open(temp_cert_extensions_file, "r")
+        print(fout.read())
+        fout.close()
+
+        shell = RemoteMachineShellConnection(self.slave_host)
+        # create node CA private key
+        output, error = shell.execute_command("openssl genrsa " +
+                                              " -out " + node_ca_key_path +
+                                              " " + str(self.key_length))
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        # create node CA csr
+        output, error = shell.execute_command("openssl req -new -key " + node_ca_key_path +
+                                              " -out " + node_ca_csr_path +
+                                              " -subj '/C=UA/O=MyCompany/OU=Servers/CN=" + node_ip + "'")
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        # create node CA pem
+        output, error = shell.execute_command("openssl x509 -req -in " + node_ca_csr_path +
+                                              " -CA " + int_ca_path +
+                                              " -CAkey " + int_ca_key_path +
+                                              " -CAcreateserial -CAserial " +
+                                              int_ca_dir + "intermediateCA.srl" +
+                                              " -out " + node_ca_path +
+                                              " -days 365 -sha256" +
+                                              " -extfile " + temp_cert_extensions_file)
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        # concatenate node ca pem & int ca pem to give chain.pem
+        output, error = shell.execute_command("cat " + node_ca_path +
+                                              " " + int_ca_path +
+                                              " > " + node_chain_ca_path)
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        if self.standard == "pkcs8":
+            self.convert_to_pkcs8(node_ip=node_ip, key_path=node_ca_key_path,
+                                  node_ca_dir=node_ca_dir)
+
+        os.remove(temp_cert_extensions_file)
+        shell.disconnect()
+        x509main.node_ca_map[str(node_ip)] = dict()
+        x509main.node_ca_map[str(node_ip)]["signed_by"] = int_ca_name
+        x509main.node_ca_map[str(node_ip)]["path"] = node_ca_dir
+        x509main.manifest[root_ca_name]["intermediate"][int_ca_name]["nodes"][node_ip] = \
+            node_ca_dir
+
+    def generate_client_certificate(self, root_ca_name, int_ca_name):
+        client_ca_name = "client_" + int_ca_name
+        root_ca_dir = x509main.CACERTFILEPATH + root_ca_name + "/"
+        int_ca_dir = root_ca_dir + int_ca_name + "/"
+        client_ca_dir = root_ca_dir + client_ca_name + "/"
+        self.create_directory(client_ca_dir)
+
+        int_ca_key_path = int_ca_dir + "int.key"
+        int_ca_path = int_ca_dir + "int.pem"
+        client_ca_key_path = client_ca_dir + self.client_ip + ".key"
+        client_ca_csr_path = client_ca_dir + self.client_ip + ".csr"
+        client_ca_path = client_ca_dir + self.client_ip + ".pem"
+        client_chain_ca_path = client_ca_dir + "long_chain" + self.client_ip + ".pem"
+
+        # check if the ip address is ipv6 raw ip address, remove [] brackets
+        if "[" in self.client_ip:
+            self.client_ip = self.client_ip.replace("[", "").replace("]", "")
+        # modify the extensions file to fill IP/DNS of the client for auth
+        temp_cert_extensions_file = "./couchbase_utils/security_utils/x509_extension_files/client2.ext"
+        copyfile(x509main.CLIENT_EXT, temp_cert_extensions_file)
+        fin = open(temp_cert_extensions_file, "a+")
+        # it must be noted that if SAN.DNS is used, it will always be used for auth
+        # irrespective of other SANs in the certificate. So SAN.DNS must be a valid user
+        if self.alt_names == 'default':
+            fin.write("\nsubjectAltName = DNS:us.cbadminbucket.com")
+            fin.write("\nsubjectAltName = URI:www.cbadminbucket.com")
+        else:
+            if self.dns is not None:
+                fin.write("\nsubjectAltName = DNS:{0}".format(self.dns))
+            if self.uri is not None:
+                fin.write("\nsubjectAltName = URI:{0}".format(self.uri))
+        fin.close()
+
+        # print file contents for easy debugging
+        fout = open(temp_cert_extensions_file, "r")
+        print(fout.read())
+        fout.close()
+
+        shell = RemoteMachineShellConnection(self.slave_host)
+        # create private key for client
+        output, error = shell.execute_command("openssl genrsa " +
+                                              " -out " + client_ca_key_path +
+                                              " " + str(self.key_length))
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        # create client CA csr
+        output, error = shell.execute_command("openssl req -new -key " + client_ca_key_path +
+                                              " -out " + client_ca_csr_path +
+                                              " -subj '/C=UA/O=MyCompany/OU=People/CN=clientuser'")
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        # create client CA pem
+        output, error = shell.execute_command("openssl x509 -req -in " + client_ca_csr_path +
+                                              " -CA " + int_ca_path +
+                                              " -CAkey " + int_ca_key_path +
+                                              " -CAcreateserial -CAserial " +
+                                              client_ca_dir + "intermediateCA.srl" +
+                                              " -out " + client_ca_path +
+                                              " -days 365 -sha256" +
+                                              " -extfile " + temp_cert_extensions_file)
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+
+        # concatenate client ca pem & int ca pem to give client chain pem
+        output, error = shell.execute_command("cat " + client_ca_path +
+                                              " " + int_ca_path +
+                                              " > " + client_chain_ca_path)
+        self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+        os.remove(temp_cert_extensions_file)
+        shell.disconnect()
+        x509main.client_ca_map[str(client_ca_name)] = dict()
+        x509main.client_ca_map[str(client_ca_name)]["signed_by"] = int_ca_name
+        x509main.client_ca_map[str(client_ca_name)]["path"] = client_ca_dir
+        x509main.manifest[root_ca_name]["intermediate"][int_ca_name]["clients"][self.client_ip] = \
+            client_ca_dir
+
+    def generate_multiple_x509_certs(self, servers, spec_file_name="default"):
+        """
+        Generates x509 certs(root, intermediates, nodes, clients)
+
+        params
+        :servers: (list) - list of nodes for which to generate
+        :spec file: (file name) - spec file name to decide numbers
+
+        returns
+        None
+        """
+        self.create_directory(x509main.CACERTFILEPATH)
+
+        # Take care of creating certs from spec file
+        spec = self.import_spec_file(spec_file=spec_file_name)
+        copy_servers = copy.deepcopy(servers)
+        node_ptr = 0
+        max_ptr = len(copy_servers)
+        if "structure" in spec.keys():
+            for root_ca_name, root_CA_dict in spec["structure"].items():
+                self.generate_root_certificate(root_ca_name=root_ca_name)
+                number_of_int_ca = root_CA_dict["i"]
+                for i in range(number_of_int_ca):
+                    int_ca_name = "i" + str(i + 1) + "_" + root_ca_name
+                    self.generate_intermediate_certificate(root_ca_name, int_ca_name)
+                    if node_ptr < max_ptr:
+                        self.generate_node_certificate(root_ca_name, int_ca_name,
+                                                       copy_servers[node_ptr].ip)
+                        node_ptr = node_ptr + 1
+                    if x509main.ca_count == spec["number_of_CAs"] and \
+                            i == (number_of_int_ca - 1):
+                        while node_ptr < max_ptr:
+                            self.generate_node_certificate(root_ca_name, int_ca_name,
+                                                           copy_servers[node_ptr].ip)
+                            node_ptr = node_ptr + 1
+        while x509main.ca_count < spec["number_of_CAs"]:
+            root_ca_name = "r" + str(x509main.ca_count + 1)
+            number_of_int_ca = spec["int_certs_per_CA"]
+            for i in range(number_of_int_ca):
+                int_ca_name = "i" + str(i + 1) + "_" + root_ca_name
+                self.generate_root_certificate(root_ca_name=root_ca_name)
+                self.generate_intermediate_certificate(root_ca_name, int_ca_name)
+                if node_ptr < max_ptr:
+                    self.generate_node_certificate(root_ca_name, int_ca_name,
+                                                   copy_servers[node_ptr].ip)
+                    node_ptr = node_ptr + 1
+                if x509main.ca_count == spec["number_of_CAs"] and \
+                        i == (number_of_int_ca - 1):
+                    while node_ptr < max_ptr:
+                        self.generate_node_certificate(root_ca_name, int_ca_name,
+                                                       copy_servers[node_ptr].ip)
+                        node_ptr = node_ptr + 1
+
+        # first client
+        int_ca_name = self.node_ca_map[servers[0].ip]["signed_by"]
+        root_ca_name = int_ca_name.split("_")[1]
+        self.generate_client_certificate(root_ca_name, int_ca_name)
+        # second client
+        int_ca_name = "iclient1_" + root_ca_name
+        self.generate_intermediate_certificate(root_ca_name, int_ca_name)
+        self.generate_client_certificate(root_ca_name, int_ca_name)
+        # third client
+        root_ca_name = "clientroot"
+        int_ca_name = "iclient1_" + root_ca_name
+        self.generate_root_certificate(root_ca_name)
+        self.generate_intermediate_certificate(root_ca_name, int_ca_name)
+        self.generate_client_certificate(root_ca_name, int_ca_name)
+
+        self.write_client_cert_json_new()
+        self.create_ca_bundle()
+
+    def rotate_certs(self, all_servers, root_ca_names="all"):
+        """
+        Rotates x509(root, node, client) certs
+
+        params
+        :all_servers: - list of all servers objects involved/affected (self.servers)
+        :root_ca_names: (optional) - list of root_ca_names. Defaults to all
+        """
+        if root_ca_names == "all":
+            root_ca_names = copy.deepcopy(x509main.root_ca_names)
+        old_ids = self.get_ids_from_ca_names(ca_names=root_ca_names,
+                                             server=all_servers[0])
+        nodes_affected_ips = list()
+        for root_ca_name in root_ca_names:
+            root_ca_manifest = copy.deepcopy(x509main.manifest[root_ca_name])
+            del x509main.manifest[root_ca_name]
+            self.remove_directory(root_ca_manifest['path'])
+            x509main.root_ca_names.remove(root_ca_name)
+            cn_name = root_ca_name + 'rotated'
+            self.generate_root_certificate(root_ca_name=root_ca_name,
+                                           cn_name=cn_name)
+            intermediate_cas_manifest = root_ca_manifest["intermediate"]
+            for int_ca_name, int_ca_manifest in intermediate_cas_manifest.items():
+                self.generate_intermediate_certificate(root_ca_name=root_ca_name,
+                                                       int_ca_name=int_ca_name)
+                nodes_cas_manifest = int_ca_manifest["nodes"]
+                nodes_ips = nodes_cas_manifest.keys()
+                nodes_affected_ips.extend(nodes_ips)
+                for node_ip in nodes_ips:
+                    del self.node_ca_map[node_ip]
+                    self.generate_node_certificate(root_ca_name=root_ca_name,
+                                                   int_ca_name=int_ca_name,
+                                                   node_ip=node_ip)
+                client_cas_manifest = int_ca_manifest["clients"]
+                if self.client_ip in client_cas_manifest.keys():
+                    del self.client_ca_map["client_" + int_ca_name]
+                    self.generate_client_certificate(root_ca_name=root_ca_name,
+                                                     int_ca_name=int_ca_name)
+        self.log.info("Generation of new certs done!")
+        servers = list()
+        for node_affected_ip in nodes_affected_ips:
+            for server in all_servers:
+                if server.ip == node_affected_ip:
+                    servers.append(copy.deepcopy(server))
+                    break
+        self.log.info("nodes affected {0}".format(servers))
+        for server in servers:
+            _ = self.upload_root_certs(server=server, root_ca_names=root_ca_names)
+        self.upload_node_certs(servers=servers)
+        self.create_ca_bundle()
+        self.delete_trusted_CAs(server=servers[0], ids=old_ids,
+                                mark_deleted=False)
+
+    def upload_root_certs(self, server=None, root_ca_names=None):
+        """
+        Uploads root certs
+
+        params
+        :server (optional): - server from which they are uploaded.
+        :root_ca_names (optional): (list) - defaults to all CAs
+
+        returns content from loadTrustedCAs call
+        """
+        if server is None:
+            server = self.host
+        if root_ca_names is None:
+            root_ca_names = x509main.root_ca_names
+        self.copy_trusted_CAs(server=server, root_ca_names=root_ca_names)
+        content = self.load_trusted_CAs(server=server)
+        return content
+
+    def upload_node_certs(self, servers):
+        """
+        Uploads node certs
+
+        params
+        :servers: (list) - list of nodes
+
+        returns None
+        """
+        for server in servers:
+            self.copy_node_cert(server=server)
+        self.reload_node_certificates(servers)
+
+    def write_client_cert_json_new(self):
+        template_path = './couchbase_utils/security_utils/' + x509main.CLIENT_CERT_AUTH_TEMPLATE
+        config_json = x509main.CACERTFILEPATH + x509main.CLIENT_CERT_AUTH_JSON
+        target_file = open(config_json, 'w')
+        source_file = open(template_path, 'r')
+        client_cert = '{"state" : ' + "'" + self.client_cert_state + "'" + ", 'prefixes' : [ "
+        for line in source_file:
+            for path, prefix, delimeter in zip(self.paths, self.prefixs, self.delimeters):
+                line1 = line.replace("@2", "'" + path + "'")
+                line2 = line1.replace("@3", "'" + prefix + "'")
+                line3 = line2.replace("@4", "'" + delimeter + "'")
+                temp_client_cert = "{ " + line3 + " },"
+                client_cert = client_cert + temp_client_cert
+        client_cert = client_cert.replace("'", '"')
+        client_cert = client_cert[:-1]
+        client_cert = client_cert + " ]}"
+        self.log.info("-- Log current config json file ---{0}".format(client_cert))
+        target_file.write(client_cert)
+
+    def upload_client_cert_settings(self, server=None):
+        """
+        Upload client cert settings(that was initialized in init function) to CB server
+        """
+        if server is None:
+            server = self.host
+        data = open(x509main.CACERTFILEPATH + x509main.CLIENT_CERT_AUTH_JSON, 'rb'). \
+            read()
+        rest = RestConnection(server)
+        authorization = base64.encodestring(('%s:%s' %
+                                             (rest.username, rest.password)).encode()).decode().rstrip("\n")
+        headers = {'Content-Type': 'application/octet-stream',
+                   'Authorization': 'Basic %s' % authorization,
+                   'Accept': '*/*'}
+        url = "settings/clientCertAuth"
+        api = rest.baseUrl + url
+        http = httplib2.Http()
+        tries = 0
+        while tries < 4:
+            response, content = http.request(api, 'POST', headers=headers, body=data)
+            if response['status'] in ['200', '201', '202']:
+                return content
+            else:
+                tries = tries + 1
+                if tries >= 4:
+                    raise Exception(content)
+
+    def load_trusted_CAs(self, server=None, from_non_localhost=True):
+        if not server:
+            server = self.host
+        if from_non_localhost:
+            shell = RemoteMachineShellConnection(server)
+            shell.non_local_CA_upload(allow=True)
+            shell.disconnect()
+        rest = RestConnection(server)
+        status, content = rest.load_trusted_CAs()
+        if from_non_localhost:
+            shell = RemoteMachineShellConnection(server)
+            shell.non_local_CA_upload(allow=False)
+            shell.disconnect()
+        if not status:
+            msg = "Could not load Trusted CAs on %s; Failed with error %s" \
+                  % (server.ip, content)
+            raise Exception(msg)
+        return content
+        # ToDO write code to upload from localhost
+
+    def reload_node_certificates(self, servers):
+        """
+        reload node certificates from inbox folder
+
+        params
+        :servers: list of nodes
+        """
+
+        def build_params(node):
+            params = dict()
+            if self.encryption_type:
+                params["privateKeyPassphrase"] = dict()
+                params["privateKeyPassphrase"]["type"] = self.passphrase_type
+                if self.passphrase_type == "script":
+                    if self.passphrase_script_path != "default":
+                        params["privateKeyPassphrase"]["path"] = self.passphrase_script_path + \
+                                                                 "/passphrase.sh"
+                    else:
+                        params["privateKeyPassphrase"]["path"] = self.install_path + \
+                                                                 x509main.CHAINFILEPATH + \
+                                                                 "/passphrase.sh"
+                    params["privateKeyPassphrase"]["timeout"] = self.passphrase_load_timeout
+                    params["privateKeyPassphrase"]["trim"] = 'true'
+                    if self.passphrase_script_args:
+                        params["privateKeyPassphrase"]["args"] = self.passphrase_script_args
+                elif self.passphrase_type == "rest":
+                    params["privateKeyPassphrase"]["url"] = self.passphrase_url
+                    params["privateKeyPassphrase"]["timeout"] = self.passphrase_load_timeout
+                    params["privateKeyPassphrase"]["httpsOpts"] = self.https_opts
+                else:
+                    params["privateKeyPassphrase"]["type"] = "plain"
+                    params["privateKeyPassphrase"]["password"] = \
+                        x509main.private_key_passphrase_map[str(node.ip)]
+            params = json.dumps(params)
+            return params
+
+        for server in servers:
+            rest = RestConnection(server)
+            params = ''
+            if self.standard == "pkcs8":
+                params = build_params(server)
+            status, content = rest.reload_certificate(params=params)
+            if not status:
+                msg = "Could not load reload node cert on %s; Failed with error %s" \
+                      % (server.ip, content)
+                raise Exception(msg)
+
+    def get_trusted_CAs(self, server=None):
+        if server is None:
+            server = self.host
+        rest = RestConnection(server)
+        status, content = rest.get_trusted_CAs()
+        if not status:
+            msg = "Could not get trusted CAs on %s; Failed with error %s" \
+                  % (server.ip, content)
+            raise Exception(msg)
+        return json.loads(content.decode('utf-8'))
+
+    def get_ca_names_from_ids(self, ids, server=None):
+        """
+        Returns list of root ca_names,
+        given a list of of CA IDs
+        """
+        ca_names = list()
+        content = self.get_trusted_CAs(server=server)
+        for ca_dict in content:
+            if int(ca_dict["id"]) in ids:
+                subject = ca_dict["subject"]
+                root_ca_name = subject.split("CN=")[1]
+                ca_names.append(root_ca_name)
+        return ca_names
+
+    def get_ids_from_ca_names(self, ca_names, server=None):
+        """
+        Returns list of CA IDs,
+        given a list of string of CA names
+        """
+        ca_ids = list()
+        content = self.get_trusted_CAs(server=server)
+        for ca_dict in content:
+            ca_id = ca_dict["id"]
+            subject = ca_dict["subject"]
+            root_ca_name = subject.split("CN=")[1]
+            if root_ca_name in ca_names:
+                ca_ids.append(int(ca_id))
+        return ca_ids
+
+    def delete_trusted_CAs(self, server=None, ids=None, mark_deleted=True):
+        """
+        Deletes trusted CAs from cluster
+
+        :server: server object to make rest (defaults to self.host)
+        :ids: list of CA IDs to delete. Defaults to all trusted CAs which
+              haven't signed any node
+        :mark_deleted: Boolean on whether to remove it from root_ca_names
+                        global variable list. Defaults to True
+        Returns None
+        """
+        if server is None:
+            server = self.host
+        rest = RestConnection(server)
+        if ids is None:
+            ids = list()
+            content = self.get_trusted_CAs(server)
+            for ca_dict in content:
+                if len(ca_dict["nodes"]) == 0:
+                    ca_id = ca_dict["id"]
+                    ids.append(ca_id)
+        ca_names = self.get_ca_names_from_ids(ids=ids, server=server)
+        for ca_id in ids:
+            status, content = rest.delete_trusted_CA(ca_id=ca_id)
+            if not status:
+                raise Exception("Could not delete trusted CA with id {0}".format(id))
+        if mark_deleted:
+            for ca_name in ca_names:
+                ca_name = ca_name.rstrip("rotated")
+                if ca_name in x509main.root_ca_names:
+                    x509main.root_ca_names.remove(ca_name)
+
+    def copy_trusted_CAs(self, root_ca_names, server=None):
+        """
+        create inbox/CA folder & copy CAs there
+        """
+        if server is None:
+            server = self.host
+        self.create_inbox_folder_on_server(server=server)
+        self.create_CA_folder_on_server(server=server)
+        for root_ca_name in root_ca_names:
+            src_pem_path = self.get_a_root_cert(root_ca_name)
+            dest_pem_path = self.install_path + x509main.CHAINFILEPATH + "/CA/" + \
+                            root_ca_name + "_ca.pem"
+            self.copy_file_from_slave_to_server(server, src_pem_path, dest_pem_path)
+
+    def copy_node_cert(self, server):
+        """
+        copy chain.pem & pkey.key there to inbox of server
+        """
+        node_ca_key_path, node_ca_path = self.get_node_cert(server)
+        dest_pem_path = self.install_path + x509main.CHAINFILEPATH + "/chain.pem"
+        self.copy_file_from_slave_to_server(server, node_ca_path, dest_pem_path)
+        dest_pkey_path = self.install_path + x509main.CHAINFILEPATH + "/pkey.key"
+        self.copy_file_from_slave_to_server(server, node_ca_key_path, dest_pkey_path)
+        if self.standard == "pkcs8" and self.encryption_type and \
+                self.passphrase_type == "script":
+            node_key_passphrase_path = self.get_node_private_key_passphrase_script(server)
+            if self.passphrase_script_path == "default":
+                dest_node_key_passphrase_path = self.install_path + \
+                                                x509main.CHAINFILEPATH + \
+                                                "/passphrase.sh"
+            else:
+                dest_node_key_passphrase_path = self.passphrase_script_path + \
+                                                "/passphrase.sh"
+            self.copy_file_from_slave_to_server(server, node_key_passphrase_path,
+                                                dest_node_key_passphrase_path)
+            shell = RemoteMachineShellConnection(server)
+            output, error = shell.execute_command("chown couchbase:couchbase " +
+                                                  dest_node_key_passphrase_path)
+            self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+            output, error = shell.execute_command("chmod 777 " +
+                                                  dest_node_key_passphrase_path)
+            self.log.info('Output message is {0} and error message is {1}'.format(output, error))
+            shell.disconnect()
+
+    @staticmethod
+    def regenerate_certs(server):
+        rest = RestConnection(server)
+        rest.regenerate_cluster_certificate()
+
+    def teardown_certs(self, servers):
+        """
+        1. Remove dir from slave
+        2. Delete all trusted CAs & regenerate certs
+        """
+        self.remove_directory(x509main.CACERTFILEPATH)
+        for server in servers:
+            self.delete_inbox_folder_on_server(server=server)
+        for server in servers:
+            self.regenerate_certs(server=server)
+            self.delete_trusted_CAs(server=server)
+
+
+class Validation:
+    def __init__(self, server,
+                 cacert=None,
+                 client_cert_path_tuple=None):
+        self.server = server
+        self.cacert = cacert
+        self.client_cert_path_tuple = client_cert_path_tuple
+        self.log = logger.get("test")
+        self.log_infra = logger.get("infra")
+
+    def urllib_request(self, api, verb='GET', params='', headers=None, timeout=100):
+        if headers is None:
+            credentials = '{}:{}'.format(self.server.rest_username, self.server.rest_password)
+            authorization = base64.encodestring(credentials.encode('utf-8'))
+            authorization = authorization.decode('utf-8').rstrip('\n')
+            headers = {'Authorization': 'Basic %s' % authorization}
+        if self.client_cert_path_tuple:
+            self.log.info("Using client cert auth")
+            del headers['Authorization']
+        if self.cacert:
+            verify = self.cacert
+        else:
+            verify = False
+        self.log.info("Making a rest request api={0} verb={1} params={2} "
+                      "client_cert={3} verify={4}".
+                      format(api, verb, params, self.client_cert_path_tuple,
+                             verify))
+
+        input_params = dict()
+        input_params["api"] = api
+        input_params["verb"] = verb
+        input_params["params"] = params
+        input_params["headers"] = headers
+        input_params["timeout"] = timeout
+        input_params["cert"] = self.client_cert_path_tuple
+        input_params["verify"] = verify
+
+        # store the input dictionary in a temp file
+        with open('./couchbase_utils/security_utils/https_input.py', 'w') as file:
+            file.write(str(input_params))
+        cmd = '/opt/jython/bin/jython ' + './couchbase_utils/security_utils/make_https_requests_script.py'
+        shell_remote_output = commands.getstatusoutput(cmd)
+        self.log.debug("Shell remote output {0}".format(shell_remote_output))
+
+        # Get the output dictionary
+        with open('./couchbase_utils/security_utils/https_output.py', 'r') as file:
+            data = file.read().replace('\n', '')
+        os.remove("./couchbase_utils/security_utils/https_input.py")
+        os.remove("./couchbase_utils/security_utils/https_output.py")
+        response_dict = literal_eval(data)
+
+        self.log.debug("Output dict from rest call {0}".format(response_dict))
+        if response_dict["exception"] is not None:
+            raise Exception(response_dict["exception"])
+        if not response_dict["status"]:
+            self.log.error("status code {0} reason {1} content {2}".
+                           format(response_dict["status_code"], response_dict["reason"],
+                                  response_dict["content"]))
+        return response_dict["status"], response_dict["content"], response_dict["reason"]
