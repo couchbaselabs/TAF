@@ -561,14 +561,14 @@ class volume(BaseTestCase):
                                 tasks.append(task)
                                 self.tm.submit(task)
                                 i -= 1
-        self.tm.getAllTaskResult()
-        for task in tasks:
-            try:
-                task.sdk.disconnectCluster()
-            except Exception as e:
-                print(e)
-        for task in tasks:
-            self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
+            self.tm.getAllTaskResult()
+            for task in tasks:
+                try:
+                    task.sdk.disconnectCluster()
+                except Exception as e:
+                    print(e)
+            for task in tasks:
+                self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
     def get_bucket_dgm(self, bucket):
         self.rest_client = BucketHelper(self.cluster.master)
@@ -1644,7 +1644,9 @@ class volume(BaseTestCase):
             self.create_perc = 200
             self.PrintStep("Step 4: Load %s items, sequential keys" %
                            str(self.num_items*self.create_perc/100))
-            self.generate_docs(doc_ops="create")
+            self.generate_docs(doc_ops="create",
+                               create_start=0,
+                               create_end=self.num_items)
             self.perform_load(validate_data=False)
             if self.end_step == 4:
                 exit(4)
@@ -1682,10 +1684,13 @@ class volume(BaseTestCase):
             '''
             temp = self.key_prefix
             self.key_prefix = "random_keys"
+            self.key_type = "RandomKey"
             self.create_perc = 100
             self.PrintStep("Step 7: Create %s random keys" %
                            str(self.num_items*self.create_perc/100))
-            self.generate_docs(doc_ops="create")
+            self.generate_docs(doc_ops="create",
+                               create_start=0,
+                               create_end=self.num_items)
             self.perform_load(crash=False, validate_data=True)
             self.key_prefix = temp
             '''
