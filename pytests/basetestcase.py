@@ -8,7 +8,6 @@ from collections import OrderedDict
 from datetime import datetime
 from ruamel.yaml import YAML
 
-import Cb_constants
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 from cb_tools.cb_cli import CbCli
@@ -24,7 +23,6 @@ from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
-from couchbase_cli import CouchbaseCLI
 
 class BaseTestCase(unittest.TestCase):
     def setUp(self):
@@ -918,7 +916,7 @@ class BaseTestCase(unittest.TestCase):
             self.fetch_cb_collect_logs()
             self.get_cbcollect_info = False
         if (self.is_test_failed() or result) and self.collect_data:
-                self.copy_data_on_slave()
+            self.copy_data_on_slave()
 
         return result
 
