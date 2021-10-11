@@ -1500,7 +1500,7 @@ class volume(BaseTestCase):
             self.set_num_writer_and_reader_threads(
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
-            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in,
+            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
                                                        [], [],
                                                        retry_get_process_num=3000)
             tasks_info = self.data_load()
