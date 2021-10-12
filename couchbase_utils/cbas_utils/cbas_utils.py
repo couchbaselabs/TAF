@@ -2316,7 +2316,9 @@ class Dataset_Util(Link_Util):
                         bucket.name, collection.name, dataverse_name,
                         dataverse_name="Default",
                         synonym_on_synonym=False)
+            return dataset_obj
 
+        dataset_objs = list()
         if for_all_kv_entities:
             for bucket in cluster.buckets:
 
@@ -2324,7 +2326,7 @@ class Dataset_Util(Link_Util):
                     continue
 
                 if bucket_cardinality == 1:
-                    create_object(bucket, None, None)
+                    dataset_objs.append(create_object(bucket, None, None))
                 else:
                     active_scopes = bucket_util.get_active_scopes(bucket)
                     for scope in active_scopes:
@@ -2336,7 +2338,7 @@ class Dataset_Util(Link_Util):
                         for collection in active_collections:
                             if collection.is_dropped or collection.name in exclude_collection:
                                 continue
-                            create_object(bucket, scope, collection)
+                            dataset_objs.append(create_object(bucket, scope, collection))
         else:
             for _ in range(no_of_objs):
                 bucket = random.choice(cluster.buckets)
@@ -2344,7 +2346,7 @@ class Dataset_Util(Link_Util):
                     bucket = random.choice(cluster.buckets)
 
                 if bucket_cardinality == 1:
-                    create_object(bucket, None, None)
+                    dataset_objs.append(create_object(bucket, None, None))
                 else:
                     active_scopes = bucket_util.get_active_scopes(bucket)
                     scope = random.choice(active_scopes)
@@ -2358,7 +2360,9 @@ class Dataset_Util(Link_Util):
                         collection.name in exclude_collection):
                         collection = random.choice(active_collections)
 
-                    create_object(bucket, scope, collection)
+                    dataset_objs.append(create_object(bucket, scope,
+                                                      collection))
+        return dataset_objs
 
     def create_external_dataset_obj(
             self, cluster, aws_bucket_names, same_dv_for_link_and_dataset=False,
