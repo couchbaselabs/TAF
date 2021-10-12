@@ -502,7 +502,8 @@ class Murphy(BaseTestCase, OPD):
 
             ###################################################################
             self.PrintStep("Step 6: Rebalance In_Out with Loading of docs")
-            rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
+            rebalance_task = self.rebalance(nodes_in=2, nodes_out=1,
+                                            services=["kv"]*2)
             self.sleep(60, "Sleep for 60s for rebalance to start")
 
             if self.stop_rebalance:
