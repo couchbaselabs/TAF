@@ -1351,9 +1351,20 @@ class BucketUtils(ScopeUtils):
         return rand_name
 
     @staticmethod
-    def get_supported_durability_levels():
-        return [key for key in vars(Bucket.DurabilityLevel)
-                if not key.startswith("__")]
+    def get_supported_durability_levels(minimum_level=Bucket.DurabilityLevel.NONE):
+        """ Returns all the durability levels sorted by relative strength.
+
+        :param minimum_level: The minimum_level e.g. `Bucket.DurabilityLevel.None`.
+        """
+        levels = [Bucket.DurabilityLevel.NONE,
+                  Bucket.DurabilityLevel.MAJORITY,
+                  Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                  Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]
+
+        if minimum_level not in levels:
+            raise ValueError("minimum_level must be in {}".format(levels))
+
+        return levels[levels.index(minimum_level):]
 
     @staticmethod
     def get_random_buckets(buckets, req_num, exclude_from=dict()):
