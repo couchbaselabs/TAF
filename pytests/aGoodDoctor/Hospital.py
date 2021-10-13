@@ -309,8 +309,8 @@ class Murphy(BaseTestCase, OPD):
         self.rebl_services = self.input.param("rebl_services", "kv").split("-")
         self.sleep(30)
         self.mutation_perc = self.input.param("mutation_perc", 20)
-        self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
         while self.loop <= self.iterations:
+            self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             self.generate_docs()
             tasks = self.perform_load(wait_for_load=False)
             self.rebl_nodes += 1
