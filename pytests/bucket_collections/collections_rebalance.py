@@ -318,7 +318,8 @@ class CollectionsRebalance(CollectionBase):
                 self.fail("preload dgm failed")
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+                                                     self.cluster.buckets,
+                                                     timeout=1200)
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def data_load_after_failover(self):
@@ -327,7 +328,8 @@ class CollectionsRebalance(CollectionBase):
         # Until we recover/rebalance-out, we can't call,
         # self.bucket_util.validate_docs_per_collections_all_buckets()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+                                                     self.cluster.buckets,
+                                                     timeout=1200)
 
     def forced_failover_operation(self, known_nodes=None, failover_nodes=None,
                                   wait_for_pending=300):
@@ -875,7 +877,7 @@ class CollectionsRebalance(CollectionBase):
                 self.sleep(60, "wait after compaction")
                 items = 0
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster, self.cluster.buckets)
+                    self.cluster, self.cluster.buckets, timeout=1200)
                 for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
@@ -884,7 +886,7 @@ class CollectionsRebalance(CollectionBase):
                 pass
             else:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster, self.cluster.buckets)
+                    self.cluster, self.cluster.buckets, timeout=1200)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
                     self.cluster)
 

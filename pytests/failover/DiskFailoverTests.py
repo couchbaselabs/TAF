@@ -54,7 +54,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def data_validation_collection(self):
         if not self.skip_validations:
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                         self.cluster.buckets)
+                                                         self.cluster.buckets,
+                                                         timeout=1200)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
 

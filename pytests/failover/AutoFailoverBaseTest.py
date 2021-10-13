@@ -166,7 +166,8 @@ class AutoFailoverBaseTest(BaseTestCase):
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+                                                     self.cluster.buckets,
+                                                     timeout=1200)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 
@@ -1080,7 +1081,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+                                                     self.cluster.buckets,
+                                                     timeout=1200)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
 
