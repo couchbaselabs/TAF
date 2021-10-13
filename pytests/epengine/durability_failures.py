@@ -3,6 +3,7 @@ import time
 import json
 
 from BucketLib.bucket import Bucket
+from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
@@ -929,9 +930,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 crud_batch_size,
                 target_vbucket=replica_vbs[server])
             success = self.bucket_util.load_durable_aborts(
-                ssh_shell, [load_gen[server]],
+                ssh_shell, [load_gen[server]], self.cluster,
                 self.bucket, self.durability_level,
-                "create", "all_aborts")
+                DocLoading.Bucket.DocOps.CREATE, "all_aborts")
             if not success:
                 self.log_failure("Failures seen during loading aborted docs")
             ssh_shell.disconnect()

@@ -1,5 +1,6 @@
 import Jython_tasks.task as jython_tasks
 from BucketLib.bucket import Bucket
+from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
@@ -180,10 +181,9 @@ class RebalanceOutTests(RebalanceBaseTest):
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen],
-                    self.cluster.buckets[0],
-                    self.durability_level,
-                    "update", "all_aborts")
+                    ssh_shell, [load_gen], self.cluster,
+                    self.cluster.buckets[0], self.durability_level,
+                    DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:
                     self.log_failure("Simulating aborts failed")
                 ssh_shell.disconnect()
@@ -547,10 +547,9 @@ class RebalanceOutTests(RebalanceBaseTest):
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen],
-                    self.cluster.buckets[0],
-                    self.durability_level,
-                    "update", "all_aborts")
+                    ssh_shell, [load_gen], self.cluster,
+                    self.cluster.buckets[0], self.durability_level,
+                    DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:
                     self.log_failure("Simulating aborts failed")
                 ssh_shell.disconnect()
@@ -722,10 +721,9 @@ class RebalanceOutTests(RebalanceBaseTest):
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen],
-                    self.cluster.buckets[0],
-                    self.durability_level,
-                    "update", "all_aborts")
+                    ssh_shell, [load_gen], self.cluster,
+                    self.cluster.buckets[0], self.durability_level,
+                    DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:
                     self.log_failure("Simulating aborts failed")
                 ssh_shell.disconnect()

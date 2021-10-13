@@ -2919,12 +2919,13 @@ class BucketUtils(ScopeUtils):
         self.log_doc_ops_task_failures(tasks_info)
         return tasks_info
 
-    def load_durable_aborts(self, ssh_shell, load_gens, bucket,
+    def load_durable_aborts(self, ssh_shell, load_gens, cluster, bucket,
                             durability_level, doc_op="create",
                             load_type="all_aborts"):
         """
         :param ssh_shell: ssh connection for simulating memcached_stop
         :param load_gens: doc_load generators used for running doc_ops
+        :param cluster: Cluster object to be utilized by doc_load_task
         :param bucket: Bucket object for loading data
         :param durability_level: Durability level to use while loading
         :param doc_op: Type of doc_operation to perform. create/update/delete
@@ -2944,13 +2945,13 @@ class BucketUtils(ScopeUtils):
         def load_docs(doc_gen, load_for=""):
             if load_for == "abort":
                 return self.task.async_load_gen_docs(
-                    self.cluster, bucket, doc_gen, doc_op, 0,
+                    cluster, bucket, doc_gen, doc_op, 0,
                     batch_size=10, process_concurrency=8,
                     durability=durability_level,
                     timeout_secs=2, start_task=False,
                     skip_read_on_error=True, suppress_error_table=True)
             return self.task.async_load_gen_docs(
-                self.cluster, bucket, doc_gen, doc_op, 0,
+                cluster, bucket, doc_gen, doc_op, 0,
                 batch_size=10, process_concurrency=8,
                 durability=durability_level,
                 timeout_secs=60)

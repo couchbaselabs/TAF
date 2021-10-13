@@ -1,4 +1,4 @@
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from base_2i import BaseSecondaryIndexingTests
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
@@ -256,9 +256,9 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
                 expected_num_indexed["durable_add_aborts"] += crud_batch_size
 
             task_success = self.bucket_util.load_durable_aborts(
-                ssh_shell, load_gen["ADD"][server], def_bucket,
-                self.durability_level,
-                "create", self.sync_write_abort_pattern)
+                ssh_shell, load_gen["ADD"][server], self.cluster, def_bucket,
+                self.durability_level, DocLoading.Bucket.DocOps.CREATE,
+                self.sync_write_abort_pattern)
             if not task_success:
                 self.log_failure("Failure during load_abort task")
 
@@ -289,9 +289,9 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
             verification_dict["sync_write_aborted_count"] += \
                 crud_batch_size
             task_success = self.bucket_util.load_durable_aborts(
-                ssh_shell, load_gen["SET"][server], def_bucket,
-                self.durability_level,
-                "update", self.sync_write_abort_pattern)
+                ssh_shell, load_gen["SET"][server], self.cluster, def_bucket,
+                self.durability_level, DocLoading.Bucket.DocOps.UPDATE,
+                self.sync_write_abort_pattern)
             if not task_success:
                 self.log_failure("Failure during load_abort task")
 

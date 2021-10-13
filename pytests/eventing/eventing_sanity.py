@@ -1,4 +1,4 @@
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from eventing.eventing_constants import HANDLER_CODE
 from eventing.eventing_base import EventingBaseTest
 from membase.helper.cluster_helper import ClusterOperationHelper
@@ -348,14 +348,15 @@ class EventingSanity(EventingBaseTest):
             verification_dict["sync_write_aborted_count"] += \
                 crud_batch_size
             task_success = self.bucket_util.load_durable_aborts(
-                ssh_shell, load_gen["SET"][server], def_bucket,
-                self.durability_level,
-                "update", self.sync_write_abort_pattern)
+                ssh_shell, load_gen["SET"][server], self.cluster, def_bucket,
+                self.durability_level, DocLoading.Bucket.DocOps.UPDATE,
+                self.sync_write_abort_pattern)
             if not task_success:
                 self.log_failure("Failure during load_abort task")
             ssh_shell.disconnect()
             if self.create_eventing_during == "before_doc_ops":
-                self.verify_eventing_results(self.function_name, verification_dict["ops_create"],
+                self.verify_eventing_results(self.function_name,
+                                             verification_dict["ops_create"],
                                              skip_stats_validation=True)
 
         failed = durability_helper.verify_vbucket_details_stats(
@@ -368,10 +369,12 @@ class EventingSanity(EventingBaseTest):
         if self.create_eventing_during == "after_doc_ops":
             body = self.create_save_function_body(self.function_name, HANDLER_CODE.BUCKET_OPS_ON_UPDATE, worker_count=3)
             self.deploy_function(body)
-            self.verify_eventing_results(self.function_name, verification_dict["ops_create"],
+            self.verify_eventing_results(self.function_name,
+                                         verification_dict["ops_create"],
                                          skip_stats_validation=True)
         self.log.info("Verify aborts are not consumed by eventing")
-        self.verify_eventing_results(self.function_name, verification_dict["ops_create"],
+        self.verify_eventing_results(self.function_name,
+                                     verification_dict["ops_create"],
                                      skip_stats_validation=True)
 
         for server in kv_nodes:
@@ -395,7 +398,8 @@ class EventingSanity(EventingBaseTest):
                 verification_dict["ops_create"] += crud_batch_size
                 if len(task.fail.keys()) != 0:
                     self.log_failure("Some failures seen during doc_ops")
-                self.verify_eventing_results(self.function_name, verification_dict["ops_create"],
+                self.verify_eventing_results(self.function_name,
+                                             verification_dict["ops_create"],
                                              skip_stats_validation=True)
 
             for gen_load in load_gen["SET"][server]:
@@ -409,11 +413,13 @@ class EventingSanity(EventingBaseTest):
                 verification_dict["ops_update"] += crud_batch_size
                 if len(task.fail.keys()) != 0:
                     self.log_failure("Some failures seen during doc_ops")
-                self.verify_eventing_results(self.function_name, verification_dict["ops_update"],
+                self.verify_eventing_results(self.function_name,
+                                             verification_dict["ops_update"],
                                              skip_stats_validation=True)
 
         self.log.info("Validate the mutated docs are taken into eventing")
-        self.verify_eventing_results(self.function_name, verification_dict["ops_create"],
+        self.verify_eventing_results(self.function_name,
+                                     verification_dict["ops_create"],
                                      skip_stats_validation=True)
         self.validate_test_failure()
 
@@ -499,18 +505,18 @@ class EventingSanity(EventingBaseTest):
                 verification_dict["sync_write_committed_count"] += \
                     crud_batch_size
 
-
             task_success = self.bucket_util.load_durable_aborts(
-                ssh_shell, load_gen["ADD"][server], def_bucket,
-                self.durability_level,
-                "create", self.sync_write_abort_pattern)
+                ssh_shell, load_gen["ADD"][server], self.cluster, def_bucket,
+                self.durability_level, DocLoading.Bucket.DocOps.CREATE,
+                self.sync_write_abort_pattern)
             if not task_success:
                 self.log_failure("Failure during load_abort task")
 
             verification_dict["sync_write_aborted_count"] += \
                 crud_batch_size
             if self.create_index_during == "before_doc_ops":
-                self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+                self.validate_indexed_doc_count(
+                    self.index_name,  verification_dict["ops_create"])
 
             load_gen["SET"][server] = list()
             load_gen["SET"][server].append(doc_generator(
@@ -529,9 +535,9 @@ class EventingSanity(EventingBaseTest):
             verification_dict["sync_write_aborted_count"] += \
                 crud_batch_size
             task_success = self.bucket_util.load_durable_aborts(
-                ssh_shell, load_gen["SET"][server], def_bucket,
-                self.durability_level,
-                "update", self.sync_write_abort_pattern)
+                ssh_shell, load_gen["SET"][server], self.cluster, def_bucket,
+                self.durability_level, DocLoading.Bucket.DocOps.UPDATE,
+                self.sync_write_abort_pattern)
             if not task_success:
                 self.log_failure("Failure during load_abort task")
 
