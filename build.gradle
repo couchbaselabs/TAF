@@ -21,8 +21,8 @@ repositories {
 }
 
 dependencies {
-    def trans_version = "1.1.0"
-    def java_client = "default"
+    def trans_version = "1.2.1"
+    def java_client = "3.2.2"
 
     if (project.hasProperty("transaction_version")) {
         trans_version = project.property("transaction_version")
