@@ -576,6 +576,8 @@ class Murphy(BaseTestCase, OPD):
                          if node.ip == self.chosen[0].ip]
             self.cluster.nodes_in_cluster = list(
                 set(self.cluster.nodes_in_cluster) - set(servs_out))
+            for server in servs_out:
+                self.cluster.kv_nodes.remove(server)
             self.available_servers += servs_out
             self.print_stats()
 
