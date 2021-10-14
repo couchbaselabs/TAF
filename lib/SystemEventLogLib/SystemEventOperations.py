@@ -32,7 +32,8 @@ class SystemEventRestHelper:
     def create_event(self, event_dict, rest=None, server=None,
                      username=None, password=None):
         """
-        :param event_dict:
+        Create event in the cluster as per event_dict
+        :param event_dict: Dictionary containing parameters for an event
         :param rest: RestConnection object to send requests
         :param server: Target server to create RestConnection
         :param username: Username auth to use during API operations

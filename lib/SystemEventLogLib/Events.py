@@ -18,6 +18,15 @@ class Event(object):
         SUB_COMPONENT = "sub_component"
         EXTRA_ATTRS = "extra_attributes"
 
+        @staticmethod
+        def values(only_mandatory_fields=False):
+            if only_mandatory_fields:
+                return [Event.Fields.EVENT_ID, Event.Fields.UUID,
+                        Event.Fields.COMPONENT, Event.Fields.TIMESTAMP,
+                        Event.Fields.SEVERITY, Event.Fields.DESCRIPTION]
+            return [var_name for var_name in Event.Fields.__dict__.keys()
+                    if not var_name.startswith("__")]
+
     class Component(object):
         """Holds all valid components supported by the SystemEvent REST API"""
         NS_SERVER = "ns_server"
@@ -32,6 +41,11 @@ class Event(object):
         SECURITY = "security"
         VIEWS = "views"
 
+        @staticmethod
+        def values():
+            return [var_name for var_name in Event.Component.__dict__.keys()
+                    if not var_name.startswith("__")]
+
     class Severity(object):
         """Holds all valid log levels supported by the SystemEvent REST API"""
         INFO = "info"
@@ -39,20 +53,26 @@ class Event(object):
         WARN = "warn"
         FATAL = "fatal"
 
+        @staticmethod
+        def values():
+            return [var_name for var_name in Event.Severity.__dict__.keys()
+                    if not var_name.startswith("__")]
+
 
 class EventHelper(object):
     class EventCounter(object):
         def __init__(self):
             self.__lock = threading.Lock()
             self.counter = 0
-            self.max_events_reached = False
 
         def increment(self):
             with self.__lock:
                 self.counter += 1
-            if self.counter > CbServer.max_sys_event_logs:
-                self.max_events_reached = True
-            return self.counter
+                return self.counter
+
+        @property
+        def max_events_reached(self):
+            return self.counter > CbServer.max_sys_event_logs
 
     def __init__(self):
         # Saves the start time of test to help during validation
