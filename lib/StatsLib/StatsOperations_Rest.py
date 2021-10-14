@@ -207,7 +207,7 @@ class StatsHelper(RestConnection):
         :param: metrics_data (json_string): metrics to update in the form of json string
         :returns (dict): all metrics settings
         """
-        api = '%s%s' % (self.base_url, '/settings/metrics/')
+        api = '%s%s' % (self.base_url, '/internal/settings/metrics/')
         headers = self.get_headers_for_content_type_json()
         status, content, _ = self._http_request(api, method="POST",
                                                 params=metrics_data,
