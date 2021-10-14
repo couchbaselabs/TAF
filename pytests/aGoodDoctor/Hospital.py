@@ -478,7 +478,7 @@ class Murphy(BaseTestCase, OPD):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 5: Rebalance Out with Loading of docs")
+            self.PrintStep("Step 6: Rebalance Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
             self.sleep(60, "Sleep for 60s for rebalance to start")
 
@@ -492,6 +492,7 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
 
+            self.PrintStep("Step 7: Crash Magma/memc with Loading of docs")
             th = threading.Thread(target=self.crash_memcached,
                                   kwargs={"graceful": False})
             th.start()
@@ -501,7 +502,7 @@ class Murphy(BaseTestCase, OPD):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 6: Rebalance In_Out with Loading of docs")
+            self.PrintStep("Step 8: Rebalance In_Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=2, nodes_out=1,
                                             services=["kv"]*2)
             self.sleep(60, "Sleep for 60s for rebalance to start")
@@ -516,6 +517,7 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
 
+            self.PrintStep("Step 9: Crash Magma/memc with Loading of docs")
             th = threading.Thread(target=self.crash_memcached,
                                   kwargs={"graceful": False})
             th.start()
@@ -525,7 +527,7 @@ class Murphy(BaseTestCase, OPD):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 7: Swap with Loading of docs")
+            self.PrintStep("Step 10: Swap with Loading of docs")
 
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
             self.sleep(60, "Sleep for 60s for rebalance to start")
@@ -540,6 +542,7 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
 
+            self.PrintStep("Step 10: Crash Magma/memc with Loading of docs")
             th = threading.Thread(target=self.crash_memcached,
                                   kwargs={"graceful": False})
             th.start()
@@ -549,7 +552,7 @@ class Murphy(BaseTestCase, OPD):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 8: Failover a node and RebalanceOut that node \
+            self.PrintStep("Step 11: Failover a node and RebalanceOut that node \
             with loading in parallel")
 
             # Chose node to failover
@@ -590,7 +593,7 @@ class Murphy(BaseTestCase, OPD):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 9: Failover a node and FullRecovery\
+            self.PrintStep("Step 12: Failover a node and FullRecovery\
              that node")
 
             self.rest = RestConnection(self.cluster.master)
@@ -625,7 +628,7 @@ class Murphy(BaseTestCase, OPD):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 10: Failover a node and DeltaRecovery that \
+            self.PrintStep("Step 13: Failover a node and DeltaRecovery that \
             node with loading in parallel")
 
             self.rest = RestConnection(self.cluster.master)
@@ -658,7 +661,7 @@ class Murphy(BaseTestCase, OPD):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 12: Updating the bucket replica to 2")
+            self.PrintStep("Step 14: Updating the bucket replica to 2")
 
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.cluster.buckets)):
@@ -684,7 +687,7 @@ class Murphy(BaseTestCase, OPD):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 13: Updating the bucket replica to 1")
+            self.PrintStep("Step 15: Updating the bucket replica to 1")
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
@@ -709,7 +712,7 @@ class Murphy(BaseTestCase, OPD):
             th.join()
 
             ###################################################################
-            self.PrintStep("Step 14: Start the entire process again")
+            self.PrintStep("Step 16: Start the entire process again")
             self.loop += 1
             if self.loop < self.iterations:
                 self.sleep(10)
@@ -730,7 +733,8 @@ class Murphy(BaseTestCase, OPD):
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(
                         set(self.cluster.nodes_in_cluster) - set(servs_out))
-
+                    self.cluster.kv_nodes = list(
+                        set(self.cluster.kv_nodes) - set(servs_out))
             self.print_stats()
 
         self.log.info("Volume Test Run Complete")
