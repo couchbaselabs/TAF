@@ -111,8 +111,7 @@ class Murphy(BaseTestCase, OPD):
             self.xdcr_remote_cluster = CBCluster(name="remote", servers=remote_nodes,
                                                  vbuckets=self.vbuckets)
             self.task.rebalance([self.xdcr_remote_cluster.master], remote_nodes[1:], [])
-            self.xdcr_remote_cluster.nodes_in_cluster.extend(
-                [self.xdcr_remote_cluster.master] + remote_nodes)
+            self.xdcr_remote_cluster.nodes_in_cluster.extend(remote_nodes)
         #######################################################################
         self.PrintStep("Step 2: Create required buckets and collections.")
         self.create_required_buckets(self.cluster)
