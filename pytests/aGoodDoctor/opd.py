@@ -442,7 +442,7 @@ class OPD:
         if wait_for_stats:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster, self.cluster.buckets, timeout=1200)
+                    self.cluster, self.cluster.buckets, timeout=7200)
                 if self.track_failures:
                     self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items)
             except Exception as e:
