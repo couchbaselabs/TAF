@@ -1,16 +1,27 @@
 class NsServer(object):
     """Mapping of ns_server events - event_id. Valid range 0-1023"""
-    BabySitterRespawn = 0
-    RebalanceStarted = 0
-    RebalanceSuccess = 0
-    RebalanceFailure = 0
     NodeAdded = 0
+    ServiceStarted = 1
+    RebalanceStarted = 2
+    RebalanceComplete = 3
+    RebalanceFailure = 4
+    RebalanceInterrupted = 5
+    GracefulFailoverStarted = 6
+    GracefulFailoverComplete = 7
+    GracefulFailoverFailed = 8
+    GracefulFailoverInterrupted = 9
+    HardFailoverStarted = 10
+    HardFailoverComplete = 11
+    HardFailoverFailed = 12
+    HardFailoverInterrupted = 13
+    AutoFailoverStarted = 14
+    AutoFailoverComplete = 15
+    AutoFailoverFailed = 16
+    AutoFailoverWarning = 17
+    MasterSelected = 18
+
+    BabySitterRespawn = 0
     NodeOffline = 0
-    GracefulFailoverManual = 0
-    AutoFailover = 0
-    AutoFailoverFailure = 0
-    HardFailoverManual = 0
-    OrchestratorChange = 0
     TopologyChange = 0
 
 
@@ -18,17 +29,17 @@ class KvEngine(object):
     """Mapping of KV related events - event_id. Valid range 8192:9215"""
     BucketCreated = 8192
     BucketDeleted = 8193
-    BucketFlushed = 8198
-    BucketOffline = 8200
-    BucketOnline = 8199
-    BucketUpdated = 8201
-    CollectedCreated = 8196
-    CollectedDropped = 8197
     ScopeCreated = 8194
     ScopeDropped = 8195
-    EphemeralAutoReprovision = 0
-    MemcachedCrashed = 0
-    MemcachedSettingChanged = 8202
+    CollectedCreated = 8196
+    CollectedDropped = 8197
+    BucketFlushed = 8198
+    BucketOnline = 8199
+    BucketOffline = 8200
+    BucketConfigChanged = 8201
+    MemcachedConfigChanged = 8202
+    EphemeralAutoReprovision = 8203
+    MemcachedCrashed = 8204
 
 
 class Security(object):
@@ -36,14 +47,16 @@ class Security(object):
     AuditEnabled = 9216
     AuditDisabled = 9217
     AuditSettingChanged = 9218
+    LdapConfigChanged = 9219
+    SecurityConfigChanged = 9220
+    SasldAuthConfigChanged = 9221
+    PasswordPolicyChanged = 9222
+
     GroupAdded = 0
     GroupRemoved = 0
     LdapEnabledDisabledForGroup = 0
     LdapEnabledDisabledForUsers = 0
-    LdapSettingChanged = 9219
-    TlsSettingChanged = 9220
     PamEnabledDisabled = 0
-    PasswordPolicyChanged = 9222
     UserAdded = 0
     UserRemoved = 0
 
