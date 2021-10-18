@@ -206,7 +206,7 @@ class BaseTestCase(unittest.TestCase):
         self.log = logger.get("test")
         self.infra_log = logger.get("infra")
         global_vars.system_event_logs = EventHelper()
-        self.events = global_vars.system_event_logs
+        self.system_events = global_vars.system_event_logs
 
         self.cleanup_pcaps()
         self.collect_pcaps = self.input.param("collect_pcaps", False)
@@ -326,7 +326,7 @@ class BaseTestCase(unittest.TestCase):
                     self.skip_buckets_handle:
                 self.log.warning("Cluster operation in setup will be skipped")
                 self.primary_index_created = True
-                self.events.set_test_start_time()
+                self.system_events.set_test_start_time()
                 self.log_setup_status("BaseTestCase", "finished")
                 return
             # avoid clean up if the previous test has been tear down
@@ -384,7 +384,7 @@ class BaseTestCase(unittest.TestCase):
             for cluster_name, cluster in self.cb_clusters.items():
                 self.modify_cluster_settings(cluster)
 
-            self.events.set_test_start_time()
+            self.system_events.set_test_start_time()
             self.log_setup_status("BaseTestCase", "finished")
 
             if not self.skip_init_check_cbserver:
@@ -508,7 +508,7 @@ class BaseTestCase(unittest.TestCase):
         sys_event_validation_failure = None
         if self.validate_system_event_logs:
             sys_event_validation_failure = \
-                self.events.validate(self.cluster.master)
+                self.system_events.validate(self.cluster.master)
 
         self.task_manager.shutdown_task_manager()
         self.task.shutdown(force=True)
