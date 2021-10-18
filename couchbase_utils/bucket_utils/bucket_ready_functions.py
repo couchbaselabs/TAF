@@ -4611,7 +4611,7 @@ class BucketUtils(ScopeUtils):
         if not status:
             raise Exception("Collections stat validation failed")
 
-    def validate_docs_per_collections_all_buckets(self, cluster, timeout=600):
+    def validate_docs_per_collections_all_buckets(self, cluster, timeout=1200):
         self.log.info("Validating collection stats and item counts")
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(cluster),
