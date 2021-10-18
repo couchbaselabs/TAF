@@ -2365,7 +2365,7 @@ class BucketUtils(ScopeUtils):
         for remote_conn in shell_conn_list1 + shell_conn_list2:
             remote_conn.disconnect()
 
-    def verify_stats_all_buckets(self, cluster, items, timeout=600):
+    def verify_stats_all_buckets(self, cluster, items, timeout=1200):
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(cluster),
             cluster.buckets,
