@@ -761,7 +761,7 @@ class RestConnection(object):
                                            timeout=timeout, verify=verify)
                 status = response.status_code
                 content = response.content
-                if status in [200, 201, 202]:
+                if status in [200, 201, 202, 204]:
                     return True, content, response
                 else:
                     self.log.error(response.reason)
@@ -803,7 +803,7 @@ class RestConnection(object):
                     self.test_log.debug(response)
                     self.test_log.debug(content)
 
-                if response['status'] in ['200', '201', '202']:
+                if response['status'] in ['200', '201', '202', '204']:
                     return True, content, response
                 else:
                     try:

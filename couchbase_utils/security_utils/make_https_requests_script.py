@@ -39,7 +39,7 @@ def https_request(api, verb='GET', params='', headers=None, timeout=100,
             res["content"] = response.content
             res["reason"] = response.reason
             res["exception"] = None
-            if res["status_code"] in [200, 201, 202]:
+            if res["status_code"] in [200, 201, 202, 204]:
                 res["status"] = True
             return res
         except Exception as e:
