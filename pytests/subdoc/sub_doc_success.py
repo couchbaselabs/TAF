@@ -31,7 +31,8 @@ class BasicOps(DurabilityTestsBase):
         doc_op = self.input.param("op_type", None)
         def_bucket = self.cluster.buckets[0]
         supported_d_levels = \
-        self.bucket_util.get_supported_durability_levels(minimum_level=Bucket.DurabilityLevel.NONE)
+        self.bucket_util.get_supported_durability_levels(
+                minimum_level=Bucket.DurabilityLevel.MAJORITY)
 
         # Stat validation reference variables
         verification_dict = dict()
