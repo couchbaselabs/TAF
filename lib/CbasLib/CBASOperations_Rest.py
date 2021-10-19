@@ -282,7 +282,7 @@ class CBASHelper(RestConnection):
         status, content, response = self._http_request(api, method="GET", headers=headers)
         content = json.loads(content)
         return status, content, response
-    
+
     def operation_service_parameters_configuration_cbas(self, method="GET", params=None, username=None, password=None):
         if not username:
             username = self.username
@@ -509,8 +509,9 @@ class CBASHelper(RestConnection):
 
         status, content, header = self._http_request(url, 'PUT', setting, headers=headers)
         return status
-    
-    def analytics_link_operations(self,method="GET", uri="", params="", timeout=120, username=None, password=None):
+
+    def analytics_link_operations(self, method="GET", uri="", params="",
+                                  timeout=120, username=None, password=None):
         if not username:
             username = self.username
         if not password:
@@ -558,5 +559,59 @@ class CBASHelper(RestConnection):
                 return True, response.status_code, content, errors
             else:
                 return False, response.status_code, content, content["errors"]
-            
-        
+
+    @staticmethod
+    def analytics_replica_settings(logger, node, method="GET", params="",
+                                   timeout=120, username=None, password=None):
+        """
+        This method is used to get or set analytics replica number from
+        cluster settings page.
+        """
+        rest_conn = RestConnection(node)
+        if not username:
+            username = rest_conn.username
+        if not password:
+            password = rest_conn.password
+
+        api = rest_conn.baseUrl + "/settings/analytics"
+        headers = rest_conn._create_headers(username, password)
+
+        try:
+            status, content, header = rest_conn._http_request(
+                api, method, headers=headers, params=params, timeout=timeout)
+            try:
+                content = json.loads(content)
+            except Exception:
+                pass
+            errors = list()
+            if not status:
+                if not content:
+                    errors.append({"msg": "Request Rejected", "code": 0 })
+                else:
+                    if isinstance(content, dict):
+                        if "errors" in content:
+                            if isinstance(content["errors"], list):
+                                errors.extend(content["errors"])
+                            else:
+                                errors.append({"msg": content["errors"], "code": 0})
+                        elif "error" in content:
+                            errors.append({"msg": content["error"], "code": 0})
+                    else:
+                        content = content.split(":")
+                        errors.append({"msg": content[1], "code": content[0]})
+            return status, header['status'], content, errors
+        except Exception as err:
+            logger.error("Exception occured while calling rest APi through httplib2.")
+            logger.error("Exception msg - (0)".format(str(err)))
+            logger.info("Retrying again with requests module")
+            response = requests.request(
+                method, api, headers=headers, data=params)
+            try:
+                content = response.json()
+            except Exception:
+                content = response.content
+            errors = list()
+            if response.status_code in [200, 201, 202]:
+                return True, response.status_code, content, errors
+            else:
+                return False, response.status_code, content, content["errors"]

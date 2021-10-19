@@ -1499,10 +1499,10 @@ class CBASExternalLinks(CBASBaseTest):
             self.cluster, run_kv_queries=False, run_cbas_queries=True,
             parallelism=3)
 
-        self.available_servers = self.rebalance_util.failover(
+        self.available_servers, _, _ = self.rebalance_util.failover(
             self.cluster, failover_type="Hard",
             action=self.input.param("action", "FullRecovery"),
-            service_type="cbas", timeout=7200,
+            cbas_nodes=1, timeout=7200,
             available_servers=self.available_servers,
             exclude_nodes=self.cluster.exclude_nodes)
 

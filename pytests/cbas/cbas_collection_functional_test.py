@@ -29,8 +29,6 @@ class CBASDataverseAndScopes(CBASBaseTest):
         self.input.test_params.update(
             {"nodes_init": "4"})
 
-        self.num_dataverses = int(self.input.param("no_of_dv", 1))
-        self.ds_per_dv = int(self.input.param("ds_per_dv", 1))
         super(CBASDataverseAndScopes, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
@@ -41,8 +39,8 @@ class CBASDataverseAndScopes(CBASBaseTest):
                 self.cbas_spec_name)
             self.cbas_util.update_cbas_spec(
                 self.cbas_spec,
-                {"no_of_dataverses": self.num_dataverses,
-                 "max_thread_count": self.ds_per_dv},
+                {"no_of_dataverses": int(self.input.param("no_of_dv", 1)),
+                 "max_thread_count": int(self.input.param("ds_per_dv", 1))},
                 "dataverse")
             if not self.cbas_util.create_dataverse_from_spec(
                 self.cluster, self.cbas_spec):
@@ -266,10 +264,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if "nodes_init" not in self.input.test_params:
             self.input.test_params.update(
                 {"nodes_init": "4"})
-        self.num_dataverses = int(self.input.param("no_of_dv", 1))
-        self.ds_per_dv = int(self.input.param("ds_per_dv", 1))
         self.iterations = int(self.input.param("iterations", 1))
-        self.wait_for_ingestion = self.input.param("wait_for_ingestion", True)
         if self.input.param('setup_infra', True):
             if "bucket_spec" not in self.input.test_params:
                 self.input.test_params.update(
@@ -1887,7 +1882,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.parallel_load_percent = 100
         create_task = CreateDatasetsTask(
             self.cluster, self.bucket_util, self.cbas_util, 3, 3,
-            ds_per_collection=ds_per_collection, ds_per_dv=self.ds_per_dv)
+            ds_per_collection=ds_per_collection,
+            ds_per_dv=int(self.input.param("ds_per_dv", 1)))
         self.start_data_load_task(
             percentage_per_collection=self.parallel_load_percent)
         self.task_manager.add_new_task(create_task)

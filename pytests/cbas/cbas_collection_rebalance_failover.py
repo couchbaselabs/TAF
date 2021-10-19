@@ -123,7 +123,7 @@ class CBASRebalance(CBASBaseTest):
             self.fail("Doc count mismatch between KV and CBAS")
 
     def load_collections_with_failover(
-            self, failover_type="Hard", action="RebalanceOut", service_type="cbas"):
+            self, failover_type="Hard", action="RebalanceOut", kv_nodes=0, cbas_nodes=0):
 
         self.log.info(
             "{0} Failover a node and {1} that node with data load in "
@@ -138,7 +138,7 @@ class CBASRebalance(CBASBaseTest):
         if self.data_load_stage == "during":
             reset_flag = False
             if (not self.durability_level) and failover_type \
-                    == "Hard" and "kv" in service_type:
+                    == "Hard" and kv_nodes:
                 # Force a durability level to prevent data loss during hard failover
                 self.log.info("Forcing durability level: MAJORITY")
                 self.durability_level = "MAJORITY"
@@ -149,9 +149,9 @@ class CBASRebalance(CBASBaseTest):
             if reset_flag:
                 self.durability_level = ""
 
-        self.available_servers = self.rebalance_util.failover(
-            self.cluster, failover_type=failover_type, action=action,
-            service_type=service_type, timeout=7200,
+        self.available_servers, _, _ = self.rebalance_util.failover(
+            self.cluster, kv_nodes=kv_nodes, cbas_nodes=cbas_nodes,
+            failover_type=failover_type, action=action, timeout=7200,
             available_servers=self.available_servers,
             exclude_nodes=self.cluster.exclude_nodes)
 
@@ -237,40 +237,40 @@ class CBASRebalance(CBASBaseTest):
 
     def test_cbas_with_kv_graceful_failover_rebalance_out(self):
         self.load_collections_with_failover(
-            failover_type="Graceful", action="RebalanceOut", service_type="kv")
+            failover_type="Graceful", action="RebalanceOut", kv_nodes=1)
 
     def test_cbas_with_kv_graceful_failover_full_recovery(self):
         self.load_collections_with_failover(
-            failover_type="Graceful", action="FullRecovery", service_type="kv")
+            failover_type="Graceful", action="FullRecovery", kv_nodes=1)
 
     def test_cbas_with_kv_graceful_failover_delta_recovery(self):
         self.load_collections_with_failover(
-            failover_type="Graceful", action="DeltaRecovery", service_type="kv")
+            failover_type="Graceful", action="DeltaRecovery", kv_nodes=1)
 
     def test_cbas_with_kv_hard_failover_rebalance_out(self):
         self.load_collections_with_failover(
-            failover_type="Hard", action="RebalanceOut", service_type="kv")
+            failover_type="Hard", action="RebalanceOut", kv_nodes=1)
 
     def test_cbas_with_cbas_hard_failover_rebalance_out(self):
         self.load_collections_with_failover(
-            failover_type="Hard", action="RebalanceOut", service_type="cbas")
+            failover_type="Hard", action="RebalanceOut", cbas_nodes=1)
 
     def test_cbas_with_kv_cbas_hard_failover_rebalance_out(self):
         self.load_collections_with_failover(
-            failover_type="Hard", action="RebalanceOut", service_type="kv-cbas")
+            failover_type="Hard", action="RebalanceOut", kv_nodes=1, cbas_nodes=1)
 
     def test_cbas_with_kv_hard_failover_full_recovery(self):
         self.load_collections_with_failover(
-            failover_type="Hard", action="FullRecovery", service_type="kv")
+            failover_type="Hard", action="FullRecovery", kv_nodes=1)
 
     def test_cbas_with_cbas_hard_failover_full_recovery(self):
         self.load_collections_with_failover(
-            failover_type="Hard", action="FullRecovery", service_type="cbas")
+            failover_type="Hard", action="FullRecovery", cbas_nodes=1)
 
     def test_cbas_with_kv_cbas_hard_failover_full_recovery(self):
         self.load_collections_with_failover(
-            failover_type="Hard", action="FullRecovery", service_type="kv-cbas")
+            failover_type="Hard", action="FullRecovery", kv_nodes=1, cbas_nodes=1)
 
     def test_cbas_with_kv_hard_failover_delta_recovery(self):
         self.load_collections_with_failover(
-            failover_type="Hard", action="DeltaRecovery", service_type="kv")
+            failover_type="Hard", action="DeltaRecovery", kv_nodes=1)

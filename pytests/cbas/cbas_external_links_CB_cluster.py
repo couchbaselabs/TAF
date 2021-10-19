@@ -1989,12 +1989,11 @@ class CBASExternalLinks(CBASBaseTest):
                 self.analytics_cluster, statement, "async",
                 self.input.param("num_queries", 0), wait_for_execution=False)
 
-        self.available_servers = self.rebalance_util.failover(
+        self.available_servers, _, _ = self.rebalance_util.failover(
             self.analytics_cluster, failover_type="Hard",
             action=self.input.param("action_on_failover", "FullRecovery"),
-            service_type="cbas", timeout=7200,
-            available_servers=self.available_servers,
-            exclude_nodes=[])
+            cbas_nodes=1, timeout=7200,
+            available_servers=self.available_servers, exclude_nodes=[])
 
         self.log.info("Get KV ops result")
         if not self.rebalance_util.wait_for_data_load_to_complete(doc_loading_task, False):
