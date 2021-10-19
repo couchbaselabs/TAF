@@ -31,6 +31,7 @@ from sdk_exceptions import SDKException
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
 from Jython_tasks.task import Task, RunQueriesTask
+from StatsLib.StatsOperations import StatsHelper
 
 
 class BaseUtil(object):
@@ -199,7 +200,7 @@ class BaseUtil(object):
 
     @staticmethod
     def generate_name(name_cardinality=1, max_length=30, fixed_length=False,
-                      name_key=None):
+                      name_key=None, seed=0):
         """
         Creates a name based on name_cadinality.
         :param name_cardinality: int, accepted values are -
@@ -216,7 +217,10 @@ class BaseUtil(object):
         specified, otherwise creates a name with length upto no_of_char specified.
         :param name_key str, if specified, it will generate name with the name_key
         """
-        random.seed(round(time.time()*1000))
+        if not seed:
+            random.seed(round(time.time()*1000))
+        else:
+            random.seed(seed)
         if 0 < name_cardinality < 3:
             if name_key:
                 return ".".join(name_key for i in range(name_cardinality))
@@ -2258,7 +2262,12 @@ class Dataset_Util(Link_Util):
                 collection = bucket_util.get_collection_obj(scope, "_default")
             if enabled_from_KV:
                 dataverse_name = bucket.name + "." + scope.name
-                dataset_name = collection.name
+                # To cover the scenario where the default collection is not
+                # present.
+                if collection:
+                    dataset_name = collection.name
+                else:
+                    dataset_name = "_default"
             else:
                 dataverse_name = None
 
@@ -2311,7 +2320,7 @@ class Dataset_Util(Link_Util):
             dataverse_obj.datasets[dataset_obj.name] = dataset_obj
 
             if enabled_from_KV:
-                if collection.name == "_default":
+                if collection and collection.name == "_default":
                     dataverse_obj.synonyms[bucket.name] = Synonym(
                         bucket.name, collection.name, dataverse_name,
                         dataverse_name="Default",
@@ -4448,6 +4457,45 @@ class CbasUtil(UDFUtil):
             node, "POST", params, username, password, validate_error_msg,
             expected_error, expected_error_code)
 
+    def wait_for_replication_to_finish(self, cluster, timeout=600):
+        self.log.info("Waiting for replication to finish")
+        stats_helper = StatsHelper(cluster.master)
+        ingestion_complete = False
+        end_time = time.time() + timeout
+        while (not ingestion_complete) and time.time() < end_time:
+            result = stats_helper.get_range_api_metrics(
+                "cbas_pending_replicate_ops", function=None,
+                label_values={"nodesAggregation": "sum"}, optional_params=None)
+            if result:
+                for data in result["data"]:
+                    data["values"].sort(key=lambda x: x[0])
+                    if int(data["values"][-1][0]) == 0:
+                        ingestion_complete = True
+        return ingestion_complete
+
+    def verify_actual_number_of_replicas(self, cluster, expected_num):
+        response = self.fetch_analytics_cluster_response(cluster.master)
+        if response:
+            replica_num_matched = True
+            if response["partitionsTopology"]["numReplicas"] == expected_num:
+                replica_num_matched = replica_num_matched and True
+            else:
+                replica_num_matched = replica_num_matched and False
+
+            partition_ids = dict()
+            for partition in response["partitions"]:
+                partition_ids.append(partition["partitionId"])
+
+            for partition in response["partitionsTopology"]["partitions"]:
+                if (partition["id"] in partition_ids) and len(
+                        partition["replicas"]) == expected_num:
+                    replica_num_matched = replica_num_matched and True
+                else:
+                    replica_num_matched = replica_num_matched and False
+            return replica_num_matched
+        else:
+            return False
+
 
 class DisconnectConnectLinksTask(Task):
     def __init__(self, cluster, cbas_util, links, run_infinitely=False, interval=5):
@@ -4752,7 +4800,8 @@ class CBASRebalanceUtil(object):
 
     def failover(self, cluster, kv_nodes=0, cbas_nodes=0, failover_type="Hard",
                  action=None, timeout=7200, available_servers=[],
-                 exclude_nodes=[]):
+                 exclude_nodes=[], kv_failover_nodes=[],
+                 cbas_failover_nodes=[]):
         """
         This fucntion fails over KV or CBAS node/nodes.
         :param cluster <cluster_obj> cluster in which the nodes are present
@@ -4794,8 +4843,8 @@ class CBASRebalanceUtil(object):
                 pass
 
         failover_count = 0
-        kv_failover_nodes = []
-        cbas_failover_nodes = []
+        kv_failover_nodes = kv_failover_nodes
+        cbas_failover_nodes = cbas_failover_nodes
         fail_over_status = True
 
         # Mark Node for failover
@@ -4830,8 +4879,9 @@ class CBASRebalanceUtil(object):
                         chosen[0].id, graceful=False)
                     failover_count += 1
                     cbas_failover_nodes.extend(chosen)
-        time.sleep(300)
-        self.wait_for_failover_or_assert(cluster, failover_count, timeout)
+        if kv_nodes or cbas_nodes:
+            time.sleep(300)
+            self.wait_for_failover_or_assert(cluster, failover_count, timeout)
 
         if action and fail_over_status:
             # Perform the action

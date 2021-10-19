@@ -8,6 +8,7 @@ import json
 import random
 from Queue import Queue
 from threading import Thread
+import time
 
 from BucketLib.BucketOperations import BucketHelper
 from CbasLib.CBASOperations import CBASHelper
@@ -980,7 +981,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
         if self.input.param('synonym_name', "new") == "new":
             synonym_name = CBASHelper.format_name(
-                self.cbas_util.generate_name(1))
+                self.cbas_util.generate_name(1, seed=round(time.time()*1000)))
         else:
             synonym_name = ds_obj.name
         if self.input.param('dangling_synonym', False):
@@ -998,7 +999,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                     self.fail("Error while creating dataverse")
             if not self.input.param('same_syn_on_syn_name', False):
                 synonym_name = CBASHelper.format_name(
-                    self.cbas_util.generate_name(1))
+                    self.cbas_util.generate_name(1, seed=round(time.time()*1000)))
             new_syn_obj = Synonym(
                 synonym_name, syn_obj.name, syn_obj.dataverse_name,
                 dataverse_name=dv_name, synonym_on_synonym=True)
@@ -1343,9 +1344,11 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         docTTL = int(self.input.param('docTTL', 0))
         collectionTTL = int(self.input.param('collectionTTL', 0))
         bucketTTL = int(self.input.param('bucketTTL', 0))
+        ttl_dict = dict()
         selected_bucket = random.choice(buckets_spec["buckets"].keys())
         if bucketTTL:
             buckets_spec["buckets"][selected_bucket]["maxTTL"] = bucketTTL
+            ttl_dict["bucketTTL"] = bucketTTL
         if collectionTTL:
             selected_scope = random.choice(
                 buckets_spec["buckets"][selected_bucket]["scopes"].keys())
@@ -1356,10 +1359,21 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 "collections"][selected_collection]["maxTTL"] = collectionTTL
             selected_collection = CBASHelper.format_name(
                 selected_bucket, selected_scope, selected_collection)
+            ttl_dict["collectionTTL"] = collectionTTL
         if docTTL:
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
                 "initial_load")
             doc_loading_spec[MetaCrudParams.DOC_TTL] = docTTL
+            ttl_dict["docTTL"] = docTTL
+
+        ttl_to_check = None
+        for ttl in ttl_dict:
+            if not ttl_to_check:
+                ttl_to_check = ttl
+            elif ttl_dict[ttl] < ttl_dict[ttl_to_check]:
+                ttl_to_check = ttl
+        end_time = time.time() + ttl_dict[ttl_to_check]
+
         self.collectionSetUp(self.cluster, True, buckets_spec, doc_loading_spec)
         #inserting docs parallel
         if self.parallel_load_percent:
@@ -1379,22 +1393,9 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.cluster, self.bucket_util):
             self.fail("Ingestion failed")
         self.bucket_util._expiry_pager(self.cluster)
-        ttl_dict = {
-            "docTTL": docTTL,
-            "bucketTTL": bucketTTL,
-            "collectionTTL": collectionTTL
-        }
-        for ttl in ttl_dict:
-            if ttl_dict[ttl] == 0:
-                del ttl_dict[ttl]
-        ttl_to_check = None
-        for ttl in ttl_dict:
-            if not ttl_to_check:
-                ttl_to_check = ttl
-            elif ttl_dict[ttl] < ttl_dict[ttl_to_check]:
-                ttl_to_check = ttl
-        self.sleep(ttl_dict[ttl_to_check] + 60,
-                   "waiting for maxTTL to complete")
+
+        while time.time() < end_time:
+            self.sleep(5, "waiting for maxTTL to complete")
 
         self.log.info("Validating item count")
         datasets = self.cbas_util.list_all_dataset_objs()
