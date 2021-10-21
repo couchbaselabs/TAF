@@ -16,6 +16,10 @@ class PlasmaMemCompTest(PlasmaBaseTest):
             self.set_index_settings({"indexer.plasma.backIndex.evictSweepInterval": self.sweep_interval}, index_node)
             self.set_index_settings({"indexer.plasma.backIndex.enableInMemoryCompression": True}, index_node)
             self.set_index_settings({"indexer.plasma.mainIndex.enableInMemoryCompression": True}, index_node)
+            self.set_index_settings({"indexer.settings.compaction.plasma.manual": self.manual},
+                                    index_node)
+            self.set_index_settings({"indexer.plasma.purger.enabled": self.purger_enabled},
+                                    index_node)
 
     def tearDown(self):
         super(PlasmaMemCompTest, self).tearDown()
@@ -29,10 +33,6 @@ class PlasmaMemCompTest(PlasmaBaseTest):
                                                                                      field=field, sync=False)
         for taskInstance in createIndexTasklist:
             self.task.jython_task_manager.get_task_result(taskInstance)
-        compare_task = self.validate_index_data(indexMap, self.init_items_per_collection, field)
-        for taskInstance in compare_task:
-            self.task.jython_task_manager.get_task_result(taskInstance)
-
         self.log.debug("initial_items_in_each_collection {}".format(self.init_items_per_collection))
         self.index_count = self.input.param("index_count", 2)
         self.items_add = self.input.param("items_add", 500)
@@ -53,7 +53,7 @@ class PlasmaMemCompTest(PlasmaBaseTest):
             if self.verify_compression_stat(self.cluster.index_nodes):
                 self.fail("Seeing index data compressed though mem_used_storage is less than 50 percent")
         self.assertTrue(self.verify_compression_stat(self.cluster.index_nodes))
-        mem_comp_compare_task = self.validate_index_data(indexMap, self.init_items_per_collection)
+        mem_comp_compare_task = self.validate_index_data(indexMap, self.init_items_per_collection, field, limit=self.query_limit)
         for taskInstance in mem_comp_compare_task:
             self.task.jython_task_manager.get_task_result(taskInstance)
 
@@ -186,13 +186,9 @@ class PlasmaMemCompTest(PlasmaBaseTest):
                         "Resident ratio not getting back to 0 after swap-out")
 
         # Perform full scan to perform swap-in
-        mem_comp_compare_task = self.validate_index_data(indexMap=indexMap, totalCount=self.create_end, field=field,
-                                                         limit=self.query_limit)
-        for taskInstance in mem_comp_compare_task:
-            self.task.jython_task_manager.get_task_result(taskInstance)
         query_tasks_info = self.indexUtil.run_full_scan(self.cluster, indexMap, key='body', is_sync= True)
-        # for taskInstance in query_tasks_info:
-        #     self.task.jython_task_manager.get_task_result(taskInstance)
+        for taskInstance in query_tasks_info:
+            self.task.jython_task_manager.get_task_result(taskInstance)
         self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "resident_ratio", 1, timeout= 100),
                         "Resident ratio not getting back to 1 after swap-in")
         self.perform_plasma_mem_ops("compressAll")
@@ -201,7 +197,8 @@ class PlasmaMemCompTest(PlasmaBaseTest):
                 break
             else:
                 self.sleep(self.counter, "waiting for compression to complete")
-        mem_comp_compare_task = self.validate_index_data(indexMap, self.init_items_per_collection)
+        mem_comp_compare_task = self.validate_index_data(indexMap=indexMap, totalCount=self.create_end, field=field,
+                                                         limit=self.query_limit)
         for taskInstance in mem_comp_compare_task:
             self.task.jython_task_manager.get_task_result(taskInstance)
 
@@ -236,10 +233,9 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "resident_ratio", 0),
                         "Resident ratio back to 0 after swap-out")
 
-        # Perform full scan to perform swap-in
-        query_tasks_info = self.indexUtil.run_full_scan(self.cluster, indexMap, key='body')
-        for taskInstance in query_tasks_info:
-            self.task.jython_task_manager.get_task_result(taskInstance)
+        # Perform perform swap-in
+        self.perform_plasma_mem_ops("swapinAll")
+        stat_obj_list = self.create_Stats_Obj_list()
         self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "resident_ratio", 1),
                         "Resident ratio back to 1 after swap-in")
         self.counter = self.input.param("counter", 30)
@@ -273,7 +269,7 @@ class PlasmaMemCompTest(PlasmaBaseTest):
                 break
             else:
                 self.sleep(self.counter, "waiting for compression to complete")
-        mem_comp_compare_task = self.validate_index_data(indexMap, self.init_items_per_collection)
+        mem_comp_compare_task = self.validate_index_data(indexMap, self.init_items_per_collection, field, limit=self.query_limit)
         for taskInstance in mem_comp_compare_task:
             self.task.jython_task_manager.get_task_result(taskInstance)
 
@@ -364,7 +360,7 @@ class PlasmaMemCompTest(PlasmaBaseTest):
                 break
             else:
                 self.sleep(self.counter, "waiting for compression to complete")
-
+        self.assertTrue(self.verify_compression_stat(self.cluster.index_nodes), "failing due to items not compressed")
         compressed_items = self.get_plasma_index_stat_value("num_rec_compressed", stat_obj_list)
         # Perform explicit compaction operation
         self.perform_plasma_mem_ops("compactAll")
@@ -372,7 +368,97 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list,"compacts", 0, ops='greater'), "compaction not triggering")
         self.assertTrue(self.compare_plasma_stat_field_value(stat_obj_list, "num_rec_compressed", compressed_items, ops='lesser'),
                         "compression not coming down after compaction")
+        mem_comp_compare_task = self.validate_index_data(indexMap, self.init_items_per_collection, field, limit=self.query_limit)
+        for taskInstance in mem_comp_compare_task:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+    """
+        1. Set indexer.settings.compaction.plasma.manual to true 
+        2. Trigger log cleaner
+        3. Trigger compression and validate num_compressed_pages > 0
+        4. Trigger log cleaner again
+        5. Perform full index scan and verify that scan results are expected.
+    """
+    def test_log_cleaning(self):
+        field = 'body'
+        stat_obj_list = self.create_Stats_Obj_list()
+        indexMap, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
+                                                                                     replica=self.num_replicas,
+                                                                                     defer=False,
+                                                                                     number_of_indexes_per_coll=self.index_count,
+                                                                                     field=field, sync=False, timeout=self.wait_timeout)
+        for taskInstance in createIndexTasklist:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        self.sleep(self.wait_timeout, "waiting for {} secs to complete the compression".format(self.wait_timeout))
+        #perform log cleaning
+        self.perform_plasma_mem_ops("logClean")
+        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list,"lss_gc_num_reads", 0, ops='greater'), "lss_gc_num_reads value still showing 0")
 
+        # Perform explicit compress operation
+        self.perform_plasma_mem_ops("compressAll")
+        self.sleep(self.wait_timeout, "waiting for {} secs to complete the compression".format(self.wait_timeout))
+        for count in range(self.counter):
+            if self.verify_compression_stat(self.cluster.index_nodes):
+                break
+            else:
+                self.sleep(self.counter, "waiting for compression to complete")
+        self.assertTrue(self.verify_compression_stat(self.cluster.index_nodes), "failing due to items not compressed")
+
+        # perform log cleaning
+        self.perform_plasma_mem_ops("logClean")
+        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "lss_gc_num_reads", 0, ops='greater'),
+                        "lss_gc_num_reads value still showing 0")
+
+        mem_comp_compare_task = self.validate_index_data(indexMap, self.init_items_per_collection, field,
+                                                         limit=self.query_limit)
+        for taskInstance in mem_comp_compare_task:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+
+    """
+        1. Set indexer.settings.compaction.plasma.manual to true 
+        2. Trigger compression and validate num_compressed_pages > 0
+        3. Trigger MVCC Purger - verify using stas - 'purges', 'mvcc_purge_ratio' and 'num_compressed_pages'
+        4. Perform full index scan and verify that scan results are expected
+    """
+
+    def test_MVCC_purger(self):
+        self.compact_ratio = self.input.param("compact_ratio", 1.0)
+        self.set_index_settings({"indexer.plasma.purger.compactRatio": self.compact_ratio},
+                                self.cluster.index_nodes[0])
+
+        field = 'body'
+        stat_obj_list = self.create_Stats_Obj_list()
+        indexMap, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
+                                                                                     replica=self.num_replicas,
+                                                                                     defer=False,
+                                                                                     number_of_indexes_per_coll=self.index_count,
+                                                                                     field=field, sync=False,
+                                                                                     timeout=self.wait_timeout)
+        for taskInstance in createIndexTasklist:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        self.sleep(self.wait_timeout, "waiting for {} secs to complete the compression".format(self.wait_timeout))
+
+        # Perform explicit compress operation
+        self.perform_plasma_mem_ops("compressAll")
+        self.sleep(self.wait_timeout, "waiting for {} secs to complete the compression".format(self.wait_timeout))
+        for count in range(self.counter):
+            if self.verify_compression_stat(self.cluster.index_nodes):
+                break
+            else:
+                self.sleep(self.counter, "waiting for compression to complete")
+        self.assertTrue(self.verify_compression_stat(self.cluster.index_nodes), "failing due to items not compressed")
+
+        # Perform explicit compress operation
+        self.perform_plasma_mem_ops("purge")
+        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "purges", 0, ops='greater'),
+                        "purges value still showing 0")
+        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "num_rec_compressed", 0, ops='greater'),
+                        "Compressed item is showing 0")
+        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "mvcc_purge_ratio", 1.0),
+                        "mvcc_purging_ratio still showing 1.0")
+        mem_comp_compare_task = self.validate_index_data(indexMap, self.init_items_per_collection, field,
+                                                         limit=self.query_limit)
+        for taskInstance in mem_comp_compare_task:
+            self.task.jython_task_manager.get_task_result(taskInstance)
     """
         1. Enable compression
             a. indexer.plasma.backIndex.enableInMemoryCompression
@@ -419,7 +505,7 @@ class PlasmaMemCompTest(PlasmaBaseTest):
             self.sleep(self.time_out)
             if self.verify_compression_stat(self.cluster.index_nodes):
                 self.fail("Seeing index data compressed though mem_used_storage is less than 50 percent")
-        mem_comp_compare_task = self.validate_index_data(indexMap, self.create_end)
+        mem_comp_compare_task = self.validate_index_data(indexMap, self.create_end, field, limit=self.query_limit)
         for taskInstance in mem_comp_compare_task:
             self.task.jython_task_manager.get_task_result(taskInstance)
 
@@ -495,6 +581,6 @@ class PlasmaMemCompTest(PlasmaBaseTest):
             self.sleep(self.time_out)
             if self.verify_compression_stat(self.cluster.index_nodes):
                 self.fail("Seeing index data compressed though mem_used_storage is less than 50 percent")
-        mem_comp_compare_task = self.validate_index_data(indexMap, self.create_end)
+        mem_comp_compare_task = self.validate_index_data(indexMap, self.create_end, field, limit=self.query_limit)
         for taskInstance in mem_comp_compare_task:
             self.task.jython_task_manager.get_task_result(taskInstance)

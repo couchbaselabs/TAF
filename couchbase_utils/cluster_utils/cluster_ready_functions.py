@@ -1367,7 +1367,7 @@ class ClusterUtils:
           return: void
       """
 
-    def indexer_id_ops(self, node, ops='compactAll', timeout=120, sleep_time=5):
+    def indexer_id_ops(self, node, ops='compactAll', mvcc_purge_ratio=0.0, timeout=120, sleep_time=5):
         generic_url = "http://%s:%s/"
         ip = node.ip
         port = constants.index_port
@@ -1382,7 +1382,10 @@ class ClusterUtils:
                 x, id = l.split(" : ")
                 if id:
                     self.log.info("Triggering %s for instance id %s" % (ops, id))
-                    compact_command = {'Cmd': ops, 'Args': [id]}
+                    if ops == 'purge':
+                        compact_command = {'Cmd': ops, 'Args': [id,mvcc_purge_ratio]}
+                    else:
+                        compact_command = {'Cmd': ops, 'Args': [id]}
                     self.log.debug("compact command {}".format(compact_command))
                     status, content, header = rest._http_request(api, 'POST', json.dumps(compact_command))
                     self.log.debug("Triggering passed with status as {}".format(status))

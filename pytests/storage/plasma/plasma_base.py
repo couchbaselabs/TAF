@@ -22,6 +22,8 @@ class PlasmaBaseTest(StorageBase):
         max_clients = min(self.task_manager.number_of_threads, 20)
         self.sdk_timeout = self.input.param("sdk_timeout", 60)
         self.moi_snapshot_interval = self.input.param("moi_snapshot_interval", 120)
+        self.manual = self.input.param("manual", False)
+        self.purger_enabled = self.input.param("purger_enabled", True)
         self.init_sdk_pool_object()
         self.log.info("Creating SDK clients for client_pool")
         max_clients = min(self.task_manager.number_of_threads, 20)
@@ -132,9 +134,14 @@ class PlasmaBaseTest(StorageBase):
                 for index in index_stat[bucket].keys():
                     self.log.debug("index name is:"+str(index))
                     index_stat_map = index_stat[bucket][index]
-                    field_value_map[index] = index_stat_map["MainStore"][plasma_stat_field]
+                    if plasma_stat_field in index_stat_map["MainStore"]:
+                        field_value_map[index] = index_stat_map["MainStore"][plasma_stat_field]
+                    elif plasma_stat_field in index_stat_map['MainStore']['lss_stats']:
+                        field_value_map[index] = index_stat_map["MainStore"]['lss_stats'][plasma_stat_field]
+                    else:
+                        self.fail("Negative digit in compressed count")
                     self.log.debug("field is:"+str(plasma_stat_field))
-                    self.log.debug("field value is: {}".format(index_stat_map["MainStore"][plasma_stat_field]))
+                    self.log.debug("field value is: {}".format(field_value_map[index]))
         return field_value_map
 
     def find_mem_used_percent(self, index_stats_map):
@@ -150,27 +157,28 @@ class PlasmaBaseTest(StorageBase):
             stats_obj_dict[str(node.ip)] = stat_obj
         return stats_obj_dict
 
-    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='equal', timeout=30):
-        isFound = False
+    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='lesser', timeout=30):
+        isFound = True
         for count in range(timeout):
+            isFound = True
             field_value_list = self.get_plasma_index_stat_value(field, stat_obj_list)
             for field_value in field_value_list.values():
                 field_value = int(field_value)
                 self.log.debug("field value: {} and expected value: {}".format(field_value, value))
                 if ops == 'equal':
                     self.log.debug("Equal operation")
-                    if field_value == value:
-                        isFound = True
+                    if not field_value == value:
+                        isFound = False
                         break
                 elif ops == 'greater':
                     self.log.debug("greater operation")
-                    if field_value > value:
-                        isFound = True
+                    if not field_value > value:
+                        isFound = False
                         break
                 else:
                     self.log.debug("lesser operation")
-                    if field_value < value:
-                        isFound = True
+                    if not field_value < value:
+                        isFound = False
                         break
             if isFound:
                 break
@@ -251,10 +259,10 @@ class PlasmaBaseTest(StorageBase):
         query_task_list = list()
         for bucket_name, bucket_data in indexMap.items():
             bucket = self.findBucket(bucket_name)
-            self.log.debug("bucket name is:".format(bucket.name))
+            self.log.debug("bucket name is:{}".format(bucket_name))
             for scope_name, collection_data in bucket_data.items():
                 scope = self.findScope(scope_name, bucket)
-                self.log.debug("bucket name is:".format(scope_name))
+                self.log.debug("bucket name is:{}".format(scope_name))
                 for collection_name, gsi_index_names in collection_data.items():
                     collection = self.findCollection(collection_name, scope)
                     offset = 0
