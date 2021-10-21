@@ -100,10 +100,10 @@ class EventHelper(object):
         :param events: List of events to be validated
         :returns boolean: 'False' in case of failure due to duplicate UUID
         """
-        event_id = set()
+        uuids = set()
         for event in events:
-            event_id.add(event[Event.Fields.EVENT_ID])
-        return len(events) != len(event_id)
+            uuids.add(event[Event.Fields.UUID])
+        return len(events) != len(uuids)
 
     def set_test_start_time(self):
         self.__test_start_time = self.get_timestamp_format(datetime.now())

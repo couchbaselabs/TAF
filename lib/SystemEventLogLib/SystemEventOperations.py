@@ -1,8 +1,9 @@
 import json
-from copy import deepcopy
-from random import choice
+import requests
 
 from Rest_Connection import RestConnection
+from copy import deepcopy
+from random import choice
 
 
 class SystemEventRestHelper:
@@ -88,6 +89,8 @@ class SystemEventRestHelper:
             get_params.update({"sinceTime": since_time})
         if events_count is not None:
             get_params.update({"limit": events_count})
-        status, content, _ = rest._http_request(api, params=get_params,
-                                                method=RestConnection.GET)
-        return json.loads(content)["events"]
+
+        response = requests.get(api, params=get_params,
+                                auth=(rest.username,
+                                      rest.password)).content
+        return json.loads(response)["events"]

@@ -53,7 +53,7 @@ class DataServiceEvents(object):
     def bucket_updated(node, bucket_uuid, old_settings, new_settings):
         return {
             Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: KvEngine.BucketUpdated,
+            Event.Fields.EVENT_ID: KvEngine.BucketConfigChanged,
             Event.Fields.COMPONENT: Event.Component.DATA,
             Event.Fields.EXTRA_ATTRS: {'bucket': bucket_uuid,
                                        'old_settings': old_settings,
@@ -124,7 +124,7 @@ class DataServiceEvents(object):
     def memcached_settings_changed(node, prev_settings, new_settings):
         return {
             Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: KvEngine.MemcachedSettingChanged,
+            Event.Fields.EVENT_ID: KvEngine.MemcachedConfigChanged,
             Event.Fields.COMPONENT: Event.Component.DATA,
             Event.Fields.EXTRA_ATTRS: {'prev_settings': prev_settings,
                                        'new_settings': new_settings}
