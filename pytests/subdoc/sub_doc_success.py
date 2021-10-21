@@ -1,5 +1,6 @@
 import json
 
+from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator,\
@@ -7,7 +8,9 @@ from couchbase_helper.documentgenerator import doc_generator, \
 from couchbase_helper.durability_helper import DurabilityHelper
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 from table_view import TableView
 
 
@@ -850,3 +853,66 @@ class BasicOps(DurabilityTestsBase):
         self.bucket_util._wait_for_stats_all_buckets()
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.validate_test_failure()
+
+    def test_doc_expiry_before_commit(self):
+        """
+        1. Create a empty doc with exp=5sec
+        2. Insert xattr to the same doc (preserve_expiry=True)
+        3. Wait for ep_queue_size to become zero
+        4. Insert few more docs to the bucket
+        5. Create a new secondary index to start DCP streaming from memory
+        6. Expect no crash after step#5
+        """
+
+        doc_ttl = 10
+        key = "test_xattr_doc-1"
+        index_retry = 10
+        index_created = False
+        index_name = "test_index"
+        bucket = self.bucket_util.buckets[0]
+        vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+
+        # Open SDK client
+        client = SDKClient([self.cluster.master], bucket)
+
+        # Create Sync_write doc with xattr + doc_ttl=10s
+        client.crud(DocLoading.Bucket.DocOps.CREATE, key, {},
+                    durability=self.durability_level)
+        client.crud("subdoc_insert", key, ["_sdkey", "abc123"],
+                    xattr=True, durability=self.durability_level)
+        client.crud(DocLoading.Bucket.DocOps.UPDATE, key, {},
+                    durability=self.durability_level, exp=doc_ttl)
+
+        # Wait for all items to get persist
+        self.log.info("Waiting for ep_queue_size to become zero")
+        self.bucket_util._wait_for_stats_all_buckets()
+
+        self.sleep(doc_ttl, "Wait for doc to expire")
+
+        self.log.info("Loading more docs into the targeted vb: %s"
+                      % vb_for_key)
+        doc_gen = doc_generator(self.key, self.num_items, 1000,
+                                target_vbucket=[vb_for_key])
+        doc_load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
+            durability=self.durability_level)
+        self.task_manager.get_task_result(doc_load_task)
+
+        rest = RestConnection(self.cluster.master)
+        rest.set_indexer_storage_mode()
+        self.log.info("Creating 2i on the bucket")
+        client.cluster.query("CREATE PRIMARY INDEX %s ON %s"
+                             % (index_name, bucket.name))
+        self.sleep(2, "Wait for primary index to be created")
+        while not index_created and index_retry != 0:
+            state = client.cluster \
+                .query("SELECT state FROM system:indexes "
+                       "WHERE name='%s'" % index_name) \
+                .rowsAsObject()[0].get("state")
+            if state == "online":
+                index_created = True
+            else:
+                index_retry -= 1
+                self.sleep(1, "Retrying.. Index not yet online")
+
+        client.close()
