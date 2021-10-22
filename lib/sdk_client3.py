@@ -135,19 +135,21 @@ class SDKClient(object):
                     # Code for cluster_run
                     if int(self.servers[0][1]) in xrange(ClusterRun.port,
                                                          ClusterRun.port+10):
-                        master_seed = HashSet(Collections.singletonList(
+                        seed_nodes = HashSet(Collections.singletonList(
                             SeedNode.create(
                                 self.servers[0][0],
                                 Optional.of(ClusterRun.memcached_port),
                                 Optional.of(int(self.servers[0][1])))))
-                        cluster_options = \
-                            cluster_options.seedNodes(master_seed)
-                    connection_string = "{0}://{1}".format(self.scheme, ", ".
-                                                           join(self.hosts).
-                                                           replace(" ", ""))
-                    self.cluster = Cluster.connect(connection_string,
-                                                   cluster_options)
-                    break
+                        self.cluster = Cluster.connect(seed_nodes,
+                                                       cluster_options)
+                        break
+                    else:
+                        connection_string = "{0}://{1}".format(self.scheme, ", ".
+                                                               join(self.hosts).
+                                                               replace(" ", ""))
+                        self.cluster = Cluster.connect(connection_string,
+                                                       cluster_options)
+                        break
                 except ConfigException as e:
                     self.log.error("Exception during cluster connection: %s"
                                    % e)
