@@ -742,25 +742,16 @@ class x509main:
                 if tries >= 4:
                     raise Exception(content)
 
-    def load_trusted_CAs(self, server=None, from_non_localhost=True):
+    def load_trusted_CAs(self, server=None):
         if not server:
             server = self.host
-        if from_non_localhost:
-            shell = RemoteMachineShellConnection(server)
-            shell.non_local_CA_upload(allow=True)
-            shell.disconnect()
         rest = RestConnection(server)
         status, content = rest.load_trusted_CAs()
-        if from_non_localhost:
-            shell = RemoteMachineShellConnection(server)
-            shell.non_local_CA_upload(allow=False)
-            shell.disconnect()
         if not status:
             msg = "Could not load Trusted CAs on %s; Failed with error %s" \
                   % (server.ip, content)
             raise Exception(msg)
         return content
-        # ToDO write code to upload from localhost
 
     def reload_node_certificates(self, servers):
         """
