@@ -1048,9 +1048,9 @@ class ServerTasks(object):
         return _task
 
     def compare_KV_Indexer_data(self, cluster, server, task_manager, query, sdk_client_pool, bucket, scope, collection,
-                                index_name,offset):
+                                index_name, offset, field='body'):
         _task = jython_tasks.CompareIndexKVData(cluster=cluster, server=server, task_manager=task_manager, query=query,
                                                 sdk_client_pool=sdk_client_pool, bucket=bucket, scope=scope,
-                                                collection=collection, index_name=index_name, offset=offset)
+                                                collection=collection, index_name=index_name, offset=offset, field=field)
         self.jython_task_manager.add_new_task(_task)
         return _task

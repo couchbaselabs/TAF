@@ -7,9 +7,10 @@ import copy
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
+from Cb_constants import DocLoading
 from Cb_constants.CBServer import CbServer
 from basetestcase import BaseTestCase
-from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.documentgenerator import doc_generator, SubdocDocumentGenerator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
@@ -149,7 +150,7 @@ class StorageBase(BaseTestCase):
         # Creation of collection of num_collections is > 1
         for bucket in self.cluster.buckets:
             for scope_name in self.scopes:
-                for i in range(1, self.num_collections):
+                for i in range(len(bucket.scopes[scope_name].collections), self.num_collections):
                     collection_name = collection_prefix + str(i)
                     self.log.info("Creating scope::collection {} {}\
                     ".format(scope_name, collection_name))
@@ -184,15 +185,19 @@ class StorageBase(BaseTestCase):
             self.key_size = self.input.param("key_size", 20)
 
         self.doc_ops = self.input.param("doc_ops", "create")
+        self.sub_doc_ops = self.input.param("sub_doc_ops", "upsert")
         self.doc_size = self.input.param("doc_size", 2048)
+        self.different_field = self.input.param("different_field", False)
         self.gen_create = None
         self.gen_delete = None
+        self.gen_subdoc_upsert = None
         self.gen_read = None
         self.gen_update = None
         self.gen_expiry = None
         self.create_perc = 100
         self.read_perc = 0
         self.update_perc = 0
+        self.upsert_perc = 0
         self.delete_perc = 0
         self.expiry_perc = 0
         self.start = 0
@@ -257,7 +262,8 @@ class StorageBase(BaseTestCase):
                          "sdk_timeout_unit": self.time_unit,
                          "sdk_timeout": self.sdk_timeout,
                          "doc_ttl": 0,
-                         "doc_gen_type": "default"}
+                         "doc_gen_type": "default",
+                         "xattr_test":False}
         for bucket in self.cluster.buckets:
             loader_dict.update({bucket: dict()})
             loader_dict[bucket].update({"scopes": dict()})
@@ -267,25 +273,29 @@ class StorageBase(BaseTestCase):
                 for collection in bucket.scopes[scope].collections.keys():
                     loader_dict[bucket]["scopes"][scope]["collections"].update({collection:dict()})
                     if self.gen_update is not None:
-                        op_type = "update"
+                        op_type = DocLoading.Bucket.DocOps.UPDATE
                         common_params.update({"doc_gen": self.gen_update})
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
                     if self.gen_create is not None:
-                        op_type = "create"
+                        op_type = DocLoading.Bucket.DocOps.CREATE
                         common_params.update({"doc_gen": self.gen_create})
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
                     if self.gen_delete is not None:
-                        op_type = "delete"
+                        op_type = DocLoading.Bucket.DocOps.DELETE
                         common_params.update({"doc_gen": self.gen_delete})
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
+                    if self.gen_subdoc_upsert is not None:
+                        op_type = DocLoading.Bucket.SubDocOps.INSERT
+                        common_params.update({"doc_gen": self.gen_subdoc_upsert})
+                        loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
                     if self.gen_expiry is not None and self.maxttl:
-                        op_type = "update"
+                        op_type = DocLoading.Bucket.DocOps.UPDATE
                         common_params.update({"doc_gen": self.gen_expiry,
                                               "doc_ttl": self.maxttl})
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
                         common_params.update({"doc_ttl": 0})
                     if self.gen_read is not None:
-                        op_type = "read"
+                        op_type = DocLoading.Bucket.DocOps.READ
                         common_params.update({"doc_gen": self.gen_read,
                                               "skip_read_success_results": True,
                                               "track_failures": False,
@@ -630,6 +640,9 @@ class StorageBase(BaseTestCase):
                              mutate=mutate,
                              deep_copy=self.deep_copy)
 
+    def generate_sub_docs_basic(self, start, end):
+        return self.custom_sub_doc_generator(self.key, start, end, key_size=self.key_size)
+
     def generate_docs(self, doc_ops=None,
                       target_vbucket=None,
                       create_end=None, create_start=None,
@@ -723,7 +736,39 @@ class StorageBase(BaseTestCase):
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
                                                       self.expiry_end,
                                                       target_vbucket=target_vbucket,
+
                                                       mutate=expiry_mutate)
+
+    def generate_subDocs(self, sub_doc_ops=None,
+                      upsert_end=None, upsert_start=None
+                        ):
+        sub_doc_ops = sub_doc_ops
+
+        if DocLoading.Bucket.SubDocOps.UPSERT in sub_doc_ops:
+            if upsert_start is not None:
+                self.upsert_start = upsert_start
+            if upsert_end is not None:
+                self.upsert_end = upsert_end
+
+            if self.upsert_start is None:
+                self.upsert_start = self.start
+            if self.upsert_end is None:
+                self.upsert_end = self.end * self.upsert_perc / 100
+
+            self.mutate += 1
+            self.gen_subdoc_upsert = self.generate_sub_docs_basic(self.upsert_start,
+                                                      self.upsert_end)
+
+    def custom_sub_doc_generator(self, key, start, end,
+                          target_vbucket=None, vbuckets=1024, key_size=8):
+        mod_body_value_list = ['l3yd8gxieLqc', 'WNvwxIxr2n3Db', 'pde5T6150CWDDJ', 'AV5YFDlZdXUBUI', 'wgFLA8bHc8nTj', '8Mix2170glcrLi', 'C1A9qKXuhJypUCsT', '3JBybTwuih9oCYSxi', 'coV8DBuY4BLziZoc', 'BSlRsbFI8Mix21']
+        template = '{{ "mod_body": "{0}"}}'
+        return SubdocDocumentGenerator(key, template,
+                                           mod_body_value_list,
+                                           start=start, end=end,
+                                           target_vbucket=target_vbucket,
+                                           vbuckets=vbuckets,
+                                           key_size=key_size)
 
     def loadgen_docs(self,
                      retry_exceptions=[],

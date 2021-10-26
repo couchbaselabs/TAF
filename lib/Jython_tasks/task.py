@@ -4043,7 +4043,7 @@ class MutateDocsFromSpecTask(Task):
 
 class CompareIndexKVData(Task):
     def __init__(self, cluster, server, task_manager,
-                 sdk_client_pool, query, bucket, scope, collection,index_name,offset,
+                 sdk_client_pool, query, bucket, scope, collection, index_name, offset, field='body',
                  track_failures=True):
         super(CompareIndexKVData, self).__init__(
             "CompareIndexKVData_%s_%s_%s" % (index_name, offset, time.time()))
@@ -4057,6 +4057,7 @@ class CompareIndexKVData(Task):
         self.bucket = bucket
         self.scope = scope
         self.collection = collection
+        self.field = field
 
     def call(self):
         self.start_task()
@@ -4079,7 +4080,8 @@ class CompareIndexKVData(Task):
             keys = self.create_list(resultList, 'id')
             success, fail = self.client.get_multi(
                         keys)
-            self.set_result(self.compareResult(success, resultList))
+            self.log.debug("field is: {}".format(self.field))
+            self.set_result(self.compareResult(success, resultList, self.field))
         except Exception as e:
             self.test_log.error(e)
             self.set_exception(e)

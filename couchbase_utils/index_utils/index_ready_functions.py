@@ -44,12 +44,14 @@ class IndexUtils:
                     build_query = "BUILD INDEX on `%s`.`%s`.`%s`(%s) " \
                                   "USING GSI" \
                                   % (bucket, scope, collection, gsi_index_names)
+                    self.log.debug("Query is: {}".format(build_query))
                     query_client = restClient_Obj_list[x % query_nodes_count]
-                    query_client.query_tool(build_query)
+                    json_load = query_client.query_tool(build_query)
+                    self.log.debug("Json load for deferred build is: {}".format(json_load))
                     x += 1
 
     def create_gsi_on_each_collection(self, cluster, buckets=None, gsi_base_name=None,
-                                      replica=0, defer=True, number_of_indexes_per_coll=1, count=1,
+                                      replica=0, defer=True, number_of_indexes_per_coll=1, count=0,
                                       field='key', sync=False, timeout=600):
         """
         Create gsi indexes on collections - according to number_of_indexes_per_coll
@@ -89,7 +91,7 @@ class IndexUtils:
                         self.log.debug("Sending index name:"+gsi_index_name)
                         task = self.task.async_execute_query(server=query_node_list[query_node_instance],
                                                              query=create_index_query,
-                                                             isIndexerQuery=True, bucket=bucket,
+                                                             isIndexerQuery=not defer, bucket=bucket,
                                                              indexName=gsi_index_name, timeout= timeout)
                         if sync:
                             self.task_manager.get_task_result(task)
@@ -155,6 +157,25 @@ class IndexUtils:
                         x += 1
         return dropIndexTaskList, indexes_dropped
 
+    def alter_indexes(self, cluster, indexesDict, num_replicas = 1):
+        alter_index_task_info = list()
+        x = 0
+        query_len = len(cluster.query_nodes)
+        for bucket, bucket_data in indexesDict.items():
+            for scope, collection_data in bucket_data.items():
+                for collection, gsi_index_names in collection_data.items():
+                    for gsi_index_name in gsi_index_names:
+                        full_keyspace_name = "default:`" + bucket + "`.`" + scope + "`.`" + \
+                                             collection + "`.`" + gsi_index_name + "`"
+                        query_node_index = x % query_len
+                        query = "ALTER INDEX %s WITH {\"action\": \"replica_count\", \"num_replica\": %s}" % (
+                        full_keyspace_name, num_replicas + 1)
+                        task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query,
+                                                             isIndexerQuery=False)
+                        alter_index_task_info.append(task)
+                        x += 1
+        return alter_index_task_info
+
     def delete_docs_with_field(self, cluster, indexMap, field='body', sync=True):
         """
         Drop gsi indexes
@@ -186,7 +207,7 @@ class IndexUtils:
         result = conn.query_tool(query, timeout)
         return result
 
-    def wait_for_indexes_to_go_online(self, cluster, buckets, gsi_index_name, timeout=300):
+    def wait_for_indexes_to_go_online(self, cluster, buckets, gsi_index_name, timeout=600):
         """
         Wait for indexes to go online after building the deferred indexes
         """
@@ -206,27 +227,44 @@ class IndexUtils:
     def randStr(self, Num=10):
         return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(Num))
 
-    def run_full_scan(self, cluster, indexesDict, key, is_sync=False):
+    def run_full_scan(self, cluster, indexesDict, key, totalCount, limit=1000000, is_sync=True):
         query_tasks_info = list()
         x = 0
         query_len = len(cluster.query_nodes)
+        self.log.debug("Limit is {} and total Count is {}".format(limit, totalCount))
         for bucket, bucket_data in indexesDict.items():
             for scope, collection_data in bucket_data.items():
                 for collection, gsi_index_names in collection_data.items():
                     for gsi_index_name in gsi_index_names:
-                        query_node_index = x % query_len
-                        query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s is not missing;" % (
-                            bucket, scope, collection, gsi_index_name, key)
-                        self.log.debug("Query is {}".format(query))
-                        task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query)
-                        query_tasks_info.append(task)
-                        if is_sync:
-                            self.log.debug("Is sync is true")
-                            if x == query_len - 1:
-                                self.log.debug("Getting status for each query")
-                                for task in query_tasks_info:
-                                    self.task_manager.get_task_result(task)
-                                self.log.debug("Resetting the list")
-                                query_tasks_info = list()
-                        x += 1
+                        offset = 0
+                        while True:
+                            query_node_index = x % query_len
+                            query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s is not missing order by meta().id limit %s offset %s" % (
+                                bucket, scope, collection, gsi_index_name, key, limit, offset)
+                            self.log.debug("Query is {}".format(query))
+                            self.log.debug("Offset is {} ".format(offset))
+                            task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query)
+                            query_tasks_info.append(task)
+                            x += 1
+                            if is_sync:
+                                self.log.debug("Is sync is true")
+                                if x == query_len:
+                                    self.log.debug("Getting status for each query")
+                                    for task in query_tasks_info:
+                                        self.task_manager.get_task_result(task)
+                                    self.log.debug("Resetting the list")
+                                    query_tasks_info = list()
+                                    x = 0
+                            offset += limit
+                            if offset > totalCount:
+                                break
         return query_tasks_info
+
+    def get_indexer_mem_quota(self, indexer_node):
+        """
+        Get Indexer memory Quota
+        :param indexer_node:
+        """
+        rest = RestConnection(indexer_node)
+        content = rest.cluster_status()
+        return int(content['indexMemoryQuota'])
