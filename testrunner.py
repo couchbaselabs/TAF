@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 import base64
-import gzip
 import glob
 import logging
 import logging.config
 import os
 import re
-import shutil
 import sys
 import threading
 import time
@@ -14,7 +12,6 @@ import unittest
 import urllib2
 import xml.dom.minidom
 
-from httplib import BadStatusLine
 from optparse import OptionParser, OptionGroup
 from os.path import basename, splitext
 from pprint import pprint
@@ -27,16 +24,12 @@ sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 from TestInput import TestInputParser, TestInputSingleton
-from scripts.collect_server_info import cbcollectRunner, couch_dbinfo_Runner
-from scripts.getcoredumps import Getcoredumps, Clearcoredumps
 from xunit import XUnitTestResult
-
-if sys.hexversion < 0x02060000:
-    print("Testrunner requires version 2.6+ of python")
-    sys.exit()
 
 
 def usage(err=None):
+    if err is not None:
+        print("Error: %s" % err)
     print("""\
 Syntax: testrunner [options]
 
@@ -48,11 +41,8 @@ Examples:
 
 
 def parse_args(argv):
-
     parser = OptionParser()
-
     parser.add_option("-q", action="store_false", dest="verbose")
-
     tgroup = OptionGroup(parser, "TestCase/Runlist Options")
     tgroup.add_option("-i", "--ini",
                       dest="ini",
@@ -273,13 +263,12 @@ def process_include_or_filter_exclude_tests(filtertype, option, tests,
             passfail = option.split("=")
             tests_list = []
             if len(passfail) == 2:
-                if passfail[1].startswith("http://") or passfail[
-                    1].startswith("https://"):
+                if passfail[1].startswith("http://") \
+                        or passfail[1].startswith("https://"):
                     tp, tf = parse_testreport_result_xml(passfail[1])
                 else:
                     tp, tf = parse_junit_result_xml(passfail[1])
-            elif option.startswith("http://") or option.startswith(
-                    "https://"):
+            elif option.startswith("http://") or option.startswith("https://"):
                 tp, tf = parse_testreport_result_xml(option)
                 tests_list = tp + tf
             else:
@@ -319,12 +308,9 @@ def process_include_or_filter_exclude_tests(filtertype, option, tests,
                 tests = [i for i in tests if re.search(option, i)]
             else:
                 tests = [i for i in tests if not re.search(option, i)]
-
     else:
-        print(
-            "Warning: unknown filtertype given (only include/exclude "
-            "supported)!")
-
+        print("Warning: unknown filtertype given (only include/exclude "
+              "supported)!")
     return tests
 
 
@@ -370,10 +356,8 @@ def parse_testreport_result_xml(filepath=""):
                 tcstatus = getNodeText(
                     (tc.getElementsByTagName("status")[0]).childNodes)
                 if tcstatus == 'PASSED':
-                    failed = False
                     passed_tests.append(tcname)
                 else:
-                    failed = True
                     failed_tests.append(tcname)
 
     if failed_tests:
@@ -410,7 +394,6 @@ def parse_junit_result_xml(filepath=""):
         doc = xml.dom.minidom.parse(xml_file)
         testsuitelem = doc.getElementsByTagName("testsuite")
         for ts in testsuitelem:
-            tsname = ts.getAttribute("name")
             testcaseelem = ts.getElementsByTagName("testcase")
             failed = False
             for tc in testcaseelem:
@@ -742,4 +725,7 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.hexversion < 0x02060000:
+        usage("Testrunner requires version 2.6+ of python")
+
     main()
