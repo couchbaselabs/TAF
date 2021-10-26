@@ -73,6 +73,7 @@ class MultipleCA(ClusterSetup):
         for server in self.cluster.servers:
             _ = self.x509.upload_root_certs(server)
         self.x509.upload_node_certs(servers=self.cluster.servers)
+        self.x509.delete_unused_out_of_the_box_CAs(self.cluster.master)
         self.x509.upload_client_cert_settings(server=self.cluster.servers[0])
         status = self.task.rebalance(self.cluster.servers[:self.nodes_init],
                                      self.cluster.servers[self.nodes_init:], [])
@@ -92,6 +93,7 @@ class MultipleCA(ClusterSetup):
         for server in self.cluster.servers:
             _ = self.x509.upload_root_certs(server)
         self.x509.upload_node_certs(servers=self.cluster.servers)
+        self.x509.delete_unused_out_of_the_box_CAs(self.cluster.master)
         self.x509.upload_client_cert_settings(server=self.cluster.servers[0])
         self.log.info("Checking authentication ...")
         self.auth()
