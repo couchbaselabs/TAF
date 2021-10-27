@@ -1,11 +1,17 @@
 from random import randint
+from threading import Thread
 
+from BucketLib.bucket import Bucket
+from Cb_constants import DocLoading
+from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from basetestcase import ClusterSetup
 from BucketLib.BucketOperations import BucketHelper
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
+from sdk_exceptions import SDKException
 from table_view import TableView
 
 
@@ -591,3 +597,85 @@ class ExpiryMaxTTL(ClusterSetup):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+    def test_ttl_less_than_durability_timeout(self):
+        """
+        MB-43238
+        1. Regular write with TTL 1 second for some key
+        2. Disable expiry pager (to prevent raciness)
+        3. Wait TTL period
+        4. Disable persistence on the node with the replica vBucket for that key
+        5. SyncWrite PersistMajority to active vBucket for that key (should hang)
+        6. Access key on other thread to trigger expiry
+        7. Observe DCP connection being torn down without fix
+        """
+        def perform_sync_write():
+            client.crud(DocLoading.Bucket.DocOps.CREATE, key, {},
+                        durability=Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+                        timeout=60)
+
+        doc_ttl = 5
+        shell = None
+        target_node = None
+        key = "test_ttl_doc"
+        vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+        bucket = self.cluster.buckets[0]
+
+        # Find target node for replica VB
+        for target_node in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(target_node)
+            cb_stats = Cbstats(shell)
+            if vb_for_key in cb_stats.vbucket_list(bucket.name, "replica"):
+                break
+            shell.disconnect()
+
+        self.log.info("Target node: %s, Key: %s" % (target_node.ip, key))
+        self.log.info("Disabling expiry_pager")
+        cb_ep_ctl = Cbepctl(shell)
+        cb_ep_ctl.set(bucket.name, "flush_param", "exp_pager_stime", 0)
+
+        # Create SDK client
+        client = SDKClient([self.cluster.master], bucket)
+
+        self.log.info("Non-sync write with TTL=%s" % doc_ttl)
+        client.crud(DocLoading.Bucket.DocOps.CREATE, key, {}, exp=doc_ttl)
+
+        self.sleep(doc_ttl, "Wait for document to expire")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+
+        self.log.info("Stopping persistence on replica VB node using cbepctl")
+        cb_ep_ctl.persistence(bucket.name, "stop")
+
+        # Start doc_load with lesser ttl
+        doc_create_thread = Thread(target=perform_sync_write)
+        doc_create_thread.start()
+        self.sleep(2, "Wait for sync_write thread to start")
+
+        self.log.info("Read key from another thread to trigger expiry")
+        failure = None
+        result = client.crud(DocLoading.Bucket.DocOps.READ, key)
+        if SDKException.DocumentNotFoundException not in str(result["error"]):
+            failure = "Invalid exception: %s" % result["error"]
+
+        self.log.info("Resuming persistence on target node")
+        cb_ep_ctl.persistence(bucket.name, "start")
+
+        # Wait for doc_create_thread to complete
+        doc_create_thread.join()
+
+        # Close SDK client and shell connections
+        client.close()
+        shell.disconnect()
+
+        if failure:
+            self.fail(failure)
+
+        for node in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(node)
+            cb_stats = Cbstats(shell).all_stats(bucket.name)
+            self.log.info("Node: %s, ep_expired_access: %s"
+                          % (node.ip, cb_stats["ep_expired_access"]))
+            shell.disconnect()
+            self.assertEqual(int(cb_stats["ep_expired_access"]), 0,
+                             "%s: ep_expired_access != 0" % node.ip)
