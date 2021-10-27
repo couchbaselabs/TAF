@@ -850,7 +850,7 @@ class BasicOps(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.num_items)
         self.validate_test_failure()
 
-    def test_doc_expiry_before_commit(self):
+    def test_expired_sys_xattr_consumed_by_dcp(self):
         """
         1. Create a empty doc with exp=5sec
         2. Insert xattr to the same doc (preserve_expiry=True)
