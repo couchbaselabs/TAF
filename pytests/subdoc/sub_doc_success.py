@@ -666,12 +666,12 @@ class BasicOps(DurabilityTestsBase):
 
             # Failover validation
             val = failover_info["init"][node.ip] \
-                  != failover_info["afterCrud"][node.ip]
+                != failover_info["afterCrud"][node.ip]
             self.assertTrue(val, msg="Failover stats got updated")
 
             # Seq_no validation (High level)
             val = vb_info_info["init"][node.ip] \
-                  != vb_info_info["afterCrud"][node.ip]
+                != vb_info_info["afterCrud"][node.ip]
             self.assertTrue(val, msg="vbucket seq_no not updated after CRUDs")
 
         # Verify doc count
@@ -710,8 +710,6 @@ class BasicOps(DurabilityTestsBase):
         vb_info_info["init"] = dict()
         vb_info_info["afterCrud"] = dict()
         def_bucket = self.bucket_util.buckets[0]
-        insert_end_index = self.num_items / 3
-        upsert_end_index = (self.num_items / 3) * 2
 
         self.log.info("Selecting nodes to simulate error condition")
         target_nodes = self.getTargetNodes()
@@ -873,13 +871,13 @@ class BasicOps(DurabilityTestsBase):
 
             # Failover validation
             val = failover_info["init"][node.ip] \
-                  == failover_info["afterCrud"][node.ip]
+                == failover_info["afterCrud"][node.ip]
             error_msg = "Failover stats not updated after error condition"
             self.assertTrue(val, msg=error_msg)
 
             # Seq_no validation (High level)
             val = vb_info_info["init"][node.ip] \
-                  != vb_info_info["afterCrud"][node.ip]
+                != vb_info_info["afterCrud"][node.ip]
             self.assertTrue(val, msg="vbucket seq_no not updated after CRUDs")
 
         # Disconnect the shell connection
