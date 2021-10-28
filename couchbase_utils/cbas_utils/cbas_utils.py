@@ -2264,10 +2264,13 @@ class Dataset_Util(Link_Util):
                 dataverse_name = bucket.name + "." + scope.name
                 # To cover the scenario where the default collection is not
                 # present.
-                if collection:
-                    dataset_name = collection.name
-                else:
-                    dataset_name = "_default"
+                if not collection:
+                    # Assign a dummy collection object
+                    active_collections = bucket_util.get_active_collections(
+                        bucket, scope.name, only_names=False)
+                    collection = random.choice(active_collections)
+                    collection.name = "_default"
+                dataset_name = collection.name
             else:
                 dataverse_name = None
 
@@ -3682,9 +3685,9 @@ class CbasUtil(UDFUtil):
                 self.error_count += 1
                 self.log.error(str(e))
 
-    def retrieve_cc_ip_from_master(self, cluster):
+    def retrieve_cc_ip_from_master(self, cbas_node):
 
-        response = self.fetch_analytics_cluster_response(cluster.master)
+        response = self.fetch_analytics_cluster_response(cbas_node)
         if response:
             cc_node_id = ""
             cc_node_ip = ""
@@ -3696,16 +3699,19 @@ class CbasUtil(UDFUtil):
                     if node["nodeId"] == cc_node_id:
                         cc_node_ip = node['nodeName'].split(":")[0]
                         break
-
+            self.log.debug("CC IP retrieved from master is {0}".format(cc_node_ip))
             return cc_node_ip
         else:
+            self.log.debug(
+                "Following response was received from master node - {"
+                "0}".format(response))
             return response
 
     def retrieve_nodes_config(self, cluster, only_cc_node_url=True):
         """
         Retrieves status of a request from /analytics/status endpoint
         """
-        response = self.fetch_analytics_cluster_response(cluster.master)
+        response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
         if response:
             cc_node_id = ""
             nodes = None
@@ -3732,23 +3738,26 @@ class CbasUtil(UDFUtil):
         else:
             return None,None,None
 
-    def fetch_analytics_cluster_response(self, master_node):
+    def fetch_analytics_cluster_response(self, cbas_node):
         """
-        Retrieves response from /analytics/status endpoint
+        Retrieves response from /analytics/cluster endpoint
         """
-        url = "http://{0}:8091/_p/cbas/analytics/cluster".format(master_node.ip)
+        url = "http://{0}:8095/analytics/cluster".format(
+            cbas_node.ip)
         response = requests.get(url, auth=(
-            master_node.rest_username, master_node.rest_password))
-        if response.status_code == 200:
+            cbas_node.rest_username, cbas_node.rest_password))
+        if response.status_code in [200, 201, 204]:
             return response.json()
         else:
+            self.log.debug("/analytics/cluster response - {0}".format(str(
+                response.content)))
             return None
 
     def is_analytics_running(self, cluster, timeout=600):
         end_time = time.time() + timeout
         self.log.info("Waiting for analytics service to come up")
         while end_time > time.time():
-            response = self.fetch_analytics_cluster_response(cluster.master)
+            response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
             if response and response["state"] == "ACTIVE":
                 return True
             time.sleep(10)
@@ -4458,6 +4467,9 @@ class CbasUtil(UDFUtil):
             expected_error, expected_error_code)
 
     def wait_for_replication_to_finish(self, cluster, timeout=600):
+        """
+        This method waits for replication to finish.
+        """
         self.log.info("Waiting for replication to finish")
         stats_helper = StatsHelper(cluster.master)
         ingestion_complete = False
@@ -4474,7 +4486,10 @@ class CbasUtil(UDFUtil):
         return ingestion_complete
 
     def verify_actual_number_of_replicas(self, cluster, expected_num):
-        response = self.fetch_analytics_cluster_response(cluster.master)
+        """
+        Verifies actual number of replicas created for each partition.
+        """
+        response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
         if response:
             replica_num_matched = True
             if response["partitionsTopology"]["numReplicas"] == expected_num:
@@ -4495,6 +4510,90 @@ class CbasUtil(UDFUtil):
             return replica_num_matched
         else:
             return False
+
+    def force_flush_cbas_data_to_disk(self, rest, dataverse_name,
+                                      dataset_name, username=None, password=None):
+        """
+        This method force flushes the data to the disk for the dataset
+        specified.
+        """
+        uri = "/analytics/connector?"
+        for dv_part in dataverse_name.split("."):
+            uri += "dataverseName={0}&".format(urllib.quote_plus(
+                CBASHelper.unformat_name(dv_part), safe=""))
+        uri += "datasetName={0}".format(urllib.quote_plus(
+            CBASHelper.unformat_name(dataset_name), safe=""))
+
+        if not username:
+            username = rest.username
+        if not password:
+            password = rest.password
+
+        headers = rest._create_headers(username, password)
+
+        response = requests.request("GET", uri, headers=headers)
+        try:
+            content = response.json()
+        except Exception:
+            content = response.content
+        if response.status_code in [200, 201, 202]:
+            return True
+        else:
+            return False
+
+    def get_partition_storage_paths(self, cluster):
+        """
+        This method returns a dict containing info on which node is the
+        partition located and it's storage path on that node.
+        """
+        nodes_info = dict()
+        storage_info = dict()
+
+        response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
+
+        if response:
+            for node in response["nodes"]:
+                if node["nodeId"] not in nodes_info:
+                    nodes_info[node["nodeId"]] = node["nodeName"].split(":")[0]
+            for partition in response["partitions"]:
+                if partition["partitionId"] not in storage_info:
+                    storage_info["partitionId"] = {
+                        "path": partition["path"],
+                        "node": nodes_info[partition["nodeId"]]
+                    }
+        return storage_info
+
+
+class FlushToDiskTask(Task):
+    def __init__(self, cluster, cbas_util, datasets=[], run_infinitely=False,
+                 interval=5):
+        super(FlushToDiskTask, self).__init__("FlushToDiskTask")
+        self.cluster = cluster
+        self.cbas_util = cbas_util
+        if datasets:
+            self.datasets = datasets
+        else:
+            self.datasets = self.cbas_util.list_all_dataset_objs()
+        self.run_infinitely = run_infinitely
+        self.results = []
+        self.interval = interval
+
+    def call(self):
+        self.start_task()
+        try:
+            while True:
+                for dataset in self.datasets:
+                    self.results.append(self.cbas_util.force_flush_cbas_data_to_disk(
+                        self.cluster.rest, dataset.dataverse_name,
+                        dataset.name))
+                    self.sleep(self.interval)
+                if not self.run_infinitely:
+                    break
+        except Exception as e:
+            self.set_exception(e)
+            return
+        self.result = all(self.results)
+        self.complete_task()
 
 
 class DisconnectConnectLinksTask(Task):

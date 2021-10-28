@@ -202,9 +202,11 @@ class CBASBaseTest(BaseTestCase):
                     service_mem_in_cluster = cluster_info.__getattribute__(property_name)
                     self.service_mem_dict[service][2] = service_mem_in_cluster
 
-            for j, server in enumerate(cluster.servers):
+            j = 1
+            for server in cluster.servers:
                 if server.ip != cluster.master.ip:
                     server.services = self.services_init[i][j].replace(":", ",")
+                    j += 1
                     if "cbas" in server.services:
                         cluster.cbas_nodes.append(server)
                     if "kv" in server.services:
@@ -246,12 +248,16 @@ class CBASBaseTest(BaseTestCase):
                 retry = 0
                 while True and retry < 60:
                     cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
-                        cluster)
+                        cluster.cbas_nodes[0])
                     if cbas_cc_node_ip:
                         break
                     else:
                         self.sleep(10, "Waiting for CBAS service to come up")
                         retry += 1
+
+                if not cbas_cc_node_ip:
+                    self.fail("CBAS service did not come up even after 10 "
+                              "mins.")
 
                 for server in cluster.cbas_nodes:
                     if server.ip == cbas_cc_node_ip:
