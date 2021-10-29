@@ -11,6 +11,7 @@ from BucketLib.BucketOperations import BucketHelper
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from sdk_exceptions import SDKException
 from table_view import TableView
 
 
@@ -582,6 +583,7 @@ class ExpiryMaxTTL(BaseTestCase):
         doc_ttl = 5
         shell = None
         target_node = None
+        failure = None
         key = "test_ttl_doc"
         vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
         bucket = self.bucket_util.buckets[0]
@@ -619,6 +621,8 @@ class ExpiryMaxTTL(BaseTestCase):
         self.log.info("Read key from another thread to trigger expiry")
         tem_client = SDKClient([self.cluster.master], bucket)
         result = tem_client.crud(DocLoading.Bucket.DocOps.READ, key)
+        if SDKException.DocumentNotFoundException not in str(result["error"]):
+            failure = "Invalid exception: %s" % result["error"]
         tem_client.close()
 
         self.log.info("Resuming persistence on target node")
@@ -631,11 +635,17 @@ class ExpiryMaxTTL(BaseTestCase):
         client.close()
         shell.disconnect()
 
+        if failure:
+            self.fail(failure)
+
+        patterns = ['runloop', 'synchronous write in progress']
         for node in self.cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(node)
-            cb_stats = Cbstats(shell).all_stats(bucket.name)
-            self.log.info("Node: %s, ep_expired_access: %s"
-                          % (node.ip, cb_stats["ep_expired_access"]))
+            for pattern in patterns:
+                output, _ = shell.execute_command(
+                    "grep -iR '%s' /opt/couchbase/var/lib/couchbase/logs/"
+                    % pattern)
+                if output:
+                    failure = output
             shell.disconnect()
-            self.assertEqual(int(cb_stats["ep_expired_access"]), 0,
-                             "%s: ep_expired_access != 0" % node.ip)
+            self.assertIsNone(failure, "Error in %s: %s" % (node.ip, failure))
