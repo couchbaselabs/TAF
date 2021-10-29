@@ -3711,6 +3711,38 @@ class RestConnection(object):
                                                      'DELETE')
         return status, content, response
 
+    def set_scope_limit(self, bucket, scope, limits):
+        """ Set a scope limit
+
+        Params:
+            bucket (str): The name of the bucket.
+            scope (str): The name of the scope.
+            limits (dict): A dict of the form {"kv": {"data_size": 1024}}.
+
+            Supplying an empty dictionary clears all limits.
+        """
+        target = self.baseUrl + "/pools/default/{}/scopes".format(bucket)
+        status, content, _ = self._http_request(target,
+                                                'POST',
+                                                params=json.dumps({'scope': scope, 'limits': limits}))
+        return status, content
+
+    def enforce_limits(self, enable=True):
+        """ The limits take effect once this function is called.
+
+        """
+        self.set_internalSetting("enforceLimits", enable)
+
+    def get_path(self, api, path):
+        """ Retrieve a json path from an end-point """
+        status, content, _ = self._http_request(self.baseUrl + api, 'GET')
+        result = json.loads(content)
+
+        for key in path.split('.'):
+            result = result[key]
+
+        return result
+
 
 class MembaseServerVersion:
     def __init__(self, implementationVersion='', componentsVersion=''):
