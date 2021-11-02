@@ -100,7 +100,8 @@ class CrashTest(CollectionBase):
                 CbServer.default_scope].collections[
                 CbServer.default_collection].num_items += self.num_items
             verification_dict["ops_create"] += self.num_items
-            if self.durability_level:
+            if self.durability_level \
+                    and self.durability_level != Bucket.DurabilityLevel.NONE:
                 verification_dict["sync_write_committed_count"] += \
                     self.num_items
             # Verify cbstats vbucket-details
