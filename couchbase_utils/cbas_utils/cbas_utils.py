@@ -218,6 +218,7 @@ class BaseUtil(object):
         :param name_key str, if specified, it will generate name with the name_key
         """
         if not seed:
+            sleep(0.1, "Sleeping before generating name")
             random.seed(round(time.time()*1000))
         else:
             random.seed(seed)
@@ -2355,11 +2356,12 @@ class Dataset_Util(Link_Util):
         return all(results)
 
     def create_dataset_obj(
-            self, cluster, bucket_util, dataset_cardinality=1, bucket_cardinality=1,
-            enabled_from_KV=False, for_all_kv_entities=False,
-            remote_dataset=False, link=None, same_dv_for_link_and_dataset=False,
-            name_length=30, fixed_length=False, exclude_bucket=[],
-            exclude_scope=[], exclude_collection=[], no_of_objs=1):
+            self, cluster, bucket_util, dataset_cardinality=1,
+            bucket_cardinality=1, enabled_from_KV=False,
+            for_all_kv_entities=False, remote_dataset=False, link=None,
+            same_dv_for_link_and_dataset=False, name_length=30,
+            fixed_length=False, exclude_bucket=[], exclude_scope=[],
+            exclude_collection=[], no_of_objs=1):
         """
         Generates dataset objects.
         """
@@ -2486,8 +2488,8 @@ class Dataset_Util(Link_Util):
                         collection.name in exclude_collection):
                         collection = random.choice(active_collections)
 
-                    dataset_objs.append(create_object(bucket, scope,
-                                                      collection))
+                    dataset_objs.append(create_object(
+                        bucket, scope, collection))
         return dataset_objs
 
     def create_external_dataset_azure_obj(
@@ -4648,6 +4650,16 @@ class CbasUtil(UDFUtil):
                         ingestion_complete = True
         return ingestion_complete
 
+    def get_actual_number_of_replicas(self, cluster):
+        """
+        Fetches number of replicas that are currently created in CBAS
+        """
+        response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
+        if response:
+            return response["partitionsTopology"]["numReplicas"]
+        else:
+            return -1
+
     def verify_actual_number_of_replicas(self, cluster, expected_num):
         """
         Verifies actual number of replicas created for each partition.
@@ -4725,6 +4737,16 @@ class CbasUtil(UDFUtil):
                         "node": nodes_info[partition["nodeId"]]
                     }
         return storage_info
+
+    def get_btree_file_paths(self, cluster):
+        partition_paths = self.get_partition_storage_paths(cluster)
+        paths = list()
+        for partition_id in partition_paths:
+            for node in cluster.servers:
+                if node.ip == partition_paths[partition_id]["node"]:
+                    break
+            shell = RemoteMachineShellConnection(node)
+            shell.list_files(partition_paths[partition_id]["path"])
 
 
 class FlushToDiskTask(Task):
@@ -4969,8 +4991,10 @@ class CBASRebalanceUtil(object):
 
     def data_load_collection(
             self, cluster, doc_spec_name, skip_validations, async_load=True,
-            skip_read_success_results=True, percentage_per_collection=100,
-            durability_level=None):
+            skip_read_success_results=True,
+            create_percentage_per_collection=100,
+            delete_percentage_per_collection=0, update_percentage_per_collection=0,
+            replace_percentage_per_collection=0, durability_level=None):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(
             doc_spec_name)
         self.set_retry_exceptions(doc_loading_spec, durability_level)
@@ -4982,7 +5006,16 @@ class CBASRebalanceUtil(object):
             skip_read_success_results
         doc_loading_spec["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = \
-            percentage_per_collection
+            create_percentage_per_collection
+        doc_loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = \
+            delete_percentage_per_collection
+        doc_loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = \
+            update_percentage_per_collection
+        doc_loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION] = \
+            replace_percentage_per_collection
         task = self.bucket_util.run_scenario_from_spec(
             self.task, cluster, cluster.buckets,
             doc_loading_spec, mutation_num=0, async_load=async_load)
@@ -5063,7 +5096,7 @@ class CBASRebalanceUtil(object):
     def failover(self, cluster, kv_nodes=0, cbas_nodes=0, failover_type="Hard",
                  action=None, timeout=7200, available_servers=[],
                  exclude_nodes=[], kv_failover_nodes=[],
-                 cbas_failover_nodes=[]):
+                 cbas_failover_nodes=[], all_at_once=False):
         """
         This fucntion fails over KV or CBAS node/nodes.
         :param cluster <cluster_obj> cluster in which the nodes are present
@@ -5117,7 +5150,7 @@ class CBASRebalanceUtil(object):
                     target_node=cluster_kv_nodes[i],
                     exclude_nodes=exclude_nodes)
                 fail_over_status = fail_over_status and cluster.rest.fail_over(
-                    chosen[0].id, graceful=True)
+                    chosen[0].id, graceful=True, all_at_once=all_at_once)
                 failover_count += 1
                 kv_failover_nodes.extend(chosen)
         else:
@@ -5128,7 +5161,7 @@ class CBASRebalanceUtil(object):
                         target_node=cluster_kv_nodes[i],
                         exclude_nodes=exclude_nodes)
                     fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        chosen[0].id, graceful=False)
+                        chosen[0].id, graceful=False, all_at_once=all_at_once)
                     failover_count += 1
                     kv_failover_nodes.extend(chosen)
             if cbas_nodes and cluster_cbas_nodes:
@@ -5138,7 +5171,7 @@ class CBASRebalanceUtil(object):
                         target_node=cluster_cbas_nodes[i],
                         exclude_nodes=exclude_nodes)
                     fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        chosen[0].id, graceful=False)
+                        chosen[0].id, graceful=False, all_at_once=all_at_once)
                     failover_count += 1
                     cbas_failover_nodes.extend(chosen)
         if kv_nodes or cbas_nodes:
@@ -5146,43 +5179,51 @@ class CBASRebalanceUtil(object):
             self.wait_for_failover_or_assert(cluster, failover_count, timeout)
 
         if action and fail_over_status:
-            # Perform the action
-            if action == "RebalanceOut":
-                nodes = cluster.rest.node_statuses()
-                cluster.rest.rebalance(
-                    otpNodes=[node.id for node in nodes],
-                    ejectedNodes=[node.id for node in
-                                  (kv_failover_nodes + cbas_failover_nodes)]
-                )
-                # self.sleep(600)
-                if not cluster.rest.monitorRebalance(stop_if_loop=False):
-                    raise Exception("Rebalance failed")
-                servs_out = [node for node in cluster.nodes_in_cluster for
-                             fail_node in (
-                                     kv_failover_nodes + cbas_failover_nodes)
-                             if
-                             node.ip == fail_node.ip]
-                cluster.nodes_in_cluster = list(
-                    set(cluster.nodes_in_cluster) - set(servs_out))
-                available_servers += servs_out
-                time.sleep(10)
-            else:
-                if action == "FullRecovery":
-                    for node in kv_failover_nodes + cbas_failover_nodes:
-                        cluster.rest.set_recovery_type(
-                            otpNode=node.id, recoveryType="full")
-                elif action == "DeltaRecovery":
-                    for node in kv_failover_nodes:
-                        cluster.rest.set_recovery_type(
-                            otpNode=node.id, recoveryType="delta")
-                rebalance_task = self.task.async_rebalance(
-                    cluster.nodes_in_cluster, [], [],
-                    retry_get_process_num=200)
-                if not self.wait_for_rebalance_task_to_complete(
-                        rebalance_task):
-                    raise Exception(
-                        "Rebalance failed while doing recovery after failover")
-                time.sleep(10)
+            self.perform_action_on_failed_over_nodes(
+                cluster, action, available_servers, kv_failover_nodes, cbas_failover_nodes)
+        return available_servers, kv_failover_nodes, cbas_failover_nodes
+
+    def perform_action_on_failed_over_nodes(
+            self, cluster, action="FullRecovery", available_servers=[],
+            kv_failover_nodes=[], cbas_failover_nodes=[]):
+        # Perform the action
+        if action == "RebalanceOut":
+            nodes = cluster.rest.node_statuses()
+            cluster.rest.rebalance(
+                otpNodes=[node.id for node in nodes],
+                ejectedNodes=[node.id for node in
+                              (kv_failover_nodes + cbas_failover_nodes)]
+            )
+            # self.sleep(600)
+            if not cluster.rest.monitorRebalance(stop_if_loop=False):
+                raise Exception("Rebalance failed")
+            servs_out = [node for node in cluster.nodes_in_cluster for
+                         fail_node in (kv_failover_nodes + cbas_failover_nodes)
+                         if node.ip == fail_node.ip]
+            cluster.nodes_in_cluster = list(
+                set(cluster.nodes_in_cluster) - set(servs_out))
+            available_servers += servs_out
+            time.sleep(10)
+        else:
+            if action == "FullRecovery":
+                for node in kv_failover_nodes + cbas_failover_nodes:
+                    cluster.rest.set_recovery_type(
+                        otpNode=node.id, recoveryType="full")
+            elif action == "DeltaRecovery":
+                for node in kv_failover_nodes:
+                    cluster.rest.set_recovery_type(
+                        otpNode=node.id, recoveryType="delta")
+            rebalance_task = self.task.async_rebalance(
+                cluster.nodes_in_cluster, [], [],
+                retry_get_process_num=200)
+            if not self.wait_for_rebalance_task_to_complete(
+                    rebalance_task):
+                raise Exception(
+                    "Rebalance failed while doing recovery after failover")
+            time.sleep(10)
+        # After the action has been performed on failed over node,
+        # the failed over nodes list should become empty.
+        kv_failover_nodes, cbas_failover_nodes = [], []
         return available_servers, kv_failover_nodes, cbas_failover_nodes
 
 

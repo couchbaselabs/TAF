@@ -93,7 +93,7 @@ class CBASRebalance(CBASBaseTest):
             data_load_task = self.rebalance_util.data_load_collection(
                 self.cluster, self.doc_spec_name, self.skip_validations,
                 async_load=True, durability_level=self.durability_level,
-                percentage_per_collection=self.parallel_load_percent)
+                create_percentage_per_collection=self.parallel_load_percent)
 
         rebalance_task, self.available_servers = self.rebalance_util.rebalance(
             self.cluster, kv_nodes_in, kv_nodes_out, cbas_nodes_in,

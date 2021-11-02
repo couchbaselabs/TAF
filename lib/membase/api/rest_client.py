@@ -1354,8 +1354,8 @@ class RestConnection(object):
         if all_at_once:
             # concat multiple otpNodes
             params = urllib.urlencode({'otpNode': otpNode[0]})
-            for i  in range(1, len(otpNode)):
-                params =  params + "&" + urllib.urlencode({'otpNode': otpNode[i]})
+            for i in range(1, len(otpNode)):
+                params = params + "&" + urllib.urlencode({'otpNode': otpNode[i]})
         else:
             params = urllib.urlencode({'otpNode': otpNode})
         params = params + "&" + urllib.urlencode({'allowUnsafe': allowUnsafe})

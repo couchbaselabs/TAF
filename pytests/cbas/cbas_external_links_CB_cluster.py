@@ -1838,7 +1838,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.doc_spec_name)
         doc_loading_task = self.rebalance_util.data_load_collection(
             to_cluster, doc_loading_spec, True, async_load=True,
-            skip_read_success_results=True, percentage_per_collection=100,
+            skip_read_success_results=True, create_percentage_per_collection=100,
             durability_level=None)
 
         run_query = self.input.param("run_query", False)
@@ -1907,7 +1907,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.doc_spec_name)
         doc_loading_task = self.rebalance_util.data_load_collection(
             to_cluster, doc_loading_spec, True, async_load=True,
-            skip_read_success_results=True, percentage_per_collection=100,
+            skip_read_success_results=True, create_percentage_per_collection=100,
             durability_level=None)
 
         run_query = self.input.param("run_query", False)
@@ -1977,7 +1977,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.doc_spec_name)
         doc_loading_task = self.rebalance_util.data_load_collection(
             to_cluster, doc_loading_spec, True, async_load=True,
-            skip_read_success_results=True, percentage_per_collection=100,
+            skip_read_success_results=True, create_percentage_per_collection=100,
             durability_level=None)
 
         run_query = self.input.param("run_query", False)

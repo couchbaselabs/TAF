@@ -981,7 +981,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
         if self.input.param('synonym_name', "new") == "new":
             synonym_name = CBASHelper.format_name(
-                self.cbas_util.generate_name(1, seed=round(time.time()*1000)))
+                self.cbas_util.generate_name(1))
         else:
             synonym_name = ds_obj.name
         if self.input.param('dangling_synonym', False):
@@ -999,7 +999,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                     self.fail("Error while creating dataverse")
             if not self.input.param('same_syn_on_syn_name', False):
                 synonym_name = CBASHelper.format_name(
-                    self.cbas_util.generate_name(1, seed=round(time.time()*1000)))
+                    self.cbas_util.generate_name(1))
             new_syn_obj = Synonym(
                 synonym_name, syn_obj.name, syn_obj.dataverse_name,
                 dataverse_name=dv_name, synonym_on_synonym=True)
@@ -1102,8 +1102,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         dataset_objs = self.cbas_util.list_all_dataset_objs()
         for dataset in dataset_objs:
             if not self.cbas_util.create_dataset(
-                self.cluster, dataset.name, dataset.full_kv_entity_name,
-                dataverse_name=dataset.dataverse_name):
+                    self.cluster, dataset.name, dataset.full_kv_entity_name,
+                    dataverse_name=dataset.dataverse_name):
                 self.fail("Error creating dataset {0}".format(dataset.name))
             if self.input.param('dangling_synonym', False):
                 break
@@ -1115,7 +1115,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 self.fail("Data ingestion failed")
         else:
             if not self.cbas_util.wait_for_ingestion_all_datasets(
-                self.cluster, self.bucket_util):
+                    self.cluster, self.bucket_util):
                 self.fail("Data ingestion failed")
 
         syn_obj = Synonym(
@@ -1367,11 +1367,14 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             ttl_dict["docTTL"] = docTTL
 
         ttl_to_check = None
-        for ttl in ttl_dict:
-            if not ttl_to_check:
-                ttl_to_check = ttl
-            elif ttl_dict[ttl] < ttl_dict[ttl_to_check]:
-                ttl_to_check = ttl
+        if len(list(set(list(ttl_dict.values())))) == 1:
+            ttl_to_check = "bucketTTL"
+        else:
+            for ttl in ttl_dict:
+                if not ttl_to_check:
+                    ttl_to_check = ttl
+                elif ttl_dict[ttl] < ttl_dict[ttl_to_check]:
+                    ttl_to_check = ttl
         end_time = time.time() + ttl_dict[ttl_to_check]
 
         self.collectionSetUp(self.cluster, True, buckets_spec, doc_loading_spec)
@@ -1525,7 +1528,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         expected_error = "Cannot find analytics collection with name {0} in analytics scope {" \
                          "1}".format(
             CBASHelper.unformat_name(synonym.name),
-            CBASHelper.unformat_name(synonym.dataverse_name))
+            CBASHelper.format_name(synonym.dataverse_name))
         if not self.cbas_util.create_cbas_index(
             self.cluster, index.name, index.indexed_fields, index.full_dataset_name,
                 analytics_index=self.input.param('analytics_index', False),
