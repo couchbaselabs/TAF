@@ -326,7 +326,11 @@ class BaseTestCase(unittest.TestCase):
                     self.skip_buckets_handle:
                 self.log.warning("Cluster operation in setup will be skipped")
                 self.primary_index_created = True
-                self.system_events.set_test_start_time()
+
+                # Track test start time only if we need system log validation
+                if self.validate_system_event_logs:
+                    self.system_events.set_test_start_time()
+
                 self.log_setup_status("BaseTestCase", "finished")
                 return
             # avoid clean up if the previous test has been tear down
@@ -384,7 +388,9 @@ class BaseTestCase(unittest.TestCase):
             for cluster_name, cluster in self.cb_clusters.items():
                 self.modify_cluster_settings(cluster)
 
-            self.system_events.set_test_start_time()
+            # Track test start time only if we need system log validation
+            if self.validate_system_event_logs:
+                self.system_events.set_test_start_time()
             self.log_setup_status("BaseTestCase", "finished")
 
             if not self.skip_init_check_cbserver:
@@ -548,6 +554,9 @@ class BaseTestCase(unittest.TestCase):
         # Fail test in case of sys_event_logging failure
         if (not self.is_test_failed()) and sys_event_validation_failure:
             self.fail(sys_event_validation_failure)
+        elif sys_event_validation_failure:
+            self.log.critical("System event log validation failed: %s"
+                              % sys_event_validation_failure)
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
