@@ -1,9 +1,9 @@
 import json
 import requests
-
-from Rest_Connection import RestConnection
 from copy import deepcopy
 from random import choice
+
+from Rest_Connection import RestConnection
 
 
 class SystemEventRestHelper:

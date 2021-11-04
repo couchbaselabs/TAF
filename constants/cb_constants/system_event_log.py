@@ -31,8 +31,8 @@ class KvEngine(object):
     BucketDeleted = 8193
     ScopeCreated = 8194
     ScopeDropped = 8195
-    CollectedCreated = 8196
-    CollectedDropped = 8197
+    CollectionCreated = 8196
+    CollectionDropped = 8197
     BucketFlushed = 8198
     BucketOnline = 8199
     BucketOffline = 8200

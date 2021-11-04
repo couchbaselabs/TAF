@@ -79,7 +79,7 @@ class DataServiceEvents(object):
     def collection_created(node, bucket_uuid, scope, collection):
         return {
             Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: KvEngine.CollectedCreated,
+            Event.Fields.EVENT_ID: KvEngine.CollectionCreated,
             Event.Fields.COMPONENT: Event.Component.DATA,
             Event.Fields.DESCRIPTION: "Collection created",
             Event.Fields.SEVERITY: Event.Severity.INFO,
@@ -92,7 +92,7 @@ class DataServiceEvents(object):
     def collection_dropped(node, bucket_uuid, scope, collection):
         return {
             Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: KvEngine.CollectedDropped,
+            Event.Fields.EVENT_ID: KvEngine.CollectionDropped,
             Event.Fields.COMPONENT: Event.Component.DATA,
             Event.Fields.DESCRIPTION: "Collection deleted",
             Event.Fields.SEVERITY: Event.Severity.INFO,
