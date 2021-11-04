@@ -653,7 +653,7 @@ class Link_Util(Dataverse_Util):
         if status == "success":
             if results:
                 if is_active:
-                    if (link_type).lower() != "s3" and results[0]["IsActive"]:
+                    if ((link_type).lower() != "s3" or (link_type).lower() != "azureblob") and results[0]["IsActive"]:
                         return True
                     else:
                         return False
@@ -717,7 +717,7 @@ class Link_Util(Dataverse_Util):
         Common for both AWS and couchbase link.
         <Required> name : name of the link to be created.
         <Required> scope : name of the dataverse under which the link has to be created.
-        <Required> type : s3/couchbase
+        <Required> type : s3/azure/couchbase
 
         For links to external couchbase cluster.
         <Required> hostname : The hostname of the link
@@ -1137,7 +1137,7 @@ class Link_Util(Dataverse_Util):
             certificate=None, clientCertificate=None, clientKey=None,
             accessKeyId=None, secretAccessKey=None, regions=[],
             serviceEndpoint=None, no_of_objs=1, name_length=30,
-            fixed_length=False):
+            fixed_length=False, link_perm=False):
         """
         Generates Link objects.
         """
@@ -1150,7 +1150,7 @@ class Link_Util(Dataverse_Util):
                         max_length=name_length - 1,
                         fixed_length=fixed_length))
                     if not self.create_dataverse(
-                        cluster, dataverse_name, if_not_exists=True):
+                            cluster, dataverse_name, if_not_exists=True):
                         raise Exception("Error while creating dataverse")
                     dataverse = self.get_dataverse_obj(dataverse_name)
                 else:
@@ -1162,22 +1162,43 @@ class Link_Util(Dataverse_Util):
                         name_cardinality=1, max_length=name_length,
                         fixed_length=fixed_length),
                     dataverse_name=dataverse.name,
-                    properties={"type": "s3", "accessKeyId":accessKeyId,
-                                "secretAccessKey":secretAccessKey,
-                                "region":random.choice(regions),
-                                "serviceEndpoint":serviceEndpoint})
+                    properties={"type": "s3", "accessKeyId": accessKeyId,
+                                "secretAccessKey": secretAccessKey,
+                                "region": random.choice(regions),
+                                "serviceEndpoint": serviceEndpoint})
+            elif link_type.lower() == "azureblob":
+                if not link_perm:
+                    link = Link(
+                        name=self.generate_name(
+                            name_cardinality=1, max_length=name_length,
+                            fixed_length=fixed_length),
+                        dataverse_name=dataverse.name,
+                        properties={"type": "azureblob",
+                                    "endpoint": serviceEndpoint,
+                                    "accountName": accessKeyId,
+                                    "accountKey": secretAccessKey,
+                                    })
+                else:
+                    link = Link(
+                        name=self.generate_name(
+                            name_cardinality=1, max_length=name_length,
+                            fixed_length=fixed_length),
+                        dataverse_name=dataverse.name,
+                        properties={"type": "azureblob",
+                                    "endpoint": serviceEndpoint,
+                                    })
             elif link_type.lower() == "couchbase":
                 link = Link(
                     name=self.generate_name(
                         name_cardinality=1, max_length=name_length,
                         fixed_length=fixed_length),
                     dataverse_name=dataverse.name,
-                    properties={"type": "couchbase", "hostname":hostname,
-                                "username":username, "password":password,
-                                "encryption":encryption,
-                                "certificate":certificate,
-                                "clientCertificate":clientCertificate,
-                                "clientKey":clientKey})
+                    properties={"type": "couchbase", "hostname": hostname,
+                                "username": username, "password": password,
+                                "encryption": encryption,
+                                "certificate": certificate,
+                                "clientCertificate": clientCertificate,
+                                "clientKey": clientKey})
             dataverse.links[link.name] = link
             count += 1
 
@@ -1368,6 +1389,99 @@ class Dataset_Util(Link_Util):
             compress_dataset, with_clause, link_name, where_clause,
             validate_error_msg, username, password, expected_error,
             timeout, analytics_timeout, True)
+
+    def create_dataset_on_external_resource_azure(
+                self, cluster, dataset_name, azure_container_name, link_name,
+                if_not_exists=False, dataverse_name=None, object_construction_def=None,
+                path_on_aws_bucket=None, file_format="json", redact_warning=None,
+                header=None, null_string=None, include=None, exclude=None,
+                validate_error_msg=False, username=None, password=None,
+                expected_error=None, expected_error_code=None,
+                timeout=120, analytics_timeout=120, create_dv=True):
+            """
+            Creates a dataset for an external resource like AWS S3 bucket/Azure blob.
+            Note - No shadow dataset is created for this type of external datasets.
+            :param dataset_name (str) : Name for the dataset to be created.
+            :param aws_bucket_name (str): AWS S3 bucket to which this dataset is to be linked. S3 bucket should be in
+            the same region as the link, that is used to create this dataset.
+            :param dataverse_name str, Dataverse where dataset is to be created.
+            :param if_not_exists bool, if this flag is set then, if a dataset with same name is present
+            in the same dataverse, then the create statement will pass without creating a new dataset.
+            :param link_name (str): external link to AWS S3
+            :param object_construction_def (str): It defines how the data read will be parsed.
+            Required only for csv and tsv formats.
+            :param path_on_aws_bucket (str): Relative path in S3 bucket, from where the files will be read.
+            :param file_format (str): Type of files to read. Valid values - json, csv and tsv
+            :param redact_warning (bool): internal information like e.g. filenames are redacted from warning messages.
+            :param header (bool): True means every csv, tsv file has a header record at the top and
+            the expected behaviour is that the first record (the header) is skipped.
+            False means every csv, tsv file does not have a header.
+            :param null_string (str): a string that represents the NULL value if the field accepts NULLs.
+            :param include str, include filter
+            :param exclude str, exclude filter
+            :param validate_error_msg (bool): validate errors that occur while creating dataset.
+            :param username (str):
+            :param password (str):
+            :param expected_error (str):
+            :param expected_error_code (str):
+            :param timeout int, REST API timeout
+            :param analytics_timeout int, analytics query timeout
+            :return True/False
+
+            """
+            if create_dv and dataverse_name and not self.create_dataverse(
+                    cluster, dataverse_name=dataverse_name, username=username,
+                    password=password, if_not_exists=True):
+                return False
+
+            cmd = "CREATE EXTERNAL DATASET"
+            if if_not_exists:
+                cmd += " if not exists"
+
+            if dataverse_name:
+                cmd += " {0}.{1}".format(dataverse_name, dataset_name)
+            else:
+                cmd += " {0}".format(dataset_name)
+
+            if object_construction_def:
+                cmd += "({0})".format(object_construction_def)
+
+            cmd += " ON `{0}` AT {1}".format(azure_container_name, link_name)
+
+            if path_on_aws_bucket is not None:
+                cmd += " USING \"{0}\"".format(path_on_aws_bucket)
+            with_parameters = dict()
+            with_parameters["format"] = file_format
+
+            if redact_warning is not None:
+                with_parameters["redact-warnings"] = redact_warning
+
+            if header is not None:
+                with_parameters["header"] = header
+
+            if null_string:
+                with_parameters["null"] = null_string
+
+            if include is not None:
+                with_parameters["include"] = include
+
+            if exclude is not None:
+                with_parameters["exclude"] = exclude
+
+            cmd += " WITH {0};".format(json.dumps(with_parameters))
+            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+                cluster, cmd, username=username, password=password, timeout=timeout,
+                analytics_timeout=analytics_timeout)
+
+            if validate_error_msg:
+                return self.validate_error_in_response(status, errors,
+                                                       expected_error,
+                                                       expected_error_code)
+            else:
+                if status != "success":
+                    return False
+                else:
+                    return True
 
     def create_dataset_on_external_resource(
             self, cluster, dataset_name, aws_bucket_name, link_name,
@@ -2375,6 +2489,55 @@ class Dataset_Util(Link_Util):
                     dataset_objs.append(create_object(bucket, scope,
                                                       collection))
         return dataset_objs
+
+    def create_external_dataset_azure_obj(
+            self, cluster, azure_containers, same_dv_for_link_and_dataset=False,
+            dataset_cardinality=1, object_construction_def=None,
+            path_on_aws_bucket=None, file_format="json", redact_warning=None,
+            header=None, null_string=None, include=None, exclude=None,
+            name_length=30, fixed_length=False, no_of_objs=1):
+        """
+        Creates a Dataset object for external datasets.
+        """
+        for _ in range(no_of_objs):
+            azure_container = random.choice(azure_containers.keys())
+
+            all_links = self.list_all_link_objs("azureblob")
+            link = random.choice(all_links)
+            while all_links and (link.properties["type"] != azure_containers[azure_container]):
+                all_links.remove(link)
+                link = random.choice(self.list_all_link_objs("azureblob"))
+            if same_dv_for_link_and_dataset:
+                dataverse = self.get_dataverse_obj(link.dataverse_name)
+            else:
+                if dataset_cardinality > 1:
+                    dataverse_name = CBASHelper.format_name(self.generate_name(
+                        name_cardinality=dataset_cardinality - 1,
+                        max_length=name_length - 1,
+                        fixed_length=fixed_length))
+                    if not self.create_dataverse(cluster, dataverse_name,
+                                                 if_not_exists=True):
+                        raise Exception("Error while creating dataverse")
+                    dataverse = self.get_dataverse_obj(dataverse_name)
+                else:
+                    dataverse = self.get_dataverse_obj("Default")
+
+            dataset = Dataset(
+                name=self.generate_name(name_cardinality=1, max_length=name_length,
+                                        fixed_length=fixed_length),
+                dataverse_name=dataverse.name, link_name=link.full_name,
+                dataset_source="external", dataset_properties={})
+            dataset.dataset_properties["azure_container_name"] = azure_container
+            dataset.dataset_properties["object_construction_def"] = object_construction_def
+            dataset.dataset_properties["path_on_aws_bucket"] = path_on_aws_bucket
+            dataset.dataset_properties["file_format"] = file_format
+            dataset.dataset_properties["redact_warning"] = redact_warning
+            dataset.dataset_properties["header"] = header
+            dataset.dataset_properties["null_string"] = null_string
+            dataset.dataset_properties["include"] = include
+            dataset.dataset_properties["exclude"] = exclude
+
+            dataverse.datasets[dataset.name] = dataset
 
     def create_external_dataset_obj(
             self, cluster, aws_bucket_names, same_dv_for_link_and_dataset=False,
