@@ -1190,7 +1190,6 @@ class RestConnection(object):
                   'user': user,
                   'password': password}
         if services is not None:
-            services = ','.join(services)
             params['services'] = ','.join(services)
 
         if port in range(9000, 9010):
