@@ -3501,7 +3501,7 @@ class RestConnection(object):
         api = self.baseUrl + url
         status, content, header = self._http_request(api, 'DELETE')
         if not status:
-            raise Exception(content)
+            self.log.error("%s - %s" % (user_id, content))
         return json.loads(content)
 
     '''
