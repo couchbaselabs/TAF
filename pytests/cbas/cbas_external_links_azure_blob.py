@@ -976,7 +976,7 @@ class CBASExternalAzureLinks(CBASBaseTest):
             create_dataset_objs=True, same_dv_for_link_and_dataset=False,
             create_datasets=True, initialize_helper_objs=True)
         dataset_obj = self.cbas_util.list_all_dataset_objs()[0]
-        buckets=self.create_buckets(num_buckets=1)
+        #buckets=self.create_buckets(num_buckets=1)
         self.azure_data_helper.generate_data_for_azure_and_upload(
             self.azure_containers_list[0],key=self.key, no_of_files=1, file_formats=["json"], no_of_folders=0,
             max_folder_depth=0,header=False, null_key="", operation="create",
@@ -1213,7 +1213,7 @@ class CBASExternalAzureLinks(CBASBaseTest):
             create_datasets=True, initialize_helper_objs=True, rebalance_util=True)
         dataset_obj = self.cbas_util.list_all_dataset_objs()[0]
 
-        buckets = self.create_buckets(num_buckets=1)
+        #buckets = self.create_buckets(num_buckets=1)
 
         result = self.azure_data_helper.generate_data_for_azure_and_upload(
             self.azure_containers_list[0], key=self.key, no_of_files=3, file_formats=["json"], no_of_folders=0,
@@ -1253,7 +1253,7 @@ class CBASExternalAzureLinks(CBASBaseTest):
             create_datasets=True, initialize_helper_objs=True, rebalance_util=True)
         dataset_obj = self.cbas_util.list_all_dataset_objs()[0]
 
-        buckets = self.create_buckets(num_buckets=1)
+        #buckets = self.create_buckets(num_buckets=1)
 
         result = self.azure_data_helper.generate_data_for_azure_and_upload(
             self.azure_containers_list[0], key=self.key, no_of_files=3, file_formats=["json"], no_of_folders=0,
@@ -1293,7 +1293,7 @@ class CBASExternalAzureLinks(CBASBaseTest):
             create_datasets=True, initialize_helper_objs=True, rebalance_util=True)
         dataset_obj = self.cbas_util.list_all_dataset_objs()[0]
 
-        buckets = self.create_buckets(num_buckets=1)
+        #buckets = self.create_buckets(num_buckets=1)
 
         result = self.azure_data_helper.generate_data_for_azure_and_upload(
             self.azure_containers_list[0], key=self.key, no_of_files=3, file_formats=["json"], no_of_folders=0,
