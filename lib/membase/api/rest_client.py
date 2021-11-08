@@ -1165,10 +1165,6 @@ class RestConnection(object):
     def add_node(self, user='', password='', remoteIp='',
                  port=constants.port, zone_name='', services=None):
         otpNode = None
-        protocol = "http"
-        if CbServer.use_https or CbServer.n2n_encryption:
-            port = CbServer.ssl_port_map.get(str(port), str(port))
-            protocol = "https"
         # if ip format is ipv6 and enclosing brackets are not found,
         # enclose self.ip and remoteIp
         if self.ip.count(':') and self.ip[0] != '[':
@@ -1190,19 +1186,18 @@ class RestConnection(object):
             else:
                 raise Exception("There is not zone with name: %s in cluster" % zone_name)
 
-        params = urllib.urlencode(
-            {'hostname': "{0}://{1}:{2}".format(protocol, remoteIp, port),
-             'user': user,
-             'password': password})
+        params = {'hostname': remoteIp,
+                  'user': user,
+                  'password': password}
         if services is not None:
             services = ','.join(services)
-            params = urllib.urlencode(
-                {'hostname':  "{0}://{1}:{2}".format(protocol, remoteIp, port),
-                 'user': user,
-                 'password': password,
-                 'services': services})
-        status, content, header = self._http_request(api, 'POST',
-                                                     params)
+            params['services'] = ','.join(services)
+
+        if port in range(9000, 9010):
+            params['hostname'] = "%s:%s" % (remoteIp, port)
+
+        params = urllib.urlencode(params)
+        status, content, header = self._http_request(api, 'POST', params)
         if status:
             json_parsed = json.loads(content)
             otpNodeId = json_parsed['otpNode']
