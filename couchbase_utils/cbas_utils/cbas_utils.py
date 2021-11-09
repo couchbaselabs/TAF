@@ -3850,9 +3850,15 @@ class CbasUtil(UDFUtil):
                 self.error_count += 1
                 self.log.error(str(e))
 
-    def retrieve_cc_ip_from_master(self, cbas_node):
-
-        response = self.fetch_analytics_cluster_response(cbas_node)
+    def retrieve_cc_ip_from_master(self, cbas_node, timeout=300):
+        end_time = time.time() + timeout
+        response = None
+        while time.time() < end_time:
+            try:
+                response = self.fetch_analytics_cluster_response(cbas_node)
+                break
+            except Exception:
+                pass
         if response:
             cc_node_id = ""
             cc_node_ip = ""
@@ -4646,8 +4652,9 @@ class CbasUtil(UDFUtil):
             if result:
                 for data in result["data"]:
                     data["values"].sort(key=lambda x: x[0])
-                    if int(data["values"][-1][0]) == 0:
+                    if int(data["values"][-1][1]) == 0:
                         ingestion_complete = True
+            time.sleep(3)
         return ingestion_complete
 
     def get_actual_number_of_replicas(self, cluster):
@@ -4672,7 +4679,7 @@ class CbasUtil(UDFUtil):
             else:
                 replica_num_matched = replica_num_matched and False
 
-            partition_ids = dict()
+            partition_ids = list()
             for partition in response["partitions"]:
                 partition_ids.append(partition["partitionId"])
 
@@ -5095,8 +5102,8 @@ class CBASRebalanceUtil(object):
 
     def failover(self, cluster, kv_nodes=0, cbas_nodes=0, failover_type="Hard",
                  action=None, timeout=7200, available_servers=[],
-                 exclude_nodes=[], kv_failover_nodes=[],
-                 cbas_failover_nodes=[], all_at_once=False):
+                 exclude_nodes=[], kv_failover_nodes=None,
+                 cbas_failover_nodes=None, all_at_once=False):
         """
         This fucntion fails over KV or CBAS node/nodes.
         :param cluster <cluster_obj> cluster in which the nodes are present
@@ -5138,8 +5145,10 @@ class CBASRebalanceUtil(object):
                 pass
 
         failover_count = 0
-        kv_failover_nodes = kv_failover_nodes
-        cbas_failover_nodes = cbas_failover_nodes
+        if cbas_failover_nodes is None:
+            cbas_failover_nodes = []
+        if kv_failover_nodes is None:
+            kv_failover_nodes = []
         fail_over_status = True
 
         # Mark Node for failover

@@ -577,7 +577,7 @@ class CBASHelper(RestConnection):
         headers = rest_conn._create_headers(username, password)
 
         try:
-            status, content, header = rest_conn._http_request(
+            status, content, response = rest_conn._http_request(
                 api, method, headers=headers, params=params, timeout=timeout)
             try:
                 content = json.loads(content)
@@ -592,14 +592,24 @@ class CBASHelper(RestConnection):
                         if "errors" in content:
                             if isinstance(content["errors"], list):
                                 errors.extend(content["errors"])
+                            elif isinstance(content["errors"], dict):
+                                for v in content["errors"].values():
+                                    errors.append(
+                                        {"msg": v.encode("utf-8"), "code": 0})
                             else:
                                 errors.append({"msg": content["errors"], "code": 0})
                         elif "error" in content:
                             errors.append({"msg": content["error"], "code": 0})
+                        elif "message" in content:
+                            errors.append(
+                                {"msg": content["message"], "code": 0})
                     else:
                         content = content.split(":")
                         errors.append({"msg": content[1], "code": content[0]})
-            return status, header['status'], content, errors
+            if hasattr(response, "status_code"):
+                return status, response.status_code, content, errors
+            else:
+                return status, response["status"], content, errors
         except Exception as err:
             logger.error("Exception occured while calling rest APi through httplib2.")
             logger.error("Exception msg - (0)".format(str(err)))
