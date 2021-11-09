@@ -10,9 +10,6 @@
 java -jar jython-installer-2.7.0.jar Install it wherever you like.
 ```
 
-3. Install gradle or you the existing gradlew executable in TAF
-
-
 ## Test Environment Requirement
 
 ```
@@ -62,17 +59,19 @@ When running Jython, you have to supply the CLASSPATH.  For a typical Java progr
 like Gradle and Maven are used to automatically pull in all dependencies, produce the CLASSPATH, and run the Java app.
 
 So a gradle project is included with a task, "testrunner", that runs Jython on the testrunner.py script, sorting out the CLASSPATH
-automatically (including downloading all dependencies).
+automatically (including downloading all dependencies). A Gradle Wrapper of the correct version is also provided.
 
 Execute:
 
 ```bash
 
-gradle --refresh-dependencies testrunner -P jython="/path/to/jython" -P args="-i <ini file path> -t <absolute path of test case>"```
+./gradlew --refresh-dependencies testrunner -P jython="/path/to/jython" -P args="-i <ini file path> -t <absolute path of test case>"```
 
 Examples:
-  gradle --refresh-dependencies testrunner -P jython="/path/to/jython" -P args="-i tmp/local.ini -t rebalance_new.rebalance_in.RebalanceInTests.test_rebalance_in_with_ops,nodes_in=3,GROUP=IN;P0;default -m rest"
+  ./gradlew --refresh-dependencies testrunner -P jython="/path/to/jython" -P args="-i tmp/local.ini -t rebalance_new.rebalance_in.RebalanceInTests.test_rebalance_in_with_ops,nodes_in=3,GROUP=IN;P0;default -m rest"
 ```
+
+(Replace `gradlew` with `gradlew.bat` on Windows).
 
 The above command will run the test mentioned using -t option on the cluster defined in local.ini file. 
 
