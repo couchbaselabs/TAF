@@ -734,7 +734,7 @@ class RebalanceBaseTest(BaseTestCase):
             if status is False:
                 self.fail("API perform_cb_collect returned False")
         if validate:
-            status = self.cluster_util.wait_for_cb_collect_to_complete(rest)
+            status = self.cluster_util.wait_for_cb_collect_to_complete(rest, retry_count=1200)
             if status is False:
                 self.fail("cb_collect timed out")
 
