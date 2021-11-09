@@ -24,6 +24,8 @@ class CbServer(object):
             FULL = "full"
             DELTA = "delta"
 
+    enterprise_edition = True
+
     port = 8091
     capi_port = 8092
     fts_port = 8094

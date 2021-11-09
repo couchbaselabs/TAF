@@ -3,6 +3,7 @@ import re
 import traceback
 import unittest
 
+import Cb_constants
 import global_vars
 from SystemEventLogLib.Events import EventHelper
 from security_config import trust_all_certs
@@ -285,6 +286,13 @@ class BaseTestCase(unittest.TestCase):
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
 
+        CbServer.enterprise_edition = \
+            self.cluster_util.is_enterprise_edition(self.cluster)
+        if CbServer.enterprise_edition:
+            self.cluster.edition = "enterprise"
+        else:
+            self.cluster.edition = "community"
+
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.cluster.master,
                                                 self.standard_buckets)
@@ -319,6 +327,7 @@ class BaseTestCase(unittest.TestCase):
                     self.cluster_util.cluster_cleanup(cluster,
                                                       self.bucket_util)
 
+            reload(Cb_constants)
             # Avoid cluster operations in setup for new upgrade / upgradeXDCR
             if str(self.__class__).find('newupgradetests') != -1 or \
                     str(self.__class__).find('upgradeXDCR') != -1 or \

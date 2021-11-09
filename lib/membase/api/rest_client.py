@@ -2,6 +2,8 @@
 import base64
 import json
 import urllib
+
+import Cb_constants
 import httplib2
 import traceback
 import socket
@@ -1192,7 +1194,12 @@ class RestConnection(object):
         if services is not None:
             params['services'] = ','.join(services)
 
-        if port in range(9000, 9010):
+        # Check for cluster_run case
+        if port in range(Cb_constants.constants.port,
+                         Cb_constants.constants.port+10):
+            # TLS disabled for CE
+            if CbServer.enterprise_edition:
+                port += 10000
             params['hostname'] = "%s:%s" % (remoteIp, port)
 
         params = urllib.urlencode(params)

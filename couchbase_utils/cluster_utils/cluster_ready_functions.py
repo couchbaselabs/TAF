@@ -45,6 +45,8 @@ class CBCluster:
         self.xdcr_remote_clusters = list()
         self.buckets = list()
         self.vbuckets = vbuckets
+        # edition = community/enterprise
+        self.edition = None
 
     def __str__(self):
         return "Couchbase Cluster: %s, Nodes: %s" % (
@@ -127,6 +129,22 @@ class ClusterUtils:
         rest = RestConnection(cluster_node)
         metakv_key_count, metakv_dict = rest.get_metakv_dicts(key=key)
         return metakv_key_count, metakv_dict
+
+    @staticmethod
+    def is_enterprise_edition(cluster):
+        """
+        :param cluster: Cluster object
+        :return: True if the cluster is enterprise edition
+        """
+        rest = RestConnection(cluster.master)
+        api = rest.baseUrl + "pools/default"
+        http_res, success = rest.init_http_request(api)
+        if http_res == 'unknown pool':
+            return False
+        for node in http_res["nodes"]:
+            if "community" in node["version"].split("-")[-1:]:
+                return False
+        return True
 
     def set_rebalance_moves_per_nodes(self, cluster_node,
                                       rebalanceMovesPerNode=4):
@@ -1361,7 +1379,7 @@ class ClusterUtils:
                         return False, "Failed to change IP family"
     """
           Method to perform operation against indexer id obj
-          arguments: 
+          arguments:
                    a. timeout
                    b. operation to perform i.e. compactAll, evictAll, persistAll and compressAll
           return: void
