@@ -31,9 +31,6 @@ dependencies {
         java_client = project.property("client_version")
     }
 
-    println("Executing 'gradle clean'")
-    clean
-
     println("Using Transaction_client :: " + trans_version)
     implementation 'com.couchbase.client:couchbase-transactions:' + trans_version
 
