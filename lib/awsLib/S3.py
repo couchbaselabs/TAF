@@ -96,14 +96,17 @@ class S3():
         try:
             bucket_deleted = False
             if retry_attempt < max_retry:
-                if self.empty_bucket(bucket_name):
-                    response = self.s3_resource.Bucket(bucket_name).delete()
-                    if response["ResponseMetadata"]["HTTPStatusCode"] == 204:
-                        bucket_deleted = True
-                if not bucket_deleted:
-                    self.delete_bucket(bucket_name, max_retry, retry_attempt + 1)
+                if bucket_name in self.list_existing_buckets():
+                    if self.empty_bucket(bucket_name):
+                        response = self.s3_resource.Bucket(bucket_name).delete()
+                        if response["ResponseMetadata"]["HTTPStatusCode"] == 204:
+                            bucket_deleted = True
+                    if not bucket_deleted:
+                        self.delete_bucket(bucket_name, max_retry, retry_attempt + 1)
+                    else:
+                        return bucket_deleted
                 else:
-                    return bucket_deleted
+                    return False
             else:
                 return False
         except Exception as e:

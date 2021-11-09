@@ -1368,7 +1368,12 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
         ttl_to_check = None
         if len(list(set(list(ttl_dict.values())))) == 1:
-            ttl_to_check = "bucketTTL"
+            if "bucketTTL" in ttl_dict:
+                ttl_to_check = "bucketTTL"
+            elif "collectionTTL" in ttl_dict:
+                ttl_to_check = "collectionTTL"
+            elif "docTTL" in ttl_dict:
+                ttl_to_check = "docTTL"
         else:
             for ttl in ttl_dict:
                 if not ttl_to_check:

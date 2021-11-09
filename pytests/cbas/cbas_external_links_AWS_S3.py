@@ -409,7 +409,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Parameters Passed - Name",
                 "validate_error_msg": True,
                 "expected_error": "Cannot find analytics scope with name {0}".format(
-                    link.properties["name"])
+                    CBASHelper.format_name(link.properties["name"]))
             },
             {
                 "dataverse": link.properties["dataverse"],

@@ -78,8 +78,12 @@ class CBASBaseTest(BaseTestCase):
         else:
             self.log.info("Starting Test: %s" % self._testMethodName)
 
+        self.log.debug("Temp Service Init after BaseTest - {0}".format(temp_service_init))
         self.services_init = temp_service_init
+        self.log.debug("Service Init after BaseTest - {0}".format(self.services_init))
         self.nodes_init = temp_nodes_init
+        self.log.debug(
+            "Node Init after BaseTest - {0}".format(self.nodes_init))
 
         """
         Parameterized Support for multiple cluster instead of creating

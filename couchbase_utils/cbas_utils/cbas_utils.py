@@ -4684,41 +4684,35 @@ class CbasUtil(UDFUtil):
                 partition_ids.append(partition["partitionId"])
 
             for partition in response["partitionsTopology"]["partitions"]:
-                if (partition["id"] in partition_ids) and len(
-                        partition["replicas"]) == expected_num:
-                    replica_num_matched = replica_num_matched and True
-                else:
-                    replica_num_matched = replica_num_matched and False
+                if partition["id"] in partition_ids:
+                    if len(partition["replicas"]) == expected_num:
+                        replica_num_matched = replica_num_matched and True
+                    else:
+                        replica_num_matched = replica_num_matched and False
             return replica_num_matched
         else:
             return False
 
-    def force_flush_cbas_data_to_disk(self, rest, dataverse_name,
+    def force_flush_cbas_data_to_disk(self, cbas_node, dataverse_name,
                                       dataset_name, username=None, password=None):
         """
         This method force flushes the data to the disk for the dataset
         specified.
         """
-        uri = "/analytics/connector?"
+        url = "http://{0}:8095/analytics/connector?".format(
+            cbas_node.ip)
         for dv_part in dataverse_name.split("."):
-            uri += "dataverseName={0}&".format(urllib.quote_plus(
+            url += "dataverseName={0}&".format(urllib.quote_plus(
                 CBASHelper.unformat_name(dv_part), safe=""))
-        uri += "datasetName={0}".format(urllib.quote_plus(
+        url += "datasetName={0}".format(urllib.quote_plus(
             CBASHelper.unformat_name(dataset_name), safe=""))
 
         if not username:
-            username = rest.username
+            username = cbas_node.rest_username
         if not password:
-            password = rest.password
-
-        headers = rest._create_headers(username, password)
-
-        response = requests.request("GET", uri, headers=headers)
-        try:
-            content = response.json()
-        except Exception:
-            content = response.content
-        if response.status_code in [200, 201, 202]:
+            password = cbas_node.rest_password
+        response = requests.get(url, auth=(username, password))
+        if response.status_code in [200, 201, 204]:
             return True
         else:
             return False
@@ -5184,7 +5178,7 @@ class CBASRebalanceUtil(object):
                     failover_count += 1
                     cbas_failover_nodes.extend(chosen)
         if kv_nodes or cbas_nodes:
-            time.sleep(300)
+            time.sleep(30)
             self.wait_for_failover_or_assert(cluster, failover_count, timeout)
 
         if action and fail_over_status:
