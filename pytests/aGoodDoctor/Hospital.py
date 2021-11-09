@@ -220,7 +220,7 @@ class Murphy(BaseTestCase, OPD):
             self.drIndexService.build_indexes()
             self.drIndexService.start_query_load()
 
-        if self.xdcr_remote_nodes:
+        if self.xdcr_remote_nodes > 0:
             self.drXDCR.create_remote_ref("magma_xdcr")
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
@@ -288,7 +288,7 @@ class Murphy(BaseTestCase, OPD):
             self.drIndexService.build_indexes()
             self.drIndexService.start_query_load()
 
-        if self.xdcr_remote_nodes:
+        if self.xdcr_remote_nodes > 0:
             self.drXDCR.create_remote_ref("magma_xdcr")
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
@@ -428,7 +428,7 @@ class Murphy(BaseTestCase, OPD):
             self.drIndexService.build_indexes()
             self.drIndexService.start_query_load()
 
-        if self.xdcr_remote_nodes:
+        if self.xdcr_remote_nodes > 0:
             self.drXDCR.create_remote_ref("magma_xdcr")
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
