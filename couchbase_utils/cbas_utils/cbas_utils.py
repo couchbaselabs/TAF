@@ -3928,10 +3928,14 @@ class CbasUtil(UDFUtil):
         end_time = time.time() + timeout
         self.log.info("Waiting for analytics service to come up")
         while end_time > time.time():
-            response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
-            if response and response["state"] == "ACTIVE":
-                return True
-            time.sleep(10)
+            try:
+                response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
+                if response and response["state"] == "ACTIVE":
+                    return True
+            except Exception:
+                pass
+            finally:
+                time.sleep(10)
         return False
 
     def retrieve_analyticsHttpAdminListen_address_port(
@@ -5144,6 +5148,7 @@ class CBASRebalanceUtil(object):
         if kv_failover_nodes is None:
             kv_failover_nodes = []
         fail_over_status = True
+        to_fail_over = list()
 
         # Mark Node for failover
         if failover_type == "Graceful":
@@ -5152,10 +5157,16 @@ class CBASRebalanceUtil(object):
                     cluster.master, howmany=1,
                     target_node=cluster_kv_nodes[i],
                     exclude_nodes=exclude_nodes)
-                fail_over_status = fail_over_status and cluster.rest.fail_over(
-                    chosen[0].id, graceful=True, all_at_once=all_at_once)
+                if all_at_once:
+                    to_fail_over.extend([x.id for x in chosen])
+                else:
+                    fail_over_status = fail_over_status and cluster.rest.fail_over(
+                        chosen[0].id, graceful=True, all_at_once=False)
                 failover_count += 1
                 kv_failover_nodes.extend(chosen)
+            if all_at_once:
+                fail_over_status = fail_over_status and cluster.rest.fail_over(
+                    to_fail_over, graceful=True, all_at_once=True)
         else:
             if kv_nodes and cluster_kv_nodes:
                 for i in range(kv_nodes):
@@ -5163,20 +5174,33 @@ class CBASRebalanceUtil(object):
                         cluster.master, howmany=1,
                         target_node=cluster_kv_nodes[i],
                         exclude_nodes=exclude_nodes)
-                    fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        chosen[0].id, graceful=False, all_at_once=all_at_once)
+                    if all_at_once:
+                        to_fail_over.extend([x.id for x in chosen])
+                    else:
+                        fail_over_status = fail_over_status and cluster.rest.fail_over(
+                            chosen[0].id, graceful=False, all_at_once=False)
                     failover_count += 1
                     kv_failover_nodes.extend(chosen)
+                if all_at_once:
+                    fail_over_status = fail_over_status and cluster.rest.fail_over(
+                        to_fail_over, graceful=False, all_at_once=True)
             if cbas_nodes and cluster_cbas_nodes:
-                for i in range(kv_nodes):
+                for i in range(cbas_nodes):
                     chosen = self.cluster_util.pick_nodes(
                         cluster.master, howmany=1,
                         target_node=cluster_cbas_nodes[i],
                         exclude_nodes=exclude_nodes)
-                    fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        chosen[0].id, graceful=False, all_at_once=all_at_once)
+                    if all_at_once:
+                        to_fail_over.extend([x.id for x in chosen])
+                    else:
+                        fail_over_status = fail_over_status and cluster.rest.fail_over(
+                            chosen[0].id, graceful=False, all_at_once=False)
                     failover_count += 1
                     cbas_failover_nodes.extend(chosen)
+                if all_at_once:
+                    fail_over_status = fail_over_status and cluster.rest.fail_over(
+                        to_fail_over, graceful=False, all_at_once=True)
+                self.reset_cbas_cc_node(cluster, cbas_failover_nodes)
         if kv_nodes or cbas_nodes:
             time.sleep(30)
             self.wait_for_failover_or_assert(cluster, failover_count, timeout)
@@ -5191,6 +5215,9 @@ class CBASRebalanceUtil(object):
             kv_failover_nodes=[], cbas_failover_nodes=[]):
         # Perform the action
         if action == "RebalanceOut":
+            if cbas_failover_nodes:
+                self.reset_cbas_cc_node(cluster, cbas_failover_nodes)
+
             nodes = cluster.rest.node_statuses()
             cluster.rest.rebalance(
                 otpNodes=[node.id for node in nodes],
@@ -5228,6 +5255,16 @@ class CBASRebalanceUtil(object):
         # the failed over nodes list should become empty.
         kv_failover_nodes, cbas_failover_nodes = [], []
         return available_servers, kv_failover_nodes, cbas_failover_nodes
+
+    def reset_cbas_cc_node(self, cluster, failed_over_nodes):
+        cbas_nodes_in_cluster = self.cluster_util.get_nodes_from_services_map(
+            cluster, service_type="cbas", get_all_nodes=True,
+            servers=cluster.nodes_in_cluster)
+        cbas_failover_node_ips = [node.ip for node in failed_over_nodes]
+        for node in cbas_nodes_in_cluster:
+            if node.ip not in cbas_failover_node_ips:
+                cluster.cbas_cc_node = node
+                break
 
 
 class BackupUtils(object):
