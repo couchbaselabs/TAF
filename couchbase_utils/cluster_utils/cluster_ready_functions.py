@@ -554,7 +554,7 @@ class ClusterUtils:
                         list_to_append.append(server)
                         break
 
-        service_map = self.get_services_map(cluster.master)
+        service_map = self.get_services_map(cluster)
         cluster.kv_nodes = list()
         cluster.fts_nodes = list()
         cluster.cbas_nodes = list()
