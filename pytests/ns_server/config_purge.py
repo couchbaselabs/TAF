@@ -131,7 +131,7 @@ class ConfigPurging(CollectionBase):
             self.fail("Invalid operation: %s" % op_type)
 
     def __get_deleted_key_count(self, check_if_zero=False):
-        deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count()
+        deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count(self.cluster)
         tbl = TableView(self.log.info)
         tbl.set_headers(["Node", "Deleted_key_count"])
         for t_ip, k_count in deleted_keys.items():
@@ -416,7 +416,7 @@ class ConfigPurging(CollectionBase):
                              CbServer.default_scope,
                              CbServer.default_collection)
 
-        deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count()
+        deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count(self.cluster)
         self.sleep(60, "Wait before triggering purger")
         rest.run_tombstone_purger(50)
         self.sleep(10, "Wait for purger to cleanup tombstones")
@@ -617,7 +617,7 @@ class ConfigPurging(CollectionBase):
                              CbServer.default_scope,
                              CbServer.default_collection)
 
-        deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count()
+        deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count(self.cluster)
         del_key_count = None
         for node_ip, curr_count in deleted_keys.items():
             if del_key_count is None:
@@ -727,7 +727,7 @@ class ConfigPurging(CollectionBase):
         shell.disconnect()
         self.sleep(60, "Wait for node to come online")
 
-        deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count()
+        deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count(self.cluster)
         self.log.info(deleted_keys)
         del_key_count = None
         for node_ip, curr_count in deleted_keys.items():
