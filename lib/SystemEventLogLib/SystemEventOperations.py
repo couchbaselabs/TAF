@@ -1,4 +1,6 @@
 import json
+import urllib
+
 import requests
 from copy import deepcopy
 from random import choice
@@ -111,7 +113,8 @@ class SystemEventRestHelper:
         """
         rest = self.get_rest_object(rest, server, username, password)
         api = rest.baseUrl + "internalSettings"
-        status, content = rest._http_request(
-            api, RestConnection.POST,
-            params={'eventLogsLimit': max_event_count})
+        params = urllib.urlencode({'eventLogsLimit': max_event_count})
+        status, content, _ = rest._http_request(
+            api, RestConnection.POST, params=params,
+            headers=rest.get_headers_for_content_type_json())
         return status, json.loads(content)
