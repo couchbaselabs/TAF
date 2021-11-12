@@ -842,7 +842,11 @@ class CBASExternalAzureLinks(CBASBaseTest):
         cbas_query = self.input.param("cbas_query", "Select count(*) from {0};")
 
         dataset_obj.dataset_properties["file_format"] = file_format
-        dataset_obj.dataset_properties["include"] = "*.{0}".format(file_format)
+        file_extension = self.input.param("file_extension", None)
+        if file_extension :
+            dataset_obj.dataset_properties["include"] = "*.{0}".format(file_extension)
+        else:
+            dataset_obj.dataset_properties["include"] = "*.{0}".format(file_format)
 
         if file_format in ["csv", "tsv"]:
             dataset_obj.dataset_properties[
