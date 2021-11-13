@@ -11,6 +11,7 @@ from Cb_constants import CbServer
 from cbas_utils.cbas_utils import CBASRebalanceUtil, FlushToDiskTask
 import copy
 from rbac_utils.Rbac_ready_functions import RbacUtils
+from remote.remote_util import RemoteMachineShellConnection
 
 rbac_users_created = {}
 
@@ -50,6 +51,8 @@ class CBASHighAvailability(CBASBaseTest):
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
+        for server in self.cluster.servers:
+            self.start_server(server)
         super(CBASHighAvailability, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
@@ -92,7 +95,7 @@ class CBASHighAvailability(CBASBaseTest):
             self.cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
             cbas_nodes_out=0, available_servers=self.available_servers, exclude_nodes=[])
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-            rebalance_task):
+            rebalance_task, self.cluster):
             self.fail("Rebalance failed")
 
     def connect_disconnect_all_local_links(self, disconnect=False):
@@ -381,6 +384,74 @@ class CBASHighAvailability(CBASBaseTest):
             self.log.info("Verifying CBAS indexes are working")
             self.verify_all_indexes_are_used()
 
+    def wait_for_rebalance_to_start_before_killing_server(
+            self, cluster, nodes_to_kill):
+
+        def stop_server(server):
+            shell = RemoteMachineShellConnection(server)
+            if shell.is_couchbase_installed():
+                shell.stop_couchbase()
+                self.log.debug("Couchbase stopped on {0}".format(server))
+            else:
+                shell.stop_membase()
+                self.log.debug("Membase stopped on {0}".format(server))
+            shell.disconnect()
+
+        try:
+            while True:
+                if cluster.rest._rebalance_progress_status() == 'running':
+                    break
+            if isinstance(nodes_to_kill, list):
+                for node in nodes_to_kill:
+                    self.log.info("Stopping Couchbase server on {0}".format(
+                        node.ip))
+                    stop_server(node)
+            else:
+                self.log.info("Stopping Couchbase server on {0}".format(
+                    nodes_to_kill.ip))
+                stop_server(nodes_to_kill)
+            return True
+        except Exception:
+            return False
+
+    def start_server(self, server):
+        shell = RemoteMachineShellConnection(server)
+        if shell.is_couchbase_installed():
+            shell.start_couchbase()
+            self.log.debug("Couchbase started on {0}".format(server))
+        else:
+            shell.start_membase()
+            self.log.debug("Membase started on {0}".format(server))
+        shell.disconnect()
+
+    def set_ops_on_nodes(self, operation, setA, setB):
+        a = copy.deepcopy(setA)
+        b = copy.deepcopy(setB)
+        if operation == "-":
+            b = [x.ip for x in b]
+            for node in a:
+                if node.ip in b:
+                    a.remove(node)
+            return a
+        elif operation == "|":
+            x = a + b
+            y = list(set([i.ip for i in x]))
+            c = list()
+            for node in x:
+                if node.ip in y:
+                    c.append(node)
+                    y.remove(node.ip)
+            return c
+        elif operation == "&":
+            x = a + b
+            y = [i.ip for i in a]
+            z = [i.ip for i in b]
+            c = list()
+            for j in x:
+                if (j.ip in y) and (j.ip in z):
+                    c.append(j)
+            return c
+
     def test_analytics_replica(self):
         self.log.info("Test started")
         self.setup_for_test()
@@ -636,7 +707,7 @@ class CBASHighAvailability(CBASBaseTest):
                     cbas_nodes_out=0, available_servers=self.available_servers,
                     exclude_nodes=[])
                 if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                        rebalance_task):
+                        rebalance_task, self.cluster):
                     self.fail("Rebalance failed")
 
                 self.log.info("Disconnecting all the Local links, so that the "
@@ -692,12 +763,8 @@ class CBASHighAvailability(CBASBaseTest):
                 cbas_nodes_out=0, available_servers=self.available_servers,
                 exclude_nodes=[])
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalance failed")
-
-            self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-                self.cluster, service_type="cbas", get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster)
 
             if len(self.cluster.cbas_nodes) < replica_num + 1:
                 self.log.info("Number of CBAS nodes is less than what is "
@@ -765,7 +832,7 @@ class CBASHighAvailability(CBASBaseTest):
                     cbas_nodes_out=0, available_servers=self.available_servers,
                     exclude_nodes=[])
                 if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                        rebalance_task):
+                        rebalance_task, self.cluster):
                     self.fail("Rebalance failed")
 
             self.log.info("Disconnecting all the Local links, so that the "
@@ -823,7 +890,7 @@ class CBASHighAvailability(CBASBaseTest):
                     cbas_nodes_in=0, cbas_nodes_out=1,
                     available_servers=self.available_servers, exclude_nodes=[])
                 if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                        rebalance_task):
+                        rebalance_task, self.cluster):
                     self.fail("Rebalance failed")
 
             self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
@@ -928,12 +995,8 @@ class CBASHighAvailability(CBASBaseTest):
             cbas_nodes_in=nodes_to_rebalance_in, cbas_nodes_out=0,
             available_servers=self.available_servers, exclude_nodes=[])
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task):
+                rebalance_task, self.cluster):
             self.fail("Rebalance failed")
-
-        self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-            self.cluster, service_type="cbas", get_all_nodes=True,
-            servers=self.cluster.nodes_in_cluster)
 
         if len(self.cluster.cbas_nodes) < self.replica_num + 1:
             self.log.info("Number of CBAS nodes is less than what is "
@@ -988,88 +1051,86 @@ class CBASHighAvailability(CBASBaseTest):
         elif node_to_crash == "existing":
             selected_node = random.choice(self.cluster.cbas_nodes)
 
-        self.log.info("Rebalancing IN a CBAS node")
+        self.log.info("Rebalancing IN {0} CBAS nodes".format(
+            nodes_to_rebalance_in))
         rebalance_task, self.available_servers = self.rebalance_util.rebalance(
             self.cluster, kv_nodes_in=0, kv_nodes_out=0,
             cbas_nodes_in=nodes_to_rebalance_in, cbas_nodes_out=0,
             available_servers=self.available_servers, exclude_nodes=[])
 
         if node_to_crash == "incoming":
-            selected_node = random.choice(list(set(
-                available_servers_before_rebalance) - set(
-                self.available_servers)))
+            selected_node = random.choice(
+                self.set_ops_on_nodes(
+                    "-", available_servers_before_rebalance,
+                    self.available_servers))
+            self.log.debug("Selected nodes - {0}".format(selected_node))
 
-        self.log.info("Stopping Couchbase server on {0}".format(
-            selected_node.ip))
-        try:
-            self.cluster_util.stop_server(self.cluster, selected_node)
-            server_stopped = True
-        except Exception:
-            server_stopped = False
-        finally:
-            if not server_stopped:
-                self.fail("Error while stopping couchbase server on {"
-                          "0}".format(selected_node.ip))
-            else:
-                if self.rebalance_util.wait_for_rebalance_task_to_complete(
-                        rebalance_task):
-                    self.fail("Rebalance passed when it should have failed")
+        server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
+            self.cluster, selected_node)
 
-                if not self.cbas_util.verify_actual_number_of_replicas(
-                        self.cluster, actual_replica):
-                    self.fail("Actual number of replicas is different from "
-                              "what was set")
-                self.post_replica_activation_verification(True, False, False)
+        if not server_stopped:
+            self.fail("Error while stopping couchbase server on {"
+                      "0}".format(selected_node.ip))
+        else:
+            if self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.cluster):
+                self.fail("Rebalance passed when it should have failed")
 
-                self.log.info("Restarting the server and rebalancing again")
-                try:
-                    self.cluster_util.start_server(self.cluster, selected_node)
-                except Exception:
-                    self.fail("Error while restarting server on {0}".format(
-                        selected_node))
+            if not self.cbas_util.verify_actual_number_of_replicas(
+                    self.cluster, actual_replica):
+                self.fail("Actual number of replicas is different from "
+                          "what was set")
+            self.post_replica_activation_verification(True, False, False)
 
-                rebalance_task, self.available_servers = self.rebalance_util.rebalance(
-                    self.cluster, kv_nodes_in=0, kv_nodes_out=0,
-                    cbas_nodes_in=0, cbas_nodes_out=0,
-                    available_servers=self.available_servers, exclude_nodes=[])
+            self.log.info("Restarting the server and rebalancing again")
+            try:
+                self.start_server(selected_node)
+            except Exception:
+                self.fail("Error while restarting server on {0}".format(
+                    selected_node))
 
-                if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                        rebalance_task):
-                    self.fail("Rebalance failed")
+            rebalance_task, self.available_servers = self.rebalance_util.rebalance(
+                self.cluster, kv_nodes_in=0, kv_nodes_out=0,
+                cbas_nodes_in=0, cbas_nodes_out=0,
+                available_servers=self.available_servers, exclude_nodes=[])
 
-                self.log.info("Disconnecting all the Local links, so that the "
-                              "data can be persisted")
-                self.connect_disconnect_all_local_links(disconnect=True)
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.cluster):
+                self.fail("Rebalance failed")
 
-                if not self.cbas_util.wait_for_replication_to_finish(
-                        self.cluster):
-                    self.fail("Replication could not complete before timeout")
+            self.log.info("Disconnecting all the Local links, so that the "
+                          "data can be persisted")
+            self.connect_disconnect_all_local_links(disconnect=True)
 
-                if not self.cbas_util.verify_actual_number_of_replicas(
-                        self.cluster, self.replica_num):
-                    self.fail("Actual number of replicas is different from "
-                              "what was set")
+            if not self.cbas_util.wait_for_replication_to_finish(
+                    self.cluster):
+                self.fail("Replication could not complete before timeout")
 
-                self.log.info("Marking {0} of the CBAS nodes as failed "
-                              "over".format(self.replica_num))
-                self.available_servers, kv_failover_nodes, cbas_failover_nodes = self.rebalance_util.failover(
-                    self.cluster, kv_nodes=0, cbas_nodes=self.replica_num,
-                    failover_type="Hard", action=None, timeout=7200,
-                    available_servers=self.available_servers, exclude_nodes=[],
-                    kv_failover_nodes=[], cbas_failover_nodes=[],
-                    all_at_once=True)
+            if not self.cbas_util.verify_actual_number_of_replicas(
+                    self.cluster, self.replica_num):
+                self.fail("Actual number of replicas is different from "
+                          "what was set")
 
-                self.post_replica_activation_verification()
+            self.log.info("Marking {0} of the CBAS nodes as failed "
+                          "over".format(self.replica_num))
+            self.available_servers, kv_failover_nodes, cbas_failover_nodes = self.rebalance_util.failover(
+                self.cluster, kv_nodes=0, cbas_nodes=self.replica_num,
+                failover_type="Hard", action=None, timeout=7200,
+                available_servers=self.available_servers, exclude_nodes=[],
+                kv_failover_nodes=[], cbas_failover_nodes=[],
+                all_at_once=True)
 
-                self.available_servers, kv_failover_nodes, cbas_failover_nodes = \
-                    self.rebalance_util.perform_action_on_failed_over_nodes(
-                        self.cluster, action="FullRecovery",
-                        available_servers=self.available_servers,
-                        kv_failover_nodes=kv_failover_nodes,
-                        cbas_failover_nodes=cbas_failover_nodes)
+            self.post_replica_activation_verification()
 
-                self.log.info("Verification after failed over node recovery ")
-                self.post_replica_activation_verification(True, False, False)
+            self.available_servers, kv_failover_nodes, cbas_failover_nodes = \
+                self.rebalance_util.perform_action_on_failed_over_nodes(
+                    self.cluster, action="FullRecovery",
+                    available_servers=self.available_servers,
+                    kv_failover_nodes=kv_failover_nodes,
+                    cbas_failover_nodes=cbas_failover_nodes)
+
+            self.log.info("Verification after failed over node recovery ")
+            self.post_replica_activation_verification(True, False, False)
 
     def test_effects_of_SWAP_rebalancing_cbas_nodes_on_replicas(self):
         self.log.info("Test started")
@@ -1083,12 +1144,8 @@ class CBASHighAvailability(CBASBaseTest):
             cbas_nodes_in=nodes_to_swap_rebalance, cbas_nodes_out=nodes_to_swap_rebalance,
             available_servers=self.available_servers, exclude_nodes=[])
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task):
+                rebalance_task, self.cluster, check_cbas_running=True):
             self.fail("Rebalance failed")
-
-        self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-            self.cluster, service_type="cbas", get_all_nodes=True,
-            servers=self.cluster.nodes_in_cluster)
 
         if len(self.cluster.cbas_nodes) < self.replica_num + 1:
             self.log.info("Number of CBAS nodes is less than what is "
@@ -1151,37 +1208,30 @@ class CBASHighAvailability(CBASBaseTest):
 
         selected_nodes = list()
         if node_to_crash in ["in", "in-out"]:
-            selected_nodes.append(random.choice(list(set(
-                available_servers_before_rebalance) - set(
-                self.available_servers))))
+            selected_nodes.append(random.choice(self.set_ops_on_nodes(
+                "-", available_servers_before_rebalance, self.available_servers)))
         elif node_to_crash in ["out", "in-out"]:
-            selected_nodes.append(random.choice(list(set(
-                self.available_servers) - set(
-                available_servers_before_rebalance))))
+            selected_nodes.append(random.choice(self.set_ops_on_nodes(
+                "-", self.available_servers, available_servers_before_rebalance)))
         elif node_to_crash == "other":
-            in_node = set(available_servers_before_rebalance) - set(self.available_servers)
-            out_node = set(self.available_servers) - set(available_servers_before_rebalance)
-            selected_nodes.append(random.choice(list(set(cluster_cbas_nodes)- (
-                    in_node | out_node))))
+            in_node = self.set_ops_on_nodes(
+                "-", available_servers_before_rebalance, self.available_servers)
+            out_node = self.set_ops_on_nodes(
+                "-", self.available_servers, available_servers_before_rebalance)
+            selected_nodes.append(random.choice(
+                self.set_ops_on_nodes(
+                    "-", cluster_cbas_nodes, self.set_ops_on_nodes(
+                        "|", in_node, out_node))))
 
-        server_stopped = True
-        for node in selected_nodes:
-            self.log.info("Stopping Couchbase server on {0}".format(
-                node.ip))
-            try:
-                self.cluster_util.stop_server(self.cluster, node)
-                server_stopped = server_stopped and True
-            except Exception:
-                server_stopped = server_stopped and False
-                self.log.error("Error while stopping couchbase server on {"
-                               "0}.".format(node.ip))
+        server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
+                self.cluster, selected_nodes)
 
         if not server_stopped:
             self.fail("Error while stopping couchbase server on one of the "
                       "cbas nodes")
         else:
             if self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalance passed when it should have failed")
 
             if not self.cbas_util.verify_actual_number_of_replicas(
@@ -1196,7 +1246,7 @@ class CBASHighAvailability(CBASBaseTest):
                 self.log.info("Starting Couchbase server on {0}".format(
                     node.ip))
                 try:
-                    self.cluster_util.start_server(self.cluster, node)
+                    self.start_server(node)
                     server_started = server_started and True
                 except Exception:
                     server_started = server_started and False
@@ -1212,7 +1262,7 @@ class CBASHighAvailability(CBASBaseTest):
                 available_servers=self.available_servers, exclude_nodes=[])
 
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalance failed")
 
             self.log.info("Disconnecting all the Local links, so that the "
@@ -1261,12 +1311,8 @@ class CBASHighAvailability(CBASBaseTest):
             cbas_nodes_in=0, cbas_nodes_out=nodes_to_rebalance_out,
             available_servers=self.available_servers, exclude_nodes=[])
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task):
+                rebalance_task, self.cluster):
             self.fail("Rebalance failed")
-
-        self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-            self.cluster, service_type="cbas", get_all_nodes=True,
-            servers=self.cluster.nodes_in_cluster)
 
         self.log.info("Disconnecting all the Local links, so that the "
                       "data can be persisted")
@@ -1276,7 +1322,13 @@ class CBASHighAvailability(CBASBaseTest):
                 self.cluster):
             self.fail("Replication could not complete before timeout")
 
-        if not self.cbas_util.verify_actual_number_of_replicas(self.cluster, 0):
+        if len(self.cluster.cbas_nodes) > self.replica_num:
+            actual_num_of_replicas = self.replica_num
+        else:
+            actual_num_of_replicas = len(self.cluster.cbas_nodes) - 1
+
+        if not self.cbas_util.verify_actual_number_of_replicas(
+                self.cluster, actual_num_of_replicas):
             self.fail("Actual number of replicas is different from "
                       "what was set")
 
@@ -1298,86 +1350,82 @@ class CBASHighAvailability(CBASBaseTest):
             cbas_nodes_in=0, cbas_nodes_out=nodes_to_rebalance_out,
             available_servers=self.available_servers, exclude_nodes=[])
 
-        rebalanced_out_nodes = set(cbas_nodes_in_cluster) & set(
-            self.available_servers)
+        rebalanced_out_nodes = self.set_ops_on_nodes(
+            "&", cbas_nodes_in_cluster, self.available_servers)
+
         if node_to_crash == "outgoing":
-            selected_node = random.choice(list(rebalanced_out_nodes))
+            selected_node = random.choice(rebalanced_out_nodes)
         elif node_to_crash == "other":
-            selected_node = random.choice(list(
-                set(cbas_nodes_in_cluster) - set(rebalanced_out_nodes)))
+            selected_node = random.choice(self.set_ops_on_nodes(
+                "-", cbas_nodes_in_cluster, rebalanced_out_nodes))
 
-        self.log.info("Stopping Couchbase server on {0}".format(
-            selected_node.ip))
-        try:
-            self.cluster_util.stop_server(self.cluster, selected_node)
-            server_stopped = True
-        except Exception:
-            server_stopped = False
-        finally:
-            if not server_stopped:
-                self.fail("Error while stopping couchbase server on {"
-                          "0}".format(selected_node.ip))
-            else:
-                if self.rebalance_util.wait_for_rebalance_task_to_complete(
-                        rebalance_task):
-                    self.fail("Rebalance passed when it should have failed")
+        server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
+            self.cluster, selected_node)
 
-                if not self.cbas_util.verify_actual_number_of_replicas(
-                        self.cluster, actual_replica):
-                    self.fail("Actual number of replicas is different from "
-                              "what was set")
-                self.post_replica_activation_verification(True, False, False)
+        if not server_stopped:
+            self.fail("Error while stopping couchbase server on {"
+                      "0}".format(selected_node.ip))
+        else:
+            if self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.cluster):
+                self.fail("Rebalance passed when it should have failed")
 
-                self.log.info("Restarting the server and rebalancing again")
-                try:
-                    self.cluster_util.start_server(self.cluster, selected_node)
-                except Exception:
-                    self.fail("Error while restarting server on {0}".format(
-                        selected_node))
+            if not self.cbas_util.verify_actual_number_of_replicas(
+                    self.cluster, actual_replica):
+                self.fail("Actual number of replicas is different from "
+                          "what was set")
+            self.post_replica_activation_verification(True, False, False)
 
-                rebalance_task, self.available_servers = self.rebalance_util.rebalance(
-                    self.cluster, kv_nodes_in=0, kv_nodes_out=0,
-                    cbas_nodes_in=0, cbas_nodes_out=0,
-                    available_servers=self.available_servers, exclude_nodes=[])
+            self.log.info("Restarting the server and rebalancing again")
+            try:
+                self.start_server(selected_node)
+            except Exception:
+                self.fail("Error while restarting server on {0}".format(
+                    selected_node))
 
-                if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                        rebalance_task):
-                    self.fail("Rebalance failed")
+            rebalance_task, self.available_servers = self.rebalance_util.rebalance(
+                self.cluster, kv_nodes_in=0, kv_nodes_out=0,
+                cbas_nodes_in=0, cbas_nodes_out=0,
+                available_servers=self.available_servers, exclude_nodes=[])
 
-                self.log.info("Disconnecting all the Local links, so that the "
-                              "data can be persisted")
-                self.connect_disconnect_all_local_links(disconnect=True)
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.cluster):
+                self.fail("Rebalance failed")
 
-                if not self.cbas_util.wait_for_replication_to_finish(
-                        self.cluster):
-                    self.fail("Replication could not complete before timeout")
+            self.log.info("Disconnecting all the Local links, so that the "
+                          "data can be persisted")
+            self.connect_disconnect_all_local_links(disconnect=True)
 
-                if not self.cbas_util.verify_actual_number_of_replicas(
-                        self.cluster, self.replica_num - nodes_to_rebalance_out):
-                    self.fail("Actual number of replicas is different from "
-                              "what was set")
+            if not self.cbas_util.wait_for_replication_to_finish(
+                    self.cluster):
+                self.fail("Replication could not complete before timeout")
 
-                self.log.info("Marking {0} of the CBAS nodes as failed "
-                              "over".format(self.replica_num))
-                self.available_servers, kv_failover_nodes, cbas_failover_nodes = self.rebalance_util.failover(
-                    self.cluster, kv_nodes=0,
-                    cbas_nodes=self.replica_num - nodes_to_rebalance_out,
-                    failover_type="Hard", action=None, timeout=7200,
-                    available_servers=self.available_servers, exclude_nodes=[],
-                    kv_failover_nodes=[], cbas_failover_nodes=[],
-                    all_at_once=True)
+            if not self.cbas_util.verify_actual_number_of_replicas(
+                    self.cluster, self.replica_num - nodes_to_rebalance_out):
+                self.fail("Actual number of replicas is different from "
+                          "what was set")
 
-                self.post_replica_activation_verification()
+            self.log.info("Marking {0} of the CBAS nodes as failed "
+                          "over".format(self.replica_num))
+            self.available_servers, kv_failover_nodes, cbas_failover_nodes = self.rebalance_util.failover(
+                self.cluster, kv_nodes=0,
+                cbas_nodes=self.replica_num - nodes_to_rebalance_out,
+                failover_type="Hard", action=None, timeout=7200,
+                available_servers=self.available_servers, exclude_nodes=[],
+                kv_failover_nodes=[], cbas_failover_nodes=[],
+                all_at_once=True)
 
-                self.available_servers, kv_failover_nodes, cbas_failover_nodes = \
-                    self.rebalance_util.perform_action_on_failed_over_nodes(
-                        self.cluster, action="FullRecovery",
-                        available_servers=self.available_servers,
-                        kv_failover_nodes=kv_failover_nodes,
-                        cbas_failover_nodes=cbas_failover_nodes)
+            self.post_replica_activation_verification()
 
-                self.log.info("Verification after failed over node recovery ")
-                self.post_replica_activation_verification(True, False, False)
+            self.available_servers, kv_failover_nodes, cbas_failover_nodes = \
+                self.rebalance_util.perform_action_on_failed_over_nodes(
+                    self.cluster, action="FullRecovery",
+                    available_servers=self.available_servers,
+                    kv_failover_nodes=kv_failover_nodes,
+                    cbas_failover_nodes=cbas_failover_nodes)
+
+            self.log.info("Verification after failed over node recovery ")
+            self.post_replica_activation_verification(True, False, False)
 
     def test_effects_of_rebalancing_IN_OUT_cbas_nodes_on_replicas(self):
         self.log.info("Test started")
@@ -1393,12 +1441,8 @@ class CBASHighAvailability(CBASBaseTest):
             cbas_nodes_out=nodes_to_rebalance_out,
             available_servers=self.available_servers, exclude_nodes=[])
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task):
+                rebalance_task, self.cluster, check_cbas_running=True):
             self.fail("Rebalance failed")
-
-        self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-            self.cluster, service_type="cbas", get_all_nodes=True,
-            servers=self.cluster.nodes_in_cluster)
 
         self.log.info("Disconnecting all the Local links, so that the "
                       "data can be persisted")
@@ -1413,7 +1457,7 @@ class CBASHighAvailability(CBASBaseTest):
         else:
             replica_num = len(self.cluster.cbas_nodes) - 1
         if not self.cbas_util.verify_actual_number_of_replicas(
-                self.cluster, self.replica_num):
+                self.cluster, replica_num):
             self.fail("Actual number of replicas is different from "
                       "what was set")
 
@@ -1451,9 +1495,10 @@ class CBASHighAvailability(CBASBaseTest):
 
         available_servers_before_rebalance = copy.deepcopy(
             self.available_servers)
+        self.log.debug("available_servers_before_rebalance - {0}".format(available_servers_before_rebalance))
         cluster_cbas_nodes = copy.deepcopy(self.cluster.cbas_nodes)
 
-        self.log.info("Rebalancing IN-OUt CBAS nodes")
+        self.log.info("Rebalancing IN-OUT CBAS nodes")
         rebalance_task, self.available_servers = self.rebalance_util.rebalance(
             self.cluster, kv_nodes_in=0, kv_nodes_out=0,
             cbas_nodes_in=nodes_to_rebalance_in,
@@ -1461,57 +1506,55 @@ class CBASHighAvailability(CBASBaseTest):
             available_servers=self.available_servers, exclude_nodes=[])
 
         selected_nodes = list()
+        self.log.debug("as {0}".format(self.available_servers))
         for action in node_to_crash:
             if action == "in":
+                x = self.set_ops_on_nodes(
+                    "-", available_servers_before_rebalance, self.available_servers)
+                self.log.debug("x {0}".format(x))
                 while True:
-                    selected_node = random.choice(list(set(
-                        available_servers_before_rebalance) - set(
-                        self.available_servers)))
+                    selected_node = random.choice(x)
                     if selected_node not in selected_nodes:
                         selected_nodes.append(selected_node)
                         break
-            elif node_to_crash == "out":
+            elif action == "out":
+                y = self.set_ops_on_nodes(
+                    "-", self.available_servers, available_servers_before_rebalance)
+                self.log.debug("y {0}".format(y))
                 while True:
-                    selected_node = random.choice(list(set(
-                        self.available_servers) - set(
-                        available_servers_before_rebalance)))
+                    selected_node = random.choice(y)
                     if selected_node not in selected_nodes:
                         selected_nodes.append(selected_node)
                         break
-            elif node_to_crash == "other":
-                in_node = set(available_servers_before_rebalance) - set(
-                    self.available_servers)
-                out_node = set(self.available_servers) - set(
-                    available_servers_before_rebalance)
-                selected_nodes.append(
-                    random.choice(list(set(cluster_cbas_nodes) - (
-                            in_node | out_node))))
+            elif action == "other":
+                in_node = self.set_ops_on_nodes(
+                    "-", available_servers_before_rebalance, self.available_servers)
+                out_node = self.set_ops_on_nodes(
+                    "-", self.available_servers, available_servers_before_rebalance)
+                select_node = self.set_ops_on_nodes(
+                    "-", cluster_cbas_nodes, self.set_ops_on_nodes(
+                        "|", in_node, out_node))
+                self.log.debug("in_node {0}".format(in_node))
+                self.log.debug("out_node {0}".format(out_node))
+                self.log.debug("select_node {0}".format(select_node))
+                selected_nodes.append(random.choice(select_node))
 
-        server_stopped = True
-        for node in selected_nodes:
-            self.log.info("Stopping Couchbase server on {0}".format(
-                node.ip))
-            try:
-                self.cluster_util.stop_server(self.cluster, node)
-                server_stopped = server_stopped and True
-            except Exception:
-                server_stopped = server_stopped and False
-                self.log.error("Error while stopping couchbase server on {"
-                               "0}.".format(node.ip))
+        server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
+            self.cluster, selected_nodes)
 
         if not server_stopped:
             self.fail("Error while stopping couchbase server on one of the "
                       "cbas nodes")
         else:
             if self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalance passed when it should have failed")
 
             if not self.cbas_util.verify_actual_number_of_replicas(
                     self.cluster, actual_replica):
                 self.fail("Actual number of replicas is different from "
                           "what was set")
-            self.post_replica_activation_verification(True, False, False)
+            #self.post_replica_activation_verification(True, False, False)
 
             server_started = True
             self.log.info("Restarting the server and rebalancing again")
@@ -1519,7 +1562,7 @@ class CBASHighAvailability(CBASBaseTest):
                 self.log.info("Starting Couchbase server on {0}".format(
                     node.ip))
                 try:
-                    self.cluster_util.start_server(self.cluster, node)
+                    self.start_server(node)
                     server_started = server_started and True
                 except Exception:
                     server_started = server_started and False
@@ -1536,7 +1579,7 @@ class CBASHighAvailability(CBASBaseTest):
                 available_servers=self.available_servers, exclude_nodes=[])
 
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalance failed")
 
             self.log.info("Disconnecting all the Local links, so that the "
@@ -1546,10 +1589,6 @@ class CBASHighAvailability(CBASBaseTest):
             if not self.cbas_util.wait_for_replication_to_finish(
                     self.cluster):
                 self.fail("Replication could not complete before timeout")
-
-            self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-                self.cluster, service_type="cbas", get_all_nodes=True,
-                servers=self.cluster.nodes_in_cluster)
 
             if len(self.cluster.cbas_nodes) > self.replica_num:
                 actual_replica = self.replica_num
@@ -1600,7 +1639,7 @@ class CBASHighAvailability(CBASBaseTest):
             self.fail("Failed to stop rebalance")
 
         if self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task):
+                rebalance_task, self.cluster):
             self.fail("Rebalance passed when it should have failed")
 
         if not self.cbas_util.verify_actual_number_of_replicas(
@@ -1615,7 +1654,7 @@ class CBASHighAvailability(CBASBaseTest):
             available_servers=self.available_servers, exclude_nodes=[])
 
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task):
+                rebalance_task, self.cluster):
             self.fail("Rebalance failed")
 
         self.log.info("Disconnecting all the Local links, so that the "
@@ -1744,10 +1783,6 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Verification after failed over node recovery ")
         self.post_replica_activation_verification(True, False, False)
-
-        self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-            self.cluster, service_type="cbas", get_all_nodes=True,
-            servers=self.cluster.nodes_in_cluster)
 
         if len(self.cluster.cbas_nodes) <= self.replica_num + 1:
             if not self.cbas_util.verify_actual_number_of_replicas(

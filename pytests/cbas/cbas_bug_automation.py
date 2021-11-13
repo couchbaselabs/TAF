@@ -135,7 +135,7 @@ class CBASBugAutomation(CBASBaseTest):
                 cbas_nodes_out=0, available_servers=self.available_servers,
                 exclude_nodes=[])
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalancing IN KV and CBAS nodes Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(self.cluster,
@@ -168,7 +168,7 @@ class CBASBugAutomation(CBASBaseTest):
                 cbas_nodes_out=1, available_servers=self.available_servers,
                 exclude_nodes=[])
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalancing OUT KV and CBAS nodes Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(self.cluster,
@@ -204,7 +204,7 @@ class CBASBugAutomation(CBASBaseTest):
                 cbas_nodes_out=0, available_servers=self.available_servers,
                 exclude_nodes=[])
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalancing OUT KV and CBAS nodes Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(self.cluster,
@@ -240,7 +240,7 @@ class CBASBugAutomation(CBASBaseTest):
                 cbas_nodes_out=1, available_servers=self.available_servers,
                 exclude_nodes=[])
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalancing OUT KV and CBAS nodes Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(self.cluster,
@@ -273,7 +273,7 @@ class CBASBugAutomation(CBASBaseTest):
                 cbas_nodes_out=0, available_servers=self.available_servers,
                 exclude_nodes=[])
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalancing OUT KV and CBAS nodes Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(self.cluster,
@@ -306,7 +306,7 @@ class CBASBugAutomation(CBASBaseTest):
                 cbas_nodes_out=1, available_servers=self.available_servers,
                 exclude_nodes=[])
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, self.cluster):
                 self.fail("Rebalancing OUT KV and CBAS nodes Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(self.cluster,

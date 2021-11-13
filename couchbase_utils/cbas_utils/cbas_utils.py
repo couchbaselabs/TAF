@@ -4681,6 +4681,9 @@ class CbasUtil(UDFUtil):
             if response["partitionsTopology"]["numReplicas"] == expected_num:
                 replica_num_matched = replica_num_matched and True
             else:
+                self.log.error("Expected number of replicas - {0}, Actual "
+                               "number of replicas - {1}".format(
+                    expected_num, response["partitionsTopology"]["numReplicas"]))
                 replica_num_matched = replica_num_matched and False
 
             partition_ids = list()
@@ -4692,6 +4695,9 @@ class CbasUtil(UDFUtil):
                     if len(partition["replicas"]) == expected_num:
                         replica_num_matched = replica_num_matched and True
                     else:
+                        self.log.error(
+                            "Actual number of replicas for partition {0} is {1}".format(
+                                expected_num, len(partition["replicas"])))
                         replica_num_matched = replica_num_matched and False
             return replica_num_matched
         else:
@@ -4876,8 +4882,14 @@ class CBASRebalanceUtil(object):
 
         self.query_threads = list()
 
-    def wait_for_rebalance_task_to_complete(self, task):
+    def wait_for_rebalance_task_to_complete(self, task, cluster,
+                                            check_cbas_running=False):
         self.task.jython_task_manager.get_task_result(task)
+        if task.result and hasattr(cluster, "cbas_nodes"):
+            self.reset_cbas_cc_node(cluster)
+            if check_cbas_running:
+                return self.cbas_util.is_analytics_running(cluster)
+            return True
         return task.result
 
     def rebalance(self, cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
@@ -4931,6 +4943,7 @@ class CBASRebalanceUtil(object):
         cluster.nodes_in_cluster.extend(servs_in)
         cluster.nodes_in_cluster = list(
             set(cluster.nodes_in_cluster) - set(servs_out))
+
         return rebalance_task, available_servers
 
     def start_parallel_queries(self, cluster, run_kv_queries, run_cbas_queries,
@@ -5115,7 +5128,7 @@ class CBASRebalanceUtil(object):
         :param exclude_nodes <list> list of nodes not to be considered for
         fail over.
         """
-        self.log.info("{0} Failover a node and {1} that node".format(
+        self.log.info("Failover Type - {0}, Action after failover {1}".format(
             failover_type, action))
 
         if kv_nodes:
@@ -5200,7 +5213,7 @@ class CBASRebalanceUtil(object):
                 if all_at_once:
                     fail_over_status = fail_over_status and cluster.rest.fail_over(
                         to_fail_over, graceful=False, all_at_once=True)
-                self.reset_cbas_cc_node(cluster, cbas_failover_nodes)
+                self.reset_cbas_cc_node(cluster)
         if kv_nodes or cbas_nodes:
             time.sleep(30)
             self.wait_for_failover_or_assert(cluster, failover_count, timeout)
@@ -5215,9 +5228,6 @@ class CBASRebalanceUtil(object):
             kv_failover_nodes=[], cbas_failover_nodes=[]):
         # Perform the action
         if action == "RebalanceOut":
-            if cbas_failover_nodes:
-                self.reset_cbas_cc_node(cluster, cbas_failover_nodes)
-
             nodes = cluster.rest.node_statuses()
             cluster.rest.rebalance(
                 otpNodes=[node.id for node in nodes],
@@ -5247,22 +5257,26 @@ class CBASRebalanceUtil(object):
                 cluster.nodes_in_cluster, [], [],
                 retry_get_process_num=200)
             if not self.wait_for_rebalance_task_to_complete(
-                    rebalance_task):
+                    rebalance_task, cluster):
                 raise Exception(
                     "Rebalance failed while doing recovery after failover")
             time.sleep(10)
+        if cbas_failover_nodes:
+            self.reset_cbas_cc_node(cluster)
         # After the action has been performed on failed over node,
         # the failed over nodes list should become empty.
         kv_failover_nodes, cbas_failover_nodes = [], []
         return available_servers, kv_failover_nodes, cbas_failover_nodes
 
-    def reset_cbas_cc_node(self, cluster, failed_over_nodes):
-        cbas_nodes_in_cluster = self.cluster_util.get_nodes_from_services_map(
+    def reset_cbas_cc_node(self, cluster):
+        self.log.info("Reassigning cluster CBAS CC node")
+        cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
             cluster, service_type="cbas", get_all_nodes=True,
             servers=cluster.nodes_in_cluster)
-        cbas_failover_node_ips = [node.ip for node in failed_over_nodes]
-        for node in cbas_nodes_in_cluster:
-            if node.ip not in cbas_failover_node_ips:
+        cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
+            cluster.cbas_nodes[0])
+        for node in cluster.cbas_nodes:
+            if node.ip == cbas_cc_node_ip:
                 cluster.cbas_cc_node = node
                 break
 

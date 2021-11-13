@@ -100,7 +100,7 @@ class CBASRebalance(CBASBaseTest):
             cbas_nodes_out, self.available_servers, self.cluster.exclude_nodes)
 
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task):
+                rebalance_task, self.cluster):
             self.fail("Rebalance failed")
 
         if self.data_load_stage == "during":

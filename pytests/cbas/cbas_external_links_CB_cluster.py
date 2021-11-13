@@ -1865,7 +1865,8 @@ class CBASExternalLinks(CBASBaseTest):
             cbas_nodes_in=0, cbas_nodes_out=0,
             available_servers=self.available_servers, exclude_nodes=[])
 
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(rebalance_task):
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, to_cluster):
             self.fali("{0} on remote cluster failed".format(
                 self.input.param("rebalance_type", "swap").upper()))
 
@@ -1935,7 +1936,8 @@ class CBASExternalLinks(CBASBaseTest):
             available_servers=self.available_servers,
             exclude_nodes=[self.analytics_cluster.cbas_cc_node])
 
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(rebalance_task):
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, self.analytics_cluster):
             self.fali("{0} on remote cluster failed".format(
                 self.input.param("rebalance_type", "swap").upper()))
 
@@ -2320,7 +2322,7 @@ class CBASExternalLinks(CBASBaseTest):
 
             for rebalance_tsk in rebalance_tasks:
                 if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                        rebalance_tsk):
+                        rebalance_tsk, self.analytics_cluster):
                     return False
             return True
 

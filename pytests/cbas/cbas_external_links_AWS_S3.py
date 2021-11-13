@@ -1395,7 +1395,8 @@ class CBASExternalLinks(CBASBaseTest):
             self.cluster, run_kv_queries=False, run_cbas_queries=True,
             parallelism=3)
 
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(rebalance_task):
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, self.cluster):
             self.fail("Rebalancing in CBAS node failed.")
 
         self.rebalance_util.stop_parallel_queries(None, cbas_query_task)
@@ -1433,7 +1434,8 @@ class CBASExternalLinks(CBASBaseTest):
             self.cluster, run_kv_queries=False, run_cbas_queries=True,
             parallelism=3)
 
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(rebalance_task):
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, self.cluster):
             self.fail("Rebalancing in CBAS node failed.")
 
         self.rebalance_util.stop_parallel_queries(None, cbas_query_task)
@@ -1471,7 +1473,8 @@ class CBASExternalLinks(CBASBaseTest):
             self.cluster, run_kv_queries=False, run_cbas_queries=True,
             parallelism=3)
 
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(rebalance_task):
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, self.cluster):
             self.fail("Rebalancing in CBAS node failed.")
 
         self.rebalance_util.stop_parallel_queries(None, cbas_query_task)

@@ -586,7 +586,7 @@ class CBASHelper(RestConnection):
             errors = list()
             if not status:
                 if not content:
-                    errors.append({"msg": "Request Rejected", "code": 0 })
+                    errors.append({"msg": "Request Rejected", "code": 0})
                 else:
                     if isinstance(content, dict):
                         if "errors" in content:

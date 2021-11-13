@@ -843,7 +843,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 "_default", CBASHelper.unformat_name("invalid", "_default"))
         # Negative scenario ends
         if self.input.param('create_dataset', False):
-            new_dataset_name = self.cbas_util.generate_name()
+            new_dataset_name = CBASHelper.format_name(
+                self.cbas_util.generate_name())
             if not self.cbas_util.create_dataset(
                 self.cluster, new_dataset_name, dataset.full_kv_entity_name,
                 dataverse_name=dataset.dataverse_name):
