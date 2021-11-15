@@ -184,7 +184,6 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.nodes_in_cluster.extend(self.cluster.fts_nodes)
             self.fts_util = FTSUtils(self.cluster, self.cluster_util, self.task)
 
-        self.available_servers = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
         print self.available_servers
         self.writer_threads = self.input.param("writer_threads", "disk_io_optimized")
         self.reader_threads = self.input.param("reader_threads", "disk_io_optimized")
