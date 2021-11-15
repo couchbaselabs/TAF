@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from random import choice, randint
 from threading import Thread
 
+from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
 from SystemEventLogLib.Events import Event, EventHelper
@@ -15,8 +16,10 @@ from basetestcase import ClusterSetup
 from cb_constants.system_event_log import NsServer, KvEngine
 from cb_tools.cb_collectinfo import CbCollectInfo
 from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.durability_helper import BucketDurability
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection, OS
+from table_view import TableView
 
 
 class SystemEventLogs(ClusterSetup):
@@ -24,6 +27,7 @@ class SystemEventLogs(ClusterSetup):
         super(SystemEventLogs, self).setUp()
 
         self.log_setup_status("SystemEventLogs", "started")
+        self.create_bucket(self.cluster)
         self.max_event_count = \
             self.input.param("max_event_count",
                              CbServer.sys_event_def_logs)
@@ -65,7 +69,8 @@ class SystemEventLogs(ClusterSetup):
         for server in self.cluster.nodes_in_cluster:
             self.log.info("Validating events from node %s" % server.ip)
             failures = self.system_events.validate(server=server,
-                                                   since_time=start_time)
+                                                   since_time=start_time,
+                                                   events_count=-1)
             if failures:
                 self.fail(failures)
 
@@ -90,10 +95,9 @@ class SystemEventLogs(ClusterSetup):
         """
         Create custom events for 'component' using the event-ids
         provided by the 'event_id_range'.
-        'is_range_valid' determines the provided values are right or not.
-        is_range_valid - Basically to test negative scenarios
+        'is_range_valid' - Determines the provided values are right or not.
+                           (Used for -ve test cases)
         """
-        start_time = EventHelper.get_timestamp_format(datetime.now())
         component = self.input.param("component", Event.Component.NS_SERVER)
         event_id_range = self.input.param("event_id_range", "0:1023")
         is_range_valid = self.input.param("is_range_valid", True)
@@ -137,7 +141,7 @@ class SystemEventLogs(ClusterSetup):
             if is_range_valid:
                 # Add events for later validation
                 self.system_events.add_event(event_dict)
-        self.__validate(start_time)
+        self.__validate(self.system_events.test_start_time)
 
     def test_event_fields_missing(self):
         """
@@ -670,6 +674,13 @@ class SystemEventLogs(ClusterSetup):
 
         self.__validate(self.system_events.test_start_time)
 
+    def get_process_id(self, shell, process_name):
+        self.log.debug("Fetching process_id for %s" % process_name)
+        process_id, _ = shell.execute_command(
+            "ps -ef | grep \"%s \" | grep -v grep | awk '{print $2}'"
+            % process_name)
+        return process_id[0].strip()
+
     def test_process_crash(self):
         """
         Crash services to make sure we get respective sys-events generated
@@ -681,9 +692,7 @@ class SystemEventLogs(ClusterSetup):
             self.log.info("Testing %s crash" % process_name)
             target_node = choice(service_nodes)
             shell = RemoteMachineShellConnection(target_node)
-            process_id, _ = shell.execute_command(
-                "ps -ef | grep \"%s \" | grep -v grep | awk '{print $2}'"
-                % process_name)
+            process_id = self.get_process_id(shell, process_name)
             self.log.debug("Pid of '%s'=%s" % (process_name, process_id))
             shell.execute_command("kill -9 %s" % process_id)
             shell.disconnect()
@@ -936,5 +945,366 @@ class SystemEventLogs(ClusterSetup):
 
         # Wait for rebalance to complete
         self.task_manager.get_task_result(rebalance_task)
+
+        self.__validate(self.system_events.test_start_time)
+
+    # KV / Data related test cases
+    def test_bucket_related_event_logs(self):
+        """
+        - Create bucket
+        - Create scope/collections
+        - Drop scope/collections
+        - Flush bucket
+        - Delete bucket
+        - Validate all above events
+        """
+
+        def bucket_events():
+            event_helper = EventHelper()
+            event_helper.set_test_start_time()
+            kv_node = choice(self.cluster.nodes_in_cluster)
+
+            bucket_name = self.bucket_util.get_random_name()
+            bucket_type = choice([Bucket.Type.EPHEMERAL, Bucket.Type.MEMBASE])
+            bucket_size = randint(512, 600)
+            num_replicas = choice([0, 1, 2])
+            bucket_ttl = choice([0, 1000, 50000, 2147483647])
+            compression_mode = choice([Bucket.CompressionMode.ACTIVE,
+                                       Bucket.CompressionMode.PASSIVE,
+                                       Bucket.CompressionMode.OFF])
+            bucket_storage = choice([Bucket.StorageBackend.couchstore,
+                                     Bucket.StorageBackend.magma])
+            flush_enabled = choice([0, 1])
+            if bucket_type == Bucket.Type.EPHEMERAL:
+                bucket_durability = choice(
+                    [BucketDurability[Bucket.DurabilityLevel.NONE],
+                     BucketDurability[Bucket.DurabilityLevel.MAJORITY]])
+            else:
+                bucket_durability = \
+                    choice([value for _, value in BucketDurability.items()])
+
+            tbl = TableView(self.log.critical)
+            tbl.set_headers(["Field", "Value"])
+            tbl.add_row(["Bucket Type", bucket_type])
+            tbl.add_row(["Bucket size", str(bucket_size)])
+            tbl.add_row(["Replicas", str(num_replicas)])
+            tbl.add_row(["TTL", str(bucket_ttl)])
+            tbl.add_row(["Compression mode", compression_mode])
+            tbl.add_row(["Storage backend", bucket_storage])
+            tbl.add_row(["Flush enabled", str(flush_enabled)])
+            tbl.display("Creating bucket %s:" % bucket_name)
+
+            try:
+                self.bucket_util.create_default_bucket(
+                    self.cluster,
+                    bucket_type=bucket_type,
+                    ram_quota=bucket_size,
+                    replica=num_replicas,
+                    maxTTL=bucket_ttl,
+                    compression_mode=compression_mode,
+                    wait_for_warmup=True,
+                    conflict_resolution=Bucket.ConflictResolution.SEQ_NO,
+                    replica_index=self.bucket_replica_index,
+                    storage=bucket_storage,
+                    eviction_policy=self.bucket_eviction_policy,
+                    flush_enabled=flush_enabled,
+                    bucket_durability=bucket_durability,
+                    purge_interval=self.bucket_purge_interval,
+                    autoCompactionDefined="false",
+                    fragmentation_percentage=50,
+                    bucket_name=bucket_name)
+            except Exception as e:
+                test_failures.append(str(e))
+                return
+
+            buckets = self.bucket_util.get_all_buckets(self.cluster)
+            bucket = [bucket for bucket in buckets
+                      if bucket.name == bucket_name][0]
+
+            bucket_create_event = DataServiceEvents.bucket_create(
+                self.cluster.master.ip, self.bucket_type,
+                bucket_name, bucket.uuid,
+                {'compression_mode': self.compression_mode,
+                 'max_ttl': bucket_ttl,
+                 'storage_mode': bucket_storage,
+                 'conflict_resolution_type': Bucket.ConflictResolution.SEQ_NO,
+                 'eviction_policy': self.bucket_eviction_policy,
+                 'purge_interval': 'undefined',
+                 'durability_min_level': self.bucket_durability_level,
+                 'num_replicas': num_replicas,
+                 'ram_quota': bucket_size*len(self.cluster.nodes_in_cluster)})
+            if self.bucket_type == Bucket.Type.EPHEMERAL:
+                bucket_create_event['storage_mode'] = Bucket.Type.EPHEMERAL
+                bucket_create_event.pop('purge_interval')
+            if bucket_create_event[Event.Fields.EXTRA_ATTRS]['bucket_props'][
+                    'eviction_policy'] == Bucket.EvictionPolicy.VALUE_ONLY:
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props']['eviction_policy'] = 'value_only'
+            self.system_events.add_event(bucket_create_event)
+
+            scope = self.bucket_util.get_random_name(
+                max_length=CbServer.max_scope_name_len)
+            collection = self.bucket_util.get_random_name(
+                max_length=CbServer.max_collection_name_len)
+
+            try:
+                self.log.info("%s - Creating scope" % bucket_name)
+                self.bucket_util.create_scope(kv_node, bucket,
+                                              {"name": scope})
+                event_helper.add_event(
+                    DataServiceEvents.scope_created(kv_node.ip, bucket_name,
+                                                    bucket.uuid, scope))
+                self.log.info("%s - Creating collection" % bucket_name)
+                self.bucket_util.create_collection(kv_node, bucket, scope,
+                                                   {"name": collection})
+                event_helper.add_event(
+                    DataServiceEvents.collection_created(
+                        kv_node.ip, bucket_name, bucket.uuid, scope,
+                        collection))
+
+                if flush_enabled:
+                    self.bucket_util.flush_bucket(self.cluster, bucket)
+                    event_helper.add_event(
+                        DataServiceEvents.bucket_flushed(
+                            kv_node.ip, bucket_name, bucket.uuid))
+                    self.sleep(5, "%s - Wait after flush" % bucket_name)
+
+                self.log.info("%s - Dropping collection" % bucket_name)
+                self.bucket_util.drop_collection(kv_node, bucket,
+                                                 scope, collection)
+                event_helper.add_event(
+                    DataServiceEvents.collection_dropped(
+                        kv_node.ip,  bucket_name, bucket.uuid,
+                        scope, collection))
+
+                self.log.info("%s - Dropping scope" % bucket_name)
+                self.bucket_util.drop_scope(kv_node, bucket, scope)
+                event_helper.add_event(
+                    DataServiceEvents.scope_dropped(kv_node.ip, bucket_name,
+                                                    bucket.uuid, scope))
+
+                self.log.info("%s - Deleting bucket" % bucket_name)
+                self.bucket_util.delete_bucket(self.cluster, bucket)
+                event_helper.add_event(
+                    DataServiceEvents.bucket_dropped(kv_node.ip, bucket_name,
+                                                     bucket.uuid))
+
+                # Validation
+                for node in self.cluster.nodes_in_cluster:
+                    failures = event_helper.validate(
+                        node, event_helper.test_start_time, events_count=-1)
+                    if failures:
+                        test_failures.extend(failures)
+            except Exception as e:
+                test_failures.append(str(e))
+                return
+
+        # Test starts here
+        index = 0
+        max_loops = 5
+        num_threads = 4
+        test_failures = list()
+        while index < max_loops:
+            self.log.info("Loop index %s" % index)
+            bucket_threads = list()
+            for _ in range(num_threads):
+                thread = Thread(target=bucket_events)
+                thread.start()
+                bucket_threads.append(thread)
+
+            for thread in bucket_threads:
+                thread.join(60)
+
+            if test_failures:
+                self.fail(test_failures)
+            index += 1
+            self.sleep(5, "Wait for all buckets to get deleted")
+
+    def test_update_bucket_params(self):
+        """
+        Update all possible bucket specific params
+        Validate the respective system_event log for the updated params
+        """
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+        old_settings = {
+            "compression_mode": bucket.compressionMode,
+            "max_ttl": bucket.maxTTL,
+            "storage_mode": bucket.storageBackend,
+            "conflict_resolution_type": bucket.conflictResolutionType,
+            "num_threads": bucket.threadsNumber,
+            "flush_enabled": True if bucket.flushEnabled else False,
+            "durability_min_level": bucket.durability_level,
+            "replica_index": bucket.replicaIndex,
+            "num_replicas": bucket.replicaNumber
+        }
+        if bucket.evictionPolicy == Bucket.EvictionPolicy.VALUE_ONLY:
+            old_settings["eviction_policy"] = 'value_only'
+
+        # Add BucketOnline event in case of single node cluster
+        # (In multi-node we may not know the order of events across the nodes)
+        if self.nodes_init == 1:
+            self.system_events.add_event(DataServiceEvents.bucket_online(
+                self.cluster.master.ip, bucket.name, bucket.uuid))
+
+        # Validate pre-bucket update events
+        self.__validate(self.system_events.test_start_time)
+
+        # Update bucket RAM quota
+        self.log.info("Updating bucket_ram quota")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, bucket,
+            ram_quota_mb=self.bucket_size+1)
+
+        # Get the last bucket update event
+        bucket_updated_event = DataServiceEvents.bucket_updated(
+            self.cluster.master.ip, bucket.name, bucket.uuid,
+            bucket.bucketType, dict(), dict())
+        event = self.event_rest_helper.get_events(
+            server=self.cluster.master)["events"][-1]
+        for param, value in bucket_updated_event.items():
+            if param == Event.Fields.EXTRA_ATTRS:
+                continue
+            if event[param] != value:
+                self.fail("Value mismatch for '%s'. Expected %s != %s Actual"
+                          % (param, value, event[param]))
+
+        # Test other mandatory fields
+        event_keys = event.keys()
+        for param in [Event.Fields.TIMESTAMP, Event.Fields.UUID]:
+            if param not in event_keys:
+                self.fail("%s key missing in bucket update event" % param)
+
+        # Test Extra Attributes fields
+        for param in ["bucket", "bucket_uuid", "type"]:
+            exp_val = bucket_updated_event[Event.Fields.EXTRA_ATTRS][param]
+            act_val = event[Event.Fields.EXTRA_ATTRS][param]
+            if act_val != exp_val:
+                self.fail("Mismatch in %s. Expected %s != %s Actual"
+                          % (param, exp_val, act_val))
+
+        act_val = event[Event.Fields.EXTRA_ATTRS]["old_settings"]
+        if 'ram_quota' not in act_val.keys():
+            self.fail("'ram_quota' missing in old_settings: %s" % act_val)
+        act_val.pop('ram_quota')
+        act_val.pop('purge_interval')
+        if old_settings != act_val:
+            self.fail("Old settings' value mismatch. Expected %s != %s Actual"
+                      % (old_settings, act_val))
+
+        act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
+        act_val_keys = act_val.keys()
+        if len(act_val_keys) != 1 or 'ram_quota' not in act_val_keys:
+            self.fail("Unexpected key in new-setting: %s" % act_val_keys)
+
+        self.num_replicas += 1
+        self.log.info("Updating bucket_replica=%s" % self.num_replicas)
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, bucket,
+            replica_number=self.num_replicas)
+
+        event = self.event_rest_helper.get_events(
+            server=self.cluster.master)["events"][-1]
+        act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
+        act_val_keys = act_val.keys()
+        if len(act_val_keys) != 1 or 'num_replicas' not in act_val_keys:
+            self.fail("Unexpected key in new-setting: %s" % act_val_keys)
+        if event[Event.Fields.EXTRA_ATTRS]["old_settings"]["num_replicas"] \
+                != self.num_replicas-1:
+            self.fail("Mismatch in old replica val. Expected %s != %s Actual"
+                      % (self.num_replicas-1,
+                         event[Event.Fields.EXTRA_ATTRS][
+                             "old_settings"]["num_replicas"]))
+        if act_val["num_replicas"] != self.num_replicas:
+            self.fail("Mismatch in replica value. Expected %s != %s Actual"
+                      % (self.num_replicas, act_val["num_replicas"]))
+
+    def test_update_memcached_settings(self):
+        """
+        Update memcached settings using dial/eval.
+        Validate the respective system_event log for the updated params
+        """
+        self.bucket_util.set_flusher_total_batch_limit(self.cluster,
+                                                       self.cluster.buckets,
+                                                       5)
+        self.system_events.add_event(
+            DataServiceEvents.memcached_settings_changed(
+                self.cluster.master, {}, {"flusher_total_batch_limit": 5}))
+        self.__validate(self.system_events.test_start_time)
+
+    def test_auto_reprovisioning(self):
+        """
+        - Create Ephemeral bucket
+        - Trigger auto-reprovisioning and validate the system event logs
+        """
+        rebalance_failure = self.input.param("with_rebalance", False)
+        rebalance_task = None
+        bucket = self.cluster.buckets[0]
+        active_nodes = [node.ip for node in self.cluster.nodes_in_cluster]
+        eject_nodes = [self.cluster.nodes_in_cluster[-1]]
+        keep_nodes = [node.ip for node in self.cluster.nodes_in_cluster
+                      if node.ip != eject_nodes[0].ip]
+        empty_list = list()
+        memcached_process = "memcached"
+        if self.bucket_type != Bucket.Type.EPHEMERAL:
+            self.fail("Test valid only for ephemeral bucket")
+
+        node = choice(self.cluster.nodes_in_cluster)
+        self.log.info("Target node: %s" % node.ip)
+        shell = RemoteMachineShellConnection(node)
+        p_id = self.get_process_id(shell, memcached_process)
+        self.log.critical("Memcached pid=%s" % p_id)
+
+        if rebalance_failure:
+            rebalance_task = self.task.async_rebalance(
+                self.cluster.nodes_in_cluster,
+                to_add=[], to_remove=eject_nodes)
+            self.system_events.add_event(
+                NsServerEvents.rebalance_started(
+                    node.ip, "rest", active_nodes=active_nodes,
+                    keep_nodes=keep_nodes, eject_nodes=eject_nodes,
+                    delta_nodes=empty_list, failed_nodes=empty_list))
+            self.sleep(5, "Wait for rebalance to start")
+
+        shell.execute_command("kill -9 %s" % p_id)
+        shell.disconnect()
+
+        # Add required event to validate
+        restarted_nodes = [node.ip]
+        self.system_events.add_event(
+            DataServiceEvents.memcached_crashed(node.ip, p_id))
+        self.system_events.add_event(
+            NsServerEvents.service_started(node.ip,
+                                           {"name": memcached_process}))
+
+        if rebalance_failure:
+            self.task_manager.get_task_result(rebalance_task)
+            self.system_events.add_event(
+                NsServerEvents.rebalance_failed(
+                    node.ip,  active_nodes=active_nodes,
+                    keep_nodes=keep_nodes, eject_nodes=eject_nodes,
+                    delta_nodes=empty_list, failed_nodes=empty_list))
+
+        self.system_events.add_event(
+            DataServiceEvents.ephemeral_auto_reprovision(
+                node.ip, bucket.name, bucket.uuid,
+                nodes=restarted_nodes, restarted_on=restarted_nodes))
+        self.system_events.add_event(
+            DataServiceEvents.bucket_online(node.ip, bucket.name,
+                                            bucket.uuid))
+
+        self.log.info("Rebalancing after auto_reprovision")
+        self.task.rebalance(self.cluster.nodes_in_cluster, [], [])
+
+        self.system_events.add_event(
+            NsServerEvents.rebalance_started(
+                self.cluster.master.ip, "rest",
+                active_nodes=active_nodes, keep_nodes=active_nodes,
+                eject_nodes=empty_list, delta_nodes=empty_list,
+                failed_nodes=empty_list))
+        self.system_events.add_event(
+            NsServerEvents.rebalance_success(
+                self.cluster.master.ip, active_nodes=active_nodes,
+                keep_nodes=active_nodes, eject_nodes=empty_list,
+                delta_nodes=empty_list, failed_nodes=empty_list))
 
         self.__validate(self.system_events.test_start_time)
