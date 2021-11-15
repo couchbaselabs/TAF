@@ -843,11 +843,12 @@ class CBASExternalAzureLinks(CBASBaseTest):
 
         dataset_obj.dataset_properties["file_format"] = file_format
         file_extension = self.input.param("file_extension", None)
-        if file_extension :
-            dataset_obj.dataset_properties["include"] = "*.{0}".format(file_extension)
-        else:
-            dataset_obj.dataset_properties["include"] = "*.{0}".format(file_format)
-
+        exclude = self.input.param("exclude", None)
+        if not exclude:
+            if file_extension:
+                dataset_obj.dataset_properties["include"] = "*.{0}".format(file_extension)
+            else:
+                dataset_obj.dataset_properties["include"] = "*.{0}".format(file_format)
         if file_format in ["csv", "tsv"]:
             dataset_obj.dataset_properties[
                 "object_construction_def"] = "key1 string, key2 string, key3 string, key4 string, key5 string"
@@ -866,7 +867,6 @@ class CBASExternalAzureLinks(CBASBaseTest):
         status, metrics, errors, cbas_result, handle = self.cbas_util.execute_statement_on_cbas_util(
             self.cluster, cbas_query.format(dataset_obj.full_name),
             timeout=120, analytics_timeout=120)
-
         if self.input.param("header", False) and not self.input.param(
             "header_s3_file", False):
             n1ql_result -= self.input.param("no_of_files", 5)
@@ -1333,26 +1333,29 @@ class CBASExternalAzureLinks(CBASBaseTest):
 
 
     def test_large_file(self):
-        self.create_azure_containers = {"accountName":"analyticsblobacc"}
         object_construction_def = "key1 STRING, key2 STRING, key3 STRING, key4 STRING"
         doc_counts = {
-            "json": 13950000,
-            "csv": 33560000,
-            "tsv": 33560000,
+            "json": 5000000,
+            "csv": 5000000,
+            "tsv": 5000000,
         }
 
         self.setup_for_test(
             create_links=True, create_azure_containers=True,
-            create_dataset_objs=True, same_dv_for_link_and_dataset=False,
+            create_dataset_objs=True, same_dv_for_link_and_dataset=True,
             create_datasets=False, initialize_helper_objs=True)
 
-        link_obj = self.cbas_util.list_all_link_objs(link_type="azureblob")[0]
-        link_obj.properties["accountName"] = "analyticsblobacc"
-        """if not self.cbas_util.create_link(
-            self.cluster, link_obj.properties, username=self.analytics_username):
-            self.fail("link creation failed")"""
-
         file_format = self.input.param("file_format", "json")
+
+        result = self.azure_data_helper.generate_data_for_azure_and_upload(
+            self.azure_containers_list[0], key=self.key, no_of_files=10, file_formats=[file_format], no_of_folders=0,
+            max_folder_depth=0, header=False, null_key="", operation="create",
+            bucket=self.cluster.buckets[0], no_of_docs=doc_counts[file_format], batch_size=10, exp=0, durability="",
+            mutation_num=0, randomize_header=False, large_file=False,
+            missing_field=[False])
+
+        if result:
+            self.fail("Error while uploading files to Azure")
 
         dataset_obj = self.cbas_util.list_all_dataset_objs()[0]
         dataset_obj.dataset_properties["file_format"] = file_format
