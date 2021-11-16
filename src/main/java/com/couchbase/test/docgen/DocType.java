@@ -180,7 +180,7 @@ public class DocType {
         }
 
         @JsonGetter
-        String name() {
+        public String name() {
             return name;
         }
 
@@ -189,37 +189,37 @@ public class DocType {
         }
 
         @JsonGetter
-        int age() {
+        public int age() {
             return age;
         }
 
         @JsonGetter
-        List<String> animals() {
+        public List<String> animals() {
             return animals;
         }
 
         @JsonGetter
-        Attributes attributes() {
+        public Attributes attributes() {
             return attributes;
         }
 
         @JsonGetter
-        String body() {
+        public String body() {
             return body;
         }
 
         @JsonGetter
-        String gender() {
+        public String gender() {
             return gender;
         }
 
         @JsonGetter
-        String marital() {
+        public String marital() {
             return marital;
         }
 
         @JsonGetter
-        int mutated() {
+        public int mutated() {
             return mutated;
         }
     }
