@@ -139,6 +139,8 @@ class MagmaExpiryTests(MagmaBaseTest):
            --- Repeat above steps n times
         '''
         self.log.info("test_expiry starts")
+        dgm_prcnt = self.get_bucket_dgm(self.buckets[0])
+        self.log.info("DGM percentage is {}".format(dgm_prcnt))
         self.expiry_start = 0
         self.expiry_end = self.init_items_per_collection
         self.doc_ops = "expiry"
@@ -170,6 +172,8 @@ class MagmaExpiryTests(MagmaBaseTest):
              to kickoff")
             self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
+            if dgm_prcnt < 100:
+                self.bucket_util._run_compaction(self.cluster, number_of_times=1)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
             self.bucket_util._wait_for_stats_all_buckets(
@@ -278,6 +282,8 @@ class MagmaExpiryTests(MagmaBaseTest):
 
             self.log.info("Disk usage after creates {}".format(disk_usage))
             size_before = disk_usage[0]
+            dgm_prcnt = self.get_bucket_dgm(self.buckets[0])
+            self.log.info("DGM percentage is {}".format(dgm_prcnt))
 
             self.generate_docs(doc_ops="expiry")
             tasks_info = dict()
@@ -305,6 +311,8 @@ class MagmaExpiryTests(MagmaBaseTest):
              to kickoff")
             self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
+            if dgm_prcnt < 100:
+                self.bucket_util._run_compaction(self.cluster, number_of_times=1)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
             self.bucket_util._wait_for_stats_all_buckets(
@@ -423,6 +431,8 @@ class MagmaExpiryTests(MagmaBaseTest):
                                              self.cluster.nodes_in_cluster)
             self.log.debug("Disk usage after updates {}".format(disk_usage))
             size_before = disk_usage[0]
+            dgm_prcnt = self.get_bucket_dgm(self.buckets[0])
+            self.log.info("DGM percentage is {}".format(dgm_prcnt))
 
             self.generate_docs(doc_ops="expiry")
             tasks_info = dict()
@@ -443,13 +453,14 @@ class MagmaExpiryTests(MagmaBaseTest):
                                                          timeout=1200)
 
             self.sleep(self.maxttl, "Wait for docs to expire")
-
             # exp_pager_stime
             self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
              to kickoff")
             self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
+            if dgm_prcnt < 100:
+                self.bucket_util._run_compaction(self.cluster, number_of_times=1)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
             self.bucket_util._wait_for_stats_all_buckets(
@@ -625,6 +636,8 @@ class MagmaExpiryTests(MagmaBaseTest):
            --- Repeat above steps n times
         '''
         self.random_exp = True
+        dgm_prcnt = self.get_bucket_dgm(self.buckets[0])
+        self.log.info("DGM percentage is {}".format(dgm_prcnt))
         self.doc_ops = "expiry"
         self.expiry_start = 0
         self.expiry_end = self.init_items_per_collection
@@ -654,6 +667,8 @@ class MagmaExpiryTests(MagmaBaseTest):
          to kickoff")
         self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
         tombstones.")
+        if dgm_prcnt < 100:
+             self.bucket_util._run_compaction(self.cluster, number_of_times=1)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
