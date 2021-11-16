@@ -9,8 +9,10 @@ import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import com.couchbase.client.core.deps.com.fasterxml.jackson.core.JsonProcessingException;
-import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.couchbase.client.core.error.AmbiguousTimeoutException;
 import com.couchbase.client.core.error.DocumentExistsException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
@@ -180,6 +182,7 @@ public class WorkLoadGenerate extends Task{
                         Map<Object, Object> trnx_res = res.stream().collect(Collectors.toMap(t -> t.get(0), t -> t.get(1)));
                         Map<Object, Object> trnx_docs = docs.stream().collect(Collectors.toMap(t -> t.get(0), t -> t.get(1)));
                         ObjectMapper om = new ObjectMapper();
+                        om.setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
                         for (Object name : trnx_docs.keySet()) {
                             try {
                                 String a = om.writeValueAsString(trnx_res.get(name));
