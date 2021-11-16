@@ -3657,7 +3657,7 @@ class BucketCreateTask(Task):
             self.result = BucketHelper(self.server).create_bucket(bucket_dict)
             if self.result is False:
                 self.test_log.critical("Bucket %s creation failed"
-                                       % self.bucket_obj.name)
+                                       % self.bucket.name)
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False
