@@ -3640,39 +3640,29 @@ class BucketCreateTask(Task):
             self.log.error("RestConnection failed for {0}: {1}"
                            .format(self.server.ip, error))
             self.result = False
+            self.complete_task()
             return
-        info = rest.get_nodes_self()
 
+        info = rest.get_nodes_self()
+        bucket_dict = self.bucket.__dict__
         if self.bucket.ramQuotaMB <= 0:
             self.size = info.memoryQuota * 2 / 3
 
         if int(info.port) in xrange(9091, 9991):
-            try:
-                self.port = info.port
-                BucketHelper(self.server).create_bucket(self.bucket.__dict__)
-                # return_value = self.check()
-                self.complete_task()
-                self.result = True
-                return
-            except Exception as e:
-                self.test_log.error(str(e))
-                self.set_exception(e)
-        version = rest.get_nodes_self().version
+            self.port = info.port
+        elif self.bucket_priority is not None:
+            self.bucket.threadsNumber = self.bucket_priority
+
         try:
-            if float(version[:2]) >= 3.0 and self.bucket_priority is not None:
-                self.bucket.threadsNumber = self.bucket_priority
-            BucketHelper(self.server).create_bucket(self.bucket.__dict__)
-            # return_value = self.check()
-            self.complete_task()
-            self.result = True
-            return
-        except BucketCreationException as e:
-            self.result = False
-            self.test_log.error(str(e))
+            self.result = BucketHelper(self.server).create_bucket(bucket_dict)
+            if self.result is False:
+                self.test_log.critical("Bucket %s creation failed"
+                                       % self.bucket_obj.name)
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False
             self.test_log.error(str(e))
+        self.complete_task()
 
     def check(self):
         try:
@@ -3683,7 +3673,7 @@ class BucketCreateTask(Task):
                                                   self.bucket.name):
                 self.test_log.debug(
                     "Bucket '{0}' created with per node RAM quota: {1}"
-                        .format(self.bucket, self.bucket.ramQuotaMB))
+                    .format(self.bucket, self.bucket.ramQuotaMB))
                 return True
             else:
                 self.test_log.error("Vbucket map not ready after try %s"
@@ -3693,7 +3683,7 @@ class BucketCreateTask(Task):
         except Exception as e:
             self.test_log.warn(
                 "Exception: {0}. vbucket map not ready after try {1}"
-                    .format(e, self.retries))
+                .format(e, self.retries))
             if self.retries >= 5:
                 self.result = False
                 self.test_log.error(str(e))
@@ -3784,11 +3774,14 @@ class BucketCreateFromSpecTask(Task):
             self.bucket_obj.threadsNumber = 8
 
         try:
-            self.bucket_helper.create_bucket(self.bucket_obj.__dict__)
-        except BucketCreationException as e:
-            self.result = False
-            self.test_log.error(str(e))
-            self.set_exception(e)
+            self.result = \
+                self.bucket_helper.create_bucket(self.bucket_obj.__dict__)
+            if self.result is False:
+                self.test_log.critical("Bucket %s creation failed"
+                                       % self.bucket_obj.name)
+                self.set_exception(
+                    BucketCreationException(ip=self.bucket_helper.ip,
+                                            bucket_name=self.bucket_obj.name))
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False

@@ -11,7 +11,7 @@ import urllib
 from bucket import Bucket
 from common_lib import sleep
 from custom_exceptions.exception import \
-    BucketCreationException, GetBucketInfoFailed, \
+    GetBucketInfoFailed, \
     BucketCompactionException
 from Rest_Connection import RestConnection
 from membase.api.rest_client import RestConnection as RC
@@ -347,30 +347,25 @@ class BucketHelper(RestConnection):
         create_start_time = time.time()
 
         maxwait = 60
-        request_success = False
         for numsleep in range(maxwait):
             status, content, header = self._http_request(api, 'POST', params)
             if status:
-                request_success = True
+                create_time = time.time() - create_start_time
+                self.log.debug("{0:.02f} seconds to create bucket {1}"
+                               .format(round(create_time, 2),
+                                       bucket_params.get('name')))
                 break
             elif (int(header['status']) == 503 and
                     '{"_":"Bucket with given name still exists"}' in content):
                 sleep(1, "Bucket still exists, will retry..")
             else:
-                raise BucketCreationException(
-                    ip=self.ip, bucket_name=bucket_params.get('name'))
-
-        if not request_success:
+                return False
+        else:
             self.log.warning("Failed creating the bucket after {0} secs"
                              .format(maxwait))
-            raise BucketCreationException(
-                ip=self.ip, bucket_name=bucket_params.get('name'))
+            return False
 
-        create_time = time.time() - create_start_time
-        self.log.debug("{0:.02f} seconds to create bucket {1}"
-                       .format(round(create_time, 2),
-                               bucket_params.get('name')))
-        return request_success
+        return True
 
     def update_memcached_settings(self, num_writer_threads="default", num_reader_threads="default",
                                   num_storage_threads="default"):
