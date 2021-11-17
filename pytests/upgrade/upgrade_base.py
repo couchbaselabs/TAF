@@ -48,8 +48,9 @@ class UpgradeBase(BaseTestCase):
         if self.initial_version == "same_version":
             self.initial_version = self.upgrade_version
 
-        self.cluster_supports_sync_write = \
-            float(self.initial_version[:3]) >= 6.5
+        t_version = float(self.initial_version[:3])
+        self.cluster_supports_sync_write = (t_version >= 6.5)
+        self.cluster_supports_system_event_logs = (t_version >= 7.1)
 
         self.installer_job = InstallerJob()
 
