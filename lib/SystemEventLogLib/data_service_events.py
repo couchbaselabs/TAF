@@ -18,7 +18,7 @@ class DataServiceEvents(object):
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: KvEngine.BucketOnline,
             Event.Fields.COMPONENT: Event.Component.DATA,
-            Event.Fields.DESCRIPTION: "Bucket created",
+            Event.Fields.DESCRIPTION: "Bucket online",
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EXTRA_ATTRS: {"bucket": bucket,
                                        "bucket_uuid": bucket_uuid}

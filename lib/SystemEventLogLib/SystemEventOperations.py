@@ -45,15 +45,15 @@ class SystemEventRestHelper:
         """
         rest = self.get_rest_object(rest, server, username, password)
         api = rest.baseUrl + "_event"
-        req_data = '{'
+        req_data = "{"
         for key, value in event_dict.items():
-            kv_format = '"%s":'
+            kv_format = "\"%s\":"
             if isinstance(value, int):
-                kv_format += '%s,'
+                kv_format += "%s,"
             else:
-                kv_format += '"%s",'
+                kv_format += "\"%s\","
             req_data += kv_format % (key, value)
-        req_data = req_data[:-1] + '}'
+        req_data = req_data[:-1] + "}"
         status, content, _ = rest._http_request(
             api, method=RestConnection.POST, params=req_data,
             headers=rest.get_headers_for_content_type_json())
@@ -95,8 +95,14 @@ class SystemEventRestHelper:
 
         response = requests.get(api, params=get_params,
                                 auth=(rest.username,
-                                      rest.password)).content
-        return json.loads(response)
+                                      rest.password))
+
+        # MB-49617: Exception handling for non-json (plain text) case
+        try:
+            return response.json()
+        except ValueError:
+            pass
+        return response.content
 
     def update_max_events(self,
                           max_event_count=CbServer.sys_event_def_logs,

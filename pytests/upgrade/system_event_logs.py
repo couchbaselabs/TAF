@@ -19,6 +19,10 @@ class SystemEventLogs(UpgradeBase):
 
     def test_upgrade(self):
         update_task = None
+        internal_setting_error = "eventLogsLimit - not supported " \
+                                 "in mixed version clusters"
+        get_events_error = "This http API endpoint isn't " \
+                           "supported in mixed version clusters"
         t_durability_level = choice([Bucket.DurabilityLevel.NONE,
                                      Bucket.DurabilityLevel.MAJORITY])
 
@@ -43,13 +47,13 @@ class SystemEventLogs(UpgradeBase):
 
             # Create custom event to test system event logs
             event = DataServiceEvents.bucket_online(
-                self.cluster.master.ip, self.bucket.name, self.bucket.uuid)
+                self.cluster.master.ip, "dummy_bucket", "dummy_uuid")
+            event.pop(Event.Fields.EXTRA_ATTRS)
             event[Event.Fields.UUID] = self.system_events.get_rand_uuid()
             event[Event.Fields.TIMESTAMP] = \
                 self.system_events.get_timestamp_format(datetime.now())
             nodes_in_cluster = \
                 RestConnection(self.cluster.master).get_nodes()
-
             if node_to_upgrade is None \
                     or self.cluster_supports_system_event_logs:
                 # Cluster fully upgraded / already supports system event logs
@@ -75,6 +79,7 @@ class SystemEventLogs(UpgradeBase):
                 status, content = event_helper.create_event(event)
                 if status is False:
                     self.log_failure("Failed to create event: %s" % content)
+                self.system_events.add_event(event)
 
                 for node in nodes_in_cluster:
                     self.log.info("Validating events on %s" % node.ip)
@@ -84,25 +89,25 @@ class SystemEventLogs(UpgradeBase):
                 self.log.info("Creating custom event to validate "
                               "and trying to fetch events from cluster")
                 for node in nodes_in_cluster:
-                    event_helper = SystemEventRestHelper([node])
-                    status, content = event_helper.create_event(event)
                     if float(node.version[:3]) >= 7.1:
+                        event_helper = SystemEventRestHelper([node])
+                        status, content = event_helper.create_event(event)
                         if not status:
                             self.log_failure("Event creation returned '%s':%s"
                                              % (status, content))
                         events = event_helper.get_events(events_count=-1)
-                        if len(events) != 0:
-                            self.log_failure("Events created in mixed mode: %s"
+                        self.log.critical("Events: %s" % events)
+                        if events != get_events_error:
+                            self.log_failure("Unexpected response: %s"
                                              % events)
 
                         status, content = event_helper.update_max_events(
                             max_event_count=CbServer.sys_event_max_logs)
                         if status:
-                            self.log_failure(
-                                "Mixed mode - able to update max_events: %s"
-                                % content)
-                        elif content != "Not supported in mixed mode error":
-                            self.log_failure("Mismatch in mix-mode error: %s"
+                            self.log_failure("Mixed mode - able to update "
+                                             "max_events: %s" % content)
+                        elif content["errors"][0] != internal_setting_error:
+                            self.log_failure("Error mismatch in mixed-mode: %s"
                                              % content)
 
             # Halt further upgrade if test has failed during current upgrade
