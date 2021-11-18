@@ -1,5 +1,6 @@
 import json
 
+from Cb_constants import CbServer
 from membase.api.rest_client import RestConnection
 from pytests.basetestcase import ClusterSetup
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main, Validation
@@ -25,6 +26,7 @@ class MultipleCA(ClusterSetup):
         self.create_bucket(self.cluster, bucket_name='default')
 
     def tearDown(self):
+        CbServer.use_https = False
         self.x509 = x509main(host=self.cluster.master)
         rest = RestConnection(self.cluster.master)
         rest.delete_builtin_user("cbadminbucket")
@@ -69,7 +71,7 @@ class MultipleCA(ClusterSetup):
         2. Rebalance-in all the remaining nodes
         """
         self.x509.generate_multiple_x509_certs(servers=self.cluster.servers)
-        self.log.info("Manifest #########\n {0}".format(json.dumps(x509main.manifest, indent=4)))
+        self.log.info("Manifest #########\n {0}".format(json.dumps(self.x509.manifest, indent=4)))
         for server in self.cluster.servers:
             _ = self.x509.upload_root_certs(server)
         self.x509.upload_node_certs(servers=self.cluster.servers)
@@ -89,7 +91,7 @@ class MultipleCA(ClusterSetup):
     def test_rotate_certificates(self):
         self.x509.generate_multiple_x509_certs(servers=self.cluster.servers)
         self.log.info("Manifest before rotating certs #########\n {0}".
-                      format(json.dumps(x509main.manifest, indent=4)))
+                      format(json.dumps(self.x509.manifest, indent=4)))
         for server in self.cluster.servers:
             _ = self.x509.upload_root_certs(server)
         self.x509.upload_node_certs(servers=self.cluster.servers)
@@ -99,7 +101,7 @@ class MultipleCA(ClusterSetup):
         self.auth()
         self.x509.rotate_certs(self.cluster.servers, "all")
         self.log.info("Manifest after rotating certs #########\n {0}".
-                      format(json.dumps(x509main.manifest, indent=4)))
+                      format(json.dumps(self.x509.manifest, indent=4)))
         status = self.task.rebalance(self.cluster.servers[:self.nodes_init],
                                      self.cluster.servers[self.nodes_init:], [])
         if not status:
