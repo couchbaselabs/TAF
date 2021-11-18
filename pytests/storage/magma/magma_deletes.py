@@ -98,7 +98,7 @@ class BasicDeleteTests(BasicCrudTests):
             '''
 
             if count != self.test_itr - 1:
-                self.log.debug("Step 2, Iteration= {}".format(count+1))
+                self.log.info("Step 2, Iteration= {}".format(count+1))
                 self.doc_ops = "create"
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,

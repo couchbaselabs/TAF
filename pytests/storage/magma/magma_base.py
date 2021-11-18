@@ -77,6 +77,8 @@ class MagmaBaseTest(StorageBase):
                 self.load_buckets_in_dgm(self.gen_create, "create", 0)
             else:
                 self.initial_load()
+            self.dgm_prcnt = self.get_bucket_dgm(self.buckets[0])
+            self.log.info("DGM percentage after init loading is {}".format(self.dgm_prcnt))
         if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
             for bucket in self.bucket_util.get_all_buckets(self.cluster):
                 disk_usage = self.get_disk_usage(
