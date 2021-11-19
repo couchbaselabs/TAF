@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from random import choice, randint
 from threading import Thread
 
+from BucketLib.BucketOperations_Rest import BucketHelper
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
@@ -97,6 +98,10 @@ class SystemEventLogs(ClusterSetup):
             "ps -ef | grep \"%s \" | grep -v grep | awk '{print $2}'"
             % process_name)
         return process_id[0].strip()
+
+    def get_last_event_from_cluster(self):
+        return self.event_rest_helper.get_events(
+            server=self.cluster.master, events_count=-1)["events"][-1]
 
     def test_event_id_range(self):
         """
@@ -1311,8 +1316,7 @@ class SystemEventLogs(ClusterSetup):
         bucket_updated_event = DataServiceEvents.bucket_updated(
             self.cluster.master.ip, bucket.name, bucket.uuid,
             bucket.bucketType, dict(), dict())
-        event = self.event_rest_helper.get_events(
-            server=self.cluster.master)["events"][-1]
+        event = self.get_last_event_from_cluster()
         for param, value in bucket_updated_event.items():
             if param == Event.Fields.EXTRA_ATTRS:
                 continue
@@ -1354,8 +1358,7 @@ class SystemEventLogs(ClusterSetup):
             self.cluster.master, bucket,
             replica_number=self.num_replicas)
 
-        event = self.event_rest_helper.get_events(
-            server=self.cluster.master)["events"][-1]
+        event = self.get_last_event_from_cluster()
         act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
         act_val_keys = act_val.keys()
         if len(act_val_keys) != 1 or 'num_replicas' not in act_val_keys:
@@ -1372,16 +1375,27 @@ class SystemEventLogs(ClusterSetup):
 
     def test_update_memcached_settings(self):
         """
-        Update memcached settings using dial/eval.
-        Validate the respective system_event log for the updated params
+        Update memcached settings and validate
+
+        Refer MB-49631 for other valid fields
         """
-        self.bucket_util.set_flusher_total_batch_limit(self.cluster,
-                                                       self.cluster.buckets,
-                                                       5)
-        self.system_events.add_event(
-            DataServiceEvents.memcached_settings_changed(
-                self.cluster.master, {}, {"flusher_total_batch_limit": 5}))
-        self.__validate(self.system_events.test_start_time)
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_helper.update_memcached_settings(max_connections=2000)
+        bucket_helper.update_memcached_settings(max_connections=2001)
+        last_event = self.get_last_event_from_cluster()
+        # Check and remove fields with dynamic values
+        for field in [Event.Fields.UUID, Event.Fields.TIMESTAMP]:
+            if field not in last_event:
+                self.fail("'%s' field missing: %s" % (field, last_event))
+            last_event.pop(field)
+
+        event = DataServiceEvents.memcached_settings_changed(
+            self.cluster.master.ip,
+            {"max_connections": 2000},
+            {"max_connections": 2001})
+        if last_event != event:
+            self.fail("Mismatch in event. Expected %s != %s Actual"
+                      % (event, last_event))
 
     def test_auto_reprovisioning(self):
         """
