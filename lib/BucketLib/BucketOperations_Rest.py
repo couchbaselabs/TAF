@@ -367,16 +367,9 @@ class BucketHelper(RestConnection):
 
         return True
 
-    def update_memcached_settings(self, num_writer_threads="default", num_reader_threads="default",
-                                  num_storage_threads="default"):
-        api = "%s%s" % (self.baseUrl,
-                        "pools/default/settings/memcached/global")
-        params_dict = dict()
-        params_dict["num_writer_threads"] = num_writer_threads
-        params_dict["num_reader_threads"] = num_reader_threads
-        params_dict["num_storage_threads"] = num_storage_threads
-
-        params = urllib.urlencode(params_dict)
+    def update_memcached_settings(self, **params):
+        api = self.baseUrl + "pools/default/settings/memcached/global"
+        params = urllib.urlencode(params)
         self.log.info("Updating memcached properties")
         self.log.debug("%s with param: %s" % (api, params))
 

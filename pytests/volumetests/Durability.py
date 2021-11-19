@@ -104,7 +104,8 @@ class volume(BaseTestCase):
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             bucket_helper = BucketHelper(node)
             bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
-                                                    num_reader_threads=num_reader_threads)
+                                                    num_reader_threads=num_reader_threads,
+                                                    num_storage_threads="default")
 
     def volume_doc_generator_users(self, key, start, end):
         template = '{{ "id":"{0}", "alias":"{1}", "name":"{2}", "user_since":"{3}", "employment":{4} }}'

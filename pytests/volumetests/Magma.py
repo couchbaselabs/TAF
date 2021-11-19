@@ -266,7 +266,8 @@ class volume(BaseTestCase):
             bucket_helper = BucketHelper(node)
             bucket_helper.update_memcached_settings(
                 num_writer_threads=num_writer_threads,
-                num_reader_threads=num_reader_threads)
+                num_reader_threads=num_reader_threads,
+                num_storage_threads="default")
 
     def generate_docs(self, doc_ops=None,
                       create_end=None, create_start=None,
