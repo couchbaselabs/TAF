@@ -137,7 +137,7 @@ class Murphy(BaseTestCase, OPD):
                     self.cluster, self.cluster.buckets)
 
         server = self.rest.get_nodes_self()
-        if self.cbas_nodes:
+        if self.cbas_nodes>0:
             self.rest.set_service_mem_quota({CbServer.Settings.CBAS_MEM_QUOTA:
                                              int(server.mcdMemoryReserved - 100
                                                  )})
@@ -149,6 +149,8 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.nodes_in_cluster.extend(self.cluster.cbas_nodes)
             DoctorCBAS(self.cluster, self.bucket_util,
                        self.num_indexes)
+            self.available_servers = [servs for servs in self.available_servers
+                                      if servs not in self.cluster.cbas_nodes]
 
 #         if self.query_nodes:
 #             nodes = len(self.cluster.nodes_in_cluster)
@@ -158,7 +160,7 @@ class Murphy(BaseTestCase, OPD):
 #             self.cluster.query_nodes = self.servers[nodes:nodes+self.query_nodes]
 #             self.cluster.nodes_in_cluster.extend(self.cluster.query_nodes)
 
-        if self.index_nodes:
+        if self.index_nodes>0:
             self.rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA:
                                              int(server.mcdMemoryReserved - 100
                                                  )})
@@ -171,8 +173,10 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.nodes_in_cluster.extend(self.cluster.index_nodes)
             self.drIndexService = DoctorN1QL(self.cluster, self.bucket_util,
                                              self.num_indexes)
+            self.available_servers = [servs for servs in self.available_servers
+                                      if servs not in self.cluster.index_nodes]
 
-        if self.fts_nodes:
+        if self.fts_nodes>0:
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
                                              int(server.mcdMemoryReserved - 100
                                                  )})
@@ -183,6 +187,8 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.fts_nodes = self.servers[nodes:nodes+self.fts_nodes]
             self.cluster.nodes_in_cluster.extend(self.cluster.fts_nodes)
             self.fts_util = FTSUtils(self.cluster, self.cluster_util, self.task)
+            self.available_servers = [servs for servs in self.available_servers
+                                      if servs not in self.cluster.fts_nodes]
 
         print self.available_servers
         self.writer_threads = self.input.param("writer_threads", "disk_io_optimized")
