@@ -48,8 +48,8 @@ class SystemEventLogs(ClusterSetup):
             Event.Component.QUERY: (1024, 2048),
             Event.Component.INDEXING: (2048, 3072),
             Event.Component.SEARCH: (3072, 4096),
-            Event.Component.EVENTING: (4096, 120),
-            Event.Component.ANALYTICS: (512, 6144),
+            Event.Component.EVENTING: (4096, 5120),
+            Event.Component.ANALYTICS: (5120, 6144),
             Event.Component.XDCR: (7168, 8192),
             Event.Component.BACKUP: (6143, 7168)
         }
