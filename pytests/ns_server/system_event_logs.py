@@ -948,6 +948,149 @@ class SystemEventLogs(ClusterSetup):
 
         self.__validate(self.system_events.test_start_time)
 
+    def test_kill_event_log_server(self):
+        """
+        - Kill event_log_server immediately after writing a log
+        - Restart event_log_server
+        - Make sure the last written log is served from disk
+        """
+        diag_eval_cmd = "supervisor:%s(ns_server_sup, event_log_server)"
+        terminate_cmd = diag_eval_cmd % "terminate_child"
+        restart_cmd = diag_eval_cmd % "restart_child"
+
+        # Create generic event template for testing
+        event_format = {
+            Event.Fields.EVENT_ID: 0,
+            Event.Fields.COMPONENT: Event.Component.NS_SERVER,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.DESCRIPTION: "Crash test event %s"
+        }
+
+        # Reset events in test case for validation
+        event_list = list()
+        self.system_events.events = list()
+        self.system_events.set_test_start_time()
+
+        # Enable diag/eval on non_local_host
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
+        # Create required number of events
+        self.log.info("Creating required event objects")
+        base_time_stamp = datetime.now()
+        for index in range(100):
+            base_time_stamp += timedelta(milliseconds=1)
+            event = deepcopy(event_format)
+            event[Event.Fields.UUID] = self.system_events.get_rand_uuid()
+            event[Event.Fields.TIMESTAMP] = \
+                self.system_events.get_timestamp_format(base_time_stamp)
+            event[Event.Fields.DESCRIPTION] = \
+                event[Event.Fields.DESCRIPTION] % index
+            event_list.append(event)
+            self.system_events.add_event(event)
+
+        # Create events on cluster
+        self.log.info("Creating events on cluster")
+        for event in event_list:
+            self.event_rest_helper.create_event(event,
+                                                server=self.cluster.master)
+        rest = RestConnection(self.cluster.master)
+        self.log.info("Terminating event_log_server")
+        rest.diag_eval(terminate_cmd)
+
+        self.sleep(5, "Wait before restarting the event_log_server back")
+        rest.diag_eval(restart_cmd)
+        self.sleep(5, "Wait for event_log_server to become fully operational")
+
+        # Validate events
+        self.__validate(self.system_events.test_start_time)
+
+    def test_event_log_replication(self):
+        """
+        - Stop event_log_server on replica node
+        - Create events on other nodes in the cluster
+        - Start event_log_server on replica node
+        - Validate all logs are synchronised on all nodes after restart
+        """
+        diag_eval_cmd = "supervisor:%s(ns_server_sup, event_log_server)"
+        terminate_cmd = diag_eval_cmd % "terminate_child"
+        restart_cmd = diag_eval_cmd % "restart_child"
+
+        failures = None
+        gossip_timeout = 120
+        base_time_stamp = datetime.now()
+        target_node = choice(self.cluster.nodes_in_cluster)
+        non_affected_nodes = [node for node in self.cluster.nodes_in_cluster
+                              if node.ip != target_node.ip]
+
+        # Create generic event template for testing
+        event_format = {
+            Event.Fields.EVENT_ID: 0,
+            Event.Fields.COMPONENT: Event.Component.NS_SERVER,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.DESCRIPTION: "Crash test event %s"
+        }
+
+        # Reset events in test case for validation
+        self.system_events.events = list()
+        self.system_events.set_test_start_time()
+
+        # Enable diag/eval on non_local_host
+        shell = RemoteMachineShellConnection(target_node)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
+        self.log.info("Stopping event_log_server on %s" % target_node.ip)
+        rest = RestConnection(target_node)
+        rest.diag_eval(terminate_cmd)
+
+        self.log.info("Creating event on other nodes")
+        for index in range(100):
+            event_target = choice(non_affected_nodes)
+            base_time_stamp += timedelta(milliseconds=1)
+            event = deepcopy(event_format)
+            event[Event.Fields.UUID] = self.system_events.get_rand_uuid()
+            event[Event.Fields.TIMESTAMP] = \
+                self.system_events.get_timestamp_format(base_time_stamp)
+            event[Event.Fields.DESCRIPTION] = \
+                event[Event.Fields.DESCRIPTION] % index
+            self.system_events.add_event(event)
+
+            self.event_rest_helper.create_event(event,
+                                                server=event_target)
+
+        node = None
+        for node in non_affected_nodes:
+            self.log.info("Validating events from node %s" % node.ip)
+            failures = self.system_events.validate(
+                server=node, since_time=self.system_events.test_start_time,
+                events_count=-1)
+            if failures:
+                # Will make test fail after restarting event_log_server
+                break
+
+        self.log.info("Starting event_log_server on %s" % target_node.ip)
+        rest.diag_eval(restart_cmd)
+
+        if failures:
+            self.fail("Event log replication failed for node %s" % node.ip)
+
+        self.log.info("Validating events from node %s" % target_node.ip)
+        for sec in range(gossip_timeout):
+            failures = self.system_events.validate(
+                server=target_node,
+                since_time=self.system_events.test_start_time,
+                events_count=-1)
+            if not failures:
+                self.log.critical("Events synced after %s seconds" % sec)
+                # All events are replicated
+                break
+            self.sleep(1, "Wait before next check")
+        else:
+            self.fail("Events not synced up on %s: %s"
+                      % (target_node.ip, failures))
+
     # KV / Data related test cases
     def test_bucket_related_event_logs(self):
         """
