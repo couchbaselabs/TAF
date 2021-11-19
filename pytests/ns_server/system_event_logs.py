@@ -91,6 +91,13 @@ class SystemEventLogs(ClusterSetup):
             Event.Fields.NODE_NAME: self.cluster.master.ip
         }
 
+    def get_process_id(self, shell, process_name):
+        self.log.debug("Fetching process_id for %s" % process_name)
+        process_id, _ = shell.execute_command(
+            "ps -ef | grep \"%s \" | grep -v grep | awk '{print $2}'"
+            % process_name)
+        return process_id[0].strip()
+
     def test_event_id_range(self):
         """
         Create custom events for 'component' using the event-ids
@@ -99,14 +106,17 @@ class SystemEventLogs(ClusterSetup):
                            (Used for -ve test cases)
         """
         component = self.input.param("component", Event.Component.NS_SERVER)
-        event_id_range = self.input.param("event_id_range", "0:1023")
         is_range_valid = self.input.param("is_range_valid", True)
+
+        self.system_events.events = list()
+        self.system_events._set_counter(0)
+        self.system_events.set_test_start_time()
+        timestamp = datetime.now()
 
         if is_range_valid:
             # event_id_range is a range. Eg: 0:1023
-            event_id_range = event_id_range.split(":")
-            event_id_range = range(int(event_id_range[0]),
-                                   int(event_id_range[1]) + 1)
+            event_id_range = range(self.id_range[component][0],
+                                   self.id_range[component][1])
         else:
             # Construct a list of event_ids from the other components
             # event_id_range to validate the negative scenarios
@@ -118,18 +128,20 @@ class SystemEventLogs(ClusterSetup):
                     event_id_range.append(randint(v_range[0], v_range[1]-1))
 
         event_severity = Event.Severity.values()
+        self.log.info("Creating %s events in cluster" % component)
         for event_id in event_id_range:
-            timestamp = EventHelper.get_timestamp_format(datetime.now())
+            timestamp += timedelta(seconds=1)
             uuid_val = self.system_events.get_rand_uuid()
             severity = choice(event_severity)
-            description = "test"
+            description = "test event_id_range: %s"
             event_dict = {
-                Event.Fields.TIMESTAMP: timestamp,
+                Event.Fields.TIMESTAMP:
+                    EventHelper.get_timestamp_format(timestamp),
                 Event.Fields.COMPONENT: component,
                 Event.Fields.SEVERITY: severity,
                 Event.Fields.EVENT_ID: event_id,
                 Event.Fields.UUID: uuid_val,
-                Event.Fields.DESCRIPTION: description,
+                Event.Fields.DESCRIPTION: description % event_id,
                 Event.Fields.NODE_NAME: self.cluster.master.ip
             }
 
@@ -141,6 +153,8 @@ class SystemEventLogs(ClusterSetup):
             if is_range_valid:
                 # Add events for later validation
                 self.system_events.add_event(event_dict)
+
+        self.log.info("Validating events")
         self.__validate(self.system_events.test_start_time)
 
     def test_event_fields_missing(self):
@@ -674,13 +688,6 @@ class SystemEventLogs(ClusterSetup):
 
         self.__validate(self.system_events.test_start_time)
 
-    def get_process_id(self, shell, process_name):
-        self.log.debug("Fetching process_id for %s" % process_name)
-        process_id, _ = shell.execute_command(
-            "ps -ef | grep \"%s \" | grep -v grep | awk '{print $2}'"
-            % process_name)
-        return process_id[0].strip()
-
     def test_process_crash(self):
         """
         Crash services to make sure we get respective sys-events generated
@@ -969,6 +976,7 @@ class SystemEventLogs(ClusterSetup):
         # Reset events in test case for validation
         event_list = list()
         self.system_events.events = list()
+        self.system_events._set_counter(0)
         self.system_events.set_test_start_time()
 
         # Enable diag/eval on non_local_host
@@ -1034,6 +1042,7 @@ class SystemEventLogs(ClusterSetup):
 
         # Reset events in test case for validation
         self.system_events.events = list()
+        self.system_events._set_counter(0)
         self.system_events.set_test_start_time()
 
         # Enable diag/eval on non_local_host
