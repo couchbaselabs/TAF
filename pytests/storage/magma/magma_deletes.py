@@ -38,7 +38,6 @@ class BasicDeleteTests(BasicCrudTests):
                                                          timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
-
             ##################################################################
             '''
             STEP - 2
@@ -73,13 +72,14 @@ class BasicDeleteTests(BasicCrudTests):
                 msg.format(disk_usage[0], 1,
                            self.disk_usage[self.disk_usage.keys()[0]]))
             self.bucket_util._run_compaction(self.cluster, number_of_times=1)
-            ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+            if not self.windows_platform:
+                ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+                expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+                self.log.info("Iterations == {}, Actual tomb stone count == {},\
+                expected_ts_count == {}".format(count+1, ts, expected_ts_count))
+                self.sleep(60, "sleep after triggering full compaction")
+                # 64 byte is size of meta data
             expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
-            self.log.info("Iterations == {}, Actual tomb stone count == {},\
-            expected_ts_count == {}".format(count+1, ts, expected_ts_count))
-            self.sleep(60, "sleep after triggering full compaction")
-
-            # 64 byte is size of meta data
             expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
             self.log.info("expected tombstone size {}".format(expected_tombstone_size))
             disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
@@ -150,12 +150,8 @@ class BasicDeleteTests(BasicCrudTests):
                                                          timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
-
-            self.delete_start = (count+1) * init_items
-            self.delete_end = self.delete_start + init_items
-            if self.rev_del:
-                self.delete_end = -int(((count+1) * init_items) - 1)
-                self.delete_start = -int(-(self.delete_end) + init_items)
+            self.delete_start = copy.deepcopy(self.create_start)
+            self.delete_end = copy.deepcopy(self.create_end)
 
             disk_usage = self.get_disk_usage(
                 self.buckets[0],
@@ -186,9 +182,10 @@ class BasicDeleteTests(BasicCrudTests):
                 self.disk_usage.keys()[0]], False,
                 msg.format(disk_usage[0], 2,
                            self.disk_usage[self.disk_usage.keys()[0]]))
-            ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
-            self.log.info("Iterations - {}, Actual tomb stone count == {} expected_ts_count == {}"
+            if not self.windows_platform:
+                ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+                self.log.info("Iterations - {}, Actual tomb stone count == {} expected_ts_count == {}"
                           .format(count+1, ts, expected_ts_count))
 
             self.bucket_util._run_compaction(self.cluster, number_of_times=1)
@@ -207,5 +204,6 @@ class BasicDeleteTests(BasicCrudTests):
                             format(disk_usage_after_compaction, expected_size))
             #Space Amplifacation check Ends
             count += 1
-        self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)
+        if not self.windows_platform:
+            self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)
         self.log.info("====test_parallel_create_deletes ends====")

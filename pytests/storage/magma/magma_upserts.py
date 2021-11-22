@@ -98,8 +98,8 @@ class BasicUpsertTests(BasicCrudTests):
 
         '''
         self.validate_data("update", self.gen_update)
-
-        self.change_swap_space(self.cluster.nodes_in_cluster,
+        if not self.windows_platform:
+            self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
         self.log.info("====test_update_n_times ends====")
 
@@ -771,19 +771,23 @@ class BasicUpsertTests(BasicCrudTests):
           -- Data validation for last iteration
         """
         self.log.info("test_parallel_create_update starts")
-        count = 0
-        init_items = self.num_items
+        count = 1
+        init_items = copy.deepcopy(self.num_items)
         self.doc_ops = "create:update"
         self.update_start = 0
         self.update_end = self.num_items
-        while count < self.test_itr:
-            self.log.info("Iteration {}".format(count+1))
+        while count <= self.test_itr:
+            self.log.info("Iteration {}".format(count))
             self.create_start = self.num_items
             self.create_end = self.num_items+init_items
 
             if self.rev_write:
                 self.create_start = -int(self.num_items+init_items - 1)
                 self.create_end = -int(self.num_items - 1)
+            self.log.info("Iteration : {}, create_start {} and create_end {}"
+                          .format(count, self.create_start, self.create_end))
+            self.log.info("Iteration : {}, update_start {} and update_end {}"
+                          .format(count, self.update_start, self.update_end))
 
             self.generate_docs()
             _ = self.loadgen_docs(self.retry_exceptions,
@@ -794,13 +798,10 @@ class BasicUpsertTests(BasicCrudTests):
                                                          timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       self.num_items)
-            if count == self.test_itr - 1:
+            if count == self.test_itr:
                 self.validate_data("update", self.gen_update)
-            self.update_start = self.num_items
-            self.update_end = self.num_items+init_items
-            if self.rev_update:
-                self.update_start = -int(self.num_items+init_items - 1)
-                self.update_end = -int(self.num_items - 1)
+            self.update_start = copy.deepcopy(self.create_start)
+            self.update_end = copy.deepcopy(self.create_end)
 
             disk_usage = self.get_disk_usage(
                 self.buckets[0],
@@ -812,19 +813,20 @@ class BasicUpsertTests(BasicCrudTests):
                     after Iteration {}'\n' \
                     exceeds keyIndex usage={}MB'\n' \
                     ".format(disk_usage[3],
-                             count+1,
+                             count,
                              disk_usage[2]))
             self.assertIs(
-                disk_usage[0] > 2.2 * (2 * self.disk_usage[
+                disk_usage[0] > 2.2 * ((count+1) * self.disk_usage[
                     self.disk_usage.keys()[0]]),
                 False, "Disk Usage {}MB After '\n\'\
                 Updates exceeds '\n\'\
                 Actual disk usage {}MB by '\n'\
                 2.2 times".format(disk_usage[0],
-                                  (2 * self.disk_usage[
+                                  ((count+1) * self.disk_usage[
                                       self.disk_usage.keys()[0]])))
             count += 1
-        self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)
+        if not self.windows_platform:
+            self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)
         self.log.info("====test_parallel_create_update ends====")
 
     def test_upsert_docs_n_times_with_intermittent_compaction(self):

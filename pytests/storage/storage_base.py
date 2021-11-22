@@ -33,6 +33,7 @@ class StorageBase(BaseTestCase):
     def setUp(self):
         super(StorageBase, self).setUp()
         self.rest = RestConnection(self.cluster.master)
+        self.windows_platform = False
         self.data_path = self.fetch_data_path()
         self._data_validation = self.input.param("data_validation", True)
 
@@ -1188,6 +1189,7 @@ class StorageBase(BaseTestCase):
         if "c:/Program Files" in data_path:
             data_path = data_path.replace("c:/Program Files",
                                            "/cygdrive/c/Program\ Files")
+            self.windows_platform = True
         return data_path
 
     def set_writer_reader_storage_threads(self):

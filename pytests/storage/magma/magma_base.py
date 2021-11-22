@@ -250,9 +250,15 @@ class MagmaBaseTest(StorageBase):
             for server in servers:
                 fragmentation_values = list()
                 shell = RemoteMachineShellConnection(server)
-                output = shell.execute_command(
-                    "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
-                    )[0][0].split('\n')[0]
+                if not self.windows_platform:
+                    output = shell.execute_command(
+                        "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
+                        )[0][0].split('\n')[0]
+                else:
+                    output = shell.execute_command(
+                        "cat /proc/cpuinfo | grep 'processor' | tail -1 | awk '{print $3}'"
+                        )[0][0].split('\n')[0]
+                    output = str(int(output) + 1)
                 self.log.debug("%s - core(s): %s" % (server.ip, output))
                 for i in range(min(int(output), 64)):
                     grep_field = "rw_{}:magma".format(i)
@@ -343,12 +349,11 @@ class MagmaBaseTest(StorageBase):
         for server in servers:
             bucket = self.cluster.buckets[0]
             magma_path = os.path.join(self.data_path, bucket.name, "magma.{}")
-
             shell = RemoteMachineShellConnection(server)
             shards = shell.execute_command(
-                        "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
-                        )[0][0].split('\n')[0]
-            self.log.debug("machine: {} - core(s): {}".format(server.ip, shards))
+                "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
+                )[0][0].split('\n')[0]
+            self.log.info("machine: {} - core(s): {}".format(server.ip, shards))
             for shard in range(min(int(shards), 64)):
                 magma = magma_path.format(shard)
                 kvstores, _ = shell.execute_command("ls {} | grep kvstore".format(magma))
@@ -361,6 +366,7 @@ class MagmaBaseTest(StorageBase):
                     self.log.info("kvstore_num=={}, ts_count=={}".format(kvstore_num, ts_count))
                     result_str += str(ts_count) + "+"
                     result += int(ts_count)
+
         self.log.info("result_str is {}".format(result_str))
         return result
 

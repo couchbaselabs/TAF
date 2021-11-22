@@ -6,7 +6,8 @@ from magma_base import MagmaBaseTest
 class BasicCrudTests(MagmaBaseTest):
     def setUp(self):
         super(BasicCrudTests, self).setUp()
-        self.change_swap_space(self.cluster.nodes_in_cluster)
+        if not self.windows_platform:
+            self.change_swap_space(self.cluster.nodes_in_cluster)
         self.generate_docs(doc_ops="update:read:delete")
         self.items = self.num_items
 
