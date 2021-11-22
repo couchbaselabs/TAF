@@ -184,7 +184,7 @@ class EventHelper(object):
         self.__event_counter.set(counter)
 
     def set_test_start_time(self):
-        self.test_start_time = self.get_timestamp_format(datetime.now())
+        self.test_start_time = self.get_timestamp_format(datetime.utcnow())
 
     def validate(self, server, since_time=None, events_count=-1):
         """

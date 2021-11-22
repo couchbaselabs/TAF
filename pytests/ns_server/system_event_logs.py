@@ -52,7 +52,7 @@ class SystemEventLogs(ClusterSetup):
             Event.Component.EVENTING: (4096, 5120),
             Event.Component.ANALYTICS: (5120, 6144),
             Event.Component.XDCR: (7168, 8192),
-            Event.Component.BACKUP: (6143, 7168)
+            Event.Component.BACKUP: (6144, 7168)
         }
         self.log_setup_status("SystemEventLogs", "completed")
 
@@ -76,7 +76,7 @@ class SystemEventLogs(ClusterSetup):
                 self.fail(failures)
 
     def __generate_random_event(self, components, severities, description):
-        timestamp = EventHelper.get_timestamp_format(datetime.now())
+        timestamp = EventHelper.get_timestamp_format(datetime.utcnow())
         uuid_val = self.system_events.get_rand_uuid()
         severity = choice(severities)
         component = choice(components)
@@ -116,7 +116,7 @@ class SystemEventLogs(ClusterSetup):
         self.system_events.events = list()
         self.system_events._set_counter(0)
         self.system_events.set_test_start_time()
-        timestamp = datetime.now()
+        timestamp = datetime.utcnow()
 
         if is_range_valid:
             # event_id_range is a range. Eg: 0:1023
@@ -173,11 +173,11 @@ class SystemEventLogs(ClusterSetup):
             return temp_event
 
         expected_err_msg = "The value must be supplied"
-        start_time = EventHelper.get_timestamp_format(datetime.now())
+        start_time = EventHelper.get_timestamp_format(datetime.utcnow())
         uuid_val = self.system_events.get_rand_uuid()
         severity = Event.Severity.INFO
         description = "test"
-        timestamp = EventHelper.get_timestamp_format(datetime.now())
+        timestamp = EventHelper.get_timestamp_format(datetime.utcnow())
         event_dict = {
             Event.Fields.TIMESTAMP: timestamp,
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
@@ -241,15 +241,14 @@ class SystemEventLogs(ClusterSetup):
 
         expected_err_format = "Name length (%d) must be in the range " \
                               "from 1 to 80, inclusive"
-        start_time = EventHelper.get_timestamp_format(datetime.now())
         target_node = choice(self.cluster.nodes_in_cluster)
+        c_time = datetime.utcnow()
 
         # Event dictionary format
         event_dict = {
             Event.Fields.COMPONENT: Event.Component.DATA,
             Event.Fields.EVENT_ID: KvEngine.BucketCreated,
-            Event.Fields.TIMESTAMP:
-                EventHelper.get_timestamp_format(datetime.now()),
+            Event.Fields.TIMESTAMP: EventHelper.get_timestamp_format(c_time),
             Event.Fields.UUID: self.system_events.get_rand_uuid(),
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.DESCRIPTION: "",
@@ -277,7 +276,7 @@ class SystemEventLogs(ClusterSetup):
             self.fail("Event creation failed with valid description len")
         self.system_events.add_event(event_dict)
 
-        self.__validate(start_time)
+        self.__validate(self.system_events.test_start_time)
 
     def test_event_size(self):
         """
@@ -286,11 +285,11 @@ class SystemEventLogs(ClusterSetup):
            and validate the event creation fails as expected
         """
         self.log.info("Adding event with 1byte description")
+        c_time = datetime.utcnow()
         event_dict = {
             Event.Fields.COMPONENT: Event.Component.DATA,
             Event.Fields.EVENT_ID: KvEngine.BucketCreated,
-            Event.Fields.TIMESTAMP:
-                EventHelper.get_timestamp_format(datetime.now()),
+            Event.Fields.TIMESTAMP: EventHelper.get_timestamp_format(c_time),
             Event.Fields.UUID: self.system_events.get_rand_uuid(),
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.DESCRIPTION: "a"
@@ -347,7 +346,7 @@ class SystemEventLogs(ClusterSetup):
         event_1.pop(Event.Fields.EXTRA_ATTRS)
         event_1[Event.Fields.UUID] = uuid_to_test
         event_1[Event.Fields.TIMESTAMP] = \
-            EventHelper.get_timestamp_format(datetime.now())
+            EventHelper.get_timestamp_format(datetime.utcnow())
 
         # Add valid event to the list for validation
         self.system_events.add_event(event_1)
@@ -360,7 +359,7 @@ class SystemEventLogs(ClusterSetup):
         event_2.pop(Event.Fields.NODE_NAME)
         event_2[Event.Fields.UUID] = uuid_to_test
         event_2[Event.Fields.TIMESTAMP] = \
-            EventHelper.get_timestamp_format(datetime.now())
+            EventHelper.get_timestamp_format(datetime.utcnow())
 
         self.log.info("Adding events with similar UUID")
         event_1 = deepcopy(event_1)
@@ -372,11 +371,11 @@ class SystemEventLogs(ClusterSetup):
 
         # Get new UUID to test
         uuid_to_test = self.system_events.get_rand_uuid()
-        curr_time = datetime.now()
+        curr_time = datetime.utcnow()
 
         # Create required event dictionaries for testing
-        event_1 = DataServiceEvents.scope_created(target_node.ip,
-                                                  "bucket", "scope_1")
+        event_1 = DataServiceEvents.scope_created(target_node.ip, "bucket_1",
+                                                  "b_uuid", "scope_1")
         event_1.pop(Event.Fields.EXTRA_ATTRS)
         event_1[Event.Fields.UUID] = uuid_to_test
         event_1[Event.Fields.TIMESTAMP] = \
@@ -390,7 +389,7 @@ class SystemEventLogs(ClusterSetup):
             seconds=CbServer.sys_event_log_uuid_uniqueness_time - 1)
         event_1.pop(Event.Fields.NODE_NAME)
         event_1[Event.Fields.TIMESTAMP] = \
-            EventHelper.get_timestamp_format(datetime.now())
+            EventHelper.get_timestamp_format(datetime.utcnow())
         self.log.info(event_1)
         self.event_rest_helper.create_event(event_1)
 
@@ -426,12 +425,12 @@ class SystemEventLogs(ClusterSetup):
         Create events with invalid field values.
         Expect the event creation to fail
         """
+        c_time = datetime.utcnow()
         valid_event = {
             Event.Fields.EVENT_ID: 0,
             Event.Fields.UUID: self.system_events.get_rand_uuid(),
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
-            Event.Fields.TIMESTAMP: EventHelper.get_timestamp_format(
-                datetime.now()),
+            Event.Fields.TIMESTAMP: EventHelper.get_timestamp_format(c_time),
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.DESCRIPTION: "test_invalid_values"
         }
@@ -491,7 +490,7 @@ class SystemEventLogs(ClusterSetup):
         self.log.info("Testing event with invalid timestamp format")
         invalid_event = deepcopy(valid_event)
         invalid_event[Event.Fields.TIMESTAMP] = \
-            EventHelper.get_timestamp_format(datetime.now())[:-1]
+            EventHelper.get_timestamp_format(datetime.utcnow())[:-1]
         status, content = self.event_rest_helper.create_event(invalid_event)
         if status:
             self.fail("Event creation succeeded with invalid timestamp format")
@@ -626,7 +625,7 @@ class SystemEventLogs(ClusterSetup):
                 self.fail("Unexpected error message: %s"
                           % content_dict["message"])
 
-        timestamp = EventHelper.get_timestamp_format(datetime.now())
+        timestamp = EventHelper.get_timestamp_format(datetime.utcnow())
         uuid_val = self.system_events.get_rand_uuid()
         severity = Event.Severity.INFO
         description = "Add event as non-admin"
@@ -681,14 +680,14 @@ class SystemEventLogs(ClusterSetup):
         events = self.event_rest_helper.get_events(
             server=self.cluster.master, username=ro_admin['id'],
             password=ro_admin['password'])
-        if isinstance(list, events) and len(events) == 0:
+        if isinstance(events, list) and len(events) == 0:
             self.fail("No events found")
 
         self.log.info("Fetching logs using bucket_admin")
         events = self.event_rest_helper.get_events(
             server=self.cluster.master,
             username=bucket_admin['id'], password=bucket_admin['password'])
-        if isinstance(list, events) and len(events) == 0:
+        if isinstance(events, list) and len(events) == 0:
             self.fail("No events found")
 
         self.__validate(self.system_events.test_start_time)
@@ -991,7 +990,7 @@ class SystemEventLogs(ClusterSetup):
 
         # Create required number of events
         self.log.info("Creating required event objects")
-        base_time_stamp = datetime.now()
+        base_time_stamp = datetime.utcnow()
         for index in range(100):
             base_time_stamp += timedelta(milliseconds=1)
             event = deepcopy(event_format)
@@ -1032,7 +1031,7 @@ class SystemEventLogs(ClusterSetup):
 
         failures = None
         gossip_timeout = 120
-        base_time_stamp = datetime.now()
+        base_time_stamp = datetime.utcnow()
         target_node = choice(self.cluster.nodes_in_cluster)
         non_affected_nodes = [node for node in self.cluster.nodes_in_cluster
                               if node.ip != target_node.ip]

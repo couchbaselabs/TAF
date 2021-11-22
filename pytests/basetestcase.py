@@ -1124,11 +1124,15 @@ class ClusterSetup(BaseTestCase):
                  'purge_interval': 'undefined',
                  'durability_min_level': self.bucket_durability_level,
                  'num_replicas': self.num_replicas})
-            if self.bucket_type == Bucket.Type.EPHEMERAL:
-                bucket_create_event['storage_mode'] = Bucket.Type.EPHEMERAL
-                bucket_create_event.pop('purge_interval', None)
             if bucket_create_event[Event.Fields.EXTRA_ATTRS]['bucket_props'][
                     'eviction_policy'] == Bucket.EvictionPolicy.VALUE_ONLY:
                 bucket_create_event[Event.Fields.EXTRA_ATTRS][
                     'bucket_props']['eviction_policy'] = 'value_only'
+            if self.bucket_type == Bucket.Type.EPHEMERAL:
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props']['storage_mode'] = Bucket.Type.EPHEMERAL
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props'].pop('purge_interval', None)
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props']['eviction_policy'] = "no_eviction"
             self.system_events.add_event(bucket_create_event)
