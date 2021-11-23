@@ -919,7 +919,7 @@ class ClusterUtils:
             table.add_row(row)
         table.display("Cluster statistics")
 
-    def verify_replica_distribution_in_zones(self, cluster, nodes):
+    def verify_replica_distribution_in_zones(self, cluster, nodes, bucket="default"):
         """
         Verify the replica distribution in nodes in different zones.
         Validate that no replicas of a node are in the same zone.
@@ -928,6 +928,7 @@ class ClusterUtils:
         Each key contains the zone name and the ip of nodes in that zone.
         """
         shell = RemoteMachineShellConnection(cluster.master)
+        rest = RestConnection(cluster.master)
         info = shell.extract_remote_info().type.lower()
         if info == 'linux':
             cbstat_command = "{0:s}cbstats" \
@@ -940,50 +941,53 @@ class ClusterUtils:
                              .format(testconstants.MAC_COUCHBASE_BIN_PATH)
         else:
             raise Exception("OS not supported.")
-        saslpassword = ''
-        versions = RestConnection(cluster.master).get_nodes_versions()
+        versions = rest.get_nodes_versions()
         for group in nodes:
             for node in nodes[group]:
                 if versions[0][:5] in testconstants.COUCHBASE_VERSION_2:
                     command = "tap"
                     if not info == 'windows':
-                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep :vb_filter: |  awk '{print $1}' \
+                        commands = "%s %s:%s -u %s -p \"%s\" %s -b %s | grep :vb_filter: |  awk '{print $1}' \
                             | xargs | sed 's/eq_tapq:replication_ns_1@//g'  | sed 's/:vb_filter://g' \
                             " % (cbstat_command, node,
                                  constants.memcached_port,
-                                 command, "default", saslpassword)
+                                 rest.username, rest.password,
+                                 command, bucket)
                     else:
-                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep.exe :vb_filter: | gawk.exe '{print $1}' \
+                        commands = "%s %s:%s -u %s -p \"%s\" %s -b %s | grep.exe :vb_filter: | gawk.exe '{print $1}' \
                                | sed.exe 's/eq_tapq:replication_ns_1@//g'  | sed.exe 's/:vb_filter://g' \
                                " % (cbstat_command, node,
                                     constants.memcached_port,
-                                    command, "default", saslpassword)
+                                    rest.username, rest.password,
+                                    command, bucket)
                     output, error = shell.execute_command(commands)
                 elif versions[0][:5] in testconstants.COUCHBASE_VERSION_3 or \
                         versions[0][:5] in testconstants.COUCHBASE_FROM_VERSION_4:
                     command = "dcp"
                     if not info == 'windows':
-                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep :replication:ns_1@%s |  grep vb_uuid | \
+                        commands = "%s %s:%s -u %s -p \"%s\" %s -b %s  | grep :replication:ns_1@%s |  grep vb_uuid | \
                                     awk '{print $1}' | sed 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
                                     sed 's/:.*//g' | sort -u | xargs \
                                    " % (cbstat_command, node,
                                         constants.memcached_port,
-                                        command, "default", saslpassword,
+                                        rest.username, rest.password,
+                                        command, bucket,
                                         node, node)
                         output, error = shell.execute_command(commands)
                     else:
-                        commands = "%s %s:%s %s -b %s -p \"%s\" | grep.exe :replication:ns_1@%s |  grep vb_uuid | \
+                        commands = "%s %s:%s -u %s -p \"%s\" %s -b %s  | grep.exe :replication:ns_1@%s |  grep vb_uuid | \
                                     gawk.exe '{print $1}' | sed.exe 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
                                     sed.exe 's/:.*//g' \
                                    " % (cbstat_command, node,
                                         constants.memcached_port,
-                                        command, "default", saslpassword,
+                                        rest.username, rest.password,
+                                        command, bucket,
                                         node, node)
                         output, error = shell.execute_command(commands)
                         output = sorted(set(output))
                 shell.log_command_output(output, error)
                 output = output[0].split(" ")
-                if node not in output:
+                if set(nodes[group]).isdisjoint(set(output)):
                     self.log.debug("{0}".format(nodes))
                     self.log.debug("replicas of node {0} are in nodes {1}"
                                    .format(node, output))

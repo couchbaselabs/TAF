@@ -52,6 +52,7 @@ class CollectionsRebalance(CollectionBase):
         self.dgm = self.input.param("dgm", "100")  # Initial dgm threshold, for dgm test; 100 means no dgm
         self.scrape_interval = self.input.param("scrape_interval", None)
         self.sleep_before_validation_of_ttl = self.input.param("sleep_before_validation_of_ttl", 400)
+        self.num_zone = self.input.param("num_zone", 1)
         if self.scrape_interval:
             self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
             # scrape_timeout cannot be greater than scrape_interval,
@@ -867,6 +868,16 @@ class CollectionsRebalance(CollectionBase):
             self.wait_for_compaction_to_complete()
 
     def data_validation_collection(self):
+        nodes_in_zones = self.get_zone_info()
+        num_zone = len(nodes_in_zones.keys())
+        if num_zone > 1:
+            for bucket in self.cluster.buckets:
+                self.cluster_util.verify_replica_distribution_in_zones(self.cluster,
+                                                                       nodes_in_zones,
+                                                                       bucket=bucket.name)
+            self.bucket_util.verify_vbucket_distribution_in_zones(self.cluster,
+                                                                  nodes_in_zones,
+                                                                  self.servers)
         if not self.skip_validations:
             if self.data_load_spec == "ttl_load" or self.data_load_spec == "ttl_load1":
                 self.bucket_util._expiry_pager(self.cluster)
@@ -890,7 +901,67 @@ class CollectionsRebalance(CollectionBase):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
-                    self.cluster)
+                    self.cluster, num_zone=num_zone)
+
+    def shuffle_nodes_between_zones_and_rebalance(self):
+        """
+        Shuffle the nodes present in the cluster if zone > 1.
+        Rebalance the nodes in the end.
+        Nodes are divided into groups iteratively. i.e: 1st node in Group 1,
+        2nd in Group 2, 3rd in Group 1 & so on, when zone=2
+        """
+        serverinfo = self.servers[0]
+        rest = RestConnection(serverinfo)
+        zones = ["Group 1"]
+        nodes_in_zone = {"Group 1": [serverinfo.ip]}
+        # Create zones, if not existing, based on params zone in test.
+        # Shuffle the nodes between zones.
+        if int(self.num_zone) > 1:
+            for i in range(1, int(self.num_zone)):
+                a = "Group "
+                zones.append(a + str(i + 1))
+                if not rest.is_zone_exist(zones[i]):
+                    rest.add_zone(zones[i])
+                nodes_in_zone[zones[i]] = list()
+            # Divide the nodes between zones.
+            nodes_in_cluster = \
+                [node.ip for node in self.cluster_util.get_nodes_in_cluster(
+                    self.cluster)]
+            for i in range(1, len(self.servers)):
+                if self.servers[i].ip in nodes_in_cluster:
+                    server_group = i % int(self.num_zone)
+                    nodes_in_zone[zones[server_group]].append(self.servers[i].ip)
+            # Shuffle the nodesS
+            for i in range(1, self.num_zone):
+                node_in_zone = list(set(nodes_in_zone[zones[i]]) -
+                                    set([node for node in rest.get_nodes_in_zone(zones[i])]))
+                rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[i])
+        # Start rebalance and monitor it.
+        self.check_balanced_attribute(rest, self.balanced)
+        self.task.rebalance(self.cluster.servers[:self.nodes_init], [], [],
+                            retry_get_process_num=self.retry_get_process_num)
+        # Verify replicas of one node should not be in the same zone
+        # as active vbuckets of the node.
+        self.check_balanced_attribute(rest, True)
+        self.data_validation_collection()
+
+    def check_balanced_attribute(self, rest, balanced):
+        content = rest.cluster_status()
+        if content['balanced'] != balanced:
+            raise Exception("expected balanced attribute {0} but actual {1}".
+                            format(content['balanced'], balanced))
+
+    def get_zone_info(self):
+        nodes_in_zone = dict()
+        serverinfo = self.servers[0]
+        rest = RestConnection(serverinfo)
+        for i in range(0, int(self.num_zone)):
+            zone_name = "Group " + str(i + 1)
+            if rest.get_nodes_in_zone(zone_name).keys():
+                nodes_in_zone[zone_name] = [x.encode('UTF8') for x in
+                                            rest.get_nodes_in_zone(zone_name).keys()]
+        self.log.info("nodes in zone inside get_zone_info():{0}".format(nodes_in_zone))
+        return nodes_in_zone
 
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None
@@ -905,6 +976,9 @@ class CollectionsRebalance(CollectionBase):
             self.load_to_dgm()
         if self.N1ql_txn:
             self.setup_N1ql_txn()
+        if self.num_zone > 1:
+            self.balanced = False
+            self.shuffle_nodes_between_zones_and_rebalance()
         if rebalance_operation == "rebalance_in":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_in",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
@@ -917,6 +991,8 @@ class CollectionsRebalance(CollectionBase):
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
                                                  remove_nodes=self.cluster.servers[:self.nodes_init][-self.nodes_out:],
                                                  tasks=tasks)
+            if self.num_zone > 1:
+                self.balanced = True
         elif rebalance_operation == "swap_rebalance":
             rebalance = self.rebalance_operation(rebalance_operation="swap_rebalance",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
@@ -960,7 +1036,6 @@ class CollectionsRebalance(CollectionBase):
                                                        failover_nodes=self.cluster.servers[:self.nodes_init]
                                                        [-self.nodes_failover:]
                                                        )
-
         if self.data_load_stage == "during":
             if self.data_load_type == "async":
                 tasks = self.async_data_load()
@@ -976,6 +1051,8 @@ class CollectionsRebalance(CollectionBase):
                 else:
                     self.wait_for_async_data_load_to_complete(tasks)
             self.data_validation_collection()
+        if self.num_zone > 1:
+            self.shuffle_nodes_between_zones_and_rebalance()
         if self.data_load_stage == "after":
             self.sync_data_load()
             self.data_validation_collection()

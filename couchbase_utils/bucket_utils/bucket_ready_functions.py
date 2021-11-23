@@ -1964,6 +1964,7 @@ class BucketUtils(ScopeUtils):
           tar_src=remote - 172.23.10.12:/data/4_nodes_1_replica_10G
 
         """
+
         def load_bucket_on_node(n_index, shell_conn, b_name, data_path,
                                 s_tar_dir):
             file_path = os.path.join(s_tar_dir, "node%d.tar.gz" % n_index)
@@ -2016,7 +2017,7 @@ class BucketUtils(ScopeUtils):
             bucket_loading_task.append(
                 self.task.async_function(
                     load_bucket_on_node,
-                    (index+1,
+                    (index + 1,
                      node_info[cluster_node.ip]["shell"],
                      bucket_obj.name,
                      node_info[cluster_node.ip]["data_path"],
@@ -2290,7 +2291,7 @@ class BucketUtils(ScopeUtils):
                              timeout=None, check_items=True,
                              check_bucket_stats=True,
                              check_ep_items_remaining=False,
-                             verify_total_items=True):
+                             verify_total_items=True, num_zone=1):
         master = cluster.master
         self._wait_for_stats_all_buckets(
             cluster, cluster.buckets,
@@ -2304,7 +2305,8 @@ class BucketUtils(ScopeUtils):
                 verified = True
                 for bucket in cluster.buckets:
                     verified &= self.wait_till_total_numbers_match(
-                        master, bucket, timeout_in_seconds=(timeout or 500))
+                        master, bucket, timeout_in_seconds=(timeout or 500),
+                        num_zone=num_zone)
                 if not verified:
                     msg = "Lost items!!! Replication was completed " \
                           "but sum (curr_items) don't match the " \
@@ -2312,7 +2314,7 @@ class BucketUtils(ScopeUtils):
                     self.log.error(msg)
                     raise Exception(msg)
 
-    def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60):
+    def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60, num_zone=1):
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
         servers = self.cluster_util.get_kv_nodes(cluster)
@@ -2328,10 +2330,14 @@ class BucketUtils(ScopeUtils):
         # TODO: Need to fix the config files to always satisfy the
         #       replica number based on the available number_of_servers
         available_replicas = bucket.replicaNumber
-        if len(servers) == bucket.replicaNumber:
-            available_replicas = len(servers) - 1
-        elif len(servers) <= bucket.replicaNumber:
-            available_replicas = len(servers) - 1
+        if num_zone > 1:
+            if bucket.replicaNumber >= num_zone:
+                available_replicas = num_zone - 1
+        else:
+            if len(servers) == bucket.replicaNumber:
+                available_replicas = len(servers) - 1
+            elif len(servers) <= bucket.replicaNumber:
+                available_replicas = len(servers) - 1
 
         # Create connection to master node for verifying cbstats
         stat_cmd = "all"
@@ -2365,14 +2371,14 @@ class BucketUtils(ScopeUtils):
         for remote_conn in shell_conn_list1 + shell_conn_list2:
             remote_conn.disconnect()
 
-    def verify_stats_all_buckets(self, cluster, items, timeout=1200):
+    def verify_stats_all_buckets(self, cluster, items, timeout=1200, num_zone=1):
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(cluster),
             cluster.buckets,
             skip_consistency=True)
         for bucket in cluster.buckets:
             self.verify_stats_for_bucket(cluster, bucket, items,
-                                         timeout=timeout)
+                                         timeout=timeout, num_zone=num_zone)
             # Validate seq_no snap_start/stop values with initial load
             result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
             self.assertTrue(result,
@@ -3983,13 +3989,14 @@ class BucketUtils(ScopeUtils):
         return bucket
 
     def wait_till_total_numbers_match(self, master, bucket,
-                                      timeout_in_seconds=120):
+                                      timeout_in_seconds=120,
+                                      num_zone=0):
         self.log.debug('Waiting for sum_of_curr_items == total_items')
         start = time.time()
         verified = False
         while (time.time() - start) <= timeout_in_seconds:
             try:
-                if self.verify_items_count(master, bucket):
+                if self.verify_items_count(master, bucket, num_zone=num_zone):
                     verified = True
                     break
                 else:
@@ -4002,7 +4009,39 @@ class BucketUtils(ScopeUtils):
             RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
         return verified
 
-    def verify_items_count(self, master, bucket, num_attempt=3, timeout=2):
+    def verify_vbucket_distribution_in_zones(self, cluster, nodes, servers):
+        """
+        Verify the active and replica distribution in nodes in same zones.
+        Validate that no replicas of a node are in the same zone.
+        :param buckets: target bucket objects
+        :param nodes: Map of the nodes in different zones.
+        Each key contains the zone name and the ip of nodes in that zone.
+        """
+        buckets = self.get_all_buckets(cluster)
+        for bucket in buckets:
+            for group in nodes:
+                vb_active_list = list()
+                vb_replica_list = list()
+                for node in nodes[group]:
+                    for server in servers:
+                        if server.ip == node:
+                            shell = RemoteMachineShellConnection(server)
+                            cbstat = Cbstats(shell)
+                            vb_active_list.extend(cbstat.vbucket_list(bucket,
+                                                                      "active"))
+                            vb_replica_list.extend(cbstat.vbucket_list(bucket,
+                                                                       "replica"))
+                            shell.disconnect()
+                            break
+                if set(vb_active_list).isdisjoint(set(vb_replica_list)):
+                    self.log.debug("Active and replica vbucket list"
+                                   "are not overlapped")
+                else:
+                    raise Exception("Active and replica vbucket list"
+                                    "are overlapped")
+
+    def verify_items_count(self, master, bucket, num_attempt=3, timeout=2,
+                           num_zone=0):
         # get the #of buckets from rest
         rest = RestConnection(master)
         replica_factor = bucket.replicaNumber
@@ -4012,9 +4051,13 @@ class BucketUtils(ScopeUtils):
         all_server_stats = []
         stats_received = True
         nodes = rest.get_nodes()
+        shell = RemoteMachineShellConnection(master)
+        cbstat = Cbstats(shell)
+        bucket_helper = BucketHelper(master)
+        active_vbucket_differ_count = len(rest.get_nodes())
         for server in nodes:
             # get the stats
-            server_stats = BucketHelper(master).get_bucket_stats_for_node(
+            server_stats = bucket_helper.get_bucket_stats_for_node(
                 bucket, server)
             if not server_stats:
                 self.log.debug("Unable to get stats from {0}: {1}"
@@ -4024,6 +4067,18 @@ class BucketUtils(ScopeUtils):
         if not stats_received:
             raise StatsUnavailableException()
         sum = 0
+        max_vbuckets, error = cbstat.get_stats(bucket.name, "all",
+                                               "ep_max_vbuckets")
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+        master_stats = bucket_helper.get_bucket_stats(bucket)
+        if "vb_active_num" in master_stats:
+            self.log.debug('vb_active_num from master: {0}'
+                           .format(master_stats["vb_active_num"]))
+        else:
+            raise Exception("Bucket {0} stats doesnt contain 'vb_active_num':"
+                            .format(bucket))
+        shell.disconnect()
         for server, single_stats in all_server_stats:
             if not single_stats or "curr_items" not in single_stats:
                 continue
@@ -4038,6 +4093,14 @@ class BucketUtils(ScopeUtils):
                                        single_stats["vb_pending_num"]))
             if 'vb_active_num' in single_stats:
                 vbucket_active_sum += single_stats['vb_active_num']
+                if (master_stats["vb_active_num"] + active_vbucket_differ_count) \
+                        <= single_stats['vb_active_num'] <= \
+                        (master_stats["vb_active_num"] - active_vbucket_differ_count):
+                    raise Exception("vb_active_num from {0}:{1} - {2} "
+                                    "and master {3}"
+                                    .format(server.ip, server.port,
+                                            single_stats["vb_active_num"],
+                                            master_stats["vb_active_num"]))
                 self.log.debug("vb_active_num from {0}:{1} - {2}"
                                .format(server.ip, server.port,
                                        single_stats["vb_active_num"]))
@@ -4053,18 +4116,38 @@ class BucketUtils(ScopeUtils):
         msg = 'sum: {0} and sum * (replica_factor + 1) ({1}) : {2}'
         self.log.debug(msg.format(sum, replica_factor + 1,
                                   (sum * (replica_factor + 1))))
-        master_stats = BucketHelper(master).get_bucket_stats(bucket)
+
         if "curr_items_tot" in master_stats:
             self.log.debug('curr_items_tot from master: {0}'
                            .format(master_stats["curr_items_tot"]))
         else:
             raise Exception("Bucket {0} stats doesnt contain 'curr_items_tot':"
                             .format(bucket))
-        if replica_factor >= len(nodes):
-            self.log.warn("Number of nodes is less than replica requires")
-            delta = sum * (len(nodes)) - master_stats["curr_items_tot"]
+        if num_zone:
+            num_nodes = num_zone
         else:
+            num_nodes = len(nodes)
+        if replica_factor >= num_nodes:
+            self.log.warn("Number of zones/nodes is less than replica requires")
+            expected_replica_vbucket = (int(max_vbuckets[0].split(':')[1]) *
+                                        (num_nodes - 1))
+            delta = (sum * num_nodes) - master_stats["curr_items_tot"]
+        else:
+            expected_replica_vbucket = (int(max_vbuckets[0].split(':')[1]) *
+                                        replica_factor)
             delta = sum * (replica_factor + 1) - master_stats["curr_items_tot"]
+        if vbucket_active_sum != int(max_vbuckets[0].split(':')[1]):
+            raise Exception("vbucket_active_sum actual {0} and expected {1}"
+                            .format(vbucket_active_sum,
+                                    int(max_vbuckets[0].split(':')[1])))
+        elif vbucket_replica_sum != expected_replica_vbucket:
+            raise Exception("vbucket_replica_sum actual {0} and expected {1}"
+                            .format(vbucket_replica_sum, expected_replica_vbucket))
+        else:
+            self.log.debug('vbucket_active_sum: {0}'
+                           'vbucket_replica_sum: {1}'
+                           .format(vbucket_active_sum,
+                                   vbucket_replica_sum))
         delta = abs(delta)
 
         if delta > 0:
@@ -4463,8 +4546,9 @@ class BucketUtils(ScopeUtils):
         shell.disconnect()
 
         for bucket in buckets:
-           cmd = '{ok, BC} = ns_bucket:get_bucket("%s"), BC2 = lists:keyreplace(purge_interval, 1, BC, {purge_interval, %s}), ns_bucket:set_bucket_config("%s", BC2).' % (bucket.name, value, bucket.name)
-           rest.diag_eval(cmd)
+            cmd = '{ok, BC} = ns_bucket:get_bucket("%s"), BC2 = lists:keyreplace(purge_interval, 1, BC, {purge_interval, %s}), ns_bucket:set_bucket_config("%s", BC2).' % (
+                bucket.name, value, bucket.name)
+            rest.diag_eval(cmd)
 
         # Restart Memcached in all cluster nodes to reflect the settings
         for server in self.cluster_util.get_kv_nodes(cluster, master=node):
@@ -4622,7 +4706,7 @@ class BucketUtils(ScopeUtils):
         if not status:
             raise Exception("Collections stat validation failed")
 
-    def validate_docs_per_collections_all_buckets(self, cluster, timeout=1200):
+    def validate_docs_per_collections_all_buckets(self, cluster, timeout=1200, num_zone=1):
         self.log.info("Validating collection stats and item counts")
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(cluster),
@@ -4633,7 +4717,7 @@ class BucketUtils(ScopeUtils):
         for bucket in cluster.buckets:
             expected_num_items = self.get_expected_total_num_items(bucket)
             self.verify_stats_for_bucket(cluster, bucket, expected_num_items,
-                                         timeout=timeout)
+                                         timeout=timeout, num_zone=num_zone)
 
             if bucket.bucketType == Bucket.Type.MEMCACHED:
                 continue
