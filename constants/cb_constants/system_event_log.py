@@ -19,10 +19,7 @@ class NsServer(object):
     AutoFailoverFailed = 16
     AutoFailoverWarning = 17
     MasterSelected = 18
-
-    BabySitterRespawn = 0
-    NodeOffline = 0
-    TopologyChange = 0
+    ServiceCrashed = 19
 
 
 class KvEngine(object):
@@ -39,7 +36,6 @@ class KvEngine(object):
     BucketConfigChanged = 8201
     MemcachedConfigChanged = 8202
     EphemeralAutoReprovision = 8203
-    MemcachedCrashed = 8204
 
 
 class Security(object):

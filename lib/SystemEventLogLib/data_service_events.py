@@ -150,17 +150,6 @@ class DataServiceEvents(object):
         }
 
     @staticmethod
-    def memcached_crashed(node, crashed_pid):
-        return {
-            Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: KvEngine.MemcachedCrashed,
-            Event.Fields.COMPONENT: Event.Component.DATA,
-            Event.Fields.DESCRIPTION: "Memcached crashed",
-            Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"os_pid": crashed_pid}
-        }
-
-    @staticmethod
     def memcached_settings_changed(node, prev_settings, new_settings):
         return {
             Event.Fields.NODE_NAME: node,

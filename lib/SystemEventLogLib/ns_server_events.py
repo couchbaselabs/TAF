@@ -15,7 +15,7 @@ class NsServerEvents(object):
         }
 
     @staticmethod
-    def rebalance_started(node, triggered_by, active_nodes, keep_nodes,
+    def rebalance_started(node, active_nodes, keep_nodes,
                           eject_nodes, delta_nodes, failed_nodes):
         return {
             Event.Fields.NODE_NAME: node,
@@ -23,8 +23,7 @@ class NsServerEvents(object):
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
             Event.Fields.DESCRIPTION: "Rebalance initiated",
             Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"triggered_by": triggered_by,
-                                       "nodes_info": {
+            Event.Fields.EXTRA_ATTRS: {"nodes_info": {
                                           "active_nodes": active_nodes,
                                           "keep_nodes": keep_nodes,
                                           "eject_nodes": eject_nodes,
@@ -258,4 +257,19 @@ class NsServerEvents(object):
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
             Event.Fields.EXTRA_ATTRS: {"old_topology": old_topology,
                                        "new_topology": new_topology}
+        }
+
+    @staticmethod
+    def service_crashed(node, process_name, process_id, exit_status):
+        return {
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EVENT_ID: NsServer.ServiceCrashed,
+            Event.Fields.COMPONENT: Event.Component.NS_SERVER,
+            Event.Fields.DESCRIPTION: "Service crashed",
+            Event.Fields.SEVERITY: Event.Severity.ERROR,
+            Event.Fields.EXTRA_ATTRS: {
+                "name": process_name,
+                "os_pid": process_id,
+                "exit_status": exit_status
+            }
         }
