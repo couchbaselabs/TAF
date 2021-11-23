@@ -1335,9 +1335,9 @@ class CBASExternalAzureLinks(CBASBaseTest):
     def test_large_file(self):
         object_construction_def = "key1 STRING, key2 STRING, key3 STRING, key4 STRING"
         doc_counts = {
-            "json": 5000000,
-            "csv": 5000000,
-            "tsv": 5000000,
+            "json": 100000,
+            "csv": 100000,
+            "tsv": 100000,
         }
 
         self.setup_for_test(
