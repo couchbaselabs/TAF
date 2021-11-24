@@ -520,14 +520,15 @@ class SystemEventLogs(ClusterSetup):
             self.fail("Invalid error message: %s" % content)
 
         self.log.info("Testing event with node value given explicitly")
-        expected_error = "Unexpected field"
         invalid_event = deepcopy(valid_event)
-        invalid_event[Event.Fields.NODE_NAME] = "1.1.1.1"
-        status, content = self.event_rest_helper.create_event(invalid_event)
-        if status:
-            self.fail("Event creation succeeded with node value given")
-        if content["errors"][Event.Fields.NODE_NAME] != expected_error:
-            self.fail("Invalid error message: %s" % content)
+        invalid_event[Event.Fields.NODE_NAME] = "ns_serv_accepts_any_str"
+        status, _ = self.event_rest_helper.create_event(invalid_event)
+        if not status:
+            self.fail("Event creation failed with node value")
+
+        last_event = self.get_last_event_from_cluster()
+        if last_event[Event.Fields.NODE_NAME] != "ns_serv_accepts_any_str":
+            self.fail("Value mismatch in last_event: %s" % last_event)
 
     def test_logs_in_cbcollect(self):
         """
