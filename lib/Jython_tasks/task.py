@@ -4083,6 +4083,7 @@ class CompareIndexKVData(Task):
             self.log.debug("field is: {}".format(self.field))
             self.set_result(self.compareResult(success, resultList, self.field))
         except Exception as e:
+            self.log.error("Exception while comparing")
             self.test_log.error(e)
             self.set_exception(e)
             return
@@ -6505,7 +6506,7 @@ class DropDataversesTask(Task):
         self.complete_task()
 
 class ExecuteQueryTask(Task):
-    def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600):
+    def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600, retry=10):
         super(ExecuteQueryTask, self).__init__("ExecuteQueriesTask_%sstarted%s"
                                                % (query, time.time()))
         self.server = server
@@ -6517,24 +6518,28 @@ class ExecuteQueryTask(Task):
         self.index_name = indexName
         self.timeout = timeout
         self.isIndexerQuery = isIndexerQuery
+        self.retry = retry
     def call(self):
         self.start_task()
         indexer_rest = GsiHelper(self.server, self.log)
         isException = False
-        try:
-            self.log.info("starting call")
-            contentType = 'application/x-www-form-urlencoded'
-            connection = 'keep-alive'
-            status, content, header = indexer_rest.execute_query(server=self.server, query=self.query,
-                                                                 contentType=contentType,
-                                                                 connection=connection, isIndexerQuery=self.isIndexerQuery)
-            newContent = json.loads(content)
-            self.log.debug("Status of the query {}".format(status))
-            self.set_result(status)
-            self.log.info("check isIndexQuery status"+str(self.isIndexerQuery))
-        except Exception as e:
-            self.log.info("Got exception:{0} with index name {1}".format(str(e), self.index_name))
-            isException = True
+        for x in range(self.retry):
+            isException = False
+            try:
+                self.log.info("starting call")
+                contentType = 'application/x-www-form-urlencoded'
+                connection = 'keep-alive'
+                status, content, header = indexer_rest.execute_query(server=self.server, query=self.query,
+                                                                     contentType=contentType,
+                                                                     connection=connection, isIndexerQuery=self.isIndexerQuery)
+                newContent = json.loads(content)
+                self.log.debug("Status of the query {}".format(status))
+                self.set_result(status)
+                self.log.info("check isIndexQuery status"+str(self.isIndexerQuery))
+                break
+            except Exception as e:
+                self.log.info("Got exception:{0} with index name {1}".format(str(e), self.index_name))
+                isException = True
 
         if self.isIndexerQuery:
             self.log.info("Waiting for polling status:" + self.index_name)
@@ -6542,5 +6547,6 @@ class ExecuteQueryTask(Task):
                                                               timeout=self.timeout)
             self.set_result(result)
         if isException:
+            self.log.info("Got exception, marking task status as fail")
             self.set_result(False)
         self.complete_task()

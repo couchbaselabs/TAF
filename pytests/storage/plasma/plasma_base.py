@@ -15,7 +15,7 @@ from gsiLib.gsiHelper import GsiHelper
 class PlasmaBaseTest(StorageBase):
     def setUp(self):
         super(PlasmaBaseTest, self).setUp()
-        self.num_replicas = self.input.param("num_replicas", 1)
+        self.index_replicas = self.input.param("index_replicas", 0)
         self.retry_exceptions = list([SDKException.AmbiguousTimeoutException,
                                       SDKException.DurabilityImpossibleException,
                                       SDKException.DurabilityAmbiguousException])
@@ -118,7 +118,7 @@ class PlasmaBaseTest(StorageBase):
             raise Exception(content)
         self.log.info("{0} set".format(setting_json))
 
-    def  mem_used_reached(self, exp_percent, plasma_obj_dict):
+    def mem_used_reached(self, exp_percent, plasma_obj_dict):
         for plasma_obj in plasma_obj_dict.values():
             index_stat = plasma_obj.get_all_index_stat_map()
             percent = self.find_mem_used_percent(index_stat)
@@ -145,6 +145,8 @@ class PlasmaBaseTest(StorageBase):
         return field_value_map
 
     def find_mem_used_percent(self, index_stats_map):
+        self.log.debug("memory total storage {}".format(index_stats_map['memory_total_storage']))
+        self.log.debug("memory used storage {}".format(index_stats_map['memory_used_storage']))
         mem_used_percent = int(
             (Decimal(index_stats_map['memory_used_storage']) / index_stats_map['memory_total_storage']) * 100)
         self.log.debug("mem used percent is {}".format(mem_used_percent))
@@ -178,8 +180,8 @@ class PlasmaBaseTest(StorageBase):
                         break
                 elif ops == 'equalOrLessThan':
                     self.log.debug("greater operation")
-                    if actual_field_value <= field_value:
-                        isCompare = True
+                    if not field_value <= value:
+                        isFound = False
                         break
                 else:
                     self.log.debug("lesser operation")
@@ -254,6 +256,10 @@ class PlasmaBaseTest(StorageBase):
                     if field_value_map[key] <= value_map[key]:
                         isCompare = True
                         break
+                elif ops == 'equalOrGreaterThan':
+                    if field_value_map[key] >= value_map[key]:
+                        isCompare = True
+                        break
                 else:
                     self.log.info("Operation {} not supported".format(ops))
                     return False
@@ -287,7 +293,7 @@ class PlasmaBaseTest(StorageBase):
                     if index_stat_map["MainStore"]["num_rec_compressed"] == 0:
                         self.log.debug("num_rec_compressed value is 0")
                         comp_stat_verified = False
-                    elif index_stat_map["MainStore"]["num_rec_compressed"] < 0:
+                    elif index_stat_map["MainStore"]["num_rec_compressed"] < 0 or index_stat_map["BackStore"]["num_rec_compressed"] < 0:
                         self.fail("Negative digit in compressed count")
         return comp_stat_verified
 
@@ -354,9 +360,11 @@ class PlasmaBaseTest(StorageBase):
                                     self.log.debug("Resetting the list")
                                     query_task_list = list()
                                     x = 0
+                            if offset >= totalCount:
+                                break
                             offset += limit
                             if offset > totalCount:
-                                break
+                                offset = totalCount
             return query_task_list
 
     def perform_plasma_mem_ops(self,ops='compactAll'):
@@ -405,3 +413,13 @@ class PlasmaBaseTest(StorageBase):
                 if index_val["num_docs_pending"] and index_val["num_docs_queued"]:
                     return False
         return True
+
+    def wait_for_stats_to_settle_down(self, stats_obj_list, ops, field, retry=10):
+        for x in range(retry):
+            if not self.check_stats_values_changing(stats_obj_list, ops, field):
+                self.sleep(10, "wait for values to settle down")
+
+    def check_stats_values_changing(self, stat_obj_list, ops='greater', field='merges'):
+        field_dict = self.get_plasma_index_stat_value(field, stat_obj_list)
+        return self.compare_plasma_stat_field_value(stat_obj_list, field, field_dict,
+                                             ops)

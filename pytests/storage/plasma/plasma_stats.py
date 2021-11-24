@@ -115,7 +115,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
         indexTask_list = list()
         count = 0
 
-        self.num_replicas = self.input.param("num_replicas", 1)
+        self.index_replicas = self.input.param("index_replicas", 1)
         self.log.info("Starting upsert test")
         i = 0
         query_nodes_list = self.cluster_util.get_nodes_from_services_map(service_type="n1ql", get_all_nodes=True)
@@ -128,7 +128,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
             indexName = "Index" + str(i)
             index_query = "CREATE INDEX `%s` ON `%s`(`body`) with {\"num_replica\":%s}" % (indexName,
                                                                                            self.buckets[0].name,
-                                                                                           self.num_replicas)
+                                                                                           self.index_replicas)
             instance = i % query_len
             self.query_client = RestConnection(query_nodes_list[instance])
             indexDict[indexName] = index_query
@@ -185,7 +185,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
             indexName = "Index" + str(counter)
             query = "CREATE INDEX `%s` ON `%s`(`body`) with {\"num_replica\":%s}" % (indexName,
                                                                                      self.buckets[0].name,
-                                                                                     self.num_replicas)
+                                                                                     self.index_replicas)
             task = self.task.async_execute_query(server=query_nodes_list[0], query=query, bucket=self.buckets[0],
                                                  indexName=indexName, isIndexerQuery=True)
             indexTask_list.append(task)
@@ -254,7 +254,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
         indexDict = dict()
 
         self.cluster_util.print_cluster_stats()
-        self.num_replicas = self.input.param("num_replicas", 1)
+        self.index_replicas = self.input.param("index_replicas", 1)
         self.log.info("Starting upsert test")
         i = 0
         query_nodes_list = self.cluster_util.get_nodes_from_services_map(service_type="n1ql", get_all_nodes=True)
@@ -283,7 +283,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
             indexName = "Index" + str(i)
             index_query = "CREATE INDEX `%s` ON `%s`(`body`) with {\"num_replica\":%s}" % (indexName,
                                                                                            self.buckets[0].name,
-                                                                                           self.num_replicas)
+                                                                                           self.index_replicas)
             self.query_client = RestConnection(query_nodes_list[0])
             indexDict[indexName] = index_query
             self.query_client.query_tool(index_query)
@@ -367,7 +367,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
         indexDict = dict()
 
         self.cluster_util.print_cluster_stats()
-        self.num_replicas = self.input.param("num_replicas", 1)
+        self.index_replicas = self.input.param("index_replicas", 1)
         self.log.info("Starting upsert test")
         i = 0
         query_nodes_list = self.cluster_util.get_nodes_from_services_map(service_type="n1ql", get_all_nodes=True)
@@ -474,10 +474,10 @@ class PlasmaStatsTest(PlasmaBaseTest):
 
         indexDict = dict()
         self.index_count = self.input.param("index_count", 2)
-        self.num_replicas = self.input.param("num_replicas", 1)
+        self.index_replicas = self.input.param("index_replicas", 1)
 
         indexes_to_build, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
-                                                                        replica=self.num_replicas, defer=True,
+                                                                        replica=self.index_replicas, defer=True,
                                                                         number_of_indexes_per_coll=self.index_count,
                                                                         count=1,
                                                                         field='body', sync=False)
@@ -538,7 +538,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
                         full_keyspace_name = "default:`" + bucket.name + "`.`" + scope_name + "`.`" + \
                                              collection + "`.`" + gsi_index_name + "`"
                         query_node_index = x % query_len
-                        query = "ALTER INDEX %s WITH {\"action\": \"replica_count\", \"num_replica\": %s}" % (full_keyspace_name, self.num_replicas + 1)
+                        query = "ALTER INDEX %s WITH {\"action\": \"replica_count\", \"num_replica\": %s}" % (full_keyspace_name, self.index_replicas + 1)
                         task = self.task.async_execute_query(self.cluster.query_nodes[query_node_index], query, isIndexerQuery=False)
                         alter_index_task_info.append(task)
                         x += 1
@@ -550,7 +550,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
         new_bucket_list = self.cluster.buckets[-2:]
 
         newlyAddedIndexes, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster, new_bucket_list,
-                                      replica=self.num_replicas, defer=False, number_of_indexes_per_coll=self.index_count, count=self.index_count + 1,
+                                      replica=self.index_replicas, defer=False, number_of_indexes_per_coll=self.index_count, count=self.index_count + 1,
                                       field='body', sync=True)
 
         dropIndexTaskList, indexDict = self.indexUtil.async_drop_indexes(self.cluster, indexes_to_build, buckets=new_bucket_list)
@@ -625,7 +625,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
             float(self.input.param("resident_ratio", .9))
 
         indexes_to_build,createIndexTasklist  = self.indexUtil.create_gsi_on_each_collection(self.cluster,
-                                                                        replica=self.num_replicas, defer=True,
+                                                                        replica=self.index_replicas, defer=True,
                                                                         number_of_indexes_per_coll=self.index_count,
                                                                         field='body', sync=False)
         for taskInstance in createIndexTasklist:
@@ -668,10 +668,10 @@ class PlasmaStatsTest(PlasmaBaseTest):
         self.log.debug("Total items are {}".format(total_items))
         indexDict = dict()
         self.index_count = self.input.param("index_count", 2)
-        self.num_replicas = self.input.param("num_replicas", 1)
+        self.index_replicas = self.input.param("index_replicas", 1)
 
         indexes_to_build,createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
-                                                                        replica=self.num_replicas, defer=True,
+                                                                        replica=self.index_replicas, defer=True,
                                                                         number_of_indexes_per_coll=2 * self.index_count,
                                                                         count=self.index_count,
                                                                         field='body', sync=False)
@@ -689,7 +689,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
         new_bucket_list = self.cluster.buckets[-2:]
 
         newlyAddedIndexes, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster, new_bucket_list,
-                                      replica=self.num_replicas, defer=False, number_of_indexes_per_coll=3 * self.index_count, count= 2 * self.index_count,
+                                      replica=self.index_replicas, defer=False, number_of_indexes_per_coll=3 * self.index_count, count= 2 * self.index_count,
                                       field='body', sync=True)
 
         dropIndexTaskList, indexDict = self.indexUtil.async_drop_indexes(self.cluster, indexes_to_build, buckets=new_bucket_list)
