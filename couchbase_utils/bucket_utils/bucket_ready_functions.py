@@ -3551,6 +3551,17 @@ class BucketUtils(ScopeUtils):
                                 "disable")
             shell_conn.disconnect()
 
+    def _compaction_exp_mem_threshold(self, cluster, val=100):
+        for node in self.cluster_util.get_kv_nodes(cluster):
+            shell_conn = RemoteMachineShellConnection(node)
+            cbepctl_obj = Cbepctl(shell_conn)
+            for bucket in cluster.buckets:
+                cbepctl_obj.set(bucket.name,
+                                "flush_param",
+                                "compaction_exp_mem_threshold",
+                                val)
+            shell_conn.disconnect()
+
     def _run_compaction(self, cluster, number_of_times=100):
         for _ in range(number_of_times):
             compaction_tasks = list()

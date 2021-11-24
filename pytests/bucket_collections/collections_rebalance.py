@@ -870,6 +870,8 @@ class CollectionsRebalance(CollectionBase):
         if not self.skip_validations:
             if self.data_load_spec == "ttl_load" or self.data_load_spec == "ttl_load1":
                 self.bucket_util._expiry_pager(self.cluster)
+                # See MB-49042
+                self.bucket_util._compaction_exp_mem_threshold(self.cluster)
                 self.sleep(self.sleep_before_validation_of_ttl, "wait for maxttl to finish")
                 # Compact buckets to delete non-resident expired items
                 self.compact_all_buckets()
@@ -881,7 +883,7 @@ class CollectionsRebalance(CollectionBase):
                 for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
-                    self.fail("Items did not go to 0")
+                    self.fail("Items did not go to 0. Number of items left in the bukcet : {0}". format(items))
             elif self.forced_hard_failover:
                 pass
             else:
