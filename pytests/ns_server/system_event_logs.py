@@ -18,6 +18,7 @@ from cb_constants.system_event_log import NsServer, KvEngine
 from cb_tools.cb_collectinfo import CbCollectInfo
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import BucketDurability
+from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection, OS
 from table_view import TableView
@@ -29,17 +30,9 @@ class SystemEventLogs(ClusterSetup):
 
         self.log_setup_status("SystemEventLogs", "started")
         self.create_bucket(self.cluster)
-        self.max_event_count = \
-            self.input.param("max_event_count",
-                             CbServer.sys_event_def_logs)
+        self.max_event_count = CbServer.sys_event_def_logs
         self.event_rest_helper = \
             SystemEventRestHelper(self.cluster.nodes_in_cluster)
-
-        if self.max_event_count != CbServer.sys_event_def_logs:
-            # Update max event logs in cluster to new value
-            self.event_rest_helper.update_max_events(self.max_event_count)
-            # Update max events in EventHelper class to help validation
-            EventHelper.max_events = self.max_event_count
 
         self.id_range = {
             Event.Component.NS_SERVER: (0, 1024),
@@ -59,12 +52,17 @@ class SystemEventLogs(ClusterSetup):
     def tearDown(self):
         self.log_setup_status("SystemEventLogs", "started", stage="tearDown")
         # Update max event counter to default value
-        self.event_rest_helper.update_max_events()
+        self.event_rest_helper.update_max_events(server=self.cluster.master)
         # Reset max events in EventHelper class
         EventHelper.max_events = CbServer.sys_event_def_logs
         self.log_setup_status("SystemEventLogs", "completed", stage="tearDown")
 
         super(SystemEventLogs, self).tearDown()
+
+    def __reset_events(self):
+        self.system_events.events = list()
+        self.system_events._set_counter(0)
+        self.system_events.set_test_start_time()
 
     def __validate(self, start_time=None):
         for server in self.cluster.nodes_in_cluster:
@@ -76,18 +74,16 @@ class SystemEventLogs(ClusterSetup):
                 self.fail(failures)
 
     def __generate_random_event(self, components, severities, description):
-        timestamp = EventHelper.get_timestamp_format(datetime.utcnow())
-        uuid_val = self.system_events.get_rand_uuid()
-        severity = choice(severities)
         component = choice(components)
         return {
-            Event.Fields.TIMESTAMP: timestamp,
-            Event.Fields.COMPONENT: choice(components),
-            Event.Fields.SEVERITY: severity,
+            Event.Fields.TIMESTAMP:
+                EventHelper.get_timestamp_format(datetime.utcnow()),
+            Event.Fields.COMPONENT: component,
+            Event.Fields.SEVERITY: choice(severities),
             Event.Fields.EVENT_ID:
                 choice(range(self.id_range[component][0],
                              self.id_range[component][1])),
-            Event.Fields.UUID: uuid_val,
+            Event.Fields.UUID: self.system_events.get_rand_uuid(),
             Event.Fields.DESCRIPTION: description,
             Event.Fields.NODE_NAME: self.cluster.master.ip
         }
@@ -113,9 +109,7 @@ class SystemEventLogs(ClusterSetup):
         component = self.input.param("component", Event.Component.NS_SERVER)
         is_range_valid = self.input.param("is_range_valid", True)
 
-        self.system_events.events = list()
-        self.system_events._set_counter(0)
-        self.system_events.set_test_start_time()
+        self.__reset_events()
         timestamp = datetime.utcnow()
 
         if is_range_valid:
@@ -172,6 +166,7 @@ class SystemEventLogs(ClusterSetup):
             temp_event.pop(mandatory_field)
             return temp_event
 
+        self.__reset_events()
         expected_err_msg = "The value must be supplied"
         start_time = EventHelper.get_timestamp_format(datetime.utcnow())
         uuid_val = self.system_events.get_rand_uuid()
@@ -205,6 +200,8 @@ class SystemEventLogs(ClusterSetup):
         2. Validate last 10K events are there in the cluster
         3. Load more event to make sure the first event is rolled over correctly
         """
+        self.__reset_events()
+
         components = Event.Component.values()
         event_severity = Event.Severity.values()
         self.log.info("Creating %s events in cluster" % self.max_event_count)
@@ -217,7 +214,12 @@ class SystemEventLogs(ClusterSetup):
                 self.fail("Failed to add event: %s" % event_dict)
             # Add events for later validation
             self.system_events.add_event(event_dict)
-            self.__validate()
+
+            # Extra logging to make sure the events are being added
+            if event_count % 500 == 0:
+                self.log.info("Added %s events" % event_count)
+
+        self.__validate()
 
         # Add one more event to check roll-over
         self.log.info("Create event to trigger rollover")
@@ -285,44 +287,65 @@ class SystemEventLogs(ClusterSetup):
            and validate the event creation fails as expected
         """
         self.log.info("Adding event with 1byte description")
-        c_time = datetime.utcnow()
         event_dict = {
             Event.Fields.COMPONENT: Event.Component.DATA,
             Event.Fields.EVENT_ID: KvEngine.BucketCreated,
-            Event.Fields.TIMESTAMP: EventHelper.get_timestamp_format(c_time),
+            Event.Fields.TIMESTAMP: EventHelper.get_timestamp_format(
+                datetime.utcnow()),
             Event.Fields.UUID: self.system_events.get_rand_uuid(),
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.DESCRIPTION: "a"
         }
         target_node = choice(self.cluster.nodes_in_cluster)
-        self.event_rest_helper.create_event(event_dict, server=target_node)
+        status, _ = self.event_rest_helper.create_event(event_dict,
+                                                        server=target_node)
+        if status is False:
+            self.fail("Event creation failed: %s" % event_dict)
         event_dict[Event.Fields.NODE_NAME] = target_node.ip
         self.system_events.add_event(event_dict)
-        self.log.info("Size: %s" % len(str(event_dict)))
 
         # Event with empty extra_attr
         self.log.info("Adding event with empty extra_attr field")
         event_dict.pop(Event.Fields.NODE_NAME)
         event_dict[Event.Fields.EXTRA_ATTRS] = ""
         event_dict[Event.Fields.UUID] = self.system_events.get_rand_uuid()
+        event_dict[Event.Fields.TIMESTAMP] = \
+            EventHelper.get_timestamp_format(datetime.utcnow())
         target_node = choice(self.cluster.nodes_in_cluster)
-        self.event_rest_helper.create_event(event_dict, server=target_node)
+        status, _ = self.event_rest_helper.create_event(event_dict,
+                                                        server=target_node)
+        if status is False:
+            self.fail("Event creation failed: %s" % event_dict)
         event_dict[Event.Fields.NODE_NAME] = target_node.ip
         self.system_events.add_event(event_dict)
-        self.log.info("Size: %s" % len(str(event_dict)))
 
         # Event with max size extra_attr
-        self.log.info("Adding event with empty extra_attr field")
+        self.log.info("Adding event with max sized extra attribute field")
         event_dict.pop(Event.Fields.NODE_NAME)
         event_dict[Event.Fields.EXTRA_ATTRS] = \
-            "a" * CbServer.sys_event_log_max_size
+            "a" * (CbServer.sys_event_log_max_size - 179)
 
         event_dict[Event.Fields.UUID] = self.system_events.get_rand_uuid()
+        event_dict[Event.Fields.TIMESTAMP] = \
+            EventHelper.get_timestamp_format(datetime.utcnow())
         target_node = choice(self.cluster.nodes_in_cluster)
-        self.event_rest_helper.create_event(event_dict, server=target_node)
+        status, _ = self.event_rest_helper.create_event(event_dict,
+                                                        server=target_node)
+        if status is False:
+            self.fail("Event creation failed: %s" % event_dict)
+
         event_dict[Event.Fields.NODE_NAME] = target_node.ip
         self.system_events.add_event(event_dict)
-        self.log.info("Size: %s" % len(str(event_dict)))
+
+        self.log.info("Adding event size greater than allowed size")
+        event_dict[Event.Fields.EXTRA_ATTRS] = \
+            event_dict[Event.Fields.EXTRA_ATTRS] + "a"
+        status, _ = self.event_rest_helper.create_event(event_dict,
+                                                        server=target_node)
+        event_dict.pop(Event.Fields.NODE_NAME)
+        if status:
+            self.fail("Event greater than allowed size got created: %s"
+                      % event_dict)
 
         self.__validate(self.system_events.test_start_time)
 
@@ -334,19 +357,17 @@ class SystemEventLogs(ClusterSetup):
            by time interval of 60sec to make sure the duplicate events are
            recorded by ns_server
         """
-        dummy_pid = 1000
+        curr_time = datetime.utcnow()
         target_node = choice(self.cluster.nodes_in_cluster)
         uuid_to_test = self.system_events.get_rand_uuid()
 
         self.log.info("Add duplicate events within 1min time frame")
         # Create duplicate events back to back within same component
         # Event-1 definition
-        event_1 = NsServerEvents.baby_sitter_respawn(target_node.ip,
-                                                     dummy_pid)
-        event_1.pop(Event.Fields.EXTRA_ATTRS)
+        event_1 = NsServerEvents.service_started(target_node.ip)
         event_1[Event.Fields.UUID] = uuid_to_test
         event_1[Event.Fields.TIMESTAMP] = \
-            EventHelper.get_timestamp_format(datetime.utcnow())
+            EventHelper.get_timestamp_format(curr_time)
 
         # Add valid event to the list for validation
         self.system_events.add_event(event_1)
@@ -367,55 +388,56 @@ class SystemEventLogs(ClusterSetup):
         self.event_rest_helper.create_event(event_1, server=target_node)
         self.event_rest_helper.create_event(event_2)
 
-        self.__validate(self.system_events.test_start_time)
-
-        # Get new UUID to test
-        uuid_to_test = self.system_events.get_rand_uuid()
-        curr_time = datetime.utcnow()
+        last_event = self.get_last_event_from_cluster()
+        if last_event[Event.Fields.UUID] != uuid_to_test \
+                or (last_event[Event.Fields.DESCRIPTION]
+                    != event_1[Event.Fields.DESCRIPTION]):
+            self.fail("Event-id mismatch. Cluster event: %s" % last_event)
 
         # Create required event dictionaries for testing
         event_1 = DataServiceEvents.scope_created(target_node.ip, "bucket_1",
                                                   "b_uuid", "scope_1")
-        event_1.pop(Event.Fields.EXTRA_ATTRS)
         event_1[Event.Fields.UUID] = uuid_to_test
-        event_1[Event.Fields.TIMESTAMP] = \
-            EventHelper.get_timestamp_format(curr_time)
-        event_2[Event.Fields.UUID] = uuid_to_test
+        event_1.pop(Event.Fields.NODE_NAME)
 
         # Add valid event to the list for validation
-        self.system_events.add_event(deepcopy(event_1))
-        self.log.info("Adding event with unique uuid")
+        self.log.info("Adding event with same uuid")
         end_time = curr_time + timedelta(
             seconds=CbServer.sys_event_log_uuid_uniqueness_time - 1)
-        event_1.pop(Event.Fields.NODE_NAME)
         event_1[Event.Fields.TIMESTAMP] = \
             EventHelper.get_timestamp_format(datetime.utcnow())
-        self.log.info(event_1)
-        self.event_rest_helper.create_event(event_1)
 
         self.log.info("Add duplicate events across allowed time frame")
         while curr_time <= end_time:
             curr_time = curr_time + timedelta(seconds=1)
-            event_2[Event.Fields.TIMESTAMP] = \
+            event_1[Event.Fields.TIMESTAMP] = \
                 EventHelper.get_timestamp_format(curr_time)
-            self.event_rest_helper.create_event(event_2)
-            self.log.info(event_2)
+            self.event_rest_helper.create_event(event_1)
 
-        curr_time = curr_time + timedelta(seconds=1)
-        self.log.info(end_time)
-        self.log.info(curr_time)
+        curr_time = curr_time + timedelta(milliseconds=1)
 
-        # Validate the events
-        self.__validate(self.system_events.test_start_time)
+        # Validate the event
+        last_event = self.get_last_event_from_cluster()
+        if last_event[Event.Fields.DESCRIPTION] != "Service started":
+            self.fail("Last cluster event mismatch. Cluster event: %s"
+                      % last_event)
 
         self.log.info("Adding same event_id after the allowed time frame")
         event_2[Event.Fields.TIMESTAMP] = \
             EventHelper.get_timestamp_format(curr_time)
-        self.log.info(event_2[Event.Fields.TIMESTAMP])
-        self.event_rest_helper.create_event(event_2, server=target_node)
-        self.log.info(event_2)
+        status, _ = self.event_rest_helper.create_event(event_2,
+                                                        server=target_node)
+        if not status:
+            self.fail("Event creation failed: %s" % event_2)
+
         event_2[Event.Fields.NODE_NAME] = target_node.ip
         self.system_events.add_event(event_2)
+
+        last_event = self.get_last_event_from_cluster()
+        if last_event[Event.Fields.UUID] != uuid_to_test \
+                or (last_event[Event.Fields.DESCRIPTION]
+                    != event_2[Event.Fields.DESCRIPTION]):
+            self.fail("Event-id mismatch. Cluster event: %s" % last_event)
 
         # Validate the events
         self.__validate(self.system_events.test_start_time)
@@ -708,51 +730,77 @@ class SystemEventLogs(ClusterSetup):
             self.log.debug("Pid of '%s'=%s" % (process_name, process_id))
             shell.execute_command("kill -9 %s" % process_id)
             shell.disconnect()
+            self.sleep(5, "Sleep for %s to recover" % p_name)
             return target_node.ip, int(process_id)
 
-        # To segrigate the nodes based on the service they run
+        # To segregate the nodes based on the service they run
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
+        exit_status = 137
 
-        # Crash memcached
-        node_ip, pid = crash_process("memcached", self.cluster.kv_nodes)
-        self.system_events.add_event(
-            DataServiceEvents.memcached_crashed(node_ip, pid))
-
-        # Crash goxdcr
-        node_ip, pid = crash_process("goxdcr", self.cluster.kv_nodes)
-        self.system_events.add_event(
-            DataServiceEvents.memcached_crashed(node_ip, pid))
+        # Crash memcached and xdcr
+        for p_name in ["memcached", "goxdcr"]:
+            node_ip, pid = crash_process(p_name, self.cluster.kv_nodes)
+            self.system_events.add_event(
+                NsServerEvents.service_crashed(node_ip, p_name, pid,
+                                               exit_status))
+            self.system_events.add_event(
+                NsServerEvents.service_started(node_ip, {"name": p_name}))
 
         # Crash cbq-engine
-        node_ip, pid = crash_process("cbq-engine", self.cluster.query_nodes)
+        p_name = "cbq-engine"
+        node_ip, pid = crash_process(p_name, self.cluster.query_nodes)
         self.system_events.add_event(
-            DataServiceEvents.memcached_crashed(node_ip, pid))
+            NsServerEvents.service_crashed(node_ip, CbServer.Services.N1QL,
+                                           pid, exit_status))
+        self.system_events.add_event(
+            NsServerEvents.service_started(node_ip,
+                                           {"name": CbServer.Services.N1QL}))
 
         # Crash cbas
-        node_ip, pid = crash_process("cbas", self.cluster.cbas_nodes)
+        p_name = "cbas"
+        node_ip, pid = crash_process(p_name, self.cluster.cbas_nodes)
         self.system_events.add_event(
-            DataServiceEvents.memcached_crashed(node_ip, pid))
+            NsServerEvents.service_crashed(node_ip, p_name, pid, exit_status))
+        self.system_events.add_event(
+            NsServerEvents.service_started(node_ip, {"name": p_name}))
 
         # Crash indexer
-        node_ip, pid = crash_process("indexer", self.cluster.index_nodes)
+        p_name = "indexer"
+        node_ip, pid = crash_process(p_name, self.cluster.index_nodes)
         self.system_events.add_event(
-            DataServiceEvents.memcached_crashed(node_ip, pid))
+            NsServerEvents.service_crashed(node_ip, CbServer.Services.INDEX,
+                                           pid, exit_status))
+        self.system_events.add_event(
+            NsServerEvents.service_started(node_ip,
+                                           {"name": CbServer.Services.INDEX}))
 
         # Crash cbft
-        node_ip, pid = crash_process("cbft", self.cluster.fts_nodes)
+        p_name = "cbft"
+        node_ip, pid = crash_process(p_name, self.cluster.fts_nodes)
         self.system_events.add_event(
-            DataServiceEvents.memcached_crashed(node_ip, pid))
+            NsServerEvents.service_crashed(node_ip, CbServer.Services.FTS,
+                                           pid, exit_status))
+        self.system_events.add_event(
+            NsServerEvents.service_started(node_ip,
+                                           {"name": CbServer.Services.FTS}))
 
         # Crash backup
-        node_ip, pid = crash_process("backup", self.cluster.backup_nodes)
+        p_name = CbServer.Services.BACKUP
+        node_ip, pid = crash_process(p_name, self.cluster.backup_nodes)
         self.system_events.add_event(
-            DataServiceEvents.memcached_crashed(node_ip, pid))
+            NsServerEvents.service_crashed(node_ip, p_name, pid, exit_status))
+        self.system_events.add_event(
+            NsServerEvents.service_started(node_ip, {"name": p_name}))
 
         # Crash eventing-producer
-        node_ip, pid = crash_process("eventing-producer",
-                                     self.cluster.eventing_nodes)
+        p_name = "eventing-producer"
+        node_ip, pid = crash_process(p_name, self.cluster.eventing_nodes)
         self.system_events.add_event(
-            DataServiceEvents.memcached_crashed(node_ip, pid))
+            NsServerEvents.service_crashed(node_ip, CbServer.Services.EVENTING,
+                                           pid, exit_status))
+        self.system_events.add_event(
+            NsServerEvents.service_started(
+                node_ip, {"name": CbServer.Services.EVENTING}))
 
     def test_update_max_event_settings(self):
         """
@@ -765,23 +813,26 @@ class SystemEventLogs(ClusterSetup):
         6. Create new events and validate the event log settings is reflected
         """
 
-        initial_val = choice(range(CbServer.sys_event_min_logs+1000,
+        def update_lib_counters(value):
+            # Update cluster with new max_event_settings
+            self.event_rest_helper.update_max_events(
+                value, server=self.cluster.master)
+            # Update max events in EventHelper class to help validation
+            EventHelper.max_events = value
+            self.max_event_count = value
+
+        initial_val = choice(range(CbServer.sys_event_min_logs+10,
                                    CbServer.sys_event_max_logs))
         new_val = choice(range(CbServer.sys_event_min_logs,
-                               CbServer.sys_event_min_logs+1000))
+                               CbServer.sys_event_min_logs+10))
 
         self.log.info("Updating max_event_counter=%s" % initial_val)
-        self.event_rest_helper.update_max_events(initial_val,
-                                                 server=self.cluster.master)
-        self.max_event_count = initial_val
+        update_lib_counters(initial_val)
         self.test_max_events()
 
         # Update to new value lower than the prev. value
         self.log.info("Updating max_event_counter=%s" % new_val)
-        self.event_rest_helper.update_max_events(new_val,
-                                                 server=self.cluster.master)
-        self.system_events._set_counter(new_val)
-        self.max_event_count = new_val
+        update_lib_counters(new_val)
 
         # Truncate values in system_event_events to trigger validation
         self.system_events.events = self.system_events.events[-new_val:]
@@ -820,9 +871,7 @@ class SystemEventLogs(ClusterSetup):
         components = Event.Component.values()
         event_severity = Event.Severity.values()
 
-        # Reset test start time to avoid test failures due to time difference
-        self.system_events.set_test_start_time()
-
+        nodes_in_cluster = deepcopy(self.cluster.nodes_in_cluster)
         if doc_loading:
             doc_gen = doc_generator(self.key, 0, self.num_items)
             doc_loading = self.task.async_continuous_doc_ops(
@@ -830,56 +879,51 @@ class SystemEventLogs(ClusterSetup):
                 exp=self.maxttl)
 
         if rebalance_type == "in":
-            nodes_in = self.cluster.servers[self.nodes_init:self.nodes_in]
+            nodes_in = self.cluster.servers[
+                       self.nodes_init:self.nodes_init+self.nodes_in]
 
             # Update nodes_in_cluster
             self.cluster.nodes_in_cluster.extend(nodes_in)
 
             # Start rebalance
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, nodes_in, [])
+                nodes_in_cluster, nodes_in, [])
         elif rebalance_type == "out":
             nodes_out = list()
             if involve_master:
-                nodes_out = [self.cluster.master]
-                nodes_out -= 1
+                nodes_out.append(self.cluster.nodes_in_cluster.pop(0))
+                self.nodes_out -= 1
                 # Update master node
-                self.cluster.master = self.cluster.servers[1]
+                self.cluster.master = self.cluster.nodes_in_cluster[0]
                 self.log.info("Updated master - %s" % self.cluster.master.ip)
-            nodes_out.extend(self.cluster.nodes_in_cluster[-self.nodes_out:])
-
-            # Update nodes_in_cluster
-            start_index = 0
-            if involve_master:
-                start_index = 1
-            self.cluster.nodes_in_cluster = \
-                self.cluster.nodes_in_cluster[start_index:-self.nodes_out]
+            while self.nodes_out:
+                nodes_out.append(self.cluster.nodes_in_cluster.pop(-1))
+                self.nodes_out -= 1
 
             # Start rebalance
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], nodes_out)
+                nodes_in_cluster, [], nodes_out)
         elif rebalance_type == "swap":
+            nodes_in = self.cluster.servers[
+                       self.nodes_init:self.nodes_init+self.nodes_in]
             nodes_out = list()
             if involve_master:
-                nodes_out = [self.cluster.master]
-                nodes_out -= 1
+                nodes_out.append(self.cluster.nodes_in_cluster.pop(0))
+                self.nodes_out -= 1
                 # Update master node
-                self.cluster.master = self.cluster.servers[1]
+                self.cluster.master = self.cluster.nodes_in_cluster[0]
                 self.log.info("Updated master - %s" % self.cluster.master.ip)
-            nodes_out.extend(self.cluster.nodes_in_cluster[-self.nodes_out:])
-            nodes_in = self.cluster.servers[self.nodes_init:self.nodes_in]
+            while self.nodes_out:
+                nodes_out.append(self.cluster.nodes_in_cluster.pop(-1))
+                self.nodes_out -= 1
 
             # Update nodes_in_cluster
-            start_index = 0
-            if involve_master:
-                start_index = 1
-            self.cluster.nodes_in_cluster = \
-                self.cluster.nodes_in_cluster[start_index:-self.nodes_out] \
-                + nodes_in
+            self.cluster.nodes_in_cluster.extend(nodes_in)
 
             # Start rebalance
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, nodes_in, nodes_out)
+                nodes_in_cluster, nodes_in, nodes_out,
+                check_vbucket_shuffling=False)
         else:
             self.fail("Invalid rebalance type")
 
@@ -921,7 +965,6 @@ class SystemEventLogs(ClusterSetup):
         """
 
         num_events = 100
-        self.system_events.set_test_start_time()
         components = Event.Component.values()
         severities = Event.Severity.values()
 
@@ -960,6 +1003,20 @@ class SystemEventLogs(ClusterSetup):
 
         self.__validate(self.system_events.test_start_time)
 
+    def test_failover_events(self):
+        """
+        Trigger all different failovers (with/without failures and validate
+        """
+        target_node = self.cluster.nodes_in_cluster[-1]
+        self.log.info("Setting failover timeout = 5 seconds")
+        rest = RestConnection(self.cluster.master)
+        rest.update_autofailover_settings(True, 5, True)
+
+        self.log.info("1. Testing auto-failover")
+        shell = RemoteMachineShellConnection(target_node)
+        cb_err = CouchbaseError(self.log, shell)
+        cb_err.create(CouchbaseError.STOP_MEMCACHED)
+
     def test_kill_event_log_server(self):
         """
         - Kill event_log_server immediately after writing a log
@@ -980,9 +1037,7 @@ class SystemEventLogs(ClusterSetup):
 
         # Reset events in test case for validation
         event_list = list()
-        self.system_events.events = list()
-        self.system_events._set_counter(0)
-        self.system_events.set_test_start_time()
+        self.__reset_events()
 
         # Enable diag/eval on non_local_host
         shell = RemoteMachineShellConnection(self.cluster.master)
@@ -1046,9 +1101,7 @@ class SystemEventLogs(ClusterSetup):
         }
 
         # Reset events in test case for validation
-        self.system_events.events = list()
-        self.system_events._set_counter(0)
-        self.system_events.set_test_start_time()
+        self.__reset_events()
 
         # Enable diag/eval on non_local_host
         shell = RemoteMachineShellConnection(target_node)
@@ -1179,24 +1232,27 @@ class SystemEventLogs(ClusterSetup):
                       if bucket.name == bucket_name][0]
 
             bucket_create_event = DataServiceEvents.bucket_create(
-                self.cluster.master.ip, self.bucket_type,
-                bucket_name, bucket.uuid,
-                {'compression_mode': self.compression_mode,
+                self.cluster.master.ip, bucket_type,
+                bucket.name, bucket.uuid,
+                {'compression_mode': compression_mode,
                  'max_ttl': bucket_ttl,
                  'storage_mode': bucket_storage,
                  'conflict_resolution_type': Bucket.ConflictResolution.SEQ_NO,
                  'eviction_policy': self.bucket_eviction_policy,
                  'purge_interval': 'undefined',
                  'durability_min_level': self.bucket_durability_level,
-                 'num_replicas': num_replicas,
-                 'ram_quota': bucket_size*len(self.cluster.nodes_in_cluster)})
-            if self.bucket_type == Bucket.Type.EPHEMERAL:
-                bucket_create_event['storage_mode'] = Bucket.Type.EPHEMERAL
-                bucket_create_event.pop('purge_interval')
+                 'num_replicas': num_replicas})
             if bucket_create_event[Event.Fields.EXTRA_ATTRS]['bucket_props'][
                     'eviction_policy'] == Bucket.EvictionPolicy.VALUE_ONLY:
                 bucket_create_event[Event.Fields.EXTRA_ATTRS][
                     'bucket_props']['eviction_policy'] = 'value_only'
+            if self.bucket_type == Bucket.Type.EPHEMERAL:
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props']['storage_mode'] = Bucket.Type.EPHEMERAL
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props'].pop('purge_interval', None)
+                bucket_create_event[Event.Fields.EXTRA_ATTRS][
+                    'bucket_props']['eviction_policy'] = "no_eviction"
             self.system_events.add_event(bucket_create_event)
 
             scope = self.bucket_util.get_random_name(
@@ -1249,9 +1305,10 @@ class SystemEventLogs(ClusterSetup):
                 # Validation
                 for node in self.cluster.nodes_in_cluster:
                     failures = event_helper.validate(
-                        node, event_helper.test_start_time, events_count=-1)
+                        node, since_time=event_helper.test_start_time)
                     if failures:
                         test_failures.extend(failures)
+                        break
             except Exception as e:
                 test_failures.append(str(e))
                 return
@@ -1297,6 +1354,8 @@ class SystemEventLogs(ClusterSetup):
         if bucket.evictionPolicy == Bucket.EvictionPolicy.VALUE_ONLY:
             old_settings["eviction_policy"] = 'value_only'
 
+        new_settings = deepcopy(old_settings)
+
         # Add BucketOnline event in case of single node cluster
         # (In multi-node we may not know the order of events across the nodes)
         if self.nodes_init == 1:
@@ -1313,10 +1372,10 @@ class SystemEventLogs(ClusterSetup):
             ram_quota_mb=self.bucket_size+1)
 
         # Get the last bucket update event
+        event = self.get_last_event_from_cluster()
         bucket_updated_event = DataServiceEvents.bucket_updated(
             self.cluster.master.ip, bucket.name, bucket.uuid,
             bucket.bucketType, dict(), dict())
-        event = self.get_last_event_from_cluster()
         for param, value in bucket_updated_event.items():
             if param == Event.Fields.EXTRA_ATTRS:
                 continue
@@ -1339,18 +1398,19 @@ class SystemEventLogs(ClusterSetup):
                           % (param, exp_val, act_val))
 
         act_val = event[Event.Fields.EXTRA_ATTRS]["old_settings"]
-        if 'ram_quota' not in act_val.keys():
-            self.fail("'ram_quota' missing in old_settings: %s" % act_val)
-        act_val.pop('ram_quota')
-        act_val.pop('purge_interval')
+        for param in ["ram_quota", "purge_interval"]:
+            if param not in act_val.keys():
+                self.fail("'%s' missing in old_settings: %s"
+                          % (param, act_val))
+            act_val.pop(param)
         if old_settings != act_val:
             self.fail("Old settings' value mismatch. Expected %s != %s Actual"
                       % (old_settings, act_val))
 
         act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
         act_val_keys = act_val.keys()
-        if len(act_val_keys) != 1 or 'ram_quota' not in act_val_keys:
-            self.fail("Unexpected key in new-setting: %s" % act_val_keys)
+        if len(act_val_keys) != 12 or 'ram_quota' not in act_val_keys:
+            self.fail("Mismatch in new-setting params: %s" % act_val_keys)
 
         self.num_replicas += 1
         self.log.info("Updating bucket_replica=%s" % self.num_replicas)
@@ -1361,8 +1421,8 @@ class SystemEventLogs(ClusterSetup):
         event = self.get_last_event_from_cluster()
         act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
         act_val_keys = act_val.keys()
-        if len(act_val_keys) != 1 or 'num_replicas' not in act_val_keys:
-            self.fail("Unexpected key in new-setting: %s" % act_val_keys)
+        if len(act_val_keys) != 12 or 'num_replicas' not in act_val_keys:
+            self.fail("Mismatch in new-setting params: %s" % act_val_keys)
         if event[Event.Fields.EXTRA_ATTRS]["old_settings"]["num_replicas"] \
                 != self.num_replicas-1:
             self.fail("Mismatch in old replica val. Expected %s != %s Actual"
@@ -1402,13 +1462,33 @@ class SystemEventLogs(ClusterSetup):
         - Create Ephemeral bucket
         - Trigger auto-reprovisioning and validate the system event logs
         """
+        def validate_rebalance_event_fields(r_type, cluster_event_dict):
+            for field in [Event.Fields.UUID, Event.Fields.TIMESTAMP]:
+                if field not in cluster_event_dict:
+                    self.fail("Field '%s' missing in rebalance event: %s"
+                              % (field, cluster_event_dict))
+                cluster_event_dict.pop(field)
+
+            fields = ['operation_id']
+            if r_type != "reb_start":
+                fields.append('time_taken')
+            for field in fields:
+                if field not in \
+                        cluster_event_dict[Event.Fields.EXTRA_ATTRS]:
+                    self.fail("Field '%s' missing in rebalance extra_attr: %s"
+                              % (field, cluster_event_dict))
+                cluster_event_dict[Event.Fields.EXTRA_ATTRS].pop(field)
+
         rebalance_failure = self.input.param("with_rebalance", False)
         rebalance_task = None
+        cluster_event = dict()
         bucket = self.cluster.buckets[0]
-        active_nodes = [node.ip for node in self.cluster.nodes_in_cluster]
-        eject_nodes = [self.cluster.nodes_in_cluster[-1]]
-        keep_nodes = [node.ip for node in self.cluster.nodes_in_cluster
-                      if node.ip != eject_nodes[0].ip]
+        active_nodes = ['ns_1@' + node.ip
+                        for node in self.cluster.nodes_in_cluster]
+        eject_nodes = ['ns_1@' + self.cluster.nodes_in_cluster[-1].ip]
+        keep_nodes = ['ns_1@' + node.ip
+                      for node in self.cluster.nodes_in_cluster
+                      if node.ip != self.cluster.nodes_in_cluster[-1].ip]
         empty_list = list()
         memcached_process = "memcached"
         if self.bucket_type != Bucket.Type.EPHEMERAL:
@@ -1417,7 +1497,7 @@ class SystemEventLogs(ClusterSetup):
         node = choice(self.cluster.nodes_in_cluster)
         self.log.info("Target node: %s" % node.ip)
         shell = RemoteMachineShellConnection(node)
-        p_id = self.get_process_id(shell, memcached_process)
+        p_id = int(self.get_process_id(shell, memcached_process))
         self.log.critical("Memcached pid=%s" % p_id)
 
         if rebalance_failure:
@@ -1426,21 +1506,24 @@ class SystemEventLogs(ClusterSetup):
                 to_add=[], to_remove=eject_nodes)
             self.system_events.add_event(
                 NsServerEvents.rebalance_started(
-                    node.ip, "rest", active_nodes=active_nodes,
+                    node.ip, active_nodes=active_nodes,
                     keep_nodes=keep_nodes, eject_nodes=eject_nodes,
                     delta_nodes=empty_list, failed_nodes=empty_list))
             self.sleep(5, "Wait for rebalance to start")
+            cluster_event["reb_start"] = self.get_last_event_from_cluster()
 
         shell.execute_command("kill -9 %s" % p_id)
         shell.disconnect()
 
         # Add required event to validate
         restarted_nodes = [node.ip]
-        self.system_events.add_event(
-            DataServiceEvents.memcached_crashed(node.ip, p_id))
+        self.system_events.add_event(NsServerEvents.service_crashed(
+            node.ip, memcached_process, p_id, 137))
         self.system_events.add_event(
             NsServerEvents.service_started(node.ip,
                                            {"name": memcached_process}))
+        if rebalance_failure:
+            cluster_event["reb_failed"] = self.get_last_event_from_cluster()
 
         if rebalance_failure:
             self.task_manager.get_task_result(rebalance_task)
@@ -1458,19 +1541,63 @@ class SystemEventLogs(ClusterSetup):
             DataServiceEvents.bucket_online(node.ip, bucket.name,
                                             bucket.uuid))
 
-        self.log.info("Rebalancing after auto_reprovision")
-        self.task.rebalance(self.cluster.nodes_in_cluster, [], [])
+        self.sleep(30, "Wait for bucket online before rebalancing")
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.nodes_in_cluster, [], [])
+        self.sleep(2, "Wait for rebalance to start")
+        if not rebalance_failure:
+            cluster_event["reb_start"] = self.get_last_event_from_cluster()
+        self.task_manager.get_task_result(rebalance_task)
 
         self.system_events.add_event(
             NsServerEvents.rebalance_started(
-                self.cluster.master.ip, "rest",
-                active_nodes=active_nodes, keep_nodes=active_nodes,
-                eject_nodes=empty_list, delta_nodes=empty_list,
-                failed_nodes=empty_list))
+                self.cluster.master.ip, active_nodes=active_nodes,
+                keep_nodes=active_nodes, eject_nodes=empty_list,
+                delta_nodes=empty_list, failed_nodes=empty_list))
         self.system_events.add_event(
             NsServerEvents.rebalance_success(
                 self.cluster.master.ip, active_nodes=active_nodes,
                 keep_nodes=active_nodes, eject_nodes=empty_list,
                 delta_nodes=empty_list, failed_nodes=empty_list))
+        cluster_event["reb_success"] = self.get_last_event_from_cluster()
 
+        # Validate all cluster events before validating event specific fields
         self.__validate(self.system_events.test_start_time)
+
+        self.log.info("Validating rebalance specific events")
+        # Validate fields existence in event dict
+        for reb_type, event in cluster_event.items():
+            validate_rebalance_event_fields(reb_type, event)
+
+        # Validate cluster event with local event dict
+        reb_event = NsServerEvents.rebalance_started(
+            self.cluster.master.ip,
+            active_nodes=active_nodes, keep_nodes=keep_nodes,
+            eject_nodes=eject_nodes, delta_nodes=empty_list,
+            failed_nodes=empty_list)
+        if not rebalance_failure:
+            reb_event[Event.Fields.EXTRA_ATTRS][
+                "nodes_info"]["keep_nodes"] = active_nodes
+            reb_event[Event.Fields.EXTRA_ATTRS][
+                "nodes_info"]["eject_nodes"] = empty_list
+        if reb_event != cluster_event["reb_start"]:
+            self.fail("Rebalance start event is not as expected: %s"
+                      % cluster_event["reb_start"])
+
+        if 'reb_failed' in cluster_event:
+            reb_event = NsServerEvents.rebalance_failed(
+                self.cluster.master.ip,
+                active_nodes=active_nodes, keep_nodes=keep_nodes,
+                eject_nodes=eject_nodes, delta_nodes=empty_list,
+                failed_nodes=empty_list)
+            if reb_event != cluster_event["reb_failed"]:
+                self.fail("Rebalance failed event is not as expected: %s"
+                          % cluster_event["reb_failed"])
+
+        reb_event = NsServerEvents.rebalance_success(
+            self.cluster.master.ip,
+            active_nodes=active_nodes, keep_nodes=active_nodes,
+            eject_nodes=[], delta_nodes=[], failed_nodes=[])
+        if reb_event != cluster_event["reb_success"]:
+            self.fail("Rebalance success event is not as expected: %s"
+                      % cluster_event["reb_success"])

@@ -43,19 +43,25 @@ class SystemEventRestHelper:
         :param username: Username auth to use during API operations
         :param password: Password auth to use during API operations
         """
+        def get_str(dict_obj):
+            str_data = "{"
+            for k, v in dict_obj.items():
+                kv_format = "\"%s\":"
+                if isinstance(v, dict):
+                    v = get_str(v)
+                    kv_format += "%s,"
+                elif isinstance(v, int):
+                    kv_format += "%s,"
+                else:
+                    kv_format += "\"%s\","
+                str_data += kv_format % (k, v)
+            str_data = str_data[:-1] + "}"
+            return str_data
+
         rest = self.get_rest_object(rest, server, username, password)
         api = rest.baseUrl + "_event"
-        req_data = "{"
-        for key, value in event_dict.items():
-            kv_format = "\"%s\":"
-            if isinstance(value, int):
-                kv_format += "%s,"
-            else:
-                kv_format += "\"%s\","
-            req_data += kv_format % (key, value)
-        req_data = req_data[:-1] + "}"
         status, content, _ = rest._http_request(
-            api, method=RestConnection.POST, params=req_data,
+            api, method=RestConnection.POST, params=get_str(event_dict),
             headers=rest.get_headers_for_content_type_json())
         return status, json.loads(content)
 
