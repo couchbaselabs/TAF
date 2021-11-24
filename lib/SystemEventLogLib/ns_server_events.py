@@ -4,17 +4,6 @@ from cb_constants.system_event_log import NsServer
 
 class NsServerEvents(object):
     @staticmethod
-    def baby_sitter_respawn(node, process_id):
-        return {
-            Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: NsServer.BabySitterRespawn,
-            Event.Fields.COMPONENT: Event.Component.NS_SERVER,
-            Event.Fields.DESCRIPTION: "Babysitter crashed",
-            Event.Fields.SEVERITY: Event.Severity.FATAL,
-            Event.Fields.EXTRA_ATTRS: {"process_id": process_id}
-        }
-
-    @staticmethod
     def rebalance_started(node, active_nodes, keep_nodes,
                           eject_nodes, delta_nodes, failed_nodes):
         return {
@@ -91,6 +80,7 @@ class NsServerEvents(object):
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.ServiceStarted,
             Event.Fields.DESCRIPTION: "Service started",
+            Event.Fields.COMPONENT: Event.Component.NS_SERVER,
             Event.Fields.SEVERITY: Event.Severity.INFO,
         }
         if extra_attrs:
