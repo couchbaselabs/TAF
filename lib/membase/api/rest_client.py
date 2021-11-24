@@ -45,7 +45,7 @@ try:
 except:
     pass
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+urllib3.disable_warnings()
 
 
 class RestHelper(object):
