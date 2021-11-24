@@ -91,16 +91,18 @@ class RestConnection(object):
             self.services = "kv"
             if hasattr(serverInfo, "services"):
                 self.services = serverInfo.services
-            if hasattr(serverInfo, 'index_port'):
+            if hasattr(serverInfo, 'index_port') \
+                    and serverInfo.index_port:
                 index_port = serverInfo.index_port
-            if hasattr(serverInfo, 'query_port'):
+            if hasattr(serverInfo, 'query_port') \
+                    and serverInfo.query_port:
                 query_port = serverInfo.query_port
-            if hasattr(serverInfo, 'fts_port'):
-                if serverInfo.fts_port:
-                    fts_port = serverInfo.fts_port
-            if hasattr(serverInfo, 'eventing_port'):
-                if serverInfo.eventing_port:
-                    self.eventing_port = serverInfo.eventing_port
+            if hasattr(serverInfo, 'fts_port') \
+                    and serverInfo.fts_port:
+                fts_port = serverInfo.fts_port
+            if hasattr(serverInfo, 'eventing_port') \
+                    and serverInfo.eventing_port:
+                self.eventing_port = serverInfo.eventing_port
             if hasattr(serverInfo, 'hostname') and serverInfo.hostname \
                     and serverInfo.hostname.find(self.ip) == -1:
                 self.hostname = serverInfo.hostname
