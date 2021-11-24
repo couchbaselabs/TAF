@@ -204,7 +204,6 @@ class x509main:
         shell.copy_file_local_to_remote(src, dst)
         shell.disconnect()
 
-    @staticmethod
     def get_a_root_cert(self, root_ca_name=None):
         """
         (returns): path to ca.pem
