@@ -12,6 +12,7 @@ from com.couchbase.client.java.query import *
 from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_utils.cb_tools.cb_cli import CbCli
+from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection, RestHelper
 from TestInput import TestInputSingleton
 from BucketLib.BucketOperations import BucketHelper
@@ -55,6 +56,9 @@ class volume(CollectionBase):
                     "|| S <- [index, fts, kv, cbas, eventing]]" % self.scrape_interval
             StatsHelper(self.cluster.master).configure_stats_settings_from_diag_eval("services", value)
 
+        self.use_x509 = self.input.param("use_x509", False)
+        if self.use_x509:
+            self.x509_setup()
         self.enable_n2n_encryption = self.input.param("enable_n2n_encryption", False)
         if self.enable_n2n_encryption:
             shell_conn = RemoteMachineShellConnection(self.cluster.master)
@@ -79,6 +83,34 @@ class volume(CollectionBase):
         # Setup the backup service
         if self.backup_service_test:
             self.backup_service.setup()
+
+    def x509_setup(self):
+        """
+        Init setup x509 certs on servers
+        """
+        self.task.rebalance(self.cluster.servers[:self.nodes_init],
+                            self.cluster.servers[self.nodes_init:], [],
+                            check_vbucket_shuffling=self.vbucket_check,
+                            retry_get_process_num=self.retry_get_process_num)
+        self.task.rebalance(self.cluster.servers[:self.nodes_init],
+                            [], self.cluster.servers[self.nodes_init:],
+                            check_vbucket_shuffling=self.vbucket_check,
+                            retry_get_process_num=self.retry_get_process_num)
+        self.standard = self.input.param("standard", "pkcs8")
+        self.passphrase_type = self.input.param("passphrase_type", "script")
+        self.encryption_type = self.input.param("encryption_type", "aes256")
+        self.client_cert_state = self.input.param("client_cert_state", "disable")
+        self.x509 = x509main(host=self.cluster.master,
+                             client_cert_state="disable",
+                             standard=self.standard,
+                             encryption_type=self.encryption_type,
+                             passphrase_type=self.passphrase_type)
+        self.x509.generate_multiple_x509_certs(servers=self.cluster.servers)
+        for server in self.cluster.servers:
+            self.x509.delete_inbox_folder_on_server(server=server)
+        for server in self.cluster.servers:
+            _ = self.x509.upload_root_certs(server)
+        self.x509.upload_node_certs(servers=self.cluster.servers)
 
     def index_and_query_setup(self):
         """
@@ -253,7 +285,7 @@ class volume(CollectionBase):
                     gsi_index_name = "gsi-" + str(count)
                     create_index_query = "CREATE INDEX `%s` " \
                                          "ON `%s`.`%s`.`%s`(`age`)" \
-                                         "WITH { 'defer_build': true, 'num_replica': 2 }" \
+                                         "WITH { 'defer_build': true, 'num_replica': 1 }" \
                                          % (gsi_index_name, bucket.name, scope.name, collection.name)
                     result = self.run_cbq_query(create_index_query)
                     # self.assertTrue(result['status'] == "success", "Defer build Query %s failed." % create_index_query)
@@ -505,11 +537,23 @@ class volume(CollectionBase):
 
         self.cluster.nodes_in_cluster.extend(servs_in)
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
-        return rebalance_task
+        return rebalance_task, servs_in, servs_out
 
     def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         self.assertTrue(task.result, "Rebalance Failed")
+
+    def x509_reload_after_rebalance_out(self, servers):
+        """
+        Reloads certs after a node got rebalanced-out
+        """
+        if not self.use_x509:
+            return
+        else:
+            self.log.info("Re-uploading certs to servers {0}".format(servers))
+            for server in servers:
+                _ = self.x509.upload_root_certs(server)
+            self.x509.upload_node_certs(servers=servers)
 
     def set_retry_exceptions(self, doc_loading_spec):
         """
@@ -662,7 +706,7 @@ class volume(CollectionBase):
                 self.reload_data_into_buckets()
             #####################################################################################################
             self.log.info("Step 5: Rebalance in with Loading of docs")
-            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+            rebalance_task, _, _ = self.rebalance(nodes_in=1, nodes_out=0)
             task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
@@ -673,9 +717,10 @@ class volume(CollectionBase):
             self.check_logs()
             ######################################################################################################
             self.log.info("Step 6: Rebalance Out with Loading of docs")
-            rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
+            rebalance_task, _, servs_out = self.rebalance(nodes_in=0, nodes_out=1)
             task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)
+            self.x509_reload_after_rebalance_out(servs_out)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             if self.fts_indexes_to_recreate > 0:
@@ -684,9 +729,10 @@ class volume(CollectionBase):
             self.check_logs()
             ######################################################################################################
             self.log.info("Step 7: Rebalance In_Out with Loading of docs")
-            rebalance_task = self.rebalance(nodes_in=2, nodes_out=1)
+            rebalance_task, _, servs_out = self.rebalance(nodes_in=2, nodes_out=1)
             task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)
+            self.x509_reload_after_rebalance_out(servs_out)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             if self.fts_indexes_to_recreate > 0:
@@ -695,9 +741,10 @@ class volume(CollectionBase):
             self.check_logs()
             #####################################################################################################
             self.log.info("Step 8: Swap with Loading of docs")
-            rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
+            rebalance_task, _, servs_out = self.rebalance(nodes_in=1, nodes_out=1)
             task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)
+            self.x509_reload_after_rebalance_out(servs_out)
             self.wait_for_async_data_load_to_complete(task)
             self.data_validation_collection()
             if self.fts_indexes_to_recreate > 0:
@@ -710,7 +757,7 @@ class volume(CollectionBase):
             for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
                     self.cluster.buckets[i], replicaNumber=2)
-            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
+            rebalance_task, _, _ = self.rebalance(nodes_in=1, nodes_out=0)
             task = self.data_load_collection()
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(task)
@@ -811,6 +858,7 @@ class volume(CollectionBase):
                         self.wait_for_rebalance_to_complete(rebalance_task)
                         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) -
                                                              set(failover_nodes))
+                        self.x509_reload_after_rebalance_out(failover_nodes)
                         for node in failover_nodes:
                             self.available_servers.append(node)
                         self.sleep(10)
@@ -835,7 +883,7 @@ class volume(CollectionBase):
 
                     kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
                     self.log.info("Collecting post_failover_stats. KV nodes are {0}".format(kv_nodes))
-                    self.bucket_util.compare_failovers_logs(prev_failover_stats, kv_nodes,
+                    self.bucket_util.compare_failovers_logs(self.cluster, prev_failover_stats, kv_nodes,
                                                             self.cluster.buckets)
                     self.sleep(10)
 
@@ -853,8 +901,8 @@ class volume(CollectionBase):
                     if action == "RebalanceOut":
                         self.sleep(120)
                         self.log.info("Rebalancing-in a node")
-                        rebalance_task = self.rebalance(nodes_in=1,
-                                                        nodes_out=0)
+                        rebalance_task, _, _ = self.rebalance(nodes_in=1,
+                                                              nodes_out=0)
                         # self.sleep(600)
                         self.wait_for_rebalance_to_complete(rebalance_task)
                     if self.fts_indexes_to_recreate > 0:
@@ -904,6 +952,7 @@ class volume(CollectionBase):
                         removed_nodes.append(node)
                     self.cluster.nodes_in_cluster = [node for node in self.cluster.nodes_in_cluster
                                                      if node not in remove_nodes]
+                self.x509_reload_after_rebalance_out(removed_nodes)
                 # add back all the nodes with kv service
                 rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster, removed_nodes, [],
                                                            retry_get_process_num=self.retry_get_process_num)
@@ -929,6 +978,7 @@ class volume(CollectionBase):
                         self.cluster.servers[:self.nodes_init], [], servs_out,
                         retry_get_process_num=self.retry_get_process_num)
                     self.wait_for_rebalance_to_complete(rebalance_task)
+                    self.x509_reload_after_rebalance_out(servs_out)
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
             else:
