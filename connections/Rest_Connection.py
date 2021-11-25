@@ -214,7 +214,8 @@ class RestConnection(object):
                 if status in [200, 201, 202]:
                     return True, content, response
                 else:
-                    self.log.error(response.reason)
+                    self.log.error("Status: {0} Content: {1} Reason: {2}".
+                                   format(status, content, response.reason))
                     return False, content, response
             except requests.exceptions.HTTPError as errh:
                 self.log.error("HTTP Error {0}".format(errh))
