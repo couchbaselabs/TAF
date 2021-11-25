@@ -115,7 +115,15 @@ public class WorkLoadGenerate extends Task{
                 .retryStrategy(this.dg.ws.retryStrategy);
         int ops = 0;
         boolean flag = false;
+        Instant trackFailureTime_start = Instant.now();
         while(true) {
+            Instant trackFailureTime_end = Instant.now();
+            Duration timeElapsed = Duration.between(trackFailureTime_start, trackFailureTime_end);
+            if(timeElapsed.toMinutes() > 5) {
+            	for (Entry<String, List<Result>> optype: failedMutations.entrySet())
+            		System.out.println("Failed mutations count so far: " + optype.getValue().size());
+                trackFailureTime_start = Instant.now();
+            }
             Instant start = Instant.now();
             if(dg.ws.creates > 0) {
                 List<Tuple2<String, Object>> docs = dg.nextInsertBatch();
@@ -220,7 +228,7 @@ public class WorkLoadGenerate extends Task{
             }
             ops = 0;
             Instant end = Instant.now();
-            Duration timeElapsed = Duration.between(start, end);
+            timeElapsed = Duration.between(start, end);
             if(!this.dg.ws.gtm && timeElapsed.toMillis() < 1000)
                 try {
                     long i =  (long) ((1000-timeElapsed.toMillis()));
