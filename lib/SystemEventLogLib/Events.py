@@ -205,6 +205,10 @@ class EventHelper(object):
                 if type(local_event[key]) is dict:
                     output_dict[key] = extract_req_values(cluster_event[key],
                                                           local_event[key])
+                elif type(cluster_event[key]) is list:
+                    cluster_event[key].sort()
+                    output_dict[key] = cluster_event[key]
+                    local_event[key].sort()
                 else:
                     output_dict[key] = cluster_event[key]
             return output_dict

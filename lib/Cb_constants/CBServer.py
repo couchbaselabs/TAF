@@ -17,6 +17,7 @@ class CbServer(object):
 
     class Failover(object):
         class Type(object):
+            AUTO = "auto"
             GRACEFUL = "graceful"
             FORCEFUL = "forceful"
 

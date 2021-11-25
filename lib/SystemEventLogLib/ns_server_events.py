@@ -12,18 +12,20 @@ class NsServerEvents(object):
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
             Event.Fields.DESCRIPTION: "Rebalance initiated",
             Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"nodes_info": {
-                                          "active_nodes": active_nodes,
-                                          "keep_nodes": keep_nodes,
-                                          "eject_nodes": eject_nodes,
-                                          "delta_nodes": delta_nodes,
-                                          "failed_nodes": failed_nodes
-                                       }}
+            Event.Fields.EXTRA_ATTRS: {
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "keep_nodes": keep_nodes,
+                    "eject_nodes": eject_nodes,
+                    "delta_nodes": delta_nodes,
+                    "failed_nodes": failed_nodes
+                }
+            }
         }
 
     @staticmethod
-    def rebalance_success(node, active_nodes,
-                          keep_nodes, eject_nodes, delta_nodes, failed_nodes):
+    def rebalance_success(node, active_nodes, keep_nodes, eject_nodes,
+                          delta_nodes, failed_nodes):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.RebalanceComplete,
@@ -97,23 +99,30 @@ class NsServerEvents(object):
         }
 
     @staticmethod
-    def auto_failover_started(node, failover_nodes, orchestrator_node,
-                              failover_threshold, failover_reason):
+    def auto_failover_started(node, active_nodes, failover_nodes, master_node,
+                              failover_threshold, failover_reason,
+                              allow_unsafe=False):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.AutoFailoverStarted,
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
             Event.Fields.DESCRIPTION: "Auto failover initiated",
             Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"node": failover_nodes,
-                                       "master_node": orchestrator_node,
-                                       "threshold": failover_threshold,
-                                       "reason": failover_reason}
+            Event.Fields.EXTRA_ATTRS: {
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "failover_nodes": failover_nodes,
+                    "master_node": master_node
+                },
+                "failover_threshold": failover_threshold,
+                "failover_reason": failover_reason,
+                "allow_unsafe": allow_unsafe
+            }
         }
 
     @staticmethod
-    def auto_failover_complete(node, failover_nodes, orchestrator_node,
-                               failover_threshold, failover_reason):
+    def auto_failover_complete(node, active_nodes, failover_nodes,
+                               master_node):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.AutoFailoverComplete,
@@ -121,111 +130,144 @@ class NsServerEvents(object):
             Event.Fields.DESCRIPTION: "Auto failover completed",
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EXTRA_ATTRS: {
-                "node": failover_nodes,
-                "master_node": orchestrator_node,
-                "time_taken": 0,
-                "threshold": failover_threshold,
-                "reason": failover_reason,
-                "completion_message": "Failover completed successfully."}
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "failover_nodes": failover_nodes,
+                    "master_node": master_node
+                },
+                "completion_message": "Failover completed successfully."
+            }
         }
 
     @staticmethod
-    def auto_failover_failure(node, failover_node, orchestrator_node,
-                              failover_threshold, failure_reason):
+    def auto_failover_failure(node, active_nodes, failover_nodes,
+                              master_node):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.AutoFailoverFailed,
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
             Event.Fields.DESCRIPTION: "Auto failover failed",
             Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"node": failover_node,
-                                       "orchestrator": orchestrator_node,
-                                       "threshold": failover_threshold,
-                                       "reason": failure_reason}
+            Event.Fields.EXTRA_ATTRS: {
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "failover_nodes": failover_nodes,
+                    "master_node": master_node
+                }
+            }
         }
 
     @staticmethod
-    def graceful_failover_started(node, trigger_method, failover_node,
-                                  orchestrator_node):
+    def graceful_failover_started(node, active_nodes, failover_nodes,
+                                  master_node):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.GracefulFailoverStarted,
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
-            Event.Fields.DESCRIPTION: "Graceful failover started",
+            Event.Fields.DESCRIPTION: "Graceful failover initiated",
             Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"trigger_method": trigger_method,
-                                       "node": failover_node,
-                                       "orchestrator": orchestrator_node}
+            Event.Fields.EXTRA_ATTRS: {
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "failover_nodes": failover_nodes,
+                    "master_node": master_node
+                }
+            }
         }
 
     @staticmethod
-    def graceful_failover_complete(node, trigger_method, failover_node,
-                                   orchestrator_node):
+    def graceful_failover_complete(node, active_nodes, failover_nodes,
+                                   master_node):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.GracefulFailoverComplete,
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
-            Event.Fields.DESCRIPTION: "Graceful failover complete",
+            Event.Fields.DESCRIPTION: "Graceful failover completed",
             Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"trigger_method": trigger_method,
-                                       "node": failover_node,
-                                       "orchestrator": orchestrator_node}
+            Event.Fields.EXTRA_ATTRS: {
+                "completion_message": "Graceful failover "
+                                      "completed successfully.",
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "failover_nodes": failover_nodes,
+                    "master_node": master_node
+                }
+            }
         }
 
     @staticmethod
-    def graceful_failover_failed(node, trigger_method, failover_node,
-                                 orchestrator_node):
+    def graceful_failover_failed(node, active_nodes, failover_nodes,
+                                 master_node):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.GracefulFailoverFailed,
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
             Event.Fields.DESCRIPTION: "Graceful failover failed",
-            Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"trigger_method": trigger_method,
-                                       "node": failover_node,
-                                       "orchestrator": orchestrator_node}
+            Event.Fields.SEVERITY: Event.Severity.ERROR,
+            Event.Fields.EXTRA_ATTRS: {
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "failover_nodes": failover_nodes,
+                    "master_node": master_node
+                }
+            }
         }
 
     @staticmethod
-    def hard_failover_started(node, trigger_type, failover_node,
-                              orchestrator_node):
+    def hard_failover_started(node, active_nodes, failover_nodes,
+                              master_node, allow_unsafe=False):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.HardFailoverStarted,
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
-            Event.Fields.DESCRIPTION: "Hard failover started",
+            Event.Fields.DESCRIPTION: "Hard failover initiated",
             Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"trigger_type": trigger_type,
-                                       "node": failover_node,
-                                       "orchestrator": orchestrator_node}
+            Event.Fields.EXTRA_ATTRS: {
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "failover_nodes": failover_nodes,
+                    "master_node": master_node
+                },
+                "failover_reason": {},
+                "allow_unsafe": allow_unsafe
+            }
         }
 
     @staticmethod
-    def hard_failover_complete(node, trigger_type, failover_node,
-                               orchestrator_node):
+    def hard_failover_complete(node, active_nodes, failover_nodes,
+                               master_node):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.HardFailoverComplete,
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
-            Event.Fields.DESCRIPTION: "Hard failover complete",
+            Event.Fields.DESCRIPTION: "Hard failover completed",
             Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"trigger_type": trigger_type,
-                                       "node": failover_node,
-                                       "orchestrator": orchestrator_node}
+            Event.Fields.EXTRA_ATTRS: {
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "failover_nodes": failover_nodes,
+                    "master_node": master_node
+                },
+                "completion_message": "Failover completed successfully."
+            }
         }
 
     @staticmethod
-    def hard_failover_failed(node, trigger_type, failover_node,
-                             orchestrator_node):
+    def hard_failover_failed(node, active_nodes, failover_nodes,
+                             master_node):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.HardFailoverComplete,
             Event.Fields.COMPONENT: Event.Component.NS_SERVER,
             Event.Fields.DESCRIPTION: "Hard failover failed",
             Event.Fields.SEVERITY: Event.Severity.INFO,
-            Event.Fields.EXTRA_ATTRS: {"trigger_type": trigger_type,
-                                       "node": failover_node,
-                                       "orchestrator": orchestrator_node}
+            Event.Fields.EXTRA_ATTRS: {
+                "nodes_info": {
+                    "active_nodes": active_nodes,
+                    "failover_nodes": failover_nodes,
+                    "master_node": master_node
+                }
+            }
         }
 
     @staticmethod

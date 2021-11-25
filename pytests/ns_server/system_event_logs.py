@@ -1003,19 +1003,113 @@ class SystemEventLogs(ClusterSetup):
 
         self.__validate(self.system_events.test_start_time)
 
-    def test_failover_events(self):
+    def test_failover_recovery_events(self):
         """
-        Trigger all different failovers (with/without failures and validate
+        Trigger failover and recovery of nodes
+        Validate respective events in system-logs
         """
-        target_node = self.cluster.nodes_in_cluster[-1]
-        self.log.info("Setting failover timeout = 5 seconds")
-        rest = RestConnection(self.cluster.master)
-        rest.update_autofailover_settings(True, 5, True)
+        def set_recovery_and_rebalance(recovery_type):
+            self.log.info("Waiting for failover to complete")
+            rebalance_outcome = rest.monitorRebalance()
+            if not rebalance_outcome:
+                self.fail("Rebalance failed")
 
-        self.log.info("1. Testing auto-failover")
+            if recovery_type:
+                self.log.info("Add back node using '%s' recovery"
+                              % recovery_type)
+                status = rest.set_recovery_type(
+                    otp_node, CbServer.Failover.RecoveryType.FULL)
+                if not status:
+                    self.fail("Unable to set recovery type")
+
+            result = self.task.rebalance(self.cluster.nodes_in_cluster,
+                                         to_add=empty_list,
+                                         to_remove=empty_list)
+            if not result:
+                self.fail("Rebalance operation failed after recovery")
+
+            delta_nodes = empty_list
+            new_active_nodes = active_nodes
+            if recovery_type is None:
+                delta_nodes = [otp_node]
+                new_active_nodes = [t_n.id for t_n in rest.node_statuses()
+                                    if t_n.ip != target_node.ip]
+
+            # Rebalance started event
+            self.system_events.add_event(
+                NsServerEvents.rebalance_started(
+                    self.cluster.master.ip, new_active_nodes,
+                    new_active_nodes, empty_list, delta_nodes, empty_list))
+            # Bucket online event
+            self.system_events.add_event(
+                DataServiceEvents.bucket_online(target_node.ip,
+                                                bucket.name, bucket.uuid))
+            # Rebalance completed event
+            self.system_events.add_event(
+                NsServerEvents.rebalance_success(
+                    self.cluster.master.ip, new_active_nodes,
+                    new_active_nodes, empty_list, delta_nodes, empty_list))
+
+        fo_type = self.input.param("failover_type",
+                                   CbServer.Failover.Type.AUTO)
+        auto_fo_threshold = 5
+        auto_fo_reason = "The data service did not respond for the duration " \
+                         "of the auto-failover threshold. Either none of " \
+                         "the buckets have warmed up or there is an " \
+                         "issue with the data service. "
+        rest = RestConnection(self.cluster.master)
+        if fo_type == "auto":
+            self.log.info("Setting failover timeout = 5 seconds")
+            rest.update_autofailover_settings(True, auto_fo_threshold, True)
+
+        bucket = self.cluster.buckets[0]
+        target_node = self.cluster.nodes_in_cluster[-1]
+        active_nodes = list()
+        otp_master = otp_node = None
+        for node in rest.node_statuses():
+            active_nodes.append(node.id)
+            if node.ip == self.cluster.master.ip:
+                otp_master = node.id
+            if node.ip == target_node.ip:
+                otp_node = node.id
+
+        empty_list = list()
+        otp_nodes = [otp_node]
+        fo_reason_dict = {otp_node: auto_fo_reason}
+        self.log.info("Node to failover: %s" % target_node.ip)
+
+        self.log.info("1/3 Testing graceful-failover")
+        rest.fail_over(otp_node, graceful=True)
+        self.system_events.add_event(
+            NsServerEvents.graceful_failover_started(
+                self.cluster.master.ip, active_nodes, otp_nodes, otp_master))
+        self.system_events.add_event(
+            NsServerEvents.graceful_failover_complete(
+                self.cluster.master.ip, active_nodes, otp_nodes, otp_master))
+        set_recovery_and_rebalance(CbServer.Failover.RecoveryType.DELTA)
+
+        self.log.info("2/3 Testing hard-failover")
+        rest.fail_over(otp_node, graceful=False)
+        self.system_events.add_event(
+            NsServerEvents.hard_failover_started(
+                self.cluster.master.ip, active_nodes, otp_nodes, otp_master))
+        self.system_events.add_event(
+            NsServerEvents.hard_failover_complete(
+                self.cluster.master.ip, active_nodes, otp_nodes, otp_master))
+        set_recovery_and_rebalance(CbServer.Failover.RecoveryType.FULL)
+
+        self.log.info("3/3 Testing auto-failover")
         shell = RemoteMachineShellConnection(target_node)
         cb_err = CouchbaseError(self.log, shell)
         cb_err.create(CouchbaseError.STOP_MEMCACHED)
+        self.sleep(10, "Wait for auto_failover to trigger")
+        cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+        shell.disconnect()
+        self.system_events.add_event(
+            NsServerEvents.auto_failover_started(
+                self.cluster.master.ip, active_nodes, otp_nodes,
+                otp_master, auto_fo_threshold, fo_reason_dict))
+        set_recovery_and_rebalance(recovery_type=None)
 
     def test_kill_event_log_server(self):
         """
@@ -1354,8 +1448,6 @@ class SystemEventLogs(ClusterSetup):
         if bucket.evictionPolicy == Bucket.EvictionPolicy.VALUE_ONLY:
             old_settings["eviction_policy"] = 'value_only'
 
-        new_settings = deepcopy(old_settings)
-
         # Add BucketOnline event in case of single node cluster
         # (In multi-node we may not know the order of events across the nodes)
         if self.nodes_init == 1:
@@ -1485,7 +1577,8 @@ class SystemEventLogs(ClusterSetup):
         bucket = self.cluster.buckets[0]
         active_nodes = ['ns_1@' + node.ip
                         for node in self.cluster.nodes_in_cluster]
-        eject_nodes = ['ns_1@' + self.cluster.nodes_in_cluster[-1].ip]
+        eject_nodes = [self.cluster.nodes_in_cluster[-1]]
+        eject_ns_nodes = ['ns_1@' + eject_nodes[0].ip]
         keep_nodes = ['ns_1@' + node.ip
                       for node in self.cluster.nodes_in_cluster
                       if node.ip != self.cluster.nodes_in_cluster[-1].ip]
@@ -1507,7 +1600,7 @@ class SystemEventLogs(ClusterSetup):
             self.system_events.add_event(
                 NsServerEvents.rebalance_started(
                     node.ip, active_nodes=active_nodes,
-                    keep_nodes=keep_nodes, eject_nodes=eject_nodes,
+                    keep_nodes=keep_nodes, eject_nodes=eject_ns_nodes,
                     delta_nodes=empty_list, failed_nodes=empty_list))
             self.sleep(5, "Wait for rebalance to start")
             cluster_event["reb_start"] = self.get_last_event_from_cluster()
