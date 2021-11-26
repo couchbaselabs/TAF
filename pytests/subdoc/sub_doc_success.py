@@ -938,7 +938,8 @@ class BasicOps(DurabilityTestsBase):
 
         # Wait for all items to get persist
         self.log.info("Waiting for ep_queue_size to become zero")
-        self.bucket_util._wait_for_stats_all_buckets()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
 
         self.sleep(doc_ttl, "Wait for doc to expire")
 
