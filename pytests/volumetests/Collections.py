@@ -111,6 +111,8 @@ class volume(CollectionBase):
         for server in self.cluster.servers:
             _ = self.x509.upload_root_certs(server)
         self.x509.upload_node_certs(servers=self.cluster.servers)
+        for node in self.cluster.servers:
+            self.x509.delete_unused_out_of_the_box_CAs(server=node)
 
     def index_and_query_setup(self):
         """
