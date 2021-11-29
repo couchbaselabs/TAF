@@ -20,6 +20,7 @@ from com.couchbase.client.core.error import RequestCanceledException,\
 from string import ascii_uppercase, ascii_lowercase
 from encodings.punycode import digits
 from remote.remote_util import RemoteMachineShellConnection
+from gsiLib.gsiHelper import GsiHelper
 
 letters = ascii_uppercase + ascii_lowercase + digits
 
@@ -82,6 +83,21 @@ class DoctorN1QL():
         for index in self.indexes.values():
             time.sleep(1)
             self.execute_statement_on_n1ql(index[0])
+
+    def wait_for_indexes_online(self, indexes, timeout=300):
+        self.rest = GsiHelper(self.cluster.master, self.log)
+        status = False
+        for bucket in self.cluster.buckets:
+            for index in indexes:
+                stop_time = time.time() + timeout
+                while time.time() < stop_time:
+                    status = self.rest.polling_create_index_status(bucket, index)
+                    if status is True:
+                        break
+                    self.sleep(5)
+                if status is False:
+                    return status
+        return status
 
     def build_indexes(self):
         for index, b_s_c in self.indexes.items():

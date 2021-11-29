@@ -223,6 +223,7 @@ class Murphy(BaseTestCase, OPD):
         if self.index_nodes:
             self.drIndexService.create_indexes()
             self.drIndexService.build_indexes()
+            self.drIndexService.wait_for_indexes_online(self.drIndexService.indexes, 2400)
             self.drIndexService.start_query_load()
 
         if self.xdcr_remote_nodes > 0:
@@ -291,6 +292,7 @@ class Murphy(BaseTestCase, OPD):
         if self.index_nodes:
             self.drIndexService.create_indexes()
             self.drIndexService.build_indexes()
+            self.drIndexService.wait_for_indexes_online(self.drIndexService.indexes, 2400)
             self.drIndexService.start_query_load()
 
         if self.xdcr_remote_nodes > 0:
@@ -431,6 +433,7 @@ class Murphy(BaseTestCase, OPD):
         if self.index_nodes:
             self.drIndexService.create_indexes()
             self.drIndexService.build_indexes()
+            self.drIndexService.wait_for_indexes_online(self.drIndexService.indexes, 2400)
             self.drIndexService.start_query_load()
 
         if self.xdcr_remote_nodes > 0:
