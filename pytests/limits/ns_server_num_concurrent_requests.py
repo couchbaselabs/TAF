@@ -3,63 +3,14 @@ import base64
 import socket
 
 from global_vars import logger
-from threading import Thread
 from java.util.concurrent.atomic import AtomicInteger
 from limits.abstract_resource_tasks import UserResourceTask
+from limits.non_blocking_connection import NonBlockingConnection
+from membase.api.rest_client import RestConnection
+from threading import Thread
 
 
 log = logger.get("test")
-
-
-class NonBlockingConnection:
-
-    def __init__(self, host, mesg):
-        self.host = host
-        self.mesg = mesg
-        self.open = False
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        # Note that calling the constructor also establishes the connection. As
-        # connections are killed in order of oldest to newest.
-        self.reconnect()
-
-    def reconnect(self):
-        """ Restablish connection and send the message """
-        try:
-            self.sock.setblocking(True)
-            self.sock.connect((self.host, 8091))
-            self.sock.sendall(self.mesg)
-            self.sock.setblocking(False)
-            self.open = True
-        except socket.error as e:
-            self.open = False
-
-    def disconnect(self):
-        """ Close socket """
-        self.sock.close()
-        self.open = False
-
-    def poll(self):
-        """ Poll the socket while messages are available """
-        try:
-            # Restablish connection
-            if not self.open:
-                self.reconnect()
-
-            # Consume as many messages as possible
-            while True:
-                msg = self.sock.recv(2048)
-                # Update if the connection was disconnected by an EOF
-                if len(msg) == 0:
-                    self.open = False
-                    self.sock.close()
-                    break
-        except socket.error as e:
-            # Update the connection status if it's a blocking related error
-            if e.args[0] != errno.EAGAIN and e.args[0] != errno.EWOULDBLOCK:
-                self.open = False
-
-        return self.open
 
 
 def get_http_request(host, path, username, password):
@@ -88,6 +39,7 @@ class NsServerNumConcurrentRequests(UserResourceTask):
         self.no_of_connections = AtomicInteger(0)
         self.no_of_open_connections = AtomicInteger(0)
         self.no_of_throughput_updates = AtomicInteger(0)
+        self.rest = RestConnection(self.node)
 
     def on_throughput_increase(self, throughput):
         log.debug(
@@ -145,7 +97,7 @@ class NsServerNumConcurrentRequests(UserResourceTask):
                 for i in range(no_of_conns - len(self.nconns)):
                     self.nconns.append(
                         NonBlockingConnection(
-                            self.node.ip, self.httprq))
+                            self.node.ip, 8091, self.httprq))
                 # Disconnect the connections that need to be closed
                 for conn in self.nconns[no_of_conns:]:
                     conn.disconnect()
@@ -166,3 +118,9 @@ class NsServerNumConcurrentRequests(UserResourceTask):
                 self.no_of_throughput_updates.incrementAndGet()
 
             no_of_conns = self.no_of_connections.get()
+
+    def error(self):
+        return self.rest._http_request(self.rest.baseUrl + "/pools/default")[1]
+
+    def expected_error(self):
+        return 'Limit(s) exceeded [num_concurrent_requests]'
