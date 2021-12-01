@@ -3535,6 +3535,15 @@ class RestConnection(object):
             self.log.error("%s - %s" % (user_id, content))
         return json.loads(content)
 
+    def get_builtin_user(self, user_id):
+        """ Gets the user's rbac settings """
+        url = "settings/rbac/users/local/" + user_id
+        api = self.baseUrl + url
+        status, content, _ = self._http_request(api, 'GET')
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
     '''
     Add/Update user role assignment
     user_id=userid of the user to act on
@@ -3721,10 +3730,10 @@ class RestConnection(object):
 
             Supplying an empty dictionary clears all limits.
         """
-        target = self.baseUrl + "/pools/default/{}/scopes".format(bucket)
+        target = self.baseUrl + "/pools/default/buckets/{}/scopes".format(bucket)
         status, content, _ = self._http_request(target,
                                                 'POST',
-                                                params=json.dumps({'scope': scope, 'limits': limits}))
+                                                params="name={}&limits={}".format(scope, json.dumps(limits)))
         return status, content
 
     def enforce_limits(self, enable=True):
@@ -3742,6 +3751,24 @@ class RestConnection(object):
             result = result[key]
 
         return result
+
+    def set_document(self, bucket, doc_id, doc_value):
+        """ Post a document value """
+        target = self.baseUrl + \
+            "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
+        docval = json.dumps(doc_value, separators=(',', ':'))
+        status, _, _ = self._http_request(target,
+                                                'POST',
+                                                params="value={}".format(docval))
+        return status
+
+    def get_document(self, bucket, doc_id):
+        """ Get a document value """
+        target = self.baseUrl + \
+            "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
+        status, content, _ = self._http_request(target,
+                                                'GET')
+        return status, content
 
 
 class MembaseServerVersion:
