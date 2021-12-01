@@ -2,6 +2,7 @@ import os
 import re
 import traceback
 import unittest
+import json
 
 import Cb_constants
 import global_vars
@@ -28,6 +29,9 @@ from remote.remote_util import RemoteMachineShellConnection
 from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
+from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
+from couchbase_utils.security_utils.security_utils import SecurityUtils
+from security.rbac_base import RbacBase
 
 
 class BaseTestCase(unittest.TestCase):
@@ -196,6 +200,7 @@ class BaseTestCase(unittest.TestCase):
         self.enforce_tls = self.input.param("enforce_tls", False)
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
+        self.multiple_ca = self.input.param("multiple_ca", False)
         if self.use_https:
             CbServer.use_https = True
             trust_all_certs()
@@ -395,6 +400,27 @@ class BaseTestCase(unittest.TestCase):
                     if not status:
                         self.fail(msg)
 
+            if self.multiple_ca:
+                self.standard = self.input.param("standard", "pkcs8")
+                self.passphrase_type = self.input.param("passphrase_type", "script")
+                self.encryption_type = self.input.param("encryption_type", "aes256")
+                self.x509 = x509main(host=self.cluster.master,
+                                     standard=self.standard,
+                                     encryption_type=self.encryption_type,
+                                     passphrase_type=self.passphrase_type)
+                self.x509.generate_multiple_x509_certs(servers=self.cluster.servers)
+                for server in self.cluster.servers:
+                    self.x509.delete_inbox_folder_on_server(server=server)
+                for server in self.cluster.servers:
+                    _ = self.x509.upload_root_certs(server)
+                self.x509.upload_node_certs(servers=self.cluster.servers)
+                for node in self.cluster.servers:
+                    self.x509.delete_unused_out_of_the_box_CAs(server=node)
+                payload = "name=cbadminbucket&roles=admin&password=password"
+                rest = RestConnection(self.cluster.master)
+                rest.add_set_builtin_user("cbadminbucket", payload)
+                self.x509.upload_client_cert_settings(server=self.cluster.servers[0])
+
             for cluster_name, cluster in self.cb_clusters.items():
                 self.modify_cluster_settings(cluster)
 
@@ -549,6 +575,12 @@ class BaseTestCase(unittest.TestCase):
                     o = cb_cli.disable_n2n_encryption()
                     self.log.info(o)
                     shell_conn.disconnect()
+        if self.multiple_ca:
+            CbServer.use_https = False
+            rest = RestConnection(self.cluster.master)
+            rest.delete_builtin_user("cbadminbucket")
+            self.x509 = x509main(host=self.cluster.master)
+            self.x509.teardown_certs(servers=self.cluster.servers)
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
         if self.collect_pcaps:
