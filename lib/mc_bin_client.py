@@ -110,7 +110,7 @@ class MemcachedClient(object):
                 len(key) + len(extraHeader) + len(val) + len(extended_meta_data), opaque, cas)
         _, w, _ = select.select([], [self.s], [], self.timeout)
         if w:
-            self.s.send(msg + extraHeader + key + val + extended_meta_data)
+            self.s.sendall(msg + extraHeader + key + val + extended_meta_data)
         else:
             raise exceptions.EOFError("Timeout waiting for socket send. from {0}".format(self.host))
 
