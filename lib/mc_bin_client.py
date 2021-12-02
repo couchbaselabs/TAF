@@ -80,7 +80,6 @@ class MemcachedClient(object):
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             if CbServer.use_https:
-                print("Sumedh creating unverfied context")
                 context = ssl._create_unverified_context()
                 self.s = context.wrap_socket(self.s, server_hostname=self.host)
             return self.s.connect_ex((self.host, self.port))

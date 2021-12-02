@@ -1031,6 +1031,7 @@ class RestConnection(object):
         params = urllib.urlencode({'clusterEncryptionLevel': level})
         status, content, header = self._http_request(api, 'POST', params)
         if status:
+            CbServer.use_https = True
             return content
         else:
             self.test_log.error("Setting encryption level on node {0} "

@@ -408,6 +408,7 @@ class BaseTestCase(unittest.TestCase):
         if self.use_https and self.enforce_tls:
             for cluster in self.__cb_clusters:
                 for node in cluster.servers:
+                    CbServer.use_https = True
                     RestConnection(node).update_autofailover_settings(False, 120, False)
                     self.log.info("Setting cluster encryption level to control on cluster "
                                   "with node {0}".format(node))
