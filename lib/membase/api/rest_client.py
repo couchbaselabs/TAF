@@ -1006,7 +1006,26 @@ class RestConnection(object):
                                 .format(self.ip, status, content))
             raise Exception("list rebalance tokens failed")
 
+    def can_enable_strict_encryption(self, boolean=True):
+        """
+        Enables/disables setting strict level encryption
+        """
+        if boolean:
+            boolean = "true"
+        else:
+            boolean = "false"
+        api = self.baseUrl + 'internalSettings'
+        params = urllib.urlencode({"canEnableStrictEncryption": boolean})
+        status, content, _ = self._http_request(api, 'POST', params)
+        return status, content
+
     def set_encryption_level(self, level="control"):
+        if level == "strict":
+            status, content = self.can_enable_strict_encryption(boolean=True)
+            if not status:
+                self.test_log.error("setting canEnableStrictEncryption failed on node {0} "
+                                    "with error {1}".format(self.ip, content))
+                raise Exception("setting canEnableStrictEncryption failed")
         _ = self.update_autofailover_settings(False, 120, False)
         api = self.baseUrl + "settings/security"
         params = urllib.urlencode({'clusterEncryptionLevel': level})
