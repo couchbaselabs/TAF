@@ -820,9 +820,10 @@ class Murphy(BaseTestCase, OPD):
             self.mutation_perc = self.input.param("mutation_perc", 100)
             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             tasks = self.perform_load(wait_for_load=False)
-
             self.rebl_services = self.input.param("rebl_services", ["kv"])
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
+
+            ###################################################################
             self.PrintStep("Step 5: Rebalance in with Loading of docs")
 
             rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
@@ -924,8 +925,8 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 60-70M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 9: Failover a node and RebalanceOut that node \
-            with loading in parallel")
+            self.PrintStep("Step 9: Failover %s node and RebalanceOut that node \
+            with loading in parallel" % self.num_replicas)
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
@@ -940,26 +941,35 @@ class Murphy(BaseTestCase, OPD):
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                       howmany=1)
+                                                       howmany=self.num_replicas)
 
             # Mark Node for failover
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
-            self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
-                                                           graceful=True)
-            self.sleep(10)
-            self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+            for node in self.chosen:
+                self.success_failed_over = self.rest.fail_over(node.id,
+                                                               graceful=True)
+                self.sleep(10)
+                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
             self.nodes = self.rest.node_statuses()
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                                ejectedNodes=[self.chosen[0].id])
+                                ejectedNodes=[node.id for node in self.chosen])
             self.assertTrue(self.rest.monitorRebalance(), msg="Rebalance failed")
-
-            servs_out = [node for node in self.cluster.servers
-                         if node.ip == self.chosen[0].ip]
+            servs_out = []
+            for failed_over in self.chosen:
+                servs_out += [node for node in self.cluster.servers
+                              if node.ip == failed_over.ip]
             self.cluster.nodes_in_cluster = list(
                 set(self.cluster.nodes_in_cluster) - set(servs_out))
             self.available_servers += servs_out
             self.cluster.kv_nodes = list(set(self.cluster.kv_nodes) - set(servs_out))
+            print "KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes]
+            print "CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes]
+            print "INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes]
+            print "FTS nodes in cluster: %s" % [server.ip for server in self.cluster.fts_nodes]
+            print "QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes]
+            print "EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes]
+            print "AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers]
             end_step_checks()
 
             self.bucket_util.compare_failovers_logs(
@@ -980,6 +990,18 @@ class Murphy(BaseTestCase, OPD):
                 std=std, total_vbuckets=self.cluster.vbuckets)
 
             ###################################################################
+            extra_node_gone = self.num_replicas - 1
+            if extra_node_gone > 0:
+                self.PrintStep("Step 10: Rebalance in with Loading of docs")
+
+                rebalance_task = self.rebalance(nodes_in=extra_node_gone,
+                                                nodes_out=0,
+                                                services=self.rebl_services*extra_node_gone)
+
+                self.task.jython_task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                end_step_checks()
+            ###################################################################
             '''
             Existing:
             Sequential: 0 - 10M
@@ -994,7 +1016,7 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 70-80M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 10: Failover a node and FullRecovery\
+            self.PrintStep("Step 11: Failover a node and FullRecovery\
              that node")
 
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
@@ -1012,19 +1034,21 @@ class Murphy(BaseTestCase, OPD):
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                       howmany=1)
+                                                       howmany=self.num_replicas)
 
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
             # Mark Node for failover
-            self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
-                                                           graceful=True)
-            self.sleep(60, "Waiting for failover to finish and settle down cluster.")
-            self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+            for node in self.chosen:
+                self.success_failed_over = self.rest.fail_over(node.id,
+                                                               graceful=True)
+                self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
             # Mark Node for full recovery
             if self.success_failed_over:
-                self.rest.set_recovery_type(otpNode=self.chosen[0].id,
-                                            recoveryType="full")
+                for node in self.chosen:
+                    self.rest.set_recovery_type(otpNode=node.id,
+                                                recoveryType="full")
             self.sleep(60, "Waiting for full recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
                 self.cluster.nodes_in_cluster, [], [],
@@ -1066,7 +1090,7 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 80-90M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 11: Failover a node and DeltaRecovery that \
+            self.PrintStep("Step 12: Failover a node and DeltaRecovery that \
             node with loading in parallel")
 
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
@@ -1084,18 +1108,22 @@ class Murphy(BaseTestCase, OPD):
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                       howmany=1)
+                                                       howmany=self.num_replicas)
 
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
             # Mark Node for failover
-            self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
-                                                           graceful=True)
+            for node in self.chosen:
+                self.success_failed_over = self.rest.fail_over(node.id,
+                                                               graceful=True)
+                self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
             self.sleep(60, "Waiting for failover to finish and settle down cluster.")
             self.rest.monitorRebalance()
             if self.success_failed_over:
-                self.rest.set_recovery_type(otpNode=self.chosen[0].id,
-                                            recoveryType="delta")
+                for node in self.chosen:
+                    self.rest.set_recovery_type(otpNode=node.id,
+                                                recoveryType="delta")
 
             self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
@@ -1137,12 +1165,13 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 12: Updating the bucket replica to 2")
+            self.PrintStep("Step 13: Updating the bucket replica to %s" %
+                           (self.num_replicas+1))
 
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.cluster.buckets[i], replicaNumber=2)
+                    self.cluster.buckets[i], replicaNumber=self.num_replicas + 1)
 
             rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
                                             services=self.rebl_services*self.rebl_nodes)
@@ -1168,11 +1197,12 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 100-110M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
-            self.PrintStep("Step 13: Updating the bucket replica to 1")
+            self.PrintStep("Step 14: Updating the bucket replica to %s" %
+                           self.num_replicas)
             bucket_helper = BucketHelper(self.cluster.master)
             for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
-                    self.cluster.buckets[i], replicaNumber=1)
+                    self.cluster.buckets[i], replicaNumber=self.num_replicas)
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             rebalance_task = self.rebalance([], [])
 #             tasks = self.perform_load(wait_for_load=False)
@@ -1182,7 +1212,7 @@ class Murphy(BaseTestCase, OPD):
             end_step_checks()
 
         #######################################################################
-            self.PrintStep("Step 14: Flush the bucket and \
+            self.PrintStep("Step 15: Flush the bucket and \
             start the entire process again")
             self.wait_for_doc_load_completion(tasks)
             self.data_validation()
