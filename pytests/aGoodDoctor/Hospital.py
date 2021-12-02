@@ -223,7 +223,7 @@ class Murphy(BaseTestCase, OPD):
         if self.index_nodes:
             self.drIndexService.create_indexes()
             self.drIndexService.build_indexes()
-            self.drIndexService.wait_for_indexes_online(self.drIndexService.indexes, 2400)
+            self.drIndexService.wait_for_indexes_online(self.log, self.drIndexService.indexes, 2400)
             self.drIndexService.start_query_load()
 
         if self.xdcr_remote_nodes > 0:
@@ -292,7 +292,7 @@ class Murphy(BaseTestCase, OPD):
         if self.index_nodes:
             self.drIndexService.create_indexes()
             self.drIndexService.build_indexes()
-            self.drIndexService.wait_for_indexes_online(self.drIndexService.indexes, 2400)
+            self.drIndexService.wait_for_indexes_online(self.log, self.drIndexService.indexes, 2400)
             self.drIndexService.start_query_load()
 
         if self.xdcr_remote_nodes > 0:
@@ -433,7 +433,7 @@ class Murphy(BaseTestCase, OPD):
         if self.index_nodes:
             self.drIndexService.create_indexes()
             self.drIndexService.build_indexes()
-            self.drIndexService.wait_for_indexes_online(self.drIndexService.indexes, 2400)
+            self.drIndexService.wait_for_indexes_online(self.log, self.drIndexService.indexes, 2400)
             self.drIndexService.start_query_load()
 
         if self.xdcr_remote_nodes > 0:
@@ -758,11 +758,7 @@ class Murphy(BaseTestCase, OPD):
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
 
-        def end_step_checks(tasks):
-            self.wait_for_doc_load_completion(tasks)
-            self.ops_rate = self.input.param("ops_rate", self.ops_rate)
-            self.data_validation()
-
+        def end_step_checks():
             self.print_stats()
             result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
             if result:
@@ -821,7 +817,10 @@ class Murphy(BaseTestCase, OPD):
             self.delete_perc = 25
             self.expiry_perc = 25
             self.read_perc = 25
-            self.mutation_perc = self.input.param("mutation_perc", 10)
+            self.mutation_perc = self.input.param("mutation_perc", 100)
+            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+            tasks = self.perform_load(wait_for_load=False)
+
             self.rebl_services = self.input.param("rebl_services", ["kv"])
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
             self.PrintStep("Step 5: Rebalance in with Loading of docs")
@@ -829,12 +828,9 @@ class Murphy(BaseTestCase, OPD):
             rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
                                             services=self.rebl_services*self.rebl_nodes)
 
-            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-            tasks = self.perform_load(wait_for_load=False)
-
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            end_step_checks(tasks)
+            end_step_checks()
             ###################################################################
             '''
             Existing:
@@ -853,12 +849,12 @@ class Murphy(BaseTestCase, OPD):
             self.PrintStep("Step 6: Rebalance Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=self.rebl_nodes)
 
-            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-            tasks = self.perform_load(wait_for_load=False)
+#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+#             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            end_step_checks(tasks)
+            end_step_checks()
 
             ###################################################################
             '''
@@ -879,12 +875,12 @@ class Murphy(BaseTestCase, OPD):
             rebalance_task = self.rebalance(nodes_in=self.rebl_nodes+1, nodes_out=self.rebl_nodes,
                                             services=self.rebl_services*(self.rebl_nodes+1))
 
-            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-            tasks = self.perform_load(wait_for_load=False)
+#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+#             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            end_step_checks(tasks)
+            end_step_checks()
 
             ###################################################################
             '''
@@ -906,12 +902,12 @@ class Murphy(BaseTestCase, OPD):
             rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=self.rebl_nodes,
                                             services=self.rebl_services*(self.rebl_nodes))
 
-            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-            tasks = self.perform_load(wait_for_load=False)
+#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+#             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            end_step_checks(tasks)
+            end_step_checks()
 
             ###################################################################
             '''
@@ -947,8 +943,8 @@ class Murphy(BaseTestCase, OPD):
                                                        howmany=1)
 
             # Mark Node for failover
-            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-            tasks = self.perform_load(wait_for_load=False)
+#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+#             tasks = self.perform_load(wait_for_load=False)
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
             self.sleep(10)
@@ -964,7 +960,7 @@ class Murphy(BaseTestCase, OPD):
                 set(self.cluster.nodes_in_cluster) - set(servs_out))
             self.available_servers += servs_out
             self.cluster.kv_nodes = list(set(self.cluster.kv_nodes) - set(servs_out))
-            end_step_checks(tasks)
+            end_step_checks()
 
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
@@ -1018,8 +1014,8 @@ class Murphy(BaseTestCase, OPD):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-            tasks = self.perform_load(wait_for_load=False)
+#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+#             tasks = self.perform_load(wait_for_load=False)
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
@@ -1036,7 +1032,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            end_step_checks(tasks)
+            end_step_checks()
 
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
@@ -1090,8 +1086,8 @@ class Murphy(BaseTestCase, OPD):
             self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                        howmany=1)
 
-            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-            tasks = self.perform_load(wait_for_load=False)
+#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+#             tasks = self.perform_load(wait_for_load=False)
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
                                                            graceful=True)
@@ -1107,7 +1103,7 @@ class Murphy(BaseTestCase, OPD):
                 retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            end_step_checks(tasks)
+            end_step_checks()
 
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
@@ -1150,12 +1146,12 @@ class Murphy(BaseTestCase, OPD):
 
             rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
                                             services=self.rebl_services*self.rebl_nodes)
-            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-            tasks = self.perform_load(wait_for_load=False)
+#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+#             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            end_step_checks(tasks)
+            end_step_checks()
 
             ####################################################################
             '''
@@ -1177,17 +1173,19 @@ class Murphy(BaseTestCase, OPD):
             for i in range(len(self.cluster.buckets)):
                 bucket_helper.change_bucket_props(
                     self.cluster.buckets[i], replicaNumber=1)
-            self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
             rebalance_task = self.rebalance([], [])
-            tasks = self.perform_load(wait_for_load=False)
+#             tasks = self.perform_load(wait_for_load=False)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            end_step_checks(tasks)
+            end_step_checks()
 
         #######################################################################
             self.PrintStep("Step 14: Flush the bucket and \
             start the entire process again")
+            self.wait_for_doc_load_completion(tasks)
+            self.data_validation()
             self.loop += 1
             if self.loop < self.iterations:
                 # Flush the bucket
