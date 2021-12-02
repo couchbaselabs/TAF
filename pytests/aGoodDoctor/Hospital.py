@@ -951,6 +951,7 @@ class Murphy(BaseTestCase, OPD):
                                                                graceful=True)
                 self.sleep(10)
                 self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+            self.sleep(600, "Waiting for data to go in after failover.")
             self.nodes = self.rest.node_statuses()
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                 ejectedNodes=[node.id for node in self.chosen])
@@ -1044,6 +1045,7 @@ class Murphy(BaseTestCase, OPD):
                                                                graceful=True)
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                 self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+            self.sleep(600, "Waiting for data to go in after failover.")
             # Mark Node for full recovery
             if self.success_failed_over:
                 for node in self.chosen:
@@ -1118,7 +1120,7 @@ class Murphy(BaseTestCase, OPD):
                                                                graceful=True)
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                 self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
-            self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+            self.sleep(600, "Waiting for data to go in after failover.")
             self.rest.monitorRebalance()
             if self.success_failed_over:
                 for node in self.chosen:
