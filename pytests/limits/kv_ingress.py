@@ -52,6 +52,10 @@ class KvIngress(UserResourceTask):
             worker.reset_client()
             worker.throughput.set(throughput / self.threads)
 
+        if throughput == 0:
+            for worker in self.workers:
+                worker.stop()
+
     on_throughput_increase = on_throughput_update
     on_throughput_decrease = on_throughput_update
 

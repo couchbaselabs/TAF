@@ -18,7 +18,7 @@ class AbstractTimedThroughputWorker(object):
         self.curr_tick = AtomicInteger(0)
 
     def stop(self):
-        self.resume = self.resume.set(False)
+        self.resume.set(False)
         self.thread.join()
 
     def start(self):
@@ -26,7 +26,7 @@ class AbstractTimedThroughputWorker(object):
         self.thread.start()
 
     def loop(self):
-        while self.resume:
+        while self.resume.get():
             self.throughput_success.set(self.tick(self.throughput.get()))
 
     def action(self, throughput):
@@ -57,6 +57,8 @@ class AbstractTimedThroughputWorker(object):
 
         chunks_sent, successes = 0, 0
         while time.time() < next_tick and chunks_sent < self.chunks:
+            if not self.resume.get():
+                break
             # Fire action and record time taken
             # time_taken, success = time_it(self.action, throughput_per_chunk)
             success = self.action(throughput_per_chunk)

@@ -32,7 +32,7 @@ class NsServerEgress(UserResourceTask):
 
         for worker in self.workers:
             worker.start()
-    
+
     def on_throughput_update(self, throughput):
         """ Updates document size """
         document_size = throughput / (self.threads * self.workers[0].chunks)
@@ -40,6 +40,10 @@ class NsServerEgress(UserResourceTask):
 
         for worker in self.workers:
             worker.throughput.set(throughput / self.threads)
+
+        if throughput == 0:
+            for worker in self.workers:
+                worker.stop()
 
     on_throughput_increase = on_throughput_update
     on_throughput_decrease = on_throughput_update

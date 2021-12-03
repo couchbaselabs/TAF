@@ -227,7 +227,6 @@ class LimitTest(ClusterSetup):
         # for task in self.tasks:
         #    self.assertEqual(retry_with_timeouttask.error(), task.expected_error())
 
-        # TODO join threads on 0
         self.set_throughput_to_zero()
 
     def test_above_to_below_threshold(self):
