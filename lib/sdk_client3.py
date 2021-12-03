@@ -847,6 +847,9 @@ class SDKClient(object):
         except FeatureNotAvailableException as ex:
             result.update({"key": key, "value": content,
                            "error": str(ex), "status": False})
+        except CouchbaseException as ex:
+            result.update({"key": key, "value": content,
+                           "error": str(ex), "status": False})
         except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": None,
