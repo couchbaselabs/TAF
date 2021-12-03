@@ -2020,8 +2020,10 @@ class RestConnection(object):
             settings.maxCount = json_parsed["maxCount"]
         return settings
 
-    def update_autofailover_settings(self, enabled, timeout, canAbortRebalance=False, enable_disk_failure=False,
-                                     disk_timeout=120, maxCount=1, enableServerGroup=False):
+    def update_autofailover_settings(self, enabled, timeout,
+                                     canAbortRebalance=False,
+                                     enable_disk_failure=False,
+                                     disk_timeout=120, maxCount=1):
         params_dict = {}
         params_dict['timeout'] = timeout
         if enabled:
@@ -2039,10 +2041,6 @@ class RestConnection(object):
         else:
             params_dict['failoverOnDataDiskIssues[enabled]'] = 'false'
         params_dict['maxCount'] = maxCount
-        if enableServerGroup:
-            params_dict['failoverServerGroup'] = 'true'
-        else:
-            params_dict['failoverServerGroup'] = 'false'
         params = urllib.urlencode(params_dict)
         api = self.baseUrl + 'settings/autoFailover'
         self.test_log.debug('settings/autoFailover params: {0}'.format(params))

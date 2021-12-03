@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 import time
 
-from math import ceil
-
 from BucketLib.bucket import Bucket
 from BucketLib.BucketOperations import BucketHelper
+from Cb_constants import DocLoading
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from basetestcase import BaseTestCase
 from cb_tools.cbstats import Cbstats
@@ -42,16 +41,22 @@ class AutoFailoverBaseTest(BaseTestCase):
         if self.server_index_to_fail is None:
             self.server_to_fail = self._servers_to_fail()
         else:
-            self.server_to_fail = [self.cluster.servers[self.server_index_to_fail]]
-        self.servers_to_add = self.cluster.servers[self.nodes_init:self.nodes_init +
-                                                                   self.nodes_in]
-        self.servers_to_remove = self.cluster.servers[self.nodes_init -
-                                                      self.nodes_out:self.nodes_init]
-        self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
-        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
+            self.server_to_fail = \
+                [self.cluster.servers[self.server_index_to_fail]]
+        self.servers_to_add = \
+            self.cluster.servers[self.nodes_init:self.nodes_init
+                                 + self.nodes_in]
+        self.servers_to_remove = \
+            self.cluster.servers[self.nodes_init
+                                 - self.nodes_out:self.nodes_init]
+        self.retry_get_process_num = \
+            self.input.param("retry_get_process_num", 200)
+        self.disk_optimized_thread_settings = \
+            self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
-            self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                   num_reader_threads="disk_io_optimized")
+            self.set_num_writer_and_reader_threads(
+                num_writer_threads="disk_io_optimized",
+                num_reader_threads="disk_io_optimized")
         if self.spec_name is not None:
             try:
                 self.collectionSetUp()
@@ -89,7 +94,8 @@ class AutoFailoverBaseTest(BaseTestCase):
                         self.sdk_pool_capacity,
                         compression_settings=self.sdk_compression)
 
-            self.load_all_buckets(self.initial_load_gen, "create", 0)
+            self.load_all_buckets(self.initial_load_gen,
+                                  DocLoading.Bucket.DocOps.CREATE, 0)
 
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.servers), self.durability_level)
@@ -103,8 +109,9 @@ class AutoFailoverBaseTest(BaseTestCase):
         # Set up cluster
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [], retry_get_process_num=self.retry_get_process_num)
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.task.rebalance([self.cluster.master], nodes_init, [],
+                            retry_get_process_num=self.retry_get_process_num)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
 
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
@@ -251,18 +258,22 @@ class AutoFailoverBaseTest(BaseTestCase):
                                                  doc_size=self.doc_size,
                                                  doc_type=self.doc_type)
         self.server_to_fail = self._servers_to_fail()
-        self.servers_to_add = self.cluster.servers[self.nodes_init:self.nodes_init +
-                                                   self.nodes_in]
-        self.servers_to_remove = self.cluster.servers[self.nodes_init -
-                                                      self.nodes_out:self.nodes_init]
+        self.servers_to_add = \
+            self.cluster.servers[self.nodes_init:self.nodes_init
+                                 + self.nodes_in]
+        self.servers_to_remove = \
+            self.cluster.servers[self.nodes_init
+                                 - self.nodes_out:self.nodes_init]
         self.get_vbucket_info_from_failover_nodes()
 
-    def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default",
+    def set_num_writer_and_reader_threads(self, num_writer_threads="default",
+                                          num_reader_threads="default",
                                           num_storage_threads="default"):
         bucket_helper = BucketHelper(self.cluster.master)
-        bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
-                                                num_reader_threads=num_reader_threads,
-                                                num_storage_threads=num_storage_threads)
+        bucket_helper.update_memcached_settings(
+            num_writer_threads=num_writer_threads,
+            num_reader_threads=num_reader_threads,
+            num_storage_threads=num_storage_threads)
 
     def tearDown(self):
         self.log.info("============AutoFailoverBaseTest teardown============")
@@ -283,9 +294,9 @@ class AutoFailoverBaseTest(BaseTestCase):
     def _loadgen(self):
         tasks = []
         if self.atomicity:
-            tasks.append(self.async_load_all_buckets_atomicity(
-                self.run_time_create_load_gen, "create", 0))
-
+            # tasks.append(self.async_load_all_buckets_atomicity(
+            #     self.run_time_create_load_gen, "create", 0))
+            pass
         else:
             subsequent_load_gen = doc_generator(self.key,
                                                 self.num_items,
@@ -426,8 +437,7 @@ class AutoFailoverBaseTest(BaseTestCase):
         """
         status = self.rest.update_autofailover_settings(
             True, self.timeout, canAbortRebalance=self.can_abort_rebalance,
-            maxCount=self.max_count,
-            enableServerGroup=self.server_group_failover)
+            maxCount=self.max_count)
         return status
 
     def enable_autoreprovision(self):
@@ -638,7 +648,7 @@ class AutoFailoverBaseTest(BaseTestCase):
                     try:
                         shell = RemoteMachineShellConnection(node)
                         o, r = shell.execute_command("/sbin/iptables -F")
-                        self.log_command_output(o, r)
+                        self.log.debug("Output: %s, Err: %s" % (o, r))
                         shell.disconnect()
                         break
                     except:
@@ -726,8 +736,6 @@ class AutoFailoverBaseTest(BaseTestCase):
         """
         self.timeout = self.input.param("timeout", 300)
         self.max_count = self.input.param("maxCount", 1)
-        self.server_group_failover = self.input.param("serverGroupFailover",
-                                                      False)
         self.failover_action = self.input.param("failover_action",
                                                 "stop_server")
         self.failover_orchestrator = self.input.param("failover_orchestrator",
@@ -905,8 +913,8 @@ class AutoFailoverBaseTest(BaseTestCase):
                     key_in_replica_vb = vb_num in self.replica_vb_in_failover_nodes
 
                     # Checks whether the error happened on target vbucket only
-                    self.assetTrue(key_in_active_vb or key_in_replica_vb,
-                                   msg=msg)
+                    self.assertTrue(key_in_active_vb or key_in_replica_vb,
+                                    msg=msg)
 
                     # Validate the received exception for CRUD failure
                     if key_in_active_vb:
@@ -1000,13 +1008,16 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.cluster.servers[:self.nodes_init], None)
         self.task.rebalance(self.cluster.servers[:1],
                             self.cluster.servers[1:self.nodes_init],
-                            [], services=self.services, retry_get_process_num=self.retry_get_process_num)
+                            [], services=self.services,
+                            retry_get_process_num=self.retry_get_process_num)
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.bucket_util.add_rbac_user(self.cluster.master)
-        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
+        self.disk_optimized_thread_settings = \
+            self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
-            self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                   num_reader_threads="disk_io_optimized")
+            self.set_num_writer_and_reader_threads(
+                num_writer_threads="disk_io_optimized",
+                num_reader_threads="disk_io_optimized")
         if self.spec_name is None:
             if self.read_loadgen:
                 self.bucket_size = 100
