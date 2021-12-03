@@ -35,7 +35,7 @@ class OpsThroughputWorker(AbstractTimedThroughputWorker):
 
 
 class KvOps(UserResourceTask):
-    """ Produces throughput for egress_mib_per_min """
+    """ Produces throughput for ops_per_min """
 
     def __init__(self, user, node):
         super(KvOps, self).__init__(user, node)

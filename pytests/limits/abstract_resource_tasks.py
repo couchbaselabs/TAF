@@ -41,7 +41,7 @@ class ResourceTask(object):
     def get_throughput_success(self):
         """ The throughput that succeeded """
         raise NotImplementedError("Please implement this method.")
-    
+
     def error(self):
         """ Generates an above threshold error """
         raise NotImplementedError("Please implement this method.")
@@ -76,7 +76,7 @@ class ScopeResourceTask(ResourceTask):
         # Last holder gets the remainder
         if self.scope.is_last_holder(self):
             throughput += throughput % self.scope.no_of_holders()
-        
+
         super(ScopeResourceTask, self).set_throughput(throughput)
 
     def get_throughput(self):

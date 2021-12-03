@@ -9,7 +9,7 @@ from limits.util import vbuckets_on_node
 class KvDataSize(ScopeResourceTask):
     """ Targets throughput for num collections """
 
-    def __init__(self, bucket, scope, user, node, collections=2):
+    def __init__(self, bucket, scope, user, node, collections=10):
         super(KvDataSize, self).__init__(bucket, scope, user, node)
         # The target bucket
         self.bucket = bucket
@@ -63,8 +63,9 @@ class KvDataSize(ScopeResourceTask):
         # Updates
         for c in self.collections:
             for i in range(start, end):
-                dvalue = {'k': random_string(self.item_size)}
-                result = self.clients[c].upsert(self.key_prefix + str(i), dvalue)
+                key = self.key_prefix + c + str(i)
+                val = {'k': random_string(self.item_size)}
+                result = self.clients[c].upsert(key, val)
                 if not result['error']:
                     self.throughput_success += 1
 
@@ -79,7 +80,7 @@ class KvDataSize(ScopeResourceTask):
         # Deletes
         for c in self.collections:
             for i in range(start, end):
-                if not self.clients[c].delete(self.key_prefix + str(i))['error']:
+                if not self.clients[c].delete(self.key_prefix + c + str(i))['error']:
                     self.throughput_success -= 1
 
     def get_throughput_success(self):
@@ -89,4 +90,4 @@ class KvDataSize(ScopeResourceTask):
         pass
 
     def expected_error(self):
-        return "kava_data_size"
+        pass
