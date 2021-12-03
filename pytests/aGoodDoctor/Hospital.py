@@ -798,6 +798,18 @@ class Murphy(BaseTestCase, OPD):
             self.perform_load(validate_data=False)
             self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             ###################################################################
+            if self.loop == 0:
+                if self.index_nodes:
+                    self.drIndexService.create_indexes()
+                    self.drIndexService.build_indexes()
+                    self.drIndexService.wait_for_indexes_online(self.log, self.drIndexService.indexes, 2400)
+                    self.drIndexService.start_query_load()
+
+                if self.xdcr_remote_nodes > 0:
+                    self.drXDCR.create_remote_ref("magma_xdcr")
+                    for bucket in self.cluster.buckets:
+                        self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
+            ###################################################################
             '''
             Existing:
             Sequential: 0 - 10M
