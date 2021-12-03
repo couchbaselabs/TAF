@@ -5,7 +5,7 @@ from BucketLib.bucket import Bucket
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import DocLoading
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
@@ -22,14 +22,13 @@ from sdk_exceptions import SDKException
 from java.lang import Exception as Java_base_exception
 
 
-class AutoFailoverBaseTest(BaseTestCase):
+class AutoFailoverBaseTest(ClusterSetup):
     MAX_FAIL_DETECT_TIME = 120
     ORCHESTRATOR_TIMEOUT_BUFFER = 60
 
     def setUp(self):
         super(AutoFailoverBaseTest, self).setUp()
-        self.spec_name = self.input.param("bucket_spec",
-                                          None)
+        self.spec_name = self.input.param("bucket_spec", None)
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self._get_params()
         self.rest = RestConnection(self.orchestrator)
@@ -83,7 +82,13 @@ class AutoFailoverBaseTest(BaseTestCase):
                                                  key_size=self.key_size,
                                                  doc_size=self.doc_size,
                                                  doc_type=self.doc_type)
-            self.set_up_cluster()
+            if self.auto_reprovision:
+                self.bucket_type = Bucket.Type.EPHEMERAL
+            self.bucket_util.create_default_bucket(
+                self.cluster,
+                replica=self.num_replicas,
+                bucket_type=self.bucket_type)
+            self.sleep(5, "Wait for bucket to accept SDK connections")
 
             if self.sdk_client_pool:
                 self.log.info("Creating SDK clients for client_pool")
@@ -106,18 +111,9 @@ class AutoFailoverBaseTest(BaseTestCase):
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def collectionSetUp(self):
-        # Set up cluster
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [],
-                            retry_get_process_num=self.retry_get_process_num)
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
 
-        # Create bucket(s) and add rbac user
-        self.bucket_util.add_rbac_user(self.cluster.master)
         # Create bucket(s)
         if self.bucket_storage == Bucket.StorageBackend.magma:
             # get the TTL value
@@ -307,22 +303,6 @@ class AutoFailoverBaseTest(BaseTestCase):
             tasks = self.async_load_all_buckets(subsequent_load_gen,
                                                 "create", 0)
         return tasks
-
-    def set_up_cluster(self):
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-                     if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [], retry_get_process_num=self.retry_get_process_num)
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        if self.auto_reprovision:
-            self.bucket_util.create_default_bucket(
-                self.cluster,
-                replica=self.num_replicas,
-                bucket_type=Bucket.Type.EPHEMERAL)
-        else:
-            self.bucket_util.create_default_bucket(self.cluster,
-                                                   replica=self.num_replicas)
-        self.bucket_util.add_rbac_user(self.cluster.master)
-        self.sleep(10)
 
     def get_vbucket_info_from_failover_nodes(self):
         """
