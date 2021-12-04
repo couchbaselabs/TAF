@@ -94,7 +94,7 @@ class DoctorN1QL():
                     status = self.rest.polling_create_index_status(bucket, index)
                     if status is True:
                         break
-                    self.sleep(5)
+                    time.sleep(5)
                 if status is False:
                     return status
         return status
