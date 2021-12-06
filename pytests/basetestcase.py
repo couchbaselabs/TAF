@@ -316,8 +316,7 @@ class BaseTestCase(unittest.TestCase):
                     status = ClusterUtils(cluster, self.task_manager). \
                         check_if_services_obey_tls(cluster.servers)
                     if not status:
-                        # ToDo: Make it fail once all services backport
-                        self.log.error("Services did not honor enforce tls")
+                        self.fail("Services did not honor enforce tls")
 
             for cluster in self.__cb_clusters:
                 cluster_util = ClusterUtils(cluster, self.task_manager)
