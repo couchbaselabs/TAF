@@ -193,8 +193,8 @@ class BasicDeleteTests(BasicCrudTests):
             disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)[0]
             expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
-            #  1.1 factor is for 10 percent buffer on calculated tomb stone size
-            expected_size = 1.1 *(self.disk_usage[self.disk_usage.keys()[0]] + expected_tombstone_size)
+
+            expected_size = 1.3 *(self.disk_usage[self.disk_usage.keys()[0]] + expected_tombstone_size)
             self.log.info("Iteration--{}, disk usage after compaction--{}\
             expected size == {},expected_tombstone_size =={} ".
             format(count+1, disk_usage_after_compaction,
