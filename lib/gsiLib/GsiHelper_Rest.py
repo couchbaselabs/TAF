@@ -355,16 +355,19 @@ class GsiHelper(RestConnection):
         while timer < timeout and index_completed is False:
             index_completed = True
             stats = self.get_index_stats()
-            for index_name, index_stats in stats[bucket_name].items():
-                if target_index is not None and index_name != target_index:
-                    continue
-                if index_stats["num_docs_queued"] != 0:
-                    index_completed = False
-                    break
-            sleep(2, "Wait before next indexer stats query")
+            if bucket_name in stats.keys():
+                for index_name, index_stats in stats[bucket_name].items():
+                    if target_index is not None and index_name != target_index:
+                        continue
+                    if index_stats["num_docs_queued"] != 0:
+                        index_completed = False
+                        break
+                sleep(2, "Wait before next indexer stats query")
+            else:
+                self.log.debug("{} is not present in stats key".format(bucket_name))
         return index_completed
 
-    def polling_create_index_status(self, bucket=None, index=None, timeout=600):
+    def polling_create_index_status(self, bucket=None, index=None, timeout=60, sleep_time=10):
         self.log.info("Starting polling for index:"+str(index))
         for x in range(timeout):
             result = self.index_status()
@@ -372,7 +375,7 @@ class GsiHelper(RestConnection):
                 if result[bucket.name].has_key(index):
                     if result[bucket.name][index]['status'] == 'Ready':
                         return True
-            sleep(1)
+            sleep(sleep_time)
             self.log.info("Index {} not found with iteration {}".format(index, str(x)))
         return False
 

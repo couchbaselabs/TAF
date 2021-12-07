@@ -87,6 +87,7 @@ class IndexUtils:
                                                 scope.name, collection.name, field,
                                                 defer, replica)
                         query_node_instance = x % query_nodes_count
+                        x = x + 1
                         self.log.debug("sending query:"+create_index_query)
                         self.log.debug("Sending index name:"+gsi_index_name)
                         task = self.task.async_execute_query(server=query_node_list[query_node_instance],
@@ -103,21 +104,35 @@ class IndexUtils:
 
         return indexes_to_build, createIndexTasklist
 
-    def recreate_dropped_indexes(self, indexes_dropped):
+    def recreate_dropped_indexes(self, cluster, indexes_dropped, field='body', defer=True, replica=0, timeout=600):
         """
         Recreate dropped indexes given indexes_dropped dict
         """
         self.log.info("Recreating dropped indexes")
-        for bucket, bucket_data in indexes_dropped.items():
-            for scope, collection_data in bucket_data.items():
-                for collection, gsi_index_names in collection_data.items():
-                    for gsi_index_name in gsi_index_names:
+        query_node_list = cluster.query_nodes
+        query_nodes_count = len(query_node_list)
+        x = 0
+        buckets = cluster.buckets
+        couchbase_buckets = [bucket for bucket in buckets
+                             if bucket.bucketType == "couchbase"]
+        for bucket in couchbase_buckets:
+            for _, scope in bucket.scopes.items():
+                for _, collection in scope.collections.items():
+                    gsi_index_names = indexes_dropped[bucket.name][scope.name][collection.name]
+                    for gsi_index_name in list(gsi_index_names):
                         create_index_query = "CREATE INDEX `%s` " \
-                                             "ON `%s`.`%s`.`%s`(`age`)" \
-                                             "WITH { 'defer_build': true, 'num_replica': 0 }" \
-                                             % (gsi_index_name, bucket, scope, collection)
-                        result = self.run_cbq_query(create_index_query)
-        self.build_deferred_indexes(indexes_dropped)
+                                             "ON `%s`.`%s`.`%s`(`%s`) " \
+                                             "WITH { 'defer_build': %s, 'num_replica': %s }" \
+                                             % (gsi_index_name, bucket.name,
+                                                scope.name, collection.name, field,
+                                                defer, replica)
+                        query_node_instance = x % query_nodes_count
+                        x = x + 1
+                        task = self.task.async_execute_query(server=query_node_list[query_node_instance],
+                                                             query=create_index_query,
+                                                             isIndexerQuery=not defer, bucket=bucket,
+                                                             indexName=gsi_index_name, timeout=timeout)
+                        self.task_manager.get_task_result(task)
 
     def async_drop_indexes(self, cluster, indexList, buckets=None):
         """
@@ -144,6 +159,7 @@ class IndexUtils:
                                            "`%s`.`%s`.`%s`" \
                                            "USING GSI" \
                                            % (gsi_index_name, bucket, scope, collection)
+                        self.log.debug("Drop query is {}".format(drop_index_query))
                         query_node_index = x % query_nodes_count
                         task = self.task.async_execute_query(server=query_nodes_list[query_node_index],
                                                              query=drop_index_query,
@@ -169,7 +185,8 @@ class IndexUtils:
                                              collection + "`.`" + gsi_index_name + "`"
                         query_node_index = x % query_len
                         query = "ALTER INDEX %s WITH {\"action\": \"replica_count\", \"num_replica\": %s}" % (
-                        full_keyspace_name, num_replicas + 1)
+                        full_keyspace_name, num_replicas)
+                        self.log.debug("Alter index query is {}".format(query))
                         task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query,
                                                              isIndexerQuery=False)
                         alter_index_task_info.append(task)
@@ -207,7 +224,7 @@ class IndexUtils:
         result = conn.query_tool(query, timeout)
         return result
 
-    def wait_for_indexes_to_go_online(self, cluster, buckets, gsi_index_name, timeout=600):
+    def wait_for_indexes_to_go_online(self, cluster, buckets, gsi_index_name, timeout=600, sleep_time=10):
         """
         Wait for indexes to go online after building the deferred indexes
         """
@@ -218,7 +235,7 @@ class IndexUtils:
         for bucket in buckets:
             if gsi_index_name.find(bucket.name.replace(".", "")) > -1:
                 while True:
-                    if self.indexer_rest.polling_create_index_status(bucket=bucket, index=gsi_index_name) is True:
+                    if self.indexer_rest.polling_create_index_status(bucket=bucket, index=gsi_index_name, timeout=timeout, sleep_time=sleep_time) is True:
                         return True
                     else:
                         if time.time() > stop_time:

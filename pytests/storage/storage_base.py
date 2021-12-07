@@ -294,7 +294,7 @@ class StorageBase(BaseTestCase):
                         common_params.update({"doc_gen": self.gen_expiry,
                                               "doc_ttl": self.maxttl})
                         loader_dict[bucket]["scopes"][scope]["collections"][collection][op_type] = copy.deepcopy(common_params)
-                        common_params.update({"doc_ttl": 0})
+                        #common_params.update({"doc_ttl": 0})
                     if self.gen_read is not None:
                         op_type = DocLoading.Bucket.DocOps.READ
                         common_params.update({"doc_gen": self.gen_read,

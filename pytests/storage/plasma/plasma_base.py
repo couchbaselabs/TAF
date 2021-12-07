@@ -41,6 +41,8 @@ class PlasmaBaseTest(StorageBase):
         self.index_count = self.input.param("index_count", 1)
         self.counter = self.input.param("counter", 30)
         self.query_limit = self.input.param("query_limit", 20000)
+        self.resident_ratio = \
+            float(self.input.param("resident_ratio", .99))
 
     def print_plasma_stats(self, plasmaDict, bucket, indexname):
         bucket_Index_key = bucket.name + ":" + indexname
@@ -65,9 +67,8 @@ class PlasmaBaseTest(StorageBase):
     def kill_indexer(self, server, timeout=10):
         self.stop_killIndexer = False
         counter = 0
-        indexerkill_shell = RemoteMachineShellConnection(server)
-        output, error = indexerkill_shell.kill_indexer()
         while not self.stop_killIndexer:
+            indexerkill_shell = RemoteMachineShellConnection(server)
             counter += 1
             if counter > timeout:
                 break
@@ -76,10 +77,10 @@ class PlasmaBaseTest(StorageBase):
             self.log.info("Output value is:" + str(output))
             self.log.info("Counter value is {0} and max count is {1}".format(str(counter), str(timeout)))
             indexerkill_shell.disconnect()
-            self.sleep(1)
+            self.sleep(20)
         self.log.info("Kill indexer process for node: {} completed".format(str(server.ip)))
 
-    def polling_for_All_Indexer_to_Ready(self, indexes_to_build, buckets=None, timeout=600):
+    def polling_for_All_Indexer_to_Ready(self, indexes_to_build, buckets=None, timeout=600, sleep_time=10):
         if buckets is None:
             buckets = self.buckets
         for _, scope_data in indexes_to_build.items():
@@ -87,7 +88,7 @@ class PlasmaBaseTest(StorageBase):
                 for collection, gsi_index_names in collection_data.items():
                     for gsi_index_name in gsi_index_names:
                         self.assertTrue(
-                            self.indexUtil.wait_for_indexes_to_go_online(self.cluster, buckets, gsi_index_name,timeout=timeout),
+                            self.indexUtil.wait_for_indexes_to_go_online(self.cluster, buckets, gsi_index_name,timeout=timeout, sleep_time=sleep_time),
                             "Index {} is not up".format(gsi_index_name))
         return True
 
@@ -132,7 +133,6 @@ class PlasmaBaseTest(StorageBase):
             index_stat = plasma_obj.get_index_storage_stats()
             for bucket in index_stat.keys():
                 for index in index_stat[bucket].keys():
-                    self.log.debug("index name is:"+str(index))
                     index_stat_map = index_stat[bucket][index]
                     if plasma_stat_field in index_stat_map["MainStore"]:
                         field_value_map[index] = index_stat_map["MainStore"][plasma_stat_field]
@@ -140,8 +140,8 @@ class PlasmaBaseTest(StorageBase):
                         field_value_map[index] = index_stat_map["MainStore"]['lss_stats'][plasma_stat_field]
                     else:
                         self.fail("Negative digit in compressed count")
-                    self.log.debug("field is:"+str(plasma_stat_field))
-                    self.log.debug("field value is: {}".format(field_value_map[index]))
+                    self.log.debug("index name is:{} field is:{} field value is:{}".format(index, plasma_stat_field,
+                                                                                           field_value_map[index]))
         return field_value_map
 
     def find_mem_used_percent(self, index_stats_map):
@@ -159,12 +159,13 @@ class PlasmaBaseTest(StorageBase):
             stats_obj_dict[str(node.ip)] = stat_obj
         return stats_obj_dict
 
-    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='lesser', timeout=30):
+    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='lesser', timeout=30, check_single_collection=False):
         isFound = True
         value = "{:.2f}".format(value)
         for count in range(timeout):
             isFound = True
             field_value_list = self.get_plasma_index_stat_value(field, stat_obj_list)
+            self.log.debug("size is:{}".format(len(field_value_list.values())))
             for field_value in field_value_list.values():
                 field_value = "{:.2f}".format(field_value)
                 self.log.debug("field value: {} and expected value: {}".format(field_value, value))
@@ -172,23 +173,22 @@ class PlasmaBaseTest(StorageBase):
                     self.log.debug("Equal operation")
                     if not field_value == value:
                         isFound = False
-                        break
                 elif ops == 'greater':
                     self.log.debug("greater operation")
                     if not field_value > value:
                         isFound = False
-                        break
                 elif ops == 'equalOrLessThan':
                     self.log.debug("greater operation")
                     if not field_value <= value:
                         isFound = False
-                        break
                 else:
                     self.log.debug("lesser operation")
                     if not field_value < value:
                         isFound = False
-                        break
-
+                if not isFound and not check_single_collection:
+                    break
+                if isFound and check_single_collection:
+                    return True
             if isFound:
                 break
             else:
@@ -281,7 +281,7 @@ class PlasmaBaseTest(StorageBase):
                         index_list.append(gsi_index_name)
         return index_list
 
-    def verify_compression_stat(self, index_nodes_list):
+    def check_compression_stat(self, index_nodes_list):
         comp_stat_verified = True
         for node in index_nodes_list:
             plasma_stats_obj = PlasmaStatsUtil(node, server_task=self.task)
@@ -289,14 +289,36 @@ class PlasmaBaseTest(StorageBase):
             for bucket in index_storage_stats.keys():
                 for index in index_storage_stats[bucket].keys():
                     index_stat_map = index_storage_stats[bucket][index]
+                    self.assertTrue(index_stat_map["MainStore"]["num_rec_compressible"] <= (
+                                index_stat_map["MainStore"]["num_rec_allocs"] - index_stat_map["MainStore"]["num_rec_frees"] + index_stat_map["MainStore"][
+                            "num_rec_compressed"]),
+                                    "For MainStore num_rec_compressible is {} num_rec_allocs is {} num_rec_frees is {} num_rec_compressed is {}".format(
+                                        index_stat_map["MainStore"]["num_rec_compressible"], index_stat_map["MainStore"]["num_rec_allocs"],
+                                        index_stat_map["MainStore"]["num_rec_frees"], index_stat_map["MainStore"]["num_rec_compressed"]))
+                    self.assertTrue(index_stat_map["BackStore"]["num_rec_compressible"] <= (
+                            index_stat_map["BackStore"]["num_rec_allocs"] - index_stat_map["BackStore"][
+                        "num_rec_frees"] + index_stat_map["BackStore"][
+                                "num_rec_compressed"]),
+                                    "For BackStore num_rec_compressible is {} num_rec_allocs is {} num_rec_frees is {} num_rec_compressed is {}".format(
+                                        index_stat_map["BackStore"]["num_rec_compressible"], index_stat_map["BackStore"]["num_rec_allocs"],
+                                        index_stat_map["BackStore"]["num_rec_frees"], index_stat_map["BackStore"]["num_rec_compressed"]))
                     self.log.debug("Compression value is: {}".format(index_stat_map["MainStore"]["num_rec_compressed"]))
                     if index_stat_map["MainStore"]["num_rec_compressed"] == 0:
-                        self.log.debug("num_rec_compressed value is 0")
-                        comp_stat_verified = False
+                        if index_stat_map["MainStore"]["num_rec_compressible"] > 0:
+                            self.log.debug("num_rec_compressible value is {}".format(index_stat_map["MainStore"]["num_rec_compressible"]))
+                            return False
+                        else:
+                            self.log.debug("Items not compressing as num_rec_compressed is 0")
                     elif index_stat_map["MainStore"]["num_rec_compressed"] < 0 or index_stat_map["BackStore"]["num_rec_compressed"] < 0:
                         self.fail("Negative digit in compressed count")
         return comp_stat_verified
 
+    def verify_compression_stat(self, index_nodes_list, retry=10):
+        for x in range(retry):
+            if self.check_compression_stat(index_nodes_list):
+                return True
+            self.sleep(5, "Waiting for compression to complete")
+        return False
     def findBucket(self, bucket_name, cluster=None):
         if cluster is None:
             cluster = self.cluster
@@ -371,48 +393,52 @@ class PlasmaBaseTest(StorageBase):
         for index_node in self.cluster.index_nodes:
             self.cluster_util.indexer_id_ops(node=index_node, ops=ops)
 
-    def verify_bucket_count_with_index_count(self, query=None,
-                                              buckets=None):
+    def verify_bucket_count_with_index_count(self, indexMap, totalCount, field):
         """
         :param query_definitions: Query definition
         :param buckets: List of bucket objects to verify
         :return:
         """
         count = 0
-        if not buckets:
-            buckets = self.cluster.buckets
-        while not self._verify_items_count() and count < 15:
-            self.log.info("All Items Yet to be Indexed...")
-            self.sleep(10)
-            count += 1
-        if not self._verify_items_count():
-            raise Exception("All Items didn't get Indexed...")
-        indexer_rest = GsiHelper(self.cluster.servers[0], self.log)
-        bucket_map = self.bucket_util.get_buckets_itemCount(self.cluster)
-        for bucket in buckets:
-            bucket_count = bucket_map[bucket.name]
-            status, content, header = indexer_rest.execute_query(server=self.cluster.query_nodes[0], query=query)
-            index_count = int(content)
-            self.assertTrue(int(index_count) == int(bucket_count),
-                        "Bucket {0}, mismatch in item count for index :{1} : expected {2} != actual {3} ".format
-                        (bucket.name, query.index_name, bucket_count, index_count))
+        indexer_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+        for bucket, bucket_data in indexMap.items():
+            indexer_rest.wait_for_indexing_to_complete(bucket)
+            for scope, collection_data in bucket_data.items():
+                for collection, gsi_index_names in collection_data.items():
+                    for gsi_index_name in gsi_index_names:
+                        count_query = "select count(*) from `%s`.`%s`.`%s` use index(`%s`) where %s is not missing" \
+                                             % (bucket,
+                                                scope, collection, gsi_index_name, field)
+                        self.log.debug("Count query is {}".format(count_query))
+                        status, content, header = indexer_rest.execute_query(server=self.cluster.query_nodes[0],
+                                                                             query=count_query)
+                        index_count = int(json.loads(content)['results'][0]['$1'])
+                        if (int(index_count) != int(totalCount)):
+                            self.log.info("Expected count is {} and actual count is {}".format(index_count, totalCount))
+                            return False
         self.log.info("Items Indexed Verified with bucket count...")
-
+        return True
     def _verify_items_count(self):
         """
         Compares Items indexed count is sample
         as items in the bucket.
         """
-        index_map = self.cluster_util.get_index_stats()
+        indexer_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+        index_map = indexer_rest.get_index_stats()
         for bucket_name in index_map.keys():
             self.log.info("Bucket: {0}".format(bucket_name))
-            for index_name, index_val in index_map[bucket_name].iteritems():
+            for index_name, index_val in index_map[bucket_name].items():
                 self.log.info("Index: {0}".format(index_name))
                 self.log.info("number of docs pending: {0}".format(index_val["num_docs_pending"]))
                 self.log.info("number of docs queued: {0}".format(index_val["num_docs_queued"]))
                 if index_val["num_docs_pending"] and index_val["num_docs_queued"]:
                     return False
         return True
+
+    def wait_for_mutuations_to_settle_down(self, stat_obj_list):
+        self.wait_for_stats_to_settle_down(stat_obj_list, "equal", "lss_fragmentation")
+        self.wait_for_stats_to_settle_down(stat_obj_list, "equal", "purges")
+        self.wait_for_stats_to_settle_down(stat_obj_list, "equal", "inserts")
 
     def wait_for_stats_to_settle_down(self, stats_obj_list, ops, field, retry=10):
         for x in range(retry):
@@ -422,4 +448,50 @@ class PlasmaBaseTest(StorageBase):
     def check_stats_values_changing(self, stat_obj_list, ops='greater', field='merges'):
         field_dict = self.get_plasma_index_stat_value(field, stat_obj_list)
         return self.compare_plasma_stat_field_value(stat_obj_list, field, field_dict,
-                                             ops)
+                                             ops, timeout=1)
+
+    def compareField(self, actual_field, expected_field, ops):
+        if ops == 'equal':
+            self.log.debug("Equal operation")
+            if actual_field == expected_field:
+                return True
+        elif ops == 'greater':
+            self.log.debug("greater operation")
+            if actual_field > expected_field:
+                return True
+        elif ops == 'equalOrLessThan':
+            self.log.debug("greater operation")
+            if actual_field <= expected_field:
+                return True
+        else:
+            self.log.debug("lesser operation")
+            if actual_field < expected_field:
+                return True
+        return False
+
+    def check_for_stat_field(self, stats_obj_list, field='resident_ratio', fieldValue=".80", ops='equalOrLessThan', avg=False):
+        if avg:
+            field_value_map = self.get_plasma_index_stat_value(field, stats_obj_list)
+            self.log.debug("size is:{}".format(len(field_value_map.values())))
+            avgValue = 0
+            for field_value in field_value_map.values():
+                avgValue = avgValue + field_value
+            avgValue = avgValue/len(field_value_map.values())
+            avgValue = "{:.2f}".format(avgValue)
+            fieldValue = "{:.2f}".format(fieldValue)
+            return self.compareField(avgValue, fieldValue, ops)
+        else:
+            return self.validate_plasma_stat_field_value(stats_obj_list, field, fieldValue,
+                                                  ops, check_single_collection=True)
+
+    def load_item_till_dgm_reached(self, stats_obj_list, resident_ratio, start_item=0, items_add=30000, avg=False):
+        initial_count = start_item
+        self.create_end = start_item
+        while not self.check_for_stat_field(stats_obj_list, 'resident_ratio', resident_ratio, 'equalOrLessThan',avg):
+            self.create_start = self.create_end
+            self.create_end = self.create_start + items_add
+            self.generate_docs(doc_ops="create")
+            data_load_task = self.data_load()
+            self.wait_for_doc_load_completion(data_load_task)
+            self.log.debug("Added items from {} to {}".format(self.create_start, self.create_end))
+        return self.create_end - start_item
