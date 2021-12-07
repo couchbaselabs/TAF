@@ -53,6 +53,8 @@ class CollectionsRebalance(CollectionBase):
         self.scrape_interval = self.input.param("scrape_interval", None)
         self.sleep_before_validation_of_ttl = self.input.param("sleep_before_validation_of_ttl", 400)
         self.num_zone = self.input.param("num_zone", 1)
+        self.failover_nodes_different_zone = self.input.param("failover_nodes_different_zone", False)
+        self.failover_entire_zone = self.input.param("failover_entire_zone", False)
         if self.scrape_interval:
             self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
             # scrape_timeout cannot be greater than scrape_interval,
@@ -947,9 +949,12 @@ class CollectionsRebalance(CollectionBase):
 
     def check_balanced_attribute(self, rest, balanced):
         content = rest.cluster_status()
-        if content['balanced'] != balanced:
-            raise Exception("expected balanced attribute {0} but actual {1}".
-                            format(content['balanced'], balanced))
+        try:
+            if content['balanced'] != balanced:
+                raise Exception("actual balanced attribute {0} but expected {1}".
+                                format(content['balanced'], balanced))
+        except KeyError:
+            self.log.info("balanced attribute is not present")
 
     def get_zone_info(self):
         nodes_in_zone = dict()
@@ -962,6 +967,28 @@ class CollectionsRebalance(CollectionBase):
                                             rest.get_nodes_in_zone(zone_name).keys()]
         self.log.info("nodes in zone inside get_zone_info():{0}".format(nodes_in_zone))
         return nodes_in_zone
+
+    def get_failover_nodes(self):
+        failover_nodes = list()
+        if self.num_zone > 1:
+            nodes_in_zone = self.get_zone_info()
+            nodes = list()
+            import random
+            if self.failover_nodes_different_zone:
+                for zone in nodes_in_zone:
+                    node = random.sample(nodes_in_zone[zone], 1)[0]
+                    if node != self.cluster.master.ip and (len(nodes) < self.nodes_failover):
+                        nodes.append(node)
+            elif self.failover_entire_zone:
+                nodes = nodes_in_zone["Group 2"]
+            for server in nodes:
+                for service in self.cluster.servers:
+                    if server == service.ip:
+                        failover_nodes.append(service)
+                        break
+        if not failover_nodes:
+            failover_nodes = self.cluster.servers[:self.nodes_init][-self.nodes_failover:]
+        return failover_nodes
 
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = None
@@ -991,8 +1018,6 @@ class CollectionsRebalance(CollectionBase):
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
                                                  remove_nodes=self.cluster.servers[:self.nodes_init][-self.nodes_out:],
                                                  tasks=tasks)
-            if self.num_zone > 1:
-                self.balanced = True
         elif rebalance_operation == "swap_rebalance":
             rebalance = self.rebalance_operation(rebalance_operation="swap_rebalance",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
@@ -1008,34 +1033,37 @@ class CollectionsRebalance(CollectionBase):
                                                  remove_nodes=self.cluster.servers[:self.nodes_init][-self.nodes_out:],
                                                  tasks=tasks)
         elif rebalance_operation == "graceful_failover_rebalance_out":
+            failover_nodes = self.get_failover_nodes()
             rebalance = self.rebalance_operation(rebalance_operation="graceful_failover_rebalance_out",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
-                                                 failover_nodes=self.cluster.servers[:self.nodes_init]
-                                                 [-self.nodes_failover:],
+                                                 failover_nodes=failover_nodes,
                                                  tasks=tasks)
         elif rebalance_operation == "hard_failover_rebalance_out":
+            failover_nodes = self.get_failover_nodes()
             rebalance = self.rebalance_operation(rebalance_operation="hard_failover_rebalance_out",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
-                                                 failover_nodes=self.cluster.servers[:self.nodes_init]
-                                                 [-self.nodes_failover:],
+                                                 failover_nodes=failover_nodes,
                                                  tasks=tasks)
         elif rebalance_operation == "graceful_failover_recovery":
+            failover_nodes = self.get_failover_nodes()
             rebalance = self.rebalance_operation(rebalance_operation="graceful_failover_recovery",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
-                                                 failover_nodes=self.cluster.servers[:self.nodes_init]
-                                                 [-self.nodes_failover:],
+                                                 failover_nodes=failover_nodes,
                                                  tasks=tasks)
         elif rebalance_operation == "hard_failover_recovery":
+            failover_nodes = self.get_failover_nodes()
             rebalance = self.rebalance_operation(rebalance_operation="hard_failover_recovery",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
-                                                 failover_nodes=self.cluster.servers[:self.nodes_init]
-                                                 [-self.nodes_failover:],
+                                                 failover_nodes=failover_nodes,
                                                  tasks=tasks)
         elif rebalance_operation == "forced_hard_failover_rebalance_out":
+            failover_nodes = self.get_failover_nodes()
             rebalance = self.forced_failover_operation(known_nodes=self.cluster.servers[:self.nodes_init],
-                                                       failover_nodes=self.cluster.servers[:self.nodes_init]
-                                                       [-self.nodes_failover:]
+                                                       failover_nodes=failover_nodes
                                                        )
+        if self.num_zone > 1 and ("rebalance_out" in rebalance_operation
+                                  or "recovery" in rebalance_operation):
+            self.balanced = True
         if self.data_load_stage == "during":
             if self.data_load_type == "async":
                 tasks = self.async_data_load()
