@@ -499,8 +499,6 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                                                     self.servers[1])
         elif error_condition == "reboot_server":
             self.sleep(self.sleep_time * 4)
-        # Added for magma. As recovery takes longer than expected and me
-        self.sleep(self.sleep_time * 4)
 
     def _induce_rebalance_test_condition(self, test_failure_condition,
                                          bucket_name="default",
