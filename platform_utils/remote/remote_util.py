@@ -369,7 +369,7 @@ class RemoteMachineShellConnection:
         self.log.debug("%s - Starting couchbase server" % self.ip)
         self.extract_remote_info()
         os = self.info.type.lower()
-        if not os or os == "centos":
+        if not os or os == "centos" or os == "ubuntu":
             os = "unix"
         if os == "windows":
             o, r = self.execute_command("net start couchbaseserver")
@@ -404,7 +404,7 @@ class RemoteMachineShellConnection:
         self.log.debug("%s - Stopping couchbase server" % self.ip)
         self.extract_remote_info()
         os = self.info.distribution_type.lower()
-        if not os or os == "centos":
+        if not os or os == "centos" or os == "ubuntu":
             os = "unix"
         if os == "windows":
             o, r = self.execute_command("net stop couchbaseserver")
