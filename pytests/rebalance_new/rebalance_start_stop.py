@@ -126,7 +126,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 self.log.info("Rebalance is still required. Verifying the data in the buckets")
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
-        self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
+        if self.verify_unacked_bytes:
+            self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
 
     def test_start_stop_rebalance_with_mutations(self):
         """
@@ -194,8 +195,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                               "Verifying the data in the buckets")
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
-
-        self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
+        if self.verify_unacked_bytes:
+            self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
 
     def test_start_stop_rebalance_before_mutations(self):
         """
@@ -263,8 +264,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                               "Verifying the data in the buckets.")
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
-
-        self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
+        if self.verify_unacked_bytes:
+            self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
 
     def test_start_stop_rebalance_after_failover(self):
         """
@@ -329,7 +330,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.shuffle_nodes_between_zones_and_rebalance()
         self.validate_docs()
         self.sleep(30)
-        self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
+        if self.verify_unacked_bytes:
+            self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
         self.bucket_util.vb_distribution_analysis(
             self.cluster,

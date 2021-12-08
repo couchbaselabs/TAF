@@ -89,7 +89,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+                                                     self.cluster.buckets,
+                                                     timeout=1200)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -498,9 +499,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                                                     self.servers[1])
         elif error_condition == "reboot_server":
             self.sleep(self.sleep_time * 4)
-            # wait till node is ready after warm-up
-            # ClusterOperationHelper.wait_for_ns_servers
-            # or assert([self.servers[1]], self)
+        # Added for magma. As recovery takes longer than expected and me
+        self.sleep(self.sleep_time * 4)
 
     def _induce_rebalance_test_condition(self, test_failure_condition,
                                          bucket_name="default",
