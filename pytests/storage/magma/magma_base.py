@@ -2,6 +2,7 @@ import math
 import os
 import random
 import time
+import threading
 
 from Cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
@@ -344,16 +345,22 @@ class MagmaBaseTest(StorageBase):
         return random.choice(keyIndex)
 
     def get_tombstone_count_key(self, servers=[]):
-        result = 0
-        result_str = ""
+        total_tombstones = {'final_count' : 0}
+        ts_per_node = dict()
         for server in servers:
+            ts_per_node[server.ip] = 0
+        threads = []
+        lock = threading.Lock()
+        def count_tombstones(node, lock):
+            result = 0
+            result_str = ""
             bucket = self.cluster.buckets[0]
             magma_path = os.path.join(self.data_path, bucket.name, "magma.{}")
-            shell = RemoteMachineShellConnection(server)
+            shell = RemoteMachineShellConnection(node)
             shards = shell.execute_command(
                 "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
                 )[0][0].split('\n')[0]
-            self.log.info("machine: {} - core(s): {}".format(server.ip, shards))
+            self.log.info("machine: {} - core(s): {}".format(node.ip, shards))
             for shard in range(min(int(shards), 64)):
                 magma = magma_path.format(shard)
                 kvstores, _ = shell.execute_command("ls {} | grep kvstore".format(magma))
@@ -366,9 +373,25 @@ class MagmaBaseTest(StorageBase):
                     self.log.info("kvstore_num=={}, ts_count=={}".format(kvstore_num, ts_count))
                     result_str += str(ts_count) + "+"
                     result += int(ts_count)
+            self.log.info("node={} and result={}".format(node, result))
+            lock.acquire()
+            increment_result(result)
+            lock.release()
+            ts_per_node[node.ip] = result
 
-        self.log.info("result_str is {}".format(result_str))
-        return result
+        def increment_result(result):
+            total_tombstones['final_count'] += result
+
+        for server in servers:
+            th = threading.Thread(
+                target=count_tombstones, args=[server, lock])
+            th.start()
+            threads.append(th)
+        for th in threads:
+            th.join()
+
+        self.log.info("total_tombstones {}".format(total_tombstones['final_count']))
+        self.log.info(" TombStones per node {}".format(ts_per_node))
 
     def get_tombstone_count_seq(self, server=None, shard=0, kvstore=0):
         cmd = '/opt/couchbase/bin/magma_dump /data/kv/default/magma.{}/ \
