@@ -397,8 +397,8 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command("open /Applications/Couchbase\ Server.app")
             self.log_command_output(o, r)
         else:
-            self.log.error("%s - Unknown operating system or product version"
-                           % self.ip)
+            self.log.error("%s : %s - Unknown operating system or product version"
+                           % (self.ip, os))
 
     def stop_server(self):
         self.log.debug("%s - Stopping couchbase server" % self.ip)
@@ -439,8 +439,8 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command("killall -9 epmd")
             self.log_command_output(o, r)
         else:
-            self.log.error("%s - Unknown operating system or product version"
-                           % self.ip)
+            self.log.error("%s : %s - Unknown operating system or product version"
+                           % (self.ip, os))
 
     def restart_couchbase(self):
         """
