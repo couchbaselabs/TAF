@@ -4467,7 +4467,7 @@ class AutoFailoverNodesFailureTask(Task):
     def call(self):
         self.start_task()
         rest = RestConnection(self.master)
-        if rest._rebalance_progress_status() == "running":
+        if rest._rebalance_progress_status(include_failover=False) == "running":
             self.rebalance_in_progress = True
         return_val = False
         while self.has_next() and not self.completed:

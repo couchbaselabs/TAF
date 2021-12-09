@@ -1587,7 +1587,7 @@ class RestConnection(object):
             sleep(sleep_time, "Wait after rebalance complete")
             return True
 
-    def _rebalance_progress_status(self):
+    def _rebalance_progress_status(self, include_failover=True):
         api = self.baseUrl + "pools/default/tasks"
         status, content, header = self._http_request(api)
         json_parsed = json.loads(content)
@@ -1603,6 +1603,9 @@ class RestConnection(object):
                 rebalance_status = json_parsed["status"]
                 if rebalance_status == "notRunning":
                     rebalance_status = "none"  # rebalance finished/notRunning scenario
+                # this is required in AF during rebalance where we confuse rebalance with AF
+                if not include_failover and json_parsed["subtype"] == "failover":
+                    rebalance_status = "none"
                 return rebalance_status
         else:
             return None
