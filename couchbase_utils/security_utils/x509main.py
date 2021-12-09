@@ -1,4 +1,7 @@
 import logging
+
+from Cb_constants import CbServer
+
 log = logging.getLogger("x509")
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
@@ -226,8 +229,7 @@ class x509main:
     def _reload_node_certificate(self,host):
         rest = RestConnection(host)
         api = rest.baseUrl + "node/controller/reloadCertificate"
-        http = httplib2.Http()
-        status, content = http.request(api, 'POST', headers=self._create_rest_headers('Administrator','password'))
+        status, content, header = rest._http_request(api, 'POST', headers=self._create_rest_headers('Administrator','password'))
         #status, content, header = rest._http_request(api, 'POST')
         return status, content
 
@@ -280,17 +282,21 @@ class x509main:
     #Function that will upload file via rest
     def _rest_upload_file(self,URL,file_path_name,username=None,password=None,curl=False,data_json=None):
         data  =  open(file_path_name, 'rb').read()
-        http = httplib2.Http()
         status = None
         content = None
         if curl:
-            cmd = "curl -v -d '%s' %s -u %s:%s"%(data_json,URL,username,password)
+            cmd = "curl -v -d '%s' %s -u %s:%s -k"%(data_json,URL,username,password)
             log.info("Running command : {0}".format(cmd))
             content = subprocess.check_output(cmd, shell=True)
             return status, content
-        status, content = http.request(URL, 'POST', headers=self._create_rest_headers(username,password),body=data)
-        log.info (" Status from rest file upload command is {0}".format(status))
-        log.info (" Content from rest file upload command is {0}".format(content))
+        if CbServer.use_https:
+            rest = RestConnection(self.host)
+            rest._http_request(URL, 'POST', headers=self._create_rest_headers(username,password), params=data)
+        else:
+            http = httplib2.Http()
+            status, content = http.request(URL, 'POST', headers=self._create_rest_headers(username,password),body=data)
+            log.info (" Status from rest file upload command is {0}".format(status))
+            log.info (" Content from rest file upload command is {0}".format(content))
         return status, content
 
     #Upload Cluster or root cert
