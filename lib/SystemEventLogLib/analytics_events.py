@@ -3,103 +3,457 @@ from cb_constants.system_event_log import Analytics
 
 
 class AnalyticsEvents(object):
+
     @staticmethod
-    def node_restart(node):
+    def process_started(node, process_name):
         return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.ProcessStarted,
+            Event.Fields.DESCRIPTION: "Analytics Process Started",
             Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: Analytics.NodeRestart,
-            Event.Fields.COMPONENT: Event.Component.ANALYTICS
+            Event.Fields.EXTRA_ATTRS: {"process_name": process_name}
         }
 
     @staticmethod
-    def process_crashed(node, crashed_pid):
+    def process_crashed(node, process_name):
+        """
+        Currently this event is only generated for java process, an issue
+        has been filed for capturing this event for cbas process as well.
+        MB-49920
+        """
         return {
-            Event.Fields.NODE_NAME: node,
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.ERROR,
             Event.Fields.EVENT_ID: Analytics.ProcessCrashed,
-            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"pid": crashed_pid}
+            Event.Fields.DESCRIPTION: "Analytics Process Crashed",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {"process_name": process_name}
         }
 
     @staticmethod
-    def dateset_created(node, dataset):
+    def process_exited(node, process_name):
+        """
+        This event can be triggered by calling analytics cluster restart
+        endpoint.
+        Currently generated only for java process
+        """
         return {
-            Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: Analytics.DataSetCreated,
             Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"dataset": dataset}
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.ProcessExited,
+            Event.Fields.DESCRIPTION: "Analytics Process Exited",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {"process_name": process_name}
         }
 
     @staticmethod
-    def dateset_deleted(node, dataset):
+    def topology_change_started(node, node_in, node_out):
         return {
-            Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: Analytics.DataSetDeleted,
             Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"dataset": dataset}
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.TopologyChangeStarted,
+            Event.Fields.DESCRIPTION: "Analytics Topology Change Started",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "topology": {
+                    "num_eject_nodes": node_out,
+                    "num_keep_nodes": node_in
+                }
+            }
         }
 
     @staticmethod
-    def date_verse_created(node, data_verse):
+    def topology_change_failed(node, node_in, node_out):
+        """
+        This event can be triggered by creating a firewall between the cbas
+        controller node and incoming/outgoing CBAS node during rebalance.
+        """
         return {
-            Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: Analytics.DateVerseCreated,
             Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"data_verse": data_verse}
+            Event.Fields.SEVERITY: Event.Severity.ERROR,
+            Event.Fields.EVENT_ID: Analytics.TopologyChangeFailed,
+            Event.Fields.DESCRIPTION: "Analytics Topology Change Failed",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "topology": {
+                    "num_eject_nodes": node_out,
+                    "num_keep_nodes": node_in,
+                }
+            }
         }
 
     @staticmethod
-    def date_verse_deleted(node, data_verse):
+    def topology_change_completed(node, node_in, node_out):
         return {
-            Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: Analytics.DateVerseDeleted,
             Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"data_verse": data_verse}
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.TopologyChangeCompleted,
+            Event.Fields.DESCRIPTION: "Analytics Topology Change Completed",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "topology": {
+                    "num_eject_nodes": node_out,
+                    "num_keep_nodes": node_in
+                }
+            }
         }
 
     @staticmethod
-    def index_created(node, index_uuid):
+    def collection_created(node, scope_name, collection_name,
+                           link_scope_name, link_name, kv_bucket_name,
+                           kv_scope_name, kv_collection_name):
         return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.CollectionCreated,
+            Event.Fields.DESCRIPTION: "Analytics Collection Created",
             Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "collection_name": collection_name,
+                "link_scope_name": link_scope_name,
+                "link_name": link_name,
+                "source": {
+                    "bucket_name": kv_bucket_name,
+                    "scope_name": kv_scope_name,
+                    "collection_name": kv_collection_name
+                }
+            }
+        }
+
+    @staticmethod
+    def collection_mapped(node, kv_bucket_name, kv_scope_name,
+                          kv_collection_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.CollectionMapped,
+            Event.Fields.DESCRIPTION: "Analytics Collection Mapped",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "bucket_name": kv_bucket_name,
+                "scope_name": kv_scope_name,
+                "collection_name": kv_collection_name
+            }
+        }
+
+    @staticmethod
+    def collection_dropped(node, scope_name, collection_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.CollectionDropped,
+            Event.Fields.DESCRIPTION: "Analytics Collection Dropped",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "collection_name": collection_name
+            }
+        }
+
+    @staticmethod
+    def collection_detached(node, scope_name, collection_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.WARN,
+            Event.Fields.EVENT_ID: Analytics.CollectionDetached,
+            Event.Fields.DESCRIPTION: "Analytics Collection Detached",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "collection_name": collection_name
+            }
+        }
+
+    @staticmethod
+    def collection_attached():
+        pass
+
+    @staticmethod
+    def collection_rollback():
+        pass
+
+    @staticmethod
+    def scope_created(node, scope_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.ScopeCreated,
+            Event.Fields.DESCRIPTION: "Analytics Scope Created",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name
+            }
+        }
+
+    @staticmethod
+    def scope_dropped(node, scope_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.ScopeDropped,
+            Event.Fields.DESCRIPTION: "Analytics Scope Dropped",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name
+            }
+        }
+
+    @staticmethod
+    def index_created(node, scope_name, index_name, collection_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EVENT_ID: Analytics.IndexCreated,
-            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"index_uuid": index_uuid}
+            Event.Fields.DESCRIPTION: "Analytics Index Created",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "index_name": index_name,
+                "collection_name": collection_name
+            }
         }
 
     @staticmethod
-    def index_deleted(node, index_uuid):
+    def index_dropped(node, scope_name, index_name, collection_name):
         return {
-            Event.Fields.NODE_NAME: node,
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EVENT_ID: Analytics.IndexDropped,
-            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"index_uuid": index_uuid}
+            Event.Fields.DESCRIPTION: "Analytics Index Dropped",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "index_name": index_name,
+                "collection_name": collection_name
+            }
         }
 
     @staticmethod
-    def link_created(node, link_uuid, target_uuid):
+    def link_created(node, attributes):
+        """
+        Attributes -
+        For S3 links -
+        {
+            "scope_name": "",
+            "link_name": "",
+            "link_type": "s3",
+            "region": "",
+            "service_endpoint": null / ""
+        }
+        For Couchbase links -
+        {
+            "scope_name": "",
+            "link_name": "",
+            "link_type": "couchbase",
+            "encryption": "none/half/full",
+            "hostname": "10.112.205.103",
+        }
+        For Azure Blob links -
+        {}
+        """
         return {
-            Event.Fields.NODE_NAME: node,
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EVENT_ID: Analytics.LinkCreated,
-            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"link_uuid": link_uuid,
-                                       "target_uuid": target_uuid}
+            Event.Fields.DESCRIPTION: "Analytics Link Created",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: attributes
         }
 
     @staticmethod
-    def link_deleted(node, link_uuid, target_uuid):
+    def link_altered(node, attributes):
+        """
+        Attributes -
+        For S3 links -
+        {
+            "scope_name": "",
+            "link_name": "",
+            "link_type": "s3",
+            "region": "",
+            "service_endpoint": null / ""
+        }
+        For Couchbase links -
+        {
+            "scope_name": "",
+            "link_name": "",
+            "link_type": "couchbase",
+            "encryption": "none/half/full",
+            "hostname": "10.112.205.103",
+        }
+        For Azure Blob links -
+        {}
+        """
         return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.LinkAltered,
+            Event.Fields.DESCRIPTION: "Analytics Link Altered",
             Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: attributes
+        }
+
+    @staticmethod
+    def link_dropped(node, scope_name, link_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EVENT_ID: Analytics.LinkDropped,
-            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"link_uuid": link_uuid,
-                                       "target_uuid": target_uuid}
+            Event.Fields.DESCRIPTION: "Analytics Link Dropped",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "link_name": link_name
+            }
         }
 
     @staticmethod
-    def settings_changed(node, prev_settings, new_settings):
+    def link_connected(node, scope_name, link_name):
         return {
-            Event.Fields.NODE_NAME: node,
-            Event.Fields.EVENT_ID: Analytics.SettingChanged,
             Event.Fields.COMPONENT: Event.Component.ANALYTICS,
-            Event.Fields.EXTRA_ATTRS: {"prev_settings": prev_settings,
-                                       "new_settings": new_settings}
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.LinkConnected,
+            Event.Fields.DESCRIPTION: "Analytics Link Connected",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "link_name": link_name
+            }
         }
+
+    @staticmethod
+    def link_disconnected(node, scope_name, link_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.LinkDisconnected,
+            Event.Fields.DESCRIPTION: "Analytics Link Disconnected",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "link_name": link_name
+            }
+        }
+
+    @staticmethod
+    def setting_changed():
+        pass
+
+    @staticmethod
+    def user_defined_library_created():
+        pass
+
+    @staticmethod
+    def user_defined_library_replaced():
+        pass
+
+    @staticmethod
+    def user_defined_library_dropped():
+        pass
+
+    @staticmethod
+    def user_defined_function_created():
+        pass
+
+    @staticmethod
+    def user_defined_function_replaced():
+        pass
+
+    @staticmethod
+    def user_defined_function_dropped(node, scope_name, udf_name, arity):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.UserDefinedFunctionDropped,
+            Event.Fields.DESCRIPTION: "Analytics User-Defined Function Dropped",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "udf_name": udf_name,
+                "arity": arity
+            }
+        }
+
+    @staticmethod
+    def synonym_created(node, scope_name, synonym_name, target_scope_name,
+                        target_collection_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.SynonymCreated,
+            Event.Fields.DESCRIPTION: "Analytics Synonym Created",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "synonym_name": synonym_name,
+                "target_scope_name": target_scope_name,
+                "target_collection_name": target_collection_name
+            }
+        }
+
+    @staticmethod
+    def synonym_dropped(node, scope_name, synonym_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.SynonymDropped,
+            Event.Fields.DESCRIPTION: "Analytics Synonym Dropped",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "synonym_name": synonym_name,
+            }
+        }
+
+    @staticmethod
+    def view_created(node, scope_name, view_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.ViewCreated,
+            Event.Fields.DESCRIPTION: "Analytics View Created",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {"scope_name": scope_name,
+                                       "view_name": view_name}
+        }
+
+    @staticmethod
+    def view_dropped(node, scope_name, view_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.ViewDropped,
+            Event.Fields.DESCRIPTION: "Analytics View Dropped",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {"scope_name": scope_name,
+                                       "view_name": view_name}
+        }
+
+    @staticmethod
+    def view_replaced(node, scope_name, view_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.ViewReplaced,
+            Event.Fields.DESCRIPTION: "Analytics View Replaced",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {"scope_name": scope_name,
+                                       "view_name": view_name}
+        }
+
+    @staticmethod
+    def bucket_connected():
+        pass
+
+    @staticmethod
+    def bucket_connect_failed():
+        pass
+
+    @staticmethod
+    def bucket_disconnected():
+        pass
+
+    @staticmethod
+    def partition_topology_updated():
+        pass

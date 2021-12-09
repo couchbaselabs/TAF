@@ -79,17 +79,43 @@ class Eventing(object):
 
 class Analytics(object):
     """Mapping of Analytics related events - event_id. Valid range 5120:6143"""
-    NodeRestart = 0
-    ProcessCrashed = 0
-    DataSetCreated = 0
-    DataSetDeleted = 0
-    DateVerseCreated = 0
-    DateVerseDeleted = 0
-    IndexCreated = 0
-    IndexDropped = 0
-    LinkCreated = 0
-    LinkDropped = 0
-    SettingChanged = 0
+    ProcessStarted = 5120
+    ProcessCrashed = 5121
+    ProcessExited = 5122
+    TopologyChangeStarted = 5123
+    TopologyChangeFailed = 5124
+    TopologyChangeCompleted = 5125
+    CollectionCreated = 5254
+    CollectionMapped = 5255
+    CollectionDropped = 5256
+    CollectionDetached = 5257
+    CollectionAttached = 5258
+    CollectionRollback = 5259
+    ScopeCreated = 5260
+    ScopeDropped = 5261
+    IndexCreated = 5262
+    IndexDropped = 5263
+    LinkCreated = 5264
+    LinkAltered = 5265
+    LinkDropped = 5266
+    LinkConnected = 5267
+    LinkDisconnected = 5268
+    SettingChanged = 5269
+    UserDefinedLibraryCreated = 5270
+    UserDefinedLibraryReplaced = 5271
+    UserDefinedLibraryDropped = 5272
+    UserDefinedFunctionCreated = 5273
+    UserDefinedFunctionReplaced = 5274
+    UserDefinedFunctionDropped = 5275
+    SynonymCreated = 5276
+    SynonymDropped = 5277
+    ViewCreated = 5278
+    ViewReplaced = 5279
+    ViewDropped = 5280
+    BucketConnected = 5281
+    BucketConnectFailed = 5282
+    BucketDisconnected = 5283
+    PartitionTopologyUpdated = 5284
 
 
 class Xdcr(object):
