@@ -23,6 +23,7 @@ class CollectionsQuorumLoss(CollectionBase):
     def tearDown(self):
         if self.failover_action:
             self.custom_remove_failure()
+            self.wipe_config_on_removed_nodes()
         super(CollectionsQuorumLoss, self).tearDown()
 
     def wait_for_rebalance_to_complete(self, task):
