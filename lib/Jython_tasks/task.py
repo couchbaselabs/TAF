@@ -36,6 +36,7 @@ from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     SubdocDocumentGenerator
+from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 from custom_exceptions.exception import \
     N1QLQueryException, DropIndexException, CreateIndexException, \
@@ -63,7 +64,7 @@ class Task(Callable):
         self.log = logger.get("infra")
         self.test_log = logger.get("test")
         self.result = False
-        self.sleep = time.sleep
+        self.sleep = sleep
 
     def __str__(self):
         if self.exception:
@@ -4849,6 +4850,232 @@ class AutoFailoverNodesFailureTask(Task):
         return False, -3
 
 
+class NodeFailureTask(Task):
+    def __init__(self, task_manager, node, failure_type,
+                 task_type="induce_failure"):
+        super(NodeFailureTask, self).__init__("NodeFailureTask_%s_%s_%s"
+                                              % (node.ip, failure_type,
+                                                 task_type))
+        self.task_manager = task_manager
+        self.target_node = node
+        self.failure_type = failure_type
+        self.task_type = task_type
+        self.shell = None
+        self.set_result(True)
+
+    def _fail_disk(self, node):
+        output, error = self.shell.unmount_partition(self.disk_location)
+        success = True
+        if output:
+            for line in output:
+                if self.disk_location in line:
+                    success = False
+        if success:
+            self.test_log.debug("Unmounted disk at location : {0} on {1}"
+                                .format(self.disk_location, node.ip))
+            self.start_time = time.time()
+        else:
+            exception_str = "Could not fail the disk at {0} on {1}" \
+                .format(self.disk_location, node.ip)
+            self.test_log.error(exception_str)
+            self.set_exception(Exception(exception_str))
+
+    def _recover_disk(self, node):
+        o, r = self.shell.mount_partition(self.disk_location)
+        for line in o:
+            if self.disk_location in line:
+                self.test_log.debug("Mounted disk at location : {0} on {1}"
+                                    .format(self.disk_location, node.ip))
+                return
+        self.test_log.critical("Failed mount disk at location %s on %s"
+                               % (self.disk_location, node.ip))
+        self.set_result(False)
+
+    def _disk_full_failure(self, node):
+        output, error = self.shell.fill_disk_space(self.disk_location,
+                                                   self.disk_size)
+        success = False
+        if output:
+            for line in output:
+                if self.disk_location in line:
+                    if "0 100% {0}".format(self.disk_location) in line:
+                        success = True
+        if success:
+            self.test_log.debug("Filled up disk Space at {0} on {1}"
+                                .format(self.disk_location, node.ip))
+            self.start_time = time.time()
+        else:
+            self.test_log.debug("Could not fill the disk at {0} on {1}"
+                                .format(self.disk_location, node.ip))
+            self.set_exception(Exception("Failed to fill disk at {0} on {1}"
+                                         .format(self.disk_location, node.ip)))
+
+    def _recover_disk_full_failure(self):
+        delete_file = "{0}/disk-quota.ext3".format(self.disk_location)
+        output, error = self.shell.execute_command("rm -f %s" % delete_file)
+        if error:
+            self.test_log.error(error)
+
+    def __induce_node_failure(self):
+        if self.failure_type == "firewall":
+            RemoteUtilHelper.enable_firewall(self.target_node)
+        elif self.failure_type == "restart_couchbase":
+            self.shell.restart_couchbase()
+        elif self.failure_type == "stop_couchbase":
+            self.shell.stop_couchbase()
+        elif self.failure_type == "restart_network":
+            self.shell.stop_network(self.timeout + self.timeout_buffer + 30)
+        elif self.failure_type == "restart_machine":
+            self.shell.execute_command(command="/sbin/reboot")
+            self.shell.disconnect()
+            self.shell = None
+        elif self.failure_type == CouchbaseError.STOP_MEMCACHED:
+            self.shell.stop_memcached()
+        elif self.failure_type == "network_split":
+            for node in self.to_nodes:
+                command = "iptables -A INPUT -s %s -j DROP" % node.ip
+                self.shell.execute_command(command)
+        elif self.failure_type == "disk_failure":
+            self._fail_disk(self.target_node)
+        elif self.failure_type == "disk_full":
+            self._disk_full_failure(self.target_node)
+        else:
+            self.log.critical("NodeFailureTask - No action defined for %s"
+                              % self.failure_type)
+            self.set_result(False)
+
+    def __revert_node_failure(self):
+        if self.failure_type in ["firewall", "network_split"]:
+            self.shell.disable_firewall()
+        elif self.failure_type == "stop_couchbase":
+            self.shell.start_couchbase()
+        elif self.failure_type == "disk_failure":
+            self._recover_disk(self.target_node)
+        elif self.failure_type == "disk_full":
+            self._recover_disk_full_failure()
+        elif self.failure_type == CouchbaseError.STOP_MEMCACHED:
+            self.shell.start_memcached()
+        else:
+            self.log.critical("NodeFailureTask - No revert action for %s"
+                              % self.failure_type)
+
+    def call(self):
+        self.start_task()
+        self.shell = RemoteMachineShellConnection(self.target_node)
+
+        if self.task_type == "induce_failure":
+            self.__induce_node_failure()
+        elif self.task_type == "revert_failure":
+            self.__revert_node_failure()
+
+        # During restart_machine, shell will be closed and marked as None
+        if self.shell:
+            self.shell.disconnect()
+        self.complete_task()
+
+
+class ConcurrentFailoverTask(Task):
+    def __init__(self, task_manager, master, servers_to_fail,
+                 disk_location=None, disk_size=200,
+                 expected_fo_nodes=1, monitor_failover=True,
+                 task_type="induce_failure"):
+        """
+        :param servers_to_fail: Dict of nodes to fail mapped with there
+                                corresponding failure method.
+                                Eg: {'10.112.212.101': 'stop_server',
+                                     '10.112.212.102': 'stop_memcached'}
+        """
+        super(ConcurrentFailoverTask, self)\
+            .__init__("ConcurrentFO_%s_nodes" % len(servers_to_fail))
+
+        # To assist failover monitoring
+        self.rest = RestConnection(master)
+        self.initial_fo_settings = self.rest.get_autofailover_settings()
+
+        self.task_manager = task_manager
+        self.master = master
+        self.servers_to_fail = servers_to_fail
+        self.timeout = self.initial_fo_settings.timeout
+        self.grace_period_for_fo = 5
+
+        # Takes either of induce_failure / revert_failure
+        self.task_type = task_type
+
+        # For Disk related failovers
+        self.disk_timeout = \
+            self.initial_fo_settings.failoverOnDataDiskIssuesTimeout
+        self.disk_timeout = disk_location
+        self.disk_size = disk_size
+
+        # To track failover operation
+        self.expected_nodes_to_fo = expected_fo_nodes
+        self.monitor_failover = monitor_failover
+
+        # To track NodeFailureTask per node
+        self.sub_tasks = list()
+        self.set_result(True)
+
+    def wait_for_fo_attempt(self):
+        curr_fo_settings = None
+        start_time = time.time()
+        expect_fo_after_time = start_time + self.timeout
+        fo_time_frame = expect_fo_after_time + self.grace_period_for_fo
+        while time.time() < expect_fo_after_time:
+            curr_fo_settings = self.rest.get_autofailover_settings()
+            if self.initial_fo_settings.count != curr_fo_settings.count:
+                self.test_log.critical("Auto failover triggered before "
+                                       "grace period. Initial %s vs %s current"
+                                       % (self.initial_fo_settings.count,
+                                          curr_fo_settings.count))
+                self.set_result(False)
+
+        while time.time() < fo_time_frame:
+            curr_fo_settings = self.rest.get_autofailover_settings()
+            self.log.critical("1 - COUNT: %s" % curr_fo_settings.count)
+            if curr_fo_settings.count == self.expected_nodes_to_fo:
+                self.log.critical("%s == %s" % (curr_fo_settings.count, self.expected_nodes_to_fo))
+                break
+        else:
+            self.test_log.critical(
+                "Some nodes are yet to be failed over. "
+                "Num fo nodes - Expected %s, Actual %s"
+                % (self.expected_nodes_to_fo, curr_fo_settings.count))
+            self.set_result(False)
+
+    def call(self):
+        self.start_task()
+
+        for node, failure_info in self.servers_to_fail.items():
+            self.sub_tasks.append(
+                NodeFailureTask(self.task_manager, node, failure_info,
+                                task_type=self.task_type))
+            self.task_manager.add_new_task(self.sub_tasks[-1])
+
+        # Wait for failure tasks to complete
+        for task in self.sub_tasks:
+            self.task_manager.get_task_result(task)
+            if task.result is False:
+                self.log.critical("NodeFailureTask '%s' failed"
+                                  % task.thread_name)
+                self.set_result(task.result)
+
+        if self.task_type == "revert_failure":
+            self.complete_task()
+            return
+
+        if self.result and self.expected_nodes_to_fo > 0:
+            self.wait_for_fo_attempt()
+
+            if self.result and self.monitor_failover:
+                self.sleep(2, "Wait for failover to actually start running")
+                status = self.rest.monitorRebalance()
+                if status is False:
+                    self.set_result(False)
+                    self.test_log.critical("Auto-Failover rebalance failed")
+
+        self.complete_task()
+
+
 class NodeDownTimerTask(Task):
     def __init__(self, node, port=None, timeout=300):
         Task.__init__(self, "NodeDownTimerTask")
@@ -5983,8 +6210,8 @@ class FailoverTask(Task):
             self._failover_nodes()
             self.test_log.debug(
                 "{0} seconds sleep after failover for nodes to go pending...."
-                    .format(self.wait_for_pending))
-            sleep(self.wait_for_pending)
+                .format(self.wait_for_pending))
+            self.sleep(self.wait_for_pending, log_type="infra")
             self.set_result(True)
             self.complete_task()
 
