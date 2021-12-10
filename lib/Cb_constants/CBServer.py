@@ -25,6 +25,14 @@ class CbServer(object):
             FULL = "full"
             DELTA = "delta"
 
+        # Node Availability - Num events
+        MIN_EVENTS = 1
+        MAX_EVENTS = 100
+
+        # Node Availability - Timeout in seconds
+        MIN_TIMEOUT = 5
+        MAX_TIMEOUT = 3600
+
     enterprise_edition = True
 
     port = 8091

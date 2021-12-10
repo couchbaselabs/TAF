@@ -4980,7 +4980,7 @@ class ConcurrentFailoverTask(Task):
                  expected_fo_nodes=1, monitor_failover=True,
                  task_type="induce_failure"):
         """
-        :param servers_to_fail: Dict of nodes to fail mapped with there
+        :param servers_to_fail: Dict of nodes to fail mapped with their
                                 corresponding failure method.
                                 Eg: {'10.112.212.101': 'stop_server',
                                      '10.112.212.102': 'stop_memcached'}
@@ -5928,7 +5928,7 @@ class CompactBucketTask(Task):
         if self.result is True:
             stop_time = time.time() + self.timeout
             while time.time() < stop_time:
-                if self.timeout > 0 and  time.time() > stop_time:
+                if self.timeout > 0 and time.time() > stop_time:
                     self.set_exception("API to check compaction status timed out in"
                                        "%s seconds" % self.timeout)
                     break
@@ -5942,7 +5942,7 @@ class CompactBucketTask(Task):
 
             stop_time = time.time() + self.timeout
             while time.time() < stop_time:
-                if self.timeout > 0 and  time.time() > stop_time:
+                if self.timeout > 0 and time.time() > stop_time:
                     self.set_exception("Compaction timed out to complete with "
                                        "%s seconds" % self.timeout)
                 status, self.progress = \

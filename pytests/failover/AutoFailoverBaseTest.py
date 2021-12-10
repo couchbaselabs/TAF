@@ -730,8 +730,6 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.add_back_node = self.input.param("add_back_node", True)
         self.recovery_strategy = self.input.param("recovery_strategy",
                                                   "delta")
-        self.multi_node_failures = self.input.param("multi_node_failures",
-                                                    False)
         self.can_abort_rebalance = self.input.param("can_abort_rebalance",
                                                     True)
         self.num_node_failures = self.input.param("num_node_failures", 1)
