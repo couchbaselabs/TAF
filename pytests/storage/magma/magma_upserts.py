@@ -138,7 +138,8 @@ class BasicUpsertTests(BasicCrudTests):
                 if self.rev_update:
                     self.update_start = -int(self.num_items - 1)
                     self.update_end = 1
-
+                self.log.info("Iteration {} , Upsert Iteration {}".
+                              format(self.test_itr, count+1))
                 self.generate_docs(doc_ops="update")
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
@@ -260,10 +261,8 @@ class BasicUpsertTests(BasicCrudTests):
               -- ReCreation of docs.
             '''
             self.log.debug("Step 5, Iteration= {}".format(i+1))
-
             self.gen_create = copy.deepcopy(self.gen_delete)
             self.doc_ops = "create"
-
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
