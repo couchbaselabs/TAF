@@ -17,12 +17,6 @@ class CBASBucketOperations(CBASBaseTest):
 
     def setUp(self):
         self.input = TestInputSingleton.input
-        if "services_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"services_init": "kv:n1ql:index-cbas-kv"})
-        if "nodes_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"nodes_init": "3"})
         if "cbas_spec" not in self.input.test_params:
             self.input.test_params.update(
                 {"cbas_spec": "local_datasets"})
