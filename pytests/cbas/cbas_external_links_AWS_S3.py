@@ -20,13 +20,6 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.input = TestInputSingleton.input
 
-        if "services_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"services_init": "kv:n1ql:index-cbas-cbas-kv"})
-        if "nodes_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"nodes_init": "4"})
-
         if self.input.param('setup_infra', True):
             self.input.test_params.update(
                 {"cluster_kv_infra": "default"})
