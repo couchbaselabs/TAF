@@ -1,10 +1,12 @@
 import copy
+import time
 
 from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
 
 from Cb_constants import CbServer
+from FtsLib.FtsOperations import FtsHelper
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.security_utils.x509main import x509main
 from membase.api.rest_client import RestConnection, RestHelper
@@ -30,6 +32,7 @@ class VolumeX509(BaseTestCase):
         self._iter_count = 0  # To keep a check of how many items are deleted
         self.available_servers = list()
         self.available_servers = self.cluster.servers[self.nodes_init:]
+        self.exclude_nodes = [self.cluster.master]
         self.num_buckets = self.input.param("num_buckets", 1)
         self.mutate = 0
         self.doc_ops = self.input.param("doc_ops", None)
@@ -60,9 +63,58 @@ class VolumeX509(BaseTestCase):
             RestConnection(self.cluster.master).set_encryption_level(level="strict")
             shell_conn.disconnect()
         self.rest = RestConnection(self.servers[0])
+        self.kv_mem_quota = self.input.param("kv_mem_quota", 17000)
+        self.index_mem_quota = self.input.param("index_mem_quota", 512)
+        self.fts_mem_quota = self.input.param("fts_mem_quota", 512)
+        self.set_memory_quota(services=["kv", "index", "fts"])
 
     def tearDown(self):
         pass
+
+    def index_and_query_setup(self):
+        """
+        Init index, query objects and create initial indexes
+        """
+        self.number_of_indexes = self.input.param("number_of_indexes", 0)
+        self.n1ql_nodes = None
+        if self.number_of_indexes > 0:
+            self.n1ql_nodes = self.cluster_util.get_nodes_from_services_map(
+                service_type="n1ql",
+                get_all_nodes=True,
+                servers=self.cluster.servers[:self.nodes_init])
+            self.n1ql_rest_connections = list()
+            for n1ql_node in self.n1ql_nodes:
+                self.n1ql_rest_connections.append(RestConnection(n1ql_node))
+            self.n1ql_turn_counter = 0  # To distribute the turn of using n1ql nodes for query. Start with first node
+
+            indexes_to_build = self.create_indexes()
+            self.build_deferred_indexes(indexes_to_build)
+
+    def fts_setup(self):
+        """
+        Create initial fts indexes
+        """
+        self.fts_indexes_to_create = self.input.param("fts_indexes_to_create", 0)
+        self.fts_indexes_to_recreate = self.input.param("fts_indexes_to_recreate", 0)
+        if self.fts_indexes_to_create > 0:
+            self.create_fts_indexes(self.fts_indexes_to_create)
+
+    def set_memory_quota(self, services=None):
+        """
+        Set memory quota of services before starting volume steps
+        services: list of services for which mem_quota has to be updated
+        """
+        if services is None:
+            return
+        if "kv" in services:
+            self.rest.set_service_memoryQuota(service='memoryQuota',
+                                              memoryQuota=int(self.kv_mem_quota))
+        if "index" in services:
+            self.rest.set_service_memoryQuota(service='indexMemoryQuota',
+                                              memoryQuota=int(self.index_mem_quota))
+        if "fts" in services:
+            self.rest.set_service_memoryQuota(service='ftsMemoryQuota',
+                                              memoryQuota=int(self.fts_mem_quota))
 
     def generate_x509_certs(self):
         """
@@ -118,28 +170,6 @@ class VolumeX509(BaseTestCase):
             CbServer.use_https = True
 
     def create_required_buckets(self):
-        self.log.info("Get the available memory quota")
-        self.info = self.rest.get_nodes_self()
-        threshold_memory = 100
-        # threshold_memory_vagrant = 100
-        total_memory_in_mb = self.info.mcdMemoryReserved
-        total_available_memory_in_mb = total_memory_in_mb
-        active_service = self.info.services
-
-        # If the mentioned service is already present, we remove that much memory from available memory quota
-        if "index" in active_service:
-            total_available_memory_in_mb -= self.info.indexMemoryQuota
-        if "fts" in active_service:
-            total_available_memory_in_mb -= self.info.ftsMemoryQuota
-        if "cbas" in active_service:
-            total_available_memory_in_mb -= self.info.cbasMemoryQuota
-        if "eventing" in active_service:
-            total_available_memory_in_mb -= self.info.eventingMemoryQuota
-
-        available_memory = total_available_memory_in_mb - threshold_memory
-        # available_memory =  total_available_memory_in_mb - threshold_memory_vagrant
-        self.rest.set_service_memoryQuota(service='memoryQuota', memoryQuota=available_memory)
-
         # Creating buckets for data loading purpose
         self.log.info("Create CB buckets")
         duration = self.input.param("bucket_expiry", 0)
@@ -147,7 +177,6 @@ class VolumeX509(BaseTestCase):
         self.bucket_type = self.input.param("bucket_type", Bucket.Type.MEMBASE)  # Bucket.bucket_type.EPHEMERAL
         compression_mode = self.input.param("compression_mode",
                                             Bucket.CompressionMode.PASSIVE)  # Bucket.bucket_compression_mode.ACTIVE
-        ramQuota = self.input.param("ramQuota", available_memory)
         bucket_names = self.input.param("bucket_names", "GleamBookUsers")
         if bucket_names:
             bucket_names = bucket_names.split(';')
@@ -158,14 +187,14 @@ class VolumeX509(BaseTestCase):
         if eviction_policy:
             eviction_policy = eviction_policy.split(';')
         if self.num_buckets == 1:
-            bucket = Bucket({"name": "GleamBookUsers", "ramQuotaMB": ramQuota, "maxTTL": duration,
+            bucket = Bucket({"name": "GleamBookUsers", "ramQuotaMB": self.kv_mem_quota, "maxTTL": duration,
                              "replicaNumber": self.num_replicas,
                              "evictionPolicy": eviction_policy[0], "bucketType": self.bucket_type[0],
                              "compressionMode": compression_mode[0]})
             self.bucket_util.create_bucket(bucket)
         elif 1 < self.num_buckets == len(bucket_names):
             for i in range(self.num_buckets):
-                bucket = Bucket({"name": bucket_names[i], "ramQuotaMB": ramQuota / self.num_buckets, "maxTTL": duration,
+                bucket = Bucket({"name": bucket_names[i], "ramQuotaMB": self.kv_mem_quota / self.num_buckets, "maxTTL": duration,
                                  "replicaNumber": self.num_replicas,
                                  "evictionPolicy": eviction_policy[i], "bucketType": self.bucket_type[i],
                                  "compressionMode": compression_mode[i]})
@@ -235,21 +264,21 @@ class VolumeX509(BaseTestCase):
             if "delete" not in self.doc_ops:
                 self.delete_perc = 0
             process_concurrency = (self.update_perc * process_concurrency) / (
-                        self.create_perc + self.delete_perc + self.update_perc)
+                    self.create_perc + self.delete_perc + self.update_perc)
         if op_type == "create":
             if "update" not in self.doc_ops:
                 self.update_perc = 0
             if "delete" not in self.doc_ops:
                 self.delete_perc = 0
             process_concurrency = (self.create_perc * process_concurrency) / (
-                        self.create_perc + self.delete_perc + self.update_perc)
+                    self.create_perc + self.delete_perc + self.update_perc)
         if op_type == "delete":
             if "create" not in self.doc_ops:
                 self.create_perc = 0
             if "update" not in self.doc_ops:
                 self.update_perc = 0
             process_concurrency = (self.delete_perc * process_concurrency) / (
-                        self.create_perc + self.delete_perc + self.update_perc)
+                    self.create_perc + self.delete_perc + self.update_perc)
         retry_exceptions = [
             SDKException.AmbiguousTimeoutException,
             SDKException.RequestCanceledException,
@@ -278,6 +307,36 @@ class VolumeX509(BaseTestCase):
         # Revert the simulated error condition and close the ssh session
         error_sim.revert(error_to_simulate)
         remote.disconnect()
+
+    def wait_for_failover_or_assert(self, expected_failover_count, timeout=7200):
+        # Timeout is kept large for graceful failover
+        time_start = time.time()
+        time_max_end = time_start + timeout
+        actual_failover_count = 0
+        while time.time() < time_max_end:
+            actual_failover_count = self.get_failover_count()
+            if actual_failover_count == expected_failover_count:
+                break
+            time.sleep(20)
+        time_end = time.time()
+        if actual_failover_count != expected_failover_count:
+            self.log.info(self.rest.print_UI_logs())
+        self.assertTrue(actual_failover_count == expected_failover_count,
+                        "{0} nodes failed over, expected : {1}"
+                        .format(actual_failover_count,
+                                expected_failover_count))
+        self.log.info("{0} nodes failed over as expected in {1} seconds"
+                      .format(actual_failover_count, time_end - time_start))
+
+    def get_failover_count(self):
+        rest = RestConnection(self.cluster.master)
+        cluster_status = rest.cluster_status()
+        failover_count = 0
+        # check for inactiveFailed
+        for node in cluster_status['nodes']:
+            if node['clusterMembership'] == "inactiveFailed":
+                failover_count += 1
+        return failover_count
 
     def rebalance(self, nodes_in=0, nodes_out=0):
         servs_in = random.sample(self.available_servers, nodes_in)
@@ -401,8 +460,143 @@ class VolumeX509(BaseTestCase):
                  str(self.start) + "---" + str(self.end),
                  str(self.start - self.initial_load_count * self.create_perc / 100) + "---" +
                  str(self.start + (
-                             self.initial_load_count * self.delete_perc / 100) - self.initial_load_count * self.create_perc / 100)])
+                         self.initial_load_count * self.delete_perc / 100) - self.initial_load_count * self.create_perc / 100)])
         self.table.display("Docs statistics")
+
+    def run_cbq_query(self, query):
+        """
+        To run cbq queries
+        Note: Do not run this in parallel
+        """
+        result = self.n1ql_rest_connections[self.n1ql_turn_counter].query_tool(query, timeout=1300)
+        self.n1ql_turn_counter = (self.n1ql_turn_counter + 1) % len(self.n1ql_nodes)
+        return result
+
+    def wait_for_indexes_to_go_online(self, gsi_index_names, timeout=300):
+        """
+        Wait for indexes to go online after building the deferred indexes
+        """
+        self.log.info("Waiting for indexes to go online")
+        start_time = time.time()
+        stop_time = start_time + timeout
+        for gsi_index_name in gsi_index_names:
+            while True:
+                check_state_query = "SELECT state FROM system:indexes WHERE name='%s'" % gsi_index_name
+                result = self.run_cbq_query(check_state_query)
+                if result['results'][0]['state'] == "online":
+                    break
+                if time.time() > stop_time:
+                    self.fail("Index availability timeout of index: {0}".format(gsi_index_name))
+
+    def build_deferred_indexes(self, indexes_to_build):
+        """
+        Build secondary indexes that were deferred
+        """
+        self.log.info("Building indexes")
+        for bucket, gsi_index_names in indexes_to_build.items():
+            for iterator in range(0, len(gsi_index_names), 10):
+                if iterator+10 <= len(gsi_index_names):
+                    indexes = gsi_index_names[iterator:iterator+10]
+                else:
+                    indexes = gsi_index_names[iterator:]
+                build_query = "BUILD INDEX on `%s`(%s) " \
+                              "USING GSI" \
+                              % (bucket, indexes)
+                result = self.run_cbq_query(build_query)
+                self.assertTrue(result['status'] == "success", "Build query %s failed." % build_query)
+                self.wait_for_indexes_to_go_online(indexes)
+
+        query = "select state from system:indexes where state='deferred'"
+        result = self.run_cbq_query(query)
+        self.log.info("deferred indexes remaining: {0}".format(len(result['results'])))
+        query = "select state from system:indexes where state='online'"
+        result = self.run_cbq_query(query)
+        self.log.info("online indexes count: {0}".format(len(result['results'])))
+        self.sleep(60, "Wait after building indexes")
+
+    def create_indexes(self):
+        """
+        Create gsi indexes on collections - according to number_of_indexes
+        """
+        self.log.info("Creating indexes with defer build")
+        indexes_to_build = dict()
+        count = 0
+        couchbase_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "couchbase"]
+        for bucket in couchbase_buckets:
+            indexes_to_build[bucket.name] = list()
+            while count < self.number_of_indexes:
+                gsi_index_name = "gsi-" + str(count)
+                create_index_query = "CREATE INDEX `%s` " \
+                                     "ON `%s`(`age`)" \
+                                     "WITH { 'defer_build': true, 'num_replica': 0 }" \
+                                     % (gsi_index_name, bucket.name)
+                result = self.run_cbq_query(create_index_query)
+                # self.assertTrue(result['status'] == "success", "Defer build Query %s failed." % create_index_query)
+                indexes_to_build[bucket.name].append(gsi_index_name)
+                count = count + 1
+        return indexes_to_build
+
+    @staticmethod
+    def get_fts_param_template():
+        fts_param_template = '{' \
+                             '"name": "%s",' \
+                             '"type": "fulltext-index",' \
+                             '"params": {' \
+                             '"mapping": {' \
+                             '"default_mapping": {' \
+                             '"enabled": true,' \
+                             '"dynamic": true},' \
+                             '"default_type": "_default",' \
+                             '"default_analyzer": "standard",' \
+                             '"default_datetime_parser": "dateTimeOptional",' \
+                             '"default_field": "_all",' \
+                             '"store_dynamic": false,' \
+                             '"index_dynamic": true},' \
+                             '"store": {' \
+                             '"indexType": "scorch",' \
+                             '"kvStoreName": ""' \
+                             '},' \
+                             '"doc_config": {' \
+                             '"mode": "type_field",' \
+                             '"type_field": "type",' \
+                             '"docid_prefix_delim": "",' \
+                             '"docid_regexp": ""}},' \
+                             '"sourceType": "couchbase",' \
+                             '"sourceName": "%s",' \
+                             '"sourceParams": {},' \
+                             '"planParams": {' \
+                             '"maxPartitionsPerPIndex": 171,' \
+                             '"numReplicas": 0,' \
+                             '"indexPartitions": 6},"uuid": ""}'
+        return fts_param_template
+
+    def create_fts_indexes(self, count=100, base_name="fts"):
+        """
+        Creates count number of fts indexes on collections
+        count should be less than number of collections
+        """
+        self.log.info("Creating {} fts indexes ".format(count))
+        fts_helper = FtsHelper(self.cluster_util.get_nodes_from_services_map(
+            service_type="fts",
+            get_all_nodes=False))
+        couchbase_buckets = [bucket for bucket in self.bucket_util.buckets if bucket.bucketType == "couchbase"]
+        created_count = 0
+        fts_indexes = dict()
+        for bucket in couchbase_buckets:
+            fts_indexes[bucket.name] = list()
+            while created_count < count:
+                fts_index_name = base_name + str(created_count)
+                fts_param_template = self.get_fts_param_template()
+                status, content = fts_helper.create_fts_index_from_json(
+                    fts_index_name,
+                    fts_param_template % (fts_index_name,
+                                          bucket.name))
+
+                if status is False:
+                    self.fail("Failed to create fts index %s: %s"
+                              % (fts_index_name, content))
+                fts_indexes[bucket.name].append(fts_index_name)
+                created_count = created_count + 1
 
     def test_volume_taf(self):
         ########################################################################################################################
@@ -427,9 +621,13 @@ class VolumeX509(BaseTestCase):
         self.log.info("Step 2 & 3: Create required buckets.")
         bucket = self.create_required_buckets()
         self.loop = 0
+        ########################################################################################################################
+        self.log.info("Step 4a: Creating fts/gsi indexes")
+        self.index_and_query_setup()
+        self.fts_setup()
         #######################################################################################################################
         while self.loop < self.iterations:
-            self.log.info("Step 4: Pre-Requisites for Loading of docs")
+            self.log.info("Step 4b: Pre-Requisites for Loading of docs")
             self.start = 0
             self.bucket_util.add_rbac_user()
             self.end = self.initial_load_count = self.input.param("initial_load", 1000)
@@ -562,14 +760,14 @@ class VolumeX509(BaseTestCase):
             self.generate_docs()
             tasks_info = self.data_load()
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
-
-            self.sleep(300)
+            self.wait_for_failover_or_assert(expected_failover_count=1)
+            self.sleep(60, "wait for failover")
             self.nodes = self.rest.node_statuses()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
-            #self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[self.chosen[0].id])
-            #self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
+            # self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[self.chosen[0].id])
+            # self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
             result = self.task.rebalance(self.cluster.nodes_in_cluster, [], [])
             if result is False:
                 self.fail("rebalance failed")
@@ -603,8 +801,8 @@ class VolumeX509(BaseTestCase):
             tasks_info = self.data_load()
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
-
-            self.sleep(300)
+            self.wait_for_failover_or_assert(expected_failover_count=1)
+            self.sleep(60, "wait after failover")
 
             # Mark Node for full recovery
             if self.success_failed_over:
@@ -619,7 +817,6 @@ class VolumeX509(BaseTestCase):
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
-            # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = RestHelper(self.rest).rebalance_reached(wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
@@ -646,7 +843,8 @@ class VolumeX509(BaseTestCase):
             # Mark Node for failover
             self.success_failed_over = self.rest.fail_over(self.chosen[0].id, graceful=False)
 
-            self.sleep(300)
+            self.wait_for_failover_or_assert(expected_failover_count=1)
+            self.sleep(60, "wait after failover")
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="delta")
             if not self.atomicity:
