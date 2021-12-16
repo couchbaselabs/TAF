@@ -943,27 +943,31 @@ class Murphy(BaseTestCase, OPD):
             std = self.std_vbucket_dist or 1.0
 
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.cluster.nodes_in_cluster, self.cluster.buckets)
+                self.cluster.kv_nodes, self.cluster.buckets)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.\
                 get_and_compare_active_replica_data_set_all(
-                    self.cluster.nodes_in_cluster, self.cluster.buckets,
+                    self.cluster.kv_nodes, self.cluster.buckets,
                     path=None)
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                       howmany=self.num_replicas)
-
-            # Mark Node for failover
+            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
+
+            # Mark Node for failover
+            self.success_failed_over = True
             for node in self.chosen:
-                self.success_failed_over = self.rest.fail_over(node.id,
+                failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                node.id = failover_node.id
+                success_failed_over = self.rest.fail_over(failover_node.id,
                                                                graceful=True)
-                self.sleep(10)
+                self.success_failed_over = self.success_failed_over and success_failed_over
+                self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                 self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
             self.sleep(600, "Waiting for data to go in after failover.")
+
             self.nodes = self.rest.node_statuses()
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                 ejectedNodes=[node.id for node in self.chosen])
@@ -988,7 +992,7 @@ class Murphy(BaseTestCase, OPD):
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
                 prev_failover_stats,
-                self.cluster.nodes_in_cluster,
+                self.cluster.kv_nodes,
                 self.cluster.buckets)
 
             self.bucket_util.data_analysis_active_replica_all(
@@ -1036,28 +1040,33 @@ class Murphy(BaseTestCase, OPD):
             std = self.std_vbucket_dist or 1.0
 
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.cluster.nodes_in_cluster, self.cluster.buckets)
+                self.cluster.kv_nodes, self.cluster.buckets)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.\
                 get_and_compare_active_replica_data_set_all(
-                    self.cluster.nodes_in_cluster,
+                    self.cluster.kv_nodes,
                     self.cluster.buckets,
                     path=None)
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                       howmany=self.num_replicas)
-
+            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
+
             # Mark Node for failover
+            self.success_failed_over = True
             for node in self.chosen:
-                self.success_failed_over = self.rest.fail_over(node.id,
+                failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                node.id = failover_node.id
+                success_failed_over = self.rest.fail_over(failover_node.id,
                                                                graceful=True)
+                self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                 self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
             self.sleep(600, "Waiting for data to go in after failover.")
+            self.rest.monitorRebalance()
+
             # Mark Node for full recovery
             if self.success_failed_over:
                 for node in self.chosen:
@@ -1075,16 +1084,16 @@ class Murphy(BaseTestCase, OPD):
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
                 prev_failover_stats,
-                self.cluster.nodes_in_cluster,
+                self.cluster.kv_nodes + [self.cluster.master],
                 self.cluster.buckets)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
-                self.cluster.nodes_in_cluster,
+                self.cluster.kv_nodes + [self.cluster.master],
                 self.cluster.buckets, path=None)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=self.cluster.nodes_in_cluster,
+                servers=self.cluster.kv_nodes + [self.cluster.master],
                 buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster.vbuckets)
@@ -1111,29 +1120,34 @@ class Murphy(BaseTestCase, OPD):
             std = self.std_vbucket_dist or 1.0
 
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.cluster.nodes_in_cluster, self.cluster.buckets)
+                self.cluster.kv_nodes + [self.cluster.master], self.cluster.buckets)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.\
                 get_and_compare_active_replica_data_set_all(
-                    self.cluster.nodes_in_cluster,
+                    self.cluster.kv_nodes + [self.cluster.master],
                     self.cluster.buckets,
                     path=None)
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                       howmany=self.num_replicas)
+            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
 
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
             # Mark Node for failover
+            self.success_failed_over = True
             for node in self.chosen:
-                self.success_failed_over = self.rest.fail_over(node.id,
+                failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                node.id = failover_node.id
+                success_failed_over = self.rest.fail_over(failover_node.id,
                                                                graceful=True)
+                self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                 self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
             self.sleep(600, "Waiting for data to go in after failover.")
             self.rest.monitorRebalance()
+
+            # Mark Node for delta recovery
             if self.success_failed_over:
                 for node in self.chosen:
                     self.rest.set_recovery_type(otpNode=node.id,
@@ -1150,16 +1164,16 @@ class Murphy(BaseTestCase, OPD):
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
                 prev_failover_stats,
-                self.cluster.nodes_in_cluster,
+                self.cluster.kv_nodes + [self.cluster.master],
                 self.cluster.buckets)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
-                self.cluster.nodes_in_cluster,
+                self.cluster.kv_nodes + [self.cluster.master],
                 self.cluster.buckets, path=None)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=self.cluster.nodes_in_cluster,
+                servers=self.cluster.kv_nodes + [self.cluster.master],
                 buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster.vbuckets)

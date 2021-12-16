@@ -70,6 +70,7 @@ class TestInput(object):
 class TestInputServer(object):
     def __init__(self):
         self.ip = ''
+        self.id = ''
         self.hostname = ''
         self.ssh_username = ''
         self.ssh_password = ''
