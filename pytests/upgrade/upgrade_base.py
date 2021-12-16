@@ -356,11 +356,11 @@ class UpgradeBase(BaseTestCase):
         if queue is not None:
             queue.put(True)
 
-    def failover_recovery(self, node_to_upgrade, recovery_type):
+    def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True):
         rest = self.__get_rest_node(node_to_upgrade)
         otp_node = self.__get_otp_node(rest, node_to_upgrade)
         self.log.info("Failing over the node %s" % otp_node.id)
-        success = rest.fail_over(otp_node.id, graceful=True)
+        success = rest.fail_over(otp_node.id, graceful=graceful)
         if not success:
             self.log_failure("Failover unsuccessful")
             return
@@ -398,6 +398,10 @@ class UpgradeBase(BaseTestCase):
 
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        deltaRecoveryBuckets=delta_recovery_buckets)
+        rebalance_passed = rest.monitorRebalance()
+        if not rebalance_passed:
+            self.log_failure("Graceful failover rebalance failed")
+            return
 
     def online_swap(self, node_to_upgrade, version,
                     install_on_spare_node=True):
@@ -458,9 +462,12 @@ class UpgradeBase(BaseTestCase):
 
         # Update master node
         self.cluster.master = self.spare_node
+        self.cluster.nodes_in_cluster.append(self.spare_node)
 
         # Update spare_node to rebalanced-out node
         self.spare_node = node_to_upgrade
+        self.cluster.nodes_in_cluster.remove(node_to_upgrade)
+
 
     def online_rebalance_out_in(self, node_to_upgrade, version,
                                 install_on_spare_node=True):
@@ -507,9 +514,11 @@ class UpgradeBase(BaseTestCase):
 
         # Update master node
         self.cluster.master = self.spare_node
+        self.cluster.nodes_in_cluster.append(self.spare_node)
 
         # Update spare node to rebalanced_out node
         self.spare_node = node_to_upgrade
+        self.cluster.nodes_in_cluster.remove(node_to_upgrade)
 
     def online_rebalance_in_out(self, node_to_upgrade, version,
                                 install_on_spare_node=True):
@@ -556,9 +565,11 @@ class UpgradeBase(BaseTestCase):
 
         # Update master node
         self.cluster.master = self.spare_node
+        self.cluster.nodes_in_cluster.append(self.spare_node)
 
         # Update spare node to rebalanced_out node
         self.spare_node = node_to_upgrade
+        self.cluster.nodes_in_cluster.remove(node_to_upgrade)
 
     def online_incremental(self, node_to_upgrade, version):
         # Fetch active services on node_to_upgrade
@@ -597,8 +608,8 @@ class UpgradeBase(BaseTestCase):
     def failover_delta_recovery(self, node_to_upgrade):
         self.failover_recovery(node_to_upgrade, "delta")
 
-    def failover_full_recovery(self, node_to_upgrade):
-        self.failover_recovery(node_to_upgrade, "full")
+    def failover_full_recovery(self, node_to_upgrade, graceful=True):
+        self.failover_recovery(node_to_upgrade, "full", graceful)
 
     def offline(self, node_to_upgrade, version):
         self.fail("Yet to be implemented")

@@ -253,19 +253,18 @@ class BaseUtil(object):
         return copy.deepcopy(spec_package.spec)
 
     @staticmethod
-    def update_cbas_spec(cbas_spec, updated_specs, sub_spec_name=None):
+    def update_cbas_spec(cbas_spec, updated_specs):
         """
         Updates new dataverse spec in the overall cbas spec.
-        :param cbas_spec dict, cbas spec dict
-        :param dataverse_spec dict, dataverse spec dict
+        :param cbas_spec dict, original cbas spec dict
+        :param updated_specs dict, keys or sub dicts to be updated
         """
         for key, value in updated_specs.iteritems():
             if key in cbas_spec:
-                cbas_spec[key] = value
-
-            if sub_spec_name:
-                if key in cbas_spec[sub_spec_name]:
-                    cbas_spec[sub_spec_name][key] = value
+                if isinstance(value, dict):
+                    BaseUtil.update_cbas_spec(cbas_spec[key], value)
+                else:
+                    cbas_spec[key] = value
 
     def run_jobs_in_parallel(self, jobs, results, thread_count,
                              async_run=False):
@@ -4191,7 +4190,7 @@ class CbasUtil(UDFUtil):
         status, content, response = \
             cbas_helper.operation_service_parameters_configuration_cbas(
                 method="GET", username=username, password=password)
-        return status, content, response
+        return status, json.loads(content), response
 
     def update_node_parameter_configuration_on_cbas(
             self, cluster, config_map=None, username=None, password=None):
@@ -4885,8 +4884,8 @@ class CBASRebalanceUtil(object):
     def wait_for_rebalance_task_to_complete(self, task, cluster,
                                             check_cbas_running=False):
         self.task.jython_task_manager.get_task_result(task)
+        self.reset_cbas_cc_node(cluster)
         if task.result and hasattr(cluster, "cbas_nodes"):
-            self.reset_cbas_cc_node(cluster)
             if check_cbas_running:
                 return self.cbas_util.is_analytics_running(cluster)
             return True
@@ -5279,6 +5278,7 @@ class CBASRebalanceUtil(object):
             if node.ip == cbas_cc_node_ip:
                 cluster.cbas_cc_node = node
                 break
+        self.log.info("Reassigned CBAS CC node is {0}".format(cbas_cc_node_ip))
 
 
 class BackupUtils(object):

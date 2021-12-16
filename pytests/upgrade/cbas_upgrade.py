@@ -8,15 +8,13 @@ Number of datasets in <= 6.5.0 should not be more than 8.
 '''
 
 from math import ceil
-
-from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading, CbServer
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_exceptions import SDKException
 from upgrade.upgrade_base import UpgradeBase
-from cbas_utils.cbas_utils_v2 import CbasUtil
+from cbas_utils.cbas_utils import CbasUtil, CBASRebalanceUtil
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 
@@ -25,50 +23,112 @@ class UpgradeTests(UpgradeBase):
 
     def setUp(self):
         super(UpgradeTests, self).setUp()
-        cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-            cluster=self.cluster,
-            service_type=CbServer.Services.CBAS,
-            get_all_nodes=True,
-            servers=self.cluster.nodes_in_cluster)
-        self.cbas_util = CbasUtil(
-            self.cluster.master, cluster_cbas_nodes[0], self.task)
+        self.cbas_util = CbasUtil(self.task)
         self.cbas_spec_name = self.input.param("cbas_spec", "local_datasets")
+        self.rebalance_util = CBASRebalanceUtil(
+            self.cluster_util, self.bucket_util, self.task,
+            vbucket_check=True, cbas_util=self.cbas_util)
+
+        cbas_cc_node_ip = None
+        retry = 0
+        self.cluster.cbas_nodes = \
+            self.cluster_util.get_nodes_from_services_map(
+                self.cluster, service_type="cbas", get_all_nodes=True,
+                servers=self.cluster.nodes_in_cluster)
+        while True and retry < 60:
+            cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
+                self.cluster.cbas_nodes[0])
+            if cbas_cc_node_ip:
+                break
+            else:
+                self.sleep(10, "Waiting for CBAS service to come up")
+                retry += 1
+
+        if not cbas_cc_node_ip:
+            self.fail("CBAS service did not come up even after 10 "
+                      "mins.")
+
+        for server in self.cluster.cbas_nodes:
+            if server.ip == cbas_cc_node_ip:
+                self.cluster.cbas_cc_node = server
+                break
+
         self.pre_upgrade_setup()
+        self.log_setup_status(self.__class__.__name__, "Finished",
+                              stage=self.setUp.__name__)
 
     def tearDown(self):
+        self.log_setup_status(self.__class__.__name__, "Started",
+                              stage=self.tearDown.__name__)
         super(UpgradeTests, self).tearDown()
+        self.log_setup_status(self.__class__.__name__, "Finished",
+                              stage=self.tearDown.__name__)
 
     def pre_upgrade_setup(self):
-        update_spec = {
-            "dataverse": {
-                "no_of_dataverses": 2,
-                "no_of_datasets_per_dataverse": 4,
-                "no_of_synonyms": 0,
-                "no_of_indexes": 3,
+        """
+        Number of datasets is fixed here, as pre 6.6 default max number of
+        datasets that can be created was 8.
+        """
+        major_version = float(self.initial_version[:3])
+        if major_version >= 7.0:
+            update_spec = {
+                "no_of_dataverses": self.input.param('pre_update_no_of_dv', 2),
+                "no_of_datasets_per_dataverse": self.input.param('pre_update_ds_per_dv', 4),
+                "no_of_synonyms": self.input.param('pre_update_no_of_synonym', 0),
+                "no_of_indexes": self.input.param('pre_update_no_of_index', 3),
                 "max_thread_count": self.input.param('no_of_threads', 10),
-                "cardinality": 1,
-                "creation_method": "dataverse"
-            },
-            "dataset": {
-                "creation_methods": ["cbas_dataset"],
-                "bucket_cardinality": 1
-            },
-            "index": {
-                "creation_method": "index"
             }
-        }
+        else:
+            update_spec = {
+                "no_of_dataverses": self.input.param('pre_update_no_of_dv', 2),
+                "no_of_datasets_per_dataverse": self.input.param('pre_update_ds_per_dv', 4),
+                "no_of_synonyms": 0,
+                "no_of_indexes": self.input.param('pre_update_no_of_index', 3),
+                "max_thread_count": self.input.param('no_of_threads', 10),
+                "dataverse": {
+                    "cardinality": 1,
+                    "creation_method": "dataverse"
+                },
+                "dataset": {
+                    "creation_methods": ["cbas_dataset"],
+                    "bucket_cardinality": 1
+                },
+                "index": {
+                    "creation_method": "index"
+                }
+            }
+            if update_spec["no_of_dataverses"] * update_spec[
+                "no_of_datasets_per_dataverse"] > 8:
+                self.fail("Total number of datasets across all dataverses "
+                          "cannot be more than 8 for pre 7.0 builds")
         if not self.cbas_setup(update_spec):
             self.fail("Pre Upgrade CBAS setup failed")
+
+        if major_version >= 7.1:
+            self.replica_num = self.input.param('replica_num', 0)
+            set_result = self.cbas_util.set_replica_number_from_settings(
+                self.cluster.master, replica_num=self.replica_num)
+            if set_result != self.replica_num:
+                self.fail("Error while setting replica for CBAS")
+
+            self.log.info(
+                "Rebalancing for CBAS replica setting change to take "
+                "effect.")
+            rebalance_task, _ = self.rebalance_util.rebalance(
+                self.cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
+                cbas_nodes_out=0, available_servers=[], exclude_nodes=[])
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.cluster):
+                self.fail("Rebalance failed")
 
     def cbas_setup(self, update_spec, connect_local_link=True):
         if self.cbas_spec_name:
             self.cbas_spec = self.cbas_util.get_cbas_spec(
                 self.cbas_spec_name)
-            for spec_name in update_spec:
-                self.cbas_util.update_cbas_spec(
-                    self.cbas_spec, update_spec[spec_name], spec_name)
+            self.cbas_util.update_cbas_spec(self.cbas_spec, update_spec)
             cbas_infra_result = self.cbas_util.create_cbas_infra_from_spec(
-                self.cbas_spec, self.bucket_util, wait_for_ingestion=False)
+                self.cluster, self.cbas_spec, self.bucket_util,
+                wait_for_ingestion=False)
             if not cbas_infra_result[0]:
                 self.log.error(
                     "Error while creating infra from CBAS spec -- {0}".format(
@@ -77,72 +137,88 @@ class UpgradeTests(UpgradeBase):
 
         if connect_local_link:
             for dataverse in self.cbas_util.dataverses:
-                if not self.cbas_util.connect_link(".".join([dataverse,"Local"])):
+                if not self.cbas_util.connect_link(
+                        self.cluster, ".".join([dataverse, "Local"])):
                     self.log.error(
                         "Failed to connect Local link for dataverse - {0}".format(
                             dataverse))
                     return False
         if not self.cbas_util.wait_for_ingestion_all_datasets(
-                self.bucket_util):
+                self.cluster, self.bucket_util):
             self.log.error("Data ingestion did not happen in the datasets")
             return False
         return True
 
     def post_upgrade_validation(self):
+        major_version = float(self.upgrade_version[:3])
         # rebalance once again to activate CBAS service
         self.sleep(180, "Sleep before rebalancing to activate CBAS service")
-        rest = RestConnection(self.cluster.master)
-        otp_nodes = [node.id for node in rest.node_statuses()]
-        rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
-        rebalance_passed = rest.monitorRebalance()
-        if not rebalance_passed:
-            self.log_failure("Rebalance operation Failed")
+        rebalance_task, _ = self.rebalance_util.rebalance(
+            self.cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
+            cbas_nodes_out=0, available_servers=[], exclude_nodes=[])
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, self.cluster):
+            self.log_failure("Rebalance failed")
             return False
+
+        rest = RestConnection(self.cluster.master)
         # Update RAM quota allocated to buckets created before upgrade
         cluster_info = rest.get_nodes_self()
         kv_quota = \
             cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
         bucket_size = kv_quota // (self.input.param("num_buckets", 1) + 1)
         for bucket in self.cluster.buckets:
-            self.bucket_util.update_bucket_property(self.cluster.master,
-                                                    bucket, bucket_size)
+            self.bucket_util.update_bucket_property(
+                self.cluster.master, bucket, bucket_size)
 
         validation_results = {}
-        cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-            service_type="cbas", get_all_nodes=True,
-            servers=self.cluster.nodes_in_cluster,
-            master=self.cluster.master)
-        pre_upgrade_cbas_entities = self.cbas_util.dataverses
-        self.cbas_util = CbasUtil(
-            self.cluster.master, cluster_cbas_nodes[0], self.task)
-        self.cbas_util.dataverses = pre_upgrade_cbas_entities
-
         self.log.info("Validating pre upgrade cbas infra")
         results = list()
         for dataverse in self.cbas_util.dataverses:
             results.append(
-                self.cbas_util.validate_dataverse_in_metadata(dataverse))
+                self.cbas_util.validate_dataverse_in_metadata(
+                    self.cluster, dataverse))
         for dataset in self.cbas_util.list_all_dataset_objs(
                 dataset_source="internal"):
             results.append(
                 self.cbas_util.validate_dataset_in_metadata(
-                    dataset_name=dataset.name,
+                    self.cluster, dataset_name=dataset.name,
                     dataverse_name=dataset.dataverse_name))
             results.append(
                 self.cbas_util.validate_cbas_dataset_items_count(
-                    dataset_name=dataset.full_name,
+                    self.cluster, dataset_name=dataset.full_name,
                     expected_count=dataset.num_of_items))
         for index in self.cbas_util.list_all_index_objs():
             result, _ = self.cbas_util.verify_index_created(
-                    index_name=index.name, dataset_name=index.dataset_name,
-                    indexed_fields=index.indexed_fields)
+                self.cluster, index_name=index.name,
+                dataset_name=index.dataset_name,
+                indexed_fields=index.indexed_fields)
             results.append(result)
             results.append(
                 self.cbas_util.verify_index_used(
+                    self.cluster,
                     statement="SELECT VALUE v FROM {0} v WHERE age > 2".format(
                         index.full_dataset_name),
                     index_used=True, index_name=None))
         validation_results["pre_upgrade"] = all(results)
+
+        if major_version >= 7.1:
+            self.log.info("Enabling replica for analytics")
+            self.replica_num = self.input.param('replica_num', 0)
+            set_result = self.cbas_util.set_replica_number_from_settings(
+                self.cluster.master, replica_num=self.replica_num)
+            if set_result != self.replica_num:
+                self.fail("Error while setting replica for CBAS")
+
+            self.log.info(
+                "Rebalancing for CBAS replica setting change to take "
+                "effect.")
+            rebalance_task, _ = self.rebalance_util.rebalance(
+                self.cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
+                cbas_nodes_out=0, available_servers=[], exclude_nodes=[])
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.cluster):
+                self.fail("Rebalance failed")
 
         self.log.info("Loading docs in default collection of existing buckets")
         for bucket in self.cluster.buckets:
@@ -167,8 +243,8 @@ class UpgradeTests(UpgradeBase):
                 CbServer.default_collection].num_items = self.num_items * 2
 
             # Verify doc load count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                         self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
             self.sleep(30, "Wait for num_items to get reflected")
             current_items = self.bucket_util.get_bucket_current_item_count(
                 self.cluster, bucket)
@@ -180,7 +256,8 @@ class UpgradeTests(UpgradeBase):
                     % (current_items, self.num_items*2))
                 validation_results["post_upgrade_data_load"] = False
         self.bucket_util.print_bucket_stats(self.cluster)
-        if not self.cbas_util.wait_for_ingestion_all_datasets(self.bucket_util):
+        if not self.cbas_util.wait_for_ingestion_all_datasets(
+                self.cluster, self.bucket_util):
             validation_results["post_upgrade_data_load"] = False
             self.log.error("Data ingestion did not happen in the datasets")
         else:
@@ -202,8 +279,8 @@ class UpgradeTests(UpgradeBase):
             self.task_manager.get_task_result(async_load_task)
 
             # Verify doc load count
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                         self.cluster.buckets)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
             while True:
                 current_items = self.bucket_util.get_bucket_current_item_count(
                     self.cluster, bucket)
@@ -212,30 +289,34 @@ class UpgradeTests(UpgradeBase):
                 else:
                     self.sleep(30, "Wait for num_items to get reflected")
 
-        bucket.scopes[CbServer.default_scope].collections[
-                CbServer.default_collection].num_items = self.num_items
+            bucket.scopes[CbServer.default_scope].collections[
+                    CbServer.default_collection].num_items = 0
 
-        self.log.info("Creating scopes and collections in existing bucket")
-        scope_spec={"name":self.cbas_util.generate_name()}
-        self.bucket_util.create_scope_object(bucket, scope_spec)
-        collection_spec={"name":self.cbas_util.generate_name(),
-                         "num_items":self.num_items}
-        self.bucket_util.create_collection_object(
-            bucket, scope_spec["name"], collection_spec)
-        bucket_helper = BucketHelper(self.cluster.master)
+        if major_version >= 7.0:
+            self.log.info("Creating scopes and collections in existing bucket")
+            scope_spec = {"name": self.cbas_util.generate_name()}
+            self.bucket_util.create_scope_object(
+                self.cluster.buckets[0], scope_spec)
+            collection_spec = {"name": self.cbas_util.generate_name(),
+                               "num_items": self.num_items}
+            self.bucket_util.create_collection_object(
+                self.cluster.buckets[0], scope_spec["name"], collection_spec)
 
-        status, content = bucket_helper.create_scope(self.bucket.name, scope_spec["name"])
-        if status is False:
-            self.fail(
-                "Create scope failed for %s:%s, Reason - %s" % (
-                    self.bucket.name, scope_spec["name"], content))
-        self.bucket.stats.increment_manifest_uid()
-        status, content = bucket_helper.create_collection(
-            self.bucket.name, scope_spec["name"], collection_spec)
-        if status is False:
-            self.fail("Create collection failed for %s:%s:%s, Reason - %s"
-                      % (self.bucket.name, scope_spec["name"], collection_spec["name"], content))
-        self.bucket.stats.increment_manifest_uid()
+            bucket_helper = BucketHelper(self.cluster.master)
+            status, content = bucket_helper.create_scope(
+                self.cluster.buckets[0].name, scope_spec["name"])
+            if status is False:
+                self.fail(
+                    "Create scope failed for %s:%s, Reason - %s" % (
+                        self.cluster.buckets[0].name, scope_spec["name"], content))
+            self.bucket.stats.increment_manifest_uid()
+            status, content = bucket_helper.create_collection(
+                self.cluster.buckets[0].name, scope_spec["name"], collection_spec)
+            if status is False:
+                self.fail("Create collection failed for %s:%s:%s, Reason - %s"
+                          % (self.cluster.buckets[0].name, scope_spec["name"],
+                             collection_spec["name"], content))
+            self.bucket.stats.increment_manifest_uid()
 
         self.log.info("Creating new buckets with scopes and collections")
         for i in range(1, self.input.param("num_buckets", 1)+1):
@@ -249,32 +330,140 @@ class UpgradeTests(UpgradeBase):
                 eviction_policy=self.bucket_eviction_policy,
                 bucket_durability=self.bucket_durability_level,
                 bucket_name="bucket_{0}".format(i))
-        self.over_ride_spec_params = self.input.param(
-            "override_spec_params", "").split(";")
 
-        self.doc_spec_name = self.input.param("doc_spec", "initial_load")
-        self.load_data_into_buckets()
+        if major_version >= 7.0:
+            self.over_ride_spec_params = self.input.param(
+                "override_spec_params", "").split(";")
+
+            self.doc_spec_name = self.input.param("doc_spec", "initial_load")
+            self.load_data_into_buckets()
+        else:
+            for bucket in self.cluster.buckets[1:]:
+                gen_load = doc_generator(
+                    self.key, 0, self.num_items,
+                    randomize_doc_size=True, randomize_value=True,
+                    randomize=True)
+                async_load_task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, gen_load,
+                    DocLoading.Bucket.DocOps.CREATE,
+                    active_resident_threshold=self.active_resident_threshold,
+                    timeout_secs=self.sdk_timeout,
+                    process_concurrency=8,
+                    batch_size=500,
+                    sdk_client_pool=self.sdk_client_pool)
+                self.task_manager.get_task_result(async_load_task)
+
+                # Update num_items in case of DGM run
+                if self.active_resident_threshold != 100:
+                    self.num_items = async_load_task.doc_index
+
+                bucket.scopes[CbServer.default_scope].collections[
+                    CbServer.default_collection].num_items = self.num_items
+
+                # Verify doc load count
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster, self.cluster.buckets)
+                self.sleep(30, "Wait for num_items to get reflected")
+                current_items = self.bucket_util.get_bucket_current_item_count(
+                    self.cluster, bucket)
+                if current_items == self.num_items:
+                    validation_results["post_upgrade_KV_infra"] = True
+                else:
+                    self.log.error(
+                        "Mismatch in doc_count. Actual: %s, Expected: %s"
+                        % (current_items, self.num_items))
+                    validation_results["post_upgrade_KV_infra"] = False
 
         self.log.info("Create CBAS infra post upgrade and check for data "
                       "ingestion")
-        update_spec = {
-            "dataverse": {
+        if major_version >= 7.0:
+            update_spec = {
                 "no_of_dataverses": self.input.param('no_of_dv', 2),
-                "no_of_datasets_per_dataverse": self.input.param('ds_per_dv',
-                                                                 4),
+                "no_of_datasets_per_dataverse": self.input.param('ds_per_dv', 4),
                 "no_of_synonyms": self.input.param('no_of_synonym', 2),
                 "no_of_indexes": self.input.param('no_of_index', 3),
                 "max_thread_count": self.input.param('no_of_threads', 10),
             }
-        }
+        else:
+            update_spec = {
+                "no_of_dataverses": self.input.param('no_of_dv', 2),
+                "no_of_datasets_per_dataverse": self.input.param('ds_per_dv', 4),
+                "no_of_synonyms": 0,
+                "no_of_indexes": self.input.param('no_of_index', 3),
+                "max_thread_count": self.input.param('no_of_threads', 10),
+                "dataverse": {
+                    "cardinality": 1,
+                    "creation_method": "dataverse"
+                },
+                "dataset": {
+                    "creation_methods": ["cbas_dataset"],
+                    "bucket_cardinality": 1
+                },
+                "index": {
+                    "creation_method": "index"
+                }
+            }
+            if update_spec["no_of_dataverses"] * update_spec[
+                "no_of_datasets_per_dataverse"] > 8:
+                self.log_failure("Total number of datasets across all "
+                                 "dataverses cannot be more than 8 for pre "
+                                 "7.0 builds")
+                return False
+
         if self.cbas_setup(update_spec, False):
             validation_results["post_upgrade_cbas_infra"] = True
         else:
             validation_results["post_upgrade_cbas_infra"] = False
 
+        if major_version >= 7.1:
+            self.cluster.rest = RestConnection(self.cluster.master)
+
+            def post_replica_activation_verification():
+                self.log.info("Verifying doc count accross all datasets")
+                if not self.cbas_util.validate_docs_in_all_datasets(
+                        self.cluster, self.bucket_util, timeout=600):
+                    self.log_failure(
+                        "Docs are missing after replicas become active")
+                    validation_results["post_upgrade_replica_verification"] = \
+                        False
+
+                if update_spec["no_of_indexes"]:
+                    self.log.info("Verifying CBAS indexes are working")
+                    for idx in self.cbas_util.list_all_index_objs():
+                        statement = "Select * from {0} where age > 5 limit 10".format(
+                            idx.full_dataset_name)
+                        if not self.cbas_util.verify_index_used(
+                                self.cluster, statement, index_used=True,
+                                index_name=idx.name):
+                            self.log.info(
+                                "Index {0} on dataset {1} was not used while "
+                                "executing query".format(
+                                    idx.name, idx.full_dataset_name))
+
+            self.log.info("Marking one of the CBAS nodes as failed over.")
+            self.available_servers, kv_failover_nodes, cbas_failover_nodes =\
+                self.rebalance_util.failover(
+                    self.cluster, kv_nodes=0, cbas_nodes=1,
+                    failover_type="Hard", action=None, timeout=7200,
+                    available_servers=[], exclude_nodes=[],
+                    kv_failover_nodes=None, cbas_failover_nodes=None,
+                    all_at_once=True)
+            post_replica_activation_verification()
+
+            self.available_servers, kv_failover_nodes, cbas_failover_nodes = \
+                self.rebalance_util.perform_action_on_failed_over_nodes(
+                    self.cluster,
+                    action=self.input.param('action_on_failover', "FullRecovery"),
+                    available_servers=self.available_servers,
+                    kv_failover_nodes=kv_failover_nodes,
+                    cbas_failover_nodes=cbas_failover_nodes)
+
+            post_replica_activation_verification()
+            validation_results["post_upgrade_replica_verification"] = True
+
         self.log.info("Delete the bucket created before upgrade")
         if self.bucket_util.delete_bucket(
-                self.cluster, self.bucket, wait_for_bucket_deletion=True):
+                self.cluster, self.cluster.buckets[0], wait_for_bucket_deletion=True):
             validation_results["bucket_delete"] = True
         else:
             validation_results["bucket_delete"] = False
@@ -285,9 +474,9 @@ class UpgradeTests(UpgradeBase):
             results = []
             for dataset in self.cbas_util.list_all_dataset_objs(
                     dataset_source="internal"):
-                if dataset.kv_bucket.name == self.bucket.name:
+                if dataset.kv_bucket.name == "default":
                     if self.cbas_util.wait_for_ingestion_complete(
-                            [dataset.full_name], 0, timeout=300):
+                            self.cluster, dataset.full_name, 0, timeout=300):
                         results.append(True)
                     else:
                         results.append(False)
@@ -379,10 +568,9 @@ class UpgradeTests(UpgradeBase):
                           % node_to_upgrade.ip)
             if "cbas" in node_to_upgrade.services:
                 self.upgrade_function["failover_full_recovery"](
-                    node_to_upgrade, self.upgrade_version)
+                    node_to_upgrade, False)
             else:
-                self.upgrade_function[self.upgrade_type](
-                    node_to_upgrade, self.upgrade_version)
+                self.upgrade_function[self.upgrade_type](node_to_upgrade)
             self.cluster_util.print_cluster_stats(self.cluster)
             node_to_upgrade = self.fetch_node_to_upgrade()
         if not all(self.post_upgrade_validation().values()):
