@@ -325,7 +325,7 @@ class BucketHelper(RestConnection):
             init_params["purgeInterval"] = 3
         if bucket_params.get("fragmentationPercentage") and \
            bucket_params.get('storageBackend') == Bucket.StorageBackend.magma:
-            init_params["fragmentationPercentage"] = bucket_params.get("fragmentationPercentage")
+            init_params["magmaFragmentationPercentage"] = bucket_params.get("fragmentationPercentage")
         if init_params[Bucket.priority] == "high":
             init_params[Bucket.threadsNumber] = 8
         init_params.pop(Bucket.priority)
