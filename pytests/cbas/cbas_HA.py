@@ -12,6 +12,8 @@ from cbas_utils.cbas_utils import CBASRebalanceUtil, FlushToDiskTask
 import copy
 from rbac_utils.Rbac_ready_functions import RbacUtils
 from remote.remote_util import RemoteMachineShellConnection
+from SystemEventLogLib.analytics_events import AnalyticsEvents
+from security_config import trust_all_certs
 
 rbac_users_created = {}
 
@@ -19,12 +21,6 @@ class CBASHighAvailability(CBASBaseTest):
 
     def setUp(self):
         self.input = TestInputSingleton.input
-        if "services_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"services_init": "kv:n1ql:index-cbas-cbas-cbas"})
-        if "nodes_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"nodes_init": "4"})
         if self.input.param('setup_infra', True):
             if "bucket_spec" not in self.input.test_params:
                 self.input.test_params.update(
@@ -57,8 +53,7 @@ class CBASHighAvailability(CBASBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
 
-    def setup_for_test(self, update_spec={}, sub_spec_name=None,
-                       wait_for_ingestion=True):
+    def setup_for_test(self, update_spec={}, wait_for_ingestion=True):
         if not update_spec:
             update_spec = {
                 "no_of_dataverses": self.input.param('no_of_dv', 1),
@@ -67,15 +62,13 @@ class CBASHighAvailability(CBASBaseTest):
                 "no_of_synonyms": 0,
                 "no_of_indexes": self.input.param('no_of_idx', 1),
                 "max_thread_count": self.input.param('no_of_threads', 1),
-                "creation_methods": ["cbas_collection", "cbas_dataset"]}
-        if not sub_spec_name:
-            sub_spec_name = "dataset"
+                "dataset": {
+                    "creation_methods": ["cbas_collection", "cbas_dataset"]}}
         if self.cbas_spec_name:
             self.cbas_spec = self.cbas_util.get_cbas_spec(
                 self.cbas_spec_name)
             if update_spec:
-                self.cbas_util.update_cbas_spec(
-                    self.cbas_spec, update_spec, sub_spec_name)
+                self.cbas_util.update_cbas_spec(self.cbas_spec, update_spec)
             cbas_infra_result = self.cbas_util.create_cbas_infra_from_spec(
                 self.cluster, self.cbas_spec, self.bucket_util,
                 wait_for_ingestion=wait_for_ingestion)
@@ -290,6 +283,7 @@ class CBASHighAvailability(CBASBaseTest):
                             break
                 if "use_https" in testcase:
                     CbServer.use_https = True
+                    trust_all_certs()
                 if "cbas_down" in testcase:
                     cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
                         self.cluster, service_type="cbas", get_all_nodes=True,
@@ -487,6 +481,10 @@ class CBASHighAvailability(CBASBaseTest):
 
             self.log.info("Verification after failed over node recovery ")
             self.post_replica_activation_verification(True, False, False)
+
+        self.log.info("Adding event for Partition Topology Updated events")
+        self.system_events.add_event(AnalyticsEvents.partition_topology_updated(
+            self.cluster.cbas_cc_node.ip, self.replica_num))
 
     def test_analytics_replica_when_data_flushed_to_disk_at_regular_interval(
             self):
@@ -890,7 +888,7 @@ class CBASHighAvailability(CBASBaseTest):
                     cbas_nodes_in=0, cbas_nodes_out=1,
                     available_servers=self.available_servers, exclude_nodes=[])
                 if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                        rebalance_task, self.cluster):
+                        rebalance_task, self.cluster, True):
                     self.fail("Rebalance failed")
 
             self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
@@ -1080,7 +1078,6 @@ class CBASHighAvailability(CBASBaseTest):
                     self.cluster, actual_replica):
                 self.fail("Actual number of replicas is different from "
                           "what was set")
-            self.post_replica_activation_verification(True, False, False)
 
             self.log.info("Restarting the server and rebalancing again")
             try:
@@ -1089,13 +1086,22 @@ class CBASHighAvailability(CBASBaseTest):
                 self.fail("Error while restarting server on {0}".format(
                     selected_node))
 
+            if node_to_crash == "existing" and \
+                    self.rebalance_util.get_failover_count(self.cluster) > 0:
+                selected_otpnode = self.cluster_util.pick_nodes(
+                    self.cluster.master, target_node=selected_node)[0]
+                if not self.cluster.rest.set_recovery_type(
+                        otpNode=selected_otpnode.id, recoveryType="full"):
+                    self.fail("Failed to add back node {0}".format(
+                        selected_node.ip))
+
             rebalance_task, self.available_servers = self.rebalance_util.rebalance(
                 self.cluster, kv_nodes_in=0, kv_nodes_out=0,
                 cbas_nodes_in=0, cbas_nodes_out=0,
                 available_servers=self.available_servers, exclude_nodes=[])
 
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task, self.cluster):
+                    rebalance_task, self.cluster, True):
                 self.fail("Rebalance failed")
 
             self.log.info("Disconnecting all the Local links, so that the "
@@ -1238,7 +1244,6 @@ class CBASHighAvailability(CBASBaseTest):
                     self.cluster, actual_replica):
                 self.fail("Actual number of replicas is different from "
                           "what was set")
-            self.post_replica_activation_verification(True, False, False)
 
             server_started = True
             self.log.info("Restarting the server and rebalancing again")
@@ -1262,7 +1267,7 @@ class CBASHighAvailability(CBASBaseTest):
                 available_servers=self.available_servers, exclude_nodes=[])
 
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task, self.cluster):
+                    rebalance_task, self.cluster, True):
                 self.fail("Rebalance failed")
 
             self.log.info("Disconnecting all the Local links, so that the "
@@ -1374,7 +1379,6 @@ class CBASHighAvailability(CBASBaseTest):
                     self.cluster, actual_replica):
                 self.fail("Actual number of replicas is different from "
                           "what was set")
-            self.post_replica_activation_verification(True, False, False)
 
             self.log.info("Restarting the server and rebalancing again")
             try:
@@ -1389,7 +1393,7 @@ class CBASHighAvailability(CBASBaseTest):
                 available_servers=self.available_servers, exclude_nodes=[])
 
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task, self.cluster):
+                    rebalance_task, self.cluster, True):
                 self.fail("Rebalance failed")
 
             self.log.info("Disconnecting all the Local links, so that the "

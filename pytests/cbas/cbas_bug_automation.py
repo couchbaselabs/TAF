@@ -95,10 +95,11 @@ class CBASBugAutomation(CBASBaseTest):
             "no_of_dataverses": self.num_dataverses,
             "no_of_datasets_per_dataverse": self.ds_per_dv,
             "no_of_synonyms": 0, "no_of_indexes": 0, "max_thread_count": 1,
-            "creation_methods": ["cbas_collection", "cbas_dataset"]}
+            "dataset": {"creation_methods": ["cbas_collection",
+                                             "cbas_dataset"]}}
         if self.cbas_spec_name:
             self.cbas_spec = self.cbas_util.get_cbas_spec(self.cbas_spec_name)
-            self.cbas_util.update_cbas_spec(self.cbas_spec, update_spec, None)
+            self.cbas_util.update_cbas_spec(self.cbas_spec, update_spec)
             cbas_infra_result = self.cbas_util.create_cbas_infra_from_spec(
                 self.cluster, self.cbas_spec, self.bucket_util,
                 wait_for_ingestion=True)

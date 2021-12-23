@@ -41,8 +41,7 @@ class CBASDataverseAndScopes(CBASBaseTest):
             self.cbas_util.update_cbas_spec(
                 self.cbas_spec,
                 {"no_of_dataverses": int(self.input.param("no_of_dv", 1)),
-                 "max_thread_count": int(self.input.param("ds_per_dv", 1))},
-                "dataverse")
+                 "max_thread_count": int(self.input.param("ds_per_dv", 1))})
             if not self.cbas_util.create_dataverse_from_spec(
                 self.cluster, self.cbas_spec):
                 self.fail("Error while creating Dataverses from CBAS spec")
@@ -291,14 +290,14 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
 
-    def setup_for_test(self, update_spec={}, sub_spec_name=None):
+    def setup_for_test(self, update_spec={}):
         wait_for_ingestion = (not self.parallel_load_percent)
         if self.cbas_spec_name:
             self.cbas_spec = self.cbas_util.get_cbas_spec(
                 self.cbas_spec_name)
             if update_spec:
                 self.cbas_util.update_cbas_spec(
-                    self.cbas_spec, update_spec, sub_spec_name)
+                    self.cbas_spec, update_spec)
             cbas_infra_result = self.cbas_util.create_cbas_infra_from_spec(
                 self.cluster, self.cbas_spec, self.bucket_util,
                 wait_for_ingestion=wait_for_ingestion)
@@ -372,7 +371,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             "no_of_synonyms": 0,
             "no_of_indexes": 0,
             "max_thread_count": self.input.param('no_of_threads', 1),
-            "creation_methods": ["cbas_collection", "cbas_dataset"]}
+            "dataset": {"creation_methods": ["cbas_collection", "cbas_dataset"]}
+        }
         # start parallel data loading
         if self.parallel_load_percent:
             self.start_data_load_task(
@@ -381,7 +381,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if self.run_concurrent_query:
             self.start_query_task()
 
-        self.setup_for_test(update_spec, "dataset")
+        self.setup_for_test(update_spec)
         # wait for queries to complete
         self.stop_query_task()
         # wait for data load to complete
@@ -905,7 +905,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 percentage_per_collection=self.parallel_load_percent)
         if self.run_concurrent_query:
             self.start_query_task()
-        self.setup_for_test(update_spec, "dataset")
+        self.setup_for_test(update_spec)
         self.stop_query_task()
         self.wait_for_data_load_task()
         synonyms = self.cbas_util.list_all_synonym_objs()

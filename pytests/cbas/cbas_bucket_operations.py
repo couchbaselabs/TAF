@@ -51,7 +51,7 @@ class CBASBucketOperations(CBASBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
 
-    def setup_cbas_for_test(self, update_spec={}, sub_spec_name="dataset"):
+    def setup_cbas_for_test(self, update_spec={}):
         if not update_spec:
             update_spec = {
                 "no_of_dataverses": self.input.param('no_of_dv', 1),
@@ -59,13 +59,13 @@ class CBASBucketOperations(CBASBaseTest):
                 "no_of_synonyms": 0,
                 "no_of_indexes": self.input.param('no_of_idx', 1),
                 "max_thread_count": self.input.param('no_of_threads', 1),
-                "creation_methods": ["cbas_collection", "cbas_dataset"]}
+                "dataset": {"creation_methods": ["cbas_collection", "cbas_dataset"]}}
         if self.cbas_spec_name:
             self.cbas_spec = self.cbas_util.get_cbas_spec(
                 self.cbas_spec_name)
             if update_spec:
                 self.cbas_util.update_cbas_spec(
-                    self.cbas_spec, update_spec, sub_spec_name)
+                    self.cbas_spec, update_spec)
             cbas_infra_result = self.cbas_util.create_cbas_infra_from_spec(
                 self.cluster, self.cbas_spec, self.bucket_util,
                 wait_for_ingestion=True)
