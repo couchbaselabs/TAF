@@ -17,12 +17,6 @@ class CBASSystemEventLogs(CBASBaseTest):
 
     def setUp(self):
         self.input = TestInputSingleton.input
-        if "services_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"services_init": "kv:n1ql:index-cbas"})
-        if "nodes_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"nodes_init": "2"})
         if self.input.param('setup_infra', True):
             if "bucket_spec" not in self.input.test_params:
                 self.input.test_params.update(
@@ -135,7 +129,8 @@ class CBASSystemEventLogs(CBASBaseTest):
             self.fail(str(err))
 
     def test_analytics_scope_events(self):
-        dataverse_name = self.cbas_util.generate_name(name_cardinality=2)
+        dataverse_name = CBASHelper.format_name(
+            self.cbas_util.generate_name(name_cardinality=2))
         if not self.cbas_util.create_dataverse(
                 self.cluster, dataverse_name,
                 analytics_scope=random.choice(["True", "False"])):
@@ -208,7 +203,8 @@ class CBASSystemEventLogs(CBASBaseTest):
                 dataverse_name=dataset_obj.dataverse_name,
                 analytics_collection=random.choice(["True", "False"])):
             self.fail("Error while creating analytics collection")
-        index_name = self.cbas_util.generate_name(name_cardinality=1)
+        index_name = CBASHelper.format_name(
+            self.cbas_util.generate_name(name_cardinality=1))
         if not self.cbas_util.create_cbas_index(
                 self.cluster, index_name, ["age:bigint"], dataset_obj.full_name,
                 analytics_index=random.choice(["True", "False"])):
@@ -245,7 +241,8 @@ class CBASSystemEventLogs(CBASBaseTest):
                 analytics_collection=random.choice(["True", "False"])):
             self.fail("Error while creating analytics collection")
 
-        syn_name_1 = self.cbas_util.generate_name(name_cardinality=1)
+        syn_name_1 = CBASHelper.format_name(
+            self.cbas_util.generate_name(name_cardinality=1))
         if not self.cbas_util.create_analytics_synonym(
             self.cluster, CBASHelper.format_name(
                     dataset_obj.dataverse_name, syn_name_1), dataset_obj.full_name):
@@ -259,7 +256,8 @@ class CBASSystemEventLogs(CBASBaseTest):
             CBASHelper.metadata_format(dataset_obj.dataverse_name),
             CBASHelper.metadata_format(dataset_obj.name)))
 
-        syn_name_2 = self.cbas_util.generate_name(name_cardinality=1)
+        syn_name_2 = CBASHelper.format_name(
+            self.cbas_util.generate_name(name_cardinality=1))
         self.log.info("Creating dangling Synonym")
         if not self.cbas_util.create_analytics_synonym(
             self.cluster, CBASHelper.format_name(
@@ -285,3 +283,61 @@ class CBASSystemEventLogs(CBASBaseTest):
                 self.cluster.cbas_cc_node.ip,
                 CBASHelper.metadata_format(dataset_obj.dataverse_name),
                 CBASHelper.metadata_format(syn_name)))
+
+    def test_analytics_collection_attach_dettach_events(self):
+        dataset_obj = self.cbas_util.create_dataset_obj(
+            self.cluster, self.bucket_util, dataset_cardinality=3,
+            bucket_cardinality=3, enabled_from_KV=False,
+            no_of_objs=1, exclude_collection=["_default"])[0]
+        if not self.cbas_util.create_dataset(
+                self.cluster, dataset_obj.name,
+                dataset_obj.full_kv_entity_name,
+                dataverse_name=dataset_obj.dataverse_name,
+                analytics_collection=random.choice(["True", "False"])):
+            self.fail("Error while creating analytics collection")
+
+        self.log.info("Dropping collection {0}".format(
+            dataset_obj.full_kv_entity_name))
+        self.bucket_util.drop_collection(
+            self.cluster.master, dataset_obj.kv_bucket,
+            scope_name=dataset_obj.kv_scope.name,
+            collection_name=dataset_obj.kv_collection.name, session=None)
+        if not self.cbas_util.wait_for_ingestion_complete(
+            self.cluster, dataset_obj.full_name, 0, timeout=300):
+            self.fail("Data is present in the dataset when it should not")
+        self.bucket_util.create_collection(
+            self.cluster.master, dataset_obj.kv_bucket,
+            scope_name=dataset_obj.kv_scope.name,
+            collection_spec=dataset_obj.kv_collection.get_dict_object(),
+            session=None)
+
+        self.log.info("Adding event for collection_detach events")
+        self.system_events.add_event(AnalyticsEvents.collection_detached(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format(dataset_obj.dataverse_name),
+            CBASHelper.metadata_format(dataset_obj.name)))
+        self.log.info("Adding event for collection_attach events")
+        self.system_events.add_event(AnalyticsEvents.collection_attached(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format(dataset_obj.dataverse_name),
+            CBASHelper.metadata_format(dataset_obj.name)))
+
+    def test_analytics_settings_change_events(self):
+        status, content, response = \
+            self.cbas_util.fetch_service_parameter_configuration_on_cbas(
+                self.cluster)
+        if not status:
+            self.fail("Error while fetching the analytics service config")
+
+        old_value = content["jobHistorySize"]
+        new_value = 10
+
+        status, content, response = \
+            self.cbas_util.update_service_parameter_configuration_on_cbas(
+                self.cluster, config_map={"jobHistorySize": 10})
+        if not status:
+            self.fail("Error while setting the analytics service config")
+
+        self.log.info("Adding event for settings_change events")
+        self.system_events.add_event(AnalyticsEvents.setting_changed(
+            self.cluster.cbas_cc_node.ip, "jobHistorySize", old_value, new_value))

@@ -167,8 +167,18 @@ class AnalyticsEvents(object):
         }
 
     @staticmethod
-    def collection_attached():
-        pass
+    def collection_attached(node, scope_name, collection_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.CollectionAttached,
+            Event.Fields.DESCRIPTION: "Analytics Collection Attached",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "collection_name": collection_name
+            }
+        }
 
     @staticmethod
     def collection_rollback():
@@ -337,8 +347,20 @@ class AnalyticsEvents(object):
         }
 
     @staticmethod
-    def setting_changed():
-        pass
+    def setting_changed(node, option_name, old_value, new_value):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.SettingChanged,
+            Event.Fields.DESCRIPTION: "Analytics Settings Changed",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope": "service",
+                "option_name": option_name,
+                "old_value": old_value,
+                "new_value": new_value
+            }
+        }
 
     @staticmethod
     def user_defined_library_created():
@@ -353,12 +375,34 @@ class AnalyticsEvents(object):
         pass
 
     @staticmethod
-    def user_defined_function_created():
-        pass
+    def user_defined_function_created(node, scope_name, udf_name, arity):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.UserDefinedFunctionCreated,
+            Event.Fields.DESCRIPTION: "Analytics User-Defined Function Created",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "udf_name": udf_name,
+                "arity": arity
+            }
+        }
 
     @staticmethod
-    def user_defined_function_replaced():
-        pass
+    def user_defined_function_replaced(node, scope_name, udf_name, arity):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.UserDefinedFunctionReplaced,
+            Event.Fields.DESCRIPTION: "Analytics User-Defined Function Replaced",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "udf_name": udf_name,
+                "arity": arity
+            }
+        }
 
     @staticmethod
     def user_defined_function_dropped(node, scope_name, udf_name, arity):
@@ -443,17 +487,51 @@ class AnalyticsEvents(object):
         }
 
     @staticmethod
-    def bucket_connected():
-        pass
+    def bucket_connected(node, scope_name, link_name, bucket_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.BucketConnected,
+            Event.Fields.DESCRIPTION: "Analytics Bucket Connected",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name, "link_name": link_name,
+                "bucket_name": bucket_name}
+        }
 
     @staticmethod
-    def bucket_connect_failed():
-        pass
+    def bucket_connect_failed(node, scope_name, link_name, bucket_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.ERROR,
+            Event.Fields.EVENT_ID: Analytics.BucketConnectFailed,
+            Event.Fields.DESCRIPTION: "Analytics Bucket Connect Failed",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name, "link_name": link_name,
+                "bucket_name": bucket_name}
+        }
 
     @staticmethod
-    def bucket_disconnected():
-        pass
+    def bucket_disconnected(node, scope_name, link_name, bucket_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.BucketDisconnected,
+            Event.Fields.DESCRIPTION: "Analytics Bucket Disconnected",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name, "link_name": link_name,
+                "bucket_name": bucket_name}
+        }
 
     @staticmethod
-    def partition_topology_updated():
-        pass
+    def partition_topology_updated(node, num_replicas):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.PartitionTopologyUpdated,
+            Event.Fields.DESCRIPTION: "Analytics Partitions Topology Updated",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {"num_replicas": num_replicas}
+        }

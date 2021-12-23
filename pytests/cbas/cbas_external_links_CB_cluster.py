@@ -14,6 +14,7 @@ from CbasLib.CBASOperations import CBASHelper
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from security_utils.security_utils import SecurityUtils
+from SystemEventLogLib.analytics_events import AnalyticsEvents
 
 rbac_users_created = {}
 
@@ -194,8 +195,8 @@ class CBASExternalLinks(CBASBaseTest):
         if create_links:
             for link_obj in link_objs:
                 if not self.cbas_util.create_link(
-                    self.analytics_cluster, link_obj.properties,
-                    username=username):
+                        self.analytics_cluster, link_obj.properties,
+                        username=username):
                     self.fail("link creation failed")
 
         if create_remote_kv_infra:
@@ -228,8 +229,8 @@ class CBASExternalLinks(CBASBaseTest):
         if connect_link:
             for dataset_obj in self.cbas_util.list_all_dataset_objs():
                 if not self.cbas_util.connect_link(
-                    self.analytics_cluster, dataset_obj.link_name,
-                    username=username):
+                        self.analytics_cluster, dataset_obj.link_name,
+                        username=username):
                     self.fail("Error while connecting remote link - {0}".format(
                         dataset_obj.link_name))
 
@@ -2778,4 +2779,130 @@ class CBASExternalLinks(CBASBaseTest):
         self.security_util.teardown_x509_certs(
             self.analytics_cluster.nodes_in_cluster,
             self.analytics_cluster.CACERTFILEPATH)
+
+    def test_link_system_event_logs(self):
+
+        to_cluster = self.setup_for_test(
+            to_cluster=None, encryption="none", hostname=None,
+            setup_cert=False, create_links=True, create_remote_kv_infra=True,
+            create_dataset_objs=True, for_all_kv_entities=False,
+            same_dv_for_link_and_dataset=True, create_datasets=True,
+            connect_link=True, wait_for_ingestion=False, rebalance_util=False)
+        link = self.cbas_util.list_all_link_objs()[0]
+        dataset = self.cbas_util.list_all_dataset_objs()[0]
+
+        self.log.info("Adding event for link_created events")
+        self.system_events.add_event(AnalyticsEvents.link_created(
+            self.cluster.cbas_cc_node.ip,
+            {
+                "scope_name": CBASHelper.metadata_format(link.dataverse_name),
+                "link_name": CBASHelper.metadata_format(link.name),
+                "link_type": "couchbase",
+                "encryption": link.properties["encryption"],
+                "hostname": link.properties["hostname"]
+            }))
+
+        self.log.info("Adding event for bucket_connected events")
+        self.system_events.add_event(AnalyticsEvents.bucket_connected(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format(link.dataverse_name),
+            CBASHelper.metadata_format(link.name),
+            dataset.kv_bucket.name
+        ))
+
+        self.log.info("Adding event for link_connected events")
+        self.system_events.add_event(AnalyticsEvents.link_connected(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format(link.dataverse_name),
+            CBASHelper.metadata_format(link.name)))
+
+        for server in to_cluster.servers:
+            if server.ip != link.properties["hostname"]:
+                link.properties["hostname"] = server.ip
+                break
+
+        self.log.info("Adding new_user in remote cluster")
+        to_cluster.rbac_util._create_user_and_grant_role("new_user", "admin")
+
+        link.properties["username"] = "new_user"
+        link.properties["password"] = "password"
+
+        # disconnect link before altering
+        self.log.info("Disconnecting link before altering it's properties")
+        if not self.cbas_util.disconnect_link(
+                self.analytics_cluster, link.full_name):
+            self.fail("Error while Disconnecting the link")
+
+        self.log.info("Adding event for bucket_disconnected events")
+        self.system_events.add_event(AnalyticsEvents.bucket_disconnected(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format(link.dataverse_name),
+            CBASHelper.metadata_format(link.name),
+            dataset.kv_bucket.name
+        ))
+
+        self.log.info("Adding event for link_disconnected events")
+        self.system_events.add_event(AnalyticsEvents.link_disconnected(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format(link.dataverse_name),
+            CBASHelper.metadata_format(link.name)))
+
+        # Altering link
+        self.log.info("Altering link properties")
+        response = self.cbas_util.update_external_link_properties(
+            self.analytics_cluster, link.properties,
+            username=self.analytics_username)
+        if not response:
+            self.fail("Error while altering link properties")
+
+        self.log.info("Adding event for link_altered events")
+        self.system_events.add_event(AnalyticsEvents.link_altered(
+            self.cluster.cbas_cc_node.ip,
+            {
+                "scope_name": CBASHelper.metadata_format(link.dataverse_name),
+                "link_name": CBASHelper.metadata_format(link.name),
+                "link_type": "couchbase",
+                "encryption": link.properties["encryption"],
+                "hostname": link.properties["hostname"],
+            }))
+
+        self.log.info("Connecting link after altering link properties")
+        if not self.cbas_util.connect_link(self.analytics_cluster,
+                                           link.full_name):
+            self.fail("Error while connecting link after altering link "
+                      "properties")
+
+        self.log.info("Disconnecting link before changing remote user "
+                      "password")
+        if not self.cbas_util.disconnect_link(
+                self.analytics_cluster, link.full_name):
+            self.fail("Error while Disconnecting the link")
+
+        self.log.info("Changing password for the new_user")
+        to_cluster.rbac_util._create_user_and_grant_role(
+            "new_user", "admin", password="passw0rd")
+
+        self.log.info("Connecting link after changing remote user password")
+        if self.cbas_util.connect_link(self.analytics_cluster, link.full_name):
+            self.fail("Link connected successfully after changing remote user "
+                      "password")
+
+        self.log.info("Adding event for bucket_connect_failed events")
+        self.system_events.add_event(AnalyticsEvents.bucket_connect_failed(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format(link.dataverse_name),
+            CBASHelper.metadata_format(link.name),
+            dataset.kv_bucket.name
+        ))
+
+        self.log.info("Dropping Link")
+        if not self.cbas_util.drop_link(self.cluster, link.full_name):
+            self.fail("Error Wwhile dropping Link")
+
+        self.log.info("Adding event for link_dropped events")
+        self.system_events.add_event(AnalyticsEvents.link_dropped(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format(link.dataverse_name),
+            CBASHelper.metadata_format(link.name)))
+
 

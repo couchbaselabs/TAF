@@ -10,6 +10,7 @@ from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import Dataverse, Synonym, CBAS_Index, CBAS_UDF
 from cbas.cbas_base import CBASBaseTest
 from TestInput import TestInputSingleton
+from SystemEventLogLib.analytics_events import AnalyticsEvents
 
 
 class CBASUDF(CBASBaseTest):
@@ -56,14 +57,13 @@ class CBASUDF(CBASBaseTest):
             "no_of_synonyms": self.input.param('no_of_synonym', 10),
             "no_of_indexes": self.input.param('no_of_index', 5),
             "max_thread_count": self.input.param('no_of_threads', 10),
-            "cardinality": self.input.param('cardinality', 0)
+            "dataverse": {"cardinality": self.input.param('cardinality', 0)}
         }
 
         if self.cbas_spec_name:
             self.cbas_spec = self.cbas_util.get_cbas_spec(self.cbas_spec_name)
             if update_spec:
-                self.cbas_util.update_cbas_spec(
-                    self.cbas_spec, update_spec, "dataverse")
+                self.cbas_util.update_cbas_spec(self.cbas_spec, update_spec)
             cbas_infra_result = \
                 self.cbas_util.create_cbas_infra_from_spec(
                     self.cluster, self.cbas_spec, self.bucket_util,
@@ -159,14 +159,17 @@ class CBASUDF(CBASBaseTest):
         elif body_type == "udf":
             dataverse, entity = get_dependent_entity_in_a_dv(dataverse)
             dependent_entity.append(entity)
+            if entity.arity >= 0:
+                body_udf_parameter = ",".join(dependent_entity[0].parameters)
+            else:
+                body_udf_parameter = ",".join(
+                    [str(i) for i in range(1, 5)])
             if use_full_name:
                 body += body_template[body_type].format(
-                    dependent_entity[0].full_name,
-                    ",".join(dependent_entity[0].parameters))
+                    dependent_entity[0].full_name, body_udf_parameter)
             else:
                 body += body_template[body_type].format(
-                    dependent_entity[0].name,
-                    ",".join(dependent_entity[0].parameters))
+                    dependent_entity[0].name, body_udf_parameter)
             parameters = dependent_entity[0].parameters
 
         obj = CBAS_UDF(
@@ -537,3 +540,93 @@ class CBASUDF(CBASBaseTest):
             disconnect_local_link=True):
             self.fail("Successfully dropped dataverse being used by a UDF")
         self.log.info("Test Finished")
+
+    def test_analytics_udf_system_event_logs(self):
+        self.log.info("Test started")
+        self.setup_for_test()
+        udf_types = [(0, "expression", "diff"), (2, "expression", "diff"),
+                     (-1, "expression", "diff"), (0, "dataset", "diff"),
+                     (2, "dataset", "diff"), (-1, "dataset", "diff"),
+                     (0, "synonym", "diff"), (2, "synonym", "diff"),
+                     (-1, "synonym", "diff"), (0, "udf", "diff"),
+                     (2, "udf", "diff"), (-1, "udf", "diff")]
+        udf_objs = list()
+
+        for udf_type in udf_types:
+            udf_obj = self.create_udf_object(
+                udf_type[0], udf_type[1], udf_type[2])
+            if not self.cbas_util.create_udf(
+                    self.cluster, name=udf_obj.name,
+                    dataverse=udf_obj.dataverse_name,
+                    or_replace=False, parameters=udf_obj.parameters,
+                    body=udf_obj.body, if_not_exists=False,
+                    query_context=False,
+                    use_statement=False, validate_error_msg=False,
+                    expected_error=None,
+                    timeout=300, analytics_timeout=300):
+                self.fail("Error while creating Analytics UDF")
+            udf_objs.append(udf_obj)
+
+        self.log.info("Adding event for user_defined_function_created events")
+        for udf_obj in udf_objs:
+            self.system_events.add_event(
+                AnalyticsEvents.user_defined_function_created(
+                    self.cluster.cbas_cc_node.ip,
+                    CBASHelper.metadata_format(udf_obj.dataverse_name),
+                    udf_obj.name, udf_obj.arity))
+
+        # Create UDF to test replace
+        idx = random.choice(range(len(udf_objs)))
+        udf_type = udf_types[idx]
+        test_udf_obj = self.create_udf_object(
+            udf_type[0], udf_type[1], udf_type[2])
+        test_udf_obj.name = udf_objs[idx].name
+        test_udf_obj.dataverse_name = udf_objs[idx].dataverse_name
+        test_udf_obj.parameters = udf_objs[idx].parameters
+        test_udf_obj.reset_full_name()
+
+        if not self.cbas_util.create_udf(
+                self.cluster, name=test_udf_obj.name,
+                dataverse=test_udf_obj.dataverse_name,
+                or_replace=True, parameters=test_udf_obj.parameters,
+                body=test_udf_obj.body,
+                if_not_exists=False, query_context=False, use_statement=False,
+                validate_error_msg=False, expected_error="",
+                timeout=300, analytics_timeout=300):
+            self.fail("Error while creating Analytics UDF")
+
+        self.log.info("Adding event for user_defined_function_replaced events")
+        self.system_events.add_event(
+            AnalyticsEvents.user_defined_function_replaced(
+                self.cluster.cbas_cc_node.ip,
+                CBASHelper.metadata_format(test_udf_obj.dataverse_name),
+                test_udf_obj.name, test_udf_obj.arity))
+
+        self.log.info("Adding event for user_defined_function_dropped events")
+        udf_deleted_successfully = list()
+        i = 0
+        while udf_objs:
+            if (i < len(udf_objs)) and (i not in udf_deleted_successfully):
+                udf_obj = udf_objs[i]
+                if self.cbas_util.drop_udf(
+                        self.cluster, name=udf_obj.name,
+                        dataverse=udf_obj.dataverse_name,
+                        parameters=udf_obj.parameters, if_exists=False,
+                        use_statement=False, query_context=False,
+                        validate_error_msg=False, expected_error=None,
+                        timeout=300, analytics_timeout=300):
+                    udf_deleted_successfully.append(i)
+                    self.system_events.add_event(
+                        AnalyticsEvents.user_defined_function_dropped(
+                            self.cluster.cbas_cc_node.ip,
+                            CBASHelper.metadata_format(udf_obj.dataverse_name),
+                            udf_obj.name, udf_obj.arity))
+                i += 1
+            elif i >= len(udf_objs):
+                i = 0
+            elif i in udf_deleted_successfully:
+                i += 1
+            elif len(udf_deleted_successfully) == len(udf_objs):
+                break
+        self.log.info("Test Finished")
+
