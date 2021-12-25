@@ -14,12 +14,6 @@ class CBASBugAutomation(CBASBaseTest):
     def setUp(self):
 
         self.input = TestInputSingleton.input
-        if "services_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"services_init": "kv:n1ql:index-cbas-cbas-kv"})
-        if "nodes_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"nodes_init": "4"})
         if "bucket_spec" not in self.input.test_params:
             self.input.test_params.update(
                 {"bucket_spec": "analytics.default"})

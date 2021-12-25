@@ -24,12 +24,6 @@ from TestInput import TestInputSingleton
 class CBASDataverseAndScopes(CBASBaseTest):
 
     def setUp(self):
-        self.input = TestInputSingleton.input
-        self.input.test_params.update(
-            {"services_init": "kv:n1ql:index-cbas-cbas-kv"})
-        self.input.test_params.update(
-            {"nodes_init": "4"})
-
         super(CBASDataverseAndScopes, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
@@ -258,12 +252,6 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
     def setUp(self):
         self.input = TestInputSingleton.input
-        if "services_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"services_init": "kv:n1ql:index-cbas-cbas-kv"})
-        if "nodes_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"nodes_init": "4"})
         self.iterations = int(self.input.param("iterations", 1))
         if self.input.param('setup_infra', True):
             if "bucket_spec" not in self.input.test_params:
@@ -1532,9 +1520,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.cbas_util.generate_name(), synonym.name, synonym.dataverse_name,
             indexed_fields=self.input.param('index_fields', None))
         expected_error = "Cannot find analytics collection with name {0} in analytics scope {" \
-                         "1}".format(
-            CBASHelper.unformat_name(synonym.name),
-            CBASHelper.format_name(synonym.dataverse_name))
+                         "1}".format(synonym.name, synonym.dataverse_name)
         if not self.cbas_util.create_cbas_index(
             self.cluster, index.name, index.indexed_fields, index.full_dataset_name,
                 analytics_index=self.input.param('analytics_index', False),
@@ -1664,18 +1650,20 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         for dataset in dataset_objs:
             if dataset.full_kv_entity_name != collection_to_delete:
                 if not self.cbas_util.validate_cbas_dataset_items_count(
-                    self.cluster, dataset.full_name, dataset.num_of_items):
-                    self.fail(
-                        "KV collection deletion affected data in datasets that were not creation on the deleted KV collection")
+                        self.cluster, dataset.full_name, dataset.num_of_items):
+                    self.fail("KV collection deletion affected data in "
+                              "datasets that were not creation on the "
+                              "deleted KV collection")
                 if not self.cbas_util.verify_index_used(
                     self.cluster, statement.format(dataset.full_name), True,
                     dataset.indexes.keys()[0]):
                     self.fail("Index was not used while querying the dataset")
             else:
                 if not self.cbas_util.validate_cbas_dataset_items_count(
-                    self.cluster, dataset.full_name, 0):
-                    self.fail(
-                        "Data is still present in the dataset even after the KV collection on which it was created was deleted.")
+                        self.cluster, dataset.full_name, 0):
+                    self.fail("Data is still present in the dataset even "
+                              "after the KV collection on which it was "
+                              "created was deleted.")
         self.log.info("Test finished")
 
     def test_analytics_select_rbac_role_for_collections(self):

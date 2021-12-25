@@ -46,4 +46,4 @@ class CBASHelper(CbasLib):
 
     @staticmethod
     def metadata_format(name):
-        return "/".join([_.replace("`","") for _ in name.split(".")])
+        return "/".join([_.replace("`", "") for _ in name.split(".")])

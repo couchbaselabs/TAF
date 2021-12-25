@@ -181,7 +181,8 @@ class BaseUtil(object):
         :param expected_error_code str, error code to match
         """
         if status != "success":
-            actual_error = errors[0]["msg"]
+            actual_error = errors[0]["msg"].replace("`", "")
+            expected_error = expected_error.replace("`", "")
             if expected_error not in actual_error:
                 self.log.debug("Error message mismatch. Expected: %s, got: %s"
                                % (expected_error, actual_error))
@@ -224,20 +225,27 @@ class BaseUtil(object):
             random.seed(seed)
         if 0 < name_cardinality < 3:
             if name_key:
-                return ".".join(name_key for i in range(name_cardinality))
+                generated_name = ".".join(name_key for i in range(
+                    name_cardinality))
             else:
                 max_name_len = max_length / name_cardinality
                 if fixed_length:
-                    return '.'.join(''.join(random.choice(
+                    generated_name = '.'.join(''.join(random.choice(
                         string.ascii_letters + string.digits)
                                             for _ in range(max_name_len))
                                     for _ in range(name_cardinality))
                 else:
-                    return '.'.join(''.join(random.choice(
+                    generated_name = '.'.join(''.join(random.choice(
                         string.ascii_letters + string.digits)
                                             for _ in range(
                         random.randint(1, max_name_len)))
                                     for _ in range(name_cardinality))
+            if generated_name.lower() in ["at", "in", "for", "by", "which",
+                                          "select", "from", "like"]:
+                return BaseUtil.generate_name(
+                    name_cardinality, max_length, fixed_length, name_key, seed)
+            else:
+                return generated_name
         else:
             return None
 
