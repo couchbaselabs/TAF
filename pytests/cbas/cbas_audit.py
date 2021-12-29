@@ -20,12 +20,6 @@ class CBASAuditLogs(CBASBaseTest):
 
     def setUp(self):
         self.input = TestInputSingleton.input
-        if "services_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"services_init": "kv:n1ql:index-cbas-cbas-kv"})
-        if "nodes_init" not in self.input.test_params:
-            self.input.test_params.update(
-                {"nodes_init": "4"})
 
         if self.input.param('setup_infra', False):
             if "bucket_spec" not in self.input.test_params:
@@ -72,7 +66,7 @@ class CBASAuditLogs(CBASBaseTest):
         self.assertTrue(status, msg="Response status incorrect for GET request")
 
         self.log.info("Create server configuration expected dictionary")
-        CBASAuditLogs.actual_service_parameter_dict = json.loads(content)
+        CBASAuditLogs.actual_service_parameter_dict = content
         for key in CBASAuditLogs.actual_service_parameter_dict:
             CBASAuditLogs.expected_service_parameter_dict[
                 "config_before:" + key] = CBASAuditLogs.actual_service_parameter_dict[key]

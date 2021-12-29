@@ -15,17 +15,6 @@ class BackupRestoreTest(CBASBaseTest):
     def setUp(self):
         self.input = TestInputSingleton.input
 
-        self.input.test_params.update(
-            {"services_init": "kv:n1ql:index-cbas-cbas-kv"})
-        self.input.test_params.update(
-            {"nodes_init": "4"})
-
-        self.num_dataverses = int(self.input.param("no_of_dv", 1))
-        self.ds_per_dv = int(self.input.param("ds_per_dv", 1))
-        self.kv_name_cardinality = self.input.param("kv_name_cardinality", 3)
-        self.cbas_name_cardinality = self.input.param(
-            "cbas_name_cardinality", 2)
-        self.ds_per_collection = self.input.param("ds_per_collection", 1)
         if self.input.param('setup_infra', True):
             if "bucket_spec" not in self.input.test_params:
                 self.input.test_params.update(
@@ -36,6 +25,13 @@ class BackupRestoreTest(CBASBaseTest):
         super(BackupRestoreTest, self).setUp()
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.setUp.__name__)
+
+        self.num_dataverses = int(self.input.param("no_of_dv", 1))
+        self.ds_per_dv = int(self.input.param("ds_per_dv", 1))
+        self.kv_name_cardinality = self.input.param("kv_name_cardinality", 3)
+        self.cbas_name_cardinality = self.input.param(
+            "cbas_name_cardinality", 2)
+        self.ds_per_collection = self.input.param("ds_per_collection", 1)
 
         # Since all the test cases are being run on 1 cluster only
         self.cluster = self.cb_clusters.values()[0]

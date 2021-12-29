@@ -47,7 +47,7 @@ class CBASHighAvailability(CBASBaseTest):
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
-        for server in self.cluster.servers:
+        for server in self.servers:
             self.start_server(server)
         super(CBASHighAvailability, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
@@ -1205,7 +1205,7 @@ class CBASHighAvailability(CBASBaseTest):
         available_servers_before_rebalance = copy.deepcopy(self.available_servers)
         cluster_cbas_nodes = copy.deepcopy(self.cluster.cbas_nodes)
 
-        self.log.info("Rebalancing IN a CBAS node")
+        self.log.info("SWAP Rebalancing CBAS nodes")
         rebalance_task, self.available_servers = self.rebalance_util.rebalance(
             self.cluster, kv_nodes_in=0, kv_nodes_out=0,
             cbas_nodes_in=nodes_to_swap_rebalance,
@@ -1216,10 +1216,10 @@ class CBASHighAvailability(CBASBaseTest):
         if node_to_crash in ["in", "in-out"]:
             selected_nodes.append(random.choice(self.set_ops_on_nodes(
                 "-", available_servers_before_rebalance, self.available_servers)))
-        elif node_to_crash in ["out", "in-out"]:
+        if node_to_crash in ["out", "in-out"]:
             selected_nodes.append(random.choice(self.set_ops_on_nodes(
                 "-", self.available_servers, available_servers_before_rebalance)))
-        elif node_to_crash == "other":
+        if node_to_crash == "other":
             in_node = self.set_ops_on_nodes(
                 "-", available_servers_before_rebalance, self.available_servers)
             out_node = self.set_ops_on_nodes(
@@ -1284,9 +1284,9 @@ class CBASHighAvailability(CBASBaseTest):
                           "what was set")
 
             self.log.info("Marking {0} of the CBAS nodes as failed "
-                          "over".format(self.replica_num))
+                          "over".format(self.replica_num - 1))
             self.available_servers, kv_failover_nodes, cbas_failover_nodes = self.rebalance_util.failover(
-                self.cluster, kv_nodes=0, cbas_nodes=self.replica_num,
+                self.cluster, kv_nodes=0, cbas_nodes=self.replica_num - 1,
                 failover_type="Hard", action=None, timeout=7200,
                 available_servers=self.available_servers, exclude_nodes=[],
                 kv_failover_nodes=[], cbas_failover_nodes=[],

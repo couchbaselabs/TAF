@@ -30,30 +30,6 @@ class CBASBaseTest(BaseTestCase):
         if not hasattr(self, "input"):
             self.input = TestInputSingleton.input
 
-        """
-        Cluster node services. Parameter value format
-        serv1:serv2-serv1:ser2|serv1:serv2-ser1:serv2
-        | -> separates services per cluster.
-        - -> separates services on each node of the cluster.
-        : -> separates services on a node.
-        """
-        temp_service_init = [x.split("-") for x in self.input.param(
-            "services_init", "kv:n1ql:index").split("|")]
-
-        self.input.test_params.update(
-            {"services_init": temp_service_init[0][0]})
-
-        """
-        Number of nodes per cluster. Parameter value format
-        num_nodes_cluster1|num_nodes_cluster2|....
-        | -> separates number of nodes per cluster.
-        """
-        if not isinstance(self.input.param("nodes_init", 1), int):
-            temp_nodes_init = [int(x) for x in self.input.param(
-                "nodes_init", 1).split("|")]
-        else:
-            temp_nodes_init = [self.input.param("nodes_init", 1)]
-
         """ In case of multi cluster setup, if cluster address family needs to be
         set, then this parameter is required """
         if self.input.param("cluster_ip_family", ""):
@@ -72,18 +48,33 @@ class CBASBaseTest(BaseTestCase):
                 "ipv4_only": False, "ipv6_only": False})
 
         super(CBASBaseTest, self).setUp()
+
+        """
+        Cluster node services. Parameter value format
+        serv1:serv2-serv1:ser2|serv1:serv2-ser1:serv2
+        | -> separates services per cluster.
+        - -> separates services on each node of the cluster.
+        : -> separates services on a node.
+        """
+        self.services_init = [x.split("-") for x in self.input.param(
+            "services_init", "kv:n1ql:index").split("|")]
+
+        """
+        Number of nodes per cluster. Parameter value format
+        num_nodes_cluster1|num_nodes_cluster2|....
+        | -> separates number of nodes per cluster.
+        """
+        if not isinstance(self.input.param("nodes_init", 1), int):
+            self.nodes_init = [int(x) for x in self.input.param(
+                "nodes_init", 1).split("|")]
+        else:
+            self.nodes_init = [self.input.param("nodes_init", 1)]
+
         if self._testMethodDoc:
             self.log.info("Starting Test: %s - %s"
                           % (self._testMethodName, self._testMethodDoc))
         else:
             self.log.info("Starting Test: %s" % self._testMethodName)
-
-        self.log.debug("Temp Service Init after BaseTest - {0}".format(temp_service_init))
-        self.services_init = temp_service_init
-        self.log.debug("Service Init after BaseTest - {0}".format(self.services_init))
-        self.nodes_init = temp_nodes_init
-        self.log.debug(
-            "Node Init after BaseTest - {0}".format(self.nodes_init))
 
         """
         Parameterized Support for multiple cluster instead of creating
@@ -252,7 +243,7 @@ class CBASBaseTest(BaseTestCase):
                 retry = 0
                 while True and retry < 60:
                     cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
-                        cluster.cbas_nodes[0])
+                        cluster)
                     if cbas_cc_node_ip:
                         break
                     else:

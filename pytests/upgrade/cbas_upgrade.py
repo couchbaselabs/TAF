@@ -37,7 +37,7 @@ class UpgradeTests(UpgradeBase):
                 servers=self.cluster.nodes_in_cluster)
         while True and retry < 60:
             cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
-                self.cluster.cbas_nodes[0])
+                self.cluster)
             if cbas_cc_node_ip:
                 break
             else:

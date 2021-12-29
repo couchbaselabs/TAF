@@ -8,6 +8,7 @@ from cbas.cbas_base import CBASBaseTest
 from security_utils.security_utils import SecurityUtils
 from TestInput import TestInputSingleton
 from cbas_utils.cbas_utils import CBASRebalanceUtil
+from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 
 class CBASBugAutomation(CBASBaseTest):
 
@@ -43,8 +44,11 @@ class CBASBugAutomation(CBASBaseTest):
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
-        self.security_util.teardown_x509_certs(
-            self.cluster.servers, self.cluster.CACERTFILEPATH)
+        x509 = x509main(
+            host=self.cluster.master, standard=self.standard,
+            encryption_type=self.encryption_type,
+            passphrase_type=self.passphrase_type)
+        x509.teardown_certs(self.cluster.servers)
         super(CBASBugAutomation, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
@@ -56,15 +60,6 @@ class CBASBugAutomation(CBASBaseTest):
         self.load_data_into_buckets(
             self.cluster, doc_loading_spec=doc_loading_spec,
             async_load=False, validate_task=True, mutation_num=0)
-
-    def setup_certs(self, cluster):
-        """
-        Setup method for setting up root, node and client certs for all the clusters.
-        """
-        self.security_util._reset_original(cluster.nodes_in_cluster)
-        self.security_util.generate_x509_certs(cluster)
-        self.sleep(60)
-        self.security_util.upload_x509_certs(cluster=cluster, setup_once=True)
 
     def create_dataset(self):
         dataset_obj = self.cbas_util.create_dataset_obj(
@@ -109,11 +104,24 @@ class CBASBugAutomation(CBASBaseTest):
         if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
             self.fail("Analytics service Failed to recover")
 
+        self.standard = self.input.param("standard", "pkcs8")
+        self.passphrase_type = self.input.param("passphrase_type", "script")
+        self.encryption_type = self.input.param("encryption_type", "aes256")
+        x509 = x509main(
+            host=self.cluster.master, standard=self.standard,
+            encryption_type=self.encryption_type,
+            passphrase_type=self.passphrase_type)
         self.log.info("Step {0}: Setting up certificates".format(step_count))
         step_count += 1
-        self.setup_certs(self.cluster)
+        self.generate_and_upload_cert(
+            self.cluster, x509, upload_root_certs=True,
+            upload_node_certs=True, upload_client_certs=True)
 
-        self.log.info("Step (0): Loading more docs".format(step_count))
+        if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
+            self.fail("Analytics service failed to come up after enabling "
+                      "Multple CA certificate")
+
+        self.log.info("Step {0}: Loading more docs".format(step_count))
         step_count += 1
         self.load_data_into_bucket()
 
@@ -146,7 +154,7 @@ class CBASBugAutomation(CBASBaseTest):
         if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
             self.fail("Analytics service Failed to recover")
 
-        self.log.info("Step (0): Loading more docs".format(step_count))
+        self.log.info("Step {0}: Loading more docs".format(step_count))
         step_count += 1
         self.load_data_into_bucket()
 
@@ -179,14 +187,16 @@ class CBASBugAutomation(CBASBaseTest):
         if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
             self.fail("Analytics service Failed to recover")
 
-        self.log.info("Step (0): Dropping Dataset".format(step_count))
+        self.log.info("Step {0}: Dropping Dataset".format(step_count))
         step_count += 1
         dataset_to_be_dropped = random.choice(self.cbas_util.list_all_dataset_objs())
         if not self.cbas_util.drop_dataset(
                 self.cluster, dataset_to_be_dropped.full_name):
             self.fail("Error while dropping dataset")
+        del self.cbas_util.dataverses[dataset_to_be_dropped.dataverse_name].datasets[
+            dataset_to_be_dropped.name]
 
-        self.log.info("Step (0): Loading more docs".format(step_count))
+        self.log.info("Step {0}: Loading more docs".format(step_count))
         step_count += 1
         self.load_data_into_bucket()
 
@@ -207,18 +217,18 @@ class CBASBugAutomation(CBASBaseTest):
             self.fail("Data ingestion into datasets after data reloading "
                       "failed")
 
-        self.log.info("Step {0}: Disabling node-to-node encryption and client cert auth")
+        self.log.info("Step {0}: Disabling node-to-node encryption and "
+                      "client cert auth".format(step_count))
         step_count += 1
         self.security_util.disable_n2n_encryption_cli_on_nodes(self.servers)
         if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
             self.fail("Analytics service Failed to recover")
 
-        self.log.info("Step {0}: Tearing down Certs")
+        self.log.info("Step {0}: Tearing down Certs".format(step_count))
         step_count += 1
-        self.security_util.teardown_x509_certs(
-            self.servers, CA_cert_file_path=self.cluster.CACERTFILEPATH)
+        x509.teardown_certs(self.cluster.servers)
 
-        self.log.info("Step (0): Loading more docs".format(step_count))
+        self.log.info("Step {0}: Loading more docs".format(step_count))
         step_count += 1
         self.load_data_into_bucket()
 
@@ -251,7 +261,7 @@ class CBASBugAutomation(CBASBaseTest):
         if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
             self.fail("Analytics service Failed to recover")
 
-        self.log.info("Step (0): Loading more docs".format(step_count))
+        self.log.info("Step {0}: Loading more docs".format(step_count))
         step_count += 1
         self.load_data_into_bucket()
 
@@ -278,19 +288,32 @@ class CBASBugAutomation(CBASBaseTest):
 
         self.log.info("Step {0}: Setting up certificates".format(step_count))
         step_count += 1
-        self.setup_certs(self.cluster)
+        x509 = x509main(
+            host=self.cluster.master, standard=self.standard,
+            encryption_type=self.encryption_type,
+            passphrase_type=self.passphrase_type)
+        self.generate_and_upload_cert(
+            self.cluster, x509, upload_root_certs=True,
+            upload_node_certs=True, upload_client_certs=True)
 
-        self.log.info("Step (0): Loading more docs".format(step_count))
+        if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
+            self.fail("Analytics service failed to come up after enabling "
+                      "Multple CA certificate")
+
+        self.log.info("Step {0}: Loading more docs".format(step_count))
         step_count += 1
         self.load_data_into_bucket()
 
-        self.log.info("Step (0): Dropping Dataset".format(step_count))
+        self.log.info("Step {0}: Dropping Dataset".format(step_count))
         step_count += 1
         dataset_to_be_dropped = random.choice(
             self.cbas_util.list_all_dataset_objs())
         if not self.cbas_util.drop_dataset(
                 self.cluster, dataset_to_be_dropped.full_name):
             self.fail("Error while dropping dataset")
+        del self.cbas_util.dataverses[
+            dataset_to_be_dropped.dataverse_name].datasets[
+            dataset_to_be_dropped.name]
 
         if self.do_rebalance:
             self.log.info("Step {0}: Rebalancing OUT KV and CBAS nodes".format(

@@ -241,7 +241,8 @@ class BaseUtil(object):
                         random.randint(1, max_name_len)))
                                     for _ in range(name_cardinality))
             if generated_name.lower() in ["at", "in", "for", "by", "which",
-                                          "select", "from", "like"]:
+                                          "select", "from", "like", "or",
+                                          "and", "to", "if", "else"]:
                 return BaseUtil.generate_name(
                     name_cardinality, max_length, fixed_length, name_key, seed)
             else:
@@ -3857,13 +3858,14 @@ class CbasUtil(UDFUtil):
                 self.error_count += 1
                 self.log.error(str(e))
 
-    def retrieve_cc_ip_from_master(self, cbas_node, timeout=300):
+    def retrieve_cc_ip_from_master(self, cluster, timeout=300):
         end_time = time.time() + timeout
         response = None
         while time.time() < end_time:
             try:
-                response = self.fetch_analytics_cluster_response(cbas_node)
-                break
+                response = self.fetch_analytics_cluster_response(cluster)
+                if response:
+                    break
             except Exception:
                 pass
         if response:
@@ -3889,7 +3891,7 @@ class CbasUtil(UDFUtil):
         """
         Retrieves status of a request from /analytics/status endpoint
         """
-        response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
+        response = self.fetch_analytics_cluster_response(cluster)
         if response:
             cc_node_id = ""
             nodes = None
@@ -3916,14 +3918,14 @@ class CbasUtil(UDFUtil):
         else:
             return None,None,None
 
-    def fetch_analytics_cluster_response(self, cbas_node):
+    def fetch_analytics_cluster_response(self, cluster):
         """
         Retrieves response from /analytics/cluster endpoint
         """
-        url = "http://{0}:8095/analytics/cluster".format(
-            cbas_node.ip)
+        url = "http://{0}:8091/_p/cbas/analytics/cluster".format(
+            cluster.master.ip)
         response = requests.get(url, auth=(
-            cbas_node.rest_username, cbas_node.rest_password))
+            cluster.master.rest_username, cluster.master.rest_password))
         if response.status_code in [200, 201, 204]:
             return response.json()
         else:
@@ -3936,7 +3938,7 @@ class CbasUtil(UDFUtil):
         self.log.info("Waiting for analytics service to come up")
         while end_time > time.time():
             try:
-                response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
+                response = self.fetch_analytics_cluster_response(cluster)
                 if response and response["state"] == "ACTIVE":
                     return True
             except Exception:
@@ -4672,7 +4674,7 @@ class CbasUtil(UDFUtil):
         """
         Fetches number of replicas that are currently created in CBAS
         """
-        response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
+        response = self.fetch_analytics_cluster_response(cluster)
         if response:
             return response["partitionsTopology"]["numReplicas"]
         else:
@@ -4682,7 +4684,7 @@ class CbasUtil(UDFUtil):
         """
         Verifies actual number of replicas created for each partition.
         """
-        response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
+        response = self.fetch_analytics_cluster_response(cluster)
         if response:
             replica_num_matched = True
             if response["partitionsTopology"]["numReplicas"] == expected_num:
@@ -4742,7 +4744,7 @@ class CbasUtil(UDFUtil):
         nodes_info = dict()
         storage_info = dict()
 
-        response = self.fetch_analytics_cluster_response(cluster.cbas_cc_node)
+        response = self.fetch_analytics_cluster_response(cluster)
 
         if response:
             for node in response["nodes"]:
@@ -5276,12 +5278,12 @@ class CBASRebalanceUtil(object):
         return available_servers, kv_failover_nodes, cbas_failover_nodes
 
     def reset_cbas_cc_node(self, cluster):
+        sleep(10, "Waiting for cluster service map to get updated.")
         self.log.info("Reassigning cluster CBAS CC node")
         cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
             cluster, service_type="cbas", get_all_nodes=True,
             servers=cluster.nodes_in_cluster)
-        cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
-            cluster.cbas_nodes[0])
+        cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(cluster)
         for node in cluster.cbas_nodes:
             if node.ip == cbas_cc_node_ip:
                 cluster.cbas_cc_node = node
