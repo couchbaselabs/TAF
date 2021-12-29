@@ -53,8 +53,11 @@ class KvOps(UserResourceTask):
     def on_throughput_update(self, throughput):
         """ Updates document size """
         for worker in self.workers:
-            worker.reset_client()
-            worker.throughput.set(throughput / self.threads)
+            try:
+                worker.reset_client()
+                worker.throughput.set(throughput / self.threads)
+            except Exception:
+                pass
 
     on_throughput_increase = on_throughput_update
     on_throughput_decrease = on_throughput_update

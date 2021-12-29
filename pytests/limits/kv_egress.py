@@ -56,8 +56,11 @@ class KvEgress(UserResourceTask):
                                create_document_of_size(document_size))
 
         for worker in self.workers:
-            worker.reset_client()
-            worker.throughput.set(throughput / self.threads)
+            try:
+                worker.reset_client()
+                worker.throughput.set(throughput / self.threads)
+            except Exception:
+                pass
 
         if throughput == 0:
             for worker in self.workers:

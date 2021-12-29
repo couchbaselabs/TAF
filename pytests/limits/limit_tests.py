@@ -204,7 +204,7 @@ class LimitTest(ClusterSetup):
         self.set_throughput_to_zero()
 
     def check(self, lhs, rhs, error):
-        self.log.info("lhs:{} rhs:{} diff:{}".format(lhs, rhs, abs(lhs-rhs)))
+        self.log.info("Expected:{} Actual:{} Actual Difference:{} Expected Difference:{}".format(lhs, rhs, abs(lhs-rhs), error))
         return abs(lhs-rhs) <= error
 
     def test_above_threshold(self):
@@ -252,7 +252,7 @@ class LimitTest(ClusterSetup):
             task.set_throughput(self.resource_limit * self.units - throughput_difference)
 
         for task in self.tasks:
-            self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check(task.get_throughput_success(), task.throughput, self.error)))
+            self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check(task.get_throughput_success(), task.get_throughput(), self.error)))
 
         self.set_throughput_to_zero()
 
@@ -269,7 +269,7 @@ class LimitTest(ClusterSetup):
             task.set_throughput(self.resource_limit * self.units - throughput_difference)
 
         for task in self.tasks:
-            self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check(task.get_throughput_success(), task.throughput, self.error)))
+            self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check(task.get_throughput_success(), task.get_throughput(), self.error)))
 
         self.sleep(5)
 

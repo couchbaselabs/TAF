@@ -49,8 +49,11 @@ class KvIngress(UserResourceTask):
     def on_throughput_update(self, throughput):
         """ Updates document size """
         for worker in self.workers:
-            worker.reset_client()
-            worker.throughput.set(throughput / self.threads)
+            try:
+                worker.reset_client()
+                worker.throughput.set(throughput / self.threads)
+            except Exception:
+                pass
 
         if throughput == 0:
             for worker in self.workers:
