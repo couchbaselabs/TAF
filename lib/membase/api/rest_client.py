@@ -217,6 +217,7 @@ class RestConnection(object):
     def __init__(self, serverInfo):
         self.log = logger.get("infra")
         self.test_log = logger.get("test")
+        self.log_errors = True
 
         self.index_port = constants.index_port
         self.fts_port = constants.fts_port
@@ -825,8 +826,9 @@ class RestConnection(object):
                     message = '{0} {1} body: {2} headers: {3} error: {4} reason: {5} {6} {7}'. \
                         format(method, api, params, headers, response['status'], reason,
                                content.rstrip('\n'), self._get_auth(headers))
-                    self.test_log.error(message.decode("utf8"))
-                    self.test_log.debug(''.join(traceback.format_stack()))
+                    if self.log_errors:
+                        self.test_log.error(message.decode("utf8"))
+                        self.test_log.debug(''.join(traceback.format_stack()))
                     return False, content, response
             except socket.error as e:
                 self.test_log.error("Socket error while connecting to {0} error {1} "

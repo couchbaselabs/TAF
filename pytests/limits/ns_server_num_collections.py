@@ -40,7 +40,7 @@ class NsServerNumCollections(ScopeResourceTask):
         content = self.bucket_hlp.create_collection(
             self.bucket_obj, self.scope.name, {"name": "justacollection"})[1]
         content = json.loads(content)
-        return content['errors']['_']
+        return content['errors']['limits']
 
     def expected_error(self):
         return 'Maximum number of collections has been reached for scope "{}"'.format(self.scope.name)

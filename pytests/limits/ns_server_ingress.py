@@ -12,6 +12,7 @@ class IngressThroughputWorker(AbstractTimedThroughputWorker):
         super(IngressThroughputWorker, self).__init__(
             period=60, chunks=100, throughput=0)
         self.rest = RestConnection(node)
+        self.rest.log_errors = False
 
     def action(self, throughput):
         """ Updates a document to produce throughput """
@@ -25,6 +26,7 @@ class NsServerIngress(UserResourceTask):
 
     def __init__(self, user, node):
         super(NsServerIngress, self).__init__(user, node)
+        self.rest = RestConnection(node)
         self.workers = []
         self.threads = 10
 

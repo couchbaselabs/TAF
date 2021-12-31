@@ -207,6 +207,10 @@ class LimitTest(ClusterSetup):
         self.log.info("Expected:{} Actual:{} Actual Difference:{} Expected Difference:{}".format(lhs, rhs, abs(lhs-rhs), error))
         return abs(lhs-rhs) <= error
 
+    def check_error(self, actual_error, expected_error):
+        self.log.info("Expected: {} Actual: {}".format(expected_error, actual_error[:20]))
+        return actual_error == expected_error
+
     def test_above_threshold(self):
         """ A test in which the throughput is above the threshold and
         operations exceeding the threshold fail. """
@@ -223,9 +227,8 @@ class LimitTest(ClusterSetup):
             self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check(task.get_throughput_success(), self.resource_limit * self.units, self.error)))
 
         # Once above threshold, ensure the expected error message is thrown
-        # TODO fix this for egress/ingress by using retry with timeout
-        # for task in self.tasks:
-        #    self.assertEqual(retry_with_timeouttask.error(), task.expected_error())
+        if self.tasks and self.tasks[0].expected_error():
+            self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check_error(self.tasks[0].error(), self.tasks[0].expected_error())))
 
         self.set_throughput_to_zero()
 

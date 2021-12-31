@@ -10,6 +10,7 @@ class EgressThroughputWorker(AbstractTimedThroughputWorker):
         super(EgressThroughputWorker, self).__init__(
             period=60, chunks=30, throughput=0)
         self.rest = RestConnection(node)
+        self.rest.log_errors = False
 
     def action(self, throughput):
         """ Retrieves a document to produce throughput """
