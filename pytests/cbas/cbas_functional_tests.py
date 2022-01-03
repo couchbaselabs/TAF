@@ -5,10 +5,6 @@ from cbas_base import CBASBaseTest
 class CBASFunctionalTests(CBASBaseTest):
     def setUp(self, add_default_cbas_node=True):
         super(CBASFunctionalTests, self).setUp(add_default_cbas_node)
-        sample_bucket = TravelSample()
-
-        if "default_bucket" not in self.input.test_params:
-            self.input.test_params.update({"default_bucket": False})
 
         self.validate_error = False
         if self.expected_error:
@@ -23,8 +19,22 @@ class CBASFunctionalTests(CBASBaseTest):
         NOTE: Cases pending where there are nodes which are running only cbas.
               For that service check on nodes is needed.
         '''
-        result = self.bucket_util.load_sample_bucket(sample_bucket)
-        self.assertTrue(result, msg="Failed to load '%s'" % sample_bucket)
+        if "default_bucket" not in self.input.test_params:
+            sample_bucket = TravelSample()
+            result = self.bucket_util.load_sample_bucket(sample_bucket)
+            self.assertTrue(result, msg="Failed to load '%s'" % sample_bucket)
+        else:
+            self.bucket_util.create_default_bucket(
+                bucket_type=self.bucket_type,
+                ram_quota=self.bucket_size,
+                replica=self.num_replicas,
+                replica_index=self.bucket_replica_index,
+                storage=self.bucket_storage,
+                eviction_policy=self.bucket_eviction_policy)
+            self.perform_doc_ops_in_all_cb_buckets(
+                "create", start_key=0, end_key=1000, batch_size=10, exp=0,
+                _async=False, durability="", mutation_num=0, cluster=None,
+                buckets=[], key=None)
 
     def test_create_dataset_on_bucket(self):
         # Create dataset on the CBAS bucket
