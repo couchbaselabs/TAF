@@ -1391,7 +1391,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             self.fail("Ingestion failed")
         self.bucket_util._expiry_pager(self.cluster)
 
-        while time.time() < end_time:
+        while time.time() < end_time + 15:
             self.sleep(5, "waiting for maxTTL to complete")
 
         self.log.info("Validating item count")
