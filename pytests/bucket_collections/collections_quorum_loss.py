@@ -19,12 +19,14 @@ class CollectionsQuorumLoss(CollectionBase):
         self.failover_orchestrator = self.input.param("failover_orchestrator", False)
         self.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
         self.create_zones = self.input.param("create_zones", False)
+        self.data_path = RestConnection(self.cluster.master).get_data_path()
 
     def tearDown(self):
         if self.failover_action:
             self.custom_remove_failure()
-            self.wipe_config_on_removed_nodes()
         super(CollectionsQuorumLoss, self).tearDown()
+        if self.failover_action:
+            self.wipe_config_on_removed_nodes()
 
     def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
@@ -206,11 +208,10 @@ class CollectionsQuorumLoss(CollectionBase):
         for node in removed_nodes:
             self.log.info("Wiping node config and restarting server on {0}".format(node))
             rest = RestConnection(node)
-            data_path = rest.get_data_path()
             shell = RemoteMachineShellConnection(node)
             shell.stop_couchbase()
             self.sleep(10)
-            shell.cleanup_data_config(data_path)
+            shell.cleanup_data_config(self.data_path)
             shell.start_server()
             self.sleep(10)
             if not RestHelper(rest).is_ns_server_running():
@@ -234,11 +235,11 @@ class CollectionsQuorumLoss(CollectionBase):
                                           scope_name,
                                           {"name": collection_name})
             uids[bucket.name] = dict()
-            uids[bucket.name]["sid"] = BucketHelper(self.cluster.master).\
+            uids[bucket.name]["sid"] = BucketHelper(self.cluster.master). \
                 get_scope_id(bucket.name, scope_name)
-            uids[bucket.name]["cid"] = BucketHelper(self.cluster.master).\
+            uids[bucket.name]["cid"] = BucketHelper(self.cluster.master). \
                 get_collection_id(bucket.name, scope_name, collection_name)
-            uids[bucket.name]["uid"] = BucketHelper(self.cluster.master).\
+            uids[bucket.name]["uid"] = BucketHelper(self.cluster.master). \
                 get_bucket_manifest_uid(bucket.name)
         return uids
 
@@ -300,7 +301,7 @@ class CollectionsQuorumLoss(CollectionBase):
         tasks = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
-                                                   retry_get_process_num=self.retry_get_process_num*3)
+                                                   retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
         self.data_validation_collection()
@@ -314,7 +315,7 @@ class CollectionsQuorumLoss(CollectionBase):
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
-                                                   retry_get_process_num=self.retry_get_process_num*3)
+                                                   retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
         self.data_validation_collection()
@@ -366,7 +367,7 @@ class CollectionsQuorumLoss(CollectionBase):
         tasks = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
-                                                   retry_get_process_num=self.retry_get_process_num*3)
+                                                   retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
         self.data_validation_collection()
@@ -379,7 +380,7 @@ class CollectionsQuorumLoss(CollectionBase):
         self.log.info("Adding back nodes which were failed and rebalanced out".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
-                                                   retry_get_process_num=self.retry_get_process_num*3)
+                                                   retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
         self.data_validation_collection()
@@ -420,7 +421,7 @@ class CollectionsQuorumLoss(CollectionBase):
         tasks = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
-                                                   retry_get_process_num=self.retry_get_process_num*3)
+                                                   retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
         self.data_validation_collection()
@@ -435,7 +436,7 @@ class CollectionsQuorumLoss(CollectionBase):
         self.log.info("Adding back nodes which were failed and rebalanced out".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
-                                                   retry_get_process_num=self.retry_get_process_num*3)
+                                                   retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
         self.data_validation_collection()
@@ -457,7 +458,7 @@ class CollectionsQuorumLoss(CollectionBase):
         self.num_node_failures = int(math.ceil(len(self.nodes_in_cluster) / 2.0))
         for i in range(2):  # two quorum failovers
             this_step_failed_nodes = self.servers_to_fail()
-            pre_qf_ids = self.populate_uids(base_name="pre_qf-"+str(i))
+            pre_qf_ids = self.populate_uids(base_name="pre_qf-" + str(i))
             self.log.info("Inducing failure {0} on nodes: {1}".
                           format(self.failover_action, this_step_failed_nodes))
             self.custom_induce_failure(this_step_failed_nodes)
@@ -469,13 +470,13 @@ class CollectionsQuorumLoss(CollectionBase):
                                         allow_unsafe=True,
                                         all_at_once=True)
             self.assertTrue(result, "Failover Failed")
-            post_qf_ids = self.populate_uids(base_name="post_qf-"+str(i))
+            post_qf_ids = self.populate_uids(base_name="post_qf-" + str(i))
             self.validate_uids(pre_qf_ids, post_qf_ids)
 
             tasks = self.data_load(async_load=True)
             self.log.info("Rebalancing the cluster")
             rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
-                                                       retry_get_process_num=self.retry_get_process_num*3)
+                                                       retry_get_process_num=self.retry_get_process_num * 3)
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(tasks)
             self.data_validation_collection()
@@ -495,7 +496,7 @@ class CollectionsQuorumLoss(CollectionBase):
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
-                                                   retry_get_process_num=self.retry_get_process_num*3)
+                                                   retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
         self.data_validation_collection()
