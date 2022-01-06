@@ -392,6 +392,7 @@ class MagmaBaseTest(StorageBase):
 
         self.log.info("total_tombstones {}".format(total_tombstones['final_count']))
         self.log.info(" TombStones per node {}".format(ts_per_node))
+        return total_tombstones['final_count']
 
     def get_tombstone_count_seq(self, server=None, shard=0, kvstore=0):
         cmd = '/opt/couchbase/bin/magma_dump /data/kv/default/magma.{}/ \
