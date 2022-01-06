@@ -602,33 +602,33 @@ class BaseTestCase(unittest.TestCase):
                 if self.skip_buckets_handle:
                     return
                 test_failed = self.is_test_failed()
+                if test_failed:
+                    # Collect logs because we have not shut things down
+                    if self.get_cbcollect_info:
+                        self.fetch_cb_collect_logs()
+
+                    get_trace = \
+                        TestInputSingleton.input.param("get_trace", None)
+                    if get_trace:
+                        for server in cluster.servers:
+                            shell = \
+                                RemoteMachineShellConnection(server)
+                            output, _ = shell.execute_command(
+                                "ps -aef|grep %s" % get_trace)
+                            output = shell.execute_command(
+                                "pstack %s"
+                                % output[0].split()[1].strip())
+                            self.infra_log.debug(output[0])
+                            shell.disconnect()
+                    else:
+                        self.log.critical("Skipping get_trace !!")
+
                 if test_failed \
                         and TestInputSingleton.input.param("stop-on-failure",
                                                            False) \
                         or self.input.param("skip_cleanup", False):
                     self.log.warn("CLEANUP WAS SKIPPED")
                 else:
-                    if test_failed:
-                        # Collect logs because we have not shut things down
-                        if self.get_cbcollect_info:
-                            self.fetch_cb_collect_logs()
-
-                        get_trace = \
-                            TestInputSingleton.input.param("get_trace", None)
-                        if get_trace:
-                            for server in cluster.servers:
-                                shell = \
-                                    RemoteMachineShellConnection(server)
-                                output, _ = shell.execute_command(
-                                    "ps -aef|grep %s" % get_trace)
-                                output = shell.execute_command(
-                                    "pstack %s"
-                                    % output[0].split()[1].strip())
-                                self.infra_log.debug(output[0])
-                                shell.disconnect()
-                        else:
-                            self.log.critical("Skipping get_trace !!")
-
                     rest = RestConnection(cluster.master)
                     alerts = rest.get_alerts()
                     if alerts is not None and len(alerts) != 0:
