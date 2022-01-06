@@ -5,6 +5,9 @@ from magma_basic_crud import BasicCrudTests
 
 
 class BasicDeleteTests(BasicCrudTests):
+    def setUp(self):
+        super(BasicDeleteTests, self).setUp()
+        self.count_ts = self.input.param("count_ts", False)
     def test_create_delete_n_times(self):
         """
         STEPS:
@@ -72,7 +75,7 @@ class BasicDeleteTests(BasicCrudTests):
                 msg.format(disk_usage[0], 1,
                            self.disk_usage[self.disk_usage.keys()[0]]))
             self.bucket_util._run_compaction(self.cluster, number_of_times=1)
-            if not self.windows_platform:
+            if not self.windows_platform and self.count_ts:
                 ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
                 expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
                 self.log.info("Iterations == {}, Actual tomb stone count == {},\
@@ -183,7 +186,7 @@ class BasicDeleteTests(BasicCrudTests):
                 msg.format(disk_usage[0], 2,
                            self.disk_usage[self.disk_usage.keys()[0]]))
             expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
-            if not self.windows_platform:
+            if not self.windows_platform and self.count_ts:
                 ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
                 self.log.info("Iterations - {}, Actual tomb stone count == {} expected_ts_count == {}"
                           .format(count+1, ts, expected_ts_count))
