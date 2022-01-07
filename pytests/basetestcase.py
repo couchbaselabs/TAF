@@ -400,11 +400,10 @@ class BaseTestCase(unittest.TestCase):
                     if not status:
                         self.fail(msg)
 
+            self.standard = self.input.param("standard", "pkcs8")
+            self.passphrase_type = self.input.param("passphrase_type", "script")
+            self.encryption_type = self.input.param("encryption_type", "aes256")
             if self.multiple_ca:
-                self.standard = self.input.param("standard", "pkcs8")
-                self.passphrase_type = self.input.param("passphrase_type", "script")
-                self.encryption_type = self.input.param("encryption_type", "aes256")
-
                 for _, cluster in self.cb_clusters.items():
                     cluster.x509 = x509main(
                         host=cluster.master, standard=self.standard,

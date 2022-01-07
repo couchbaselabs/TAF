@@ -242,7 +242,8 @@ class BaseUtil(object):
                                     for _ in range(name_cardinality))
             if generated_name.lower() in ["at", "in", "for", "by", "which",
                                           "select", "from", "like", "or",
-                                          "and", "to", "if", "else"]:
+                                          "and", "to", "if", "else", "as",
+                                          "with", "on", "where"]:
                 return BaseUtil.generate_name(
                     name_cardinality, max_length, fixed_length, name_key, seed)
             else:
@@ -925,7 +926,7 @@ class Link_Util(Dataverse_Util):
         return status
 
     def connect_link(self, cluster, link_name, validate_error_msg=False,
-                     with_force=False, username=None, password=None,
+                     with_force=True, username=None, password=None,
                      expected_error=None, expected_error_code=None, timeout=120,
                      analytics_timeout=120):
         """
@@ -943,8 +944,8 @@ class Link_Util(Dataverse_Util):
         """
         cmd_connect_bucket = "connect link %s" % link_name
 
-        if with_force is True:
-            cmd_connect_bucket += " with {'force':true}"
+        if not with_force:
+            cmd_connect_bucket += " with {'force':false}"
 
         retry_attempt = 5
         connect_bucket_failed = True
@@ -1320,9 +1321,8 @@ class Dataset_Util(Link_Util):
         :param analytics_collection bool, If True, will use create analytics collection syntax
         """
         if dataverse_name and not self.create_dataverse(
-                cluster, dataverse_name=dataverse_name, username=username,
-                password=password, if_not_exists=True, timeout=timeout,
-                analytics_timeout=analytics_timeout):
+                cluster, dataverse_name=dataverse_name, if_not_exists=True,
+                timeout=timeout, analytics_timeout=analytics_timeout):
             return False
 
         if analytics_collection:

@@ -104,9 +104,6 @@ class CBASBugAutomation(CBASBaseTest):
         if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
             self.fail("Analytics service Failed to recover")
 
-        self.standard = self.input.param("standard", "pkcs8")
-        self.passphrase_type = self.input.param("passphrase_type", "script")
-        self.encryption_type = self.input.param("encryption_type", "aes256")
         x509 = x509main(
             host=self.cluster.master, standard=self.standard,
             encryption_type=self.encryption_type,
