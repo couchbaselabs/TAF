@@ -3,6 +3,8 @@ from Cb_constants import CbServer
 from Jython_tasks.task import ConcurrentFailoverTask
 from error_simulation.cb_error import CouchbaseError
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
+from membase.api.rest_client import RestConnection
+from table_view import TableView
 
 
 class ConcurrentFailoverTests(AutoFailoverBaseTest):
@@ -58,6 +60,15 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         # Hold the dict of {node_obj_to_fail: failover_type, ...}
         self.nodes_to_fail = None
+
+        # To display test execution status
+        self.test_status_tbl = TableView(self.log.critical)
+        self.auto_fo_settings_tbl = TableView(self.log.critical)
+        self.test_status_tbl.set_headers(
+            ["Node", "Services", "Node status", "Failover type"])
+        self.auto_fo_settings_tbl.set_headers(
+            ["Enabled", "Auto FO count", "Max Events configured",
+             "Auto FO timeout", "Disk Auto FO", "Disk Auto FO timeout"])
 
         self.log_setup_status(self.__class__.__name__, "complete",
                               self.setUp.__name__)
@@ -158,6 +169,14 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
     def validate_failover_settings(self, enabled, timeout, count, max_count):
         settings = self.rest.get_autofailover_settings()
+        self.auto_fo_settings_tbl.rows = list()
+        self.auto_fo_settings_tbl.rows.append([
+            str(settings.enabled), str(settings.count),
+            str(settings.maxCount), str(settings.timeout),
+            str(settings.failoverOnDataDiskIssuesEnabled),
+            str(settings.failoverOnDataDiskIssuesTimeout)])
+        self.auto_fo_settings_tbl.display("Auto failover status:")
+
         err_msg = "Mismatch in '%s' field. " \
                   "Cluster FO data: " + str(settings.__dict__)
         self.assertEqual(settings.enabled, enabled, err_msg % "enabled")
@@ -165,6 +184,28 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.assertEqual(settings.count, count, err_msg % "count")
         self.assertEqual(settings.maxCount, max_count,
                          err_msg % "maxCount")
+
+    def __display_failure_node_status(self, message):
+        self.test_status_tbl.rows = list()
+        cluster_nodes = self.rest.get_nodes(inactive=True)
+        for node, fo_type in self.nodes_to_fail.items():
+            node = [t_node for t_node in cluster_nodes
+                    if t_node.ip == node.ip][0]
+            self.test_status_tbl.add_row([node.ip, ",".join(node.services),
+                                          node.clusterMembership, fo_type])
+        self.test_status_tbl.display(message)
+
+    def __update_unaffected_node(self):
+        cluster_nodes = self.rest.get_nodes()
+        for cluster_node in cluster_nodes:
+            for failure_node in self.nodes_to_fail:
+                if cluster_node.ip == failure_node.ip:
+                    break
+            else:
+                self.orchestrator = cluster_node
+                self.rest = RestConnection(self.orchestrator)
+                self.log.info("Node for REST APIs: %s" % cluster_node.ip)
+                break
 
     def test_max_events_range(self):
         """
@@ -198,6 +239,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         # Validate count before the start of failover procedure
         self.validate_failover_settings(True, self.timeout,
                                         self.fo_events, self.max_count)
+
+        # Before failure - nodes' information
+        self.__display_failure_node_status("Nodes to be failed")
+
         try:
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 expected_fo_nodes = self.num_nodes_to_be_failover
@@ -232,6 +277,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 if failover_task.result is False:
                     self.fail("Failure during failover operation")
 
+        # After failure - failed nodes' information
+        self.__display_failure_node_status("Nodes status failure")
         # Validate count at the end of failover procedure
         self.validate_failover_settings(True, self.timeout,
                                         self.fo_events, self.max_count)
@@ -247,5 +294,6 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             services_to_fo = services_to_fo.split(":")
             # servers_to_fail -> [kv, index] / [kv, index_kv]
             self.nodes_to_fail = self.get_nodes_to_fail(services_to_fo)
+            self.__update_unaffected_node()
             self.log.info("Current target nodes: %s" % self.nodes_to_fail)
             self.__run_test()
