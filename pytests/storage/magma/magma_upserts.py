@@ -192,7 +192,7 @@ class BasicUpsertTests(BasicCrudTests):
               -- Delete half of the docs.
             '''
 
-            self.log.debug("Step 3, Iteration {}".format(i+1))
+            self.log.info("Step 3, Iteration {}".format(i+1))
             self.doc_ops = "delete"
 
             self.delete_start = 0
@@ -217,7 +217,8 @@ class BasicUpsertTests(BasicCrudTests):
             STEP - 4
               -- Space Amplification Check after deletion.
             '''
-            self.log.debug("Step 4, Iteration {}".format(i+1))
+            self.sleep(60, "sleep before checking fragmentation")
+            self.log.info("Step 4, Iteration {}".format(i+1))
             _result = self.check_fragmentation_using_magma_stats(
                 self.buckets[0],
                 self.cluster.nodes_in_cluster)
@@ -260,7 +261,7 @@ class BasicUpsertTests(BasicCrudTests):
             STEP - 5
               -- ReCreation of docs.
             '''
-            self.log.debug("Step 5, Iteration= {}".format(i+1))
+            self.log.info("Step 5, Iteration= {}".format(i+1))
             self.gen_create = copy.deepcopy(self.gen_delete)
             self.doc_ops = "create"
             _ = self.loadgen_docs(self.retry_exceptions,
@@ -278,7 +279,7 @@ class BasicUpsertTests(BasicCrudTests):
             STEP - 6
               -- Space Amplification Check after Recreation.
             '''
-            self.log.debug("Step 6, Iteration= {}".format(i+1))
+            self.log.info("Step 6, Iteration= {}".format(i+1))
 
             _result = self.check_fragmentation_using_magma_stats(
                 self.buckets[0],
@@ -307,7 +308,7 @@ class BasicUpsertTests(BasicCrudTests):
           -- Validate data
            -- Data validation is only for the creates in last iterations.
         '''
-        self.log.debug("Step 7, Iteration= {}".format(i+1))
+        self.log.info("Step 7, Iteration= {}".format(i+1))
         self.validate_data("create", self.gen_create)
         self.log.info("====test_multiUpdate_delete ends====")
 
@@ -333,7 +334,6 @@ class BasicUpsertTests(BasicCrudTests):
         the configured value"
         msg = "{} Iteration= {}, Disk Usage = {}MB\
         exceeds {} times from Actual disk usage = {}MB"
-
         count = 0
         mutated = 1
         for i in range(self.test_itr):
@@ -412,7 +412,6 @@ class BasicUpsertTests(BasicCrudTests):
                     _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
                     False, msg.format("update", count+1, _res, 2.5,
                                       self.disk_usage[self.disk_usage.keys()[0]]))
-
                 count += 1
             self.update_itr += self.update_itr
 
@@ -463,10 +462,10 @@ class BasicUpsertTests(BasicCrudTests):
             self.log.info("Delete Iteration {}, Disk Usage- {}MB\
             ".format(i+1, _res))
             self.assertIs(
-                _res > 0.5 * self.disk_usage[
+                _res > 1 * self.disk_usage[
                     self.disk_usage.keys()[0]],
                 False, msg.format(
-                    "delete", i+1, _res, 0.5,
+                    "delete", i+1, _res, 1,
                     self.disk_usage[self.disk_usage.keys()[0]]))
             ###################################################################
             '''

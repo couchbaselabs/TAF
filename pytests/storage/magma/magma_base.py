@@ -279,6 +279,7 @@ class MagmaBaseTest(StorageBase):
                 self.log.debug(stats)
                 return True
         self.log.info("magma stats fragmentation result %s" % result)
+        self.log.info("Fragmentation value that exceeds the configured value is ==> {}".format(max(res)))
         self.log.info(stats)
         return False
 
