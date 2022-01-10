@@ -152,6 +152,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         return expected_num_nodes
 
     def get_nodes_to_fail(self, services_to_fail):
+        def get_server_obj(n_obj):
+            for server in self.cluster.servers:
+                if server.ip == n_obj.ip:
+                    return server
+
         nodes = dict()
         # Update the list of service-nodes mapping in the cluster object
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
@@ -160,7 +165,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             node_services = set(services.split("_"))
             for index, node in enumerate(nodes_in_cluster):
                 if node_services == set(node.services):
-                    nodes[node] = self.failover_method
+                    nodes[get_server_obj(node)] = self.failover_method
                     # Remove the node to be failed to avoid double insertion
                     nodes_in_cluster.pop(index)
                     break
