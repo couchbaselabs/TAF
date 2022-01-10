@@ -5016,11 +5016,9 @@ class ConcurrentFailoverTask(Task):
         self.set_result(True)
 
     def wait_for_fo_attempt(self):
-        curr_fo_settings = None
         start_time = time.time()
         expect_fo_after_time = start_time + self.timeout
-        fo_time_frame = expect_fo_after_time + self.grace_period_for_fo
-        while time.time() < expect_fo_after_time:
+        while int(time.time()) < expect_fo_after_time:
             curr_fo_settings = self.rest.get_autofailover_settings()
             if self.initial_fo_settings.count != curr_fo_settings.count:
                 self.test_log.critical("Auto failover triggered before "
@@ -5028,19 +5026,6 @@ class ConcurrentFailoverTask(Task):
                                        % (self.initial_fo_settings.count,
                                           curr_fo_settings.count))
                 self.set_result(False)
-
-        while time.time() < fo_time_frame:
-            curr_fo_settings = self.rest.get_autofailover_settings()
-            self.log.critical("1 - COUNT: %s" % curr_fo_settings.count)
-            if curr_fo_settings.count == self.expected_nodes_to_fo:
-                self.log.critical("%s == %s" % (curr_fo_settings.count, self.expected_nodes_to_fo))
-                break
-        else:
-            self.test_log.critical(
-                "Some nodes are yet to be failed over. "
-                "Num fo nodes - Expected %s, Actual %s"
-                % (self.expected_nodes_to_fo, curr_fo_settings.count))
-            self.set_result(False)
 
     def call(self):
         self.start_task()
@@ -5067,11 +5052,20 @@ class ConcurrentFailoverTask(Task):
             self.wait_for_fo_attempt()
 
             if self.result and self.monitor_failover:
-                self.sleep(2, "Wait for failover to actually start running")
+                self.sleep(5, "Wait for failover to actually start running")
                 status = self.rest.monitorRebalance()
                 if status is False:
                     self.set_result(False)
                     self.test_log.critical("Auto-Failover rebalance failed")
+                else:
+                    curr_fo_settings = self.rest.get_autofailover_settings()
+                    if curr_fo_settings.count != self.expected_nodes_to_fo:
+                        self.test_log.critical(
+                            "Some nodes are yet to be failed over. "
+                            "Num fo nodes - Expected %s, Actual %s"
+                            % (self.expected_nodes_to_fo,
+                               curr_fo_settings.count))
+                        self.set_result(False)
 
         self.complete_task()
 

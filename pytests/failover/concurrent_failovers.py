@@ -258,6 +258,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     task_type="induce_failure")
                 self.task_manager.add_new_task(failover_task)
                 self.task_manager.get_task_result(failover_task)
+                if failover_task.result is False:
+                    self.fail("Failure during concurrent failover procedure")
                 self.fo_events += expected_fo_nodes
             elif self.current_fo_strategy == CbServer.Failover.Type.GRACEFUL:
                 for node in self.nodes_to_fail:
@@ -302,3 +304,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.__update_unaffected_node()
             self.log.info("Current target nodes: %s" % self.nodes_to_fail)
             self.__run_test()
+
+        self.log.info("Rebalance out all failed nodes")
+        result = self.cluster_util.rebalance(self.cluster)
+        self.assertTrue(result, "Final rebalance failed")
