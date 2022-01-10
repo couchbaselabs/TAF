@@ -138,6 +138,11 @@ class LimitTest(ClusterSetup):
         for node in self.cluster.servers[:self.nodes_init]:
             self.tasks.append(self.resource_producer.get_resource_task(user, copy_node_for_user(user, node)))
 
+    def get_stats(self, throughput, above=True):
+        self.resource_producer.get_resource_stat_monitor(self.users,
+                                                         self.cluster.servers[:self.nodes_init],
+                                                         throughput, above)
+
     def set_throughput_to_zero(self):
         """ Set the throughput for all tasks to 0 """
         for task in self.tasks:
@@ -199,7 +204,11 @@ class LimitTest(ClusterSetup):
             task.set_throughput(self.resource_limit * self.units - throughput_difference)
 
         for task in self.tasks:
-            self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check(task.get_throughput_success(), task.get_throughput(), self.error)))
+            self.get_throughput = task.get_throughput() + self.error
+            self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check(task.get_throughput_success(),
+                                                                                      task.get_throughput(), self.error)))
+
+        self.get_stats(self.get_throughput, False)
 
         self.set_throughput_to_zero()
 
@@ -224,12 +233,18 @@ class LimitTest(ClusterSetup):
             task.set_throughput(self.resource_limit * self.units + throughput_difference)
 
         for task in self.tasks:
-            self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check(task.get_throughput_success(), self.resource_limit * self.units, self.error)))
+            self.get_throughput = self.resource_limit * self.units
+            self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check(task.get_throughput_success(),
+                                                                                      self.get_throughput, self.error)))
 
         # Once above threshold, ensure the expected error message is thrown
         if self.tasks and self.tasks[0].expected_error():
             self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check_error(self.tasks[0].error(), self.tasks[0].expected_error())))
 
+        # set a higher limit to validate stats
+        self.set_limits_for_all_users(self.resource_name, self.resource_limit*2)
+
+        self.get_stats(self.get_throughput)
         self.set_throughput_to_zero()
 
     def test_above_to_below_threshold(self):

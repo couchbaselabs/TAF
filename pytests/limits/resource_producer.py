@@ -8,6 +8,10 @@ from limits.kv_egress import KvEgress
 from limits.kv_ingress import KvIngress
 from limits.kv_ops import KvOps
 from limits.kv_data_size import KvDataSize
+from cb_tools.mc_stat import McStat
+from remote.remote_util import RemoteMachineShellConnection
+from StatsLib.StatsOperations import StatsHelper
+import re
 
 
 class UserResourceProducer(object):
@@ -44,10 +48,47 @@ class UserResourceProducer(object):
                 "unknown resource name '{}'".format(
                     self.resource_name))
 
-    def get_resource_stat_monitor(self, user, node):
-        """ Returns an object that allows you monitor this statisic for the given user and node """
-        pass
+    def mc_stats(self, user, node, pattern):
+        shell_conn = RemoteMachineShellConnection(node)
+        output = McStat(shell_conn).get_user_stat("default", user)
+        shell_conn.disconnect()
+        return pattern.findall(output[0])
 
+    def ns_server_stat(self, node, pattern):
+        content = StatsHelper(node).get_prometheus_metrics_high(component="ns_server")
+        output = [re.findall(r'\s\d+', line)[0] for line in content if pattern in line]
+        return output
+
+    def get_resource_stat_monitor(self, users, nodes, throughput, above=True):
+        """ Returns an object that allows you monitor this statisic for the given user and node """
+        self.output = list()
+        for node in nodes:
+            if self.resource_name == "kv_ingress":
+                pattern = re.compile(r"\"ingress_bytes\":(\d*)")
+                self.output = self.mc_stats(users[0], node, pattern)
+            if self.resource_name == "kv_egress":
+                pattern = re.compile(r"\"egress_bytes\":(\d*)")
+                self.output = self.mc_stats(users[0], node, pattern)
+            if self.resource_name == "kv_num_connections":
+                pattern = re.compile(r"\"total\":(\d*)")
+                self.output = self.mc_stats(users[0], node, pattern)
+            if self.resource_name == "ns_server_num_concurrent_requests":
+                self.output = self.ns_server_stat(node, pattern="cm_num_concurrent_requests")
+            elif self.resource_name == "ns_server_egress":
+                self.output = self.ns_server_stat(node, pattern="cm_egress_1m_max")
+            elif self.resource_name == "ns_server_ingress":
+                self.output = self.ns_server_stat(node, pattern="cm_ingress_1m_max")
+            for value in self.output:
+                if above:
+                    if int(value) < throughput:
+                        raise Exception("{0} didnot exceeed limits actual {1}"
+                                        "expected {2}". format(value, throughput,
+                                                               self.resource_name))
+                else:
+                    if int(value) > throughput:
+                        raise Exception("{0} above limits actual {1}"
+                                        "expected {2}". format(value, throughput,
+                                                               self.resource_name))
 
 class LimitConfig:
     def __init__(self):

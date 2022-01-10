@@ -18,3 +18,22 @@ class McStat(CbCmdBase):
         _, error = self._execute_cmd(cmd)
         if error:
             raise Exception("".join(error))
+
+    def get_tenants_stat(self, bucket_name):
+        cmd = "%s -h localhost:%s -u %s -P %s -b %s tenants" \
+              % (self.cbstatCmd, self.mc_port, self.username, self.password,
+                 bucket_name)
+        output, error = self._execute_cmd(cmd)
+        if error:
+            raise Exception("".join(error))
+        return output
+
+    def get_user_stat(self, bucket_name, user):
+        # 'tenants {\"domain\":\"local\",\"user\":\"%s\"}'
+        cmd = "%s -h localhost:%s -u %s -P %s -b %s tenants" \
+              % (self.cbstatCmd, self.mc_port, user.username, user.password,
+                 bucket_name)
+        output, error = self._execute_cmd(cmd)
+        if error:
+            raise Exception("{0}".format(error))
+        return output
