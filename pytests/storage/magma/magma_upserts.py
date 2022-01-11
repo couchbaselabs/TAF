@@ -10,6 +10,100 @@ from sdk_client3 import SDKClient
 
 
 class BasicUpsertTests(BasicCrudTests):
+    def test_update_n_times_new(self):
+        """
+        Test Focus: Update items n times and
+                    test space amplification
+        STEPS:
+          -- Update items n times (where n gets calculated
+             from fragmentation value
+          -- Check space amplification
+          -- Repeat the above steps n times
+          -- After all iterations validate the data
+        Note: This test is written using new doc loader
+              and is targeted for 1% DGM
+        """
+
+        self.log.info("test_update_n_times_new starts")
+        self.create_start = 0
+        self.create_end = self.init_items_per_collection
+        self.mutate = 0
+        self.log.info("Initial loading with new loader starts")
+        self.new_loader(wait=True)
+        self.sleep(60, "sleep after init loading in test")
+        disk_usage = self.get_disk_usage(
+            self.buckets[0], self.cluster.nodes_in_cluster)
+        self.disk_usage[self.buckets[0].name] = disk_usage[0]
+        self.log.info(
+            "For bucket {} disk usage after initial creation is {}MB\
+                    ".format(self.buckets[0].name,
+                             self.disk_usage[self.buckets[0].name]))
+        count = 0
+
+        while count < self.test_itr:
+            self.log.info("Iteration == {}".format(count+1))
+            #################################################################
+            '''
+            STEP - 1, Update Items
+
+            '''
+            self.doc_ops = "update"
+            self.update_start = 0
+            self.update_end = self.init_items_per_collection
+            self.create_perc = 0
+            self.read_perc = 0
+            self.delete_perc = 0
+            self.expiry_perc = 0
+            self.update_perc = 100
+            self.mutate += 1
+            self.new_loader(wait=True)
+            self.log.info("Waiting for ep-queues to get drained")
+            self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets, timeout=3600)
+
+            #################################################################
+            '''
+            STEP - 2, Space Amplification Check
+
+            '''
+            msg = "Fragmentation value for {} stats exceeds\
+            the configured value"
+
+            _result = self.check_fragmentation_using_magma_stats(
+                self.buckets[0],
+                self.cluster.nodes_in_cluster)
+            self.assertIs(_result, True,
+                          msg.format("magma"))
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.cluster.nodes_in_cluster)
+            self.assertIs(_r, True,
+                         msg.format("KV"))
+
+            time_end = time.time() + 60 * 2
+            while time.time() < time_end:
+                disk_usage = self.get_disk_usage(self.buckets[0],
+                                            self.cluster.nodes_in_cluster)
+                _res = disk_usage[0]
+                self.log.debug("usage at time {} is {}".format((time_end - time.time()), _res))
+                if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                    break
+
+            msg = "Iteration= {}, Disk Usage = {}MB\
+            exceeds {} times from Actual disk usage = {}MB"
+            self.assertIs(_res > 2.5 * self.disk_usage[
+                self.disk_usage.keys()[0]],
+                False, msg.format(count+1, _res, 2.5,
+                                  self.disk_usage[self.disk_usage.keys()[0]]))
+
+            count += 1
+        #######################################################################
+        '''
+        STEP - 3, Data Validation
+
+        '''
+        self.data_validation()
+    #########################################
     def test_update_n_times(self):
         """
         Test Focus: Update items n times and

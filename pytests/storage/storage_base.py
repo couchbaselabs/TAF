@@ -359,7 +359,7 @@ class StorageBase(BaseTestCase):
                                           cmd.get("validate", False),
                                           cmd.get("gtm", False),
                                           cmd.get("deleted", False),
-                                          cmd.get("mutated", 0)
+                                          cmd.get("mutated", self.mutate)
                                           )
                     hm = HashMap()
                     hm.putAll({DRConstants.create_s: self.create_start,
@@ -502,7 +502,7 @@ class StorageBase(BaseTestCase):
                                                   cmd.get("validate", True),
                                                   cmd.get("gtm", False),
                                                   cmd.get("deleted", False),
-                                                  cmd.get("mutated", 0))
+                                                  cmd.get("mutated", self.mutate))
                             ws.dr = dr
                             dg = DocumentGenerator(ws, self.key_type, None)
                             self.loader_map.update({bucket.name+scope+collection+op_type: dg})

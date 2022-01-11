@@ -1,8 +1,51 @@
+import copy
 from magma_basic_crud import BasicCrudTests
 from remote.remote_util import RemoteMachineShellConnection
 
 
 class BasicCreateTests(BasicCrudTests):
+    def test_basic_create_read_new(self):
+        """
+        Test Focus: Perform create and read Doc-OPs parallely.
+
+        STEPS:
+           -- Create new items
+           -- Read existing items
+        """
+        self.log.info("test_basic_create_read_new starts")
+        self.create_start = 0
+        self.create_end = self.init_items_per_collection
+        self.log.info("Initial loading with new loader starts")
+        self.new_loader(wait=True)
+        count = 0
+        while count < self.test_itr:
+            self.log.info("Iteration == {}".format(count))
+            for node in self.cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(node)
+                shell.restart_couchbase()
+                shell.disconnect()
+
+            self.doc_ops = "create:read"
+            self.read_start = copy.deepcopy(self.create_start)
+            self.read_end = copy.deepcopy(self.create_end)
+            self.create_start += self.init_items_per_collection
+            self.create_end += self.init_items_per_collection
+            #below statement is a work around, so that test doesn't fail in new_loader retry_failures
+            self.num_items_per_collection += self.create_end - self.create_start
+            self.log.info("read_S={}, read_e={}, create_s={}, create_e={}".format(self.read_start,
+                                                                                  self.read_end,
+                                                                                  self.create_start,
+                                                                                  self.create_end))
+            self.create_perc = 50
+            self.read_perc = 50
+            self.delete_perc = 0
+            self.expiry_perc = 0
+            self.update_perc = 0
+            self.new_loader(wait=True)
+            count += 1
+
+        self.log.info("====test_basic_create_read_new ends====")
+    #################################################
     def test_basic_create_read(self):
         """
         Test Focus: Perform create and read Doc-OPs parallely.

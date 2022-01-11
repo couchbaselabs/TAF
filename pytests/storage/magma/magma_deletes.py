@@ -8,6 +8,126 @@ class BasicDeleteTests(BasicCrudTests):
     def setUp(self):
         super(BasicDeleteTests, self).setUp()
         self.count_ts = self.input.param("count_ts", False)
+
+    def test_create_delete_n_times_new(self):
+        """
+        STEPS:
+           -- Create n items
+           -- Delete all n items
+           -- Check Space Amplification
+           -- Repeat above step n times
+        """
+        self.log.info("test_create_delete_n_times starts ")
+        self.create_start = 0
+        self.create_end = self.init_items_per_collection
+        self.mutate = 0
+        self.log.info("Initial loading with new loader starts")
+        self.new_loader(wait=True)
+        self.sleep(60, "sleep after init loading in test")
+        disk_usage = self.get_disk_usage(
+            self.buckets[0], self.cluster.nodes_in_cluster)
+        self.disk_usage[self.buckets[0].name] = disk_usage[0]
+        self.log.info(
+            "For bucket {} disk usage after initial creation is {}MB\
+                    ".format(self.buckets[0].name,
+                             self.disk_usage[self.buckets[0].name]))
+        msg_stats = "Fragmentation value for {} stats exceeds\
+        the configured value"
+
+        count = 0
+        while count < self.test_itr:
+            ##################################################################
+            '''
+            STEP - 1, Delete all the items
+
+            '''
+            self.log.debug("Step 1, Iteration= {}".format(count+1))
+            self.doc_ops = "delete"
+            self.delete_start = 0
+            self.delete_end = self.init_items_per_collection
+            self.create_perc = 0
+            self.read_perc = 0
+            self.delete_perc = 100
+            self.expiry_perc = 0
+            self.update_perc = 0
+            self.num_items_per_collection -= self.delete_end - self.delete_start
+            self.new_loader(wait=True)
+            ##################################################################
+            '''
+            STEP - 2
+              -- Space Amplification check after
+                 deleting all the items
+            '''
+            self.log.debug("Step 2, Iteration= {}".format(count+1))
+            _result = self.check_fragmentation_using_magma_stats(
+                self.buckets[0],
+                self.cluster.nodes_in_cluster)
+            self.assertIs(_result, True,
+                          msg_stats.format("magma"))
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.cluster.nodes_in_cluster)
+            self.assertIs(_r, True,
+                          msg_stats.format("KV"))
+
+            time_end = time.time() + 60 * 2
+            while time.time() < time_end:
+                disk_usage = self.get_disk_usage(self.buckets[0],
+                                                 self.cluster.nodes_in_cluster)
+                _res = disk_usage[0]
+                self.log.info("DeleteIteration-{}, Disk Usage at time {} is {}MB \
+                ".format(count+1, time_end - time.time(), _res))
+                if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
+                    break
+
+            msg = "Disk Usage={}MB > {} * init_Usage={}MB"
+            self.assertIs(_res > 1 * self.disk_usage[
+                self.disk_usage.keys()[0]], False,
+                msg.format(disk_usage[0], 1,
+                           self.disk_usage[self.disk_usage.keys()[0]]))
+            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+            if not self.windows_platform and self.count_ts:
+                ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+                expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+                self.log.info("Iterations == {}, Actual tomb stone count == {},\
+                expected_ts_count == {}".format(count+1, ts, expected_ts_count))
+                self.sleep(60, "sleep after triggering full compaction")
+                # 64 byte is size of meta data
+            expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+            expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
+            self.log.info("expected tombstone size {}".format(expected_tombstone_size))
+            disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
+                                                              self.cluster.nodes_in_cluster)[0]
+            #  1.1 factor is for 10 percent buffer on calculated tomb stone size
+            expected_size = 1.1 * (expected_tombstone_size + self.empty_bucket_disk_usage)
+            self.log.info("Iteration=={}, disk usage after compaction=={}\
+            expected_size=={}".format(count+1, disk_usage_after_compaction, expected_size))
+            self.assertTrue(disk_usage_after_compaction <= expected_size ,
+                            "Disk size=={} after compaction exceeds expected size=={}".
+                            format(disk_usage_after_compaction, expected_size))
+            ######################################################################
+            '''
+            STEP - 3
+              -- Recreate n items
+            '''
+
+            if count != self.test_itr - 1:
+                self.log.info("Step 2, Iteration= {}".format(count+1))
+                self.create_start = 0
+                self.create_end = self.init_items_per_collection
+                self.doc_ops = "create"
+                self.create_perc = 100
+                self.read_perc = 0
+                self.delete_perc = 0
+                self.expiry_perc = 0
+                self.update_perc = 0
+                self.num_items_per_collections += self.create_end - self.create_start
+                self.new_loader(wait=True)
+            count += 1
+
+        self.log.info("====test_create_delete_n_times_new ends====")
+
+    ##################################################
     def test_create_delete_n_times(self):
         """
         STEPS:
@@ -112,7 +232,7 @@ class BasicDeleteTests(BasicCrudTests):
                                                           self.num_items)
             count += 1
 
-        self.log.info("====test_basic_create_delete ends====")
+        self.log.info("====test_create_delete_n_times ends====")
 
     def test_parallel_creates_deletes(self):
         """
