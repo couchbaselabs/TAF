@@ -16,6 +16,7 @@ class Event(object):
         TIMESTAMP = "timestamp"
         DESCRIPTION = "description"
         NODE_NAME = "node"
+        OTP_NODE = "otp_node"
         SUB_COMPONENT = "sub_component"
         EXTRA_ATTRS = "extra_attributes"
 

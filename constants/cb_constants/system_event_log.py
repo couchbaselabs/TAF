@@ -47,14 +47,10 @@ class Security(object):
     SecurityConfigChanged = 9220
     SasldAuthConfigChanged = 9221
     PasswordPolicyChanged = 9222
-
-    GroupAdded = 0
-    GroupRemoved = 0
-    LdapEnabledDisabledForGroup = 0
-    LdapEnabledDisabledForUsers = 0
-    PamEnabledDisabled = 0
-    UserAdded = 0
-    UserRemoved = 0
+    UserAdded = 9223
+    UserRemoved = 9224
+    GroupAdded = 9225
+    GroupRemoved = 9226
 
 
 class Views(object):

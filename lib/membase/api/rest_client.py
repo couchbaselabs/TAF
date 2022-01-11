@@ -3547,6 +3547,23 @@ class RestConnection(object):
             raise Exception(content)
         return json.loads(content)
 
+    def add_set_bulitin_group(self, group_name, payload):
+        url = "settings/rbac/groups/" + group_name
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'PUT', payload)
+        if not status:
+            self.log.error("%s - %s" % (group_name, content))
+        return json.loads(content)
+
+    def delete_builtin_group(self, group_name):
+        url = "settings/rbac/groups/" + group_name
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'DELETE')
+        if not status:
+            self.log.error("%s - %s" % (group_name, content))
+        return json.loads(content)
+
+
     '''
     Add/Update user role assignment
     user_id=userid of the user to act on
