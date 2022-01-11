@@ -4,6 +4,7 @@ from Jython_tasks.task import ConcurrentFailoverTask
 from error_simulation.cb_error import CouchbaseError
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from membase.api.rest_client import RestConnection
+from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
 
 
@@ -151,12 +152,12 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         return expected_num_nodes
 
-    def get_nodes_to_fail(self, services_to_fail):
-        def get_server_obj(n_obj):
-            for server in self.cluster.servers:
-                if server.ip == n_obj.ip:
-                    return server
+    def __get_server_obj(self, node):
+        for server in self.cluster.servers:
+            if server.ip == node.ip:
+                return server
 
+    def get_nodes_to_fail(self, services_to_fail):
         nodes = dict()
         # Update the list of service-nodes mapping in the cluster object
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
@@ -165,7 +166,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             node_services = set(services.split("_"))
             for index, node in enumerate(nodes_in_cluster):
                 if node_services == set(node.services):
-                    nodes[get_server_obj(node)] = self.failover_method
+                    nodes[self.__get_server_obj(node)] = self.failover_method
                     # Remove the node to be failed to avoid double insertion
                     nodes_in_cluster.pop(index)
                     break
@@ -308,3 +309,104 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.log.info("Rebalance out all failed nodes")
         result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Final rebalance failed")
+
+    def test_split_brain(self):
+        """
+        Test params:
+        split_nodes - Accepts string of pattern 'a_b:c-b_a:d'
+                      This creates a barriers like,
+                      Node running services a_b & c to ignore anything from
+                      nodes running services b_a & d and vice versa
+        """
+        def get_nodes_based_on_services(services):
+            nodes = list()
+            services = services.split(":")
+            for service in services:
+                service = service.split("_")
+                service.sort()
+                for t_node in cluster_nodes:
+                    if t_node.services == service:
+                        nodes.append(self.__get_server_obj(t_node))
+                        # Remove nodes from cluster_nodes once picked
+                        # to avoid picking same node again
+                        cluster_nodes.remove(t_node)
+                        break
+            return nodes
+
+        def create_split_between_nodes(dest_nodes, src_nodes):
+            for t_node in dest_nodes:
+                shell_conn = RemoteMachineShellConnection(t_node)
+                for src_node in src_nodes:
+                    shell_conn.execute_command(
+                        "iptables -A INPUT -s %s -j DROP" % src_node.ip)
+                shell_conn.disconnect()
+
+        fo_happens = self.input.param("fo_happens", True)
+        nodes_to_split = self.input.param("split_nodes", None).split('-')
+
+        if nodes_to_split is None:
+            self.fail("Nothing to test. split_nodes is None")
+
+        # Validate count before the start of failover procedure
+        self.validate_failover_settings(True, self.timeout,
+                                        self.fo_events, self.max_count)
+
+        self.log.info("Fetching current cluster_nodes")
+        self.cluster_util.find_orchestrator(self.cluster)
+        # cluster_nodes holds servers which are not yet selected for nw split
+        cluster_nodes = self.rest.get_nodes()
+        for node in cluster_nodes:
+            node.services.sort()
+
+        # Fetch actual nodes from given service list to create a split
+        node_split_1 = get_nodes_based_on_services(nodes_to_split[0])
+        node_split_2 = get_nodes_based_on_services(nodes_to_split[1])
+        num_nodes_to_fo = min(len(node_split_1), len(node_split_2))
+
+        self.log.info("Creating split between nodes %s || %s. "
+                      "Expected %s failover events"
+                      % (nodes_to_split[0], nodes_to_split[1],
+                         num_nodes_to_fo))
+
+        try:
+            create_split_between_nodes(node_split_1, node_split_2)
+            create_split_between_nodes(node_split_2, node_split_1)
+
+            self.sleep(self.timeout, "Wait for configured fo_timeout")
+            self.sleep(15, "Extra sleep to avoid fail results")
+
+            if fo_happens:
+                self.log.info("Expecting failover to be triggered")
+                # Pick new master based on split network
+                new_master = node_split_1[0]
+                if len(node_split_2) > len(node_split_1):
+                    new_master = node_split_2[0]
+
+                self.log.info("Node for cluster ops: %s" % new_master.ip)
+                self.rest = RestConnection(new_master)
+                self.cluster.master = new_master
+
+                self.rest.monitorRebalance()
+                self.validate_failover_settings(True, self.timeout,
+                                                num_nodes_to_fo,
+                                                self.max_count)
+                self.log.info("Rebalance out failed nodes")
+                result = self.cluster_util.rebalance(self.cluster)
+                self.assertTrue(result, "Post failover rebalance failed")
+
+                # Validate failover count reset post rebalance
+                self.validate_failover_settings(True, self.timeout,
+                                                0, self.max_count)
+            else:
+                self.log.info("Expecting no failover will be triggered")
+                self.validate_failover_settings(True, self.timeout,
+                                                0, self.max_count)
+        finally:
+            self.log.info("Flushing iptables rules from all nodes")
+            for node in node_split_1 + node_split_2:
+                shell = RemoteMachineShellConnection(node)
+                shell.execute_command("iptables -F")
+                shell.disconnect()
+
+    def test_concurrent_failover_timer_reset(self):
+        pass
