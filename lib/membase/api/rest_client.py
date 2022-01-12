@@ -58,7 +58,7 @@ class RestHelper(object):
     def is_ns_server_running(self, timeout_in_seconds=360):
         self.test_log.debug(
             "Checking if ns_server is running with timeout {0}secs"
-            .format(timeout_in_seconds))
+                .format(timeout_in_seconds))
         end_time = time.time() + timeout_in_seconds
         while time.time() <= end_time:
             try:
@@ -987,7 +987,7 @@ class RestConnection(object):
     def list_indexer_rebalance_tokens(self, server):
         if server:
             api = "{0}://{1}:{2}/" \
-                    .format(self.protocol, server.ip, self.index_port) + \
+                      .format(self.protocol, server.ip, self.index_port) + \
                   'listRebalanceTokens'
         else:
             api = self.baseUrl + 'listRebalanceTokens'
@@ -998,6 +998,15 @@ class RestConnection(object):
             self.test_log.error("{0} - listRebalanceTokens: {1} ,content: {2}"
                                 .format(self.ip, status, content))
             raise Exception("list rebalance tokens failed")
+
+    def set_security_settings(self, settings):
+        api = self.baseUrl + "settings/security"
+        params = urllib.urlencode(settings)
+        status, content, header = self._http_request(api, 'POST', params)
+        if not status:
+            self.test_log.error("Setting Security settings on node {0} "
+                                "failed with error {1}".format(self.ip, content))
+        return status, content, header
 
     def set_encryption_level(self, level="control"):
         _ = self.update_autofailover_settings(False, 120, False)
@@ -1462,7 +1471,7 @@ class RestConnection(object):
         if print_log:
             self.test_log.debug(
                 "/diag/eval status on {0}:{1}: {2} content: {3} command: {4}"
-                .format(self.ip, self.port, status, content, code))
+                    .format(self.ip, self.port, status, content, code))
         return status, content
 
     def set_chk_max_items(self, max_items):
@@ -3276,6 +3285,18 @@ class RestConnection(object):
                 tasks_warmup.append(task)
         return tasks_warmup
 
+    def configure_sasl_authd(self, settings):
+        api = self.baseUrl + 'settings/saslauthdAuth'
+        params = urllib.urlencode(settings)
+        status, content, header = self._http_request(api, 'POST', params)
+        return status, content, header
+
+    def configure_ldap_settings(self, settings):
+        api = self.baseUrl + '/settings/ldap'
+        params = urllib.urlencode(settings)
+        status, content, header = self._http_request(api, 'POST', params)
+        return status, content, header
+
     '''LDAP Rest API '''
     '''
     clearLDAPSettings - Function to clear LDAP settings
@@ -3431,10 +3452,11 @@ class RestConnection(object):
     '''
 
     def setAuditSettings(self, enabled='true', rotateInterval=86400, logPath='/opt/couchbase/var/lib/couchbase/logs',
-                         disabled='', users=''):
+                         disabled='', users='', rotateSize=524288000):
         api = self.baseUrl + "settings/audit"
         params = urllib.urlencode({
             'rotateInterval': '{0}'.format(rotateInterval),
+            'rotateSize': '{0}'.format(rotateSize),
             'auditdEnabled': '{0}'.format(enabled),
             'logPath': '{0}'.format(logPath),
             'disabled': '{0}'.format(disabled),
@@ -3563,6 +3585,19 @@ class RestConnection(object):
             self.log.error("%s - %s" % (group_name, content))
         return json.loads(content)
 
+    def change_password_policy(self, min_length, enforce_uppercase="false",
+                               enforce_lowercase="false", enforce_digits="false",
+                               enforce_specialchars="false"):
+        url = "settings/passwordPolicy"
+        api = self.baseUrl + url
+        params = "minLength=" + str(min_length) + "&enforceUppercase=" + \
+                 enforce_uppercase + "&enforceLowercase=" + \
+                 enforce_lowercase + "&enforceDigits=" + enforce_digits + \
+                 "&enforceSpecialChars=" + enforce_specialchars
+        status, content, header = self._http_request(api, 'POST', params)
+        if not status:
+            self.log.error("Changing password policy failed {0}".format(content))
+        return status, content
 
     '''
     Add/Update user role assignment
@@ -3735,9 +3770,9 @@ class RestConnection(object):
         Deletes a trusted CA from the cluster, given its ID
         """
         status, content, response = self._http_request(self.baseUrl
-                                                     + "/pools/default/trustedCAs/"
-                                                     + str(ca_id),
-                                                     'DELETE')
+                                                       + "/pools/default/trustedCAs/"
+                                                       + str(ca_id),
+                                                       'DELETE')
         return status, content, response
 
     def set_scope_limit(self, bucket, scope, limits):
@@ -3775,17 +3810,17 @@ class RestConnection(object):
     def set_document(self, bucket, doc_id, doc_value):
         """ Post a document value """
         target = self.baseUrl + \
-            "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
+                 "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
         docval = json.dumps(doc_value, separators=(',', ':'))
         status, _, _ = self._http_request(target,
-                                                'POST',
-                                                params="value={}".format(docval))
+                                          'POST',
+                                          params="value={}".format(docval))
         return status
 
     def get_document(self, bucket, doc_id):
         """ Get a document value """
         target = self.baseUrl + \
-            "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
+                 "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
         status, content, _ = self._http_request(target,
                                                 'GET')
         return status, content
