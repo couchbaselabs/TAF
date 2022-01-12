@@ -74,6 +74,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             ["Enabled", "Auto FO count", "Max Events configured",
              "Auto FO timeout", "Disk Auto FO", "Disk Auto FO timeout"])
 
+        self.validate_failover_settings(True, self.timeout, 0, self.max_count)
+
         self.log_setup_status(self.__class__.__name__, "complete",
                               self.setUp.__name__)
 
@@ -163,7 +165,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             if server.ip == node.ip:
                 return server
 
-    def get_nodes_to_fail(self, services_to_fail):
+    def get_nodes_to_fail(self, services_to_fail, dynamic_fo_method=False):
         nodes = dict()
         # Update the list of service-nodes mapping in the cluster object
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
@@ -172,11 +174,16 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             node_services = set(services.split("_"))
             for index, node in enumerate(nodes_in_cluster):
                 if node_services == set(node.services):
-                    nodes[self.__get_server_obj(node)] = self.failover_method
+                    fo_type = self.failover_method
+                    if dynamic_fo_method:
+                        fo_type = CouchbaseError.STOP_SERVER
+                        if CbServer.Services.KV in node_services \
+                                and choice([True, False]):
+                            fo_type = CouchbaseError.STOP_MEMCACHED
+                    nodes[self.__get_server_obj(node)] = fo_type
                     # Remove the node to be failed to avoid double insertion
                     nodes_in_cluster.pop(index)
                     break
-
         return nodes
 
     def validate_failover_settings(self, enabled, timeout, count, max_count):
@@ -423,76 +430,158 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         5. Validate auto failovers after new timeout
         """
 
-        def get_nodes_for_fo():
-            nodes = dict()
-            # Update the list of service-nodes mapping in the cluster object
-            self.cluster_util.update_cluster_nodes_service_list(self.cluster)
-            nodes_in_cluster = self.rest.get_nodes()
-            for services in self.failover_order:
-                node_services = set(services.split("_"))
-                for index, node in enumerate(nodes_in_cluster):
-                    if node_services == set(node.services):
-                        fo_type = CouchbaseError.STOP_SERVER
-                        if CbServer.Services.KV in node_services \
-                                and choice([True, False]):
-                            fo_type = CouchbaseError.STOP_MEMCACHED
-                        nodes[self.__get_server_obj(node)] = fo_type
-                        nodes_in_cluster.pop(index)
-                        break
-            return nodes
-
-        self.nodes_to_fail = get_nodes_for_fo()
+        self.nodes_to_fail = self.get_nodes_to_fail(self.failover_order[0],
+                                                    dynamic_fo_method=True)
         expected_fo_nodes = self.num_nodes_to_be_failover
         rand_node = choice(self.nodes_to_fail.keys())
 
-        self.log.info("Starting auto-failover procedure")
-        failover_task = ConcurrentFailoverTask(
-            task_manager=self.task_manager, master=self.orchestrator,
-            servers_to_fail=self.nodes_to_fail,
-            expected_fo_nodes=expected_fo_nodes,
-            task_type="induce_failure")
-        self.task_manager.add_new_task(failover_task)
-        self.sleep(int(self.timeout * 0.7),
-                   "Wait before bringing back the failed nodes")
+        try:
+            self.log.info("Starting auto-failover procedure")
+            failover_task = ConcurrentFailoverTask(
+                task_manager=self.task_manager, master=self.orchestrator,
+                servers_to_fail=self.nodes_to_fail,
+                expected_fo_nodes=expected_fo_nodes,
+                task_type="induce_failure")
+            self.task_manager.add_new_task(failover_task)
+            self.sleep(int(self.timeout * 0.7),
+                       "Wait before bringing back the failed nodes")
 
-        self.log.info("Bringing back '%s' for some time" % rand_node.ip)
-        new_timer = None
-        shell = RemoteMachineShellConnection(rand_node)
-        cb_err = CouchbaseError(self.log, shell)
-        if self.nodes_to_fail[rand_node] == CouchbaseError.STOP_MEMCACHED:
-            cb_err.revert(CouchbaseError.STOP_MEMCACHED)
-            self.sleep(10, "Wait before creating failure again")
-            cb_err.create(CouchbaseError.STOP_MEMCACHED)
-            new_timer = time()
-        elif self.nodes_to_fail[rand_node] == CouchbaseError.STOP_SERVER:
-            cb_err.revert(CouchbaseError.STOP_SERVER)
-            self.sleep(10, "Wait before creating failure again")
-            cb_err.create(CouchbaseError.STOP_SERVER)
-            new_timer = time()
-        shell.disconnect()
+            self.log.info("Bringing back '%s' for some time" % rand_node.ip)
+            new_timer = None
+            shell = RemoteMachineShellConnection(rand_node)
+            cb_err = CouchbaseError(self.log, shell)
+            if self.nodes_to_fail[rand_node] == CouchbaseError.STOP_MEMCACHED:
+                cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+                self.sleep(10, "Wait before creating failure again")
+                cb_err.create(CouchbaseError.STOP_MEMCACHED)
+                new_timer = time()
+            elif self.nodes_to_fail[rand_node] == CouchbaseError.STOP_SERVER:
+                cb_err.revert(CouchbaseError.STOP_SERVER)
+                self.sleep(10, "Wait before creating failure again")
+                cb_err.create(CouchbaseError.STOP_SERVER)
+                new_timer = time()
+            shell.disconnect()
 
-        # Validate the previous auto-failover task failed
-        # due to the random_node coming back online
-        self.task_manager.get_task_result(failover_task)
-        self.assertFalse("Nodes failed over though some nodes became active")
+            # Validate the previous auto-failover task failed
+            # due to the random_node coming back online
+            self.task_manager.get_task_result(failover_task)
+            self.assertFalse("Nodes failed over though nodes became active")
 
-        # Validate auto_failover_settings
-        self.validate_failover_settings(True, self.timeout, 0, self.max_count)
+            # Validate auto_failover_settings
+            self.validate_failover_settings(True, self.timeout,
+                                            0, self.max_count)
 
-        # Make sure the new auto-failover timing is honoured
-        new_timer = new_timer + self.timeout
-        while int(time()) < new_timer:
-            settings = self.rest.get_autofailover_settings()
-            if settings.count != 0:
-                self.fail("Nodes failed over before new failover time")
+            # Make sure the new auto-failover timing is honoured
+            new_timer = new_timer + self.timeout
+            while int(time()) < new_timer:
+                settings = self.rest.get_autofailover_settings()
+                if settings.count != 0:
+                    self.fail("Nodes failed over before new failover time")
 
-        # Validate auto_failover_settings after actual auto failover
-        self.validate_failover_settings(True, self.timeout,
-                                        expected_fo_nodes, self.max_count)
+            # Validate auto_failover_settings after actual auto failover
+            self.validate_failover_settings(True, self.timeout,
+                                            expected_fo_nodes, self.max_count)
+        finally:
+            # Recover all nodes from induced failures
+            failover_task = ConcurrentFailoverTask(
+                task_manager=self.task_manager, master=self.orchestrator,
+                servers_to_fail=self.nodes_to_fail,
+                expected_fo_nodes=expected_fo_nodes,
+                task_type="revert_failure")
+            self.task_manager.add_new_task(failover_task)
+            self.task_manager.get_task_result(failover_task)
 
         self.log.info("Rebalance out the failed nodes")
         result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Final rebalance failed")
 
     def test_failover_during_rebalance(self):
-        pass
+        """
+        1. Start rebalance operation on the active cluster
+        2. Introduce failures on target nodes to trigger auto-failover
+        3. Validate rebalance succeeds after auto-fo trigger
+        """
+        def get_reb_out_nodes():
+            nodes = list()
+            nodes_with_services = dict()
+            cluster_nodes = self.rest.get_nodes()
+            for node in cluster_nodes:
+                node.services.sort()
+                d_key = '_'.join(node.services)
+                if d_key not in nodes_with_services:
+                    nodes_with_services[d_key] = list()
+                nodes_with_services[d_key].append(node)
+
+            for services in out_nodes:
+                services = services.split("_")
+                services.sort()
+                services = "_".join(services)
+                rand_node = choice(nodes_with_services[services])
+                nodes_with_services[services].remove(rand_node)
+                nodes.append(rand_node)
+            return nodes
+
+        add_nodes = list()
+        remove_nodes = list()
+        # Format - kv:kv_index -> 2 nodes with services [kv, kv:index]
+        out_nodes = self.input.param("out_nodes", "kv").split(":")
+        # Can take any of (in/out/swap)
+        rebalance_type = self.input.param("rebalance_type", "in")
+        self.nodes_to_fail = self.get_nodes_to_fail(self.failover_order[0],
+                                                    dynamic_fo_method=True)
+
+        expected_fo_nodes = self.num_nodes_to_be_failover
+        # Create Auto-failover task but won't start it
+        failover_task = ConcurrentFailoverTask(
+            task_manager=self.task_manager, master=self.orchestrator,
+            servers_to_fail=self.nodes_to_fail,
+            expected_fo_nodes=expected_fo_nodes,
+            task_type="revert_failure")
+
+        self.log.info("Starting rebalance operation")
+        if rebalance_type == "in":
+            add_nodes = [self.cluster.servers[
+                         self.nodes_init:self.nodes_init+self.nodes_in]]
+        elif rebalance_type == "out":
+            remove_nodes = get_reb_out_nodes()
+        elif rebalance_type == "swap":
+            remove_nodes = get_reb_out_nodes()
+            add_nodes = [self.cluster.servers[
+                         self.nodes_init:self.nodes_init+self.nodes_in]]
+
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.nodes_in_cluster,
+            to_add=add_nodes, to_remove=remove_nodes)
+
+        self.sleep(10, "Wait for rebalance task to start before failover")
+        self.task_manager.add_new_task(failover_task)
+
+        self.log.info("Wait for failover task to complete")
+        self.task_manager.get_task_result(failover_task)
+
+        self.log.info("Wait for rebalance task to complete")
+        self.task_manager.get_task_result(rebalance_task)
+
+        try:
+            self.assertFalse(failover_task.result, "Auto-failover task failed")
+            self.assertFalse(rebalance_task.result,
+                             "Rebalance succeeded with failed node")
+        finally:
+            # Recover all nodes from induced failures
+            recovery_task = ConcurrentFailoverTask(
+                task_manager=self.task_manager, master=self.orchestrator,
+                servers_to_fail=self.nodes_to_fail,
+                expected_fo_nodes=expected_fo_nodes,
+                task_type="revert_failure")
+            self.task_manager.add_new_task(recovery_task)
+            self.task_manager.get_task_result(recovery_task)
+
+        # Validate auto_failover_settings after failover
+        self.validate_failover_settings(True, self.timeout,
+                                        expected_fo_nodes, self.max_count)
+
+        # Rebalance the cluster to remove failed nodes
+        self.cluster_util.rebalance(self.cluster)
+
+        # Validate auto_failover_settings after rebalance operation
+        self.validate_failover_settings(True, self.timeout, 0, self.max_count)
