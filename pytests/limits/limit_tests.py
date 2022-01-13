@@ -4,7 +4,7 @@ import json
 from BucketLib.BucketOperations import BucketHelper
 from basetestcase import ClusterSetup
 from limits.resource_producer import UserResourceProducer, LimitConfig
-from limits.util import retry_with_timeout, copy_node_for_user
+from limits.util import retry_with_timeout, copy_node_for_user, apply_rebalance
 from membase.api.rest_client import RestConnection
 
 
@@ -298,3 +298,23 @@ class LimitTest(ClusterSetup):
             self.remove_user_and_task(self.users[-1])
             # Add a new user to the system
             self.insert_user_and_task(User("user{}".format(len(self.users) + i)))
+
+    def test_cluster_ops(self):
+        """ A test in which the limits are configured, a cluser operation
+        happens and throughput is produced above the threshold and operations
+        exceeding the threshold fail.
+        """
+        # The number of times the cluster operation happens
+        cycles = self.input.param("cycles", 3)
+        # The type of cluster operation
+        strategy = self.input.param("strategy", "rebalance")
+
+        self.assertGreaterEqual(self.nodes_init, 3, "Requires at least 3 nodes")
+
+        if strategy not in {'rebalance', 'graceful-failover', 'hard-failover'}:
+            self.fail("Strategy {} is not an allowed strategy".format(strategy))
+
+        # Apply cluster operation
+        apply_rebalance(self.task, self.cluster.servers, cycles=cycles, strategy=strategy)
+        # Ensure limits still apply after cluster operation
+        self.test_above_threshold()

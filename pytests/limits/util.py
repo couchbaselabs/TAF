@@ -52,3 +52,30 @@ def key_for_node(node, bucket_name):
         if BucketUtils.get_vbucket_num_for_key(key) in vbuckets:
             return key
     raise RuntimeError('A key that belongs to this node could not be found.')
+
+
+def apply_rebalance(task, servers, cycles=3, strategy="rebalance"):
+    """ Shuffles servers in and out via a swap-rebalance or failover.
+    Requires a minimum of 3 servers. """
+    # Remove last server
+    task.rebalance(servers, [], servers[-1:])
+
+    # Swap rebalance a single node for several cycles.
+    for _ in range(cycles):
+        # Add last server and remove second-to-last server
+        to_add, to_remove = servers[-1:], servers[-2:-1]
+
+        if strategy == "rebalance":
+            # Perform a swap rebalance
+            task.rebalance(servers, to_add, to_remove)
+
+        if strategy == "graceful-failover" or strategy == "hard-failover":
+            # Perform a graceful-failover followed
+            task.failover(servers=servers, failover_nodes=to_remove,
+                          graceful=strategy == "graceful-failover")
+            task.rebalance(servers, to_add, [])
+
+        # Swap last two elements
+        servers[-1], servers[-2] = servers[-2], servers[-1]
+
+    task.rebalance(servers, to_remove, [])
