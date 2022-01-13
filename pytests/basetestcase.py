@@ -407,8 +407,11 @@ class BaseTestCase(unittest.TestCase):
                         encryption_type=self.encryption_type,
                         passphrase_type=self.passphrase_type)
                     self.generate_and_upload_cert(
-                        cluster, cluster.x509, upload_root_certs=True,
+                        cluster.servers, cluster.x509, upload_root_certs=True,
                         upload_node_certs=True, upload_client_certs=True)
+                    payload = "name=cbadminbucket&roles=admin&password=password"
+                    rest = RestConnection(cluster.master)
+                    rest.add_set_builtin_user("cbadminbucket", payload)
 
             for cluster_name, cluster in self.cb_clusters.items():
                 self.modify_cluster_settings(cluster)
@@ -1066,27 +1069,31 @@ class BaseTestCase(unittest.TestCase):
                 get_tar(remote_path, file_path, file_name,
                         server, todir=copy_to_path)
 
-    def generate_and_upload_cert(self, cluster, x509, upload_root_certs=True,
-                                 upload_node_certs=True, upload_client_certs=True):
-        x509.generate_multiple_x509_certs(servers=cluster.servers)
-        for server in cluster.servers:
-            x509.delete_inbox_folder_on_server(server=server)
+    def generate_and_upload_cert(
+            self, servers, x509, generate_certs=True, delete_inbox_folder=True,
+            upload_root_certs=True, upload_node_certs=True,
+            delete_out_of_the_box_CAs=True, upload_client_certs=True):
+
+        if generate_certs:
+            x509.generate_multiple_x509_certs(servers=servers)
+
+        if delete_inbox_folder:
+            for server in servers:
+                x509.delete_inbox_folder_on_server(server=server)
 
         if upload_root_certs:
-            for server in cluster.servers:
+            for server in servers:
                 _ = x509.upload_root_certs(server)
 
         if upload_node_certs:
-            x509.upload_node_certs(servers=cluster.servers)
+            x509.upload_node_certs(servers=servers)
 
-        for node in cluster.servers:
-            x509.delete_unused_out_of_the_box_CAs(server=node)
-        payload = "name=cbadminbucket&roles=admin&password=password"
-        rest = RestConnection(cluster.master)
-        rest.add_set_builtin_user("cbadminbucket", payload)
+        if delete_out_of_the_box_CAs:
+            for node in servers:
+                x509.delete_unused_out_of_the_box_CAs(server=node)
 
         if upload_client_certs:
-            x509.upload_client_cert_settings(server=cluster.servers[0])
+            x509.upload_client_cert_settings(server=servers[0])
 
 
 class ClusterSetup(BaseTestCase):

@@ -3861,6 +3861,7 @@ class CbasUtil(UDFUtil):
     def retrieve_cc_ip_from_master(self, cluster, timeout=300):
         end_time = time.time() + timeout
         response = None
+        counter = 1
         while time.time() < end_time:
             try:
                 response = self.fetch_analytics_cluster_response(cluster)
@@ -3868,6 +3869,9 @@ class CbasUtil(UDFUtil):
                     break
             except Exception:
                 pass
+            finally:
+                time.sleep(min(10, 2 * counter))
+                counter += 1
         if response:
             cc_node_id = ""
             cc_node_ip = ""
@@ -3936,6 +3940,7 @@ class CbasUtil(UDFUtil):
     def is_analytics_running(self, cluster, timeout=600):
         end_time = time.time() + timeout
         self.log.info("Waiting for analytics service to come up")
+        counter = 1
         while end_time > time.time():
             try:
                 response = self.fetch_analytics_cluster_response(cluster)
@@ -3944,7 +3949,8 @@ class CbasUtil(UDFUtil):
             except Exception:
                 pass
             finally:
-                time.sleep(10)
+                time.sleep(min(10, 2 * counter))
+                counter += 1
         return False
 
     def retrieve_analyticsHttpAdminListen_address_port(
@@ -4376,7 +4382,7 @@ class CbasUtil(UDFUtil):
                         {"cluster": cluster,
                          "dataset_name": dataset.full_name,
                          "num_items": dataset.num_of_items,
-                         "timeout": cbas_spec.get("api_timeout", 120)}))
+                         "timeout": cbas_spec.get("api_timeout", 300)}))
             self.run_jobs_in_parallel(jobs, results,
                                       cbas_spec["max_thread_count"],
                                       async_run=False)
@@ -4894,7 +4900,8 @@ class CBASRebalanceUtil(object):
     def wait_for_rebalance_task_to_complete(self, task, cluster,
                                             check_cbas_running=False):
         self.task.jython_task_manager.get_task_result(task)
-        self.reset_cbas_cc_node(cluster)
+        if hasattr(cluster, "cbas_cc_node"):
+            self.reset_cbas_cc_node(cluster)
         if task.result and hasattr(cluster, "cbas_nodes"):
             if check_cbas_running:
                 return self.cbas_util.is_analytics_running(cluster)

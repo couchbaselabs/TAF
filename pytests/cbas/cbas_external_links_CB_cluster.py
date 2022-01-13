@@ -101,7 +101,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
 
-    def setup_certs(self, cluster):
+    def setup_certs(self, cluster, spare_servers=False):
         """
         Setup method for setting up root, node and client certs for all the clusters.
         """
@@ -112,8 +112,11 @@ class CBASExternalLinks(CBASBaseTest):
             host=cluster.master, standard=self.standard,
             encryption_type=self.encryption_type,
             passphrase_type=self.passphrase_type)
+        servers = copy.deepcopy(cluster.servers)
+        if spare_servers:
+            servers.extend(self.available_servers)
         self.generate_and_upload_cert(
-            cluster, cluster.x509, upload_root_certs=True,
+            servers, cluster.x509, upload_root_certs=True,
             upload_node_certs=True, upload_client_certs=True)
         self.setup_certs_status = True
 
@@ -132,7 +135,7 @@ class CBASExternalLinks(CBASBaseTest):
                        same_dv_for_link_and_dataset=True,
                        create_datasets=False, connect_link=False,
                        wait_for_ingestion=False, rebalance_util=False,
-                       username=None):
+                       username=None, spare_servers=False):
 
         self.log.info("Selecting remote cluster")
         if not to_cluster:
@@ -160,7 +163,7 @@ class CBASExternalLinks(CBASBaseTest):
         link_objs = self.cbas_util.list_all_link_objs(link_type="couchbase")
 
         if setup_cert:
-            self.setup_certs(to_cluster)
+            self.setup_certs(to_cluster, spare_servers)
             if encryption in ["full1", "full2"]:
                 for link in link_objs:
                     link.properties["certificate"] = self.read_file(
@@ -1822,15 +1825,13 @@ class CBASExternalLinks(CBASBaseTest):
             same_dv_for_link_and_dataset=self.input.param(
                 "same_dv_for_link_and_dataset", True),
             create_datasets=True, connect_link=True, wait_for_ingestion=True,
-            rebalance_util=True, username=None)
+            rebalance_util=True, username=None, spare_servers=True)
         dataset = self.cbas_util.list_all_dataset_objs()[0]
 
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package(
-            self.doc_spec_name)
         doc_loading_task = self.rebalance_util.data_load_collection(
-            to_cluster, doc_loading_spec, True, async_load=True,
-            skip_read_success_results=True, create_percentage_per_collection=100,
-            durability_level=None)
+            to_cluster, self.doc_spec_name, skip_validations=True,
+            async_load=True, skip_read_success_results=True,
+            create_percentage_per_collection=100, durability_level=None)
 
         run_query = self.input.param("run_query", False)
         if run_query:
@@ -1858,7 +1859,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
                 rebalance_task, to_cluster):
-            self.fali("{0} on remote cluster failed".format(
+            self.fail("{0} on remote cluster failed".format(
                 self.input.param("rebalance_type", "swap").upper()))
 
         self.log.info("Get KV ops result")
@@ -1895,12 +1896,10 @@ class CBASExternalLinks(CBASBaseTest):
             rebalance_util=True, username=None)
         dataset = self.cbas_util.list_all_dataset_objs()[0]
 
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package(
-            self.doc_spec_name)
         doc_loading_task = self.rebalance_util.data_load_collection(
-            to_cluster, doc_loading_spec, True, async_load=True,
-            skip_read_success_results=True, create_percentage_per_collection=100,
-            durability_level=None)
+            to_cluster, self.doc_spec_name, skip_validations=True,
+            async_load=True, skip_read_success_results=True,
+            create_percentage_per_collection=100, durability_level=None)
 
         run_query = self.input.param("run_query", False)
         if run_query:
@@ -1925,11 +1924,11 @@ class CBASExternalLinks(CBASBaseTest):
             self.analytics_cluster, kv_nodes_in=0, kv_nodes_out=0,
             cbas_nodes_in=cbas_nodes_in, cbas_nodes_out=cbas_nodes_out,
             available_servers=self.available_servers,
-            exclude_nodes=[self.analytics_cluster.cbas_cc_node])
+            exclude_nodes=[])
 
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
                 rebalance_task, self.analytics_cluster):
-            self.fali("{0} on remote cluster failed".format(
+            self.fail("{0} on remote cluster failed".format(
                 self.input.param("rebalance_type", "swap").upper()))
 
         self.log.info("Get KV ops result")
@@ -1966,12 +1965,10 @@ class CBASExternalLinks(CBASBaseTest):
             rebalance_util=True, username=None)
         dataset = self.cbas_util.list_all_dataset_objs()[0]
 
-        doc_loading_spec = self.bucket_util.get_crud_template_from_package(
-            self.doc_spec_name)
         doc_loading_task = self.rebalance_util.data_load_collection(
-            to_cluster, doc_loading_spec, True, async_load=True,
-            skip_read_success_results=True, create_percentage_per_collection=100,
-            durability_level=None)
+            to_cluster, self.doc_spec_name, skip_validations=True,
+            async_load=True, skip_read_success_results=True,
+            create_percentage_per_collection=100, durability_level=None)
 
         run_query = self.input.param("run_query", False)
         if run_query:
@@ -2087,27 +2084,26 @@ class CBASExternalLinks(CBASBaseTest):
         original_link_name = ""
 
         if self.input.param('invalid_kv_collection', False):
-            dataset_obj.full_kv_entity_name = dataset_obj.get_fully_qualified_kv_entity_name(
-                2) + ".invalid"
+            dataset_obj.kv_collection.name = "invalid"
             error_msg = error_msg.format(CBASHelper.unformat_name(
-                dataset_obj.full_kv_entity_name))
+                dataset_obj.get_fully_qualified_kv_entity_name(3)))
         elif self.input.param('invalid_kv_scope', False):
-            dataset_obj.full_kv_entity_name = dataset_obj.kv_bucket.name + \
-                                              ".invalid." + \
-                                              dataset_obj.kv_collection.name
+            dataset_obj.kv_scope.name = "invalid"
             error_msg = error_msg.format(CBASHelper.unformat_name(
-                dataset_obj.full_kv_entity_name))
+                dataset_obj.get_fully_qualified_kv_entity_name(2)))
         elif self.input.param('invalid_dataverse', False):
             dataset_obj.name = "invalid." + dataset_obj.name
             dataset_obj.dataverse_name = ""
             error_msg = error_msg.format("invalid")
         elif self.input.param('name_length', 0):
-            dataset_obj.full_name = dataset_obj.dataverse_name + self.cbas_util.generate_name(
-                name_cardinality=1,
-                max_length=self.input.param('name_length', 0),
-                fixed_length=True, name_key=None)
+            dataset_obj.name = CBASHelper.format_name(
+                self.cbas_util.generate_name(
+                    name_cardinality=1,
+                    max_length=self.input.param('name_length', 0),
+                    fixed_length=True, name_key=None))
         elif self.input.param('no_dataset_name', False):
             dataset_obj.name = ''
+            dataset_obj.full_name = dataset_obj.kv_bucket.name
         elif self.input.param('remove_default_collection', False):
             error_msg = error_msg.format(
                 CBASHelper.unformat_name(
@@ -2116,13 +2112,15 @@ class CBASExternalLinks(CBASBaseTest):
         elif self.input.param("connect_invalid_link", False):
             original_link_name = dataset_obj.link_name
             dataset_obj.link_name = "invalid"
-            error_msg = "Link {0} does not exist".format(dataset_obj.link_name)
+            error_msg = "Link {0}.{1} does not exist".format(
+                dataset_obj.dataverse_name, dataset_obj.link_name)
         # Negative scenario ends
 
         self.log.info("Creating dataset on link to remote cluster")
         if not self.cbas_util.create_dataset(
                 self.analytics_cluster, dataset_obj.name,
-                kv_entity=dataset_obj.full_kv_entity_name,
+                kv_entity=dataset_obj.get_fully_qualified_kv_entity_name(
+                    self.input.param("bucket_cardinality", 3)),
                 dataverse_name=dataset_obj.dataverse_name,
                 link_name=dataset_obj.link_name,
                 validate_error_msg=self.input.param('validate_error', False),
@@ -2257,8 +2255,7 @@ class CBASExternalLinks(CBASBaseTest):
         def load_data(cluster):
             doc_loading_spec = \
                 self.bucket_util.get_crud_template_from_package("initial_load")
-            doc_loading_spec["doc_crud"][
-                "create_percentage_per_collection"] = 25
+            doc_loading_spec["doc_crud"]["create_percentage_per_collection"] = 25
             self.load_data_into_buckets(
                 cluster, doc_loading_spec=doc_loading_spec,
                 async_load=False, validate_task=True, mutation_num=0)
@@ -2282,8 +2279,9 @@ class CBASExternalLinks(CBASBaseTest):
                 self.fail("Error while creating dataset {0}".format(
                     dataset_obj.full_name))
 
-        def perform_rebalance(remoteIN=True, remoteOUT=False,
-                              analyticsIN=True, analyticsOUT=False):
+        def perform_rebalance(
+                remoteIN=True, remoteOUT=False, analyticsIN=True,
+                analyticsOUT=False):
             rebalance_tasks = list()
             if remoteIN or remoteOUT:
                 kv_nodes_in = 0
@@ -2328,7 +2326,8 @@ class CBASExternalLinks(CBASBaseTest):
             create_links=True, create_remote_kv_infra=True,
             create_dataset_objs=True, for_all_kv_entities=False,
             same_dv_for_link_and_dataset=False, create_datasets=True,
-            connect_link=True, wait_for_ingestion=True, rebalance_util=True)
+            connect_link=True, wait_for_ingestion=True, rebalance_util=True,
+            spare_servers=True)
 
         self.log.info("Step {0}: Disabling Auto-Failover on remote "
                       "cluster".format(step_count))
@@ -2349,11 +2348,6 @@ class CBASExternalLinks(CBASBaseTest):
         self.security_util.set_n2n_encryption_level_on_nodes(
             to_cluster.nodes_in_cluster, level="control")
 
-        self.log.info("Step {0}: Setting up certificates on remote "
-                      "cluster".format(step_count))
-        step_count += 1
-        self.setup_certs(to_cluster)
-
         self.log.info("Step (0): Loading more docs on remote cluster".format(
             step_count))
         step_count += 1
@@ -2371,7 +2365,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=True, remoteOUT=False, analyticsIN=True,
                     analyticsOUT=False):
-                self.fali("Rebalancing-IN KV node on remote cluster and "
+                self.fail("Rebalancing-IN KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2391,7 +2385,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Step {0}: Setting up certificates on analytics "
                       "cluster".format(step_count))
         step_count += 1
-        self.setup_certs(self.analytics_cluster)
+        self.setup_certs(self.analytics_cluster, True)
 
         self.log.info("Step (0): Loading more docs on remote cluster".format(
             step_count))
@@ -2410,7 +2404,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=False, remoteOUT=True, analyticsIN=False,
                     analyticsOUT=True):
-                self.fali("Rebalancing-OUT KV node on remote cluster and "
+                self.fail("Rebalancing-OUT KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2433,7 +2427,7 @@ class CBASExternalLinks(CBASBaseTest):
         step_count += 1
         dataset_to_drop = random.choice(self.cbas_util.list_all_dataset_objs())
         if not self.cbas_util.drop_dataset(
-            self.analytics_cluster, dataset_to_drop.full_name):
+                self.analytics_cluster, dataset_to_drop.full_name):
             self.fail("Error while dropping dataset {0}".format(
                 dataset_to_drop.full_name))
 
@@ -2445,7 +2439,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=True, remoteOUT=False, analyticsIN=True,
                     analyticsOUT=False):
-                self.fali("Rebalancing-IN KV node on remote cluster and "
+                self.fail("Rebalancing-IN KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2479,7 +2473,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=False, remoteOUT=True, analyticsIN=False,
                     analyticsOUT=True):
-                self.fali("Rebalancing-OUT KV node on remote cluster and "
+                self.fail("Rebalancing-OUT KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2510,7 +2504,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=True, remoteOUT=False, analyticsIN=True,
                     analyticsOUT=False):
-                self.fali("Rebalancing-IN KV node on remote cluster and "
+                self.fail("Rebalancing-IN KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2548,7 +2542,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=False, remoteOUT=True, analyticsIN=False,
                     analyticsOUT=True):
-                self.fali("Rebalancing-OUT KV node on remote cluster and "
+                self.fail("Rebalancing-OUT KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2584,7 +2578,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=True, remoteOUT=False, analyticsIN=True,
                     analyticsOUT=False):
-                self.fali("Rebalancing-IN KV node on remote cluster and "
+                self.fail("Rebalancing-IN KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2627,7 +2621,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=False, remoteOUT=True, analyticsIN=False,
                     analyticsOUT=True):
-                self.fali("Rebalancing-OUT KV node on remote cluster and "
+                self.fail("Rebalancing-OUT KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2662,7 +2656,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=True, remoteOUT=False, analyticsIN=True,
                     analyticsOUT=False):
-                self.fali("Rebalancing-IN KV node on remote cluster and "
+                self.fail("Rebalancing-IN KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2696,7 +2690,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=False, remoteOUT=True, analyticsIN=False,
                     analyticsOUT=True):
-                self.fali("Rebalancing-OUT KV node on remote cluster and "
+                self.fail("Rebalancing-OUT KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2726,7 +2720,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=True, remoteOUT=False, analyticsIN=True,
                     analyticsOUT=False):
-                self.fali("Rebalancing-IN KV node on remote cluster and "
+                self.fail("Rebalancing-IN KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(
@@ -2756,7 +2750,7 @@ class CBASExternalLinks(CBASBaseTest):
             if not perform_rebalance(
                     remoteIN=False, remoteOUT=True, analyticsIN=False,
                     analyticsOUT=True):
-                self.fali("Rebalancing-OUT KV node on remote cluster and "
+                self.fail("Rebalancing-OUT KV node on remote cluster and "
                           "CBAS node on analytics cluster Failed")
 
         if not self.cbas_util.validate_docs_in_all_datasets(

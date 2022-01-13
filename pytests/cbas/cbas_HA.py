@@ -394,6 +394,8 @@ class CBASHighAvailability(CBASBaseTest):
         try:
             while True:
                 if cluster.rest._rebalance_progress_status() == 'running':
+                    self.sleep(3, "Waiting for rebalance to start before "
+                                  "killing the server")
                     break
             if isinstance(nodes_to_kill, list):
                 for node in nodes_to_kill:

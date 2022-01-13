@@ -111,7 +111,7 @@ class CBASBugAutomation(CBASBaseTest):
         self.log.info("Step {0}: Setting up certificates".format(step_count))
         step_count += 1
         self.generate_and_upload_cert(
-            self.cluster, x509, upload_root_certs=True,
+            self.cluster.servers, x509, upload_root_certs=True,
             upload_node_certs=True, upload_client_certs=True)
 
         if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
@@ -290,7 +290,7 @@ class CBASBugAutomation(CBASBaseTest):
             encryption_type=self.encryption_type,
             passphrase_type=self.passphrase_type)
         self.generate_and_upload_cert(
-            self.cluster, x509, upload_root_certs=True,
+            self.cluster.servers, x509, upload_root_certs=True,
             upload_node_certs=True, upload_client_certs=True)
 
         if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
