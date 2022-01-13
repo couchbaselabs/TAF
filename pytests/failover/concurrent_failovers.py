@@ -2,8 +2,11 @@ from random import choice
 from time import time
 
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from Jython_tasks.task import ConcurrentFailoverTask
+from bucket_collections.collections_base import CollectionBase
+from collections_helper.collections_spec_constants import MetaCrudParams
+from couchbase_helper.documentgenerator import doc_generator
 from error_simulation.cb_error import CouchbaseError
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from membase.api.rest_client import RestConnection
@@ -51,6 +54,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         # End of params to be used for failover
         #######################################################################
 
+        self.load_during_fo = self.input.param("load_during_fo", False)
+
         self.log.info("Updating Auto-failover settings")
         self.rest.update_autofailover_settings(
             enabled=True, timeout=self.timeout, maxCount=self.max_count,
@@ -76,6 +81,17 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         self.validate_failover_settings(True, self.timeout, 0, self.max_count)
 
+        # Init sdk_client_pool if not initialized before
+        if self.sdk_client_pool is None:
+            self.init_sdk_pool_object()
+            CollectionBase.create_sdk_clients(
+                self.task_manager.number_of_threads,
+                self.cluster.master, self.cluster.buckets,
+                self.sdk_client_pool, self.sdk_compression)
+
+        # Perform initial collection load
+        self.__load_initial_collection_data()
+
         self.log_setup_status(self.__class__.__name__, "complete",
                               self.setUp.__name__)
 
@@ -94,6 +110,58 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                               self.tearDown.__name__)
 
         super(ConcurrentFailoverTests, self).tearDown()
+
+    def __get_collection_load_spec(self, doc_ttl=0):
+        """
+        Set doc_ttl for loading doc during failover operations
+        """
+        d_level = Bucket.DurabilityLevel.NONE
+        if self.num_replicas != 3:
+            # Since durability is not supported with replicas=3
+            d_level = choice([
+                Bucket.DurabilityLevel.NONE,
+                Bucket.DurabilityLevel.MAJORITY,
+                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                Bucket.DurabilityLevel.PERSIST_TO_MAJORITY])
+        return {
+            # Scope/Collection ops params
+            MetaCrudParams.COLLECTIONS_TO_DROP: 3,
+
+            MetaCrudParams.SCOPES_TO_DROP: 1,
+            MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 3,
+            MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 5,
+
+            MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 10,
+
+            MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS: "all",
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS: "all",
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_OPS: "all",
+
+            # Doc loading params
+            "doc_crud": {
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "concurrent_fo_docs",
+
+                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 5000,
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 20,
+                MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 10,
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 10,
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 10,
+            },
+
+            # Doc_loading task options
+            MetaCrudParams.DOC_TTL: doc_ttl,
+            MetaCrudParams.DURABILITY_LEVEL: d_level,
+            MetaCrudParams.SKIP_READ_ON_ERROR: True,
+            MetaCrudParams.SUPPRESS_ERROR_TABLE: False,
+            # The below is to skip populating success dictionary for reads
+            MetaCrudParams.SKIP_READ_SUCCESS_RESULTS: True,
+
+            MetaCrudParams.RETRY_EXCEPTIONS: [],
+            MetaCrudParams.IGNORE_EXCEPTIONS: [],
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",
+            MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all"
+        }
 
     @property
     def num_nodes_to_be_failover(self):
@@ -197,6 +265,43 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.nodes_to_fail = dict()
         for node_obj, fo_type in temp_data.items():
             self.nodes_to_fail[self.__get_server_obj(node_obj)] = fo_type
+
+    def __load_initial_collection_data(self):
+        load_spec = self.__get_collection_load_spec()
+        load_spec[MetaCrudParams.SCOPES_TO_DROP] = 0
+        load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 0
+        load_spec[MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET] = 2
+        load_spec[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 5
+        load_spec["doc_crud"][
+            MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = 10000
+
+    def __perform_doc_ops(self, durability=None, validate_num_items=True):
+        load_spec = self.__get_collection_load_spec()
+        if durability:
+            load_spec[MetaCrudParams.DURABILITY_LEVEL] = durability
+
+        self.log.info("Performing doc_ops with durability level=%s"
+                      % load_spec[MetaCrudParams.DURABILITY_LEVEL])
+        doc_loading_task = \
+            self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.cluster.buckets,
+                load_spec,
+                mutation_num=0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency)
+
+        if doc_loading_task.result is False:
+            self.fail("Collection CRUDs failure")
+
+        if validate_num_items:
+            # Verify initial doc load count
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets,
+                                                         timeout=1200)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster)
 
     def get_nodes_to_fail(self, services_to_fail, dynamic_fo_method=False):
         nodes = dict()
@@ -334,6 +439,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         # After failure - failed nodes' information
         self.__display_failure_node_status("Nodes status failure")
+
+        self.bucket_util.print_bucket_stats(self.cluster)
         # Validate count at the end of failover procedure
         self.validate_failover_settings(True, self.timeout,
                                         self.fo_events, self.max_count)
@@ -352,9 +459,15 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.__update_unaffected_node()
             self.__run_test()
 
+            # Perform collection crud + doc_ops before rebalance operation
+            self.__perform_doc_ops(durability="NONE", validate_num_items=False)
+
         self.log.info("Rebalance out all failed nodes")
         result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Final rebalance failed")
+
+        # Perform collection crud + doc_ops
+        self.__perform_doc_ops()
 
     def test_split_brain(self):
         """
@@ -535,6 +648,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Final rebalance failed")
 
+        # Perform collection crud + doc_ops after rebalance operation
+        self.__perform_doc_ops()
+
     def test_failover_during_rebalance(self):
         """
         1. Start rebalance operation on the active cluster
@@ -572,6 +688,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         services_to_fo = self.failover_order[0].split(":")
         self.nodes_to_fail = self.get_nodes_to_fail(services_to_fo,
                                                     dynamic_fo_method=True)
+        loader_task = None
+        reader_task = None
+
         if rebalance_type == "in":
             add_nodes = self.cluster.servers[
                 self.nodes_init:self.nodes_init+self.nodes_in]
@@ -586,6 +705,16 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         expected_fo_nodes = self.num_nodes_to_be_failover
         self.__update_server_obj()
+
+        # Start doc_ops in background
+        if self.load_during_fo:
+            doc_gen = doc_generator("fo_docs", 0, 200000)
+            loader_task = self.task.async_continuous_doc_ops(
+                self.cluster, self.cluster.buckets[0], doc_gen,
+                DocLoading.Bucket.DocOps.UPDATE, exp=5, process_concurrency=1)
+            reader_task = self.task.async_continuous_doc_ops(
+                self.cluster, self.cluster.buckets[0], doc_gen,
+                DocLoading.Bucket.DocOps.READ, process_concurrency=1)
 
         self.__update_unaffected_node()
         self.__display_failure_node_status("Nodes to be failed")
@@ -627,8 +756,21 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.validate_failover_settings(True, self.timeout,
                                         expected_fo_nodes, self.max_count)
 
+        # Stop background doc_ops
+        if self.load_during_fo:
+            for task in [loader_task, reader_task]:
+                task.end_task()
+                self.task_manager.get_task_result(task)
+
+        # Perform collection crud + doc_ops before rebalance operation
+        self.__perform_doc_ops(durability="NONE", validate_num_items=False)
+
         # Rebalance the cluster to remove failed nodes
-        self.cluster_util.rebalance(self.cluster)
+        result = self.cluster_util.rebalance(self.cluster)
+        self.assertTrue(result, "Rebalance failed")
 
         # Validate auto_failover_settings after rebalance operation
         self.validate_failover_settings(True, self.timeout, 0, self.max_count)
+
+        # Perform collection crud + doc_ops after rebalance operation
+        self.__perform_doc_ops()
