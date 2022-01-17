@@ -675,7 +675,7 @@ class OPD:
         self.log.info("KV stats fragmentation values {}".format(result))
 
     def dump_magma_stats(self, server, bucket, shard, kvstore):
-        if bucket.bucket_storage != Bucket.StorageBackend.magma:
+        if bucket.storageBackend != Bucket.StorageBackend.magma:
             return
         shell = RemoteMachineShellConnection(server)
         data_path = RestConnection(server).get_data_path()

@@ -84,7 +84,7 @@ class DoctorN1QL():
             time.sleep(1)
             self.execute_statement_on_n1ql(index[0])
 
-    def wait_for_indexes_online(self, logger, indexes, timeout=300,):
+    def wait_for_indexes_online(self, logger, indexes, timeout=86400):
         self.rest = GsiHelper(self.cluster.master, logger)
         status = False
         for bucket in self.cluster.buckets:
