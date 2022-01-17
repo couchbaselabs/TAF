@@ -121,7 +121,7 @@ class BasicDeleteTests(BasicCrudTests):
                 self.delete_perc = 0
                 self.expiry_perc = 0
                 self.update_perc = 0
-                self.num_items_per_collections += self.create_end - self.create_start
+                self.num_items_per_collection += self.create_end - self.create_start
                 self.new_loader(wait=True)
             count += 1
 
