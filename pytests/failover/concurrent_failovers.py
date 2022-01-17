@@ -94,20 +94,21 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
     @property
     def num_nodes_to_be_failover(self):
         def is_safe_to_fo(service):
-            # Service / Data loss check
-            if service == CbServer.Services.KV \
-                    and self.min_bucket_replica > 0 \
-                    and node_count[CbServer.Services.KV] > 2:
-                return True
-            elif service == CbServer.Services.INDEX \
-                    and node_count[CbServer.Services.INDEX] > 1:
-                return True
-            elif service == CbServer.Services.N1QL \
-                    and node_count[CbServer.Services.N1QL] > 1:
-                return True
-            else:
-                self.log.critical("Safety check missing for '%s'" % service)
+            # Reference doc:
+            # https://docs.couchbase.com/server/7.0/learn/clusters-and-availability/automatic-failover.html#failover-policy
 
+            # Service / Data loss check
+            if service == CbServer.Services.KV:
+                if self.min_bucket_replica > 0 \
+                        and node_count[CbServer.Services.KV] > 2:
+                    return True
+            elif service == CbServer.Services.INDEX:
+                if node_count[CbServer.Services.INDEX] > 1:
+                    return True
+            else:
+                # All other services require at least 2 nodes to FO
+                if node_count[service] > 1:
+                    return True
             return False
 
         def decr_node_count(service):
@@ -144,6 +145,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 # KV takes priority over other nodes in deciding the Auto-FO
                 if is_safe_to_fo(CbServer.Services.KV):
                     node_fo_possible = True
+                else:
+                    # No nodes should be FO'ed if KV FO is not possible
+                    expected_num_nodes = 0
+                    break
             else:
                 # For other nodes, we need to check if the node running
                 # other services are also safe to failover
@@ -158,12 +163,20 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 for service_type in node.services:
                     decr_node_count(service_type)
 
+        self.log.info("Expected nodes to be failed over: %d"
+                      % expected_num_nodes)
         return expected_num_nodes
 
     def __get_server_obj(self, node):
         for server in self.cluster.servers:
             if server.ip == node.ip:
                 return server
+
+    def __update_server_obj(self):
+        temp_data = self.nodes_to_fail
+        self.nodes_to_fail = dict()
+        for node_obj, fo_type in temp_data.items():
+            self.nodes_to_fail[self.__get_server_obj(node_obj)] = fo_type
 
     def get_nodes_to_fail(self, services_to_fail, dynamic_fo_method=False):
         nodes = dict()
@@ -180,7 +193,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                         if CbServer.Services.KV in node_services \
                                 and choice([True, False]):
                             fo_type = CouchbaseError.STOP_MEMCACHED
-                    nodes[self.__get_server_obj(node)] = fo_type
+                    nodes[node] = fo_type
                     # Remove the node to be failed to avoid double insertion
                     nodes_in_cluster.pop(index)
                     break
@@ -223,6 +236,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             else:
                 self.orchestrator = cluster_node
                 self.rest = RestConnection(self.orchestrator)
+                self.cluster.master = cluster_node
                 self.log.info("Node for REST APIs: %s" % cluster_node.ip)
                 break
 
@@ -265,6 +279,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         try:
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 expected_fo_nodes = self.num_nodes_to_be_failover
+                self.__update_server_obj()
                 failover_task = ConcurrentFailoverTask(
                     task_manager=self.task_manager, master=self.orchestrator,
                     servers_to_fail=self.nodes_to_fail,
@@ -316,7 +331,6 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # servers_to_fail -> [kv, index] / [kv, index_kv]
             self.nodes_to_fail = self.get_nodes_to_fail(services_to_fo)
             self.__update_unaffected_node()
-            self.log.info("Current target nodes: %s" % self.nodes_to_fail)
             self.__run_test()
 
         self.log.info("Rebalance out all failed nodes")
@@ -433,6 +447,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.nodes_to_fail = self.get_nodes_to_fail(self.failover_order[0],
                                                     dynamic_fo_method=True)
         expected_fo_nodes = self.num_nodes_to_be_failover
+        self.__update_server_obj()
         rand_node = choice(self.nodes_to_fail.keys())
 
         try:
@@ -529,8 +544,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         rebalance_type = self.input.param("rebalance_type", "in")
         self.nodes_to_fail = self.get_nodes_to_fail(self.failover_order[0],
                                                     dynamic_fo_method=True)
-
         expected_fo_nodes = self.num_nodes_to_be_failover
+        self.__update_server_obj()
+
         # Create Auto-failover task but won't start it
         failover_task = ConcurrentFailoverTask(
             task_manager=self.task_manager, master=self.orchestrator,

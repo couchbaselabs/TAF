@@ -5048,7 +5048,7 @@ class ConcurrentFailoverTask(Task):
             self.complete_task()
             return
 
-        if self.result and self.expected_nodes_to_fo > 0:
+        if self.result:
             self.wait_for_fo_attempt()
 
             if self.result and self.monitor_failover:
