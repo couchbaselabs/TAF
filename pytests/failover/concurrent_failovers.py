@@ -120,7 +120,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         num_unreachable_nodes = 0
         fo_not_possible_for_service = None
         active_cluster_nodes = len(self.rest.get_nodes(inactive=False))
-        total_nodes = active_cluster_nodes + self.fo_events
+        total_nodes = active_cluster_nodes + self.fo_events + self.nodes_in
         min_nodes_for_quorum = int(total_nodes/2) + 1
         max_allowed_unreachable_nodes = total_nodes - min_nodes_for_quorum
 
@@ -147,6 +147,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 if is_safe_to_fo(CbServer.Services.KV):
                     node_fo_possible = True
                 else:
+                    self.log.warning("KV failover not possible")
                     # No nodes should be FO'ed if KV FO is not possible
                     fo_nodes = list()
                     break
@@ -552,52 +553,57 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 nodes.append(rand_node)
             return nodes
 
+        self.nodes_in = self.input.param("nodes_in", 0)
+
         add_nodes = list()
         remove_nodes = list()
         # Format - kv:kv_index -> 2 nodes with services [kv, kv:index]
         out_nodes = self.input.param("out_nodes", "kv").split(":")
         # Can take any of (in/out/swap)
         rebalance_type = self.input.param("rebalance_type", "in")
-        self.nodes_to_fail = self.get_nodes_to_fail(self.failover_order[0],
+        services_to_fo = self.failover_order[0].split(":")
+        self.nodes_to_fail = self.get_nodes_to_fail(services_to_fo,
                                                     dynamic_fo_method=True)
+        if rebalance_type == "in":
+            add_nodes = self.cluster.servers[
+                self.nodes_init:self.nodes_init+self.nodes_in]
+            self.cluster.kv_nodes.extend(add_nodes)
+        elif rebalance_type == "out":
+            remove_nodes = get_reb_out_nodes()
+        elif rebalance_type == "swap":
+            remove_nodes = get_reb_out_nodes()
+            add_nodes = self.cluster.servers[
+                self.nodes_init:self.nodes_init+self.nodes_in]
+            self.cluster.kv_nodes.extend(add_nodes)
+
         expected_fo_nodes = self.num_nodes_to_be_failover
         self.__update_server_obj()
+
+        self.__update_unaffected_node()
+        self.__display_failure_node_status("Nodes to be failed")
 
         # Create Auto-failover task but won't start it
         failover_task = ConcurrentFailoverTask(
             task_manager=self.task_manager, master=self.orchestrator,
             servers_to_fail=self.nodes_to_fail,
             expected_fo_nodes=expected_fo_nodes,
-            task_type="revert_failure")
+            task_type="induce_failure")
 
+        # Start rebalance operation
         self.log.info("Starting rebalance operation")
-        if rebalance_type == "in":
-            add_nodes = [self.cluster.servers[
-                         self.nodes_init:self.nodes_init+self.nodes_in]]
-        elif rebalance_type == "out":
-            remove_nodes = get_reb_out_nodes()
-        elif rebalance_type == "swap":
-            remove_nodes = get_reb_out_nodes()
-            add_nodes = [self.cluster.servers[
-                         self.nodes_init:self.nodes_init+self.nodes_in]]
-
         rebalance_task = self.task.async_rebalance(
             self.cluster.nodes_in_cluster,
             to_add=add_nodes, to_remove=remove_nodes)
 
-        self.sleep(10, "Wait for rebalance task to start before failover")
+        self.sleep(max(10, 4*self.nodes_in),
+                   "Wait for rebalance to start before failover")
         self.task_manager.add_new_task(failover_task)
 
-        self.log.info("Wait for failover task to complete")
-        self.task_manager.get_task_result(failover_task)
-
-        self.log.info("Wait for rebalance task to complete")
-        self.task_manager.get_task_result(rebalance_task)
-
         try:
-            self.assertFalse(failover_task.result, "Auto-failover task failed")
-            self.assertFalse(rebalance_task.result,
-                             "Rebalance succeeded with failed node")
+            self.log.info("Wait for failover task to complete")
+            self.task_manager.get_task_result(failover_task)
+
+            self.assertTrue(failover_task.result, "Auto-failover task failed")
         finally:
             # Recover all nodes from induced failures
             recovery_task = ConcurrentFailoverTask(
@@ -607,6 +613,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 task_type="revert_failure")
             self.task_manager.add_new_task(recovery_task)
             self.task_manager.get_task_result(recovery_task)
+            self.task_manager.stop_task(rebalance_task)
 
         # Validate auto_failover_settings after failover
         self.validate_failover_settings(True, self.timeout,
