@@ -199,7 +199,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 if node_services == set(node.services):
                     fo_type = self.failover_method
                     if dynamic_fo_method:
-                        fo_type = CouchbaseError.STOP_SERVER
+                        fo_type = "stop_couchbase"
                         if CbServer.Services.KV in node_services \
                                 and choice([True, False]):
                             fo_type = CouchbaseError.STOP_MEMCACHED
@@ -454,12 +454,14 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         5. Validate auto failovers after new timeout
         """
 
-        self.nodes_to_fail = self.get_nodes_to_fail(self.failover_order[0],
+        services_to_fo = self.failover_order[0].split(":")
+        self.nodes_to_fail = self.get_nodes_to_fail(services_to_fo,
                                                     dynamic_fo_method=True)
         expected_fo_nodes = self.num_nodes_to_be_failover
         self.__update_server_obj()
         rand_node = choice(self.nodes_to_fail.keys())
-
+        self.__update_unaffected_node()
+        self.__display_failure_node_status("Nodes to be failed")
         try:
             self.log.info("Starting auto-failover procedure")
             failover_task = ConcurrentFailoverTask(
@@ -480,7 +482,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 self.sleep(10, "Wait before creating failure again")
                 cb_err.create(CouchbaseError.STOP_MEMCACHED)
                 new_timer = time()
-            elif self.nodes_to_fail[rand_node] == CouchbaseError.STOP_SERVER:
+            elif self.nodes_to_fail[rand_node] == "stop_couchbase":
                 cb_err.revert(CouchbaseError.STOP_SERVER)
                 self.sleep(10, "Wait before creating failure again")
                 cb_err.create(CouchbaseError.STOP_SERVER)
@@ -490,7 +492,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Validate the previous auto-failover task failed
             # due to the random_node coming back online
             self.task_manager.get_task_result(failover_task)
-            self.assertFalse("Nodes failed over though nodes became active")
+            self.assertFalse(failover_task.result,
+                             "Nodes failed over though nodes became active")
 
             # Validate auto_failover_settings
             self.validate_failover_settings(True, self.timeout,
@@ -502,6 +505,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 settings = self.rest.get_autofailover_settings()
                 if settings.count != 0:
                     self.fail("Nodes failed over before new failover time")
+
+            self.sleep(10, "Wait for failover rebalance to trigger")
+            self.rest.monitorRebalance()
 
             # Validate auto_failover_settings after actual auto failover
             self.validate_failover_settings(True, self.timeout,
