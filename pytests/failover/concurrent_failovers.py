@@ -116,8 +116,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             if service == CbServer.Services.KV:
                 self.min_bucket_replica -= 1
 
-        expected_num_nodes = 0
+        fo_nodes = list()
         num_unreachable_nodes = 0
+        fo_not_possible_for_service = None
         active_cluster_nodes = len(self.rest.get_nodes(inactive=False))
         total_nodes = active_cluster_nodes + self.fo_events
         min_nodes_for_quorum = int(total_nodes/2) + 1
@@ -128,7 +129,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             if failure_type in ["stop_couchbase", "network_split"]:
                 num_unreachable_nodes += 1
         if num_unreachable_nodes > max_allowed_unreachable_nodes:
-            return expected_num_nodes
+            return 0
         # End of quorum check
 
         node_count = dict()
@@ -147,22 +148,31 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     node_fo_possible = True
                 else:
                     # No nodes should be FO'ed if KV FO is not possible
-                    expected_num_nodes = 0
+                    fo_nodes = list()
                     break
             else:
                 # For other nodes, we need to check if the node running
                 # other services are also safe to failover
                 for service_type in node.services:
                     if not is_safe_to_fo(service_type):
+                        self.log.warning("Service '%s' not safe to failover"
+                                         % service_type)
+                        fo_not_possible_for_service = service_type
                         break
                 else:
                     node_fo_possible = True
 
             if node_fo_possible:
-                expected_num_nodes += 1
+                fo_nodes.append(node)
                 for service_type in node.services:
+                    # Decrement the node count for the service
                     decr_node_count(service_type)
+            else:
+                for t_node in fo_nodes:
+                    if fo_not_possible_for_service in t_node.services:
+                        fo_nodes.remove(t_node)
 
+        expected_num_nodes = len(fo_nodes)
         self.log.info("Expected nodes to be failed over: %d"
                       % expected_num_nodes)
         return expected_num_nodes
