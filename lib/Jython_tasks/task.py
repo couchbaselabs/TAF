@@ -239,6 +239,15 @@ class RebalanceTask(Task):
                                 stat["version"], stat["cpu_utilization"],
                                 node_status])
 
+        # Fetch last rebalance task to track starting of current rebalance
+        self.prev_rebalance_status_id = None
+        server_task = self.rest.ns_server_tasks(
+            task_type="rebalance", task_sub_type="rebalance")
+        if server_task:
+            self.prev_rebalance_status_id = server_task["statusId"]
+        self.log.debug("Last known rebalance status_id: %s"
+                       % self.prev_rebalance_status_id)
+
     def __str__(self):
         if self.exception:
             return "[%s] %s download error %s in %.2fs" % \
@@ -289,6 +298,20 @@ class RebalanceTask(Task):
             self.add_nodes()
             self.start_rebalance()
             self.table.display("Rebalance Overview")
+
+            check_timeout = int(time.time()) + 10
+            rebalance_started = False
+            # Wait till current rebalance statusId updates in cluster's task
+            while not rebalance_started and int(time.time()) < check_timeout:
+                server_task = self.rest.ns_server_tasks(
+                    task_type="rebalance", task_sub_type="rebalance")
+                if server_task and server_task["statusId"] \
+                        != self.prev_rebalance_status_id:
+                    rebalance_started = True
+                    self.prev_rebalance_status_id = server_task["statusId"]
+                    self.log.debug("New rebalance status_id: %s"
+                                   % server_task["statusId"])
+
             self.check()
             # self.task_manager.schedule(self)
         except Exception as e:
@@ -381,7 +404,8 @@ class RebalanceTask(Task):
                                          new_vbuckets[srv][vb_type])
                                 self.test_log.error(msg)
                                 raise Exception(msg)
-                (status, progress) = self.rest._rebalance_status_and_progress()
+                (status, progress) = self.rest._rebalance_status_and_progress(
+                        self.prev_rebalance_status_id)
                 self.test_log.info("Rebalance - status: %s, progress: %s",
                                    status,
                                    progress)

@@ -1625,7 +1625,7 @@ class RestConnection(object):
         else:
             return None
 
-    def _rebalance_status_and_progress(self):
+    def _rebalance_status_and_progress(self, task_status_id=None):
         """
         Returns a 2-tuple capturing the rebalance status and progress, as follows:
             ('running', progress) - if rebalance is running
@@ -1657,7 +1657,13 @@ class RestConnection(object):
                     json_parsed = json_parsed[i]
                     break
         if status:
-            if "status" in json_parsed:
+            if "statusId" in json_parsed \
+                    and json_parsed["statusId"] != task_status_id:
+                # Case where current rebalance is done
+                # and new rebalance / failover task is running in cluster
+                rebalance_status = "none"
+                avg_percentage = 100
+            elif "status" in json_parsed:
                 rebalance_status = json_parsed["status"]
                 if rebalance_status == "notRunning":
                     rebalance_status = "none"  # rebalance finished/notRunning scenario
