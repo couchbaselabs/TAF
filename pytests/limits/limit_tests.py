@@ -6,6 +6,7 @@ from basetestcase import ClusterSetup
 from limits.resource_producer import UserResourceProducer, LimitConfig
 from limits.util import retry_with_timeout, copy_node_for_user, apply_rebalance
 from membase.api.rest_client import RestConnection
+from BucketLib.bucket import Bucket
 
 
 class Scope():
@@ -92,7 +93,9 @@ class LimitTest(ClusterSetup):
         self.bucket_name = "default"
 
         # Create bucket
-        self.create_bucket(self.cluster, bucket_name=self.bucket_name)
+        self.fragmentationPercentage = self.input.param("fragmentationPercentage", False)
+        bucket_params = Bucket({"name": self.bucket_name, "fragmentationPercentage": self.fragmentationPercentage})
+        self.bucket_util.create_bucket(self.cluster, bucket_params)
 
         # Create users
         self.users = self.create_users()
@@ -123,6 +126,10 @@ class LimitTest(ClusterSetup):
             for node in self.cluster.servers[:self.nodes_init]:
                 tasks.append(self.resource_producer.get_resource_task(user, copy_node_for_user(user, node)))
         return tasks
+
+    def run_compaction(self):
+        if self.fragmentationPercentage:
+            self.bucket_util._run_compaction(self.cluster, number_of_times=2)
 
     def remove_user_and_task(self, user):
         """ Removes a user and their associated task """
@@ -240,6 +247,8 @@ class LimitTest(ClusterSetup):
         # Once above threshold, ensure the expected error message is thrown
         if self.tasks and self.tasks[0].expected_error():
             self.assertTrue(retry_with_timeout(self.retry_timeout, lambda: self.check_error(self.tasks[0].error(), self.tasks[0].expected_error())))
+
+        self.run_compaction()
 
         # set a higher limit to validate stats
         self.set_limits_for_all_users(self.resource_name, self.resource_limit*2)
