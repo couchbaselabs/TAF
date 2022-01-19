@@ -438,23 +438,27 @@ class RestConnection(object):
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
 
-    def ns_server_tasks(self, task_type=None):
+    def ns_server_tasks(self, task_type=None, task_sub_type=None):
         api = self.baseUrl + 'pools/default/tasks'
-        json_parsed = ""
+        cluster_tasks = None
         try:
             status, content, header = self._http_request(
-                api,
-                'GET',
-                headers=self._create_headers())
+                api, 'GET', headers=self._create_headers())
             json_parsed = json.loads(content)
             if task_type is not None:
                 for t_content in json_parsed:
                     if t_content["type"] == task_type:
-                        json_parsed = t_content
-                        break
+                        if task_sub_type is None:
+                            cluster_tasks = t_content
+                            break
+                        elif t_content["subtype"] == task_sub_type:
+                            cluster_tasks = t_content
+                            break
+            else:
+                cluster_tasks = json_parsed
         except ValueError:
             pass
-        return json_parsed
+        return cluster_tasks
 
     # DEPRECATED: use create_ddoc() instead.
     def create_view(self, design_doc_name, bucket_name, views, options=None):
