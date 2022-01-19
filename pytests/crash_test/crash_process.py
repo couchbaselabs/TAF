@@ -59,12 +59,15 @@ class CrashTest(BaseTestCase):
                     self.sdk_pool_capacity,
                     compression_settings=self.sdk_compression)
 
+        self.__is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
+            self.bucket_durability_level, self.durability_level)
+
         verification_dict = dict()
         verification_dict["ops_create"] = self.num_items
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["rollback_item_count"] = 0
         verification_dict["pending_writes"] = 0
-        if self.durability_level:
+        if self.__is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] = self.num_items
 
         # Load initial documents into the buckets
@@ -334,7 +337,7 @@ class CrashTest(BaseTestCase):
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["rollback_item_count"] = 0
         verification_dict["pending_writes"] = 0
-        if self.durability_level:
+        if self.__is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] = self.num_items
 
         if self.bucket_type == Bucket.Type.EPHEMERAL \
