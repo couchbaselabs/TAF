@@ -5102,7 +5102,7 @@ class ConcurrentFailoverTask(Task):
                     status = self.rest.monitorRebalance()
                 else:
                     status = False
-                    self.test_log_critical("Failover not started as expected")
+                    self.test_log.critical("Failover not started as expected")
 
                 if status is False:
                     self.set_result(False)
