@@ -29,6 +29,15 @@ class EnforceTls(BaseTestCase):
                          "21100": "21150", "8095": "18095", "8096": "18096", "8097": "18097",
                          "11211": "11207"}
 
+        # Make only 1 node provisioned
+        nodes_rem = self.cluster.servers[1:]
+        result = self.task.rebalance([self.cluster.master], nodes_rem, [])
+        if result is False:
+            self.fail("Initial rebalance1 failed")
+        result = self.task.rebalance(self.cluster.servers, [], nodes_rem)
+        if result is False:
+            self.fail("Initial rebalance2 failed")
+
         # Initial rebalance for nodes_init (it is not done in basetest)
         services = None
         if self.services_init:
@@ -43,7 +52,7 @@ class EnforceTls(BaseTestCase):
             result = self.task.rebalance([self.cluster.master], nodes_init, [],
                                          services=services)
             if result is False:
-                self.fail("Initial rebalance failed")
+                self.fail("Initial rebalance3 failed")
 
             self.cluster.nodes_in_cluster.extend(nodes_init)
 
@@ -142,12 +151,15 @@ class EnforceTls(BaseTestCase):
 
     def set_n2n_encryption_level_on_nodes(self, nodes, level="control"):
         for node in nodes:
-            self.log.info("Enabling n2n encryption and setting level to "
-                          "{0} on node {1}".format(level, node))
+            self.log.info("Enabling n2n encryption on node {0}".format(node))
             shell_conn = RemoteMachineShellConnection(node)
             cb_cli = CbCli(shell_conn, no_ssl_verify=True)
-            cb_cli.enable_n2n_encryption()
-            cb_cli.set_n2n_encryption_level(level=level)
+            o = cb_cli.enable_n2n_encryption()
+            self.log.info(o)
+            self.log.info(" setting level to "
+                          "{0} on node {1}".format(level, node))
+            o = cb_cli.set_n2n_encryption_level(level=level)
+            self.log.info(o)
             shell_conn.disconnect()
 
     def disable_n2n_encryption_cli_on_nodes(self, nodes):
