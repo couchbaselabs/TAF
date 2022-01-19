@@ -82,6 +82,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "started",
                               self.tearDown.__name__)
+        # Select KV node as a cluster master to perform tearDown rebalance out
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
+        self.cluster.master = self.cluster.kv_nodes[0]
+
         self.log.info("Resetting auto-failover settings to default")
         self.rest.update_autofailover_settings(
             enabled=True, timeout=120, maxCount=1,
