@@ -243,7 +243,7 @@ class RebalanceTask(Task):
         self.prev_rebalance_status_id = None
         server_task = self.rest.ns_server_tasks(
             task_type="rebalance", task_sub_type="rebalance")
-        if server_task:
+        if server_task and "statusId" in server_task:
             self.prev_rebalance_status_id = server_task["statusId"]
         self.log.debug("Last known rebalance status_id: %s"
                        % self.prev_rebalance_status_id)
@@ -5039,6 +5039,15 @@ class ConcurrentFailoverTask(Task):
         self.sub_tasks = list()
         self.set_result(True)
 
+        # Fetch last rebalance task to track starting of current rebalance
+        self.prev_rebalance_status_id = None
+        server_task = self.rest.ns_server_tasks(
+            task_type="rebalance", task_sub_type="failover")
+        if server_task and "statusId" in server_task:
+            self.prev_rebalance_status_id = server_task["statusId"]
+        self.log.debug("Last known failover status_id: %s"
+                       % self.prev_rebalance_status_id)
+
     def wait_for_fo_attempt(self):
         start_time = time.time()
         expect_fo_after_time = start_time + self.timeout
@@ -5076,8 +5085,25 @@ class ConcurrentFailoverTask(Task):
             self.wait_for_fo_attempt()
 
             if self.result and self.monitor_failover:
-                self.sleep(5, "Wait for failover to actually start running")
-                status = self.rest.monitorRebalance()
+                self.log.info("Wait for failover to actually start running")
+                timeout = int(time.time()) + 15
+                task_id_changed = False
+                while not task_id_changed and int(time.time()) < timeout:
+                    server_task = self.rest.ns_server_tasks(
+                        task_type="rebalance", task_sub_type="failover")
+                    if server_task and server_task["statusId"] != \
+                            self.prev_rebalance_status_id:
+                        task_id_changed = True
+                        self.prev_rebalance_status_id = server_task["statusId"]
+                        self.log.debug("New failover status id: %s"
+                                       % server_task["statusId"])
+
+                if task_id_changed:
+                    status = self.rest.monitorRebalance()
+                else:
+                    status = False
+                    self.test_log_critical("Failover not started as expected")
+
                 if status is False:
                     self.set_result(False)
                     self.test_log.critical("Auto-Failover rebalance failed")
