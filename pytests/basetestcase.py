@@ -2,7 +2,6 @@ import os
 import re
 import traceback
 import unittest
-import json
 
 import Cb_constants
 import global_vars
@@ -30,8 +29,6 @@ from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
-from couchbase_utils.security_utils.security_utils import SecurityUtils
-from security.rbac_base import RbacBase
 
 
 class BaseTestCase(unittest.TestCase):
