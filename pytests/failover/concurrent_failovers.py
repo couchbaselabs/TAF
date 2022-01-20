@@ -98,22 +98,27 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
     @property
     def num_nodes_to_be_failover(self):
         def is_safe_to_fo(service):
+            is_safe = False
+
+            # Check to see whether the max_fo count is reached
+            if self.max_count == (self.fo_events + len(fo_nodes)):
+                return is_safe
+
             # Reference doc:
             # https://docs.couchbase.com/server/7.0/learn/clusters-and-availability/automatic-failover.html#failover-policy
-
             # Service / Data loss check
             if service == CbServer.Services.KV:
                 if self.min_bucket_replica > 0 \
                         and node_count[CbServer.Services.KV] > 2:
-                    return True
+                    is_safe = True
             elif service == CbServer.Services.INDEX:
                 if node_count[CbServer.Services.INDEX] > 1:
-                    return True
+                    is_safe = True
             else:
                 # All other services require at least 2 nodes to FO
                 if node_count[service] > 1:
-                    return True
-            return False
+                    is_safe = True
+            return is_safe
 
         def decr_node_count(service):
             node_count[service] -= 1
@@ -294,17 +299,17 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         try:
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 expected_fo_nodes = self.num_nodes_to_be_failover
+                self.fo_events += expected_fo_nodes
                 self.__update_server_obj()
                 failover_task = ConcurrentFailoverTask(
                     task_manager=self.task_manager, master=self.orchestrator,
                     servers_to_fail=self.nodes_to_fail,
-                    expected_fo_nodes=expected_fo_nodes,
+                    expected_fo_nodes=self.fo_events,
                     task_type="induce_failure")
                 self.task_manager.add_new_task(failover_task)
                 self.task_manager.get_task_result(failover_task)
                 if failover_task.result is False:
                     self.fail("Failure during concurrent failover procedure")
-                self.fo_events += expected_fo_nodes
             elif self.current_fo_strategy == CbServer.Failover.Type.GRACEFUL:
                 for node in self.nodes_to_fail:
                     status = self.rest.fail_over(node.otpNode, graceful=True)
