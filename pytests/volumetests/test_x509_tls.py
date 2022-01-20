@@ -50,6 +50,13 @@ class VolumeX509(BaseTestCase):
             status = RestConnection(node).update_autofailover_settings(False, 120, False)
             self.assertTrue(status)
         self.x509enable = self.input.param("x509enable", True)
+        # Rebalance-in and rebalance-out initially once
+        result = self.task.rebalance([self.cluster.master], self.cluster.servers[1:], [])
+        if result is False:
+            self.fail("Initial rebalance1 failed")
+        result = self.task.rebalance(self.cluster.servers, [], self.cluster.servers[1:])
+        if result is False:
+            self.fail("Initial rebalance2 failed")
         if self.x509enable:
             self.generate_x509_certs()
             self.upload_x509_certs()
@@ -614,7 +621,7 @@ class VolumeX509(BaseTestCase):
             result = self.task.rebalance([self.cluster.master], nodes_init, [],
                                          services=services)
             if result is False:
-                self.fail("Initial rebalance failed")
+                self.fail("Initial rebalance3 failed")
         self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
         self.query_node = self.cluster.master
         ########################################################################################################################
