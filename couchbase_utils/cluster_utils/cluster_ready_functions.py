@@ -13,7 +13,7 @@ import os
 import testconstants
 
 from Cb_constants import constants, CbServer
-from Jython_tasks.task import MonitorActiveTask
+from Jython_tasks.task import MonitorActiveTask, FunctionCallTask
 from TestInput import TestInputSingleton, TestInputServer
 from cb_tools.cb_collectinfo import CbCollectInfo
 from common_lib import sleep, humanbytes
@@ -171,18 +171,31 @@ class ClusterUtils:
 
     # wait_if_warmup=True is useful in tearDown method for (auto)failover tests
     def wait_for_ns_servers_or_assert(self, servers, wait_time=360):
+        tasks = []
         for server in servers:
-            rest = RestConnection(server)
-            self.log.debug("Waiting for ns_server @ {0}:{1}"
+            task = FunctionCallTask(self._wait_for_ns_servers,
+                                    (server, wait_time))
+            self.task_manager.schedule(task)
+            tasks.append(task)
+        for task in tasks:
+            result = self.task_manager.get_task_result(task)
+            if not result:
+                self.log.error("Some machines aren't running yet.")
+                return result
+        return True
+
+    def _wait_for_ns_servers(self, server, wait_time):
+        rest = RestConnection(server)
+        self.log.debug("Waiting for ns_server @ {0}:{1}"
+                       .format(server.ip, server.port))
+        if RestHelper(rest).is_ns_server_running(wait_time):
+            self.log.debug("ns_server @ {0}:{1} is running"
                            .format(server.ip, server.port))
-            if RestHelper(rest).is_ns_server_running(wait_time):
-                self.log.debug("ns_server @ {0}:{1} is running"
-                               .format(server.ip, server.port))
-            else:
-                self.log.error("ns_server {0} is not running in {1} sec"
-                               .format(server.ip, wait_time))
-                return False
-            return True
+        else:
+            self.log.error("ns_server {0} is not running in {1} sec"
+                           .format(server.ip, wait_time))
+            return False
+        return True
 
     def cleanup_cluster(self, cluster, wait_for_rebalance=True, master=None):
         if master is None:

@@ -89,6 +89,8 @@ class TestInputServer(object):
         self.es_username = ''
         self.es_password = ''
         self.upgraded = False
+        self.remote_info = None
+        self.use_sudo = False
 
     def __str__(self):
         ip_str = "ip:{0} port:{1}".format(self.ip, self.port)

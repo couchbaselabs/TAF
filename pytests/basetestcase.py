@@ -15,9 +15,9 @@ from ruamel.yaml import YAML
 
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
-from cb_tools.cb_cli import CbCli
 from common_lib import sleep
 from couchbase_helper.cluster import ServerTasks
+from node_utils.node_utils import NodeUtils
 from TestInput import TestInputSingleton
 from global_vars import logger
 from couchbase_helper.durability_helper import BucketDurability
@@ -222,10 +222,16 @@ class BaseTestCase(unittest.TestCase):
         global_vars.system_event_logs = EventHelper()
         self.system_events = global_vars.system_event_logs
 
-        self.cleanup_pcaps()
+        # Support lib objects for testcase execution
+        self.task_manager = TaskManager(self.thread_to_use)
+        self.task = ServerTasks(self.task_manager)
+        self.node_utils = NodeUtils(self.task_manager)
+        # End of library object creation
+
+        self.node_utils.cleanup_pcaps(self.servers)
         self.collect_pcaps = self.input.param("collect_pcaps", False)
         if self.collect_pcaps:
-            self.start_collect_pcaps()
+            self.node_utils.start_collect_pcaps(self.servers)
 
         # variable for log collection using cbCollect
         self.get_cbcollect_info = self.input.param("get-cbcollect-info", False)
@@ -250,10 +256,6 @@ class BaseTestCase(unittest.TestCase):
         self.log.setLevel(self.log_level)
         self.infra_log.setLevel(self.infra_log_level)
 
-        # Support lib objects for testcase execution
-        self.task_manager = TaskManager(self.thread_to_use)
-        self.task = ServerTasks(self.task_manager)
-        # End of library object creation
 
         self.sleep = sleep
 
@@ -395,26 +397,22 @@ class BaseTestCase(unittest.TestCase):
 
             # Enable dp_version since we need collections enabled
             if self.enable_dp:
+                tasks = []
                 for server in self.cluster.servers:
-                    shell_conn = RemoteMachineShellConnection(server)
-                    cb_cli = CbCli(shell_conn)
-                    cb_cli.enable_dp()
-                    shell_conn.disconnect()
+                    task = self.node_utils.async_enable_dp(server)
+                    tasks.append(task)
+                for task in tasks:
+                    self.task_manager.get_task_result(task)
 
             # Enforce tls on nodes of all clusters
             if self.use_https and self.enforce_tls:
                 for _, cluster in self.cb_clusters.items():
+                    tasks = []
                     for node in cluster.servers:
-                        RestConnection(node).update_autofailover_settings(False, 120, False)
-                        self.log.info("Setting cluster encryption level to strict on cluster "
-                                      "with node {0}". format(node))
-                        shell_conn = RemoteMachineShellConnection(node)
-                        cb_cli = CbCli(shell_conn)
-                        o = cb_cli.enable_n2n_encryption()
-                        self.log.info(o)
-                        o = cb_cli.set_n2n_encryption_level(level="strict")
-                        self.log.info(o)
-                        shell_conn.disconnect()
+                        task = self.node_utils.async_enable_tls(node)
+                        tasks.append(task)
+                    for task in tasks:
+                        self.task_manager.get_task_result(task)
                     self.log.info("Validating if services obey tls only on servers {0}".
                                   format(cluster.servers))
                     status = ClusterUtils(self.task_manager).\
@@ -507,70 +505,10 @@ class BaseTestCase(unittest.TestCase):
         if self.port:
             self.port = str(self.port)
 
-    def cleanup_pcaps(self):
-        for server in self.servers:
-            shell = RemoteMachineShellConnection(server)
-            # Stop old instances of tcpdump if still running
-            stop_tcp_cmd = "if [[ \"$(pgrep tcpdump)\" ]]; " \
-                           "then kill -s TERM $(pgrep tcpdump); fi"
-            _, _ = shell.execute_command(stop_tcp_cmd)
-            shell.execute_command("rm -rf pcaps")
-            shell.execute_command("rm -rf " + server.ip + "_pcaps.zip")
-            shell.disconnect()
-
-    def start_collect_pcaps(self):
-        for server in self.servers:
-            shell = RemoteMachineShellConnection(server)
-            # Create path for storing pcaps
-            create_path = "mkdir -p pcaps"
-            o, e = shell.execute_command(create_path)
-            shell.log_command_output(o, e)
-            # Install tcpdump command if it doesn't exist
-            o, e = shell.execute_command("yum install -y tcpdump")
-            shell.log_command_output(o, e)
-            # Install screen command if it doesn't exist
-            o, e = shell.execute_command("yum install -y screen")
-            shell.log_command_output(o, e)
-            # Execute the tcpdump command
-            tcp_cmd = "screen -dmS test bash -c \"tcpdump -C 500 -W 10 " \
-                      "-w pcaps/pack-dump-file.pcap  -i eth0 -s 0 tcp\""
-            o, e = shell.execute_command(tcp_cmd)
-            shell.log_command_output(o, e)
-            shell.disconnect()
-
     def start_fetch_pcaps(self):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
-        for server in self.servers:
-            remote_client = RemoteMachineShellConnection(server)
-            # stop tcdump
-            stop_tcp_cmd = "if [[ \"$(pgrep tcpdump)\" ]]; " \
-                           "then kill -s TERM $(pgrep tcpdump); fi"
-            o, e = remote_client.execute_command(stop_tcp_cmd)
-            remote_client.log_command_output(o, e)
-            if self.is_test_failed():
-                # install zip unzip
-                o, e = remote_client.execute_command(
-                    "yum install -y zip unzip")
-                remote_client.log_command_output(o, e)
-                # zip the pcaps folder
-                zip_cmd = "zip -r " + server.ip + "_pcaps.zip pcaps"
-                o, e = remote_client.execute_command(zip_cmd)
-                remote_client.log_command_output(o, e)
-                # transfer the zip file
-                zip_file_copied = remote_client.get_file(
-                    "/root",
-                    os.path.basename(server.ip + "_pcaps.zip"),
-                    log_path)
-                self.log.info(
-                    "%s node pcap zip copied on client : %s"
-                    % (server.ip, zip_file_copied))
-                if zip_file_copied:
-                    # Remove the zips
-                    remote_client.execute_command("rm -rf "
-                                                  + server.ip + "_pcaps.zip")
-            # Remove pcaps
-            remote_client.execute_command("rm -rf pcaps")
-            remote_client.disconnect()
+        is_test_failed = self.is_test_failed()
+        self.node_utils.start_fetch_pcaps(self.servers, log_path, is_test_failed)
 
     def tearDown(self):
         # Perform system event log validation and get failures (if any)
@@ -591,17 +529,12 @@ class BaseTestCase(unittest.TestCase):
         # Disable n2n encryption on nodes of all clusters
         if self.use_https and self.enforce_tls:
             for _, cluster in self.cb_clusters.items():
+                tasks = []
                 for node in cluster.servers:
-                    RestConnection(node).update_autofailover_settings(False, 120, False)
-                    self.log.info("Disabling n2n encryption on cluster "
-                                  "with node {0}".format(node))
-                    shell_conn = RemoteMachineShellConnection(node)
-                    cb_cli = CbCli(shell_conn)
-                    o = cb_cli.set_n2n_encryption_level(level="control")
-                    self.log.info(o)
-                    o = cb_cli.disable_n2n_encryption()
-                    self.log.info(o)
-                    shell_conn.disconnect()
+                    task = self.node_utils.async_disable_tls(node)
+                    tasks.append(task)
+                for task in tasks:
+                    self.task_manager.get_task_result(task)
         if self.multiple_ca:
             CbServer.use_https = False
             for _, cluster in self.cb_clusters.items():
@@ -640,20 +573,16 @@ class BaseTestCase(unittest.TestCase):
                     # Collect logs because we have not shut things down
                     if self.get_cbcollect_info:
                         self.fetch_cb_collect_logs()
-
                     get_trace = \
                         TestInputSingleton.input.param("get_trace", None)
                     if get_trace:
+                        tasks = []
                         for server in cluster.servers:
-                            shell = \
-                                RemoteMachineShellConnection(server)
-                            output, _ = shell.execute_command(
-                                "ps -aef|grep %s" % get_trace)
-                            output = shell.execute_command(
-                                "pstack %s"
-                                % output[0].split()[1].strip())
-                            self.infra_log.debug(output[0])
-                            shell.disconnect()
+                            task = self.node_utils.async_get_trace(
+                                server, get_trace)
+                            tasks.append(task)
+                        for task in tasks:
+                            self.task_manager.get_task_result(task)
                     else:
                         self.log.critical("Skipping get_trace !!")
 
@@ -667,9 +596,6 @@ class BaseTestCase(unittest.TestCase):
                     alerts = rest.get_alerts()
                     if alerts is not None and len(alerts) != 0:
                         self.infra_log.warn("Alerts found: {0}".format(alerts))
-                    self.log.debug("Cleaning up cluster")
-                    self.cluster_util.cluster_cleanup(cluster,
-                                                      self.bucket_util)
             except BaseException as e:
                 # kill memcached
                 traceback.print_exc()

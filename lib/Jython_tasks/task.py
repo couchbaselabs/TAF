@@ -165,6 +165,7 @@ class FunctionCallTask(Task):
         self.start_task()
         result = self.f(*self.args, **self.kwds)
         self.complete_task()
+        self.set_result(result)
         return result
 
 

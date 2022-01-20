@@ -193,8 +193,12 @@ class RemoteMachineShellConnection:
         if self.nonroot:
             self.bin_path = self.nr_home_path + self.bin_path
 
+        self.info = serverInfo.remote_info
         self.connect()
-        self.extract_remote_info()
+        if not self.info:
+            self.info = self.extract_remote_info()
+            serverInfo.remote_info = self.info
+            serverInfo.use_sudo = self.use_sudo
         if self.info.type.lower() == "windows":
             self.cmd_ext = ".exe"
             self.bin_path = WIN_COUCHBASE_BIN_PATH
@@ -3329,6 +3333,8 @@ class RemoteMachineShellConnection:
 
     def extract_remote_info(self):
         # initialize params
+        if self.info:
+            return self.info
         os_distro = "linux"
         os_version = "default"
         is_linux_distro = True
