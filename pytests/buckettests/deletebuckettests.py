@@ -51,31 +51,6 @@ class DeleteBucketTests(BaseTestCase):
                 return False
         return True
 
-    def test_default_moxi(self):
-        name = "default"
-        replicas = [0, 1, 2, 3]
-        rest = RestConnection(self.cluster.master)
-        remote = RemoteMachineShellConnection(self.cluster.master)
-        for replicaNumber in replicas:
-            bucket = Bucket({"name": name, "replicaNumber": replicaNumber})
-            self.bucket_util.create_bucket(self.cluster, bucket)
-            msg = 'create_bucket succeeded but bucket {0} does not exist'.format(name)
-            self.assertTrue(
-                self.bucket_util.wait_for_bucket_creation(self.cluster,
-                                                          bucket),
-                msg)
-            self.bucket_util.delete_bucket(self.cluster, bucket.name)
-            msg = 'bucket "{0}" was not deleted even after waiting for two minutes'.format(name)
-            self.assertTrue(
-                self.bucket_util.wait_for_bucket_deletion(self.cluster,
-                                                          bucket),
-                msg)
-            msg = 'bucket {0} data files are not deleted after bucket deleted from membase'.format(name)
-            self.assertTrue(
-                self.wait_for_data_files_deletion(name,
-                                                  remote_connection=remote,
-                                                  rest=rest, timeout_in_seconds=20), msg=msg)
-
     def test_audit_logging_for_delete_bucket(self):
         rest = RestConnection(self.cluster.master)
         logfilePath = LINUX_COUCHBASE_LOGS_PATH + "/audit.log"

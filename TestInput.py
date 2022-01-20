@@ -23,7 +23,6 @@ class TestInput(object):
     """
     def __init__(self):
         self.servers = list()
-        self.moxis = list()
         self.clusters = dict()
         self.membase_settings = None
         self.test_params = dict()
@@ -188,7 +187,6 @@ class TestInputParser:
         cluster_ips = []
         clusters = {}
         t_input.tuq_client = {}
-        moxi_ips = []
         client_ips = []
         t_input.dashboard = []
         t_input.ui_conf = {}
@@ -196,8 +194,6 @@ class TestInputParser:
             result = re.search('^cluster', section)
             if section == 'servers':
                 ips = TestInputParser.get_server_ips(config, section)
-            elif section == 'moxis':
-                moxi_ips = TestInputParser.get_server_ips(config, section)
             elif section == 'clients':
                 client_ips = TestInputParser.get_server_ips(config, section)
             elif section == 'membase':
@@ -249,15 +245,6 @@ class TestInputParser:
             servers.append(TestInputParser.get_server(ip, config))
         t_input.servers = TestInputParser.get_server_options(
             servers,
-            t_input.membase_settings,
-            global_properties)
-
-        # Setting up 'moxis' tag
-        moxis = []
-        for moxi_ip in moxi_ips:
-            moxis.append(TestInputParser.get_server(moxi_ip, config))
-        t_input.moxis = TestInputParser.get_server_options(
-            moxis,
             t_input.membase_settings,
             global_properties)
 

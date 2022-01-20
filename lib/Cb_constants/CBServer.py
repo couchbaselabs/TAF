@@ -54,8 +54,6 @@ class CbServer(object):
     ssl_cbas_port = 18095
 
     memcached_port = 11210
-    moxi_port = 11211
-
     ssl_memcached_port = 11207
 
     # map of {non-ssl,ssl} ports

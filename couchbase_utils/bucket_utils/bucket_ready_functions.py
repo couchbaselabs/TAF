@@ -3975,8 +3975,6 @@ class BucketUtils(ScopeUtils):
             node.os = nodeDictionary['os']
             if "ports" in nodeDictionary:
                 ports = nodeDictionary["ports"]
-                if "proxy" in ports:
-                    node.moxi = ports["proxy"]
                 if "direct" in ports:
                     node.memcached = ports["direct"]
             if "hostname" in nodeDictionary:

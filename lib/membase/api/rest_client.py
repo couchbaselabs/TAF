@@ -3915,7 +3915,6 @@ class Node(object):
         self.availableStorage = []
         self.storage = []
         self.memoryQuota = 0
-        self.moxi = constants.moxi_port
         self.memcached = constants.memcached_port
         self.id = ""
         self.ip = ""
@@ -4045,8 +4044,6 @@ class RestParser(object):
         # Format: ports={"proxy":11211,"direct":11210}
         if "ports" in parsed:
             ports = parsed["ports"]
-            if "proxy" in ports:
-                node.moxi = ports["proxy"]
             if "direct" in ports:
                 node.memcached = ports["direct"]
 

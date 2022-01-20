@@ -23,17 +23,6 @@ class CreateBucketTests(BaseTestCase):
     def tearDown(self):
         super(CreateBucketTests, self).tearDown()
 
-    def test_default_moxi(self):
-        bucket_name = 'default'
-        rest = RestConnection(self.cluster.master)
-        replicaNumber = 1
-        bucket = Bucket({"name": bucket_name, "replicaNumber": replicaNumber})
-        self.bucket_util.create_bucket(self.cluster, bucket)
-        msg = 'create_bucket succeeded but bucket {0} does not exist'.format(bucket_name)
-        self.assertTrue(
-            self.bucket_util.wait_for_bucket_creation(self.cluster, bucket),
-            msg)
-
     def test_two_replica(self):
         bucket_name = 'default'
         rest = RestConnection(self.cluster.master)
