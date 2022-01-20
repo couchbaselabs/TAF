@@ -210,8 +210,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     fo_type = self.failover_method
                     if dynamic_fo_method:
                         fo_type = "stop_couchbase"
-                        if CbServer.Services.KV in node_services \
-                                and choice([True, False]):
+                        if CbServer.Services.KV in node_services:
                             fo_type = CouchbaseError.STOP_MEMCACHED
                     nodes[node] = fo_type
                     # Remove the node to be failed to avoid double insertion
