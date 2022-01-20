@@ -190,3 +190,46 @@ class CollectionsNegativeTc(CollectionBase):
         else:
             self.fail("Inserting doc key greater than max key size "
                       "succeeded when it should have failed")
+    
+    def test_max_collection_scope_name_length(self):
+        try:
+            BucketUtils.create_scope(self.cluster.master, self.bucket,
+                                    {"name": "a"*CbServer.max_scope_name_len})
+        except Exception:
+            self.fail("Scope creation failed")
+        else:
+            self.log.info("Scope creation passed with the max length")
+        
+        try:
+            BucketUtils.create_scope(self.cluster.master, self.bucket,
+                                    {"name": "a"*(CbServer.max_scope_name_len+1)})
+        except Exception:
+            self.log.info("Scope creation failed as expected "
+                          "as the length of the name exceeds max length")
+        else:
+            self.fail("Scope creation did not fail "
+                      "even when length of the name exceeds max length")
+
+        BucketUtils.create_scope(self.cluster.master, self.bucket,
+                                    {"name": "scope1"})
+        try:
+            BucketUtils.create_collection(self.cluster.master,
+                                          self.bucket,
+                                          "scope1",
+                                          {"name": "a"*CbServer.max_collection_name_len})
+        except Exception:
+            self.fail("Collection creation failed")
+        else:
+            self.log.info("Collection creation passed with the max length")
+
+        try:
+            BucketUtils.create_collection(self.cluster.master,
+                                          self.bucket,
+                                          "scope1",
+                                          {"name": "a"*(CbServer.max_collection_name_len+1)})
+        except Exception:
+            self.log.info("Collection creation failed as expected "
+                          "as the length of the name exceeds max length")
+        else:
+            self.fail("Collection creation did not fail "
+                      "even when length of the name exceeds max length")
