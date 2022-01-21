@@ -1146,6 +1146,32 @@ class CollectionsRebalance(CollectionBase):
             self.wait_for_async_data_load_to_complete(tasks)
             self.data_validation_collection()
 
+    def test_swap_rebalance_cycles(self):
+        """
+        Do swap rebalance in loop for a couple of cycles
+        """
+        self.cycles = self.input.param("cycles", 4)
+        self.bulk_api_crud = self.input.param("bulk_api_crud", False)
+        known_nodes = self.cluster.servers[:self.nodes_init]
+        unknown_nodes = self.cluster.servers[self.nodes_init:]
+        for cycle in range(self.cycles):
+            self.log.info("Cycle {0}".format(cycle))
+
+            add_nodes = unknown_nodes[:self.nodes_swap]
+            remove_nodes = known_nodes[-self.nodes_swap:]
+            operation = self.task.async_rebalance(known_nodes, add_nodes, remove_nodes,
+                                                  retry_get_process_num=self.retry_get_process_num)
+            tasks = self.async_data_load()
+            known_nodes=known_nodes+add_nodes
+            known_nodes=list(set(known_nodes)-set(remove_nodes))
+            unknown_nodes=unknown_nodes+remove_nodes
+            unknown_nodes=list(set(unknown_nodes)-set(add_nodes))
+            if self.bulk_api_crud:
+                self.bulk_api_load(self.bucket.name)
+            self.wait_for_rebalance_to_complete(operation)
+            self.wait_for_async_data_load_to_complete(tasks)
+            self.data_validation_collection()
+
     def test_Orchestrator_Node_failover(self):
         """
         Failover orchestrator node and remove it and rebalance-in it back
