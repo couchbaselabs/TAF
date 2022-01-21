@@ -65,30 +65,29 @@ class UserResourceProducer(object):
         for node in nodes:
             if self.resource_name == "kv_ingress":
                 pattern = re.compile(r"\"ingress_bytes\":(\d*)")
-                self.output = self.mc_stats(users[0], node, pattern)
+                self.output.extend(self.mc_stats(users[0], node, pattern))
             if self.resource_name == "kv_egress":
                 pattern = re.compile(r"\"egress_bytes\":(\d*)")
-                self.output = self.mc_stats(users[0], node, pattern)
+                self.output.extend(self.mc_stats(users[0], node, pattern))
             if self.resource_name == "kv_num_connections":
                 pattern = re.compile(r"\"total\":(\d*)")
-                self.output = self.mc_stats(users[0], node, pattern)
+                self.output.extend(self.mc_stats(users[0], node, pattern))
             if self.resource_name == "ns_server_num_concurrent_requests":
-                self.output = self.ns_server_stat(node, pattern="cm_num_concurrent_requests")
+                self.output.extend(self.ns_server_stat(node, pattern="cm_num_concurrent_requests"))
             elif self.resource_name == "ns_server_egress":
-                self.output = self.ns_server_stat(node, pattern="cm_egress_1m_max")
+                self.output.extend(self.ns_server_stat(node, pattern="cm_egress_1m_max"))
             elif self.resource_name == "ns_server_ingress":
-                self.output = self.ns_server_stat(node, pattern="cm_ingress_1m_max")
-            for value in self.output:
-                if above:
-                    if int(value) < throughput:
-                        raise Exception("{0} didnot exceeed limits actual {1}"
-                                        "expected {2}". format(value, throughput,
-                                                               self.resource_name))
-                else:
-                    if int(value) > throughput:
-                        raise Exception("{0} above limits actual {1}"
-                                        "expected {2}". format(value, throughput,
-                                                               self.resource_name))
+                self.output.extend(self.ns_server_stat(node, pattern="cm_ingress_1m_max"))
+        count = 0
+        # raise exception only when stat on all nodes fail
+        for value in self.output:
+            if above:
+                if int(value) < throughput: count += 1
+            else:
+                if int(value) > throughput: count += 1
+        if count == len(nodes):
+            raise Exception("limits not equal for {0} actual {1} expected {2}".
+                            format(self.resource_name,  self.output, throughput))
 
 class LimitConfig:
     def __init__(self):

@@ -146,8 +146,9 @@ class LimitTest(ClusterSetup):
             self.tasks.append(self.resource_producer.get_resource_task(user, copy_node_for_user(user, node)))
 
     def get_stats(self, throughput, above=True):
+        nodes_in_server = self.cluster_util.get_nodes_in_cluster(self.cluster)
         self.resource_producer.get_resource_stat_monitor(self.users,
-                                                         self.cluster.servers[:self.nodes_init],
+                                                         nodes_in_server,
                                                          throughput, above)
 
     def set_throughput_to_zero(self):
