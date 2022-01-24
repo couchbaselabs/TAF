@@ -573,37 +573,44 @@ class CBASExternalLinks(CBASBaseTest):
                             "Expected - {0} \t Actual- {1}".format(
                                 link.properties["hostname"],
                                 response[0]["bootstrapHostname"]))
-                    if not response[0]["username"] == link.properties["username"]:
-                        raise Exception(
-                            "Expected - {0} \t Actual- {1}".format(
-                                link.properties["username"],
-                                response[0]["username"]))
                     if not response[0]["encryption"] == link.properties[
                         "encryption"]:
                         raise Exception(
                             "Expected - {0} \t Actual- {1}".format(
                                 link.properties["encryption"],
                                 response[0]["encryption"]))
-                    if not response[0]["certificate"] == link.properties.get(
-                        "certificate", None):
-                        raise Exception(
-                            "Expected - {0} \t Actual- {1}".format(
-                                link.properties["certificate"],
-                                response[0]["certificate"]))
-                    if not response[0]["clientCertificate"] == link.properties.get(
-                        "clientCertificate", None):
-                        raise Exception(
-                            "Expected - {0} \t Actual- {1}".format(
-                                link.properties["clientCertificate"],
-                                response[0]["clientCertificate"]))
                     if link.properties["encryption"] == "full":
+                        if not len(response[0]['certificates']) == \
+                               to_cluster.x509.ca_count:
+                            raise Exception(
+                                "Expected Root CA count - {0} \t Actual- {"
+                                "1}".format(to_cluster.x509.ca_count,
+                                    len(response[0]['certificates'])))
+                        for cert in response[0]['certificates']:
+                            if cert not in link.properties.get("certificate",
+                                                           None):
+                                raise Exception(
+                                    "Following Root CA cert is missing - {0}".format(
+                                        cert))
                         if self.encryption == "full1":
+                            if not response[0]["username"] == link.properties["username"]:
+                                raise Exception(
+                                    "Expected - {0} \t Actual- {1}".format(
+                                        link.properties["username"],
+                                        response[0]["username"]))
                             if not response[0]["password"] == "<redacted sensitive entry>":
                                 raise Exception(
                                     "Expected - {0} \t Actual- {1}".format(
                                         link.properties["password"],
                                         response[0]["password"]))
                         elif self.encryption == "full2":
+                            if not response[0][
+                                       "clientCertificate"] == link.properties.get(
+                                    "clientCertificate", None):
+                                raise Exception(
+                                    "Expected - {0} \t Actual- {1}".format(
+                                        link.properties["clientCertificate"],
+                                        response[0]["clientCertificate"]))
                             if not response[0]["clientKey"] == "<redacted sensitive entry>":
                                 raise Exception(
                                     "Expected - {0} \t Actual- {1}".format(
@@ -615,12 +622,12 @@ class CBASExternalLinks(CBASBaseTest):
                                 "Expected - {0} \t Actual- {1}".format(
                                     "<redacted sensitive entry>",
                                     response[0]["password"]))
-                        if not response[0]["clientKey"] == link.properties.get(
-                            "clientKey", None):
+                        if not response[0]["username"] == link.properties[
+                            "username"]:
                             raise Exception(
                                 "Expected - {0} \t Actual- {1}".format(
-                                    link.properties["clientKey"],
-                                    response[0]["clientKey"]))
+                                    link.properties["username"],
+                                    response[0]["username"]))
                 self.log.info("Test Passed")
             except Exception as err:
                 self.log.error(str(err))
