@@ -3988,7 +3988,7 @@ class BucketUtils(ScopeUtils):
 
     def wait_till_total_numbers_match(self, master, bucket,
                                       timeout_in_seconds=120,
-                                      num_zone=0):
+                                      num_zone=1):
         self.log.debug('Waiting for sum_of_curr_items == total_items')
         start = time.time()
         verified = False
@@ -4039,7 +4039,7 @@ class BucketUtils(ScopeUtils):
                                     "are overlapped")
 
     def verify_items_count(self, master, bucket, num_attempt=3, timeout=2,
-                           num_zone=0):
+                           num_zone=1):
         # get the #of buckets from rest
         rest = RestConnection(master)
         replica_factor = bucket.replicaNumber
@@ -4114,14 +4114,13 @@ class BucketUtils(ScopeUtils):
         msg = 'sum: {0} and sum * (replica_factor + 1) ({1}) : {2}'
         self.log.debug(msg.format(sum, replica_factor + 1,
                                   (sum * (replica_factor + 1))))
-
         if "curr_items_tot" in master_stats:
             self.log.debug('curr_items_tot from master: {0}'
                            .format(master_stats["curr_items_tot"]))
         else:
             raise Exception("Bucket {0} stats doesnt contain 'curr_items_tot':"
                             .format(bucket))
-        if num_zone:
+        if num_zone > 1:
             num_nodes = num_zone
         else:
             num_nodes = len(nodes)
