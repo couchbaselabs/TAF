@@ -448,7 +448,7 @@ class RestConnection(object):
             if task_type is not None:
                 for t_content in json_parsed:
                     if t_content["type"] == task_type:
-                        if task_sub_type is None:
+                        if task_sub_type is None or "subtype" not in t_content:
                             cluster_tasks = t_content
                             break
                         elif t_content["subtype"] == task_sub_type:
