@@ -41,6 +41,9 @@ class CrashTest(CollectionBase):
                 replicate_to=self.replicate_to,
                 persist_to=self.persist_to)
 
+        self.__is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
+            self.bucket_durability_level, self.durability_level)
+
         verification_dict = dict()
         verification_dict["ops_create"] = \
             self.cluster.buckets[0].scopes[
@@ -49,7 +52,7 @@ class CrashTest(CollectionBase):
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["rollback_item_count"] = 0
         verification_dict["pending_writes"] = 0
-        if self.durability_level:
+        if self.__is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] = \
                 verification_dict["ops_create"]
 
@@ -100,7 +103,7 @@ class CrashTest(CollectionBase):
                 CbServer.default_scope].collections[
                 CbServer.default_collection].num_items += self.num_items
             verification_dict["ops_create"] += self.num_items
-            if self.durability_level \
+            if self.__is_sync_write_enabled \
                     and self.durability_level != Bucket.DurabilityLevel.NONE:
                 verification_dict["sync_write_committed_count"] += \
                     self.num_items
@@ -595,7 +598,7 @@ class CrashTest(CollectionBase):
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["rollback_item_count"] = 0
         verification_dict["pending_writes"] = 0
-        if self.durability_level:
+        if self.__is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] = 2*self.num_items
 
         if self.bucket_type == Bucket.Type.EPHEMERAL \
