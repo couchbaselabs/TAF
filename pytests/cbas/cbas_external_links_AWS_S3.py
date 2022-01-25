@@ -270,7 +270,8 @@ class CBASExternalLinks(CBASBaseTest):
                 {
                     "description": "Create a link with an invalid region name",
                     "region": self.invalid_region,
-                    "validate_error_msg": False
+                    "validate_error_msg": True,
+                    "expected_error": "Provided S3 region is not supported"
                 },
                 {
                     "description": "Create a link with an invalid credentials",
@@ -534,7 +535,9 @@ class CBASExternalLinks(CBASBaseTest):
             },
             {
                 "description": "Changing region to a non-existent region",
-                "region": self.invalid_region
+                "region": self.invalid_region,
+                "validate_error_msg": True,
+                "expected_error": "Provided S3 region is not supported"
             },
             {
                 "description": "Changing serviceEndpoint to a new valid serviceEndpoint",

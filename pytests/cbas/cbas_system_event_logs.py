@@ -65,6 +65,10 @@ class CBASSystemEventLogs(CBASBaseTest):
         self.system_events.add_event(AnalyticsEvents.process_crashed(
             self.cluster.cbas_cc_node.ip, "java"))
 
+        if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
+            self.fail("Analytics service failed to start after Java process "
+                      "was killed")
+
         self.log.info("Restarting analytics cluster to trigger process exited event")
         status, _, _ = self.cbas_util.restart_analytics_cluster_uri(
             self.cluster, username=None, password=None)
@@ -73,6 +77,10 @@ class CBASSystemEventLogs(CBASBaseTest):
         self.log.info("Adding event for process_exited event")
         self.system_events.add_event(AnalyticsEvents.process_exited(
             self.cluster.cbas_cc_node.ip, "java"))
+
+        if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
+            self.fail("Analytics service failed to start after Java process "
+                      "was killed")
 
     def test_topology_change_events(self):
         available_server_before_rebalance = copy.deepcopy(self.available_servers)
@@ -315,12 +323,12 @@ class CBASSystemEventLogs(CBASBaseTest):
         self.system_events.add_event(AnalyticsEvents.collection_detached(
             self.cluster.cbas_cc_node.ip,
             CBASHelper.metadata_format(dataset_obj.dataverse_name),
-            CBASHelper.metadata_format(dataset_obj.name)))
+            CBASHelper.unformat_name(dataset_obj.name)))
         self.log.info("Adding event for collection_attach events")
         self.system_events.add_event(AnalyticsEvents.collection_attached(
             self.cluster.cbas_cc_node.ip,
             CBASHelper.metadata_format(dataset_obj.dataverse_name),
-            CBASHelper.metadata_format(dataset_obj.name)))
+            CBASHelper.unformat_name(dataset_obj.name)))
 
     def test_analytics_settings_change_events(self):
         status, content, response = \

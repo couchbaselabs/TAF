@@ -566,14 +566,12 @@ class CBASUDF(CBASBaseTest):
                     timeout=300, analytics_timeout=300):
                 self.fail("Error while creating Analytics UDF")
             udf_objs.append(udf_obj)
-
-        self.log.info("Adding event for user_defined_function_created events")
-        for udf_obj in udf_objs:
+            self.log.info("Adding event for user_defined_function_created events")
             self.system_events.add_event(
                 AnalyticsEvents.user_defined_function_created(
                     self.cluster.cbas_cc_node.ip,
                     CBASHelper.metadata_format(udf_obj.dataverse_name),
-                    udf_obj.name, udf_obj.arity))
+                    CBASHelper.unformat_name(udf_obj.name), udf_obj.arity))
 
         # Create UDF to test replace
         idx = random.choice(range(len(udf_objs)))
@@ -600,7 +598,8 @@ class CBASUDF(CBASBaseTest):
             AnalyticsEvents.user_defined_function_replaced(
                 self.cluster.cbas_cc_node.ip,
                 CBASHelper.metadata_format(test_udf_obj.dataverse_name),
-                test_udf_obj.name, test_udf_obj.arity))
+                CBASHelper.unformat_name(test_udf_obj.name),
+                test_udf_obj.arity))
 
         self.log.info("Adding event for user_defined_function_dropped events")
         udf_deleted_successfully = list()
@@ -620,13 +619,14 @@ class CBASUDF(CBASBaseTest):
                         AnalyticsEvents.user_defined_function_dropped(
                             self.cluster.cbas_cc_node.ip,
                             CBASHelper.metadata_format(udf_obj.dataverse_name),
-                            udf_obj.name, udf_obj.arity))
+                            CBASHelper.unformat_name(udf_obj.name),
+                            udf_obj.arity))
                 i += 1
+            elif len(udf_deleted_successfully) == len(udf_objs):
+                break
             elif i >= len(udf_objs):
                 i = 0
             elif i in udf_deleted_successfully:
                 i += 1
-            elif len(udf_deleted_successfully) == len(udf_objs):
-                break
         self.log.info("Test Finished")
 

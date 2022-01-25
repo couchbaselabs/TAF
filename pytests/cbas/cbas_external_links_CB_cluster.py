@@ -781,7 +781,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Changing credentials to a user which has less than minimum role required",
                 "new_user": "analytics_reader",
                 "validate_connect_error": True,
-                "expected_connect_error": "Access denied: user lacks necessary permission(s) to access resource"
+                "expected_connect_error": "Connect link failed"
             },
             {
                 "description": "Changing encryption type to half",
@@ -2140,25 +2140,24 @@ class CBASExternalLinks(CBASBaseTest):
         else:
             dataset_created = True
 
-        self.log.info("Connecting remote link")
-        if not self.cbas_util.connect_link(
-                self.analytics_cluster, dataset_obj.link_name,
-                validate_error_msg=self.input.param("validate_link_error", False),
-                with_force=False, username=None, password=None,
-                expected_error=error_msg, expected_error_code=None,
-                timeout=120, analytics_timeout=120):
-            self.fail("Error while connecting the link")
+        if not self.input.param("connect_invalid_link", False):
+            self.log.info("Connecting remote link")
+            if not self.cbas_util.connect_link(
+                    self.analytics_cluster, dataset_obj.link_name,
+                    validate_error_msg=self.input.param(
+                        "validate_link_error", False),
+                    with_force=False, username=None, password=None,
+                    expected_error=error_msg, expected_error_code=None,
+                    timeout=120, analytics_timeout=120):
+                self.fail("Error while connecting the link")
 
-        if not self.input.param("connect_invalid_link",
-                                False) and dataset_created:
+        if dataset_created:
             if not self.cbas_util.wait_for_ingestion_all_datasets(
                     self.analytics_cluster, self.bucket_util):
                 self.fail("Expected data does not match actual data")
-
-        if dataset_created:
             self.log.info("Dropping dataset created on link to remote cluster")
             if not self.cbas_util.drop_dataset(
-            self.analytics_cluster, dataset_obj.full_name):
+                    self.analytics_cluster, dataset_obj.full_name):
                 self.fail("Error while creating dataset")
 
         if not self.input.param("connect_invalid_link", False):
@@ -2784,7 +2783,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Adding event for link_created events")
         self.system_events.add_event(AnalyticsEvents.link_created(
-            self.cluster.cbas_cc_node.ip,
+            self.analytics_cluster.cbas_cc_node.ip,
             {
                 "scope_name": CBASHelper.metadata_format(link.dataverse_name),
                 "link_name": CBASHelper.metadata_format(link.name),
@@ -2795,7 +2794,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Adding event for bucket_connected events")
         self.system_events.add_event(AnalyticsEvents.bucket_connected(
-            self.cluster.cbas_cc_node.ip,
+            self.analytics_cluster.cbas_cc_node.ip,
             CBASHelper.metadata_format(link.dataverse_name),
             CBASHelper.metadata_format(link.name),
             dataset.kv_bucket.name
@@ -2803,7 +2802,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Adding event for link_connected events")
         self.system_events.add_event(AnalyticsEvents.link_connected(
-            self.cluster.cbas_cc_node.ip,
+            self.analytics_cluster.cbas_cc_node.ip,
             CBASHelper.metadata_format(link.dataverse_name),
             CBASHelper.metadata_format(link.name)))
 
@@ -2826,7 +2825,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Adding event for bucket_disconnected events")
         self.system_events.add_event(AnalyticsEvents.bucket_disconnected(
-            self.cluster.cbas_cc_node.ip,
+            self.analytics_cluster.cbas_cc_node.ip,
             CBASHelper.metadata_format(link.dataverse_name),
             CBASHelper.metadata_format(link.name),
             dataset.kv_bucket.name
@@ -2834,7 +2833,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Adding event for link_disconnected events")
         self.system_events.add_event(AnalyticsEvents.link_disconnected(
-            self.cluster.cbas_cc_node.ip,
+            self.analytics_cluster.cbas_cc_node.ip,
             CBASHelper.metadata_format(link.dataverse_name),
             CBASHelper.metadata_format(link.name)))
 
@@ -2848,7 +2847,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Adding event for link_altered events")
         self.system_events.add_event(AnalyticsEvents.link_altered(
-            self.cluster.cbas_cc_node.ip,
+            self.analytics_cluster.cbas_cc_node.ip,
             {
                 "scope_name": CBASHelper.metadata_format(link.dataverse_name),
                 "link_name": CBASHelper.metadata_format(link.name),
@@ -2880,19 +2879,24 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Adding event for bucket_connect_failed events")
         self.system_events.add_event(AnalyticsEvents.bucket_connect_failed(
-            self.cluster.cbas_cc_node.ip,
+            self.analytics_cluster.cbas_cc_node.ip,
             CBASHelper.metadata_format(link.dataverse_name),
             CBASHelper.metadata_format(link.name),
             dataset.kv_bucket.name
         ))
 
+        self.log.info("Dropping dataset")
+        if not self.cbas_util.drop_dataset(self.analytics_cluster,
+                                           dataset.full_name):
+            self.fail("Error while dropping dataset")
+
         self.log.info("Dropping Link")
-        if not self.cbas_util.drop_link(self.cluster, link.full_name):
+        if not self.cbas_util.drop_link(self.analytics_cluster, link.full_name):
             self.fail("Error Wwhile dropping Link")
 
         self.log.info("Adding event for link_dropped events")
         self.system_events.add_event(AnalyticsEvents.link_dropped(
-            self.cluster.cbas_cc_node.ip,
+            self.analytics_cluster.cbas_cc_node.ip,
             CBASHelper.metadata_format(link.dataverse_name),
             CBASHelper.metadata_format(link.name)))
 

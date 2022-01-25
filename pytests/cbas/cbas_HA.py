@@ -1042,6 +1042,8 @@ class CBASHighAvailability(CBASBaseTest):
         self.log.info("Test started")
         self.setup_for_test()
 
+        _ = self.cluster.rest.update_autofailover_settings(True, 600)
+
         nodes_to_rebalance_in = self.input.param('nodes_in', 0)
         node_to_crash = self.input.param('node_to_crash', "existing")
         actual_replica = self.cbas_util.get_actual_number_of_replicas(self.cluster)
@@ -1198,6 +1200,7 @@ class CBASHighAvailability(CBASBaseTest):
     def test_cbas_node_crash_while_swap_rebalancing_cbas_nodes_does_not_change_actual_number_of_replicas(self):
         self.log.info("Test started")
         self.setup_for_test()
+        _ = self.cluster.rest.update_autofailover_settings(True, 600)
 
         nodes_to_swap_rebalance = self.input.param('nodes_to_swap', 0)
         # Following values are accepted for node_to_crash - in, out, in-out, other
@@ -1344,6 +1347,7 @@ class CBASHighAvailability(CBASBaseTest):
     def test_cbas_node_crash_while_rebalancing_OUT_cbas_nodes_does_not_change_actual_number_of_replicas(self):
         self.log.info("Test started")
         self.setup_for_test()
+        _ = self.cluster.rest.update_autofailover_settings(True, 600)
 
         nodes_to_rebalance_out = self.input.param('nodes_out', 0)
         node_to_crash = self.input.param('node_to_crash', "other")
@@ -1491,6 +1495,7 @@ class CBASHighAvailability(CBASBaseTest):
     def test_cbas_node_crash_while_rebalancing_IN_OUT_cbas_nodes_does_not_change_actual_number_of_replicas(self):
         self.log.info("Test started")
         self.setup_for_test()
+        _ = self.cluster.rest.update_autofailover_settings(True, 600)
 
         nodes_to_rebalance_in = self.input.param('nodes_in', 0)
         nodes_to_rebalance_out = self.input.param('nodes_out', 0)
