@@ -1657,13 +1657,7 @@ class RestConnection(object):
                     json_parsed = json_parsed[i]
                     break
         if status:
-            if "statusId" in json_parsed \
-                    and json_parsed["statusId"] != task_status_id:
-                # Case where current rebalance is done
-                # and new rebalance / failover task is running in cluster
-                rebalance_status = "none"
-                avg_percentage = 100
-            elif "status" in json_parsed:
+            if "status" in json_parsed:
                 rebalance_status = json_parsed["status"]
                 if rebalance_status == "notRunning":
                     rebalance_status = "none"  # rebalance finished/notRunning scenario
@@ -1673,9 +1667,19 @@ class RestConnection(object):
                     self.print_UI_logs()
                     raise RebalanceFailedException(msg)
                 elif rebalance_status == "running":
-                    avg_percentage = round(json_parsed["progress"], 2)
-                    self.test_log.debug("Rebalance percentage: {0:.02f} %"
-                                        .format(avg_percentage))
+                    if "statusId" in json_parsed \
+                            and json_parsed["statusId"] != task_status_id:
+                        # Case where current rebalance is done
+                        # and new rebalance / failover task is running in cluster
+                        rebalance_status = "none"
+                        avg_percentage = 100
+                        self.test_log.warning(
+                            "Previous rebalance with status id '%s' changed to '%s'"
+                            % (task_status_id, json_parsed["statusId"]))
+                    else:
+                        avg_percentage = round(json_parsed["progress"], 2)
+                        self.test_log.debug("Rebalance percentage: {0:.02f} %"
+                                            .format(avg_percentage))
                 else:
                     # Sleep before printing rebalance failure log
                     sleep(5, log_type="infra")
