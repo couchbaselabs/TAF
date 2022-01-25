@@ -2291,7 +2291,7 @@ class BucketUtils(ScopeUtils):
                              timeout=None, check_items=True,
                              check_bucket_stats=True,
                              check_ep_items_remaining=False,
-                             verify_total_items=True, num_zone=0):
+                             verify_total_items=True, num_zone=1):
         master = cluster.master
         self._wait_for_stats_all_buckets(
             cluster, cluster.buckets,
