@@ -668,7 +668,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
         tombstones.")
         if dgm_prcnt < 100:
-             self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,

@@ -361,7 +361,7 @@ class MagmaBaseTest(StorageBase):
             shards = shell.execute_command(
                 "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
                 )[0][0].split('\n')[0]
-            self.log.info("machine: {} - core(s): {}".format(node.ip, shards))
+            self.log.debug("machine: {} - core(s): {}".format(node.ip, shards))
             for shard in range(min(int(shards), 64)):
                 magma = magma_path.format(shard)
                 kvstores, _ = shell.execute_command("ls {} | grep kvstore".format(magma))
@@ -371,7 +371,7 @@ class MagmaBaseTest(StorageBase):
                     kvstore_num = kvstore.split("-")[1].strip()
                     dump += ' --kvstore {} --tree key --treedata | grep Key |grep \'"deleted":true\' | wc -l'.format(kvstore_num)
                     ts_count = shell.execute_command(dump)[0][0].strip()
-                    self.log.info("kvstore_num=={}, ts_count=={}".format(kvstore_num, ts_count))
+                    self.log.debug("kvstore_num=={}, ts_count=={}".format(kvstore_num, ts_count))
                     result_str += str(ts_count) + "+"
                     result += int(ts_count)
             self.log.info("node={} and result={}".format(node, result))

@@ -1022,8 +1022,9 @@ class StorageBase(BaseTestCase):
             else:
                 shell.kill_memcached()
             shell.disconnect()
-        self.assertTrue(self.bucket_util._wait_warmup_completed(
-            [self.cluster.master],
+        for node in self.cluster.nodes_in_cluster:
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+            [node],
             self.cluster.buckets[0],
             wait_time=self.wait_timeout * 20))
 
