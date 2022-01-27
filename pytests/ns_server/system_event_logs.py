@@ -29,6 +29,19 @@ class SystemEventLogs(ClusterSetup):
         super(SystemEventLogs, self).setUp()
 
         self.log_setup_status("SystemEventLogs", "started")
+
+        # Rebalance in and out a node to update node value from cb.local
+        # to actual IPs/hostnames
+        # Ref: MB-50641
+        if self.case_number == self.nodes_init == 1:
+            node_in_out = [self.cluster.servers[self.nodes_init]]
+            result = self.task.rebalance(self.cluster.nodes_in_cluster,
+                                         to_add=node_in_out, to_remove=[])
+            self.assertTrue(result, msg="Rebalance in failed")
+            result = self.task.rebalance(self.cluster.nodes_in_cluster,
+                                         to_add=[], to_remove=node_in_out)
+            self.assertTrue(result, msg="Rebalance out failed")
+
         self.create_bucket(self.cluster)
         self.max_event_count = CbServer.sys_event_def_logs
         self.event_rest_helper = \
@@ -1545,6 +1558,7 @@ class SystemEventLogs(ClusterSetup):
             self.cluster.master.ip,
             {"max_connections": 2000},
             {"max_connections": 2001})
+        event["otp_node"] = "ns_1@" + self.cluster.master.ip
         if last_event != event:
             self.fail("Mismatch in event. Expected %s != %s Actual"
                       % (event, last_event))
@@ -1628,7 +1642,7 @@ class SystemEventLogs(ClusterSetup):
 
         self.system_events.add_event(
             DataServiceEvents.ephemeral_auto_reprovision(
-                node.ip, bucket.name, bucket.uuid,
+                self.cluster.master.ip, bucket.name, bucket.uuid,
                 nodes=restarted_nodes, restarted_on=restarted_nodes))
         self.system_events.add_event(
             DataServiceEvents.bucket_online(node.ip, bucket.name,
@@ -1668,6 +1682,7 @@ class SystemEventLogs(ClusterSetup):
             active_nodes=active_nodes, keep_nodes=keep_nodes,
             eject_nodes=eject_nodes, delta_nodes=empty_list,
             failed_nodes=empty_list)
+        reb_event["otp_node"] = "ns_1@%s" % self.cluster.master.ip
         if not rebalance_failure:
             reb_event[Event.Fields.EXTRA_ATTRS][
                 "nodes_info"]["keep_nodes"] = active_nodes
