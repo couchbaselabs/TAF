@@ -290,7 +290,7 @@ class volume(CollectionBase):
                                          "WITH { 'defer_build': true, 'num_replica': 1 }" \
                                          % (gsi_index_name, bucket.name, scope.name, collection.name)
                     result = self.run_cbq_query(create_index_query)
-                    # self.assertTrue(result['status'] == "success", "Defer build Query %s failed." % create_index_query)
+                    self.assertTrue(result['status'] == "success", "Defer build Query %s failed." % create_index_query)
 
                     if collection.name not in indexes_to_build[bucket.name][scope.name]:
                         indexes_to_build[bucket.name][scope.name][collection.name] = list()
