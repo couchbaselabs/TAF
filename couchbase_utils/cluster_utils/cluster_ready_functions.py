@@ -635,7 +635,9 @@ class ClusterUtils:
                             if node.ip in ips_new:
                                 node.ssh_username = server.ssh_username
                                 node.ssh_password = server.ssh_password
+                                shell.disconnect()
                                 break
+                            shell.disconnect()
 
                         shell = RemoteMachineShellConnection(node)
                         hostname = shell.get_full_hostname()

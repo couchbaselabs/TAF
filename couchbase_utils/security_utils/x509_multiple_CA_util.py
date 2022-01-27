@@ -948,7 +948,6 @@ class x509main:
                                                 x509main.SCRIPTFILEPATH
                 self.copy_file_from_slave_to_server(server, node_key_passphrase_path,
                                                     dest_node_key_passphrase_path)
-                shell = RemoteMachineShellConnection(server)
                 output, error = shell.execute_command("chown couchbase:couchbase " +
                                                       dest_node_key_passphrase_path)
                 self.log.info('Output message is {0} and error message is {1}'.format(output, error))
