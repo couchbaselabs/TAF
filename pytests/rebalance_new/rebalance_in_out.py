@@ -303,7 +303,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 tasks_info, self.cluster,
                 sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
-            self.bucket_util.verify_cluster_stats(self.cluster. self.num_items,
+            self.bucket_util.verify_cluster_stats(self.cluster, self.num_items,
                                                   timeout=self.wait_timeout)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
 
