@@ -153,8 +153,8 @@ class SecurityEvents(object):
         }
 
     @staticmethod
-    def sasldauth_config_changed(node, old_enabled, old_admins, old_roAdmins,
-                                  new_enabled, new_admins, new_roAdmins):
+    def sasldauth_config_changed(node, old_enabled,
+                                  new_enabled):
         return {
             Event.Fields.COMPONENT: Event.Component.SECURITY,
             Event.Fields.SEVERITY: Event.Severity.INFO,
@@ -165,13 +165,13 @@ class SecurityEvents(object):
             Event.Fields.EXTRA_ATTRS: {
                 "old_settings": {
                     "enabled": old_enabled,
-                    "admins": old_admins,
-                    "roAdmins": old_roAdmins
+                    "admins": "redacted",
+                    "roAdmins": "redacted"
                 },
                 "new_settings": {
                     "enabled": new_enabled,
-                    "admins": new_admins,
-                    "roAdmins": new_roAdmins
+                    "admins": "redacted",
+                    "roAdmins": "redacted"
                 },
             }
         }

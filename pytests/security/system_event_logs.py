@@ -235,7 +235,6 @@ class SystemEventLogs(ClusterSetup):
             self.generic_fields_check(event)
 
             # Test Extra Attributes fields
-            # TODO: Add code to check that sasl users are not logged (MB-50356)
             for param in ["old_settings", "new_settings"]:
                 exp_val = user_event[Event.Fields.EXTRA_ATTRS][param]
                 act_val = event[Event.Fields.EXTRA_ATTRS][param]
@@ -253,11 +252,7 @@ class SystemEventLogs(ClusterSetup):
         actual_event = self.get_event_from_cluster()
         expected_event = SecurityEvents.sasldauth_config_changed(self.cluster.master.ip,
                                                                  old_enabled=False,
-                                                                 old_admins=[],
-                                                                 old_roAdmins=[],
-                                                                 new_enabled=True,
-                                                                 new_roAdmins=["clair,daniel"],
-                                                                 new_admins=["alice,barry"])
+                                                                 new_enabled=True)
         validate_saslauthd_event(event=actual_event, user_event=expected_event)
 
         # disable the saslauthd
@@ -269,11 +264,7 @@ class SystemEventLogs(ClusterSetup):
         actual_event = self.get_event_from_cluster()
         expected_event = SecurityEvents.sasldauth_config_changed(self.cluster.master.ip,
                                                                  old_enabled=True,
-                                                                 old_admins=["alice,barry"],
-                                                                 old_roAdmins=["clair,daniel"],
-                                                                 new_enabled=False,
-                                                                 new_roAdmins=[],
-                                                                 new_admins=[])
+                                                                 new_enabled=False)
         validate_saslauthd_event(event=actual_event, user_event=expected_event)
 
     def test_security_config_changed_event(self):
@@ -288,8 +279,8 @@ class SystemEventLogs(ClusterSetup):
         settings = {"tlsMinVersion": "tlsv1.1", "clusterEncryptionLevel": "all"}
         self.rest.set_security_settings(settings)
 
-        old_settings = {"ssl_minimum_protocol": "tlsv1.1", "clusterEncryptionLevel": "control"}
-        new_settings = {"ssl_minimum_protocol": "tlsv1.2", "clusterEncryptionLevel": "all"}
+        old_settings = {"ssl_minimum_protocol": "tlsv1.2", "clusterEncryptionLevel": "control"}
+        new_settings = {"ssl_minimum_protocol": "tlsv1.1", "clusterEncryptionLevel": "all"}
         # Get the last event
         event = self.get_event_from_cluster()
         user_event = SecurityEvents.security_config_changed(self.cluster.master.ip,
@@ -310,7 +301,7 @@ class SystemEventLogs(ClusterSetup):
         for param in ["old_settings", "new_settings"]:
             expected_settings = user_event[Event.Fields.EXTRA_ATTRS][param]
             actual_settings = event[Event.Fields.EXTRA_ATTRS][param]
-            for i_param in ["ssl_minimum_protocol", "tlsv1.2"]:
+            for i_param in ["ssl_minimum_protocol", "cluster_encryption_level"]:
                 act_val = actual_settings[i_param]
                 exp_val = expected_settings[i_param]
                 if act_val != exp_val:
