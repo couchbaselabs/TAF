@@ -1667,7 +1667,8 @@ class RestConnection(object):
                     self.print_UI_logs()
                     raise RebalanceFailedException(msg)
                 elif rebalance_status == "running":
-                    if "statusId" in json_parsed \
+                    if task_status_id is not None \
+                            and "statusId" in json_parsed \
                             and json_parsed["statusId"] != task_status_id:
                         # Case where current rebalance is done
                         # and new rebalance / failover task is running in cluster
