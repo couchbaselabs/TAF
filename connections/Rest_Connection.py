@@ -56,7 +56,7 @@ class RestConnection(object):
             obj = object.__new__(self, serverInfo)
         return obj
 
-    def __init__(self, serverInfo):
+    def __init__(self, serverInfo, timeout=300):
         # serverInfo can be a json object/dictionary
         index_port = constants.index_port
         fts_port = constants.fts_port
@@ -141,7 +141,7 @@ class RestConnection(object):
         unexpected_server_err_msg = "Unexpected server error, request logged"
         for iteration in xrange(5):
             http_res, success = \
-                self.init_http_request(self.baseUrl + 'nodes/self')
+                self.init_http_request(self.baseUrl + 'nodes/self', timeout)
             if not success and type(http_res) == unicode \
                     and (http_res.find(node_unknown_msg) > -1
                          or http_res.find(unexpected_server_err_msg) > -1):
@@ -256,7 +256,7 @@ class RestConnection(object):
             try:
                 response, content = httplib2.Http(timeout=timeout).request(
                     api, method, params, headers)
-                if response['status'] in ['200', '201', '202']:
+                if response['status'] in ['200', '201', '202', '204']:
                     return True, content, response
                 else:
                     try:

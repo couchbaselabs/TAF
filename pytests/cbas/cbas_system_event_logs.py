@@ -117,6 +117,11 @@ class CBASSystemEventLogs(CBASBaseTest):
                 cbas_nodes_in=0, cbas_nodes_out=0,
                 available_servers=self.available_servers, exclude_nodes=[])
 
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.cluster, check_cbas_running=False):
+                raise Exception("Rebalance failed even after disabling "
+                                "firewall")
+
             self.log.info("Adding event for topology_change_started event")
             self.system_events.add_event(AnalyticsEvents.topology_change_started(
                 self.cluster.cbas_cc_node.ip, 2, 0))
@@ -311,13 +316,19 @@ class CBASSystemEventLogs(CBASBaseTest):
             scope_name=dataset_obj.kv_scope.name,
             collection_name=dataset_obj.kv_collection.name, session=None)
         if not self.cbas_util.wait_for_ingestion_complete(
-            self.cluster, dataset_obj.full_name, 0, timeout=300):
+                self.cluster, dataset_obj.full_name, 0, timeout=300):
             self.fail("Data is present in the dataset when it should not")
+
+        self.log.info("Creating collection {0}".format(
+            dataset_obj.full_kv_entity_name))
         self.bucket_util.create_collection(
             self.cluster.master, dataset_obj.kv_bucket,
             scope_name=dataset_obj.kv_scope.name,
             collection_spec=dataset_obj.kv_collection.get_dict_object(),
             session=None)
+        if not self.cbas_util.wait_for_ingestion_complete(
+                self.cluster, dataset_obj.full_name, 0, timeout=300):
+            self.fail("Data ingestion failed.")
 
         self.log.info("Adding event for collection_detach events")
         self.system_events.add_event(AnalyticsEvents.collection_detached(

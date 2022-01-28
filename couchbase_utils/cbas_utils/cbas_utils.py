@@ -32,6 +32,8 @@ from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
 from Jython_tasks.task import Task, RunQueriesTask
 from StatsLib.StatsOperations import StatsHelper
+from connections.Rest_Connection import RestConnection
+from Cb_constants import CbServer
 
 
 class BaseUtil(object):
@@ -44,11 +46,11 @@ class BaseUtil(object):
         self.task = server_task
 
     def createConn(self, cluster, bucket, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         cbas_helper.createConn(bucket, username, password)
 
     def closeConn(self, cluster):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         cbas_helper.closeConn()
 
     def execute_statement_on_cbas_util(self, cluster, statement, mode=None,
@@ -70,7 +72,7 @@ class BaseUtil(object):
         :param scan_consistency str
         :param scan_wait str
         """
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         pretty = "true"
         try:
             self.log.debug("Running query on cbas: %s" % statement)
@@ -130,7 +132,7 @@ class BaseUtil(object):
         :param analytics_timeout int, timeout for analytics workbench
         :param parameters dict,
         """
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         pretty = "true"
         try:
             self.log.debug("Running query on cbas: %s" % statement)
@@ -759,7 +761,7 @@ class Link_Util(Dataverse_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         self.log.info(
             "Creating link - {0}.{1}".format(
                 link_properties["dataverse"], link_properties["name"]))
@@ -860,7 +862,7 @@ class Link_Util(Dataverse_Util):
         :param restapi : True, if you want to create link using rest API. False, if you
         want to create link using DDL.
         """
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         if restapi:
             params = dict()
             uri = ""
@@ -897,7 +899,7 @@ class Link_Util(Dataverse_Util):
         :param expected_error : str, expected error string
         :param expected_error_code: str, expected error code
         """
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         link_prop = copy.deepcopy(link_properties)
         params = dict()
         uri = ""
@@ -3926,15 +3928,45 @@ class CbasUtil(UDFUtil):
         """
         Retrieves response from /analytics/cluster endpoint
         """
-        url = "http://{0}:8091/_p/cbas/analytics/cluster".format(
-            cluster.master.ip)
-        response = requests.get(url, auth=(
-            cluster.master.rest_username, cluster.master.rest_password))
-        if response.status_code in [200, 201, 204]:
-            return response.json()
+        rest = RestConnection(cluster.master)
+        url = "http://{0}:{1}/_p/cbas/analytics/cluster".format(
+            cluster.master.ip, CbServer.port)
+        if CbServer.use_https:
+            url = "https://{0}:{1}/_p/cbas/analytics/cluster".format(
+                cluster.master.ip, CbServer.ssl_port)
+
+        headers = rest._create_capi_headers(
+            cluster.master.rest_username, cluster.master.rest_password)
+
+        status, content, header = rest._http_request(
+            url, 'GET', headers=headers)
+
+        if status:
+            return json.loads(content)
         else:
-            self.log.debug("/analytics/cluster response - {0}".format(str(
-                response.content)))
+            for node in cluster.cbas_nodes:
+                try:
+                    rest = RestConnection(node, 30)
+                    url = "http://{0}:{1}/analytics/cluster".format(
+                        node.ip, CbServer.cbas_port)
+                    if CbServer.use_https:
+                        url = "https://{0}:{1}/analytics/cluster".format(
+                            node.ip, CbServer.ssl_cbas_port)
+
+                    headers = rest._create_capi_headers(
+                        node.rest_username, node.rest_password)
+
+                    status, content, header = rest._http_request(
+                        url, 'GET', headers=headers)
+
+                    if status:
+                        return json.loads(content)
+                    else:
+                        self.log.error("/analytics/cluster status:{0}, content:{1}"
+                                       .format(status, content))
+                except Exception:
+                    self.log.error("Failed to connect to node {0}".format(
+                        node.ip))
             return None
 
     def is_analytics_running(self, cluster, timeout=600):
@@ -4296,6 +4328,7 @@ class CbasUtil(UDFUtil):
         """
         analytics_recovered = False
         cluster_recover_start_time = time.time()
+        counter = 1
         while time.time() < cluster_recover_start_time + timeout:
             try:
                 status, _, _, _, _ = self.execute_statement_on_cbas_util(
@@ -4305,10 +4338,12 @@ class CbasUtil(UDFUtil):
                     break
                 else:
                     self.log.info("Service unavailable. Will retry..")
-                    time.sleep(2)
+                    time.sleep(min(10, 2 * counter))
+                    counter += 1
             except:
                 self.log.info("Service unavailable. Will retry..")
-                time.sleep(2)
+                time.sleep(min(10, 2 * counter))
+                counter += 1
         return analytics_recovered
 
     # Backup Analytics metadata
@@ -4957,8 +4992,9 @@ class CBASRebalanceUtil(object):
         available_servers += servs_out
 
         cluster.nodes_in_cluster.extend(servs_in)
-        cluster.nodes_in_cluster = list(
-            set(cluster.nodes_in_cluster) - set(servs_out))
+        nodes_in_cluster = [server for server in cluster.nodes_in_cluster if
+                            server not in servs_out]
+        cluster.nodes_in_cluster = nodes_in_cluster
 
         return rebalance_task, available_servers
 

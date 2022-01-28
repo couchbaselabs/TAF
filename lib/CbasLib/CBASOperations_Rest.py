@@ -15,7 +15,7 @@ from membase.api import httplib2
 
 
 class CBASHelper(RestConnection):
-    def __init__(self, master, cbas_node):
+    def __init__(self, cbas_node):
         super(CBASHelper, self).__init__(cbas_node)
         self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
         if CbServer.use_https:

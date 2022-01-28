@@ -14,6 +14,7 @@ from rbac_utils.Rbac_ready_functions import RbacUtils
 from remote.remote_util import RemoteMachineShellConnection
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 from security_config import trust_all_certs
+from membase.api.rest_client import RestConnection, RestHelper
 
 rbac_users_created = {}
 
@@ -1051,7 +1052,10 @@ class CBASHighAvailability(CBASBaseTest):
         if node_to_crash == "incoming":
             available_servers_before_rebalance = copy.deepcopy(self.available_servers)
         elif node_to_crash == "existing":
-            selected_node = random.choice(self.cluster.cbas_nodes)
+            for node in self.cluster.cbas_nodes:
+                if node.ip != self.cluster.cbas_cc_node.ip:
+                    selected_node = node
+                    break
 
         self.log.info("Rebalancing IN {0} CBAS nodes".format(
             nodes_to_rebalance_in))
@@ -1067,6 +1071,7 @@ class CBASHighAvailability(CBASBaseTest):
                     self.available_servers))
             self.log.debug("Selected nodes - {0}".format(selected_node))
 
+        selected_node_rest = RestHelper(RestConnection(selected_node))
         server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
             self.cluster, selected_node)
 
@@ -1098,6 +1103,15 @@ class CBASHighAvailability(CBASBaseTest):
                         otpNode=selected_otpnode.id, recoveryType="full"):
                     self.fail("Failed to add back node {0}".format(
                         selected_node.ip))
+
+            self.log.info("Checking if server is running on {0}".format(
+                selected_node.ip))
+            if not selected_node_rest.is_ns_server_running():
+                self.fail("Server failed to come up after timeout on node {"
+                          "0}".format(selected_node.ip))
+
+            if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 360):
+                self.fail("Cbas service failed to come up")
 
             rebalance_task, self.available_servers = self.rebalance_util.rebalance(
                 self.cluster, kv_nodes_in=0, kv_nodes_out=0,
@@ -1215,7 +1229,8 @@ class CBASHighAvailability(CBASBaseTest):
             self.cluster, kv_nodes_in=0, kv_nodes_out=0,
             cbas_nodes_in=nodes_to_swap_rebalance,
             cbas_nodes_out=nodes_to_swap_rebalance,
-            available_servers=self.available_servers, exclude_nodes=[])
+            available_servers=self.available_servers,
+            exclude_nodes=[self.cluster.cbas_cc_node])
 
         selected_nodes = list()
         if node_to_crash in ["in", "in-out"]:
@@ -1223,16 +1238,23 @@ class CBASHighAvailability(CBASBaseTest):
                 "-", available_servers_before_rebalance, self.available_servers)))
         if node_to_crash in ["out", "in-out"]:
             selected_nodes.append(random.choice(self.set_ops_on_nodes(
-                "-", self.available_servers, available_servers_before_rebalance)))
+                "-", self.available_servers,
+                available_servers_before_rebalance)))
         if node_to_crash == "other":
             in_node = self.set_ops_on_nodes(
                 "-", available_servers_before_rebalance, self.available_servers)
             out_node = self.set_ops_on_nodes(
                 "-", self.available_servers, available_servers_before_rebalance)
-            selected_nodes.append(random.choice(
-                self.set_ops_on_nodes(
+            for node in self.set_ops_on_nodes(
                     "-", cluster_cbas_nodes, self.set_ops_on_nodes(
-                        "|", in_node, out_node))))
+                        "|", in_node, out_node)):
+                if node.ip != self.cluster.cbas_cc_node.ip:
+                    selected_nodes.append(node)
+                    break
+
+        selected_node_rest_helper = list()
+        for node in selected_nodes:
+            selected_node_rest_helper.append(RestHelper(RestConnection(node)))
 
         server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
                 self.cluster, selected_nodes)
@@ -1265,6 +1287,16 @@ class CBASHighAvailability(CBASBaseTest):
 
             if not server_started:
                 self.fail("Error while starting couchbase server on one of the cbas nodes")
+
+            for rest_helper in selected_node_rest_helper:
+                self.log.info("Checking if server is running on {0}".format(
+                    rest_helper.rest.ip))
+                if not rest_helper.is_ns_server_running():
+                    self.fail("Server failed to come up after timeout on node {"
+                              "0}".format(rest_helper.rest.ip))
+
+            if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 360):
+                self.fail("Cbas service failed to come up")
 
             rebalance_task, self.available_servers = self.rebalance_util.rebalance(
                 self.cluster, kv_nodes_in=0, kv_nodes_out=0,
@@ -1359,7 +1391,8 @@ class CBASHighAvailability(CBASBaseTest):
         rebalance_task, self.available_servers = self.rebalance_util.rebalance(
             self.cluster, kv_nodes_in=0, kv_nodes_out=0,
             cbas_nodes_in=0, cbas_nodes_out=nodes_to_rebalance_out,
-            available_servers=self.available_servers, exclude_nodes=[])
+            available_servers=self.available_servers,
+            exclude_nodes=[self.cluster.cbas_cc_node])
 
         rebalanced_out_nodes = self.set_ops_on_nodes(
             "&", cbas_nodes_in_cluster, self.available_servers)
@@ -1369,6 +1402,8 @@ class CBASHighAvailability(CBASBaseTest):
         elif node_to_crash == "other":
             selected_node = random.choice(self.set_ops_on_nodes(
                 "-", cbas_nodes_in_cluster, rebalanced_out_nodes))
+
+        selected_node_rest_helper = RestHelper(RestConnection(selected_node))
 
         server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
             self.cluster, selected_node)
@@ -1392,6 +1427,12 @@ class CBASHighAvailability(CBASBaseTest):
             except Exception:
                 self.fail("Error while restarting server on {0}".format(
                     selected_node))
+
+            self.log.info("Checking if server is running on {0}".format(
+                selected_node.ip))
+            if not selected_node_rest_helper.is_ns_server_running():
+                self.fail("Server failed to come up after timeout on node {"
+                          "0}".format(selected_node.ip))
 
             rebalance_task, self.available_servers = self.rebalance_util.rebalance(
                 self.cluster, kv_nodes_in=0, kv_nodes_out=0,
@@ -1506,7 +1547,6 @@ class CBASHighAvailability(CBASBaseTest):
 
         available_servers_before_rebalance = copy.deepcopy(
             self.available_servers)
-        self.log.debug("available_servers_before_rebalance - {0}".format(available_servers_before_rebalance))
         cluster_cbas_nodes = copy.deepcopy(self.cluster.cbas_nodes)
 
         self.log.info("Rebalancing IN-OUT CBAS nodes")
@@ -1514,44 +1554,43 @@ class CBASHighAvailability(CBASBaseTest):
             self.cluster, kv_nodes_in=0, kv_nodes_out=0,
             cbas_nodes_in=nodes_to_rebalance_in,
             cbas_nodes_out=nodes_to_rebalance_out,
-            available_servers=self.available_servers, exclude_nodes=[])
+            available_servers=self.available_servers,
+            exclude_nodes=[self.cluster.cbas_cc_node])
 
-        selected_nodes = list()
-        self.log.debug("as {0}".format(self.available_servers))
+        selected_nodes = dict()
         for action in node_to_crash:
             if action == "in":
-                x = self.set_ops_on_nodes(
+                in_nodes = self.set_ops_on_nodes(
                     "-", available_servers_before_rebalance, self.available_servers)
-                self.log.debug("x {0}".format(x))
                 while True:
-                    selected_node = random.choice(x)
-                    if selected_node not in selected_nodes:
-                        selected_nodes.append(selected_node)
+                    selected_node = random.choice(in_nodes)
+                    if selected_node.ip not in selected_nodes:
+                        selected_nodes[selected_node.ip] = selected_node
                         break
             elif action == "out":
-                y = self.set_ops_on_nodes(
+                out_node = self.set_ops_on_nodes(
                     "-", self.available_servers, available_servers_before_rebalance)
-                self.log.debug("y {0}".format(y))
                 while True:
-                    selected_node = random.choice(y)
-                    if selected_node not in selected_nodes:
-                        selected_nodes.append(selected_node)
+                    selected_node = random.choice(out_node)
+                    if selected_node.ip not in selected_nodes:
+                        selected_nodes[selected_node.ip] = selected_node
                         break
             elif action == "other":
                 in_node = self.set_ops_on_nodes(
                     "-", available_servers_before_rebalance, self.available_servers)
                 out_node = self.set_ops_on_nodes(
                     "-", self.available_servers, available_servers_before_rebalance)
-                select_node = self.set_ops_on_nodes(
+                select_node = random.choice(self.set_ops_on_nodes(
                     "-", cluster_cbas_nodes, self.set_ops_on_nodes(
-                        "|", in_node, out_node))
-                self.log.debug("in_node {0}".format(in_node))
-                self.log.debug("out_node {0}".format(out_node))
-                self.log.debug("select_node {0}".format(select_node))
-                selected_nodes.append(random.choice(select_node))
+                        "|", in_node, out_node)))
+                selected_nodes[select_node.ip] = select_node
+
+        selected_node_rest_helper = list()
+        for node in selected_nodes.values():
+            selected_node_rest_helper.append(RestHelper(RestConnection(node)))
 
         server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
-            self.cluster, selected_nodes)
+            self.cluster, selected_nodes.values())
 
         if not server_stopped:
             self.fail("Error while stopping couchbase server on one of the "
@@ -1565,7 +1604,6 @@ class CBASHighAvailability(CBASBaseTest):
                     self.cluster, actual_replica):
                 self.fail("Actual number of replicas is different from "
                           "what was set")
-            #self.post_replica_activation_verification(True, False, False)
 
             server_started = True
             self.log.info("Restarting the server and rebalancing again")
@@ -1583,6 +1621,16 @@ class CBASHighAvailability(CBASBaseTest):
             if not server_started:
                 self.fail(
                     "Error while starting couchbase server on one of the cbas nodes")
+
+            for rest_helper in selected_node_rest_helper:
+                self.log.info("Checking if server is running on {0}".format(
+                    rest_helper.rest.ip))
+                if not rest_helper.is_ns_server_running():
+                    self.fail("Server failed to come up after timeout on node {"
+                              "0}".format(rest_helper.rest.ip))
+
+            if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 360):
+                self.fail("Cbas service failed to come up")
 
             rebalance_task, self.available_servers = self.rebalance_util.rebalance(
                 self.cluster, kv_nodes_in=0, kv_nodes_out=0,
