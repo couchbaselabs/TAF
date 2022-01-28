@@ -248,6 +248,7 @@ class Murphy(BaseTestCase, OPD):
             '''
             self.generate_docs()
             self.perform_load(validate_data=True)
+            self.loop += 1
 
     def test_rebalance(self):
         self.loop = 1
@@ -391,7 +392,6 @@ class Murphy(BaseTestCase, OPD):
     def SystemTestMagma(self):
         #######################################################################
         self.loop = 1
-        self.track_failures = False
         self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
@@ -430,6 +430,7 @@ class Murphy(BaseTestCase, OPD):
                            update_start=self.start,
                            update_end=self.end)
         self.perform_load(validate_data=False)
+        self.track_failures = False
 
         if self.index_nodes:
             self.drIndexService.create_indexes()

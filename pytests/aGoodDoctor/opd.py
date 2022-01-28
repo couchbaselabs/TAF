@@ -444,7 +444,8 @@ class OPD:
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=7200)
                 if self.track_failures:
-                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items)
+                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items,
+                                                              timeout=7200)
             except Exception as e:
                 self.get_gdb()
                 raise e
