@@ -157,6 +157,10 @@ class SystemEventLogs(ClusterSetup):
         def validate_ldap_event(old_settings, new_settings):
             old_settings_copy = copy.deepcopy(old_settings)
             new_settings_copy = copy.deepcopy(new_settings)
+            old_settings_copy["clientTLSCert"] = "redacted"
+            old_settings_copy["cacert"] = "redacted"
+            new_settings_copy["clientTLSCert"] = "redacted"
+            new_settings_copy["cacert"] = "redacted"
             for key, val in old_settings_copy.items():
                 if val == "false":
                     old_settings_copy[key] = False
@@ -279,8 +283,8 @@ class SystemEventLogs(ClusterSetup):
         settings = {"tlsMinVersion": "tlsv1.1", "clusterEncryptionLevel": "all"}
         self.rest.set_security_settings(settings)
 
-        old_settings = {"ssl_minimum_protocol": "tlsv1.2", "clusterEncryptionLevel": "control"}
-        new_settings = {"ssl_minimum_protocol": "tlsv1.1", "clusterEncryptionLevel": "all"}
+        old_settings = {"ssl_minimum_protocol": "tlsv1.2", "cluster_encryption_level": "control"}
+        new_settings = {"ssl_minimum_protocol": "tlsv1.1", "cluster_encryption_level": "all"}
         # Get the last event
         event = self.get_event_from_cluster()
         user_event = SecurityEvents.security_config_changed(self.cluster.master.ip,
@@ -344,6 +348,9 @@ class SystemEventLogs(ClusterSetup):
                 self.fail("Param: {0} not present in new settings".format(param))
 
     def test_audit_disabled_event(self):
+        status = self.rest.setAuditSettings(enabled='true')
+        if not status:
+            self.fail("Enabling audit failed")
         status = self.rest.setAuditSettings(enabled='false')
         if not status:
             self.fail("Disabling audit failed")
@@ -360,7 +367,7 @@ class SystemEventLogs(ClusterSetup):
                                                    enabled_audit_ids=[],
                                                    log_path="/opt/couchbase/var/lib/couchbase/logs",
                                                    rotate_interval=86400,
-                                                   rotate_size=20971520,
+                                                   rotate_size=524288000,
                                                    sync=[])
         # Test NON Extra Attributes fields & NON generic fields
         for param, value in user_event.items():
@@ -374,7 +381,7 @@ class SystemEventLogs(ClusterSetup):
         self.generic_fields_check(event)
 
         # Test Extra Attributes fields
-        # check if mandatory keys in new settings are present
+        # check if mandatory keys in old settings are present
         for param in ["enabled_audit_ids", "log_path", "rotate_interval", "rotate_size", "sync"]:
             if param not in event[Event.Fields.EXTRA_ATTRS]["old_settings"].keys():
                 self.fail("Param: {0} not present in new settings".format(param))

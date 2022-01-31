@@ -3478,7 +3478,7 @@ class RestConnection(object):
             'disabledUsers': '{0}'.format(users)
         })
         status, content, header = self._http_request(api, 'POST', params)
-        self.test_log.info("Value os status is {0}".format(status))
+        self.test_log.info("Value of status is {0}".format(status))
         self.test_log.info("Value of content is {0}".format(content))
         if (status):
             return status
