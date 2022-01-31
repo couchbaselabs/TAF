@@ -57,6 +57,7 @@ public class WorkLoadGenerate extends Task{
         this.docops = new DocOps();
         this.sdk = client;
         this.durability = durability;
+        this.unique_str = this.sdk.bucket + this.sdk.scope + this.sdk.collection;
     }
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability, int exp, String exp_unit, boolean trackFailures, int retryTimes) {
@@ -69,6 +70,7 @@ public class WorkLoadGenerate extends Task{
         this.retryTimes = retryTimes;
         this.exp = exp;
         this.exp_unit = exp_unit;
+        this.unique_str = this.sdk.bucket + this.sdk.scope + this.sdk.collection;
     }
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability,
