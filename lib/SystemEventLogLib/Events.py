@@ -243,7 +243,8 @@ class EventHelper(object):
                                                      self.events[v_index])
                 if dict_to_compare == self.events[v_index]:
                     v_index += 1
-                    if v_index == self.__event_counter.counter:
+                    if v_index == self.__event_counter.counter \
+                            or v_index == EventHelper.max_events:
                         break
         else:
             failures.append("Unable to validate event: %s"

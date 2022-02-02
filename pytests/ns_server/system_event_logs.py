@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from random import choice, randint
 from threading import Thread
+from time import time
 
 from BucketLib.BucketOperations_Rest import BucketHelper
 from BucketLib.bucket import Bucket
@@ -450,7 +451,8 @@ class SystemEventLogs(ClusterSetup):
         if last_event[Event.Fields.UUID] != uuid_to_test \
                 or (last_event[Event.Fields.DESCRIPTION]
                     != event_2[Event.Fields.DESCRIPTION]):
-            self.fail("Event-id mismatch. Cluster event: %s" % last_event)
+            self.fail("UUID / desc mismatch. Cluster event: %s, "
+                      "Expected: %s" % (last_event, event_2))
 
         # Validate the events
         self.__validate(self.system_events.test_start_time)
@@ -939,6 +941,13 @@ class SystemEventLogs(ClusterSetup):
                 check_vbucket_shuffling=False)
         else:
             self.fail("Invalid rebalance type")
+
+        ref_time = time() + 60
+        while time() < ref_time:
+            if rebalance_task.state == "running":
+                break
+        else:
+            self.fail("Rebalance task is not running")
 
         self.log.info("Creating events with rebalance")
         for index in range(events_to_create):
@@ -1599,12 +1608,18 @@ class SystemEventLogs(ClusterSetup):
             fields = ['operation_id']
             if r_type != "reb_start":
                 fields.append('time_taken')
+            if r_type == "reb_failed":
+                fields.append('completion_message')
             for field in fields:
                 if field not in \
                         cluster_event_dict[Event.Fields.EXTRA_ATTRS]:
                     self.fail("Field '%s' missing in rebalance extra_attr: %s"
                               % (field, cluster_event_dict))
                 cluster_event_dict[Event.Fields.EXTRA_ATTRS].pop(field)
+
+        def sort_nodes(t_event):
+            for n_type in ["active_nodes", "keep_nodes"]:
+                t_event[Event.Fields.EXTRA_ATTRS]["nodes_info"][n_type].sort()
 
         rebalance_failure = self.input.param("with_rebalance", False)
         rebalance_task = None
@@ -1634,7 +1649,7 @@ class SystemEventLogs(ClusterSetup):
                 to_add=[], to_remove=eject_nodes)
             self.system_events.add_event(
                 NsServerEvents.rebalance_started(
-                    node.ip, active_nodes=active_nodes,
+                    self.cluster.master.ip, active_nodes=active_nodes,
                     keep_nodes=keep_nodes, eject_nodes=eject_ns_nodes,
                     delta_nodes=empty_list, failed_nodes=empty_list))
             self.sleep(5, "Wait for rebalance to start")
@@ -1651,14 +1666,20 @@ class SystemEventLogs(ClusterSetup):
             NsServerEvents.service_started(node.ip,
                                            {"name": memcached_process}))
         if rebalance_failure:
-            cluster_event["reb_failed"] = self.get_last_event_from_cluster()
+            reb_fail_event = None
+            max_retry_time = time() + 5
+            while time() < max_retry_time and reb_fail_event is None:
+                reb_fail_event = self.get_last_event_from_cluster()
+                if reb_fail_event["event_id"] != NsServer.RebalanceFailure:
+                    reb_fail_event = None
+            cluster_event["reb_failed"] = reb_fail_event
 
         if rebalance_failure:
             self.task_manager.get_task_result(rebalance_task)
             self.system_events.add_event(
                 NsServerEvents.rebalance_failed(
-                    node.ip,  active_nodes=active_nodes,
-                    keep_nodes=keep_nodes, eject_nodes=eject_nodes,
+                    self.cluster.master.ip,  active_nodes=active_nodes,
+                    keep_nodes=keep_nodes, eject_nodes=eject_ns_nodes,
                     delta_nodes=empty_list, failed_nodes=empty_list))
 
         self.system_events.add_event(
@@ -1701,7 +1722,7 @@ class SystemEventLogs(ClusterSetup):
         reb_event = NsServerEvents.rebalance_started(
             self.cluster.master.ip,
             active_nodes=active_nodes, keep_nodes=keep_nodes,
-            eject_nodes=eject_nodes, delta_nodes=empty_list,
+            eject_nodes=eject_ns_nodes, delta_nodes=empty_list,
             failed_nodes=empty_list)
         reb_event["otp_node"] = "ns_1@%s" % self.cluster.master.ip
         if not rebalance_failure:
@@ -1709,26 +1730,38 @@ class SystemEventLogs(ClusterSetup):
                 "nodes_info"]["keep_nodes"] = active_nodes
             reb_event[Event.Fields.EXTRA_ATTRS][
                 "nodes_info"]["eject_nodes"] = empty_list
+
+        for tem_event in [reb_event,
+                          cluster_event["reb_start"],
+                          cluster_event["reb_failed"],
+                          cluster_event["reb_success"]]:
+            sort_nodes(tem_event)
+
         if reb_event != cluster_event["reb_start"]:
-            self.fail("Rebalance start event is not as expected: %s"
-                      % cluster_event["reb_start"])
+            self.fail("Rebalance start event is not as expected. "
+                      "Expected: %s, Actual: %s"
+                      % (reb_event, cluster_event["reb_start"]))
 
         if 'reb_failed' in cluster_event:
             reb_event = NsServerEvents.rebalance_failed(
                 self.cluster.master.ip,
                 active_nodes=active_nodes, keep_nodes=keep_nodes,
-                eject_nodes=eject_nodes, delta_nodes=empty_list,
+                eject_nodes=eject_ns_nodes, delta_nodes=empty_list,
                 failed_nodes=empty_list)
             reb_event["otp_node"] = "ns_1@%s" % self.cluster.master.ip
+            sort_nodes(reb_event)
             if reb_event != cluster_event["reb_failed"]:
-                self.fail("Rebalance failed event is not as expected: %s"
-                          % cluster_event["reb_failed"])
+                self.fail("Rebalance failed event is not as expected. "
+                          "Expected: %s, Actual: %s"
+                          % (reb_event, cluster_event["reb_failed"]))
 
         reb_event = NsServerEvents.rebalance_success(
             self.cluster.master.ip,
             active_nodes=active_nodes, keep_nodes=active_nodes,
             eject_nodes=[], delta_nodes=[], failed_nodes=[])
         reb_event["otp_node"] = "ns_1@%s" % self.cluster.master.ip
+        sort_nodes(reb_event)
         if reb_event != cluster_event["reb_success"]:
-            self.fail("Rebalance success event is not as expected: %s"
-                      % cluster_event["reb_success"])
+            self.fail("Rebalance success event is not as expected. "
+                      "Expected: %s, Actual: %s"
+                      % (reb_event, cluster_event["reb_success"]))
