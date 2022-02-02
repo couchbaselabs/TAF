@@ -100,8 +100,7 @@ class NsServerEvents(object):
 
     @staticmethod
     def auto_failover_started(node, active_nodes, failover_nodes, master_node,
-                              failover_threshold, failover_reason,
-                              allow_unsafe=False):
+                              failover_reason, allow_unsafe=False):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: NsServer.AutoFailoverStarted,
@@ -114,7 +113,6 @@ class NsServerEvents(object):
                     "failover_nodes": failover_nodes,
                     "master_node": master_node
                 },
-                "failover_threshold": failover_threshold,
                 "failover_reason": failover_reason,
                 "allow_unsafe": allow_unsafe
             }

@@ -1132,7 +1132,7 @@ class SystemEventLogs(ClusterSetup):
         self.system_events.add_event(
             NsServerEvents.auto_failover_started(
                 self.cluster.master.ip, active_nodes, otp_nodes,
-                otp_master, auto_fo_threshold, fo_reason_dict))
+                otp_master, fo_reason_dict))
         set_recovery_and_rebalance(recovery_type=None)
         do_event_validation("auto-failover")
 
