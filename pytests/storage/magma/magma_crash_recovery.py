@@ -37,6 +37,11 @@ class MagmaCrashTests(MagmaBaseTest):
         self.stop_crash = True
         if self.crash_th and self.crash_th.is_alive():
             self.crash_th.join()
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets,
+                                                     check_ep_items_remaining=True, timeout=1200)
+        for bucket in self.cluster.buckets:
+            items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
+            self.bucket_util.verify_stats_for_bucket(self.cluster, bucket, items, timeout=300)
         super(MagmaCrashTests, self).tearDown()
 
     def kill_magma_check_wal_file_size(self):
