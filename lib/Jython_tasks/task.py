@@ -65,6 +65,7 @@ class Task(Callable):
         self.test_log = logger.get("test")
         self.result = False
         self.sleep = sleep
+        self.state = None
 
     def __str__(self):
         if self.exception:
@@ -295,8 +296,11 @@ class RebalanceTask(Task):
                 if self.monitor_vbuckets_shuffling:
                     self.test_log.debug("Will monitor vbucket shuffling for "
                                         "swap rebalance")
+            self.state = "add_nodes"
             self.add_nodes()
+            self.state = "triggering"
             self.start_rebalance()
+            self.state = "triggered"
             self.table.display("Rebalance Overview")
 
             check_timeout = int(time.time()) + 10
@@ -312,6 +316,7 @@ class RebalanceTask(Task):
                     self.log.debug("New rebalance status_id: %s"
                                    % server_task["statusId"])
 
+            self.state = "running"
             self.check()
             # self.task_manager.schedule(self)
         except Exception as e:
