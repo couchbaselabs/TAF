@@ -16,6 +16,8 @@ from BucketLib.BucketOperations import BucketHelper
 from cluster_utils.cluster_ready_functions import CBCluster
 import threading
 import random
+from aGoodDoctor.bkrs import DoctorBKRS
+import os
 
 
 class Murphy(BaseTestCase, OPD):
@@ -45,6 +47,7 @@ class Murphy(BaseTestCase, OPD):
 
         self.num_collections = self.input.param("num_collections", 1)
         self.xdcr_collections = self.input.param("xdcr_collections", self.num_collections)
+        self.num_collections_bkrs = self.input.param("num_collections_bkrs", self.num_collections)
         self.num_scopes = self.input.param("num_scopes", 1)
         self.xdcr_scopes = self.input.param("xdcr_scopes", self.num_scopes)
         self.num_buckets = self.input.param("num_buckets", 1)
@@ -52,7 +55,7 @@ class Murphy(BaseTestCase, OPD):
         self.cbas_nodes = self.input.param("cbas_nodes", 0)
         self.fts_nodes = self.input.param("fts_nodes", 0)
         self.index_nodes = self.input.param("index_nodes", 0)
-        self.query_nodes = self.input.param("query_nodes", 0)
+        self.backup_nodes = self.input.param("backup_nodes", 0)
         self.xdcr_remote_nodes = self.input.param("xdcr_remote_nodes", 0)
         self.num_indexes = self.input.param("num_indexes", 0)
         self.mutation_perc = 100
@@ -153,13 +156,14 @@ class Murphy(BaseTestCase, OPD):
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.cbas_nodes]
 
-#         if self.query_nodes:
-#             nodes = len(self.cluster.nodes_in_cluster)
-#             self.task.rebalance(self.cluster.nodes_in_cluster,
-#                                 self.servers[nodes:nodes+self.query_nodes], [],
-#                                 services=["n1ql"]*self.query_nodes)
-#             self.cluster.query_nodes = self.servers[nodes:nodes+self.query_nodes]
-#             self.cluster.nodes_in_cluster.extend(self.cluster.query_nodes)
+        if self.backup_nodes:
+            nodes = len(self.cluster.nodes_in_cluster)
+            self.task.rebalance(self.cluster.nodes_in_cluster,
+                                self.servers[nodes:nodes+self.backup_nodes], [],
+                                services=["backup"]*self.backup_nodes)
+            self.cluster.backup_nodes = self.servers[nodes:nodes+self.backup_nodes]
+            self.cluster.nodes_in_cluster.extend(self.cluster.backup_nodes)
+            self.drBackup = DoctorBKRS(self.cluster)
 
         if self.index_nodes>0:
             self.rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA:
@@ -172,7 +176,7 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.index_nodes = self.servers[nodes:nodes+self.index_nodes]
             self.cluster.query_nodes = self.servers[nodes:nodes+self.index_nodes]
             self.cluster.nodes_in_cluster.extend(self.cluster.index_nodes)
-            self.drIndexService = DoctorN1QL(self.cluster, self.bucket_util,
+            self.drIndex = DoctorN1QL(self.cluster, self.bucket_util,
                                              self.num_indexes)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.index_nodes]
@@ -222,10 +226,10 @@ class Murphy(BaseTestCase, OPD):
         self.perform_load(validate_data=False)
 
         if self.index_nodes:
-            self.drIndexService.create_indexes()
-            self.drIndexService.build_indexes()
-            self.drIndexService.wait_for_indexes_online(self.log, self.drIndexService.indexes)
-            self.drIndexService.start_query_load()
+            self.drIndex.create_indexes()
+            self.drIndex.build_indexes()
+            self.drIndex.wait_for_indexes_online(self.log, self.drIndex.indexes)
+            self.drIndex.start_query_load()
 
         if self.xdcr_remote_nodes > 0:
             self.drXDCR.create_remote_ref("magma_xdcr")
@@ -249,6 +253,22 @@ class Murphy(BaseTestCase, OPD):
             self.generate_docs()
             self.perform_load(validate_data=True)
             self.loop += 1
+        self.stop_stats = True
+        stat_th.join()
+
+        # Starting the backup here.
+        if self.backup_nodes > 0:
+            self.restore_timeout = self.input.param("restore_timeout", 12*60*60)
+            archive = os.path.join(self.cluster.backup_nodes[0].data_path, "bkrs")
+            repo = "magma"
+            self.drBackup.configure_backup(archive, repo, [], [])
+            self.drBackup.trigger_backup(archive, repo)
+            items = self.bucket_util.get_bucket_current_item_count(self.cluster,
+                                                                   self.cluster.buckets[0])
+            self.bucket_util.flush_all_buckets(self.cluster)
+            self.drBackup.trigger_restore(archive, repo)
+            result = self.drBackup.monitor_restore(self.bucket_util, items, timeout=self.restore_timeout)
+            self.assertTrue(result, "Restore failed")
 
     def test_rebalance(self):
         self.loop = 1
@@ -292,10 +312,10 @@ class Murphy(BaseTestCase, OPD):
 #         stat_th.join()
 
         if self.index_nodes:
-            self.drIndexService.create_indexes()
-            self.drIndexService.build_indexes()
-            self.drIndexService.wait_for_indexes_online(self.log, self.drIndexService.indexes)
-            self.drIndexService.start_query_load()
+            self.drIndex.create_indexes()
+            self.drIndex.build_indexes()
+            self.drIndex.wait_for_indexes_online(self.log, self.drIndex.indexes)
+            self.drIndex.start_query_load()
 
         if self.xdcr_remote_nodes > 0:
             self.drXDCR.create_remote_ref("magma_xdcr")
@@ -433,10 +453,10 @@ class Murphy(BaseTestCase, OPD):
         self.track_failures = False
 
         if self.index_nodes:
-            self.drIndexService.create_indexes()
-            self.drIndexService.build_indexes()
-            self.drIndexService.wait_for_indexes_online(self.log, self.drIndexService.indexes)
-            self.drIndexService.start_query_load()
+            self.drIndex.create_indexes()
+            self.drIndex.build_indexes()
+            self.drIndex.wait_for_indexes_online(self.log, self.drIndex.indexes)
+            self.drIndex.start_query_load()
 
         if self.xdcr_remote_nodes > 0:
             self.drXDCR.create_remote_ref("magma_xdcr")
@@ -802,10 +822,10 @@ class Murphy(BaseTestCase, OPD):
             ###################################################################
             if self.loop == 0:
                 if self.index_nodes:
-                    self.drIndexService.create_indexes()
-                    self.drIndexService.build_indexes()
-                    self.drIndexService.wait_for_indexes_online(self.log, self.drIndexService.indexes)
-                    self.drIndexService.start_query_load()
+                    self.drIndex.create_indexes()
+                    self.drIndex.build_indexes()
+                    self.drIndex.wait_for_indexes_online(self.log, self.drIndex.indexes)
+                    self.drIndex.start_query_load()
 
                 if self.xdcr_remote_nodes > 0:
                     self.drXDCR.create_remote_ref("magma_xdcr")

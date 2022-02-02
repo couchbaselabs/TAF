@@ -687,7 +687,7 @@ class OPD:
                 self.dump_seq_index(shell, data_path, bucket.name, shard, kvstore)
             self.sleep(600)
         shell.disconnect()
- 
+
     def dump_seq_index(self, shell, data_path, bucket, shard, kvstore):
         magma_path = os.path.join(data_path, bucket, "magma.{}")
         magma = magma_path.format(shard)
