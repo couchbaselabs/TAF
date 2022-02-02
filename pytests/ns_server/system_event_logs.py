@@ -1472,6 +1472,10 @@ class SystemEventLogs(ClusterSetup):
         }
         if bucket.evictionPolicy == Bucket.EvictionPolicy.VALUE_ONLY:
             old_settings["eviction_policy"] = 'value_only'
+        if bucket.bucketType == Bucket.Type.EPHEMERAL:
+            old_settings["eviction_policy"] = "no_eviction"
+            old_settings["storage_mode"] = Bucket.Type.EPHEMERAL
+            old_settings.pop("replica_index", None)
 
         # Add BucketOnline event in case of single node cluster
         # (In multi-node we may not know the order of events across the nodes)
@@ -1524,9 +1528,13 @@ class SystemEventLogs(ClusterSetup):
             self.fail("Old settings' value mismatch. Expected %s != %s Actual"
                       % (old_settings, act_val))
 
+        expected_keys = 11 if bucket.bucketType == Bucket.Type.EPHEMERAL \
+            else 12
         act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
+        self.log.info(act_val)
         act_val_keys = act_val.keys()
-        if len(act_val_keys) != 12 or 'ram_quota' not in act_val_keys:
+        if len(act_val_keys) != expected_keys \
+                or 'ram_quota' not in act_val_keys:
             self.fail("Mismatch in new-setting params: %s" % act_val_keys)
 
         self.num_replicas += 1
@@ -1538,7 +1546,8 @@ class SystemEventLogs(ClusterSetup):
         event = self.get_last_event_from_cluster()
         act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
         act_val_keys = act_val.keys()
-        if len(act_val_keys) != 12 or 'num_replicas' not in act_val_keys:
+        if len(act_val_keys) != expected_keys \
+                or 'num_replicas' not in act_val_keys:
             self.fail("Mismatch in new-setting params: %s" % act_val_keys)
         if event[Event.Fields.EXTRA_ATTRS]["old_settings"]["num_replicas"] \
                 != self.num_replicas-1:
