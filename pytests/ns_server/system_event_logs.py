@@ -1698,6 +1698,7 @@ class SystemEventLogs(ClusterSetup):
                 active_nodes=active_nodes, keep_nodes=keep_nodes,
                 eject_nodes=eject_nodes, delta_nodes=empty_list,
                 failed_nodes=empty_list)
+            reb_event["otp_node"] = "ns_1@%s" % self.cluster.master.ip
             if reb_event != cluster_event["reb_failed"]:
                 self.fail("Rebalance failed event is not as expected: %s"
                           % cluster_event["reb_failed"])
@@ -1706,6 +1707,7 @@ class SystemEventLogs(ClusterSetup):
             self.cluster.master.ip,
             active_nodes=active_nodes, keep_nodes=active_nodes,
             eject_nodes=[], delta_nodes=[], failed_nodes=[])
+        reb_event["otp_node"] = "ns_1@%s" % self.cluster.master.ip
         if reb_event != cluster_event["reb_success"]:
             self.fail("Rebalance success event is not as expected: %s"
                       % cluster_event["reb_success"])
