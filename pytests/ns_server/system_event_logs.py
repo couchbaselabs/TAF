@@ -1030,8 +1030,7 @@ class SystemEventLogs(ClusterSetup):
             if recovery_type:
                 self.log.info("Add back node using '%s' recovery"
                               % recovery_type)
-                status = rest.set_recovery_type(
-                    otp_node, CbServer.Failover.RecoveryType.FULL)
+                status = rest.set_recovery_type(otp_node, recovery_type)
                 if not status:
                     self.fail("Unable to set recovery type")
 
@@ -1041,28 +1040,38 @@ class SystemEventLogs(ClusterSetup):
             if not result:
                 self.fail("Rebalance operation failed after recovery")
 
-            delta_nodes = empty_list
+            delta_nodes = failed_nodes = empty_list
             new_active_nodes = active_nodes
             if recovery_type is None:
-                delta_nodes = [otp_node]
+                failed_nodes = [otp_node]
                 new_active_nodes = [t_n.id for t_n in rest.node_statuses()
                                     if t_n.ip != target_node.ip]
+            elif recovery_type == CbServer.Failover.RecoveryType.DELTA:
+                delta_nodes = [otp_node]
 
             # Rebalance started event
             self.system_events.add_event(
                 NsServerEvents.rebalance_started(
                     self.cluster.master.ip, new_active_nodes,
-                    new_active_nodes, empty_list, delta_nodes, empty_list))
-            # Bucket online event
-            self.system_events.add_event(
-                DataServiceEvents.bucket_online(target_node.ip,
-                                                bucket.name, bucket.uuid))
+                    new_active_nodes, empty_list, delta_nodes, failed_nodes))
+            if recovery_type is not None:
+                # Bucket online event
+                self.system_events.add_event(
+                    DataServiceEvents.bucket_online(target_node.ip,
+                                                    bucket.name, bucket.uuid))
             # Rebalance completed event
             self.system_events.add_event(
                 NsServerEvents.rebalance_success(
                     self.cluster.master.ip, new_active_nodes,
-                    new_active_nodes, empty_list, delta_nodes, empty_list))
+                    new_active_nodes, empty_list, delta_nodes, failed_nodes))
 
+        def do_event_validation(scenario_name):
+            failures = \
+                self.system_events.validate(self.cluster.master,
+                                            self.system_events.test_start_time)
+            if failures:
+                self.fail("Failed to validate events for %s scenario"
+                          % scenario_name)
         fo_type = self.input.param("failover_type",
                                    CbServer.Failover.Type.AUTO)
         auto_fo_threshold = 5
@@ -1100,6 +1109,7 @@ class SystemEventLogs(ClusterSetup):
             NsServerEvents.graceful_failover_complete(
                 self.cluster.master.ip, active_nodes, otp_nodes, otp_master))
         set_recovery_and_rebalance(CbServer.Failover.RecoveryType.DELTA)
+        do_event_validation("graceful failover")
 
         self.log.info("2/3 Testing hard-failover")
         rest.fail_over(otp_node, graceful=False)
@@ -1110,6 +1120,7 @@ class SystemEventLogs(ClusterSetup):
             NsServerEvents.hard_failover_complete(
                 self.cluster.master.ip, active_nodes, otp_nodes, otp_master))
         set_recovery_and_rebalance(CbServer.Failover.RecoveryType.FULL)
+        do_event_validation("hard failover")
 
         self.log.info("3/3 Testing auto-failover")
         shell = RemoteMachineShellConnection(target_node)
@@ -1123,6 +1134,7 @@ class SystemEventLogs(ClusterSetup):
                 self.cluster.master.ip, active_nodes, otp_nodes,
                 otp_master, auto_fo_threshold, fo_reason_dict))
         set_recovery_and_rebalance(recovery_type=None)
+        do_event_validation("auto-failover")
 
     def test_kill_event_log_server(self):
         """
