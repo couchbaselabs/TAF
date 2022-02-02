@@ -228,7 +228,6 @@ class NsServerEvents(object):
                     "failover_nodes": failover_nodes,
                     "master_node": master_node
                 },
-                "failover_reason": {},
                 "allow_unsafe": allow_unsafe
             }
         }
