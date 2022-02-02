@@ -2634,7 +2634,7 @@ class Dataset_Util(Link_Util):
                         "_default").num_items
 
     def get_datasets(self, cluster, retries=10, fields=[]):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         datasets_created = []
         datasets_query = "select value regexp_replace(ds.DataverseName,\"/\",\".\") || " \
               "\".\" || ds.DatasetName from Metadata.`Dataset` as ds " \
@@ -3632,7 +3632,7 @@ class CbasUtil(UDFUtil):
         """
         Deletes a request from CBAS
         """
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         try:
             if client_context_id is None:
                 payload = "client_context_id=None"
@@ -4112,7 +4112,7 @@ class CbasUtil(UDFUtil):
 
     def set_log_level_on_cbas(self, cluster, log_level_dict, timeout=120,
                               username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         payload = ""
         for component, level in log_level_dict.items():
             payload += '{ "level": "' + level + '", "name": "' + component + '" },'
@@ -4127,7 +4127,7 @@ class CbasUtil(UDFUtil):
     def set_specific_log_level_on_cbas(
             self, cluster, logger_name, log_level, timeout=120, username=None,
             password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.operation_log_level_on_cbas(
                 method="PUT", params=None, logger_name=logger_name,
@@ -4136,7 +4136,7 @@ class CbasUtil(UDFUtil):
         return status, content, response
 
     def get_log_level_on_cbas(self, cluster, timeout=120, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.operation_log_level_on_cbas(
                 method="GET", params="", logger_name=None, timeout=timeout,
@@ -4145,7 +4145,7 @@ class CbasUtil(UDFUtil):
 
     def get_specific_cbas_log_level(self, cluster, logger_name, timeout=120,
                                     username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.operation_log_level_on_cbas(
                 method="GET", params=None, logger_name=logger_name,
@@ -4154,7 +4154,7 @@ class CbasUtil(UDFUtil):
 
     def delete_all_loggers_on_cbas(self, cluster, timeout=120, username=None,
                                    password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.operation_log_level_on_cbas(
                 method="DELETE", params="", logger_name=None,
@@ -4163,7 +4163,7 @@ class CbasUtil(UDFUtil):
 
     def delete_specific_cbas_log_level(self, cluster, logger_name, timeout=120,
                                        username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.operation_log_level_on_cbas(
                 method="DELETE", params=None, logger_name=logger_name,
@@ -4172,7 +4172,7 @@ class CbasUtil(UDFUtil):
 
     def update_config_on_cbas(self, cluster, config_name=None, config_value=None,
                               username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         if config_name and config_value:
             params = '{"' + config_name + '":' + str(config_value) + '}'
         else:
@@ -4182,13 +4182,13 @@ class CbasUtil(UDFUtil):
         return status, content, response
 
     def fetch_config_on_cbas(self, cluster, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = cbas_helper.operation_config_on_cbas(
             method="GET", username=username, password=password)
         return status, content, response
 
     def fetch_cbas_stats(self, cluster, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = cbas_helper.fetch_cbas_stats(
             username=username, password=password)
         return status, content, response
@@ -4222,7 +4222,7 @@ class CbasUtil(UDFUtil):
 
     def update_service_parameter_configuration_on_cbas(
             self, cluster, config_map=None, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         if config_map:
             params = json.dumps(config_map)
         else:
@@ -4234,7 +4234,7 @@ class CbasUtil(UDFUtil):
 
     def fetch_service_parameter_configuration_on_cbas(
             self, cluster, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.operation_service_parameters_configuration_cbas(
                 method="GET", username=username, password=password)
@@ -4242,7 +4242,7 @@ class CbasUtil(UDFUtil):
 
     def update_node_parameter_configuration_on_cbas(
             self, cluster, config_map=None, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         if config_map:
             params = json.dumps(config_map)
         else:
@@ -4254,14 +4254,14 @@ class CbasUtil(UDFUtil):
 
     def fetch_node_parameter_configuration_on_cbas(
             self, cluster, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.operation_node_parameters_configuration_cbas(
                 method="GET", username=username, password=password)
         return status, content, response
 
     def restart_analytics_cluster_uri(self, cluster, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.restart_analytics_cluster_uri(username=username,
                                                            password=password)
@@ -4269,14 +4269,14 @@ class CbasUtil(UDFUtil):
 
     def restart_analytics_node_uri(self, cluster, node_id, port=8095,
                                    username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.restart_analytics_node_uri(
                 node_id, port, username=username, password=password)
         return status, content, response
 
     def fetch_bucket_state_on_cbas(self, cluster):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.fetch_bucket_state_on_cbas(
                 method="GET", username=None, password=None)
@@ -4284,7 +4284,7 @@ class CbasUtil(UDFUtil):
 
     def fetch_pending_mutation_on_cbas_node(self, cluster, node_ip, port=9110,
                                             username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.fetch_pending_mutation_on_cbas_node(
                 node_ip, port, method="GET",
@@ -4293,7 +4293,7 @@ class CbasUtil(UDFUtil):
 
     def fetch_pending_mutation_on_cbas_cluster(self, cluster, port=9110,
                                                username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.fetch_pending_mutation_on_cbas_cluster(
                 port, method="GET", username=username, password=password)
@@ -4301,7 +4301,7 @@ class CbasUtil(UDFUtil):
 
     def fetch_dcp_state_on_cbas(self, cluster, data_set, data_verse="Default",
                                 username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         if not data_set:
             raise ValueError("dataset is required field")
         status, content, response = cbas_helper.fetch_dcp_state_on_cbas(
@@ -4310,14 +4310,14 @@ class CbasUtil(UDFUtil):
         return status, content, response
 
     def get_analytics_diagnostics(self, cluster, cbas_node, timeout=120):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         response = cbas_helper.get_analytics_diagnostics(cbas_node,
                                                               timeout=timeout)
         return response
 
     def set_global_compression_type(self, cluster, compression_type="snappy",
                                     username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         return cbas_helper.set_global_compression_type(compression_type,
                                                             username, password)
 
@@ -4350,7 +4350,7 @@ class CbasUtil(UDFUtil):
     def backup_cbas_metadata(
             self, cluster, bucket_name='default', username=None,
             password=None, include="", exclude=""):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         response = cbas_helper.backup_cbas_metadata(
             bucket_name, username=username, password=password, include=include,
             exclude=exclude)
@@ -4359,7 +4359,7 @@ class CbasUtil(UDFUtil):
     # Restore Analytics metadata
     def restore_cbas_metadata(self, cluster, metadata, bucket_name='default',
                               username=None, password=None):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         if metadata is None:
             raise ValueError("Missing metadata")
         response = cbas_helper.restore_cbas_metadata(
@@ -5213,58 +5213,54 @@ class CBASRebalanceUtil(object):
         if kv_failover_nodes is None:
             kv_failover_nodes = []
         fail_over_status = True
-        to_fail_over = list()
+
+        def pick_node(cluster, target_nodes, how_many=1):
+            picked = list()
+            node_status = cluster.rest.node_statuses()
+            for i in range(how_many):
+                for node in node_status:
+                    if node.ip == target_nodes[i].ip:
+                        picked.append(node)
+            self.log.info("Nodes selected are - {0}".format(
+                [p.id for p in picked]))
+            return picked
 
         # Mark Node for failover
         if failover_type == "Graceful":
-            for i in range(kv_nodes):
-                chosen = self.cluster_util.pick_nodes(
-                    cluster.master, howmany=1,
-                    target_node=cluster_kv_nodes[i],
-                    exclude_nodes=exclude_nodes)
-                if all_at_once:
-                    to_fail_over.extend([x.id for x in chosen])
-                else:
-                    fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        chosen[0].id, graceful=True, all_at_once=False)
-                failover_count += 1
-                kv_failover_nodes.extend(chosen)
+            chosen = pick_node(cluster, cluster_kv_nodes, kv_nodes)
             if all_at_once:
                 fail_over_status = fail_over_status and cluster.rest.fail_over(
-                    to_fail_over, graceful=True, all_at_once=True)
+                    [x.id for x in chosen], graceful=False, all_at_once=True)
+            else:
+                for node in chosen:
+                    fail_over_status = fail_over_status and cluster.rest.fail_over(
+                        node.id, graceful=False, all_at_once=False)
+            failover_count += kv_nodes
+            kv_failover_nodes.extend(chosen)
         else:
             if kv_nodes and cluster_kv_nodes:
-                for i in range(kv_nodes):
-                    chosen = self.cluster_util.pick_nodes(
-                        cluster.master, howmany=1,
-                        target_node=cluster_kv_nodes[i],
-                        exclude_nodes=exclude_nodes)
-                    if all_at_once:
-                        to_fail_over.extend([x.id for x in chosen])
-                    else:
-                        fail_over_status = fail_over_status and cluster.rest.fail_over(
-                            chosen[0].id, graceful=False, all_at_once=False)
-                    failover_count += 1
-                    kv_failover_nodes.extend(chosen)
+                chosen = pick_node(cluster, cluster_kv_nodes, kv_nodes)
                 if all_at_once:
                     fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        to_fail_over, graceful=False, all_at_once=True)
+                        [x.id for x in chosen], graceful=False,
+                        all_at_once=True)
+                else:
+                    for node in chosen:
+                        fail_over_status = fail_over_status and cluster.rest.fail_over(
+                            node.id, graceful=False, all_at_once=False)
+                failover_count += kv_nodes
+                kv_failover_nodes.extend(chosen)
             if cbas_nodes and cluster_cbas_nodes:
-                for i in range(cbas_nodes):
-                    chosen = self.cluster_util.pick_nodes(
-                        cluster.master, howmany=1,
-                        target_node=cluster_cbas_nodes[i],
-                        exclude_nodes=exclude_nodes)
-                    if all_at_once:
-                        to_fail_over.extend([x.id for x in chosen])
-                    else:
-                        fail_over_status = fail_over_status and cluster.rest.fail_over(
-                            chosen[0].id, graceful=False, all_at_once=False)
-                    failover_count += 1
-                    cbas_failover_nodes.extend(chosen)
+                chosen = pick_node(cluster, cluster_cbas_nodes, cbas_nodes)
                 if all_at_once:
                     fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        to_fail_over, graceful=False, all_at_once=True)
+                        [x.id for x in chosen], graceful=False, all_at_once=True)
+                else:
+                    for node in chosen:
+                        fail_over_status = fail_over_status and cluster.rest.fail_over(
+                            node.id, graceful=False, all_at_once=False)
+                failover_count += cbas_nodes
+                cbas_failover_nodes.extend(chosen)
                 self.reset_cbas_cc_node(cluster)
         if kv_nodes or cbas_nodes:
             time.sleep(30)
@@ -5407,7 +5403,7 @@ class BackupUtils(object):
 
     def rest_backup_cbas(self, cluster, username=None, password=None, bucket="",
                          include="", exclude="", level="cluster"):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = cbas_helper.backup_cbas(
             username=username, password=password, bucket=bucket,
             include=include, exclude=exclude, level=level)
@@ -5416,7 +5412,7 @@ class BackupUtils(object):
     def rest_restore_cbas(self, cluster, username=None, password=None, bucket="",
                           include=[], exclude=[], remap="", level="cluster",
                           backup={}):
-        cbas_helper = CBASHelper(cluster.master, cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = cbas_helper.restore_cbas(
             username=username, password=password, bucket=bucket,
             include=include, exclude=exclude, remap=remap,

@@ -79,10 +79,12 @@ class UpgradeBase(BaseTestCase):
         # Get service list to initialize the cluster
         if self.services_init:
             self.services_init = self.cluster_util.get_services(
-                self.cluster.master, self.services_init, 0)
+                [self.cluster.master], self.services_init, 0)
 
         # Initialize first node in cluster
-        master_rest = RestConnection(self.cluster.servers[0])
+        master_node = self.cluster.servers[0]
+        master_node.services = self.services_init[0]
+        master_rest = RestConnection(master_node)
         master_rest.init_node()
 
         # Initialize cluster using given nodes

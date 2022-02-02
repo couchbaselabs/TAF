@@ -53,6 +53,11 @@ class UpgradeTests(UpgradeBase):
                 self.cluster.cbas_cc_node = server
                 break
 
+        if not self.cbas_util.wait_for_cbas_to_recover(
+                self.cluster, timeout=300):
+            self.fail("Analytics service failed to start post adding cbas "
+                      "nodes to cluster")
+
         self.pre_upgrade_setup()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -220,6 +225,14 @@ class UpgradeTests(UpgradeBase):
                     rebalance_task, self.cluster):
                 self.fail("Rebalance failed")
 
+            if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
+                self.fail("Replication could not complete before timeout")
+
+            if not self.cbas_util.verify_actual_number_of_replicas(
+                    self.cluster, len(self.cluster.cbas_nodes) - 1):
+                self.fail("Actual number of replicas is different from what "
+                          "was set")
+
         self.log.info("Loading docs in default collection of existing buckets")
         for bucket in self.cluster.buckets:
             gen_load = doc_generator(
@@ -334,8 +347,6 @@ class UpgradeTests(UpgradeBase):
         if major_version >= 7.0:
             self.over_ride_spec_params = self.input.param(
                 "override_spec_params", "").split(";")
-
-            self.doc_spec_name = self.input.param("doc_spec", "initial_load")
             self.load_data_into_buckets()
         else:
             for bucket in self.cluster.buckets[1:]:
@@ -445,9 +456,9 @@ class UpgradeTests(UpgradeBase):
                 self.rebalance_util.failover(
                     self.cluster, kv_nodes=0, cbas_nodes=1,
                     failover_type="Hard", action=None, timeout=7200,
-                    available_servers=[], exclude_nodes=[],
+                    available_servers=[], exclude_nodes=[self.cluster.cbas_cc_node],
                     kv_failover_nodes=None, cbas_failover_nodes=None,
-                    all_at_once=True)
+                    all_at_once=False)
             post_replica_activation_verification()
 
             self.available_servers, kv_failover_nodes, cbas_failover_nodes = \
@@ -511,7 +522,7 @@ class UpgradeTests(UpgradeBase):
 
         if not doc_loading_spec:
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
-                self.doc_spec_name)
+                self.input.param("doc_spec", "initial_load"))
         self.over_ride_doc_loading_template_params(doc_loading_spec)
         # MB-38438, adding CollectionNotFoundException in retry exception
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
@@ -527,6 +538,7 @@ class UpgradeTests(UpgradeBase):
                                                      self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
+        self.sdk_client_pool.shutdown()
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:
@@ -566,7 +578,13 @@ class UpgradeTests(UpgradeBase):
         while node_to_upgrade is not None:
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
-            if "cbas" in node_to_upgrade.services:
+            rest = RestConnection(node_to_upgrade)
+            services = rest.get_nodes_services()
+            services_on_target_node = services[(node_to_upgrade.ip + ":"
+                                                + node_to_upgrade.port)]
+            self.log.info("Selected node services {0}".format(
+                services_on_target_node))
+            if "cbas" in services_on_target_node:
                 self.upgrade_function["failover_full_recovery"](
                     node_to_upgrade, False)
             else:

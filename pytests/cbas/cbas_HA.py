@@ -1400,8 +1400,12 @@ class CBASHighAvailability(CBASBaseTest):
         if node_to_crash == "outgoing":
             selected_node = random.choice(rebalanced_out_nodes)
         elif node_to_crash == "other":
-            selected_node = random.choice(self.set_ops_on_nodes(
-                "-", cbas_nodes_in_cluster, rebalanced_out_nodes))
+            eligible_nodes = self.set_ops_on_nodes(
+                "-", cbas_nodes_in_cluster, rebalanced_out_nodes)
+            for node in eligible_nodes:
+                if node.ip != self.cluster.cbas_cc_node:
+                    selected_node = node
+                    break
 
         selected_node_rest_helper = RestHelper(RestConnection(selected_node))
 
@@ -1434,10 +1438,17 @@ class CBASHighAvailability(CBASBaseTest):
                 self.fail("Server failed to come up after timeout on node {"
                           "0}".format(selected_node.ip))
 
+            cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
+                self.cluster, service_type="cbas", get_all_nodes=True,
+                servers=self.servers)
+            self.cluster.nodes_in_cluster = self.set_ops_on_nodes(
+                "|", self.cluster.nodes_in_cluster, cluster_cbas_nodes)
+
             rebalance_task, self.available_servers = self.rebalance_util.rebalance(
                 self.cluster, kv_nodes_in=0, kv_nodes_out=0,
-                cbas_nodes_in=0, cbas_nodes_out=0,
-                available_servers=self.available_servers, exclude_nodes=[])
+                cbas_nodes_in=0, cbas_nodes_out=nodes_to_rebalance_out,
+                available_servers=self.available_servers,
+                exclude_nodes=[self.cluster.cbas_cc_node])
 
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
                     rebalance_task, self.cluster, True):
@@ -1580,10 +1591,13 @@ class CBASHighAvailability(CBASBaseTest):
                     "-", available_servers_before_rebalance, self.available_servers)
                 out_node = self.set_ops_on_nodes(
                     "-", self.available_servers, available_servers_before_rebalance)
-                select_node = random.choice(self.set_ops_on_nodes(
+                eligible_nodes = self.set_ops_on_nodes(
                     "-", cluster_cbas_nodes, self.set_ops_on_nodes(
-                        "|", in_node, out_node)))
-                selected_nodes[select_node.ip] = select_node
+                        "|", in_node, out_node))
+                for node in eligible_nodes:
+                    if node.ip != self.cluster.cbas_cc_node.ip:
+                        selected_nodes[node.ip] = node
+                        break
 
         selected_node_rest_helper = list()
         for node in selected_nodes.values():
@@ -1607,7 +1621,7 @@ class CBASHighAvailability(CBASBaseTest):
 
             server_started = True
             self.log.info("Restarting the server and rebalancing again")
-            for node in selected_nodes:
+            for node in selected_nodes.values():
                 self.log.info("Starting Couchbase server on {0}".format(
                     node.ip))
                 try:
@@ -1632,10 +1646,17 @@ class CBASHighAvailability(CBASBaseTest):
             if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 360):
                 self.fail("Cbas service failed to come up")
 
+            cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
+                self.cluster, service_type="cbas", get_all_nodes=True,
+                servers=self.servers)
+            self.cluster.nodes_in_cluster = self.set_ops_on_nodes(
+                "|", self.cluster.nodes_in_cluster, cluster_cbas_nodes)
+
             rebalance_task, self.available_servers = self.rebalance_util.rebalance(
                 self.cluster, kv_nodes_in=0, kv_nodes_out=0,
-                cbas_nodes_in=0, cbas_nodes_out=0,
-                available_servers=self.available_servers, exclude_nodes=[])
+                cbas_nodes_in=0, cbas_nodes_out=nodes_to_rebalance_out,
+                available_servers=self.available_servers,
+                exclude_nodes=[self.cluster.cbas_cc_node])
 
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
                     rebalance_task, self.cluster):
@@ -1694,18 +1715,26 @@ class CBASHighAvailability(CBASBaseTest):
             cbas_nodes_in=nodes_to_rebalance_in, cbas_nodes_out=0,
             available_servers=self.available_servers, exclude_nodes=[])
 
+        while True:
+            if self.cluster.rest._rebalance_progress_status() == 'running':
+                self.sleep(3, "Waiting for rebalance to start before "
+                              "killing the server")
+                break
+
         if not self.cluster.rest.stop_rebalance():
             self.fail("Failed to stop rebalance")
 
-        if self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task, self.cluster):
+        self.rebalance_util.wait_for_rebalance_task_to_complete(
+            rebalance_task, self.cluster)
+
+        response = self.cluster.rest.cluster_status()
+        if response["balanced"]:
             self.fail("Rebalance passed when it should have failed")
 
         if not self.cbas_util.verify_actual_number_of_replicas(
                 self.cluster, actual_replica):
             self.fail("Actual number of replicas is different from "
                       "what was set")
-        self.post_replica_activation_verification(True, False, True)
 
         rebalance_task, self.available_servers = self.rebalance_util.rebalance(
             self.cluster, kv_nodes_in=0, kv_nodes_out=0,
@@ -1822,7 +1851,8 @@ class CBASHighAvailability(CBASBaseTest):
         self.available_servers, kv_failover_nodes, cbas_failover_nodes = self.rebalance_util.failover(
             self.cluster, kv_nodes=0, cbas_nodes=nodes_to_failover,
             failover_type="Hard", action=None, timeout=7200,
-            available_servers=self.available_servers, exclude_nodes=[],
+            available_servers=self.available_servers,
+            exclude_nodes=[self.cluster.cbas_cc_node],
             kv_failover_nodes=[], cbas_failover_nodes=[],
             all_at_once=True)
 

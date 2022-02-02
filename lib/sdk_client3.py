@@ -82,6 +82,7 @@ class SDKClientPool(object):
             for client in bucket_dict["idle_clients"] \
                           + bucket_dict["busy_clients"]:
                 client.close()
+        self.clients = dict()
 
     def create_clients(self, bucket, servers,
                        req_clients=1,
