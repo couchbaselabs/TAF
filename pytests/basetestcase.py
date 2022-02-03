@@ -56,7 +56,7 @@ class BaseTestCase(unittest.TestCase):
         self.servers = self.input.servers
         self.cb_clusters = OrderedDict()
         self.num_servers = self.input.param("servers", len(self.servers))
-        self.vbuckets =self.input.param("vbuckets", CbServer.total_vbuckets)
+        self.vbuckets = self.input.param("vbuckets", CbServer.total_vbuckets)
         self.primary_index_created = False
         self.index_quota_percent = self.input.param("index_quota_percent",
                                                     None)
@@ -356,7 +356,8 @@ class BaseTestCase(unittest.TestCase):
                     self.tear_down_while_setup = False
             if not self.skip_init_check_cbserver:
                 for cluster_name, cluster in self.cb_clusters.items():
-                    self.initialize_cluster(cluster_name, cluster, services=None)
+                    self.initialize_cluster(cluster_name, cluster,
+                                            services=None)
             else:
                 self.quota = ""
 
@@ -433,10 +434,10 @@ class BaseTestCase(unittest.TestCase):
         self.cluster_util.reset_cluster(cluster)
         if not services:
             master_services = self.cluster_util.get_services(
-                            cluster.servers[:1], self.services_init, start_node=0)
+                cluster.servers[:1], self.services_init, start_node=0)
         else:
             master_services = self.cluster_util.get_services(
-                            cluster.servers[:1], services, start_node=0)
+                cluster.servers[:1], services, start_node=0)
         if master_services is not None:
             master_services = master_services[0].split(",")
 

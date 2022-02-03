@@ -47,7 +47,6 @@ class CreateBucketTests(BucketDurabilityBase):
             bucket_obj = Bucket(bucket_dict)
 
             output = cb_cli.create_bucket(bucket_dict, wait=True)
-            self.log.info(output)
             if self.num_replicas == Bucket.ReplicaNum.THREE \
                     and d_level != Bucket.DurabilityLevel.NONE:
                 if err_for_three_replicas not in str(output):
