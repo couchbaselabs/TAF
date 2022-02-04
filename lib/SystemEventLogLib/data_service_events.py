@@ -79,7 +79,7 @@ class DataServiceEvents(object):
         }
 
     @staticmethod
-    def collection_created(node, bucket, bucket_uuid, scope, collection):
+    def collection_created(node, bucket, scope, collection):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: KvEngine.CollectionCreated,
@@ -87,13 +87,12 @@ class DataServiceEvents(object):
             Event.Fields.DESCRIPTION: "Collection created",
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EXTRA_ATTRS: {"bucket": bucket,
-                                       "bucket_uuid": bucket_uuid,
                                        "scope": scope,
                                        "collection": collection}
         }
 
     @staticmethod
-    def collection_dropped(node, bucket, bucket_uuid, scope, collection):
+    def collection_dropped(node, bucket, scope, collection):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: KvEngine.CollectionDropped,
@@ -101,13 +100,12 @@ class DataServiceEvents(object):
             Event.Fields.DESCRIPTION: "Collection deleted",
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EXTRA_ATTRS: {"bucket": bucket,
-                                       "bucket_uuid": bucket_uuid,
                                        "scope": scope,
                                        "collection": collection}
         }
 
     @staticmethod
-    def scope_created(node, bucket, bucket_uuid, scope):
+    def scope_created(node, bucket, scope):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: KvEngine.ScopeCreated,
@@ -115,12 +113,11 @@ class DataServiceEvents(object):
             Event.Fields.DESCRIPTION: "Scope created",
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EXTRA_ATTRS: {"bucket": bucket,
-                                       "bucket_uuid": bucket_uuid,
                                        "scope": scope}
         }
 
     @staticmethod
-    def scope_dropped(node, bucket, bucket_uuid, scope):
+    def scope_dropped(node, bucket, scope):
         return {
             Event.Fields.NODE_NAME: node,
             Event.Fields.EVENT_ID: KvEngine.ScopeDropped,
@@ -128,7 +125,6 @@ class DataServiceEvents(object):
             Event.Fields.DESCRIPTION: "Scope deleted",
             Event.Fields.SEVERITY: Event.Severity.INFO,
             Event.Fields.EXTRA_ATTRS: {"bucket": bucket,
-                                       "bucket_uuid": bucket_uuid,
                                        "scope": scope}
         }
 

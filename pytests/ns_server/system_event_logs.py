@@ -1394,20 +1394,19 @@ class SystemEventLogs(ClusterSetup):
                                               {"name": scope})
                 event_helper.add_event(
                     DataServiceEvents.scope_created(kv_node.ip, bucket_name,
-                                                    bucket.uuid, scope))
+                                                    scope))
                 self.log.info("%s - Creating collection" % bucket_name)
                 self.bucket_util.create_collection(kv_node, bucket, scope,
                                                    {"name": collection})
                 event_helper.add_event(
                     DataServiceEvents.collection_created(
-                        kv_node.ip, bucket_name, bucket.uuid, scope,
-                        collection))
+                        kv_node.ip, bucket_name, scope, collection))
 
                 if flush_enabled:
                     self.bucket_util.flush_bucket(self.cluster, bucket)
                     event_helper.add_event(
                         DataServiceEvents.bucket_flushed(
-                            kv_node.ip, bucket_name, bucket.uuid))
+                            master_ip, bucket_name, bucket.uuid))
                     self.sleep(5, "%s - Wait after flush" % bucket_name)
 
                 self.log.info("%s - Dropping collection" % bucket_name)
@@ -1415,19 +1414,18 @@ class SystemEventLogs(ClusterSetup):
                                                  scope, collection)
                 event_helper.add_event(
                     DataServiceEvents.collection_dropped(
-                        kv_node.ip,  bucket_name, bucket.uuid,
-                        scope, collection))
+                        kv_node.ip,  bucket_name, scope, collection))
 
                 self.log.info("%s - Dropping scope" % bucket_name)
                 self.bucket_util.drop_scope(kv_node, bucket, scope)
                 event_helper.add_event(
                     DataServiceEvents.scope_dropped(kv_node.ip, bucket_name,
-                                                    bucket.uuid, scope))
+                                                    scope))
 
                 self.log.info("%s - Deleting bucket" % bucket_name)
                 self.bucket_util.delete_bucket(self.cluster, bucket)
                 event_helper.add_event(
-                    DataServiceEvents.bucket_dropped(kv_node.ip, bucket_name,
+                    DataServiceEvents.bucket_dropped(master_ip, bucket_name,
                                                      bucket.uuid))
 
                 # Validation
@@ -1540,7 +1538,6 @@ class SystemEventLogs(ClusterSetup):
         expected_keys = 11 if bucket.bucketType == Bucket.Type.EPHEMERAL \
             else 12
         act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
-        self.log.info(act_val)
         act_val_keys = act_val.keys()
         if len(act_val_keys) != expected_keys \
                 or 'ram_quota' not in act_val_keys:
