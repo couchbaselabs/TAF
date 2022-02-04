@@ -725,7 +725,6 @@ class BaseTestCase(unittest.TestCase):
                     max_parallel_indexers,
                     max_parallel_replica_indexers, init_port,
                     quota_percent, services=assigned_services,
-                    index_quota_percent=self.index_quota_percent,
                     gsi_type=self.gsi_type))
         for _task in init_tasks:
             node_quota = self.task_manager.get_task_result(_task)

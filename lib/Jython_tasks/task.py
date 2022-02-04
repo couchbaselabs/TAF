@@ -6110,23 +6110,17 @@ class CBASQueryExecuteTask(Task):
 
 
 class NodeInitializeTask(Task):
-    def __init__(self, server, task_manager, disabled_consistent_view=None,
+    def __init__(self, server, disabled_consistent_view=None,
                  rebalanceIndexWaitingDisabled=None,
                  rebalanceIndexPausingDisabled=None,
                  maxParallelIndexers=None,
                  maxParallelReplicaIndexers=None,
                  port=None, quota_percent=None,
-                 index_quota_percent=None,
-                 fts_quota_percent=None,
-                 cbas_quota_percent=None,
                  services=None, gsi_type='forestdb'):
         Task.__init__(self, "node_init_task_%s_%s" %
                       (server.ip, server.port))
         self.server = server
         self.port = port or server.port
-        self.index_quota_percent = index_quota_percent
-        self.fts_quota_percent = fts_quota_percent
-        self.cbas_quota_percent = cbas_quota_percent
         self.quota_percent = quota_percent
         self.disable_consistent_view = disabled_consistent_view
         self.rebalanceIndexWaitingDisabled = rebalanceIndexWaitingDisabled
@@ -6145,7 +6139,8 @@ class NodeInitializeTask(Task):
         except ServerUnavailableException as error:
             self.set_exception(error)
 
-        # Change timeout back to 10 after https://issues.couchbase.com/browse/MB-40670 is resolved
+        # Change timeout back to 10 after
+        # https://issues.couchbase.com/browse/MB-40670 is resolved
         info = Task.wait_until(lambda: rest.get_nodes_self(),
                                lambda x: x.memoryTotal > 0, 30)
         self.test_log.debug("server: %s, nodes/self: %s", self.server,
@@ -6166,8 +6161,9 @@ class NodeInitializeTask(Task):
         if set_services is None:
             set_services = ["kv"]
         if "index" in set_services:
-            if self.index_quota_percent:
-                index_memory = total_memory * self.index_quota_percent / 100
+            if False:
+                # index_memory = total_memory * self.index_quota_percent / 100
+                pass
             else:
                 index_memory = INDEX_QUOTA
             self.test_log.debug("Quota for index service will be %s MB"
@@ -6175,8 +6171,9 @@ class NodeInitializeTask(Task):
             total_memory -= index_memory
             service_quota[CbServer.Settings.INDEX_MEM_QUOTA] = index_memory
         if "fts" in set_services:
-            if self.fts_quota_percent:
-                fts_memory = total_memory * self.fts_quota_percent / 100
+            if False:
+                # fts_memory = total_memory * self.fts_quota_percent / 100
+                pass
             else:
                 fts_memory = FTS_QUOTA
             self.test_log.debug("Quota for fts service will be %s MB"
@@ -6184,8 +6181,9 @@ class NodeInitializeTask(Task):
             total_memory -= fts_memory
             service_quota[CbServer.Settings.FTS_MEM_QUOTA] = fts_memory
         if "cbas" in set_services:
-            if self.cbas_quota_percent:
-                cbas_memory = total_memory * self.cbas_quota_percent / 100
+            if False:
+                # cbas_memory = total_memory * self.cbas_quota_percent / 100
+                pass
             else:
                 cbas_memory = CBAS_QUOTA
             self.test_log.debug("Quota for cbas service will be %s MB"

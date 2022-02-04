@@ -61,7 +61,7 @@ class ServerTasks(object):
                         maxParallelIndexers=None,
                         maxParallelReplicaIndexers=None, port=None,
                         quota_percent=None, services=None,
-                        index_quota_percent=None, gsi_type='forestdb'):
+                        gsi_type='forestdb'):
         """
         Asynchronously initializes a node
 
@@ -86,11 +86,10 @@ class ServerTasks(object):
           NodeInitTask - A task future that is a handle to the scheduled task
         """
         _task = jython_tasks.NodeInitializeTask(
-            server, self.jython_task_manager, disabled_consistent_view,
+            server, disabled_consistent_view,
             rebalanceIndexWaitingDisabled, rebalanceIndexPausingDisabled,
             maxParallelIndexers, maxParallelReplicaIndexers,
-            port, quota_percent, services=services,
-            index_quota_percent=index_quota_percent, gsi_type=gsi_type)
+            port, quota_percent, services=services, gsi_type=gsi_type)
 
         self.jython_task_manager.schedule(_task)
         return _task

@@ -1154,8 +1154,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.rebalanceIndexWaitingDisabled,
             self.rebalanceIndexPausingDisabled, self.maxParallelIndexers,
             self.maxParallelReplicaIndexers, init_port, self.quota_percent,
-            services=services, index_quota_percent=self.index_quota_percent,
-            gsi_type=self.gsi_type))
+            services=services, gsi_type=self.gsi_type))
         for task in init_tasks:
             self.task.jython_task_manager.get_task_result(task)
 
