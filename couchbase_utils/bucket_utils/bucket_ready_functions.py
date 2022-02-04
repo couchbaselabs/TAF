@@ -2459,6 +2459,20 @@ class BucketUtils(ScopeUtils):
             for shell in task.shellConnList:
                 shell.disconnect()
 
+    def validate_active_replica_item_count(self, cluster, bucket, timeout=300):
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            bucket_helper = BucketHelper(cluster.master)
+            bucket_stats = bucket_helper.fetch_bucket_stats(bucket)
+            active_count = bucket_stats['op']['samples']['curr_items'][-1]
+            replica_count = bucket_stats['op']['samples'][
+                'vb_replica_curr_items'][-1]
+            self.log.debug("Bucket '%s' items count. Active: %s, Replica : %s"
+                           % (bucket.name, active_count, replica_count))
+            if (active_count * bucket.replicaNumber) == replica_count:
+                return True
+        return False
+
     def validate_seq_no_stats(self, vb_seqno_stats):
         """
         :param vb_seqno_stats: stat_dictionary returned from
