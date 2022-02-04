@@ -1165,6 +1165,13 @@ class ClusterSetup(BaseTestCase):
         # Add bucket create event in system event log
         if self.system_events.test_start_time is not None:
             bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+            eviction_policy_val = "full_eviction"
+            if self.bucket_eviction_policy \
+                    == Bucket.EvictionPolicy.VALUE_ONLY:
+                eviction_policy_val = "value_only"
+            elif self.bucket_eviction_policy \
+                    == Bucket.EvictionPolicy.NO_EVICTION:
+                eviction_policy_val = "no_eviction"
             bucket_create_event = DataServiceEvents.bucket_create(
                 self.cluster.master.ip, self.bucket_type,
                 bucket.name, bucket.uuid,
@@ -1172,14 +1179,10 @@ class ClusterSetup(BaseTestCase):
                  'max_ttl': self.bucket_ttl,
                  'storage_mode': self.bucket_storage,
                  'conflict_resolution_type': Bucket.ConflictResolution.SEQ_NO,
-                 'eviction_policy': self.bucket_eviction_policy,
+                 'eviction_policy': eviction_policy_val,
                  'purge_interval': 'undefined',
                  'durability_min_level': self.bucket_durability_level,
                  'num_replicas': self.num_replicas})
-            if bucket_create_event[Event.Fields.EXTRA_ATTRS]['bucket_props'][
-                    'eviction_policy'] == Bucket.EvictionPolicy.VALUE_ONLY:
-                bucket_create_event[Event.Fields.EXTRA_ATTRS][
-                    'bucket_props']['eviction_policy'] = 'value_only'
             if self.bucket_type == Bucket.Type.EPHEMERAL:
                 bucket_create_event[Event.Fields.EXTRA_ATTRS][
                     'bucket_props']['storage_mode'] = Bucket.Type.EPHEMERAL

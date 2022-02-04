@@ -3,7 +3,7 @@ import zipfile
 from copy import deepcopy
 from datetime import datetime, timedelta
 from random import choice, randint
-from threading import Thread
+from threading import Thread, Lock
 from time import time
 
 from BucketLib.BucketOperations_Rest import BucketHelper
@@ -352,14 +352,18 @@ class SystemEventLogs(ClusterSetup):
         self.system_events.add_event(event_dict)
 
         self.log.info("Adding event size greater than allowed size")
+        event_dict = deepcopy(event_dict)
         event_dict[Event.Fields.EXTRA_ATTRS] = \
             event_dict[Event.Fields.EXTRA_ATTRS] + "a"
-        status, _ = self.event_rest_helper.create_event(event_dict,
-                                                        server=target_node)
-        event_dict.pop(Event.Fields.NODE_NAME)
-        if status:
-            self.fail("Event greater than allowed size got created: %s"
-                      % event_dict)
+        try:
+            status, _ = self.event_rest_helper.create_event(event_dict,
+                                                            server=target_node)
+            event_dict.pop(Event.Fields.NODE_NAME)
+            if status:
+                self.fail("Event greater than allowed size got created: %s"
+                          % event_dict)
+        except ValueError:
+            pass
 
         self.__validate(self.system_events.test_start_time)
 
@@ -1301,6 +1305,7 @@ class SystemEventLogs(ClusterSetup):
             event_helper = EventHelper()
             event_helper.set_test_start_time()
             kv_node = choice(self.cluster.nodes_in_cluster)
+            master_ip = self.cluster.master.ip
 
             bucket_name = self.bucket_util.get_random_name()
             bucket_type = choice([Bucket.Type.EPHEMERAL, Bucket.Type.MEMBASE])
@@ -1355,9 +1360,10 @@ class SystemEventLogs(ClusterSetup):
                 test_failures.append(str(e))
                 return
 
-            buckets = self.bucket_util.get_all_buckets(self.cluster)
-            bucket = [bucket for bucket in buckets
-                      if bucket.name == bucket_name][0]
+            with thread_lock:
+                buckets = self.bucket_util.get_all_buckets(self.cluster)
+                bucket = [bucket for bucket in buckets
+                          if bucket.name == bucket_name][0]
 
             bucket_create_event = DataServiceEvents.bucket_create(
                 self.cluster.master.ip, bucket_type,
@@ -1444,6 +1450,7 @@ class SystemEventLogs(ClusterSetup):
         max_loops = 5
         num_threads = 4
         test_failures = list()
+        thread_lock = Lock()
         while index < max_loops:
             self.log.info("Loop index %s" % index)
             bucket_threads = list()
@@ -1466,6 +1473,12 @@ class SystemEventLogs(ClusterSetup):
         Validate the respective system_event log for the updated params
         """
         bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+        eviction_policy_val = "full_eviction"
+        if self.bucket_eviction_policy == Bucket.EvictionPolicy.VALUE_ONLY:
+            eviction_policy_val = "value_only"
+        elif self.bucket_eviction_policy == Bucket.EvictionPolicy.NO_EVICTION:
+            eviction_policy_val = "no_eviction"
+
         old_settings = {
             "compression_mode": bucket.compressionMode,
             "max_ttl": bucket.maxTTL,
@@ -1475,10 +1488,11 @@ class SystemEventLogs(ClusterSetup):
             "flush_enabled": True if bucket.flushEnabled else False,
             "durability_min_level": bucket.durability_level,
             "replica_index": bucket.replicaIndex,
-            "num_replicas": bucket.replicaNumber
+            "num_replicas": bucket.replicaNumber,
+            "eviction_policy": eviction_policy_val
         }
-        if bucket.evictionPolicy == Bucket.EvictionPolicy.VALUE_ONLY:
-            old_settings["eviction_policy"] = 'value_only'
+        if bucket.storageBackend == Bucket.StorageBackend.magma:
+            old_settings["storage_quota_percentage"] = 10
         if bucket.bucketType == Bucket.Type.EPHEMERAL:
             old_settings["eviction_policy"] = "no_eviction"
             old_settings["storage_mode"] = Bucket.Type.EPHEMERAL
@@ -1535,13 +1549,19 @@ class SystemEventLogs(ClusterSetup):
             self.fail("Old settings' value mismatch. Expected %s != %s Actual"
                       % (old_settings, act_val))
 
-        expected_keys = 11 if bucket.bucketType == Bucket.Type.EPHEMERAL \
-            else 12
+        expected_keys = 12
+        if bucket.storageBackend == Bucket.StorageBackend.magma:
+            expected_keys += 1
+        elif bucket.bucketType == Bucket.Type.EPHEMERAL:
+            expected_keys -= 1
+
         act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
         act_val_keys = act_val.keys()
         if len(act_val_keys) != expected_keys \
                 or 'ram_quota' not in act_val_keys:
             self.fail("Mismatch in new-setting params: %s" % act_val_keys)
+
+        prev_uuid = self.get_last_event_from_cluster()[Event.Fields.UUID]
 
         self.num_replicas += 1
         self.log.info("Updating bucket_replica=%s" % self.num_replicas)
@@ -1549,7 +1569,14 @@ class SystemEventLogs(ClusterSetup):
             self.cluster.master, bucket,
             replica_number=self.num_replicas)
 
-        event = self.get_last_event_from_cluster()
+        self.log.info("Waiting for latest bucket update event")
+        max_retry_time = time() + 5
+        event = None
+        while time() < max_retry_time and event is None:
+            event = self.get_last_event_from_cluster()
+            if event[Event.Fields.UUID] == prev_uuid:
+                event = None
+
         act_val = event[Event.Fields.EXTRA_ATTRS]["new_settings"]
         act_val_keys = act_val.keys()
         if len(act_val_keys) != expected_keys \
