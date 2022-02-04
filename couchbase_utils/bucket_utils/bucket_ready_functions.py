@@ -2461,6 +2461,8 @@ class BucketUtils(ScopeUtils):
 
     def validate_active_replica_item_count(self, cluster, bucket, timeout=300):
         end_time = time.time() + timeout
+        active_count = None
+        replica_count = None
         while time.time() < end_time:
             bucket_helper = BucketHelper(cluster.master)
             bucket_stats = bucket_helper.fetch_bucket_stats(bucket)
@@ -2471,6 +2473,8 @@ class BucketUtils(ScopeUtils):
                            % (bucket.name, active_count, replica_count))
             if (active_count * bucket.replicaNumber) == replica_count:
                 return True
+        self.log.critical("Mismatch!!! Bucket '%s' items count. Active: %s, Replica : %s"
+                           % (bucket.name, active_count, replica_count))
         return False
 
     def validate_seq_no_stats(self, vb_seqno_stats):
