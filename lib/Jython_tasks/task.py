@@ -6116,11 +6116,14 @@ class NodeInitializeTask(Task):
                  maxParallelIndexers=None,
                  maxParallelReplicaIndexers=None,
                  port=None, quota_percent=None,
-                 services=None, gsi_type='forestdb'):
+                 services=None, gsi_type='forestdb',
+                 services_mem_quota_percent=None):
         Task.__init__(self, "node_init_task_%s_%s" %
                       (server.ip, server.port))
         self.server = server
         self.port = port or server.port
+        self.services_mem_quota_percent = services_mem_quota_percent \
+            if services_mem_quota_percent else dict()
         self.quota_percent = quota_percent
         self.disable_consistent_view = disabled_consistent_view
         self.rebalanceIndexWaitingDisabled = rebalanceIndexWaitingDisabled
@@ -6129,6 +6132,14 @@ class NodeInitializeTask(Task):
         self.maxParallelReplicaIndexers = maxParallelReplicaIndexers
         self.services = services
         self.gsi_type = gsi_type
+        self.total_memory = 0
+
+    def __get_memory_quota_in_mb(self, service_name):
+        mem_quota = 0
+        if service_name in self.services_mem_quota_percent:
+            percent = self.services_mem_quota_percent[service_name]
+            mem_quota = int(self.total_memory* percent / 100)
+        return mem_quota
 
     def call(self):
         self.start_task()
@@ -6146,55 +6157,55 @@ class NodeInitializeTask(Task):
         self.test_log.debug("server: %s, nodes/self: %s", self.server,
                             info.__dict__)
 
-        username = self.server.rest_username
-        password = self.server.rest_password
-
+        # Cluster-run case check
         if int(info.port) in range(9091, 9991):
             self.set_result(True)
             return
 
-        total_memory = int(info.mcdMemoryReserved - 100)
+        self.total_memory = int(info.mcdMemoryReserved - 100)
         if self.quota_percent:
-            total_memory = int(total_memory * self.quota_percent / 100)
+            self.self.total_memory = int(self.total_memory*self.quota_percent
+                                         / 100)
 
-        set_services = copy.deepcopy(self.services)
-        if set_services is None:
-            set_services = ["kv"]
-        if "index" in set_services:
-            if False:
-                # index_memory = total_memory * self.index_quota_percent / 100
-                pass
-            else:
-                index_memory = INDEX_QUOTA
-            self.test_log.debug("Quota for index service will be %s MB"
-                                % index_memory)
-            total_memory -= index_memory
-            service_quota[CbServer.Settings.INDEX_MEM_QUOTA] = index_memory
-        if "fts" in set_services:
-            if False:
-                # fts_memory = total_memory * self.fts_quota_percent / 100
-                pass
-            else:
-                fts_memory = FTS_QUOTA
-            self.test_log.debug("Quota for fts service will be %s MB"
-                                % fts_memory)
-            total_memory -= fts_memory
-            service_quota[CbServer.Settings.FTS_MEM_QUOTA] = fts_memory
-        if "cbas" in set_services:
-            if False:
-                # cbas_memory = total_memory * self.cbas_quota_percent / 100
-                pass
-            else:
-                cbas_memory = CBAS_QUOTA
-            self.test_log.debug("Quota for cbas service will be %s MB"
-                                % cbas_memory)
-            total_memory -= cbas_memory
-            service_quota[CbServer.Settings.CBAS_MEM_QUOTA] = cbas_memory
-        if total_memory < MIN_KV_QUOTA:
-            raise Exception("KV RAM needs to be more than %s MB"
-                            " at node  %s" % (MIN_KV_QUOTA, self.server.ip))
+        if len(self.services) < 1:
+            # If no quota defined, given 100% to Data service
+            self.services_mem_quota_percent[CbServer.Services.KV] = 100
 
-        service_quota[CbServer.Settings.KV_MEM_QUOTA] = total_memory
+        service_quota[CbServer.Settings.KV_MEM_QUOTA] = \
+            max(self.__get_memory_quota_in_mb(CbServer.Services.KV),
+                CbServer.Settings.MinRAMQuota.KV)
+
+        service_quota[CbServer.Settings.CBAS_MEM_QUOTA] = \
+            max(self.__get_memory_quota_in_mb(CbServer.Services.CBAS),
+                CbServer.Settings.MinRAMQuota.CBAS)
+
+        service_quota[CbServer.Settings.INDEX_MEM_QUOTA] = \
+            max(self.__get_memory_quota_in_mb(CbServer.Services.INDEX),
+                CbServer.Settings.MinRAMQuota.INDEX)
+
+        service_quota[CbServer.Settings.FTS_MEM_QUOTA] = \
+            max(self.__get_memory_quota_in_mb(CbServer.Services.FTS),
+                CbServer.Settings.MinRAMQuota.FTS)
+
+        service_quota[CbServer.Settings.EVENTING_MEM_QUOTA] = \
+            max(self.__get_memory_quota_in_mb(CbServer.Services.EVENTING),
+                CbServer.Settings.MinRAMQuota.EVENTING)
+
+        # Display memory quota allocated
+        tbl = TableView(self.test_log.critical)
+        tbl.set_headers(["Service", "RAM mb"])
+        for service, mem_quota in service_quota.items():
+            tbl.add_row([service, str(mem_quota)])
+        tbl.display("Memory quota allocated:")
+
+        req_mem = sum([service_quota[service] for service in service_quota])
+        if self.total_memory < req_mem:
+            self.log.warning("Total memory requested %s > %s available"
+                             % (req_mem, self.total_memory))
+
+        username = self.server.rest_username
+        password = self.server.rest_password
+
         rest.set_service_mem_quota(service_quota)
         rest.set_indexer_storage_mode(username, password, self.gsi_type)
 

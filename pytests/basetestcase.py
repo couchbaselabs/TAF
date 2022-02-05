@@ -58,9 +58,20 @@ class BaseTestCase(unittest.TestCase):
         self.num_servers = self.input.param("servers", len(self.servers))
         self.vbuckets = self.input.param("vbuckets", CbServer.total_vbuckets)
         self.primary_index_created = False
-        self.index_quota_percent = self.input.param("index_quota_percent",
-                                                    None)
         self.gsi_type = self.input.param("gsi_type", 'plasma')
+        # Memory quota settings
+        # Max memory quota to utilize per node
+        self.quota_percent = self.input.param("quota_percent", 90)
+        # Services' RAM quota to set on cluster
+        self.kv_mem_quota_percent = self.input.param("kv_quota_percent", None)
+        self.index_mem_quota_percent = \
+            self.input.param("index_quota_percent", None)
+        self.fts_mem_quota_percent = \
+            self.input.param("fts_quota_percent", None)
+        self.cbas_mem_quota_percent = \
+            self.input.param("cbas_quota_percent", None)
+        self.eventing_mem_quota_percent = \
+            self.input.param("eventing_quota_percent", None)
         # CBAS setting
         self.jre_path = self.input.param("jre_path", None)
         self.enable_dp = self.input.param("enable_dp", False)
@@ -190,7 +201,6 @@ class BaseTestCase(unittest.TestCase):
             self.input.param("maxParallelIndexers", None)
         self.maxParallelReplicaIndexers = \
             self.input.param("maxParallelReplicaIndexers", None)
-        self.quota_percent = self.input.param("quota_percent", 90)
         self.skip_buckets_handle = self.input.param("skip_buckets_handle",
                                                     False)
         self.use_https = self.input.param("use_https", False)
@@ -320,7 +330,28 @@ class BaseTestCase(unittest.TestCase):
                 self.cluster.buckets = self.bucket_util.get_all_buckets(
                     self.cluster)
                 return
-            self.services_map = None
+
+            # Construct dict of mem. quota percent / mb per service
+            mem_quota_percent = dict()
+            # Construct dict of mem. quota percent per service
+            if self.kv_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.KV] = \
+                    self.kv_mem_quota_percent
+            if self.index_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.INDEX] = \
+                    self.index_mem_quota_percent
+            if self.cbas_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.CBAS] = \
+                    self.cbas_mem_quota_percent
+            if self.fts_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.FTS] = \
+                    self.fts_mem_quota_percent
+            if self.eventing_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.EVENTING] = \
+                    self.eventing_mem_quota_percent
+
+            if not mem_quota_percent:
+                mem_quota_percent = None
 
             self.log_setup_status("BaseTestCase", "started")
             for cluster_name, cluster in self.cb_clusters.items():
@@ -356,8 +387,9 @@ class BaseTestCase(unittest.TestCase):
                     self.tear_down_while_setup = False
             if not self.skip_init_check_cbserver:
                 for cluster_name, cluster in self.cb_clusters.items():
-                    self.initialize_cluster(cluster_name, cluster,
-                                            services=None)
+                    self.initialize_cluster(
+                        cluster_name, cluster, services=None,
+                        services_mem_quota_percent=mem_quota_percent)
             else:
                 self.quota = ""
 
@@ -429,7 +461,8 @@ class BaseTestCase(unittest.TestCase):
             self.task.shutdown(force=True)
             self.fail(e)
 
-    def initialize_cluster(self, cluster_name, cluster, services=None):
+    def initialize_cluster(self, cluster_name, cluster, services=None,
+                           services_mem_quota_percent=None):
         self.log.info("Initializing cluster : {0}".format(cluster_name))
         self.cluster_util.reset_cluster(cluster)
         if not services:
@@ -451,7 +484,8 @@ class BaseTestCase(unittest.TestCase):
             self.maxParallelReplicaIndexers,
             self.port,
             self.quota_percent,
-            services=master_services)
+            services=master_services,
+            services_mem_quota_percent=services_mem_quota_percent)
 
         self.cluster_util.change_env_variables(cluster)
         self.cluster_util.change_checkpoint_params(cluster)
@@ -691,7 +725,8 @@ class BaseTestCase(unittest.TestCase):
                           rebalance_index_pausing_disabled=None,
                           max_parallel_indexers=None,
                           max_parallel_replica_indexers=None,
-                          port=None, quota_percent=None, services=None):
+                          port=None, quota_percent=None, services=None,
+                          services_mem_quota_percent=None):
         quota = 0
         init_tasks = []
         ssh_sessions = dict()
@@ -725,7 +760,8 @@ class BaseTestCase(unittest.TestCase):
                     max_parallel_indexers,
                     max_parallel_replica_indexers, init_port,
                     quota_percent, services=assigned_services,
-                    gsi_type=self.gsi_type))
+                    gsi_type=self.gsi_type,
+                    services_mem_quota_percent=services_mem_quota_percent))
         for _task in init_tasks:
             node_quota = self.task_manager.get_task_result(_task)
             if node_quota < quota or quota == 0:

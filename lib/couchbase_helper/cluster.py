@@ -61,7 +61,8 @@ class ServerTasks(object):
                         maxParallelIndexers=None,
                         maxParallelReplicaIndexers=None, port=None,
                         quota_percent=None, services=None,
-                        gsi_type='forestdb'):
+                        gsi_type='forestdb',
+                        services_mem_quota_percent=None):
         """
         Asynchronously initializes a node
 
@@ -89,7 +90,8 @@ class ServerTasks(object):
             server, disabled_consistent_view,
             rebalanceIndexWaitingDisabled, rebalanceIndexPausingDisabled,
             maxParallelIndexers, maxParallelReplicaIndexers,
-            port, quota_percent, services=services, gsi_type=gsi_type)
+            port, quota_percent, services=services, gsi_type=gsi_type,
+            services_mem_quota_percent=services_mem_quota_percent)
 
         self.jython_task_manager.schedule(_task)
         return _task

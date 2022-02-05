@@ -15,6 +15,13 @@ class CbServer(object):
         CBAS_MEM_QUOTA = "cbasMemoryQuota"
         EVENTING_MEM_QUOTA = "eventingMemoryQuota"
 
+        class MinRAMQuota(object):
+            KV = 256
+            INDEX = 256
+            FTS = 256
+            EVENTING = 256
+            CBAS = 1024
+
     class Failover(object):
         class Type(object):
             AUTO = "auto"
