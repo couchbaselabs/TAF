@@ -414,7 +414,7 @@ class SystemEventLogs(ClusterSetup):
 
         # Create required event dictionaries for testing
         event_1 = DataServiceEvents.scope_created(target_node.ip, "bucket_1",
-                                                  "b_uuid", "scope_1")
+                                                  "scope_1")
         event_1[Event.Fields.UUID] = uuid_to_test
         event_1.pop(Event.Fields.NODE_NAME)
 
@@ -1757,7 +1757,6 @@ class SystemEventLogs(ClusterSetup):
 
         for tem_event in [reb_event,
                           cluster_event["reb_start"],
-                          cluster_event["reb_failed"],
                           cluster_event["reb_success"]]:
             sort_nodes(tem_event)
 
@@ -1767,6 +1766,7 @@ class SystemEventLogs(ClusterSetup):
                       % (reb_event, cluster_event["reb_start"]))
 
         if 'reb_failed' in cluster_event:
+            sort_nodes(cluster_event["reb_failed"])
             reb_event = NsServerEvents.rebalance_failed(
                 self.cluster.master.ip,
                 active_nodes=active_nodes, keep_nodes=keep_nodes,
