@@ -779,10 +779,9 @@ public class SimpleTransaction {
     }
 
     public Tuple2<byte[], List<LogDefer>> DeferTransaction(Cluster cluster, Transactions transaction, List<Collection> collections, List<Tuple2<String,
-            JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys) {
+            JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys, int updatecount) {
         byte[] encoded = new byte[0];
         List<LogDefer> res = new ArrayList<LogDefer>();
-        int updatecount = 1;
 
         Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
         EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
@@ -804,10 +803,10 @@ public class SimpleTransaction {
                             for (int i=1; i<=updatecount; i++) {
                                 JsonObject content = doc2.contentAs(JsonObject.class);
                                 if (content.containsKey("mutated")) {
-                                    content.put("mutated", content.getInt("mutated")+1);
+                                    content.put("mutated", updatecount);
                                 }
                                 else {
-                                    content.put("mutated", 1);
+                                    content.put("mutated", updatecount);
                                 }
                                 ctx.replace(doc2, content);
 //                                        TransactionGetResult doc1=ctx.get(bucket, key).get();
