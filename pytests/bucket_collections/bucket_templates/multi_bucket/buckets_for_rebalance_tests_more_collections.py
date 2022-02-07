@@ -22,8 +22,8 @@ spec = {
 
     "buckets": {
         "default": {
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 2500,
-            Bucket.ramQuotaMB: 2000,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 1900,
+            Bucket.ramQuotaMB: 1500,
             Bucket.bucketType: Bucket.Type.MEMBASE,
             "privileges": [
                 "Perm1"
