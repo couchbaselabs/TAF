@@ -1159,13 +1159,15 @@ class CollectionsRebalance(CollectionBase):
 
             add_nodes = unknown_nodes[:self.nodes_swap]
             remove_nodes = known_nodes[-self.nodes_swap:]
-            operation = self.task.async_rebalance(known_nodes, add_nodes, remove_nodes,
+            operation = self.task.async_rebalance(known_nodes, add_nodes, remove_nodes, check_vbucket_shuffling=False,
                                                   retry_get_process_num=self.retry_get_process_num)
             tasks = self.async_data_load()
-            known_nodes=known_nodes+add_nodes
-            known_nodes=list(set(known_nodes)-set(remove_nodes))
-            unknown_nodes=unknown_nodes+remove_nodes
-            unknown_nodes=list(set(unknown_nodes)-set(add_nodes))
+            for node in add_nodes:
+                known_nodes.append(node)
+                unknown_nodes.remove(node)
+            for node in remove_nodes:
+                unknown_nodes.append(node)
+                known_nodes.remove(node)
             if self.bulk_api_crud:
                 self.bulk_api_load(self.bucket.name)
             self.wait_for_rebalance_to_complete(operation)
