@@ -5093,7 +5093,6 @@ class Atomicity(Task):
                                 else:
                                     exception = err
                                     break
-
                 if exception:
                     if self.record_fail:
                         self.all_keys = list()
@@ -5138,15 +5137,15 @@ class Atomicity(Task):
                 if op_type == "create":
                     ret = self.transaction_app.DeferTransaction(
                         self.clients[0][0].cluster,
-                        self.transaction, self.bucket, doc, update_keys, [])
+                        self.transaction, self.bucket, doc, update_keys, [], self.update_count)
                 elif op_type == "update":
                     ret = self.transaction_app.DeferTransaction(
                         self.clients[0][0].cluster,
-                        self.transaction, self.bucket, [], doc, [])
+                        self.transaction, self.bucket, [], doc, [], self.update_count)
                 elif op_type == "delete":
                     ret = self.transaction_app.DeferTransaction(
                         self.clients[0][0].cluster,
-                        self.transaction, self.bucket, [], [], doc)
+                        self.transaction, self.bucket, [], [], doc, self.update_count)
                 err = ret.getT2()
             else:
                 if op_type == "create":
@@ -5169,6 +5168,7 @@ class Atomicity(Task):
                     self.all_keys = list()
                 elif SDKException.DurabilityImpossibleException in str(err) \
                         and self.retries > 0:
+                    self.test_log.debug(err)
                     self.test_log.info("D_ImpossibleException so retrying..")
                     # sleep(60)
                     self.retries -= 1
@@ -5205,6 +5205,7 @@ class Atomicity(Task):
                             pass
                     else:
                         wrong_values.append(key)
+                        self.inserted_keys[client].remove(key)
                         self.test_log.info("Key %s - Actual value %s,"
                                            "Expected value: %s"
                                            % (key, actual_val, expected_val))

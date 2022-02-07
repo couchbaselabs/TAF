@@ -770,78 +770,77 @@ public class SimpleTransaction {
 				}
 			}
             long cleanup_timeout = this.get_cleanup_timeout(transaction, start_time);
-			this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids,
-					                            cleanup_timeout);
-			return Mono.just(res);
-		}).block();
-		cleanup_es.unsubscribe();
-		return res;
-	}
+            this.waitForTransactionCleanupEvent(cluster, ((TransactionFailed) err).result().attempts(), attempt_ids,
+                                                cleanup_timeout);
+            return Mono.just(res);
+        }).block();
+        cleanup_es.unsubscribe();
+        return res;
+    }
 
-	public Tuple2<byte[], List<LogDefer>> DeferTransaction(Cluster cluster, Transactions transaction, List<Collection> collections, List<Tuple2<String,
-			JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys) {
-		byte[] encoded = new byte[0];
-		List<LogDefer> res = new ArrayList<LogDefer>();
-		int updatecount = 1;
+    public Tuple2<byte[], List<LogDefer>> DeferTransaction(Cluster cluster, Transactions transaction, List<Collection> collections, List<Tuple2<String,
+            JsonObject>> Createkeys, List<String> Updatekeys, List<String> Deletekeys, int updatecount) {
+        byte[] encoded = new byte[0];
+        List<LogDefer> res = new ArrayList<LogDefer>();
 
-		Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
-		EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
-		long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
-		try {
-			TransactionResult result = transaction.run(ctx -> {
-				for (Collection bucket:collections) {
-					for (Tuple2<String, JsonObject> document : Createkeys) {
-						TransactionGetResult doc=ctx.insert(bucket, document.getT1(), document.getT2());
-						TransactionGetResult doc1=ctx.getOptional(bucket, document.getT1()).get();
-					}
-				}
+        Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+        EventSubscription cleanup_es = this.record_cleanup_attempt_events(cluster, attempt_ids);
+        long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
+        try {
+            TransactionResult result = transaction.run(ctx -> {
+                for (Collection bucket:collections) {
+                    for (Tuple2<String, JsonObject> document : Createkeys) {
+                        TransactionGetResult doc=ctx.insert(bucket, document.getT1(), document.getT2());
+                        TransactionGetResult doc1=ctx.getOptional(bucket, document.getT1()).get();
+                    }
+                }
 
-  			 	// update of docs
-				for (String key: Updatekeys) {
-					for (Collection bucket:collections) {
-						try {
-							TransactionGetResult doc2=ctx.getOptional(bucket, key).get();
-							for (int i=1; i<=updatecount; i++) {
-								JsonObject content = doc2.contentAs(JsonObject.class);
-								if (content.containsKey("mutated")) {
-									content.put("mutated", content.getInt("mutated")+1);
-								}
-								else {
-									content.put("mutated", 1);
-								}
-								ctx.replace(doc2, content);
-//										TransactionGetResult doc1=ctx.get(bucket, key).get();
-//										JsonObject read_content = doc1.contentAs(JsonObject.class);
-								}
-							}
-						catch (TransactionFailed err) {
-							System.out.println("Document not present");
-						}
-					}
-				}
-				// delete the docs
-				for (String key: Deletekeys) {
-					for (Collection bucket:collections) {
-						try {
-							TransactionGetResult doc1=ctx.getOptional(bucket, key).get();
-							ctx.remove(doc1);
-						}
-						catch (TransactionFailed err) {
-							System.out.println("Document not present");
-						}
-					}
-				}
-				ctx.defer();
-			});
-			if(result.serialized().isPresent()) {
-			    TransactionSerializedContext serialized = result.serialized().get();
-			    encoded = serialized.encodeAsBytes();
-			}
-		}
-		catch (TransactionFailed err) {
-			res = err.result().log().logs();
-			if (res.toString().contains("DurabilityImpossibleException")) {
-				System.out.println("DurabilityImpossibleException seen");
+                   // update of docs
+                for (String key: Updatekeys) {
+                    for (Collection bucket:collections) {
+                        try {
+                            TransactionGetResult doc2=ctx.getOptional(bucket, key).get();
+                            for (int i=1; i<=updatecount; i++) {
+                                JsonObject content = doc2.contentAs(JsonObject.class);
+                                if (content.containsKey("mutated")) {
+                                    content.put("mutated", updatecount);
+                                }
+                                else {
+                                    content.put("mutated", updatecount);
+                                }
+                                ctx.replace(doc2, content);
+//                                        TransactionGetResult doc1=ctx.get(bucket, key).get();
+//                                        JsonObject read_content = doc1.contentAs(JsonObject.class);
+                                }
+                            }
+                        catch (TransactionFailed err) {
+                            System.out.println("Document not present");
+                        }
+                    }
+                }
+                // delete the docs
+                for (String key: Deletekeys) {
+                    for (Collection bucket:collections) {
+                        try {
+                            TransactionGetResult doc1=ctx.getOptional(bucket, key).get();
+                            ctx.remove(doc1);
+                        }
+                        catch (TransactionFailed err) {
+                            System.out.println("Document not present");
+                        }
+                    }
+                }
+                ctx.defer();
+            });
+            if(result.serialized().isPresent()) {
+                TransactionSerializedContext serialized = result.serialized().get();
+                encoded = serialized.encodeAsBytes();
+            }
+        }
+        catch (TransactionFailed err) {
+            res = err.result().log().logs();
+            if (res.toString().contains("DurabilityImpossibleException")) {
+                System.out.println("DurabilityImpossibleException seen");
                 long cleanup_timeout = this.get_cleanup_timeout(transaction, start_time);
 				this.waitForTransactionCleanupEvent(cluster, err.result().attempts(), attempt_ids,
 					                                cleanup_timeout);
