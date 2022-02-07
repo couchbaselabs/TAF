@@ -418,10 +418,11 @@ class OPD:
         self.doc_loading_tm.getAllTaskResult()
         for task in tasks:
             task.result = True
+            unique_str = "{}:{}:{}:".format(task.sdk.bucket, task.sdk.scope, task.sdk.collection)
             for optype, failures in task.failedMutations.items():
                 for failure in failures:
                     if failure is not None:
-                        print("Test Retrying {}: {} -> {}".format(optype, failure.id(), failure.err().getClass().getSimpleName()))
+                        print("Test Retrying {}: {}{} -> {}".format(optype, unique_str, failure.id(), failure.err().getClass().getSimpleName()))
                         try:
                             if optype == "create":
                                 task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions)

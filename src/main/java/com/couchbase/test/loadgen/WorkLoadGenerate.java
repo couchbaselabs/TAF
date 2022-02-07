@@ -49,7 +49,6 @@ public class WorkLoadGenerate extends Task{
     public InsertOptions setOptions;
     public RemoveOptions removeOptions;
     public GetOptions getOptions;
-    public String unique_str;
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability) {
         super(taskName);
@@ -57,7 +56,6 @@ public class WorkLoadGenerate extends Task{
         this.docops = new DocOps();
         this.sdk = client;
         this.durability = durability;
-        this.unique_str = this.sdk.bucket + this.sdk.scope + this.sdk.collection;
     }
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability, int exp, String exp_unit, boolean trackFailures, int retryTimes) {
@@ -70,7 +68,6 @@ public class WorkLoadGenerate extends Task{
         this.retryTimes = retryTimes;
         this.exp = exp;
         this.exp_unit = exp_unit;
-        this.unique_str = this.sdk.bucket + this.sdk.scope + this.sdk.collection;
     }
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability,
@@ -85,7 +82,6 @@ public class WorkLoadGenerate extends Task{
         this.exp = exp;
         this.exp_unit = exp_unit;
         this.retryStrategy = retryStrategy;
-        this.unique_str = this.sdk.bucket + this.sdk.scope + this.sdk.collection;
     }
 
     @Override
@@ -137,9 +133,9 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.creates/100;
                     if(trackFailures && result.size()>0)
                         try {
-                            failedMutations.get("create" + this.unique_str).addAll(result);
+                            failedMutations.get("create").addAll(result);
                         } catch (Exception e) {
-                            failedMutations.put("create" + this.unique_str, result);
+                            failedMutations.put("create", result);
                         }
                 }
             }
@@ -151,9 +147,9 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.updates/100;
                     if(trackFailures && result.size()>0)
                         try {
-                            failedMutations.get("update" + this.unique_str).addAll(result);
+                            failedMutations.get("update").addAll(result);
                         } catch (Exception e) {
-                            failedMutations.put("update" + this.unique_str, result);
+                            failedMutations.put("update", result);
                         }
                 }
             }
@@ -165,9 +161,9 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.expiry/100;
                     if(trackFailures && result.size()>0)
                         try {
-                            failedMutations.get("expiry" + this.unique_str).addAll(result);
+                            failedMutations.get("expiry").addAll(result);
                         } catch (Exception e) {
-                            failedMutations.put("expiry" + this.unique_str, result);
+                            failedMutations.put("expiry", result);
                         }
                 }
             }
