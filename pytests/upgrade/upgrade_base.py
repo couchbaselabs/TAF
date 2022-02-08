@@ -95,7 +95,7 @@ class UpgradeBase(BaseTestCase):
                 node_service = self.services_init[index+1].split(',')
             master_rest.add_node(
                 user=server.rest_username, password=server.rest_password,
-                remoteIp=server.ip, services=node_service)
+                remoteIp=server.ip, port=server.port, services=node_service)
 
         self.task.rebalance(self.cluster.servers[0:self.nodes_init], [], [])
         self.cluster.nodes_in_cluster.extend(
