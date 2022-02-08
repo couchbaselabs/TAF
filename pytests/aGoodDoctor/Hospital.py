@@ -236,6 +236,7 @@ class Murphy(BaseTestCase, OPD):
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
+        self.stop_stats = False
         stat_th = threading.Thread(target=self.dump_magma_stats,
                                    kwargs=dict(server=self.cluster.master,
                                                bucket=self.cluster.buckets[0],

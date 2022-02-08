@@ -681,7 +681,6 @@ class OPD:
             return
         shell = RemoteMachineShellConnection(server)
         data_path = RestConnection(server).get_data_path()
-        self.stop_stats = False
         while not self.stop_stats:
             for bucket in self.cluster.buckets:
                 self.log.info(self.get_magma_stats(bucket, shell, "rw_0:magma"))
