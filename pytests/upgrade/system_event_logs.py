@@ -70,11 +70,11 @@ class SystemEventLogs(UpgradeBase):
                 self.system_events.add_event(
                     DataServiceEvents.collection_created(
                         self.cluster.master.ip, self.bucket.name,
-                        self.bucket.uuid, CbServer.default_scope, col_name))
+                        CbServer.default_scope, col_name))
                 self.system_events.add_event(
                     DataServiceEvents.collection_dropped(
                         self.cluster.master.ip, self.bucket.name,
-                        self.bucket.uuid, CbServer.default_scope, col_name))
+                        CbServer.default_scope, col_name))
                 event_helper = SystemEventRestHelper([self.cluster.master])
                 status, content = event_helper.create_event(event)
                 if status is False:
