@@ -748,10 +748,12 @@ class BaseTestCase(unittest.TestCase):
                 rest.set_data_path(data_path=server.data_path,
                                    index_path=server.index_path,
                                    cbas_path=server.cbas_path)
+
+            if cluster.master != server:
+                continue
+
             init_port = port or server.port or '8091'
             assigned_services = services
-            if cluster.master != server:
-                assigned_services = None
             init_tasks.append(
                 task.async_init_node(
                     server, disabled_consistent_view,
