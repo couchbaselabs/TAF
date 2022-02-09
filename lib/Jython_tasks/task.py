@@ -6246,7 +6246,7 @@ class NodeInitializeTask(Task):
                 Exception(
                     'unable to get information on a server %s, it is available?'
                     % self.server.ip))
-        self.set_result(total_memory)
+        self.set_result(self.total_memory)
 
 
 class FailoverTask(Task):
