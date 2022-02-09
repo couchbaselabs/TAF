@@ -450,6 +450,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         Common code to run failover tests
         """
         self.current_fo_strategy = None
+        load_data_after_fo = self.input.param("post_failover_data_load", True)
         for index, services_to_fo in enumerate(self.failover_order):
             self.current_fo_strategy = self.failover_type[index]
             # servers_to_fail -> kv:index / kv:index_kv / index:n1ql
@@ -460,14 +461,17 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.__run_test()
 
             # Perform collection crud + doc_ops before rebalance operation
-            self.__perform_doc_ops(durability="NONE", validate_num_items=False)
+            if load_data_after_fo:
+                self.__perform_doc_ops(durability="NONE",
+                                       validate_num_items=False)
 
         self.log.info("Rebalance out all failed nodes")
         result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Final rebalance failed")
 
         # Perform collection crud + doc_ops
-        self.__perform_doc_ops()
+        if load_data_after_fo:
+            self.__perform_doc_ops()
 
     def test_split_brain(self):
         """
@@ -500,6 +504,38 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                         "iptables -A INPUT -s %s -j DROP" % src_node.ip)
                 shell_conn.disconnect()
 
+        def get_num_nodes_to_fo(num_nodes_affected,
+                                service_count_affected_nodes,
+                                service_count_unaffected_nodes):
+            nodes_to_fo = num_nodes_affected
+            for t_serv, count in service_count_affected_nodes.items():
+                if t_serv not in service_count_unaffected_nodes \
+                        or service_count_unaffected_nodes[t_serv] < 1:
+                    nodes_to_fo -= service_count_affected_nodes[t_serv]
+            return nodes_to_fo
+
+        def recover_from_split(node_list):
+            self.log.info("Flushing iptables rules from all nodes")
+            for t_node in node_list:
+                ssh_shell = RemoteMachineShellConnection(t_node)
+                ssh_shell.execute_command("iptables -F")
+                ssh_shell.disconnect()
+            self.sleep(5, "Wait for nodes to be reachable")
+
+        def post_failover_procedure():
+            self.rest.monitorRebalance()
+            self.validate_failover_settings(True, self.timeout,
+                                            num_nodes_to_fo,
+                                            self.max_count)
+            recover_from_split(node_split_1 + node_split_2)
+            self.log.info("Rebalance out failed nodes")
+            reb_result = self.cluster_util.rebalance(self.cluster)
+            self.assertTrue(reb_result, "Post failover rebalance failed")
+
+            # Validate failover count reset post rebalance
+            self.validate_failover_settings(True, self.timeout,
+                                            0, self.max_count)
+
         fo_happens = self.input.param("fo_happens", True)
         nodes_to_split = self.input.param("split_nodes", None).split('-')
 
@@ -520,7 +556,23 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         # Fetch actual nodes from given service list to create a split
         node_split_1 = get_nodes_based_on_services(nodes_to_split[0])
         node_split_2 = get_nodes_based_on_services(nodes_to_split[1])
-        num_nodes_to_fo = min(len(node_split_1), len(node_split_2))
+
+        service_count = [dict(), dict()]
+        for index, split_services in enumerate(nodes_to_split):
+            for node_services in nodes_to_split[index].split(':'):
+                for service in node_services.split("_"):
+                    if service not in service_count[index]:
+                        service_count[index][service] = 0
+                    service_count[index][service] += 1
+
+        if len(node_split_1) > len(node_split_2):
+            num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_2),
+                                                  service_count[1],
+                                                  service_count[0])
+        else:
+            num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_1),
+                                                  service_count[0],
+                                                  service_count[1])
 
         self.log.info("Creating split between nodes %s || %s. "
                       "Expected %s failover events"
@@ -536,36 +588,24 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
             if fo_happens:
                 self.log.info("Expecting failover to be triggered")
-                # Pick new master based on split network
-                new_master = node_split_1[0]
-                if len(node_split_2) > len(node_split_1):
-                    new_master = node_split_2[0]
-
-                self.log.info("Node for cluster ops: %s" % new_master.ip)
-                self.rest = RestConnection(new_master)
-                self.cluster.master = new_master
-
-                self.rest.monitorRebalance()
-                self.validate_failover_settings(True, self.timeout,
-                                                num_nodes_to_fo,
-                                                self.max_count)
-                self.log.info("Rebalance out failed nodes")
-                result = self.cluster_util.rebalance(self.cluster)
-                self.assertTrue(result, "Post failover rebalance failed")
-
-                # Validate failover count reset post rebalance
-                self.validate_failover_settings(True, self.timeout,
-                                                0, self.max_count)
+                post_failover_procedure()
             else:
                 self.log.info("Expecting no failover will be triggered")
                 self.validate_failover_settings(True, self.timeout,
                                                 0, self.max_count)
+                if (self.nodes_init % 2) == 1:
+                    # Pick new master based on split network
+                    new_master = node_split_1[0]
+                    if len(node_split_2) > len(node_split_1):
+                        new_master = node_split_2[0]
+
+                    self.log.info("FO expected wrt node %s" % new_master.ip)
+                    self.rest = RestConnection(new_master)
+                    self.cluster.master = new_master
+
+                    post_failover_procedure()
         finally:
-            self.log.info("Flushing iptables rules from all nodes")
-            for node in node_split_1 + node_split_2:
-                shell = RemoteMachineShellConnection(node)
-                shell.execute_command("iptables -F")
-                shell.disconnect()
+            recover_from_split(node_split_1 + node_split_2)
 
     def test_concurrent_failover_timer_reset(self):
         """
