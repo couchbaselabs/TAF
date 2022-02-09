@@ -945,13 +945,9 @@ class BucketDurabilityTests(BucketDurabilityBase):
     def test_durability_impossible(self):
         """
         Create bucket with replica > num_kv_nodes.
-        Perform doc insert to make sure we get TimeoutException due to
-        durability_impossible from the server.
+        Make sure the bucket creating fails due to durability.
         """
 
-        verification_dict = self.get_cb_stat_verification_dict()
-
-        key, value = doc_generator("test_key", 0, 1).next()
         for d_level in self.possible_d_levels[self.bucket_type]:
             if d_level == Bucket.DurabilityLevel.NONE:
                 continue
@@ -959,23 +955,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
-            self.bucket_util.create_bucket(self.cluster, bucket_obj,
-                                           wait_for_warmup=True)
-            self.summary.add_step("Create bucket with durability %s"
-                                  % d_level)
-
-            client = SDKClient([self.cluster.master], bucket_obj)
-            result = client.crud("create", key, value, timeout=3)
-            if result["status"] is True \
-                    or SDKException.DurabilityImpossibleException \
-                    not in result["error"]:
-                self.log_failure("Indirect sync_write succeeded "
-                                 "without enough nodes")
-            client.close()
-
-            # Cbstats vbucket-details validation
-            self.cb_stat_verify(verification_dict)
-
-            # Delete the created bucket
-            self.bucket_util.delete_bucket(self.cluster, bucket_obj)
-            self.summary.add_step("Delete bucket with d_level %s" % d_level)
+            task = self.bucket_util.async_create_bucket(self.cluster,
+                                                        bucket_obj)
+            self.task_manager.get_task_result(task)
+            if task.result is True:
+                self.fail("Bucket created with replica=%s, durability=%s")
