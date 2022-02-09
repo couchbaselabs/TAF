@@ -130,6 +130,10 @@ class RebalanceDurability(RebalanceBaseTest):
         # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
 
+        is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
+            self.bucket_durability_level, self.durability_level)
+        expected_err = "You do not have enough data servers to support " \
+                       "this durability level"
         self.sleep(10, "Wait for cluster to be ready after rebalance")
         self.log.info("Increasing the replicas and rebalancing in the nodes")
         for replicas in range(self.num_replicas+1, 3):
@@ -137,8 +141,22 @@ class RebalanceDurability(RebalanceBaseTest):
             tasks_info = self.__load_docs_in_all_buckets()
             self.log.info("Increasing the bucket replicas to {0}"
                           .format(replicas))
-            self.bucket_util.update_all_bucket_replicas(self.cluster,
-                                                        replicas=replicas)
+            exception = None
+            try:
+                self.log.info("Update replica=%s and expect it to fail"
+                              % replicas)
+                self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                            replicas=replicas)
+            except Exception as e:
+                exception = e
+
+            # Only replica [1,3] requires more len(nodes) > replica.
+            # Replica=2 works with 1 less node since it required only
+            # two nodes to satisfy the durability settings
+            if is_sync_write_enabled and replicas in [1, 3] \
+                    and expected_err not in str(exception):
+                self.fail("Bucket replica update worked")
+
             rebalance_result = self.task.rebalance(
                 self.cluster.nodes_in_cluster,
                 [self.cluster.servers[replicas]],
@@ -146,6 +164,14 @@ class RebalanceDurability(RebalanceBaseTest):
             self.assertTrue(rebalance_result)
             self.cluster.nodes_in_cluster.extend(
                 [self.cluster.servers[replicas]])
+
+            if is_sync_write_enabled and replicas == 1:
+                self.log.info("Updating replica=%s and performing rebalance"
+                              % replicas)
+                self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                            replicas=replicas)
+                result = self.cluster_util.rebalance(self.cluster)
+                self.assertTrue(result, "Replica update rebalance failed")
 
             # Wait for all doc_load tasks to complete and validate
             for task, task_info in tasks_info.items():
