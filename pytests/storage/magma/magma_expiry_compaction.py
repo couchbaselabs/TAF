@@ -906,19 +906,18 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.sleep(self.maxttl, "Wait for docs to expire")
 
         # Convert to tomb-stones
-        tasks_info = dict()
         self.gen_delete = copy.deepcopy(self.gen_expiry)
+        tasks_info = dict()
         for collection in self.collections[::2]:
-            temp_tasks_info = self.bucket_util._async_validate_docs(
-                self.cluster, self.gen_delete, "delete", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout,
-                scope=CbServer.default_scope,
-                collection=collection,
-                retry_exceptions=self.retry_exceptions,
-                ignore_exceptions=self.ignore_exceptions)
-            tasks_info.update(temp_tasks_info.items())
+            task_in = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=False,
+                                  doc_ops="delete",
+                                  skip_read_on_error=False,
+                                  suppress_error_table=False,
+                                  track_failures=False,
+                                  collection=collection)
+            tasks_info.update(task_in.items())
         for task in tasks_info:
             self.task_manager.get_task_result(task)
 
@@ -935,30 +934,36 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.assertEqual(ts, 0, "Tombstones found after collections(expired items) drop.")
 
     def test_drop_collection_during_tombstone_creation(self):
-        scope_name, collections = CbServer.default_scope, self.collections
-        self.load_bucket()
-        tasks = []
-        for collection in collections[::2]:
+        self.log.info("test_drop_collection_during_tombstone_creation")
+        tasks = dict()
+        for collection in self.collections[::2]:
             self.generate_docs(doc_ops="expiry")
-            tasks.append(self.loadgen_docs(scope=scope_name,
-                         collection=collection,
-                         _sync=False))
+            task = self.loadgen_docs(scope=CbServer.default_scope,
+                                     collection=collection,
+                                     _sync=False,
+                                     doc_ops="expiry")
+            tasks.update(task.items())
+        self.sleep(self.maxttl, "Wait for docs to expire")
         # exp_pager_stime
         self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
         self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
          to kickoff")
+
         for task in tasks:
             self.task_manager.get_task_result(task)
-        for collection in collections[::2]:
+
+        for collection in self.collections[::2]:
             self.bucket_util.drop_collection(self.cluster.master,
                                              self.buckets[0],
-                                             scope_name=scope_name,
+                                             scope_name=CbServer.default_scope,
                                              collection_name=collection)
-            self.buckets[0].scopes[scope_name].collections.pop(collection)
-            collections.remove(collection)
-
+            self.buckets[0].scopes[CbServer.default_scope].collections.pop(collection)
+            self.collections.remove(collection)
+        self.sleep(self.maxttl, "Wait for docs to expire")
+        self.sleep(self.exp_pager_stime, "Wait Again until exp_pager_stime for kv_purger\
+         to kickoff")
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-        self.log.info("Tombstones after full compaction: {}".format(ts))
+        self.log.info("tombstone count is {}".format(ts))
         self.assertEqual(ts, 0, "Tombstones found after collections(expired items) drop.")
 
     def test_failover_expired_items_in_vB(self):
