@@ -83,7 +83,8 @@ class UpgradeBase(BaseTestCase):
 
         # Initialize first node in cluster
         master_node = self.cluster.servers[0]
-        master_node.services = self.services_init[0]
+        if self.services_init:
+            master_node.services = self.services_init[0]
         master_rest = RestConnection(master_node)
         master_rest.init_node()
 
