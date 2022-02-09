@@ -6164,7 +6164,7 @@ class NodeInitializeTask(Task):
 
         self.total_memory = int(info.mcdMemoryReserved - 100)
         if self.quota_percent:
-            self.self.total_memory = int(self.total_memory*self.quota_percent
+            self.total_memory = int(self.total_memory*self.quota_percent
                                          / 100)
 
         if len(self.services) < 1:
