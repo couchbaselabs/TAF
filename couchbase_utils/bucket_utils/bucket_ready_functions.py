@@ -3908,12 +3908,10 @@ class BucketUtils(ScopeUtils):
         return float(stats["op"]["samples"]["couch_docs_fragmentation"][-1])
 
     def parse_get_bucket_json(self, buckets, parsed):
-        bucket = None
         for bucket in buckets:
             if bucket.name == parsed['name']:
                 break
-
-        if bucket is None:
+        else:
             bucket = Bucket()
             bucket.name = parsed["name"]
 
