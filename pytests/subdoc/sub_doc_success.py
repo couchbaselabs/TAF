@@ -4,6 +4,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator,\
     sub_doc_generator_for_edit
+from couchbase_helper.durability_helper import DurabilityHelper
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
@@ -236,6 +237,8 @@ class BasicOps(DurabilityTestsBase):
         doc_ops = self.input.param("op_type", "create")
         tasks = list()
         def_bucket = self.cluster.buckets[0]
+        is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
+            self.bucket_durability_level, self.durability_level)
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -264,7 +267,7 @@ class BasicOps(DurabilityTestsBase):
 
         # Update verification_dict and validate
         verification_dict["ops_create"] = self.num_items
-        if self.durability_level:
+        if is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] = self.num_items
 
         self.log.info("Validating doc_count")
@@ -362,7 +365,7 @@ class BasicOps(DurabilityTestsBase):
             timeout_secs=self.sdk_timeout))
 
         verification_dict["ops_update"] += self.num_items
-        if self.durability_level:
+        if is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] += self.num_items
 
         # Wait for all task to complete
