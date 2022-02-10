@@ -55,6 +55,7 @@ class CollectionsRebalance(CollectionBase):
         self.num_zone = self.input.param("num_zone", 1)
         self.failover_nodes_different_zone = self.input.param("failover_nodes_different_zone", False)
         self.failover_entire_zone = self.input.param("failover_entire_zone", False)
+        self.failover_same_zone = self.input.param("failover_same_zone", False)
         if self.scrape_interval:
             self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
             # scrape_timeout cannot be greater than scrape_interval,
@@ -981,6 +982,12 @@ class CollectionsRebalance(CollectionBase):
                         nodes.append(node)
             elif self.failover_entire_zone:
                 nodes = nodes_in_zone["Group 2"]
+            elif self.failover_same_zone:
+                # randomly choose nodes in the zone
+                try:
+                    nodes = random.sample(nodes_in_zone["Group 2"], self.nodes_failover)
+                except:
+                    nodes = nodes_in_zone["Group 2"]
             for server in nodes:
                 for service in self.cluster.servers:
                     if server == service.ip:
