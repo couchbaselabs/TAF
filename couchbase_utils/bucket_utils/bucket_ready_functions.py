@@ -3586,7 +3586,7 @@ class BucketUtils(ScopeUtils):
                                 val)
             shell_conn.disconnect()
 
-    def _run_compaction(self, cluster, number_of_times=100):
+    def _run_compaction(self, cluster, number_of_times=1):
         for _ in range(number_of_times):
             compaction_tasks = list()
             for bucket in cluster.buckets:
