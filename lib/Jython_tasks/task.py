@@ -6136,6 +6136,7 @@ class NodeInitializeTask(Task):
 
     def __get_memory_quota_in_mb(self, service_name):
         mem_quota = 0
+
         if service_name in self.services_mem_quota_percent:
             percent = self.services_mem_quota_percent[service_name]
             mem_quota = int(self.total_memory* percent / 100)
@@ -6162,7 +6163,12 @@ class NodeInitializeTask(Task):
             self.set_result(True)
             return
 
-        self.total_memory = int(info.mcdMemoryReserved - 100)
+        timeout = time.time() + 300
+        while self.total_memory <= 0 and time.time() < timeout:
+            info = rest.get_nodes_self()
+            self.total_memory = int(info.mcdMemoryReserved - 100)
+        self.log.critical("mcdMemoryReserved reported in nodes/self is: %s"
+                          % info.mcdMemoryReserved)
         if self.quota_percent:
             self.total_memory = int(self.total_memory * self.quota_percent
                                     / 100)

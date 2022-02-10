@@ -61,7 +61,7 @@ class BaseTestCase(unittest.TestCase):
         self.gsi_type = self.input.param("gsi_type", 'plasma')
         # Memory quota settings
         # Max memory quota to utilize per node
-        self.quota_percent = self.input.param("quota_percent", 90)
+        self.quota_percent = self.input.param("quota_percent", 100)
         # Services' RAM quota to set on cluster
         self.kv_mem_quota_percent = self.input.param("kv_quota_percent", None)
         self.index_mem_quota_percent = \
