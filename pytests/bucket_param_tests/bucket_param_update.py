@@ -1,6 +1,7 @@
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
+from couchbase_helper.durability_helper import DurabilityHelper
 from sdk_exceptions import SDKException
 
 
@@ -278,7 +279,7 @@ class BucketParamTest(ClusterSetup):
                 suppress_error_table = True
 
             ignore_exceptions = list()
-            if replica_num == 3:
+            if replica_num == 3 and self.is_sync_write_enabled:
                 ignore_exceptions.append(
                     SDKException.DurabilityImpossibleException)
 
@@ -303,7 +304,7 @@ class BucketParamTest(ClusterSetup):
 
                 for task, task_info in tasks.items():
                     if replica_num == 3:
-                        if self.durability_level in supported_d_levels:
+                        if self.is_sync_write_enabled:
                             self.assertTrue(
                                 len(task.fail.keys()) == (self.num_items/2),
                                 "Few doc_ops succeeded while they should have failed.")
@@ -341,6 +342,8 @@ class BucketParamTest(ClusterSetup):
         doc_count = self.num_items
         start_doc_for_insert = self.num_items
 
+        self.is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
+            self.bucket_durability_level, self.durability_level)
         # Replica increment tests
         doc_count, start_doc_for_insert = self.generic_replica_update(
             doc_count,
