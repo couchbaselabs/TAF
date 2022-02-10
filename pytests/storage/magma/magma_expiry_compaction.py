@@ -934,9 +934,11 @@ class MagmaExpiryTests(MagmaBaseTest):
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("tombstone count is {}".format(ts))
         self.bucket_util._run_compaction(self.cluster)
-        self.log.info("tombstone count is {}".format(ts))
-        self.log.info("num collections now are {}".format(len(self.collections)))
-        self.assertEqual(ts, len(self.collections), "Incorrect number of tombstones found.")
+        ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+        self.log.info("tombstone count after compaction  {}".format(ts))
+        expected_ts = self.vbuckets * (self.num_replicas+1) * int(self.num_collections)//2
+        self.log.info("expected_ts {}".format(expected_ts))
+        self.assertEqual(ts, expected_ts, "Incorrect number of tombstones found.")
 
     def test_drop_collection_during_tombstone_creation(self):
         self.log.info("test_drop_collection_during_tombstone_creation")
@@ -976,8 +978,9 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util._run_compaction(self.cluster)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("tombstone count after compaction is {}".format(ts))
-        self.log.info("num collections now are {}".format(len(self.collections)))
-        self.assertEqual(ts, int(self.num_collections)//2 , "Incorrect number of tombstones found.")
+        expected_ts = self.vbuckets * (self.num_replicas+1) * int(self.num_collections)//2
+        self.log.info("expected_ts {}".format(expected_ts))
+        self.assertEqual(ts, expected_ts, "Incorrect number of tombstones found.")
 
     def test_failover_expired_items_in_vB(self):
         self.maxttl = 120
