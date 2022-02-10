@@ -892,9 +892,11 @@ class MagmaExpiryTests(MagmaBaseTest):
 
     def test_drop_collection_expired_items(self):
         self.log.info("test_drop_collection_expired_items starts")
+        self.expiry_start = 0
+        self.expiry_end = self.init_items_per_collection
+        self.generate_docs(doc_ops="expiry")
         tasks = dict()
         for collection in self.collections[::2]:
-            self.generate_docs(doc_ops="expiry")
             task = self.loadgen_docs(scope=CbServer.default_scope,
                                      collection=collection,
                                      _sync=False,
@@ -913,8 +915,8 @@ class MagmaExpiryTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=False,
                                   doc_ops="delete",
-                                  skip_read_on_error=False,
-                                  suppress_error_table=False,
+                                  skip_read_on_error=True,
+                                  suppress_error_table=True,
                                   track_failures=False,
                                   collection=collection)
             tasks_info.update(task_in.items())
@@ -931,10 +933,16 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.sleep(180, "sleep after dropping collections")
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("tombstone count is {}".format(ts))
-        self.assertEqual(ts, 0, "Tombstones found after collections(expired items) drop.")
+        self.bucket_util._run_compaction(self.cluster)
+        self.log.info("tombstone count is {}".format(ts))
+        self.log.info("num collections now are {}".format(len(self.collections)))
+        self.assertEqual(ts, len(self.collections), "Incorrect number of tombstones found.")
 
     def test_drop_collection_during_tombstone_creation(self):
         self.log.info("test_drop_collection_during_tombstone_creation")
+        self.expiry_start = 0
+        self.expiry_end = self.init_items_per_collection
+        self.generate_docs(doc_ops="expiry")
         tasks = dict()
         for collection in self.collections[::2]:
             self.generate_docs(doc_ops="expiry")
@@ -962,9 +970,14 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.sleep(self.maxttl, "Wait for docs to expire")
         self.sleep(self.exp_pager_stime, "Wait Again until exp_pager_stime for kv_purger\
          to kickoff")
+        self.sleep(60, "sleep before checking ts")
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("tombstone count is {}".format(ts))
-        self.assertEqual(ts, 0, "Tombstones found after collections(expired items) drop.")
+        self.bucket_util._run_compaction(self.cluster)
+        ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+        self.log.info("tombstone count after compaction is {}".format(ts))
+        self.log.info("num collections now are {}".format(len(self.collections)))
+        self.assertEqual(ts, int(self.num_collections)//2 , "Incorrect number of tombstones found.")
 
     def test_failover_expired_items_in_vB(self):
         self.maxttl = 120
