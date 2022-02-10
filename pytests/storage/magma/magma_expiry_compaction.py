@@ -762,8 +762,8 @@ class MagmaExpiryTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=False,
                                   doc_ops="delete",
-                                  skip_read_on_error=False,
-                                  suppress_error_table=False,
+                                  skip_read_on_error=True,
+                                  suppress_error_table=True,
                                   track_failures=False,
                                   collection=collection)
             tasks_info.update(task_in.items())
