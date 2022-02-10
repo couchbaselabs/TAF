@@ -17,7 +17,6 @@ from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
-from couchbase_cli import CouchbaseCLI
 
 
 class CBASBaseTest(BaseTestCase):
@@ -264,6 +263,51 @@ class CBASBaseTest(BaseTestCase):
 
             cluster.otpNodes = cluster.rest.node_statuses()
 
+            # Wait for analytics service to be up.
+            if hasattr(cluster, "cbas_cc_node"):
+                if not self.cbas_util.is_analytics_running(cluster):
+                    self.fail("Analytics service did not come up even after 10\
+                                 mins of wait after initialisation")
+
+            if self.input.param("analytics_loggers", None):
+                """
+                This flag is used for setting analytics internal log levels. 
+                These logs are helpful while dubugging issues as they 
+                provide a deeper insight into working on CBAS service.
+                This flag can be used to set one or more logger for analytics.
+                logger_name_1:level-logger_name_2:level-......
+                """
+                cbas_loggers = self.input.param("analytics_loggers",
+                                                None).split("-")
+                log_level_dict = dict()
+                for logger in cbas_loggers:
+                    tmp = logger.split(":")
+                    log_level_dict[tmp[0]] = tmp[1]
+                self.log.info("Setting following log levels for analytics - "
+                              "{0}".format(log_level_dict))
+                status, content, response = self.cbas_util.set_log_level_on_cbas(
+                    self.cluster, log_level_dict, timeout=120)
+                if not status:
+                    self.fail("Error while setting log level for CBAS - "
+                              "{0}".format(content))
+
+                self.log.info("Verifying whether log levels set successfully")
+                status, content, response = self.cbas_util.get_log_level_on_cbas(
+                    self.cluster)
+                match_counter = 0
+                if status:
+                    actual_log_levels = content["loggers"]
+                    for logger in actual_log_levels:
+                        if (logger["name"] in log_level_dict) and \
+                                logger["level"] == log_level_dict[logger["name"]]:
+                            match_counter += 1
+                    if match_counter == len(log_level_dict):
+                        self.log.info("All log levels were set successfully")
+                    else:
+                        self.fail("Some log levels were not set")
+                else:
+                    self.fail("Error while fetching log levels")
+
             if self.cluster_kv_infra[i] == "bkt_spec":
                 if self.bucket_spec is not None:
                     try:
@@ -287,12 +331,6 @@ class CBASBaseTest(BaseTestCase):
                     flush_enabled=self.flush_enabled)
 
             self.bucket_util.add_rbac_user(cluster.master)
-
-            # Wait for analytics service to be up.
-            if hasattr(cluster, "cbas_cc_node"):
-                if not self.cbas_util.is_analytics_running(cluster):
-                    self.fail("Analytics service did not come up even after 10\
-                     mins of wait after initialisation")
 
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))

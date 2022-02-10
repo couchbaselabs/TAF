@@ -5,35 +5,17 @@ import random
 import os
 import copy
 import string
-import time
 from ast import literal_eval
 
 import requests
 from global_vars import logger
-from membase.api import httplib2
 import commands
 from membase.api.rest_client import RestConnection
 
 from shutil import copyfile
 
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
-
-
-class ServerInfo():
-
-    def __init__(self,
-                 ip,
-                 port,
-                 ssh_username,
-                 ssh_password,
-                 memcached_port,
-                 ssh_key=''):
-        self.ip = ip
-        self.ssh_username = ssh_username
-        self.ssh_password = ssh_password
-        self.port = port
-        self.ssh_key = ssh_key
-        self.memcached_port = memcached_port
+from TestInput import TestInputServer
 
 
 class x509main:
@@ -46,7 +28,11 @@ class x509main:
     SCRIPTSPATH = "scripts/"
     SCRIPTFILEPATH = "/passphrase.sh"
     SCRIPTWINDOWSFILEPATH = "passphrase.bat"
-    SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase', 11210)
+    SLAVE_HOST = TestInputServer()
+    SLAVE_HOST.ip = '127.0.0.1'
+    SLAVE_HOST.port = 22
+    SLAVE_HOST.ssh_username = "root"
+    SLAVE_HOST.ssh_password = "couchbase"
     CLIENT_CERT_AUTH_JSON = 'client_cert_auth1.json'
     CLIENT_CERT_AUTH_TEMPLATE = 'client_cert_config_template.txt'
     IP_ADDRESS = '172.16.1.174'  # dummy ip address
@@ -747,11 +733,11 @@ class x509main:
                    'Accept': '*/*'}
         url = "settings/clientCertAuth"
         api = rest.baseUrl + url
-        http = httplib2.Http()
         tries = 0
         while tries < 4:
-            response, content = http.request(api, 'POST', headers=headers, body=data)
-            if response['status'] in ['200', '201', '202']:
+            status, content, response = rest._http_request(
+                api, method='POST', params=data, headers=headers, timeout=300)
+            if status:
                 return content
             else:
                 tries = tries + 1

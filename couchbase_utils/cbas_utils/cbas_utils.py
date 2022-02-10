@@ -4141,6 +4141,8 @@ class CbasUtil(UDFUtil):
             cbas_helper.operation_log_level_on_cbas(
                 method="GET", params="", logger_name=None, timeout=timeout,
                 username=username, password=password)
+        if content:
+            content = json.loads(content)
         return status, content, response
 
     def get_specific_cbas_log_level(self, cluster, logger_name, timeout=120,
@@ -4995,6 +4997,7 @@ class CBASRebalanceUtil(object):
         nodes_in_cluster = [server for server in cluster.nodes_in_cluster if
                             server not in servs_out]
         cluster.nodes_in_cluster = nodes_in_cluster
+        cluster.servers = nodes_in_cluster
 
         return rebalance_task, available_servers
 
@@ -5288,8 +5291,9 @@ class CBASRebalanceUtil(object):
             servs_out = [node for node in cluster.nodes_in_cluster for
                          fail_node in (kv_failover_nodes + cbas_failover_nodes)
                          if node.ip == fail_node.ip]
-            cluster.nodes_in_cluster = list(
-                set(cluster.nodes_in_cluster) - set(servs_out))
+            actual_nodes_in_cluster = list(set(cluster.nodes_in_cluster) - set(servs_out))
+            cluster.nodes_in_cluster = actual_nodes_in_cluster
+            cluster.server = actual_nodes_in_cluster
             available_servers += servs_out
             time.sleep(10)
         else:
