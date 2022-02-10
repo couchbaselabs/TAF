@@ -16,6 +16,8 @@ from table_view import TableView
 class BasicOps(DurabilityTestsBase):
     def setUp(self):
         super(BasicOps, self).setUp()
+        self.is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
+            self.bucket_durability_level, self.durability_level)
         self.log.info("==========Finished BasisOps base setup========")
 
     def tearDown(self):
@@ -30,8 +32,6 @@ class BasicOps(DurabilityTestsBase):
         """
         doc_op = self.input.param("op_type", None)
         def_bucket = self.cluster.buckets[0]
-        supported_d_levels = self.bucket_util.get_supported_durability_levels(
-            minimum_level=Bucket.DurabilityLevel.MAJORITY)
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -42,7 +42,7 @@ class BasicOps(DurabilityTestsBase):
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["sync_write_committed_count"] = 0
 
-        if self.durability_level in supported_d_levels:
+        if self.is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] += self.num_items
 
         # Initial validation
@@ -85,7 +85,7 @@ class BasicOps(DurabilityTestsBase):
 
         # Update verification_dict and validate
         verification_dict["ops_update"] += self.num_items - insert_failures
-        if self.durability_level in supported_d_levels:
+        if self.is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] += self.num_items - insert_failures
             verification_dict["sync_write_aborted_count"] += insert_failures
 
@@ -131,7 +131,7 @@ class BasicOps(DurabilityTestsBase):
             verification_dict["ops_update"] += \
                 num_item_start_for_crud - update_failures
 
-            if self.durability_level in supported_d_levels:
+            if self.is_sync_write_enabled:
                 verification_dict["sync_write_committed_count"] += \
                     num_item_start_for_crud - update_failures
 
@@ -177,7 +177,7 @@ class BasicOps(DurabilityTestsBase):
             verification_dict["ops_update"] += \
                 num_item_start_for_crud - remove_failures
 
-            if self.durability_level in supported_d_levels:
+            if self.is_sync_write_enabled:
                 verification_dict["sync_write_committed_count"] += \
                     num_item_start_for_crud - remove_failures
 
@@ -237,8 +237,6 @@ class BasicOps(DurabilityTestsBase):
         doc_ops = self.input.param("op_type", "create")
         tasks = list()
         def_bucket = self.cluster.buckets[0]
-        is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
-            self.bucket_durability_level, self.durability_level)
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -267,7 +265,7 @@ class BasicOps(DurabilityTestsBase):
 
         # Update verification_dict and validate
         verification_dict["ops_create"] = self.num_items
-        if is_sync_write_enabled:
+        if self.is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] = self.num_items
 
         self.log.info("Validating doc_count")
@@ -317,7 +315,7 @@ class BasicOps(DurabilityTestsBase):
             self.task.jython_task_manager.get_task_result(task)
 
             verification_dict["ops_update"] += self.num_items
-            if self.durability_level:
+            if self.is_sync_write_enabled:
                 verification_dict["sync_write_committed_count"] += \
                     self.num_items
 
@@ -365,7 +363,7 @@ class BasicOps(DurabilityTestsBase):
             timeout_secs=self.sdk_timeout))
 
         verification_dict["ops_update"] += self.num_items
-        if is_sync_write_enabled:
+        if self.is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] += self.num_items
 
         # Wait for all task to complete
@@ -429,7 +427,7 @@ class BasicOps(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(task)
         verification_dict["ops_update"] += \
             (curr_doc_gen.end - curr_doc_gen.start)
-        if self.durability_level:
+        if self.is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] += \
                 (curr_doc_gen.end - curr_doc_gen.start)
 
@@ -500,7 +498,7 @@ class BasicOps(DurabilityTestsBase):
                     batch_size=10, process_concurrency=1,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout))
-                if op_type != "read" and self.durability_level:
+                if op_type != "read" and self.is_sync_write_enabled:
                     verification_dict["sync_write_committed_count"] += \
                         mutation_count
             else:
@@ -519,7 +517,7 @@ class BasicOps(DurabilityTestsBase):
         # Update num_items to sync with new docs created
         self.num_items *= 2
         verification_dict["ops_create"] = self.num_items
-        if self.durability_level:
+        if self.is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] += \
                 self.num_items
 
