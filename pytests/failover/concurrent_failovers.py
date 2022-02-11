@@ -247,7 +247,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     decr_node_count(service_type)
             else:
                 for t_node in fo_nodes:
-                    if fo_not_possible_for_service in t_node.services:
+                    if fo_not_possible_for_service in t_node.services \
+                            and CbServer.Services.KV not in t_node.services:
                         fo_nodes.remove(t_node)
 
         expected_num_nodes = len(fo_nodes)
