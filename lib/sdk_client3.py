@@ -787,6 +787,9 @@ class SDKClient(object):
             self.log.debug("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
+        except CouchbaseException as e:
+            result.update({"key": key, "value": None,
+                           "error": str(e), "status": False})
         except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
             result.update({"key": key, "value": None,

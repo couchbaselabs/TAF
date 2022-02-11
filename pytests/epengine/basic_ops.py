@@ -16,8 +16,11 @@ from error_simulation.cb_error import CouchbaseError
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from sdk_constants.java_client import SDKConstants
 from sdk_exceptions import SDKException
 from table_view import TableView
+
+from java.lang import RuntimeException
 
 """
 Capture basic get, set operations, also the meta operations.
@@ -642,6 +645,46 @@ class basic_ops(ClusterSetup):
             else:
                 self.assertNotEquals("API is accessible from localhost only",
                                      output[0])
+
+    def test_bucket_ops_with_bucket_reader_user(self):
+        uname = "bucket_reader"
+        user = [{'id': uname, 'name': uname, 'password': 'password'}]
+        role_list = [{'id': uname, 'name': uname, 'roles': 'data_writer[*]'}]
+        key = "test_doc_1"
+        val = {"f": "v"}
+
+        self.log.info("Creating user %s" % uname)
+        self.bucket_util.add_rbac_user(self.cluster.master,
+                                       testuser=user, rolelist=role_list)
+        client = SDKClient([self.cluster.master], self.cluster.buckets[0],
+                           username=uname, password="password")
+
+        try:
+            self.log.info("Perform regular update")
+            result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key, val)
+            self.assertTrue(result["status"], "Update op failed")
+            result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key, val,
+                                 durability=None, replicate_to=0, persist_to=0)
+            self.assertTrue(result["status"], "Update op failed")
+
+            self.log.info("Performing update with observe")
+            try:
+                client.crud(
+                    DocLoading.Bucket.DocOps.UPDATE, key, val,
+                    durability=None, replicate_to=1, persist_to=2)
+                self.fail("Observe operation succeded")
+            except RuntimeException:
+                pass
+
+            self.log.info("Performing read op")
+            result = client.crud(DocLoading.Bucket.DocOps.READ, key)
+            self.assertFalse(result["status"], "Read op succeeded")
+            self.assertTrue(SDKException.CouchbaseException in result["error"],
+                            "Invalid exception type")
+            self.assertTrue("NO_ACCESS" in result["error"],
+                            "Expected error string not found")
+        finally:
+            client.close()
 
     def test_MB_40967(self):
         """
