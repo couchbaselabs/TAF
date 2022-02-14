@@ -765,11 +765,7 @@ class ClusterUtils:
         for server in index_servers:
             RestConnection(server).set_index_settings(json)
 
-    def get_kv_nodes(self, cluster, servers=None, master=None):
-        if not master:
-            master = cluster.master
-        rest = RestConnection(master)
-        versions = rest.get_nodes_versions()
+    def get_kv_nodes(self, cluster, servers=None):
         if servers is None:
             servers = cluster.servers
         kv_servers = self.get_nodes_from_services_map(
