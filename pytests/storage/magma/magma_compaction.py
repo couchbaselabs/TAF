@@ -218,13 +218,13 @@ class MagmaCompactionTests(MagmaBaseTest):
                         ep_queue_size_map.update({nod: 0})
                         vb_replica_queue_size_map.update({nod: 0})
 
-                for bucket in self.cluster.buckets:
-                    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
-                                                    timeout=1200)
-                    self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
-                                                    cbstat_cmd="all",
-                                                    stat_name="vb_replica_queue_size",
-                                                    timeout=1200)
+                #for bucket in self.cluster.buckets:
+                #    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
+                #                                    timeout=1200)
+                #    self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
+                #                                    cbstat_cmd="all",
+                #                                    stat_name="vb_replica_queue_size",
+                #                                    timeout=1200)
                 # replica vBuckets
                 for bucket in self.cluster.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
