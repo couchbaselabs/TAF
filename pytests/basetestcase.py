@@ -17,7 +17,6 @@ from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 from common_lib import sleep
 from couchbase_helper.cluster import ServerTasks
-from node_utils.node_utils import NodeUtils
 from TestInput import TestInputSingleton
 from global_vars import logger
 from couchbase_helper.durability_helper import BucketDurability
@@ -29,6 +28,7 @@ from Jython_tasks.task_manager import TaskManager
 from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
+from node_utils.node_ready_functions import NodeUtils
 
 
 class BaseTestCase(unittest.TestCase):
