@@ -506,9 +506,8 @@ class MembaseServerInstaller(Installer):
                                                     vbuckets=vbuckets,
                                                     swappiness=swappiness,
                                                     openssl=openssl)
-            ready = RestHelper(
-                RestConnection(params["server"])).is_ns_server_running(
-                60)
+            ready = RestHelper(RestConnection(params["server"]))\
+                .is_ns_server_running(60)
             if not ready:
                 log.error("membase-server did not start...")
             log.info('wait 5 seconds for Membase server to start')
@@ -843,8 +842,10 @@ class CouchbaseServerInstaller(Installer):
                         fts_query_limit=fts_query_limit,
                         enable_ipv6=enable_ipv6,
                         force=force_upgrade)
-                    log.info('Wait 5 seconds for Couchbase server to start')
-                    time.sleep(5)
+                    ready = RestHelper(RestConnection(params["server"]))\
+                        .is_ns_server_running(60)
+                    if not ready:
+                        log.error("membase-server did not start...")
                     if "rest_vbuckets" in params:
                         rest_vbuckets = int(params["rest_vbuckets"])
                         ClusterOperationHelper.set_vbuckets(server,

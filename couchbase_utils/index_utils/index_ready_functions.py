@@ -67,6 +67,7 @@ class IndexUtils:
         x = 0
         createIndexTasklist = list()
         indexes_to_build = dict()
+        counter = 0
         for bucket in couchbase_buckets:
             if bucket.name not in indexes_to_build:
                 indexes_to_build[bucket.name] = dict()
@@ -79,7 +80,8 @@ class IndexUtils:
                             gsi_index_name = bucket.name.replace(".", "") + "_" + scope.name + "_" +\
                                              collection.name + "_" + str(tempCount)
                         else:
-                            gsi_index_name = gsi_base_name + str(tempCount)
+                            gsi_index_name = gsi_base_name + str(counter)
+                            counter += 1
                         create_index_query = "CREATE INDEX `%s` " \
                                              "ON `%s`.`%s`.`%s`(`%s`) " \
                                              "WITH { 'defer_build': %s, 'num_replica': %s }" \

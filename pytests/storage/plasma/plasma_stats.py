@@ -633,15 +633,6 @@ class PlasmaStatsTest(PlasmaBaseTest):
         self.resident_ratio = \
             float(self.input.param("resident_ratio", .9))
 
-        first_indexes_map,createIndexTasklist  = self.indexUtil.create_gsi_on_each_collection(self.cluster,
-                                                                        replica=self.index_replicas, defer=True,
-                                                                        number_of_indexes_per_coll=self.index_count,
-                                                                        field='body', sync=False)
-        for taskInstance in createIndexTasklist:
-            self.task.jython_task_manager.get_task_result(taskInstance)
-        self.indexUtil.build_deferred_indexes(self.cluster, first_indexes_map)
-        self.assertTrue(self.polling_for_All_Indexer_to_Ready(first_indexes_map),
-                        "polling for deferred indexes failed")
         while not self.validate_plasma_stat_field_value(stat_obj_list, "resident_ratio", self.resident_ratio, ops='lesser'):
             self.create_start = self.create_end
             self.create_end = self.create_start + self.items_add
@@ -656,6 +647,33 @@ class PlasmaStatsTest(PlasmaBaseTest):
         # Perform CRUD operations
         start = time.time()
         self.gen_create = None
+
+        th = list()
+        for node in self.cluster.index_nodes:
+            thread_name = node.ip + "_thread"
+            t = threading.Thread(target=self.kill_indexer, name=thread_name,
+                                 kwargs=dict(server=node,
+                                             timeout=500, kill_sleep_time=10))
+            t.start()
+            th.append(t)
+        first_indexes_map, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
+                                                                                              replica=self.index_replicas,
+                                                                                              defer=True,
+                                                                                              number_of_indexes_per_coll=self.index_count,
+                                                                                              field='body', sync=False)
+        for taskInstance in createIndexTasklist:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+
+
+        self.indexUtil.build_deferred_indexes(self.cluster, first_indexes_map)
+        self.assertTrue(self.polling_for_All_Indexer_to_Ready(first_indexes_map),
+                        "polling for deferred indexes failed")
+
+        for t in th:
+            self.stop_killIndexer = True
+            self.log.info("Stopping thread {}".format(t.name))
+            t.join()
+
         while time.time() - start < self.timer:
             self.create_start = total_items
             self.create_end = int((.2 * total_items) + total_items)
@@ -761,6 +779,188 @@ class PlasmaStatsTest(PlasmaBaseTest):
         # Delete all buckets
         self.bucket_util.delete_all_buckets(self.cluster)
 
+    def test_system_stability_with_different_indexer(self):
+        self.log.info("Cluster ops test")
+        stat_obj_list = self.create_Stats_Obj_list()
+        self.index_count = self.input.param("index_count", 1)
+        # Set indexer storage mode
+        for index_node in self.cluster.index_nodes:
+            self.indexer_rest = GsiHelper(index_node, self.log)
+            doc = {"indexer.plasma.backIndex.enablePageBloomFilter": True,
+                   "indexer.settings.enable_corrupt_index_backup": True,
+                   "indexer.settings.rebalance.redistribute_indexes": True,
+                   "indexer.plasma.backIndex.enableInMemoryCompression": True,
+                   "indexer.plasma.mainIndex.enableInMemoryCompression": True}
+            self.indexer_rest.set_index_settings_internal(doc)
+        self.resident_ratio = \
+            float(self.input.param("resident_ratio", .9))
+        first_indexes_map, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
+                                                                                              replica=self.index_replicas,
+                                                                                              defer=True,
+                                                                                              number_of_indexes_per_coll=self.index_count,
+                                                                                              field='body', sync=False)
+        for taskInstance in createIndexTasklist:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        self.indexUtil.build_deferred_indexes(self.cluster, first_indexes_map)
+        self.assertTrue(self.polling_for_All_Indexer_to_Ready(first_indexes_map),
+                        "polling for deferred indexes failed")
+        self.isAvg = self.input.param("isAvg", False)
+        total_items_added = self.load_item_till_dgm_reached(stat_obj_list, self.resident_ratio, self.create_end,
+                                                            self.items_add, self.isAvg)
+        self.init_items_per_collection = self.init_items_per_collection + total_items_added
+        self.log.debug("Added item count is {} and total item count is {}".format(total_items_added,
+                                                                                  self.init_items_per_collection))
+        # Modifying half of the documents
+        self.gen_create = None
+        self.upsert_start = 0
+        self.upsert_end = self.init_items_per_collection / 2
+        self.generate_subDocs(sub_doc_ops="upsert")
+        self.different_field = True
+        data_load_task = self.data_load()
+        self.log.debug("update from {} to {}".format(self.upsert_start, self.upsert_end))
+        self.wait_for_doc_load_completion(data_load_task)
+        second_indexes_map, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
+                                                                                               replica=self.index_replicas,
+                                                                                               defer=True,
+                                                                                               number_of_indexes_per_coll=2 * self.index_count,
+                                                                                               count=self.index_count,
+                                                                                               field='mod_body',
+                                                                                               sync=False)
+        for taskInstance in createIndexTasklist:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        self.indexUtil.build_deferred_indexes(self.cluster, second_indexes_map)
+        self.assertTrue(self.polling_for_All_Indexer_to_Ready(second_indexes_map, timeout=1800),
+                        "polling for deferred indexes failed")
+        mem_comp_compare_task = self.validate_index_data(second_indexes_map, self.upsert_end, 'mod_body',
+                                                         limit=self.query_limit)
+        for taskInstance in mem_comp_compare_task:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        self.kill_sleep_time = self.input.param("kill_sleep_time", 100)
+        th = list()
+        for node in self.cluster.index_nodes:
+            thread_name = node.ip + "_thread"
+            t = threading.Thread(target=self.kill_indexer, name=thread_name,
+                                 kwargs=dict(server=node,
+                                             timeout=500, kill_sleep_time=100))
+            t.start()
+            th.append(t)
+        # Perform CRUD operations
+        start = time.time()
+        self.gen_create = None
+        self.create_end = self.init_items_per_collection
+        start = time.time()
+        self.gen_create = None
+        delete_end = 0
+        while time.time() - start < self.timer:
+            self.create_start = self.init_items_per_collection
+            self.create_end = int((.2 * self.init_items_per_collection) + self.init_items_per_collection)
+            total_items = self.create_end
+            self.delete_start = delete_end
+            self.delete_end = int(delete_end + (.2 * self.init_items_per_collection))
+            delete_end = self.delete_end
+            self.update_start = int(delete_end + (.2 * self.init_items_per_collection))
+            self.update_end = int(delete_end + (.4 * self.init_items_per_collection))
+            self.log.debug(
+                "self.create is {} self.create_end is {} self.delete_start is {} self.delete_end is {} "
+                "self.update_start is {} self.update_end is {}".format(
+                    self.create_start, self.create_end, self.delete_start, self.delete_end, self.update_start,
+                    self.update_end))
+            end_refer = self.create_end
+            self.generate_docs(doc_ops="create:update:delete")
+            task = self.data_load()
+            self.wait_for_doc_load_completion(task)
+        total_items = int(self.create_end - self.delete_end)
+        self.check_negative_plasma_stats(stat_obj_list)
+        self.log.debug("Total items are {}".format(total_items))
+        for t in th:
+            self.stop_killIndexer = True
+            self.log.info("Stopping thread {}".format(t.name))
+            t.join()
+        second_indexes_map, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
+                                                                                               replica=self.index_replicas,
+                                                                                               defer=True,
+                                                                                               number_of_indexes_per_coll=2 * self.index_count,
+                                                                                               count=self.index_count,
+                                                                                               field='body', sync=False)
+        for taskInstance in createIndexTasklist:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        self.indexUtil.build_deferred_indexes(self.cluster, second_indexes_map)
+        self.assertTrue(self.polling_for_All_Indexer_to_Ready(second_indexes_map, timeout=1800),
+                        "polling for deferred indexes failed")
+        self.log.info("Creating index from last 2 buckets started")
+        new_bucket_list = self.cluster.buckets[-2:]
+        third_indexes_map, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
+                                                                                              new_bucket_list,
+                                                                                              replica=self.index_replicas,
+                                                                                              defer=False,
+                                                                                              number_of_indexes_per_coll=3 * self.index_count,
+                                                                                              count=2 * self.index_count,
+                                                                                              field='body', sync=True)
+        dropIndexTaskList, indexDict = self.indexUtil.async_drop_indexes(self.cluster, first_indexes_map,
+                                                                         buckets=new_bucket_list)
+        for taskInstance in createIndexTasklist:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        th = list()
+        counter = 0
+        for node in self.cluster.index_nodes:
+            thread_name = node.ip + "_Rebalance_thread_" + str(counter)
+            t = threading.Thread(target=self.kill_indexer, name=thread_name,
+                                 kwargs=dict(server=node,
+                                             timeout=500, kill_sleep_time=20))
+            t.start()
+            th.append(t)
+            counter += 1
+        self.log.info("Starting rebalance in and rebalance out task")
+        self.nodes_in = self.input.param("nodes_in", 2)
+        count = len(self.dcp_services) + self.nodes_init
+        nodes_in = self.cluster.servers[count:count + self.nodes_in]
+        services = ["index", "index"]
+        self.retry_get_process_num = self.input.param("retry_get_process_num", 40)
+        rebalance_in_task_result = self.task.rebalance([self.cluster.master],
+                                                       nodes_in,
+                                                       [],
+                                                       services=services)
+        indexer_nodes_list = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="index",
+                                                                           get_all_nodes=True)
+        self.assertTrue(rebalance_in_task_result, "Rebalance in task failed")
+        self.log.info("Rebalance in task completed, starting Rebalance-out task")
+        self.num_failed_nodes = self.input.param("num_failed_nodes", 1)
+        self.nodes_out = indexer_nodes_list[:self.num_failed_nodes]
+        rebalance_out_task_result = self.task.rebalance([self.cluster.master],
+                                                        [],
+                                                        to_remove=self.nodes_out)
+        self.assertTrue(rebalance_out_task_result, "Rebalance out task failed")
+        self.check_negative_plasma_stats(stat_obj_list)
+        for t in th:
+            self.stop_killIndexer = True
+            self.log.info("Stopping thread {}".format(t.name))
+            t.join()
+        for taskInstance in dropIndexTaskList:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        self.cluster.index_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="index",
+                                                                                 get_all_nodes=True)
+        self.cluster.query_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="n1ql",
+                                                                                 get_all_nodes=True)
+        first_query_tasks_info = self.indexUtil.run_full_scan(self.cluster, second_indexes_map, key='body',
+                                                              totalCount=80000, limit=self.query_limit)
+        second_query_tasks_info = self.indexUtil.run_full_scan(self.cluster, third_indexes_map, key='body',
+                                                               totalCount=80000, limit=self.query_limit)
+        alter_indexes_task_list = self.indexUtil.alter_indexes(self.cluster, second_indexes_map)
+        for taskInstance in alter_indexes_task_list:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        for taskInstance in first_query_tasks_info:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        for taskInstance in second_query_tasks_info:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        second_dropAllIndexTaskList, indexDict = self.indexUtil.async_drop_indexes(self.cluster, second_indexes_map)
+        third_dropAllIndexTaskList, indexDict = self.indexUtil.async_drop_indexes(self.cluster, third_indexes_map)
+        for taskInstance in second_dropAllIndexTaskList:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        for taskInstance in third_dropAllIndexTaskList:
+            self.task.jython_task_manager.get_task_result(taskInstance)
+        # Delete all buckets
+        self.bucket_util.delete_all_buckets(self.cluster)
+
     def test_system_stability_set_two(self):
         self.log.info("Cluster ops test")
         stat_obj_list = self.create_Stats_Obj_list()
@@ -785,6 +985,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
                                                                                               field='body', sync=False)
         for taskInstance in createIndexTasklist:
             self.task.jython_task_manager.get_task_result(taskInstance)
+
         self.indexUtil.build_deferred_indexes(self.cluster, first_indexes_map)
         self.assertTrue(self.polling_for_All_Indexer_to_Ready(first_indexes_map),
                         "polling for deferred indexes failed")
@@ -831,6 +1032,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
             task = self.data_load()
             self.wait_for_doc_load_completion(task)
         total_items = int(self.create_end - self.delete_end)
+        self.check_negative_plasma_stats(stat_obj_list)
         self.log.debug("Total items are {}".format(total_items))
         second_indexes_map, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
                                                                                                replica=self.index_replicas,
@@ -886,7 +1088,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
 
         for taskInstance in dropIndexTaskList:
             self.task.jython_task_manager.get_task_result(taskInstance)
-
+        self.check_negative_plasma_stats(stat_obj_list)
         for t in th:
             self.stop_killIndexer = True
             self.log.info("Stopping thread {}".format(t.name))
@@ -1024,7 +1226,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
         self.resident_ratio = \
             float(self.input.param("resident_ratio", .9))
 
-        field = 'body'
+        field = 'META().expiration'
         stat_obj_list = self.create_Stats_Obj_list()
         self.timer = self.input.param("timer", 600)
         indexMap, createIndexTasklist = self.indexUtil.create_gsi_on_each_collection(self.cluster,
@@ -1072,19 +1274,17 @@ class PlasmaStatsTest(PlasmaBaseTest):
             while not self.verify_bucket_count_with_index_count(indexMap, initial_count, field) and size_counter < 100:
                 self.sleep(100, "wait for items to get delete")
                 size_counter += 1
-            self.compare_plasma_stat_field_value(stat_obj_list, "lss_data_size", data_dict,
-                                                 ops='lesser', timeout=120)
-            self.compare_plasma_stat_field_value(stat_obj_list, "lss_disk_size", disk_dict,
-                                                 ops='lesser', timeout=120)
-            self.compare_plasma_stat_field_value(stat_obj_list, "lss_used_space", used_space_dict,
-                                                 ops='lesser', timeout=120)
-
-            # self.assertTrue(self.compare_plasma_stat_field_value(stat_obj_list, "lss_data_size", data_dict,
-            #                                                      ops='lesser',timeout=120), "data size is not going down")
-            # self.assertTrue(self.compare_plasma_stat_field_value(stat_obj_list, "lss_disk_size", disk_dict,
-            #                                                      ops='lesser',timeout=120), "disk size is not coming down")
-            # self.assertTrue(self.compare_plasma_stat_field_value(stat_obj_list, "lss_used_space", used_space_dict,
-            #                                                      ops='lesser',timeout=120), "used space is not coming down")
+            query_tasks_info = self.indexUtil.run_full_scan(self.cluster, indexMap, key=field,
+                                                            totalCount=self.expiry_end,
+                                                            limit=self.query_limit)
+            for taskInstance in query_tasks_info:
+                self.task.jython_task_manager.get_task_result(taskInstance)
+            self.assertTrue(self.compare_plasma_stat_field_value(stat_obj_list, "lss_data_size", data_dict,
+                                                                 ops='lesser',timeout=120), "data size is not going down")
+            self.assertTrue(self.compare_plasma_stat_field_value(stat_obj_list, "lss_disk_size", disk_dict,
+                                                                 ops='lesser',timeout=120), "disk size is not coming down")
+            self.assertTrue(self.compare_plasma_stat_field_value(stat_obj_list, "lss_used_space", used_space_dict,
+                                                                 ops='lesser',timeout=120), "used space is not coming down")
 
     def test_system_stability_with_ttl_dgm(self):
         self.log.info("Cluster ops system test")
@@ -1141,6 +1341,11 @@ class PlasmaStatsTest(PlasmaBaseTest):
             while not self.verify_bucket_count_with_index_count(indexMap, initial_count, field) and size_counter < 100:
                 self.sleep(100, "wait for items to get delete")
                 size_counter += 1
+            query_tasks_info = self.indexUtil.run_full_scan(self.cluster, indexMap, key='body',
+                                                            totalCount=self.expiry_end,
+                                                            limit=self.query_limit)
+            for taskInstance in query_tasks_info:
+                self.task.jython_task_manager.get_task_result(taskInstance)
             self.compare_plasma_stat_field_value(stat_obj_list, "lss_data_size", data_dict,
                                                  ops='lesser', timeout=120)
             self.compare_plasma_stat_field_value(stat_obj_list, "lss_disk_size", disk_dict,

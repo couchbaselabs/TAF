@@ -505,10 +505,12 @@ class UpgradeTests(UpgradeBase):
         """
         Loads data into buckets using the data spec
         """
+        self.over_ride_spec_params = self.input.param(
+            "override_spec_params", "").split(";")
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
             self.init_sdk_pool_object()
-
+        self.doc_spec_name = self.input.param("doc_spec", "initial_load")
         # Create clients in SDK client pool
         if self.sdk_client_pool:
             self.log.info("Creating required SDK clients for client_pool")
@@ -522,7 +524,7 @@ class UpgradeTests(UpgradeBase):
 
         if not doc_loading_spec:
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
-                self.input.param("doc_spec", "initial_load"))
+                self.doc_spec_name)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
         # MB-38438, adding CollectionNotFoundException in retry exception
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
@@ -538,7 +540,6 @@ class UpgradeTests(UpgradeBase):
                                                      self.cluster.buckets)
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
-        self.sdk_client_pool.shutdown()
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for over_ride_param in self.over_ride_spec_params:

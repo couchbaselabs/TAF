@@ -150,6 +150,9 @@ class UpgradeBase(BaseTestCase):
             self.num_items = async_load_task.doc_index
 
         self.bucket.scopes[CbServer.default_scope].collections[
+            CbServer.default_collection].doc_index = (0, self.num_items)
+
+        self.bucket.scopes[CbServer.default_scope].collections[
             CbServer.default_collection].num_items = self.num_items
 
         # Verify initial doc load count

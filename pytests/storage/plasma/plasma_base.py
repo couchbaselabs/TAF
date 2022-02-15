@@ -64,7 +64,7 @@ class PlasmaBaseTest(StorageBase):
                 return True
         return False
 
-    def kill_indexer(self, server, timeout=10):
+    def kill_indexer(self, server, timeout=10, kill_sleep_time=20):
         self.stop_killIndexer = False
         counter = 0
         while not self.stop_killIndexer:
@@ -77,7 +77,7 @@ class PlasmaBaseTest(StorageBase):
             self.log.info("Output value is:" + str(output))
             self.log.info("Counter value is {0} and max count is {1}".format(str(counter), str(timeout)))
             indexerkill_shell.disconnect()
-            self.sleep(20)
+            self.sleep(kill_sleep_time)
         self.log.info("Kill indexer process for node: {} completed".format(str(server.ip)))
 
     def polling_for_All_Indexer_to_Ready(self, indexes_to_build, buckets=None, timeout=600, sleep_time=10):
@@ -144,6 +144,24 @@ class PlasmaBaseTest(StorageBase):
                                                                                            field_value_map[index]))
         return field_value_map
 
+    def check_negative_plasma_stats(self, plasma_obj_dict):
+        for plasma_obj in plasma_obj_dict.values():
+            index_stat = plasma_obj.get_index_storage_stats()
+            for bucket in index_stat.keys():
+                for index in index_stat[bucket].keys():
+                    index_stat_map = index_stat[bucket][index]
+                    for key in index_stat_map["MainStore"].keys():
+                        self.log.debug("Key considered {}".format(key))
+                        if type(index_stat_map['MainStore'].get(key)) == int or type(
+                                index_stat_map['MainStore'].get(key)) == float and index_stat_map['MainStore'].get(
+                                key) < 0:
+                            self.fail("Negative field value for key {} in MainStore".format(key))
+                    for key in index_stat_map["BackStore"].keys():
+                        if type(index_stat_map['BackStore'].get(key)) == int or type(
+                                index_stat_map['BackStore'].get(key)) == float and index_stat_map['BackStore'].get(
+                                key) < 0:
+                            self.fail("Negative field value for key {} in BackStore".format(key))
+
     def find_mem_used_percent(self, index_stats_map):
         self.log.debug("memory total storage {}".format(index_stats_map['memory_total_storage']))
         self.log.debug("memory used storage {}".format(index_stats_map['memory_used_storage']))
@@ -159,7 +177,7 @@ class PlasmaBaseTest(StorageBase):
             stats_obj_dict[str(node.ip)] = stat_obj
         return stats_obj_dict
 
-    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='lesser', timeout=30, check_single_collection=False):
+    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='lesser', timeout=30, check_single_collection=False, sleep_time=10):
         isFound = True
         value = "{:.2f}".format(value)
         for count in range(timeout):
@@ -192,7 +210,7 @@ class PlasmaBaseTest(StorageBase):
             if isFound:
                 break
             else:
-                self.sleep(10, "waiting to settle down the plasma stat value")
+                self.sleep(sleep_time, "waiting to settle down the plasma stat value")
         return isFound
 
     def validate_plasma_stat_index_specific(self, stat_obj_list, field, index_list, field_value, ops='lesser', timeout=30):
@@ -469,20 +487,24 @@ class PlasmaBaseTest(StorageBase):
                 return True
         return False
 
-    def check_for_stat_field(self, stats_obj_list, field='resident_ratio', fieldValue=".80", ops='equalOrLessThan', avg=False):
+    def check_for_stat_field(self, stats_obj_list, field='resident_ratio', fieldValue=1.00, ops='equalOrLessThan', avg=False):
         if avg:
-            field_value_map = self.get_plasma_index_stat_value(field, stats_obj_list)
-            self.log.debug("size is:{}".format(len(field_value_map.values())))
-            avgValue = 0
-            for field_value in field_value_map.values():
-                avgValue = avgValue + field_value
-            avgValue = avgValue/len(field_value_map.values())
-            avgValue = "{:.2f}".format(avgValue)
             fieldValue = "{:.2f}".format(fieldValue)
-            return self.compareField(avgValue, fieldValue, ops)
+            for count in range(5):
+                field_value_map = self.get_plasma_index_stat_value(field, stats_obj_list)
+                self.log.debug("size is:{}".format(len(field_value_map.values())))
+                avgValue = 0
+                for field_value in field_value_map.values():
+                    avgValue = avgValue + field_value
+                avgValue = avgValue / len(field_value_map.values())
+                avgValue = "{:.2f}".format(avgValue)
+                if self.compareField(avgValue, fieldValue, ops):
+                    return True
+                else:
+                    self.sleep(200, "waiting for stat to settle down to check the resident ratio")
         else:
             return self.validate_plasma_stat_field_value(stats_obj_list, field, fieldValue,
-                                                  ops, check_single_collection=True)
+                                                         ops, timeout=2, check_single_collection=False, sleep_time=200)
 
     def load_item_till_dgm_reached(self, stats_obj_list, resident_ratio, start_item=0, items_add=30000, avg=False):
         initial_count = start_item
