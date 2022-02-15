@@ -490,6 +490,8 @@ class Murphy(BaseTestCase, OPD):
                            create_end=self.num_items*20,
                            update_start=self.num_items*2,
                            update_end=self.num_items*20,
+                           delete_start=0,
+                           delete_end=self.num_items*2,
                            expire_start=self.num_items*2,
                            expire_end=self.num_items*20
                            )
