@@ -462,7 +462,7 @@ class BaseTestCase(unittest.TestCase):
     def initialize_cluster(self, cluster_name, cluster, services=None,
                            services_mem_quota_percent=None):
         self.log.info("Initializing cluster : {0}".format(cluster_name))
-        self.cluster_util.reset_cluster(cluster)
+        self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
         if not services:
             master_services = self.cluster_util.get_services(
                 cluster.servers[:1], self.services_init, start_node=0)

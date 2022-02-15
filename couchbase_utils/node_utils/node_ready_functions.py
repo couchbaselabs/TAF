@@ -6,9 +6,10 @@ Created on Jan 10, 2022
 import os
 
 import Jython_tasks.task as jython_tasks
+from couchbase_cli import CouchbaseCLI
 from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
-from membase.api.rest_client import RestConnection
+from membase.api.rest_client import RestConnection, RestHelper
 from cb_tools.cb_cli import CbCli
 
 """
@@ -59,6 +60,22 @@ class NodeUtils(object):
             tasks.append(task)
         for task in tasks:
             self.jython_task_manager.get_task_result(task)
+
+    def reset_cluster_nodes(self, cluster_util, cluster, async_run=False):
+        tasks = list()
+        try:
+            for node in cluster.servers:
+                task = jython_tasks.FunctionCallTask(
+                    self.__reset_node, (cluster_util, cluster, node))
+                self.jython_task_manager.schedule(task)
+                tasks.append(task)
+        except Exception as ex:
+            self.log.critical(ex)
+
+        if not async_run:
+            for task in tasks:
+                self.jython_task_manager.get_task_result(task)
+        return tasks
 
     def async_enable_dp(self, server):
         task = jython_tasks.FunctionCallTask(self._enable_dp, [server])
@@ -164,9 +181,8 @@ class NodeUtils(object):
         shell_conn.disconnect()
 
     def _disable_tls(self, server):
-        RestConnection(server).update_autofailover_settings(False,
-                                                              120,
-                                                          False)
+        RestConnection(server).update_autofailover_settings(
+            False, 120, False)
         self.log.info("Disabling n2n encryption on cluster "
                       "with node {0}".format(server))
         shell_conn = RemoteMachineShellConnection(server)
@@ -177,13 +193,45 @@ class NodeUtils(object):
         self.log.info(o)
         shell_conn.disconnect()
 
-    def _get_trace(self,server, get_trace):
-        shell = \
-            RemoteMachineShellConnection(server)
-        output, _ = shell.execute_command(
-            "ps -aef|grep %s" % get_trace)
-        output = shell.execute_command(
-            "pstack %s"
-            % output[0].split()[1].strip())
+    def _get_trace(self, server, get_trace):
+        shell = RemoteMachineShellConnection(server)
+        output, _ = shell.execute_command("ps -aef|grep %s" % get_trace)
+        output = shell.execute_command("pstack %s"
+                                       % output[0].split()[1].strip())
         self.log.debug(output[0])
         shell.disconnect()
+
+    def __reset_node(self, cluster_util, cluster, node, crash_warning=False):
+        shell = RemoteMachineShellConnection(node)
+        rest = RestConnection(node)
+        try:
+            if '.com' in node.ip or ':' in node.ip:
+                _ = rest.update_autofailover_settings(False, 120, False)
+                cli = CouchbaseCLI(node, node.rest_username,
+                                   node.rest_password)
+                output, err, result = cli.set_address_family("ipv6")
+                if not result:
+                    raise Exception("Addr family was not changed to ipv6")
+                _ = rest.update_autofailover_settings(True, 120)
+            else:
+                # Start node
+                data_path = rest.get_data_path()
+                core_path = \
+                    str(rest.get_data_path()).split("data")[0] + "crash/"
+                if not os.path.isdir(core_path):
+                    core_path = "/opt/couchbase/var/lib/couchbase/crash/"
+
+                # Stop node
+                cluster_util.stop_server(cluster, node)
+                # Delete Path
+                shell.cleanup_data_config(data_path)
+                if not crash_warning:
+                    shell.cleanup_data_config(core_path)
+
+                cluster_util.start_server(cluster, node)
+                if not RestHelper(RestConnection(node)).is_ns_server_running():
+                    self.log.error("%s ns_server not running" % node.ip)
+        except Exception as e:
+            self.log.critical(e)
+        finally:
+            shell.disconnect()

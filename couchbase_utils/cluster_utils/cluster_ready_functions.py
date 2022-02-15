@@ -539,43 +539,6 @@ class ClusterUtils:
                 remote_client.disable_firewall()
                 remote_client.disconnect()
 
-    def reset_cluster(self, cluster, crash_warning=False):
-        try:
-            for node in cluster.servers:
-                shell = RemoteMachineShellConnection(node)
-                rest = RestConnection(node)
-                if '.com' in node.ip or ':' in node.ip:
-                    _ = rest.update_autofailover_settings(False, 120, False)
-                    cli = CouchbaseCLI(node, node.rest_username,
-                                       node.rest_password)
-                    output, err, result = cli.set_address_family("ipv6")
-                    if not result:
-                        raise Exception("Addr family was not changed to ipv6")
-                    _ = rest.update_autofailover_settings(True, 120)
-                else:
-                    # Start node
-                    data_path = rest.get_data_path()
-                    core_path = \
-                        str(rest.get_data_path()).split("data")[0] + "crash/"
-                    if not os.path.isdir(core_path):
-                        core_path = "/opt/couchbase/var/lib/couchbase/crash/"
-
-                    # Stop node
-                    self.stop_server(cluster, node)
-                    # Delete Path
-                    shell.cleanup_data_config(data_path)
-                    if not crash_warning:
-                        shell.cleanup_data_config(core_path)
-
-                    self.start_server(cluster, node)
-                    if not RestHelper(RestConnection(node)).is_ns_server_running():
-                        self.log.error("%s ns_server not running" % node.ip)
-                shell.disconnect()
-            # Wait after reset of cluster nodes
-            sleep(10)
-        except Exception as ex:
-            self.log.error(ex)
-
     def update_cluster_nodes_service_list(self, cluster):
         def append_nodes_to_list(nodes, list_to_append):
             for t_node in nodes:
