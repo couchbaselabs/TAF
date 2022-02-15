@@ -13,7 +13,7 @@ import com.couchbase.test.key.SimpleKey;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 import com.couchbase.test.val.SimpleValue;
-
+import com.couchbase.test.val.anySizeValue;
 import com.couchbase.test.docgen.DocRange;
 import com.couchbase.test.docgen.KVGenerator;
 import com.couchbase.test.docgen.WorkLoadSettings;
@@ -43,7 +43,11 @@ abstract class KVGenerator{
         else
             this.keyInstance = SimpleKey.class;
 
-        this.valInstance = SimpleValue.class;
+        if(valClass.equals(anySizeValue.class.getSimpleName()))
+            this.valInstance = anySizeValue.class;
+        else
+            this.valInstance = SimpleValue.class;
+
         try {
             this.keys = keyInstance.getConstructor(WorkLoadSettings.class).newInstance(ws);
             this.vals = valInstance.getConstructor(WorkLoadSettings.class).newInstance(ws);

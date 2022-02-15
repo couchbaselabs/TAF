@@ -161,6 +161,15 @@ public class DocType {
         @JsonCreator
         public
         Person(
+                @JsonProperty("mutated") int mutated,
+                @JsonProperty("body") String body) {
+            this.mutated = mutated;
+            this.body = body;
+        }
+
+        @JsonCreator
+        public
+        Person(
                 @JsonProperty("name") String name,
                 @JsonProperty("age") int age,
                 @JsonProperty("animals") List<String> animals,

@@ -168,7 +168,7 @@ class OPD:
             elif error_condition == "enable_firewall":
                 self.cluster_util.stop_firewall_on_node(node)
 
-        for node in self.cluster.kv_nodes + self.cluster.master:
+        for node in self.cluster.kv_nodes + [self.cluster.master]:
             self.check_warmup_complete(node)
             result = self.cluster_util.wait_for_ns_servers_or_assert([node],
                                                                      wait_time=1200)
@@ -410,7 +410,7 @@ class OPD:
                                DRConstants.read_e: self.read_end})
                     dr = DocRange(hm)
                     ws.dr = dr
-                    dg = DocumentGenerator(ws, self.key_type, None)
+                    dg = DocumentGenerator(ws, self.key_type, self.val_type)
                     self.loader_map.update({bucket.name+scope+collection: dg})
 
     def wait_for_doc_load_completion(self, tasks, wait_for_stats=True):
@@ -507,7 +507,7 @@ class OPD:
                                                   cmd.get("deleted", False),
                                                   cmd.get("mutated", 0))
                             ws.dr = dr
-                            dg = DocumentGenerator(ws, self.key_type, None)
+                            dg = DocumentGenerator(ws, self.key_type, self.val_type)
                             self.loader_map.update({bucket.name+scope+collection+op_type: dg})
 
             tasks = list()
