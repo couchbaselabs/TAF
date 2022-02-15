@@ -114,6 +114,16 @@ class Murphy(BaseTestCase, OPD):
             self.PrintStep("Step 1*: Create a %s node XDCR remote cluster" % self.xdcr_remote_nodes)
             self.xdcr_remote_cluster = CBCluster(name="remote", servers=remote_nodes,
                                                  vbuckets=self.vbuckets)
+            self._initialize_nodes(self.task,
+                                   self.xdcr_remote_cluster,
+                                   self.disabled_consistent_view,
+                                   self.rebalanceIndexWaitingDisabled,
+                                   self.rebalanceIndexPausingDisabled,
+                                   self.maxParallelIndexers,
+                                   self.maxParallelReplicaIndexers,
+                                   self.port,
+                                   self.quota_percent)
+
             self.task.rebalance([self.xdcr_remote_cluster.master], remote_nodes[1:], [])
             self.xdcr_remote_cluster.nodes_in_cluster.extend(remote_nodes)
         #######################################################################
