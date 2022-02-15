@@ -1171,8 +1171,7 @@ class StorageBase(BaseTestCase):
             rest.diag_eval(cmd)
 
         # Restart Memcached in all cluster nodes to reflect the settings
-        for server in self.cluster_util.get_kv_nodes(self.cluster,
-                                                     master=node):
+        for server in self.cluster_util.get_kv_nodes(self.cluster):
             shell = RemoteMachineShellConnection(server)
             shell.restart_couchbase()
             shell.disconnect()
