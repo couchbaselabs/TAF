@@ -840,17 +840,17 @@ class OPD:
         if not servers:
             servers = self.cluster.kv_nodes + [self.cluster.master]
 
-        for _ in xrange(num_kills):
-            self.sleep(5, "Sleep for 5 seconds between continuous memc kill")
-            for server in servers:
+        for server in servers:
+            for _ in xrange(num_kills):
+                if num_kills > 1:
+                    self.sleep(2, "Sleep for 2 seconds b/w cont memc kill on same node.")
                 shell = RemoteMachineShellConnection(server)
-
                 if graceful:
                     shell.restart_couchbase()
                 else:
                     shell.kill_memcached()
-
                 shell.disconnect()
+            self.sleep(5, "Sleep for 5 seconds before killing memc on next node.")
 
         result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if result:
