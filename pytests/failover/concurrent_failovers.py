@@ -470,6 +470,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Final rebalance failed")
 
+        # Validate count is reset back to 0 after rebalance operation
+        self.validate_failover_settings(True, self.timeout, 0, self.max_count)
+
         # Perform collection crud + doc_ops
         if load_data_after_fo:
             self.__perform_doc_ops()
