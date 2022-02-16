@@ -358,18 +358,20 @@ class Cbstats(CbCmdBase):
                 result[match_result.group(1)] = match_result.group(2)
         return result
 
-    def checkpoint_stats(self, bucket_name):
+    def checkpoint_stats(self, bucket_name, vb_num=None):
         """
         Fetches checkpoint stats for the given bucket_name
 
         :param bucket_name: Bucket name to fetch the stats for
+        :param vb_num:      Target vbucket number to fetch the stats for
         :return result: Dictionary map of vb_num as inner dict
 
         Raise:
         :Exception returned from the command line execution (if any)
         """
         result = dict()
-        output, error = self.get_stats(bucket_name, "checkpoint")
+        stat = "checkpoint %s" % vb_num if vb_num is not None else "checkpoint"
+        output, error = self.get_stats(bucket_name, stat)
         if len(error) != 0:
             raise Exception("\n".join(error))
 
