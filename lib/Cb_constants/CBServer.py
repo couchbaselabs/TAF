@@ -8,6 +8,14 @@ class CbServer(object):
         EVENTING = "eventing"
         BACKUP = "backup"
 
+        @classmethod
+        def services_require_memory(cls):
+            return [CbServer.Services.KV,
+                    CbServer.Services.INDEX,
+                    CbServer.Services.CBAS,
+                    CbServer.Services.FTS,
+                    CbServer.Services.EVENTING]
+
     class Settings(object):
         KV_MEM_QUOTA = "memoryQuota"
         INDEX_MEM_QUOTA = "indexMemoryQuota"

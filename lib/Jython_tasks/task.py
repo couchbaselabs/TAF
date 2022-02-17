@@ -6174,9 +6174,18 @@ class NodeInitializeTask(Task):
             self.total_memory = int(self.total_memory * self.quota_percent
                                     / 100)
 
-        if (self.services is None or len(self.services) < 2) and \
-                CbServer.Services.KV not in self.services_mem_quota_percent:
-            # If no quota defined, given 100% to Data service
+        override_kv_mem = True \
+            if CbServer.Services.KV not in self.services_mem_quota_percent \
+            else False
+
+        if override_kv_mem and self.services and len(self.services) > 1:
+            services_req_mem = CbServer.Services.services_require_memory()
+            for service in self.services:
+                if service in services_req_mem:
+                    override_kv_mem = False
+                    break
+
+        if override_kv_mem:
             self.services_mem_quota_percent[CbServer.Services.KV] = 100
 
         service_quota[CbServer.Settings.KV_MEM_QUOTA] = \
