@@ -217,39 +217,41 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.cluster.eventing_nodes)
         node_count[CbServer.Services.BACKUP] = len(self.cluster.backup_nodes)
 
+        kv_nodes = dict()
+        non_kv_nodes = dict()
         for node, failure_type in self.nodes_to_fail.items():
-            node_fo_possible = False
+            if CbServer.Services.KV in node.services:
+                kv_nodes[node] = failure_type
+            else:
+                non_kv_nodes[node] = failure_type
+
+        for node, failure_type in kv_nodes.items():
             if CbServer.Services.KV in node.services:
                 # KV takes priority over other nodes in deciding the Auto-FO
                 if is_safe_to_fo(CbServer.Services.KV):
-                    node_fo_possible = True
+                    fo_nodes.append(node)
+                    for service_type in node.services:
+                        # Decrement the node count for the service
+                        decr_node_count(service_type)
                 else:
                     self.log.warning("KV failover not possible")
                     # No nodes should be FO'ed if KV FO is not possible
                     fo_nodes = list()
                     break
-            else:
+        else:
+            for node, failure_type in non_kv_nodes.items():
                 # For other nodes, we need to check if the node running
                 # other services are also safe to failover
                 for service_type in node.services:
                     if not is_safe_to_fo(service_type):
                         self.log.warning("Service '%s' not safe to failover"
                                          % service_type)
-                        fo_not_possible_for_service = service_type
                         break
                 else:
-                    node_fo_possible = True
-
-            if node_fo_possible:
-                fo_nodes.append(node)
-                for service_type in node.services:
-                    # Decrement the node count for the service
-                    decr_node_count(service_type)
-            else:
-                for t_node in fo_nodes:
-                    if fo_not_possible_for_service in t_node.services \
-                            and CbServer.Services.KV not in t_node.services:
-                        fo_nodes.remove(t_node)
+                    fo_nodes.append(node)
+                    for service_type in node.services:
+                        # Decrement the node count for the service
+                        decr_node_count(service_type)
 
         expected_num_nodes = len(fo_nodes)
         self.log.info("Expected nodes to be failed over: %d"
