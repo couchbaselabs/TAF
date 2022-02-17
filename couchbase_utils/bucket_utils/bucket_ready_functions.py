@@ -2363,21 +2363,14 @@ class BucketUtils(ScopeUtils):
 
         # Create connection to master node for verifying cbstats
         stat_cmd = "all"
-        shell_conn_list1 = list()
-        shell_conn_list2 = list()
-        for cluster_node in servers:
-            shell_conn_list1.append(
-                RemoteMachineShellConnection(cluster_node))
-            shell_conn_list2.append(
-                RemoteMachineShellConnection(cluster_node))
 
         # Create Tasks to verify total items/replica count in the bucket
         stats_tasks.append(self.task.async_wait_for_stats(
-            shell_conn_list1, bucket, stat_cmd,
+            servers, bucket, stat_cmd,
             'vb_replica_curr_items', '==', items * available_replicas,
             timeout=timeout))
         stats_tasks.append(self.task.async_wait_for_stats(
-            shell_conn_list2, bucket, stat_cmd,
+            servers, bucket, stat_cmd,
             'curr_items_tot', '==', items * (available_replicas + 1),
             timeout=timeout))
         try:
@@ -2390,9 +2383,6 @@ class BucketUtils(ScopeUtils):
             self.log.error("Unable to get expected stats from the "
                            "selected node")
 
-        for remote_conn in shell_conn_list1 + shell_conn_list2:
-            remote_conn.disconnect()
-
     def verify_stats_all_buckets(self, cluster, items, timeout=1200, num_zone=1):
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(cluster),
@@ -2401,7 +2391,7 @@ class BucketUtils(ScopeUtils):
         for bucket in cluster.buckets:
             self.verify_stats_for_bucket(cluster, bucket, items,
                                          timeout=timeout, num_zone=num_zone)
-            # Validate seq_no snap_start/stop values with initial load
+            #Validate seq_no snap_start/stop values with initial load
             result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
             self.assertTrue(result,
                             "snap_start and snap_end corruption found!!!")
@@ -2430,15 +2420,12 @@ class BucketUtils(ScopeUtils):
             for server, stat_value in stat_map.items():
                 if bucket.bucketType == 'memcached':
                     continue
-                shell_conn = RemoteMachineShellConnection(server)
                 tasks.append(self.task.async_wait_for_stats(
-                    [shell_conn], bucket, cbstat_cmd,
+                    [server], bucket, cbstat_cmd,
                     stat_name, stat_cond, stat_value,
                     timeout=timeout))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-            for shell in task.shellConnList:
-                shell.disconnect()
 
     def _wait_for_stats_all_buckets(self, cluster, buckets, expected_val=0,
                                     comparison_condition='==',
@@ -2466,20 +2453,17 @@ class BucketUtils(ScopeUtils):
                     continue
                 if check_ep_items_remaining:
                     dcp_cmd = "dcp"
-                    shell_conn = RemoteMachineShellConnection(server)
                     tasks.append(self.task.async_wait_for_stats(
-                        [shell_conn], bucket, dcp_cmd,
+                        [server], bucket, dcp_cmd,
                         'ep_dcp_items_remaining', "==", 0,
                         timeout=timeout))
-                shell_conn = RemoteMachineShellConnection(server)
                 tasks.append(self.task.async_wait_for_stats(
-                    [shell_conn], bucket, cbstat_cmd,
+                    [server], bucket, cbstat_cmd,
                     stat_name, comparison_condition, expected_val,
                     timeout=timeout))
+                time.sleep(1)
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-            for shell in task.shellConnList:
-                shell.disconnect()
 
     def validate_active_replica_item_count(self, cluster, bucket, timeout=300):
         end_time = time.time() + timeout
@@ -4064,13 +4048,11 @@ class BucketUtils(ScopeUtils):
                 for node in nodes[group]:
                     for server in servers:
                         if server.ip == node:
-                            shell = RemoteMachineShellConnection(server)
-                            cbstat = Cbstats(shell)
+                            cbstat = Cbstats(server)
                             vb_active_list.extend(cbstat.vbucket_list(bucket,
                                                                       "active"))
                             vb_replica_list.extend(cbstat.vbucket_list(bucket,
                                                                        "replica"))
-                            shell.disconnect()
                             break
                 if set(vb_active_list).isdisjoint(set(vb_replica_list)):
                     self.log.debug("Active and replica vbucket list"
@@ -4090,8 +4072,7 @@ class BucketUtils(ScopeUtils):
         all_server_stats = []
         stats_received = True
         nodes = rest.get_nodes()
-        shell = RemoteMachineShellConnection(master)
-        cbstat = Cbstats(shell)
+        cbstat = Cbstats(master)
         bucket_helper = BucketHelper(master)
         active_vbucket_differ_count = len(rest.get_nodes())
         for server in nodes:
@@ -4106,10 +4087,8 @@ class BucketUtils(ScopeUtils):
         if not stats_received:
             raise StatsUnavailableException()
         sum = 0
-        max_vbuckets, error = cbstat.get_stats(bucket.name, "all",
-                                               "ep_max_vbuckets")
-        if len(error) != 0:
-            raise Exception("\n".join(error))
+        max_vbuckets = int(cbstat.get_stats_memc(bucket.name, "all",
+                                                 "ep_max_vbuckets"))
         master_stats = bucket_helper.get_bucket_stats(bucket)
         if "vb_active_num" in master_stats:
             self.log.debug('vb_active_num from master: {0}'
@@ -4117,7 +4096,6 @@ class BucketUtils(ScopeUtils):
         else:
             raise Exception("Bucket {0} stats doesnt contain 'vb_active_num':"
                             .format(bucket))
-        shell.disconnect()
         for server, single_stats in all_server_stats:
             if not single_stats or "curr_items" not in single_stats:
                 continue
@@ -4167,17 +4145,14 @@ class BucketUtils(ScopeUtils):
             num_nodes = len(nodes)
         if replica_factor >= num_nodes:
             self.log.warn("Number of zones/nodes is less than replica requires")
-            expected_replica_vbucket = (int(max_vbuckets[0].split(':')[1]) *
-                                        (num_nodes - 1))
+            expected_replica_vbucket = max_vbuckets * (num_nodes - 1)
             delta = (sum * num_nodes) - master_stats["curr_items_tot"]
         else:
-            expected_replica_vbucket = (int(max_vbuckets[0].split(':')[1]) *
-                                        replica_factor)
+            expected_replica_vbucket = (max_vbuckets * replica_factor)
             delta = sum * (replica_factor + 1) - master_stats["curr_items_tot"]
-        if vbucket_active_sum != int(max_vbuckets[0].split(':')[1]):
+        if vbucket_active_sum != max_vbuckets:
             raise Exception("vbucket_active_sum actual {0} and expected {1}"
-                            .format(vbucket_active_sum,
-                                    int(max_vbuckets[0].split(':')[1])))
+                            .format(vbucket_active_sum, max_vbuckets))
         elif vbucket_replica_sum != expected_replica_vbucket:
             raise Exception("vbucket_replica_sum actual {0} and expected {1}"
                             .format(vbucket_replica_sum, expected_replica_vbucket))
@@ -4216,8 +4191,7 @@ class BucketUtils(ScopeUtils):
         for server in servers:
             # Cbstats implementation to wait for bucket warmup
             warmed_up = False
-            shell = RemoteMachineShellConnection(server)
-            cbstat_obj = Cbstats(shell)
+            cbstat_obj = Cbstats(server)
             while time.time() - start < wait_time:
                 try:
                     result = cbstat_obj.all_stats(bucket.name)
@@ -4228,7 +4202,6 @@ class BucketUtils(ScopeUtils):
                     self.log.warning("Exception during cbstat all cmd: %s" % e)
                 sleep(2, "Warm-up not complete for %s on %s" % (bucket.name,
                                                                 server.ip))
-            shell.disconnect()
 
         return warmed_up
 
@@ -4695,8 +4668,7 @@ class BucketUtils(ScopeUtils):
 
         # Create required cb_stat objects
         for node in self.cluster_util.get_kv_nodes(cluster):
-            shell = RemoteMachineShellConnection(node)
-            cb_stat_objects.append(Cbstats(shell))
+            cb_stat_objects.append(Cbstats(node))
 
         for cb_stat in cb_stat_objects:
             tem_collection_data = cb_stat.get_collections(bucket)
@@ -4709,9 +4681,6 @@ class BucketUtils(ScopeUtils):
                             collection_data[key][col_name]['items'] \
                                 += c_data['items']
 
-        # Disconnect all created shell connections
-        for cb_stat in cb_stat_objects:
-            cb_stat.shellConn.disconnect()
         return collection_data
 
     def validate_doc_count_as_per_collections(self, cluster, bucket):
@@ -4729,22 +4698,19 @@ class BucketUtils(ScopeUtils):
 
         # Create required cb_stat objects
         for node in self.cluster_util.get_kv_nodes(cluster):
-            cb_stat_objects.append(Cbstats(RemoteMachineShellConnection(node)))
+            cb_stat_objects.append(Cbstats(node))
 
         # Validate scope-collection hierarchy with doc_count
         status = self.validate_bucket_collection_hierarchy(bucket,
                                                            cb_stat_objects,
                                                            collection_data)
 
-        # Disconnect all created shell connections
-        for cb_stat in cb_stat_objects:
-            cb_stat.shellConn.disconnect()
-
         # Raise exception if the status is 'False'
         if not status:
             raise Exception("Collections stat validation failed")
 
-    def validate_docs_per_collections_all_buckets(self, cluster, timeout=1200, num_zone=1):
+    def validate_docs_per_collections_all_buckets(self, cluster, timeout=1200,
+                                                  num_zone=1):
         self.log.info("Validating collection stats and item counts")
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(cluster),

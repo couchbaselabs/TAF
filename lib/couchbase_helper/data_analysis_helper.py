@@ -565,8 +565,7 @@ class DataCollector(object):
             dataMap = dict()
             for server in servers:
                 map_data = dict()
-                shell = RemoteMachineShellConnection(server)
-                cbstat = Cbstats(shell)
+                cbstat = Cbstats(server)
 
                 if collect_vbucket:
                     result = dict()
@@ -596,7 +595,6 @@ class DataCollector(object):
                     dataMap[server.ip] = map_data
                 else:
                     dataMap.update(map_data)
-                shell.disconnect()
             bucketMap[bucket.name] = dataMap
         return bucketMap
 
@@ -622,8 +620,7 @@ class DataCollector(object):
             for server in servers:
                 #client = MemcachedClientHelper.direct_client(server, bucket)
                 #stats = client.stats('failovers')
-                shell = RemoteMachineShellConnection(server)
-                cbstat = Cbstats(shell)
+                cbstat = Cbstats(server)
                 stats = cbstat.failover_stats(bucket)
                 map_data = {}
                 num_map ={}
@@ -696,8 +693,7 @@ class DataCollector(object):
             for server in servers:
                 #client = MemcachedClientHelper.direct_client(server, bucket)
                 #stats = client.stats('')
-                shell = RemoteMachineShellConnection(server)
-                cbstat = Cbstats(shell)
+                cbstat = Cbstats(server)
                 stats = cbstat.vbucket_list(bucket)
                 active_map_data[server.ip] = len(stats)
                 stats = cbstat.vbucket_list(bucket,vbucket_type="replica")
@@ -737,9 +733,8 @@ class DataCollector(object):
             for server in servers:
                 # client = MemcachedClientHelper.direct_client(server, bucket)
                 # stats = client.stats('dcp')
-                shell = RemoteMachineShellConnection(server)
-                cbstat = Cbstats(shell)
-                stats = cbstat.dcp_stats(bucket)
+                cbstat = Cbstats(server)
+                stats = cbstat.dcp_stats(bucket.name)
                 for key in stats.keys():
                     do_filter = False
                     if stat_name in key:

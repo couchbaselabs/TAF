@@ -1,8 +1,9 @@
 '''
-Created on 15-Apr-2021
+Created on May 2, 2022
 
-@author: riteshagarwal
+@author: ritesh.agarwal
 '''
+
 from basetestcase import BaseTestCase
 from remote.remote_util import RemoteMachineShellConnection
 from Cb_constants.CBServer import CbServer
@@ -18,6 +19,8 @@ import threading
 import random
 from aGoodDoctor.bkrs import DoctorBKRS
 import os
+from BucketLib.bucket import Bucket
+from capella.internal_api import capella_utils as CapellaAPI
 
 
 class Murphy(BaseTestCase, OPD):
@@ -67,7 +70,6 @@ class Murphy(BaseTestCase, OPD):
         self.rest = RestConnection(self.servers[0])
         self.op_type = self.input.param("op_type", "create")
         self.dgm = self.input.param("dgm", None)
-        self.available_servers = self.cluster.servers[self.nodes_init:]
         self.num_buckets = self.input.param("num_buckets", 1)
         self.mutate = 0
         self.iterations = self.input.param("iterations", 10)
@@ -92,137 +94,63 @@ class Murphy(BaseTestCase, OPD):
             "cursor_dropping_checkpoint", None)
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
                                                        True)
-        #######################################################################
-        self.capella_run = self.input.param("capella_run", False)
-        self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
-        if self.nodes_init > 1:
-            nodes_init = self.cluster.servers[1:self.nodes_init]
-            if not self.capella_run:
-                self.task.rebalance([self.cluster.master], nodes_init, [])
-            self.cluster.nodes_in_cluster.extend(
-                [self.cluster.master] + nodes_init)
-        else:
-            self.cluster.nodes_in_cluster.extend([self.cluster.master])
-        self.available_servers = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
-        self.cluster.kv_nodes = self.cluster.nodes_in_cluster[:]
-        self.cluster.kv_nodes.remove(self.cluster.master)
-        self.cluster_util.set_metadata_purge_interval(self.cluster.master,
-                                                      interval=self.bucket_purge_interval)
-        if self.xdcr_remote_nodes > 0:
-            self.assertTrue(self.xdcr_remote_nodes <= len(self.available_servers),
-                            "Only {0} nodes available, cannot create XDCR remote with {1} nodes".format(
-                                len(self.available_servers), self.xdcr_remote_nodes))
-            remote_nodes = self.available_servers[0:self.xdcr_remote_nodes]
-            self.available_servers = self.available_servers[self.xdcr_remote_nodes:]
-            self.PrintStep("Step 1*: Create a %s node XDCR remote cluster" % self.xdcr_remote_nodes)
-            self.xdcr_remote_cluster = CBCluster(name="remote", servers=remote_nodes,
-                                                 vbuckets=self.vbuckets)
-            self._initialize_nodes(self.task,
-                                   self.xdcr_remote_cluster,
-                                   self.disabled_consistent_view,
-                                   self.rebalanceIndexWaitingDisabled,
-                                   self.rebalanceIndexPausingDisabled,
-                                   self.maxParallelIndexers,
-                                   self.maxParallelReplicaIndexers,
-                                   self.port,
-                                   self.quota_percent)
 
-            self.task.rebalance([self.xdcr_remote_cluster.master], remote_nodes[1:], [])
-            self.xdcr_remote_cluster.nodes_in_cluster.extend(remote_nodes)
+        if self.xdcr_remote_nodes > 0:
+            pass
         #######################################################################
         self.PrintStep("Step 2: Create required buckets and collections.")
-        if self.num_buckets > 10:
-            self.bucket_util.change_max_buckets(self.cluster.master,
-                                                self.num_buckets)
-        self.create_required_buckets(self.cluster)
+        self.log.info("Create CB buckets")
+        # Create Buckets
+        self.log.info("Get the available memory quota")
+        rest = RestConnection(self.cluster.master)
+        self.info = rest.get_nodes_self()
+
+        # threshold_memory_vagrant = 100
+        kv_memory = self.info.memoryQuota - 100
+        ramQuota = self.input.param("ramQuota", kv_memory)
+        buckets = ["default"]*self.num_buckets
+        bucket_type = self.bucket_type.split(';')*self.num_buckets
+        for i in range(self.num_buckets):
+            bucket = Bucket(
+                {Bucket.name: buckets[i] + str(i),
+                 Bucket.ramQuotaMB: ramQuota/self.num_buckets,
+                 Bucket.maxTTL: self.bucket_ttl,
+                 Bucket.replicaNumber: self.num_replicas,
+                 Bucket.storageBackend: self.bucket_storage,
+                 Bucket.evictionPolicy: self.bucket_eviction_policy,
+                 Bucket.bucketType: bucket_type[i],
+                 Bucket.durabilityMinLevel: self.bucket_durability_level,
+                 Bucket.flushEnabled: True,
+                 Bucket.fragmentationPercentage: self.fragmentation})
+            self.bucket_params = {
+                "name": bucket.name,
+                "bucketConflictResolution": "seqno",
+                "memoryAllocationInMb": bucket.ramQuotaMB,
+                "flush": bucket.flushEnabled,
+                "replicas": bucket.replicaNumber,
+                "durabilityLevel": bucket.durability_level,
+                "timeToLive": {"unit": "seconds", "value": bucket.maxTTL}
+                }
+            CapellaAPI.create_bucket(self.pod, self.tenant, self.cluster, self.bucket_params)
+            self.cluster.buckets.append(bucket)
+
+        self.buckets = self.cluster.buckets
         self.create_required_collections(self.cluster, self.num_scopes, self.num_collections)
         if self.xdcr_remote_nodes > 0:
-            self.PrintStep("Step 2*: Create required buckets and collections on XDCR remote.")
-            self.create_required_buckets(cluster=self.xdcr_remote_cluster)
-            # Increase number of collections to increase number of replicated docs
-            self.create_required_collections(self.xdcr_remote_cluster, self.xdcr_scopes, self.xdcr_collections)
-            self.drXDCR = DoctorXDCR(self.cluster, self.xdcr_remote_cluster)
+            pass
 
-        self.rest = RestConnection(self.cluster.master)
-        self.af_timeout = self.input.param("af_timeout", 600)
-        self.af_enable = self.input.param("af_enable", False)
-        self.assertTrue(
-            self.rest.update_autofailover_settings(self.af_enable,
-                                                   self.af_timeout),
-            "AutoFailover disabling failed")
-        self.max_commit_points = self.input.param("max_commit_points", None)
-        props = "magma"
-
-        if self.max_commit_points is not None:
-            props += ";magma_max_checkpoints={}".format(self.max_commit_points)
-            self.log.debug("props== {}".format(props))
-            self.bucket_util.update_bucket_props(
-                    "backend", props,
-                    self.cluster, self.cluster.buckets)
-
-        server = self.rest.get_nodes_self()
-        if self.cbas_nodes>0:
-            self.rest.set_service_mem_quota({CbServer.Settings.CBAS_MEM_QUOTA:
-                                             int(server.mcdMemoryReserved - 100
-                                                 )})
-            nodes = len(self.cluster.nodes_in_cluster)
-            self.task.rebalance(self.cluster.nodes_in_cluster,
-                                self.servers[nodes:nodes+self.cbas_nodes], [],
-                                services=["cbas"]*self.cbas_nodes)
-            self.cluster.cbas_nodes = self.servers[nodes:nodes+self.cbas_nodes]
-            self.cluster.nodes_in_cluster.extend(self.cluster.cbas_nodes)
+        if self.cluster.cbas_nodes:
             self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util,
                                      self.num_indexes)
-            self.available_servers = [servs for servs in self.available_servers
-                                      if servs not in self.cluster.cbas_nodes]
 
-        if self.backup_nodes:
-            nodes = len(self.cluster.nodes_in_cluster)
-            self.task.rebalance(self.cluster.nodes_in_cluster,
-                                self.servers[nodes:nodes+self.backup_nodes], [],
-                                services=["backup"]*self.backup_nodes)
-            self.cluster.backup_nodes = self.servers[nodes:nodes+self.backup_nodes]
-            self.cluster.nodes_in_cluster.extend(self.cluster.backup_nodes)
+        if self.cluster.backup_nodes:
             self.drBackup = DoctorBKRS(self.cluster)
 
-        if self.index_nodes>0:
-            self.rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA:
-                                             int(server.mcdMemoryReserved - 100
-                                                 )})
-            nodes = len(self.cluster.nodes_in_cluster)
-            self.task.rebalance(self.cluster.nodes_in_cluster,
-                                self.servers[nodes:nodes+self.index_nodes], [],
-                                services=["index,n1ql"]*self.index_nodes)
-            self.cluster.index_nodes = self.servers[nodes:nodes+self.index_nodes]
-            self.cluster.query_nodes = self.servers[nodes:nodes+self.index_nodes]
-            self.cluster.nodes_in_cluster.extend(self.cluster.index_nodes)
+        if self.cluster.index_nodes:
             self.drIndex = DoctorN1QL(self.cluster, self.bucket_util,
-                                             self.num_indexes)
-            self.available_servers = [servs for servs in self.available_servers
-                                      if servs not in self.cluster.index_nodes]
-
-        if self.fts_nodes>0:
-            self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
-                                             int(server.mcdMemoryReserved - 100
-                                                 )})
-            nodes = len(self.cluster.nodes_in_cluster)
-            self.task.rebalance(self.cluster.nodes_in_cluster,
-                                self.servers[nodes:nodes+self.fts_nodes], [],
-                                services=["fts"]*self.fts_nodes)
-            self.cluster.fts_nodes = self.servers[nodes:nodes+self.fts_nodes]
-            self.cluster.nodes_in_cluster.extend(self.cluster.fts_nodes)
+                                      self.num_indexes)
+        if self.cluster.fts_nodes:
             self.fts_util = FTSUtils(self.cluster, self.cluster_util, self.task)
-            self.available_servers = [servs for servs in self.available_servers
-                                      if servs not in self.cluster.fts_nodes]
-
-        print self.available_servers
-        self.writer_threads = self.input.param("writer_threads", "disk_io_optimized")
-        self.reader_threads = self.input.param("reader_threads", "disk_io_optimized")
-        self.storage_threads = self.input.param("storage_threads", 40)
-        self.set_num_writer_and_reader_threads(
-                num_writer_threads=self.writer_threads,
-                num_reader_threads=self.reader_threads,
-                num_storage_threads=self.storage_threads)
 
     def tearDown(self):
         self.check_dump_thread = False
@@ -245,11 +173,11 @@ class Murphy(BaseTestCase, OPD):
                            create_end=self.num_items*2)
         self.perform_load(validate_data=False)
 
-        if self.cbas_nodes:
+        if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets()
             self.drCBAS.start_query_load()
 
-        if self.index_nodes:
+        if self.cluster.index_nodes:
             self.drIndex.create_indexes()
             self.drIndex.build_indexes()
             self.drIndex.wait_for_indexes_online(self.log, self.drIndex.indexes)
@@ -344,7 +272,7 @@ class Murphy(BaseTestCase, OPD):
 #         self.stop_stats = False
 #         stat_th.join()
 
-        if self.cbas_nodes:
+        if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets()
             self.drCBAS.start_query_load()
 
@@ -381,7 +309,7 @@ class Murphy(BaseTestCase, OPD):
                 self.rebl_nodes = 1
             for service in self.rebl_services:
                 ###################################################################
-                self.PrintStep("Step 4.{}: Rebalance IN with Loading of docs".
+                self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
                                format(self.loop))
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
                                                 nodes_out=0,
@@ -393,7 +321,7 @@ class Murphy(BaseTestCase, OPD):
                 self.print_stats()
                 self.sleep(10, "Sleep for 60s after rebalance")
 
-                self.PrintStep("Step 5.{}: Rebalance OUT with Loading of docs".
+                self.PrintStep("Step 5.{}: Scale OUT with Loading of docs".
                                format(self.loop))
                 rebalance_task = self.rebalance(nodes_in=0,
                                                 nodes_out=self.rebl_nodes,
@@ -409,30 +337,6 @@ class Murphy(BaseTestCase, OPD):
                                format(self.loop))
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
                                                 nodes_out=self.rebl_nodes,
-                                                services=[service]*self.rebl_nodes,
-                                                retry_get_process_num=3000)
-                self.sleep(60, "Sleep for 60s for rebalance to start")
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.sleep(10, "Sleep for 60s after rebalance")
-
-                self.PrintStep("Step 7.{}: Rebalance IN/OUT with Loading of docs".
-                               format(self.loop))
-                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes+1,
-                                                nodes_out=self.rebl_nodes,
-                                                services=[service]*(self.rebl_nodes+1),
-                                                retry_get_process_num=3000)
-                self.sleep(60, "Sleep for 60s for rebalance to start")
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.sleep(10, "Sleep for 60s after rebalance")
-
-                self.PrintStep("Step 8.{}: Rebalance OUT/IN with Loading of docs".
-                               format(self.loop))
-                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
-                                                nodes_out=self.rebl_nodes+1,
                                                 services=[service]*self.rebl_nodes,
                                                 retry_get_process_num=3000)
                 self.sleep(60, "Sleep for 60s for rebalance to start")
@@ -489,7 +393,7 @@ class Murphy(BaseTestCase, OPD):
         self.perform_load(validate_data=False)
         self.track_failures = False
 
-        if self.cbas_nodes:
+        if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets()
             self.drCBAS.start_query_load()
 
@@ -814,10 +718,24 @@ class Murphy(BaseTestCase, OPD):
             if self.loop < self.iterations:
                 self.sleep(10)
                 if len(self.cluster.kv_nodes) + 1 > self.nodes_init:
-                    rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes) + 1 - self.nodes_init),
-                                                    services=["kv"])
-                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    nodes_cluster = self.cluster.nodes_in_cluster[:]
+                    nodes_cluster.remove(self.cluster.master)
+                    servs_out = random.sample(
+                        nodes_cluster,
+                        int(len(self.cluster.kv_nodes)
+                            - self.nodes_init))
+                    rebalance_task = self.task.async_rebalance(
+                        self.cluster.servers[:self.nodes_init], [], servs_out,
+                        retry_get_process_num=3000)
+
+                    self.task_manager.get_task_result(
+                        rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.available_servers += servs_out
+                    self.cluster.nodes_in_cluster = list(
+                        set(self.cluster.nodes_in_cluster) - set(servs_out))
+                    self.cluster.kv_nodes = list(
+                        set(self.cluster.kv_nodes) - set(servs_out))
             self.print_stats()
 
         self.log.info("Volume Test Run Complete")
@@ -872,10 +790,6 @@ class Murphy(BaseTestCase, OPD):
             self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             ###################################################################
             if self.loop == 0:
-                if self.cbas_nodes:
-                    self.drCBAS.create_datasets()
-                    self.drCBAS.start_query_load()
-                
                 if self.index_nodes:
                     self.drIndex.create_indexes()
                     self.drIndex.build_indexes()
@@ -1328,7 +1242,7 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(result, "Flush bucket failed!")
                 self.sleep(600)
                 if len(self.cluster.kv_nodes) + 1 > self.nodes_init:
-                    rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes) + 1 - self.nodes_init),
+                    rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes)- self.nodes_init),
                                                     services=["kv"])
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")

@@ -187,7 +187,7 @@ class SDKClient(object):
     def __init__(self, servers, bucket,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 username="Administrator", password="password",
+                 username=None, password=None,
                  compression_settings=None, cert_path=None):
         """
         :param servers: List of servers for SDK to establish initial
@@ -215,8 +215,8 @@ class SDKClient(object):
 
         self.scope_name = scope
         self.collection_name = collection
-        self.username = username
-        self.password = password
+        self.username = username or servers[0].rest_username
+        self.password = password or servers[0].rest_password
         self.default_timeout = 0
         self.cluster = None
         self.bucket = bucket

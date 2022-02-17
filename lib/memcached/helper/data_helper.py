@@ -24,6 +24,7 @@ from mc_ascii_client import MemcachedAsciiClient
 from memcached.helper.old_kvstore import ClientKeyValueStore
 from membase.api.rest_client import RestConnection
 from memcacheConstants import ERR_NOT_MY_VBUCKET, ERR_ETMPFAIL, ERR_EINVAL
+from Cb_constants.CBServer import CbServer
 # from perf_engines import mcsoda
 
 try:
@@ -244,7 +245,7 @@ class MemcachedClientHelper(object):
 
     @staticmethod
     def direct_client(server, bucket, timeout=30,
-                      admin_user='Administrator', admin_pass='password'):
+                      admin_user=None, admin_pass=None):
         log = logger.get("test")
         rest = RestConnection(server)
         node = None
@@ -257,13 +258,13 @@ class MemcachedClientHelper(object):
             for n in nodes:
                 if n.ip == server.ip and n.port == server.port:
                     node = n
-
+        if CbServer.use_https:
+            node.memcached = CbServer.ssl_memcached_port
         if isinstance(server, dict):
-            log.info("dict:{0}".format(server))
-            log.info("creating direct client {0}:{1} {2}"
+            log.info("creating memcached client: {0}:{1} {2}"
                      .format(server["ip"], node.memcached, bucket.name))
         else:
-            log.info("creating direct client {0}:{1} {2}"
+            log.info("creating memcached client: {0}:{1} {2}"
                      .format(server.ip, node.memcached, bucket.name))
         BucketHelper(server).vbucket_map_ready(bucket, 60)
         vBuckets = BucketHelper(server).get_vbuckets(bucket)
@@ -276,7 +277,8 @@ class MemcachedClientHelper(object):
         else:
             client.vbucket_count = 0
         # todo raise exception for not bucket_info
-
+        admin_user = admin_user or server.rest_username
+        admin_pass = admin_pass or server.rest_password
         bucket_name = bucket.name.encode('ascii')
         client.sasl_auth_plain(admin_user, admin_pass)
         client.bucket_select(bucket_name)

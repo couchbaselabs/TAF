@@ -43,6 +43,8 @@ class OPD:
         return mem
 
     def create_required_buckets(self, cluster):
+        if self.cluster.cloud_cluster:
+            return
         self.log.info("Get the available memory quota")
         rest = RestConnection(cluster.master)
         self.info = rest.get_nodes_self()
@@ -594,6 +596,10 @@ class OPD:
             self.data_validation()
 
         self.print_stats()
+
+        if self.cluster.cloud_cluster:
+            return
+
         result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if result:
             self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
@@ -644,7 +650,7 @@ class OPD:
         self.print_crud_stats()
         for bucket in self.cluster.buckets:
             self.get_bucket_dgm(bucket)
-            if bucket.storageBackend == Bucket.StorageBackend.magma:
+            if bucket.storageBackend == Bucket.StorageBackend.magma and not self.cluster.cloud_cluster:
                 self.get_magma_disk_usage(bucket)
                 self.check_fragmentation_using_magma_stats(bucket)
             self.check_fragmentation_using_kv_stats(bucket)
@@ -673,7 +679,7 @@ class OPD:
         self.log.info("KV stats fragmentation values {}".format(result))
 
     def dump_magma_stats(self, server, bucket, shard, kvstore):
-        if bucket.storageBackend != Bucket.StorageBackend.magma:
+        if bucket.storageBackend != Bucket.StorageBackend.magma or self.cluster.cloud_cluster:
             return
         shell = RemoteMachineShellConnection(server)
         data_path = RestConnection(server).get_data_path()

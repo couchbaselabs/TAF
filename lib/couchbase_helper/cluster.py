@@ -533,8 +533,26 @@ class ServerTasks(object):
             retry_get_process_num=retry_get_process_num)
         self.jython_task_manager.add_new_task(_task)
         return _task
+    
+    def async_rebalance_capella(self, pod, tenant, cluster, params):
+        """
+        Asynchronously rebalances a cluster
 
-    def async_wait_for_stats(self, shell_conn_list, bucket, stat_cmd, stat,
+        Parameters:
+          servers - Servers participating in the rebalance ([TestServers])
+          to_add - Servers being added to the cluster ([TestServers])
+          to_remove - Servers being removed from the cluster ([TestServers])
+          use_hostnames - True if nodes should be added using hostnames (Bool)
+
+        Returns:
+          RebalanceTask - A task future that is a handle to the scheduled task
+        """
+        _task = jython_tasks.RebalanceTaskCapella(
+            pod, tenant, cluster, params)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
+    def async_wait_for_stats(self, servers, bucket, stat_cmd, stat,
                              comparison, value, timeout=60):
         """
         Asynchronously wait for stats
@@ -559,7 +577,7 @@ class ServerTasks(object):
         """
         self.log.debug("Starting StatsWaitTask for %s on bucket %s"
                        % (stat, bucket.name))
-        _task = jython_tasks.StatsWaitTask(shell_conn_list, bucket, stat_cmd,
+        _task = jython_tasks.StatsWaitTask(servers, bucket, stat_cmd,
                                            stat, comparison, value,
                                            timeout=timeout)
         self.jython_task_manager.add_new_task(_task)

@@ -2,15 +2,18 @@ import re
 import zlib
 import json
 
-from cb_tools.cb_tools_base import CbCmdBase
+from memcached.helper.data_helper import MemcachedClientHelper
+from BucketLib.bucket import Bucket
 
 
-class Cbstats(CbCmdBase):
-    def __init__(self, shell_conn, username="Administrator",
-                 password="password"):
+class Cbstats:
 
-        CbCmdBase.__init__(self, shell_conn, "cbstats",
-                           username=username, password=password)
+    def __init__(self, server, username=None, password=None):
+        self.server = server
+        self.port = server.port
+        self.mc_port = server.memcached_port
+        self.username = username or server.rest_username
+        self.password = password or server.rest_password
 
     def __calculate_vbucket_num(self, doc_key, total_vbuckets):
         """
@@ -38,92 +41,26 @@ class Cbstats(CbCmdBase):
         :scope_data - Dict containing the scopes stat values
         """
         scope_data = dict()
-        cmd = "%s localhost:%s -u %s -p %s -b %s scopes" \
-              % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket.name)
 
-        output, error = self._execute_cmd(cmd)
-        if len(error) != 0:
-            raise Exception("\n".join(error))
-
-        output = str(output)
-
-        # Fetch general scope stats
-        manifest_uid_pattern = "[ \t]*uid:[ \t]+([0-9]+)"
-        manifest_uid_pattern = re.compile(manifest_uid_pattern)
-        manifest_uid = manifest_uid_pattern.findall(str(output))[0]
-        scope_data["manifest_uid"] = int(manifest_uid)
-
-        scope_names_pattern = "[ \t]+([0-9xa-f]+):name:" \
-                              "[ \t]+([0-9A-Za-z_%-]+)"
-        col_count_pattern = "[ \t]*%s:collections:[ \t]+([0-9]+)"
-        items_count_pattern = "[ \t]*%s:items:[ \t]+([0-9]+)"
-
-        scope_names_pattern = re.compile(scope_names_pattern)
-        scope_names = scope_names_pattern.findall(output)
-
-        # Populate specific scope stats
+        client = MemcachedClientHelper.direct_client(
+            self.server, Bucket({"name": bucket.name}), 30,
+            self.username, self.password)
+        client.collections_supported = True
+        collection_details = json.loads(client.get_collections()[2])
+        collection_stats = client.stats("collections")
+        scope_data["manifest_uid"] = int(collection_stats["manifest_uid"])
         scope_data["count"] = 0
-        for s_name_match in scope_names:
-            s_id = s_name_match[0]
-            s_name = s_name_match[1]
-
-            collections_count_pattern = col_count_pattern % s_id
-            s_items_count_pattern = items_count_pattern % s_id
-
-            collections_count_pattern = re.compile(collections_count_pattern)
-            s_items_count_pattern = re.compile(s_items_count_pattern)
-
-            collection_count = collections_count_pattern.findall(output)[0]
-            items_count = s_items_count_pattern.findall(output)[0]
-
-            scope_data[s_name] = dict()
-            scope_data[s_name]["id"] = s_id
-            scope_data[s_name]["collections"] = int(collection_count)
-            scope_data[s_name]["num_items"] = int(items_count)
+        for s_details in collection_details["scopes"]:
+            s_name = s_details["name"]
+            s_id = s_details["uid"]
             scope_data["count"] += 1
-
-        return scope_data
-
-    def get_scope_details(self, bucket_name):
-        """
-        Fetches scopes-details status from the server
-        Uses command:
-          cbstats localhost:port scopes-details
-
-        Arguments:
-        :bucket_name - Name of the bucket to get the stats
-
-        Returns:
-        :scope_data - Dict containing the scopes_details stat values
-        """
-        scope_data = dict()
-        cmd = "%s localhost:%s -u %s -p %s -b %s scopes-details" \
-              % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket_name)
-
-        output, error = self._execute_cmd(cmd)
-        if len(error) != 0:
-            raise Exception("\n".join(error))
-
-        pattern = "[ \t]*manifest:scopes:([0-9xa-h]+):collections:" \
-                  "[ \t]+(a-zA-Z_0-9%-)+"
-        regexp = re.compile(pattern)
-        scope_name_match = regexp.findall(str(output))
-        for scope in scope_name_match:
-            scope_name = scope.group(1)
-            scope_data[scope_name] = dict()
-            scope_data[scope_name]["id"] = scope.group(0)
-
-        # Cluster_run case
-        if type(output) is str:
-            output = output.split("\n")
-
-        for line in output:
-            match_result = regexp.match(line)
-            if match_result:
-                scope_data = match_result.group(1)
-                break
+            scope_data[s_name] = dict()
+            scope_data[s_name]["collections"] = len(s_details["collections"])
+            scope_data[s_name]["num_items"] = 0
+            for col_details in s_details["collections"]:
+                c_id = col_details["uid"]
+                i_key = "0x%s:0x%s:items" % (s_id, c_id)
+                scope_data[s_name]["num_items"] += int(collection_stats[i_key])
 
         return scope_data
 
@@ -140,100 +77,41 @@ class Cbstats(CbCmdBase):
         :collection_data - Dict containing the collections stat values
         """
         collection_data = dict()
-        scope_id_mapping = dict()
 
-        # Fetch scope_data before fetching collections
-        # scope_data = self.get_scopes(bucket)
+        client = MemcachedClientHelper.direct_client(
+            self.server, Bucket({"name": bucket.name}), 30,
+            self.username, self.password)
+        client.collections_supported = True
+        collection_details = json.loads(client.get_collections()[2])
+        collection_stats = client.stats("collections")
 
-        cmd = "%s localhost:%s -u %s -p %s -b %s collections" \
-              % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket.name)
-
-        output, error = self._execute_cmd(cmd)
-        if len(error) != 0:
-            raise Exception("\n".join(error))
-
-        manifest_uid_pattern = "[ \t]*manifest_uid:[ \t]+([0-9]+)"
-
-        scope_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):scope_name:" \
-                             "[ \t]+([a-zA-Z_0-9%-]+)"
-        col_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):name:" \
-                           "[ \t]+([a-zA-Z_0-9%-]+)"
-        collection_stat_pattern = \
-            "[ \t]*%s:%s:([0-9A-Za-z_]+):[ \t]+([0-9]+)"
-
-        manifest_uid_pattern = re.compile(manifest_uid_pattern)
-        scope_name_pattern = re.compile(scope_name_pattern)
-        col_name_pattern = re.compile(col_name_pattern)
-
-        # Populate generic manifest stats
-        manifest_uid = manifest_uid_pattern.findall(str(output))[0]
         collection_data["count"] = 0
-        collection_data["manifest_uid"] = int(manifest_uid)
+        collection_data["manifest_uid"] = collection_stats["manifest_uid"]
 
-        # Fetch all available collection names
-        scope_names = scope_name_pattern.findall(str(output))
-        collection_names = col_name_pattern.findall(str(output))
+        for scope_details in collection_details["scopes"]:
+            s_name = scope_details["name"]
+            s_id = scope_details["uid"]
+            collection_data[s_name] = dict()
+            for col_details in scope_details["collections"]:
+                c_name = col_details["name"]
+                c_id = col_details["uid"]
 
-        for scope_name_match in scope_names:
-            scope_id_mapping[scope_name_match[0]] = scope_name_match[2]
+                collection_data[s_name][c_name] = dict()
+                scope_col_id = "0x%s:0x%s:" % (s_id, c_id)
 
-        # Populate collection specific data
-        for c_name_match in collection_names:
-            s_id = c_name_match[0]
-            c_id = c_name_match[1]
-
-            scope_name = scope_id_mapping[s_id]
-            c_name = c_name_match[2]
-
-            if scope_name not in collection_data:
-                collection_data[scope_name] = dict()
-
-            curr_col_stats_pattern = collection_stat_pattern % (s_id, c_id)
-            curr_col_stats_pattern = re.compile(curr_col_stats_pattern)
-            pattern_match = curr_col_stats_pattern.findall(str(output))
-
-            collection_data[scope_name][c_name] = dict()
-            collection_data[scope_name][c_name]["id"] = c_id
-            for match in pattern_match:
-                try:
-                    collection_data[scope_name][c_name][match[0]] \
-                        = int(match[1])
-                except ValueError:
-                    collection_data[scope_name][c_name][match[0]] = match[1]
-            collection_data["count"] += 1
-
+                for stat, value in collection_stats.items():
+                    if stat.startswith(scope_col_id):
+                        stat = stat.split(':')[2]
+                        # Convert to number if possible
+                        try:
+                            value = int(value)
+                        except ValueError:
+                            pass
+                        collection_data[s_name][c_name][stat] = value
+                collection_data["count"] += 1
         return collection_data
 
-    def get_collection_details(self, bucket_name):
-        """
-        Fetches collections_details from the server
-        Uses command:
-          cbstats localhost:port collections-details
-
-        Arguments:
-        :bucket_name - Name of the bucket to get the stats
-
-        Returns:
-        :collection_data - Dict containing the collections stat values
-        """
-        collection_data = dict()
-        cmd = "%s localhost:%s -u %s -p %s -b %s collections-details" \
-              % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket_name)
-
-        output, error = self._execute_cmd(cmd)
-        if len(error) != 0:
-            raise Exception("\n".join(error))
-
-        output = str(output)
-        bucket_uid_pattern = "[ \t]*uid[ \t:]+([0-9]+)"
-        bucket_uid_pattern = re.compile(bucket_uid_pattern)
-        bucket_uid = bucket_uid_pattern.findall(output)
-        collection_data["uid"] = int(bucket_uid[0])
-        return collection_data
-
-    def get_stats(self, bucket_name, stat_name, field_to_grep=None):
+    def get_stats_memc(self, bucket_name, stat_name="", key=None):
         """
         Fetches stats using cbstat and greps for specific line.
         Uses command:
@@ -252,14 +130,14 @@ class Cbstats(CbCmdBase):
         :output - Output for the cbstats command
         :error  - Buffer containing warnings/errors from the execution
         """
-
-        cmd = "%s localhost:%s -u %s -p %s -b %s %s" \
-              % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket_name, stat_name)
-
-        if field_to_grep:
-            cmd = "%s | grep %s" % (cmd, field_to_grep)
-        return self._execute_cmd(cmd)
+        # result = dict()
+        if stat_name == "all":
+            stat_name = ""
+        client = MemcachedClientHelper.direct_client(
+            self.server, Bucket({"name": bucket_name}), 30,
+            self.username, self.password)
+        output = client.stats(stat_name)
+        return output if key is None else output[key]
 
     def get_timings(self, bucket_name, command="raw"):
         """
@@ -318,18 +196,14 @@ class Cbstats(CbCmdBase):
         :output - Output for the cbstats command
         :error  - Buffer containing warnings/errors from the execution
         """
-
-        cmd = "%s localhost:%s -u %s -p %s -b %s %s %s" \
-              % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket_name, stat_name, vbucket_num)
-
-        if field_to_grep:
-            cmd = "%s | grep %s" % (cmd, field_to_grep)
-
-        return self._execute_cmd(cmd)
+        client = MemcachedClientHelper.direct_client(
+            self.server, Bucket(bucket_name), 30,
+            self.username, self.password)
+        output = client.stats("{} {}".format(stat_name, vbucket_num))
+        return output
 
     # Below are wrapper functions for above command executor APIs
-    def all_stats(self, bucket_name, stat_name="all"):
+    def all_stats(self, bucket_name, stat_name=""):
         """
         Get a particular value of stat from the command,
           cbstats localhost:port all
@@ -341,21 +215,9 @@ class Cbstats(CbCmdBase):
         Raise:
         :Exception returned from command line execution (if any)
         """
-
-        result = dict()
-        output, error = self.get_stats(bucket_name, stat_name)
-        if len(error) != 0:
-            raise Exception("\n".join(error))
-
-        if type(output) is str:
-            output = output.split("\n")
-
-        pattern = "[ \t]*([0-9A-Za-z_]+)[ \t]*:[ \t]+([a-zA-Z0-9\-\.\: ]+)"
-        pattern = re.compile(pattern)
-        for line in output:
-            match_result = pattern.match(line)
-            if match_result:
-                result[match_result.group(1)] = match_result.group(2)
+        if stat_name == "all":
+            stat_name = ""
+        result = self.get_stats_memc(bucket_name, stat_name)
         return result
 
     def checkpoint_stats(self, bucket_name, vb_num=None):
@@ -371,19 +233,16 @@ class Cbstats(CbCmdBase):
         """
         result = dict()
         stat = "checkpoint %s" % vb_num if vb_num is not None else "checkpoint"
-        output, error = self.get_stats(bucket_name, stat)
-        if len(error) != 0:
-            raise Exception("\n".join(error))
-
+        output = self.get_stats_memc(bucket_name, stat)
         pattern = \
-            "[\t ]*vb_([0-9]+):([a-zA-Z0-9@.->:_]+):[\t ]+([0-9A-Za-z_]+)"
+            "[\t ]*vb_([0-9]+):([a-zA-Z0-9@.->:_]+)"
         pattern = re.compile(pattern)
-        for line in output:
-            match_result = pattern.match(line)
+        for key in output.keys():
+            match_result = pattern.match(key)
             if match_result:
                 vb_num = int(match_result.group(1))
                 stat_name = match_result.group(2)
-                stat_value = match_result.group(3)
+                stat_value = output.get(key)
                 try:
                     stat_value = int(stat_value)
                 except ValueError:
@@ -449,25 +308,13 @@ class Cbstats(CbCmdBase):
         Raise:
         :Exception returned from command line execution (if any)
         """
-
         vb_list = list()
-        cmd = "%s localhost:%s -u %s -p %s -b %s vbucket" \
-              % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket_name)
-        output, error = self._execute_cmd(cmd)
-        if len(error) != 0:
-            raise Exception("\n".join(error))
-
-        pattern = "[ \t]*vb_([0-9]+)[ \t]*:[ \t]+([a-zA-Z]+)"
-        regexp = re.compile(pattern)
-        for line in output:
-            match_result = regexp.match(line)
-            if match_result:
-                curr_vb_type = match_result.group(2)
-                if curr_vb_type == vbucket_type:
-                    vb_num = match_result.group(1)
-                    vb_list.append(int(vb_num))
-
+        output = self.get_stats_memc(bucket_name, "vbucket")
+        for key in output.keys():
+            curr_vb_type = output[key]
+            if curr_vb_type == vbucket_type:
+                vb_num = key
+                vb_list.append(int(vb_num.split("_")[1]))
         return vb_list
 
     def vbucket_details(self, bucket_name):
@@ -483,30 +330,24 @@ class Cbstats(CbCmdBase):
         """
 
         stats = dict()
-        cmd = "%s localhost:%s -u %s -p %s -b %s vbucket-details" \
-              % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket_name)
-
-        output, error = self._execute_cmd(cmd)
-        if len(error) != 0:
-            raise Exception("\n".join(error))
+        output = self.get_stats_memc(bucket_name, "vbucket-details")
         # In case of cluster_run, output is plain string due to direct exec
         if type(output) is str:
             output = output.split("\n")
 
-        pattern = "[ \t]*vb_([0-9]+):([0-9a-zA-Z_]*):?[ \t]+([0-9A-Za-z\-\.\:\",_\[\]]+)"
+        pattern = "[ \t]*vb_([0-9]+):([0-9a-zA-Z_]*)"
         regexp = re.compile(pattern)
 
-        for line in output:
-            if line.strip() == '':
-                continue
-            match_result = regexp.match(line)
-            vb_num = match_result.group(1)
-            stat_name = match_result.group(2)
-            stat_value = match_result.group(3)
-
-            if stat_name == "":
+        for key in output.keys():
+            match_result = regexp.match(key)
+            if not match_result:
+                vb_num = key.split("_")[1]
                 stat_name = "type"
+                stat_value = output[key]
+            else:
+                vb_num = match_result.group(1)
+                stat_name = match_result.group(2)
+                stat_value = output[key]
 
             # Create a sub_dict to state vbucket level stats
             if vb_num not in stats:
@@ -578,18 +419,16 @@ class Cbstats(CbCmdBase):
         """
 
         stats = dict()
-        output, error = self.get_stats(bucket_name, "vbucket-seqno")
-        if len(error) != 0:
-            raise Exception("\n".join(error))
+        output = self.get_stats_memc(bucket_name, "vbucket-seqno")
 
-        pattern = "[ \t]*vb_([0-9]+):([0-9a-zA-Z_]+):[ \t]+([0-9]+)"
+        pattern = "[ \t]*vb_([0-9]+):([0-9a-zA-Z_]+)"
         regexp = re.compile(pattern)
-        for line in output:
-            match_result = regexp.match(line)
+        for key in output.keys():
+            match_result = regexp.match(key)
             if match_result:
                 vb_num = match_result.group(1)
                 stat_name = match_result.group(2)
-                stat_value = match_result.group(3)
+                stat_value = output[key]
 
                 # Create a sub_dict to state vbucket level stats
                 if vb_num not in stats:
@@ -617,25 +456,22 @@ class Cbstats(CbCmdBase):
         """
 
         stats = dict()
-        output, error = self.get_stats(bucket_name, "failovers")
-        if len(error) != 0:
-            raise Exception("\n".join(error))
+        output = self.get_stats_memc(bucket_name, "failovers")
 
-        pattern = "[ \t]vb_([0-9]+):([0-9A-Za-z:_]+):[ \t]+([0-9]+)"
+        pattern = "vb_([0-9]+):([0-9A-Za-z:_]+)"
         regexp = re.compile(pattern)
 
-        for line in output:
+        for key, value in output.items():
             # Match the regexp to the line and populate the values
-            match_result = regexp.match(line)
+            match_result = regexp.match(key)
             vb_num = match_result.group(1)
             stat_name = match_result.group(2)
-            stat_value = match_result.group(3)
 
             # Create a sub_dict to state vbucket level stats
             if vb_num not in stats:
                 stats[vb_num] = dict()
             # Populate the values to the stats dictionary
-            stats[vb_num][stat_name] = stat_value
+            stats[vb_num][stat_name] = value
 
         return stats
 
@@ -698,19 +534,7 @@ class Cbstats(CbCmdBase):
         return is_stat_ok
 
     def dcp_stats(self, bucket_name):
-        stats = dict()
-        output, error = self.get_stats(bucket_name, "dcp")
-        if len(error) != 0:
-            raise Exception("\n".join(error))
-        for line in output:
-            line = line.split()
-            # TODO: Remove try..catch once MB-46630 is fixed
-            try:
-                stat = line[0].rstrip(":")
-                stats[stat] = line[1].strip()
-            except IndexError:
-                pass
-        return stats
+        return self.get_stats_memc(bucket_name, "dcp")
 
     def dcp_vbtakeover(self, bucket_name, vb_num, key):
         """

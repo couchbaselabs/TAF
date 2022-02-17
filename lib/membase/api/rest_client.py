@@ -49,131 +49,14 @@ import urllib3
 
 urllib3.disable_warnings()
 
+from Rest_Connection import RestConnection as newRC
 
-class RestConnection(object):
+class RestConnection(newRC):
     def __init__(self, serverInfo):
+        newRC.__init__(self, serverInfo)
         self.log = logger.get("infra")
         self.test_log = logger.get("test")
         self.log_errors = True
-
-        self.index_port = constants.index_port
-        self.fts_port = constants.fts_port
-        self.query_port = constants.n1ql_port
-        self.eventing_port = constants.eventing_port
-        self.cbas_port = constants.cbas_port
-
-        # serverInfo can be a json object/dictionary
-        if isinstance(serverInfo, dict):
-            self.ip = serverInfo["ip"]
-            self.username = serverInfo["username"]
-            self.password = serverInfo["password"]
-            self.port = serverInfo["port"]
-            if "index_port" in serverInfo.keys():
-                self.index_port = serverInfo["index_port"]
-            if "fts_port" in serverInfo.keys():
-                if serverInfo['fts_port']:
-                    self.fts_port = serverInfo["fts_port"]
-            if "eventing_port" in serverInfo.keys():
-                if serverInfo['eventing_port']:
-                    self.eventing_port = serverInfo["eventing_port"]
-            self.hostname = ''
-            self.services = ''
-            if "hostname" in serverInfo:
-                self.hostname = serverInfo["hostname"]
-            if "services" in serverInfo:
-                self.services = serverInfo["services"]
-        else:
-            self.ip = serverInfo.ip
-            self.username = serverInfo.rest_username
-            self.password = serverInfo.rest_password
-            self.port = serverInfo.port
-            self.hostname = ''
-            self.services = "kv"
-            if hasattr(serverInfo, "services"):
-                self.services = serverInfo.services
-            if hasattr(serverInfo, 'index_port'):
-                self.index_port = serverInfo.index_port
-            if hasattr(serverInfo, 'query_port'):
-                self.query_port = serverInfo.query_port
-            if hasattr(serverInfo, 'fts_port'):
-                if serverInfo.fts_port:
-                    self.fts_port = serverInfo.fts_port
-            if hasattr(serverInfo, 'eventing_port'):
-                if serverInfo.eventing_port:
-                    self.eventing_port = serverInfo.eventing_port
-            if hasattr(serverInfo, 'hostname') and serverInfo.hostname and \
-                    serverInfo.hostname.find(self.ip) == -1:
-                self.hostname = serverInfo.hostname
-            if hasattr(serverInfo, 'services'):
-                self.services = serverInfo.services
-
-        if CbServer.use_https:
-            self.port = CbServer.ssl_port
-            self.index_port = CbServer.ssl_index_port
-            self.query_port = CbServer.ssl_n1ql_port
-            self.fts_port = CbServer.ssl_fts_port
-            self.eventing_port = CbServer.ssl_eventing_port
-            self.cbas_port = CbServer.ssl_cbas_port
-        self.protocol = "http"
-        self.node_services = list()
-        self.input = TestInputSingleton.input
-        if self.input is not None:
-            """ from watson, services param order and format:
-                new_services=fts-kv-index-n1ql """
-            self.services_node_init = self.input.param("new_services", None)
-
-        http_url_format = "http://%s:%s/"
-        https_url_format = "https://%s:%s/"
-        url_format = http_url_format
-        if CbServer.use_https:
-            url_format = https_url_format
-            self.protocol = "https"
-        url_host = self.ip
-        if self.hostname:
-            url_host = self.hostname
-
-        self.baseUrl = url_format % (url_host, self.port)
-        self.fts_baseUrl = url_format % (url_host, self.fts_port)
-        self.index_baseUrl = url_format % (url_host, self.index_port)
-        self.query_baseUrl = url_format % (url_host, self.query_port)
-        self.capi_baseUrl = url_format % (url_host, constants.capi_port)
-        self.eventing_baseUrl = url_format % (url_host, self.eventing_port)
-
-        # for Node is unknown to this cluster error
-        for iteration in xrange(5):
-            http_res, success = self.init_http_request(self.baseUrl +
-                                                       'nodes/self')
-            if not success and type(http_res) == unicode and \
-                    (http_res.find('Node is unknown to this cluster') > -1 or
-                     http_res.find('Unexpected server error, request logged') > -1):
-                self.test_log.error(
-                    "Error {0} was gotten, 5 seconds sleep before retry"
-                        .format(http_res))
-                sleep(5)
-                if iteration == 2:
-                    self.test_log.error("Node {0}:{1} is in a broken state!"
-                                        .format(self.ip, self.port))
-                    raise ServerUnavailableException(self.ip)
-                continue
-            else:
-                break
-        # determine the real couchApiBase for cluster_run
-        # couchApiBase appeared in version 2.*
-        if not http_res or http_res["version"][0:2] == "1.":
-            self.capi_baseUrl = self.baseUrl + "/couchBase"
-        else:
-            for iteration in xrange(5):
-                if "couchApiBase" not in http_res.keys():
-                    if self.is_cluster_mixed():
-                        self.capi_baseUrl = self.baseUrl + "/couchBase"
-                        return
-                    # Sleep before next retry
-                    sleep(0.5)
-                    http_res, success = self.init_http_request(self.baseUrl + 'nodes/self')
-                else:
-                    self.capi_baseUrl = http_res["couchApiBase"]
-                    return
-            raise ServerUnavailableException("couchApiBase doesn't exist in nodes/self: %s" % http_res)
 
     def sasl_streaming_rq(self, bucket, timeout=120):
         api = self.baseUrl + 'pools/default/bucketsStreaming/{0}'.format(bucket)
@@ -246,24 +129,6 @@ class RestConnection(object):
                                 .format(community_nodes))
             return False
         return True
-
-    def init_http_request(self, api, timeout=300):
-        content = None
-        try:
-            status, content, header = self._http_request(api, 'GET',
-                                                         headers=self._create_capi_headers(), timeout=timeout)
-            json_parsed = json.loads(content)
-            if status:
-                return json_parsed, True
-            else:
-                print("{0} with status {1}: {2}".format(api, status, json_parsed))
-                return json_parsed, False
-        except ValueError as e:
-            if content is not None:
-                print("{0}: {1}".format(api, content))
-            else:
-                print(e)
-            return content, False
 
     def rename_node(self, hostname, username='Administrator',
                     password='password'):
@@ -552,137 +417,6 @@ class RestConnection(object):
             api, 'GET', headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
-
-    def _create_capi_headers(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password)).strip("\n")
-        return {'Content-Type': 'application/json',
-                'Authorization': 'Basic %s' % authorization,
-                'Connection': 'close',
-                'Accept': '*/*'}
-
-    def _create_headers_with_auth(self, username, password):
-        authorization = base64.encodestring('%s:%s' % (username, password)).strip("\n")
-        return {'Authorization': 'Basic %s' % authorization}
-
-    # authorization must be a base64 string of username:password
-    def _create_headers(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password)).strip("\n")
-        return {'Content-Type': 'application/x-www-form-urlencoded',
-                'Authorization': 'Basic %s' % authorization,
-                'Connection': 'close',
-                'Accept': '*/*'}
-
-    # authorization must be a base64 string of username:password
-    def _create_headers_encoded_prepared(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password)).strip("\n")
-        return {'Content-Type': 'application/json',
-                'Connection': 'close',
-                'Authorization': 'Basic %s' % authorization}
-
-    def _get_auth(self, headers):
-        key = 'Authorization'
-        if key in headers:
-            val = headers[key]
-            if val.startswith("Basic "):
-                return "auth: " + base64.decodestring(val[6:])
-        return ""
-
-    def _urllib_request(self, api, method='GET', params='', headers=None,
-                        timeout=300, verify=False, session=None):
-        if session is None:
-            session = requests.Session()
-        end_time = time.time() + timeout
-        while True:
-            try:
-                if method == "GET":
-                    response = session.get(api, params=params, headers=headers,
-                                           timeout=timeout, verify=verify)
-                elif method == "POST":
-                    response = session.post(api, data=params, headers=headers,
-                                            timeout=timeout, verify=verify)
-                elif method == "DELETE":
-                    response = session.delete(api, data=params, headers=headers,
-                                              timeout=timeout, verify=verify)
-                elif method == "PUT":
-                    response = session.put(api, data=params, headers=headers,
-                                           timeout=timeout, verify=verify)
-                status = response.status_code
-                content = response.content
-                if status in [200, 201, 202, 204]:
-                    return True, content, response
-                else:
-                    self.log.error("Status: {0} Content: {1} Reason: {2}".
-                                   format(status, content, response.reason))
-                    return False, content, response
-            except requests.exceptions.HTTPError as errh:
-                self.log.error("HTTP Error {0}".format(errh))
-            except requests.exceptions.ConnectionError as errc:
-                if "Illegal state exception" in str(errc):
-                    # Known ssl bug, retry
-                    pass
-                else:
-                    self.log.error("Error Connecting {0}".format(errc))
-                if time.time() > end_time:
-                    raise ServerUnavailableException(ip=self.ip)
-            except requests.exceptions.Timeout as errt:
-                self.log.error("Timeout Error: {0}".format(errt))
-                if time.time() > end_time:
-                    raise ServerUnavailableException(ip=self.ip)
-            except requests.exceptions.RequestException as err:
-                self.log.error("Something else: {0}".format(err))
-                if time.time() > end_time:
-                    raise ServerUnavailableException(ip=self.ip)
-            sleep(3, log_type="infra")
-
-    def _http_request(self, api, method='GET', params='', headers=None,
-                      timeout=300):
-        if not headers:
-            headers = self._create_headers()
-        if CbServer.use_https:
-            status, content, response = \
-                self._urllib_request(api, method=method, params=params, headers=headers,
-                                     timeout=timeout, verify=False)
-            return status, content, response
-        end_time = time.time() + timeout
-        while True:
-            try:
-                response, content = httplib2.Http(timeout=timeout).request(api, method, params, headers)
-                if params.startswith("nodes=ns_1"):
-                    self.test_log.debug(response)
-                    self.test_log.debug(content)
-
-                if response['status'] in ['200', '201', '202', '204']:
-                    return True, content, response
-                else:
-                    try:
-                        json_parsed = json.loads(content)
-                    except ValueError:
-                        json_parsed = dict()
-                        json_parsed["error"] = "status: {0}, content: {1}" \
-                            .format(response['status'],
-                                    content)
-                    reason = "unknown"
-                    if "error" in json_parsed:
-                        reason = json_parsed["error"]
-                    message = '{0} {1} body: {2} headers: {3} error: {4} reason: {5} {6} {7}'. \
-                        format(method, api, params, headers, response['status'], reason,
-                               content.rstrip('\n'), self._get_auth(headers))
-                    if self.log_errors:
-                        self.test_log.error(message.decode("utf8"))
-                        self.test_log.debug(''.join(traceback.format_stack()))
-                    return False, content, response
-            except socket.error as e:
-                self.test_log.error("Socket error while connecting to {0} error {1} "
-                                    .format(api, e))
-                if time.time() > end_time:
-                    raise ServerUnavailableException(ip=self.ip)
-            except httplib2.ServerNotFoundError as e:
-                self.test_log.error("ServerNotFoundError error while connecting to {0} error {1} "
-                                    .format(api, e))
-                if time.time() > end_time:
-                    raise ServerUnavailableException(ip=self.ip)
-            # Sleep before next retry
-            sleep(2)
 
     def init_cluster(self, username='Administrator', password='password',
                      port=constants.port):
@@ -1620,12 +1354,33 @@ class RestConnection(object):
     # returns node data for this host
     def get_nodes_self(self, timeout=120):
         node = None
-        api = self.baseUrl + 'nodes/self'
+        if self.on_cloud:
+            return self.get_limited_nodes_self(timeout)
+        else:
+            api = self.baseUrl + 'nodes/self'
         status, content, header = self._http_request(api, timeout=timeout)
         if status:
             json_parsed = json.loads(content)
             node = RestParser().parse_get_nodes_response(json_parsed)
         return node
+
+    # only admin users can call /nodes/self but almost always the
+    # data we need can be found in /pools/default
+    def get_limited_nodes_self(self, timeout=120):
+
+        node = None
+        pools_default = self.get_pools_default(timeout=timeout)
+        if "nodes" in pools_default:
+            node = self.extract_nodes_self_from_pools_default(pools_default)
+            node["memoryQuota"] = pools_default["memoryQuota"]
+            node["storageTotals"] = pools_default["storageTotals"]
+            if node:
+                node = RestParser().parse_get_nodes_response(node)
+        return node
+
+    def extract_nodes_self_from_pools_default(self, pools_default):
+        return next(iter(filter(lambda node: "thisNode" in node and node["thisNode"],
+                     pools_default["nodes"])), None)
 
     # returns node data for this host
     def get_jre_path(self, timeout=120):

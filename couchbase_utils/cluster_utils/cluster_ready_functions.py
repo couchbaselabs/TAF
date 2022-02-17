@@ -47,10 +47,38 @@ class CBCluster:
         self.vbuckets = vbuckets
         # edition = community/enterprise
         self.edition = None
+        self.cloud_cluster = False
 
     def __str__(self):
         return "Couchbase Cluster: %s, Nodes: %s" % (
             self.name, ', '.join([s.ip for s in self.servers]))
+
+    def refresh_object(self, servers):
+        self.master = servers[0]
+        self.servers = servers
+        self.kv_nodes = list()
+        self.fts_nodes = list()
+        self.cbas_nodes = list()
+        self.index_nodes = list()
+        self.query_nodes = list()
+        self.eventing_nodes = list()
+        self.backup_nodes = list()
+        self.nodes_in_cluster = list()
+        
+        for server in servers:
+            if "Data" in server.services:
+                self.kv_nodes.append(server)
+            if "Query" in server.services:
+                self.query_nodes.append(server)
+            if "Index" in server.services:
+                self.index_nodes.append(server)
+            if "Eventing" in server.services:
+                self.eventing_nodes.append(server)
+            if "Analytics" in server.services:
+                self.cbas_nodes.append(server)
+            if "FTS" in server.services:
+                self.fts_nodes.append(server)
+            self.nodes_in_cluster.append(server)
 
     def update_master_using_diag_eval(self, node_in_cluster=None):
         if node_in_cluster is None:
@@ -240,6 +268,7 @@ class ClusterUtils:
             for removed in [node for node in nodes if (node.id != master_id)]:
                 removed.rest_password = cluster.master.rest_password
                 removed.rest_username = cluster.master.rest_username
+                removed.hosted_on_cloud = False
                 try:
                     rest = RestConnection(removed)
                 except Exception as ex:

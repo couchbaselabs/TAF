@@ -8,17 +8,27 @@ Copyright (c) 2007  Dustin Sallings <dustin@spy.net>
 import array
 import exceptions
 import hmac
+import json
 import random
+import re
 import select
 import socket
+import ssl
 import struct
+import sys
+import time
 import zlib
 
-from memcacheConstants import REQ_MAGIC_BYTE, RES_MAGIC_BYTE
+from memcacheConstants import REQ_MAGIC_BYTE, RES_MAGIC_BYTE, ALT_REQ_MAGIC_BYTE, ALT_RES_MAGIC_BYTE, ALT_RES_PKT_FMT
 from memcacheConstants import REQ_PKT_FMT, RES_PKT_FMT, MIN_RECV_PACKET, REQ_PKT_SD_EXTRAS, SUBDOC_FLAGS_MKDIR_P
-from memcacheConstants import SET_PKT_FMT, DEL_PKT_FMT, INCRDECR_RES_FMT, INCRDECR_RES_WITH_UUID_AND_SEQNO_FMT, META_CMD_FMT
-from memcacheConstants import TOUCH_PKT_FMT, GAT_PKT_FMT, GETL_PKT_FMT, ALT_RES_PKT_FMT
+from memcacheConstants import SET_PKT_FMT, DEL_PKT_FMT, INCRDECR_RES_FMT, INCRDECR_RES_WITH_UUID_AND_SEQNO_FMT, \
+    META_CMD_FMT
+from memcacheConstants import TOUCH_PKT_FMT, GAT_PKT_FMT, GETL_PKT_FMT, REQ_PKT_SD_EXTRAS_EXPIRY
+from memcacheConstants import COMPACT_DB_PKT_FMT
 import memcacheConstants
+from cluster_run_manager import KeepRefs
+from Cb_constants.CBServer import CbServer
+from global_vars import logger
 
 
 def decodeCollectionID(key):
@@ -40,12 +50,14 @@ def decodeCollectionID(key):
             raise exceptions.ValueError("encoded key did not contain a stop byte")
     return cid, key[end:]
 
+
 class MemcachedError(exceptions.Exception):
     """Error raised when a command fails."""
 
-    def __init__(self, status, msg):
+    def __init__(self, status, msg=None):
         error_msg = error_to_str(status)
-        supermsg = 'Memcached error #' + str(status) + ' ' + error_msg
+        supermsg = 'Memcached error #' + repr(status) + ' ' + repr(error_msg)
+        msg = str(msg)
         if msg: supermsg += ":  " + msg
         exceptions.Exception.__init__(self, supermsg)
 
@@ -56,30 +68,45 @@ class MemcachedError(exceptions.Exception):
         return "<MemcachedError #%d ``%s''>" % (self.status, self.msg)
 
 
-class MemcachedClient(object):
+class MemcachedClient(KeepRefs):
     """Simple memcached client."""
 
     vbucketId = 0
 
     def __init__(self, host='127.0.0.1', port=11211, timeout=30):
+        super(MemcachedClient, self).__init__()
         self.host = host
         self.port = port
+        if CbServer.use_https:
+            self.port = CbServer.ssl_memcached_port
         self.timeout = timeout
         self._createConn()
         self.r = random.Random()
         self.vbucket_count = 1024
+        self.feature_flag = set()
+        self.features = set()
+        self.error_map = None
+        self.error_map_version = 1
+        self.collection_map = {}
+        self.log = logger.get("infra")
+        self.collections_supported = False
 
     def _createConn(self):
-        if self.host.find('[') == -1 or self.host.find('.com') == -1:
+        try:
             # IPv4
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self.s.settimeout(self.timeout)
+            if CbServer.use_https:
+                context = ssl._create_unverified_context(ssl.PROTOCOL_TLSv1)
+                self.s = context.wrap_socket(self.s, server_hostname=self.host)
             return self.s.connect_ex((self.host, self.port))
-        else:
+        except:
             # IPv6
             self.host = self.host.replace('[', '').replace(']', '')
             self.s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
             self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self.s.settimeout(self.timeout)
             return self.s.connect_ex((self.host, self.port, 0, 0))
 
     def reconnect(self):
@@ -92,100 +119,138 @@ class MemcachedClient(object):
     def __del__(self):
         self.close()
 
-    def _sendCmd(self, cmd, key, val, opaque, extraHeader='', cas=0, extended_meta_data='',extraHeaderLength=None):
+    def _sendCmd(self, cmd, key, val, opaque, extraHeader='', cas=0, scope=None, collection=None,
+                 extended_meta_data='', extraHeaderLength=None):
         self._sendMsg(cmd, key, val, opaque, extraHeader=extraHeader, cas=cas,
-                      vbucketId=self.vbucketId, extended_meta_data=extended_meta_data, extraHeaderLength=extraHeaderLength)
+                      vbucketId=self.vbucketId, scope=scope, collection=collection,
+                      extended_meta_data=extended_meta_data, extraHeaderLength=extraHeaderLength)
 
     def _sendMsg(self, cmd, key, val, opaque, extraHeader='', cas=0,
                  dtype=0, vbucketId=0,
-                 fmt=REQ_PKT_FMT, magic=REQ_MAGIC_BYTE, extended_meta_data='', extraHeaderLength=None):
-
+                 fmt=REQ_PKT_FMT, magic=REQ_MAGIC_BYTE, scope=None, collection=None, extended_meta_data='',
+                 extraHeaderLength=None):
+        if collection:
+            key = self._encodeCollectionId(key, scope, collection)
         # a little bit unfortunate but the delWithMeta command expects the extra data length to be the
         # overall packet length (28 in that case) so we need a facility to support that
         if extraHeaderLength is None:
             extraHeaderLength = len(extraHeader)
 
         msg = struct.pack(fmt, magic,
-            cmd, len(key), extraHeaderLength, dtype, vbucketId,
-                len(key) + len(extraHeader) + len(val) + len(extended_meta_data), opaque, cas)
-        _, w, _ = select.select([], [self.s], [], self.timeout)
-        if w:
-            self.s.sendall(msg + extraHeader + key + val + extended_meta_data)
-        else:
-            raise exceptions.EOFError("Timeout waiting for socket send. from {0}".format(self.host))
+                          cmd, len(key), extraHeaderLength, dtype, vbucketId,
+                          len(key) + len(extraHeader) + len(val) + len(extended_meta_data), opaque, cas)
+
+        try:
+            key = key.encode()
+        except AttributeError:
+            pass
+
+        try:
+            extraHeader = extraHeader.encode()
+        except AttributeError:
+            pass
+
+        try:
+            val = val.encode()
+        except AttributeError:
+            pass
+
+        try:
+            extended_meta_data = extended_meta_data.encode()
+        except AttributeError:
+            pass
+
+        self.s.sendall(msg + extraHeader + key + val + extended_meta_data)
 
     def _recvMsg(self):
-        response = ""
+        response = b""
         while len(response) < MIN_RECV_PACKET:
-            r, _, _ = select.select([self.s], [], [], self.timeout)
-            if r:
-                data = self.s.recv(MIN_RECV_PACKET - len(response))
-                if data == '':
-                    raise exceptions.EOFError("Got empty data (remote died?). from {0}".format(self.host))
-                response += data
-            else:
-                raise exceptions.EOFError("Timeout waiting for socket recv. from {0}".format(self.host))
+            data = self.s.recv(MIN_RECV_PACKET - len(response))
+            if data == b'':
+                raise exceptions.EOFError("Got empty data (remote died?). from {0}".format(self.host))
+            response += data
 
         assert len(response) == MIN_RECV_PACKET
-        magic, cmd, frameextralen, keylen, extralen, dtype, errcode, remaining, opaque, cas = \
-                struct.unpack(ALT_RES_PKT_FMT, response)
-#         magic, cmd, keylen, extralen, dtype, errcode, remaining, opaque, cas = \
-#             struct.unpack(RES_PKT_FMT, response)
 
-        rv = ""
+        # Peek at the magic so we can support alternative-framing
+        magic = struct.unpack(b">B", response[0:1])[0]
+        assert (magic in (
+            RES_MAGIC_BYTE, REQ_MAGIC_BYTE, ALT_RES_MAGIC_BYTE, ALT_REQ_MAGIC_BYTE)), "Got magic: 0x%x" % magic
+
+        cmd = 0
+        keylen = 0
+        extralen = 0
+        dtype = 0
+        errcode = 0
+        remaining = 0
+        opaque = 0
+        cas = 0
+        if magic == ALT_RES_MAGIC_BYTE or magic == ALT_REQ_MAGIC_BYTE:
+            magic, cmd, keylen, extralen, dtype, errcode, remaining, opaque, cas = \
+                struct.unpack(ALT_RES_PKT_FMT, response)
+        else:
+            magic, cmd, keylen, extralen, dtype, errcode, remaining, opaque, cas = \
+                struct.unpack(RES_PKT_FMT, response)
+
+        rv = b""
         while remaining > 0:
-            r, _, _ = select.select([self.s], [], [], self.timeout)
-            if r:
-                data = self.s.recv(remaining)
-                if data == '':
-                    raise exceptions.EOFError("Got empty data (remote died?). from {0}".format(self.host))
-                rv += data
-                remaining -= len(data)
-            else:
-                raise exceptions.EOFError("Timeout waiting for socket recv. from {0}".format(self.host))
-        assert (magic in (RES_MAGIC_BYTE, REQ_MAGIC_BYTE)), "Got magic: %d" % magic
-        return cmd, errcode, opaque, cas, keylen, extralen, dtype, rv, frameextralen
+            data = self.s.recv(remaining)
+            if data == b'':
+                raise exceptions.EOFError("Got empty data (remote died?). from {0}".format(self.host))
+            rv += data
+            remaining -= len(data)
+
+        return cmd, errcode, opaque, cas, keylen, extralen, dtype, rv
 
     def _handleKeyedResponse(self, myopaque):
-        cmd, errcode, opaque, cas, keylen, extralen, dtype, rv, frameextralen = self._recvMsg()
+        cmd, errcode, opaque, cas, keylen, extralen, dtype, rv = self._recvMsg()
         assert myopaque is None or opaque == myopaque, \
             "expected opaque %x, got %x" % (myopaque, opaque)
-        if errcode:
-            rv += " for vbucket :{0} to mc {1}:{2}".format(self.vbucketId, self.host, self.port)
-            raise MemcachedError(errcode, rv)
-        return cmd, opaque, cas, keylen, extralen, dtype, rv, frameextralen
+        if errcode != 0:
+            if self.error_map is None:
+                msg = rv
+            else:
+                err = self.error_map['errors'].get(errcode, rv)
+                msg = "{name} : {desc} : {rv}".format(rv=rv, **err)
+
+            raise MemcachedError(errcode, msg)
+        return cmd, opaque, cas, keylen, extralen, rv
 
     def _handleSingleResponse(self, myopaque):
-        cmd, opaque, cas, keylen, extralen, dtype, data, frameextralen = self._handleKeyedResponse(myopaque)
+        cmd, opaque, cas, keylen, extralen, data = self._handleKeyedResponse(myopaque)
         return opaque, cas, data
 
-    def _doCmd(self, cmd, key, val, extraHeader='', cas=0,extended_meta_data='',extraHeaderLength=None):
+    def _doCmd(self, cmd, key, val, extraHeader='', cas=0, scope=None, collection=None,
+               extended_meta_data='', extraHeaderLength=None):
         """Send a command and await its response."""
         opaque = self.r.randint(0, 2 ** 32)
-        self._sendCmd(cmd, key, val, opaque, extraHeader, cas, extended_meta_data=extended_meta_data,
+        self._sendCmd(cmd, key, val, opaque, extraHeader, cas, scope, collection, extended_meta_data=extended_meta_data,
                       extraHeaderLength=extraHeaderLength)
         return self._handleSingleResponse(opaque)
 
-    def _doSdCmd(self, cmd, key, path, val=None, expiry=0, opaque=0, cas=0, create=False):
+    def _doSdCmd(self, cmd, key, path, val=None, expiry=0, opaque=0, cas=0, create=False, scope=None, collection=None):
         createFlag = 0
         if opaque == 0:
-            opaque = self.r.randint(0, 2**32)
+            opaque = self.r.randint(0, 2 ** 32)
         if create == True:
             createFlag = SUBDOC_FLAGS_MKDIR_P
-        extraHeader = struct.pack(REQ_PKT_SD_EXTRAS, len(path), createFlag)
+        if expiry == 0:
+            extraHeader = struct.pack(REQ_PKT_SD_EXTRAS, len(path), createFlag)
+        else:
+            extraHeader = struct.pack(REQ_PKT_SD_EXTRAS_EXPIRY, len(path), createFlag, expiry)
         body = path
         if val != None:
             body += str(val)
-        self._sendCmd(cmd, key, body, opaque, extraHeader, cas)
+        self._sendCmd(cmd, key, body, opaque, extraHeader, cas, scope, collection)
         return self._handleSingleResponse(opaque)
 
-    def _doMultiSdCmd(self, cmd, key, cmdDict, opaque=0):
+    def _doMultiSdCmd(self, cmd, key, cmdDict, opaque=0, scope=None, collection=None):
         if opaque == 0:
-            opaque = self.r.randint(0, 2**32)
+            opaque = self.r.randint(0, 2 ** 32)
         body = ''
         extraHeader = ''
         mcmd = None
-        for k, v  in cmdDict.iteritems():
+        for k, v in cmdDict.items():
             if k == "store":
                 mcmd = memcacheConstants.CMD_SUBDOC_DICT_ADD
             elif k == "counter":
@@ -215,27 +280,32 @@ class MemcachedClient(object):
             op_spec = struct.pack(memcacheConstants.REQ_PKT_SD_MULTI_MUTATE, mcmd, flags, len(path), valuelen)
             op_spec += path + value
             body += op_spec
-        self._sendMsg(cmd, key, body, opaque, extraHeader, cas=0)
+        self._sendMsg(cmd, key, body, opaque, extraHeader, cas=0, scope=scope, collection=collection)
         return self._handleSingleResponse(opaque)
 
-    def _mutate(self, cmd, key, exp, flags, cas, val):
+    def _mutate(self, cmd, key, exp, flags, cas, val, scope='_default', collection='_default'):
         return self._doCmd(cmd, key, val, struct.pack(SET_PKT_FMT, flags, exp),
-            cas)
+                           cas, scope, collection)
 
-    def _cat(self, cmd, key, cas, val):
-        return self._doCmd(cmd, key, val, '', cas)
+    def _cat(self, cmd, key, cas, val, scope=None, collection=None):
+        scope, collection = self.collection_name(scope, collection)
+        return self._doCmd(cmd, key, val, '', cas, scope, collection)
 
-    def append(self, key, value, cas=0, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._cat(memcacheConstants.CMD_APPEND, key, cas, value)
+    def append(self, key, value, cas=0, vbucket=-1, scope=None, collection=None):
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._cat(memcacheConstants.CMD_APPEND, key, cas, value, scope, collection)
 
-    def prepend(self, key, value, cas=0, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._cat(memcacheConstants.CMD_PREPEND, key, cas, value)
+    def prepend(self, key, value, cas=0, vbucket=-1, scope=None, collection=None):
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._cat(memcacheConstants.CMD_PREPEND, key, cas, value, scope, collection)
 
-    def __incrdecr(self, cmd, key, amt, init, exp):
+    def __incrdecr(self, cmd, key, amt, init, exp,  scope=None, collection=None):
+        scope, collection = self.collection_name(scope, collection)
         something, cas, val = self._doCmd(cmd, key, '',
-            struct.pack(memcacheConstants.INCRDECR_PKT_FMT, amt, init, exp))
+                                          struct.pack(memcacheConstants.INCRDECR_PKT_FMT, amt, init, exp),
+                                          scope=scope, collection=collection)
         if len(val) == 8:
             return struct.unpack(INCRDECR_RES_FMT, val)[0], cas
         elif len(val) == 24:
@@ -244,52 +314,58 @@ class MemcachedClient(object):
             res = struct.unpack(INCRDECR_RES_WITH_UUID_AND_SEQNO_FMT, val)
             return res[2], cas, res[0], res[1]
 
-    def incr(self, key, amt=1, init=0, exp=0, vbucket= -1):
+    def incr(self, key, amt=1, init=0, exp=0, vbucket=-1, scope=None, collection=None):
+        scope, collection = self.collection_name(scope, collection)
         """Increment or create the named counter."""
-        self._set_vbucket(key, vbucket)
-        return self.__incrdecr(memcacheConstants.CMD_INCR, key, amt, init, exp)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self.__incrdecr(memcacheConstants.CMD_INCR, key, amt, init, exp, scope, collection)
 
-    def decr(self, key, amt=1, init=0, exp=0, vbucket= -1):
+    def decr(self, key, amt=1, init=0, exp=0, vbucket=-1, scope=None, collection=None):
         """Decrement or create the named counter."""
-        self._set_vbucket(key, vbucket)
-        return self.__incrdecr(memcacheConstants.CMD_DECR, key, amt, init, exp)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self.__incrdecr(memcacheConstants.CMD_DECR, key, amt, init, exp, scope, collection)
 
-    def set(self, key, exp, flags, val, vbucket= -1):
+    def set(self, key, exp, flags, val, vbucket=-1, scope=None, collection=None):
         """Set a value in the memcached server."""
-        self._set_vbucket(key, vbucket)
-        return self._mutate(memcacheConstants.CMD_SET, key, exp, flags, 0, val)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._mutate(memcacheConstants.CMD_SET, key, exp, flags, 0, val, scope, collection)
 
     def pack_the_extended_meta_data(self, adjusted_time, conflict_resolution_mode):
         return struct.pack(memcacheConstants.EXTENDED_META_DATA_FMT,
-                    memcacheConstants.EXTENDED_META_DATA_VERSION,
-                    memcacheConstants.META_DATA_ID_ADJUSTED_TIME,
-                    memcacheConstants.META_DATA_ID_ADJUSTED_TIME_SIZE, adjusted_time,
-                    memcacheConstants.META_DATA_ID_CONFLICT_RESOLUTION_MODE,
-                    memcacheConstants.META_DATA_ID_CONFLICT_RESOLUTION_MODE_SIZE, conflict_resolution_mode)
+                           memcacheConstants.EXTENDED_META_DATA_VERSION,
+                           memcacheConstants.META_DATA_ID_ADJUSTED_TIME,
+                           memcacheConstants.META_DATA_ID_ADJUSTED_TIME_SIZE, adjusted_time,
+                           memcacheConstants.META_DATA_ID_CONFLICT_RESOLUTION_MODE,
+                           memcacheConstants.META_DATA_ID_CONFLICT_RESOLUTION_MODE_SIZE, conflict_resolution_mode)
 
     # doMeta - copied from the mc bin client on github
-    def _doMetaCmd(self, cmd, key, value, cas, exp, flags, seqno, remote_cas, options):
-        #extra = struct.pack('>IIQQI', flags, exp, seqno, remote_cas, 0)
+    def _doMetaCmd(self, cmd, key, value, cas, exp, flags, seqno, remote_cas, options, scope=None, collection=None):
+        # extra = struct.pack('>IIQQI', flags, exp, seqno, remote_cas, 0)
         exp = 0
         extra = struct.pack('>IIQQI', flags, exp, seqno, remote_cas, options)
-        return self._doCmd(cmd, key, value, extra, cas)
 
-    def setWithMeta(self, key, value, exp, flags, seqno, remote_cas, options=2):
+        scope, collection = self.collection_name(scope, collection)
+        return self._doCmd(cmd, key, value, extra, cas, scope, collection)
+
+    def setWithMeta(self, key, value, exp, flags, seqno, remote_cas, options=2, scope=None, collection=None):
         """Set a value and its meta data in the memcached server."""
+        scope, collection = self.collection_name(scope, collection)
         return self._doMetaCmd(memcacheConstants.CMD_SET_WITH_META,
-                               key, value, 0, exp, flags, seqno, remote_cas, options)
+                               key, value, 0, exp, flags, seqno, remote_cas, options, scope, collection)
 
-    def setWithMetaInvalid(self, key, value, exp, flags, seqno, remote_cas, options=2):
+    def setWithMetaInvalid(self, key, value, exp, flags, seqno, remote_cas, options=2, scope=None, collection=None):
         """Set a value with meta that can be an invalid number memcached server."""
         exp = 0
-
+        scope, collection = self.collection_name(scope, collection)
         # 'i' allows for signed integer as remote_cas value
         extra = struct.pack('>IIQiI', flags, exp, seqno, remote_cas, options)
         cmd = memcacheConstants.CMD_SET_WITH_META
-        return self._doCmd(cmd, key, value, extra, 0)
+        return self._doCmd(cmd, key, value, extra, 0, scope, collection)
 
     # set with meta using the LWW conflict resolution CAS
-    def setWithMetaLWW(self, key, value, exp, flags,cas):
+    def setWithMetaLWW(self, key, value, exp, flags, cas, scope=None, collection=None):
         """Set a value and its meta data in the memcached server.
         The format is described here https://github.com/couchbase/ep-engine/blob/master/docs/protocol/set_with_meta.md,
         the first CAS will be 0 because that is the traditional CAS, and the CAS in the "extras" will be populated.
@@ -297,17 +373,18 @@ class MemcachedClient(object):
 
         """
         #
-        SET_META_EXTRA_FMT = '>IIQQH'    # flags (4), expiration (4), seqno (8), CAS (8), metalen (2)
+        SET_META_EXTRA_FMT = '>IIQQH'  # flags (4), expiration (4), seqno (8), CAS (8), metalen (2)
         META_LEN = 0
         SEQNO = 0
-
+        scope, collection = self.collection_name(scope, collection)
         self._set_vbucket(key, -1)
 
         return self._doCmd(memcacheConstants.CMD_SET_WITH_META, key, value,
-                struct.pack(memcacheConstants.META_EXTRA_FMT, flags, exp,  SEQNO, cas, META_LEN))
+                           struct.pack(memcacheConstants.META_EXTRA_FMT, flags, exp, SEQNO, cas),
+                           scope=scope, collection=collection)
 
     # set with meta using the LWW conflict resolution CAS
-    def delWithMetaLWW(self, key, exp, flags,cas):
+    def delWithMetaLWW(self, key, exp, flags, cas, scope=None, collection=None):
         """Set a value and its meta data in the memcached server.
         The format is described here https://github.com/couchbase/ep-engine/blob/master/docs/protocol/del_with_meta.md,
         the first CAS will be 0 because that is the traditional CAS, and the CAS in the "extras" will be populated.
@@ -318,24 +395,31 @@ class MemcachedClient(object):
         META_LEN = 0
         SEQNO = 0
 
-        self._set_vbucket(key, -1)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, -1, scope=scope, collection=collection)
 
         return self._doCmd(memcacheConstants.CMD_DEL_WITH_META, key, '',
-                struct.pack('>IIQQI', flags, exp,  SEQNO, cas, memcacheConstants.FORCE_ACCEPT_WITH_META_OPS))
-                #struct.pack(memcacheConstants.META_EXTRA_FMT, flags, exp,  SEQNO, cas, META_LEN))
+                           struct.pack('>IIQQI', flags, exp, SEQNO, cas, memcacheConstants.FORCE_ACCEPT_WITH_META_OPS),
+                           scope=scope, collection=collection)
+        # struct.pack(memcacheConstants.META_EXTRA_FMT, flags, exp,  SEQNO, cas))
 
     # hope to remove this and migrate existing calls to the aboce
-    def set_with_meta(self, key, exp, flags, seqno, cas, val, vbucket= -1, add_extended_meta_data=False,
-                      adjusted_time=0, conflict_resolution_mode=0):
+    def set_with_meta(self, key, exp, flags, seqno, cas, val, vbucket=-1, add_extended_meta_data=False,
+                      adjusted_time=0, conflict_resolution_mode=0, scope=None, collection=None):
         """Set a value in the memcached server."""
-        self._set_vbucket(key, vbucket)
+        self._set_vbucket(key, vbucket ,scope=scope, collection=collection)
 
+        scope, collection = self.collection_name(scope, collection)
         return self._doCmd(memcacheConstants.CMD_SET_WITH_META,
-                           key, val,
+                           key,
+                           val,
                            struct.pack(memcacheConstants.SKIP_META_CMD_FMT,
-                                       flags, exp, seqno, cas,
+                                       flags,
+                                       exp,
+                                       seqno,
+                                       cas,
                                        memcacheConstants.CR
-                                       ))
+                                       ), scope=scope, collection=collection)
 
         # Extended meta data was a 4.0 and 4.5 era construct, and not supported in 4.6 Not sure if will ever be needed
         # but leaving the code visible in case it is
@@ -351,57 +435,78 @@ class MemcachedClient(object):
                    struct.pack(META_CMD_FMT, flags, exp, seqno, cas) )
         """
 
-    def del_with_meta(self, key, exp, flags, seqno, cas, vbucket= -1,
+    def del_with_meta(self, key, exp, flags, seqno, cas, vbucket=-1,
                       options=0,
                       add_extended_meta_data=False,
-                      adjusted_time=0, conflict_resolution_mode=0):
+                      adjusted_time=0, conflict_resolution_mode=0, scope=None, collection=None):
         """Set a value in the memcached server."""
-        self._set_vbucket(key, vbucket)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        resp = self._doCmd(memcacheConstants.CMD_DELETE_WITH_META, key, '',
 
-        resp = self._doCmd(memcacheConstants.CMD_DEL_WITH_META, key, '',
-                       struct.pack(memcacheConstants.EXTENDED_META_CMD_FMT, flags,
-                                   exp, seqno, cas, options, 0) )
+                           struct.pack(memcacheConstants.EXTENDED_META_CMD_FMT, flags,
+                                       exp, seqno, cas, options, 0), scope=scope, collection=collection)
         return resp
 
-    def hello(self, features, name=''):
-        """Send a hello command for feature checking"""
-        #MB-11902
-        opaque, cas, data = self._doCmd(memcacheConstants.CMD_HELLO, name, struct.pack('>' + ('H' * len(features)), *features))
-        return struct.unpack('>' + ('H' * (len(data)/2)), data)
+    def hello(self, feature_flag):  # , key, exp, flags, val, vbucket= -1):
+        resp = self._doCmd(memcacheConstants.CMD_HELLO, '', struct.pack(">H", feature_flag))
+        result = struct.unpack('>H', resp[2])
+        if result[0] != feature_flag:
+            self.log.info("collections not supported")
+        else:
+            self.collections_supported = True
+        supported = resp[2]
+        for i in range(0, len(supported), struct.calcsize(">H")):
+            self.features.update(
+                struct.unpack_from(">H", supported, i))
 
-    def send_set(self, key, exp, flags, val, vbucket= -1):
+        if self.is_xerror_supported():
+            self.error_map = self.get_error_map()
+
+    def send_set(self, key, exp, flags, val, vbucket=-1, scope=None, collection=None):
         """Set a value in the memcached server without handling the response"""
-        self._set_vbucket(key, vbucket)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
         opaque = self.r.randint(0, 2 ** 32)
-        self._sendCmd(memcacheConstants.CMD_SET, key, val, opaque, struct.pack(SET_PKT_FMT, flags, exp), 0)
+        self._sendCmd(memcacheConstants.CMD_SET, key, val, opaque, struct.pack(SET_PKT_FMT, flags, exp), 0,
+                      scope=scope, collection=collection)
 
-    def add(self, key, exp, flags, val, vbucket= -1):
+    def add(self, key, exp, flags, val, vbucket=-1, scope=None, collection=None):
         """Add a value in the memcached server iff it doesn't already exist."""
-        self._set_vbucket(key, vbucket)
-        return self._mutate(memcacheConstants.CMD_ADD, key, exp, flags, 0, val)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._mutate(memcacheConstants.CMD_ADD, key, exp, flags, 0, val, scope, collection)
 
-    def replace(self, key, exp, flags, val, vbucket= -1):
+    def replace(self, key, exp, flags, val, vbucket=-1, scope=None, collection=None):
         """Replace a value in the memcached server iff it already exists."""
-        self._set_vbucket(key, vbucket)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
         return self._mutate(memcacheConstants.CMD_REPLACE, key, exp, flags, 0,
-            val)
+                            val, scope, collection)
 
-    def observe(self, key, vbucket= -1):
+    def observe(self, key, vbucket=-1, scope=None, collection=None):
         """Observe a key for persistence and replication."""
-        self._set_vbucket(key, vbucket)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        try:
+            key = key.encode()
+        except AttributeError:
+            pass
         value = struct.pack('>HH', self.vbucketId, len(key)) + key
-        opaque, cas, data = self._doCmd(memcacheConstants.CMD_OBSERVE, '', value)
+        opaque, cas, data = self._doCmd(memcacheConstants.CMD_OBSERVE, '', value, scope=scope, collection=collection)
         rep_time = (cas & 0xFFFFFFFF)
         persist_time = (cas >> 32) & 0xFFFFFFFF
-        persisted = struct.unpack('>B', data[4 + len(key)])[0]
+        persisted = struct.unpack('>B', bytes([data[4 + len(key)]]))
         return opaque, rep_time, persist_time, persisted, cas
 
-    def observe_seqno(self, key, vbucket_uuid, vbucket= -1):
+    def observe_seqno(self, key, vbucket_uuid, vbucket=-1, scope=None, collection=None):
         """Observe a key for persistence and replication."""
-        self._set_vbucket(key, vbucket)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
 
         value = struct.pack('>Q', vbucket_uuid)
-        opaque, cas, data = self._doCmd(memcacheConstants.CMD_OBSERVE_SEQNO, '', value)
+        opaque, cas, data = self._doCmd(memcacheConstants.CMD_OBSERVE_SEQNO, '', value,
+                                        scope=scope, collection=collection)
         format_type = struct.unpack('>B', data[0])[0]
         vbucket_id = struct.unpack('>H', data[1:3])[0]
         r_vbucket_uuid = struct.unpack('>Q', data[3:11])[0]
@@ -415,46 +520,55 @@ class MemcachedClient(object):
             old_vbucket_uuid = None
             last_seqno_received = None
 
-        return opaque, format_type, vbucket_id, r_vbucket_uuid, last_persisted_seq_no,current_seqno, old_vbucket_uuid ,last_seqno_received
+        return opaque, format_type, vbucket_id, r_vbucket_uuid, last_persisted_seq_no, current_seqno,\
+               old_vbucket_uuid, last_seqno_received
 
     def __parseGet(self, data, klen=0):
         flags = struct.unpack(memcacheConstants.GET_RES_FMT, data[-1][:4])[0]
-        return flags, data[1], data[-1][4 + klen:]
+        if klen == 0:
+            return flags, data[1], data[-1][4 + klen:]
+        else:
+            return flags, data[1], b"{" + data[-1].split(b'{')[-1]  # take only the value and value starts with "{"
 
-    def get(self, key, vbucket= -1):
+    def get(self, key, vbucket=-1, scope=None, collection=None):
         """Get the value for a given key within the memcached server."""
-        self._set_vbucket(key, vbucket)
-        parts = self._doCmd(memcacheConstants.CMD_GET, key, '')
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        parts = self._doCmd(memcacheConstants.CMD_GET, key, '', scope=scope, collection=collection)
 
         return self.__parseGet(parts)
 
-    def send_get(self, key, vbucket= -1):
+    def send_get(self, key, vbucket=-1, scope=None, collection=None):
         """ sends a get message without parsing the response """
-        self._set_vbucket(key, vbucket)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
         opaque = self.r.randint(0, 2 ** 32)
-        self._sendCmd(memcacheConstants.CMD_GET, key, '', opaque)
+        self._sendCmd(memcacheConstants.CMD_GET, key, '', opaque, scope, collection)
 
-    def getl(self, key, exp=15, vbucket= -1):
+    def getl(self, key, exp=15, vbucket=-1, scope=None, collection=None):
         """Get the value for a given key within the memcached server."""
-        self._set_vbucket(key, vbucket)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
         parts = self._doCmd(memcacheConstants.CMD_GET_LOCKED, key, '',
-            struct.pack(memcacheConstants.GETL_PKT_FMT, exp))
+                            struct.pack(memcacheConstants.GETL_PKT_FMT, exp), scope=scope, collection=collection)
         return self.__parseGet(parts)
 
-    def getr(self, key, vbucket= -1):
+    def getr(self, key, vbucket=-1, scope=None, collection=None):
         """Get the value for a given key within the memcached server from a replica vbucket."""
-        self._set_vbucket(key, vbucket)
-        parts = self._doCmd(memcacheConstants.CMD_GET_REPLICA, key, '')
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        parts = self._doCmd(memcacheConstants.CMD_GET_REPLICA, key, '', scope=scope, collection=collection)
         return self.__parseGet(parts, len(key))
 
-    def getMeta(self, key, request_extended_meta_data=False):
+    def getMeta(self, key, request_extended_meta_data=False, scope=None, collection=None):
         """Get the metadata for a given key within the memcached server."""
-        self._set_vbucket(key)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, scope=scope, collection=collection)
         if request_extended_meta_data:
             extras = struct.pack('>B', 1)
         else:
             extras = ''
-        opaque, cas, data = self._doCmd(memcacheConstants.CMD_GET_META, key, '', extras)
+        opaque, cas, data = self._doCmd(memcacheConstants.CMD_GET_META, key, '', extras,
+                                        scope=scope, collection=collection)
         deleted = struct.unpack('>I', data[0:4])[0]
         flags = struct.unpack('>I', data[4:8])[0]
         exp = struct.unpack('>I', data[8:12])[0]
@@ -462,44 +576,52 @@ class MemcachedClient(object):
 
         if request_extended_meta_data:
             conflict_res = struct.unpack('>B', data[20:21])[0]
-            return (deleted, flags, exp, seqno, cas, conflict_res)
+            return deleted, flags, exp, seqno, cas, conflict_res
         else:
-            return (deleted, flags, exp, seqno, cas)
+            return deleted, flags, exp, seqno, cas
 
-    def get_adjusted_time(self, vbucket):
+    def get_adjusted_time(self, vbucket, scope=None, collection=None):
         """Get the value for a given key within the memcached server."""
+        scope, collection = self.collection_name(scope, collection)
         self.vbucketId = vbucket
-        return self._doCmd(memcacheConstants.CMD_GET_ADJUSTED_TIME, '', '')
+        return self._doCmd(memcacheConstants.CMD_GET_ADJUSTED_TIME, '', '', scope=scope, collection=collection)
 
-    def set_time_drift_counter_state(self, vbucket, drift, state):
+    def set_time_drift_counter_state(self, vbucket, drift, state, scope=None, collection=None):
         """Get the value for a given key within the memcached server."""
+        scope, collection = self.collection_name(scope, collection)
         self.vbucketId = vbucket
         extras = struct.pack(memcacheConstants.SET_DRIFT_COUNTER_STATE_REQ_FMT, drift, state)
-        return self._doCmd(memcacheConstants.CMD_SET_DRIFT_COUNTER_STATE, '', '', extras)
+        return self._doCmd(memcacheConstants.CMD_SET_DRIFT_COUNTER_STATE, '', '', extras,
+                           scope=scope, collection=collection)
 
-    def set_time_sync_state(self, vbucket, state):
+    def set_time_sync_state(self, vbucket, state, scope=None, collection=None):
         """Get the value for a given key within the memcached server."""
+        scope, collection = self.collection_name(scope, collection)
         self.vbucketId = vbucket
         extras = struct.pack(memcacheConstants.SET_DRIFT_COUNTER_STATE_REQ_FMT, 0, state)
-        return self._doCmd(memcacheConstants.CMD_SET_DRIFT_COUNTER_STATE, '', '', extras)
+        return self._doCmd(memcacheConstants.CMD_SET_DRIFT_COUNTER_STATE, '', '', extras,
+                           scope=scope, collection=collection)
 
-    def cas(self, key, exp, flags, oldVal, val, vbucket= -1):
+    def cas(self, key, exp, flags, oldVal, val, vbucket=-1, scope=None, collection=None):
         """CAS in a new value for the given key and comparison value."""
-        self._set_vbucket(key, vbucket)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
         self._mutate(memcacheConstants.CMD_SET, key, exp, flags,
-            oldVal, val)
+                     oldVal, val, scope, collection)
 
-    def touch(self, key, exp, vbucket= -1):
+    def touch(self, key, exp, vbucket=-1, scope=None, collection=None):
         """Touch a key in the memcached server."""
-        self._set_vbucket(key, vbucket)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
         return self._doCmd(memcacheConstants.CMD_TOUCH, key, '',
-            struct.pack(memcacheConstants.TOUCH_PKT_FMT, exp))
+                           struct.pack(memcacheConstants.TOUCH_PKT_FMT, exp), scope=scope, collection=collection)
 
-    def gat(self, key, exp, vbucket= -1):
+    def gat(self, key, exp, vbucket=-1, scope=None, collection=None):
         """Get the value for a given key and touch it within the memcached server."""
-        self._set_vbucket(key, vbucket)
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
         parts = self._doCmd(memcacheConstants.CMD_GAT, key, '',
-            struct.pack(memcacheConstants.GAT_PKT_FMT, exp))
+                            struct.pack(memcacheConstants.GAT_PKT_FMT, exp), scope=scope, collection=collection)
         return self.__parseGet(parts)
 
     def version(self):
@@ -509,7 +631,7 @@ class MemcachedClient(object):
     def sasl_mechanisms(self):
         """Get the supported SASL methods."""
         return set(self._doCmd(memcacheConstants.CMD_SASL_LIST_MECHS,
-                               '', '')[2].split(' '))
+                               b'', b'')[2].split(b' '))
 
     def sasl_auth_start(self, mech, data):
         """Start a sasl auth session."""
@@ -540,11 +662,11 @@ class MemcachedClient(object):
         return self._doCmd(memcacheConstants.CMD_START_PERSISTENCE, '', '')
 
     def set_flush_param(self, key, val):
-        print("setting flush param:", key, val)
+        self.log.info("setting flush param: {} {}".format(key, val))
         return self._doCmd(memcacheConstants.CMD_SET_FLUSH_PARAM, key, val)
 
     def set_param(self, key, val, type):
-        print("setting param:", key, val)
+        self.log.info("setting param: {} {}".format(key, val))
         type = struct.pack(memcacheConstants.GET_RES_FMT, type)
         return self._doCmd(memcacheConstants.CMD_SET_FLUSH_PARAM, key, val, type)
 
@@ -558,7 +680,7 @@ class MemcachedClient(object):
         return self._doCmd(memcacheConstants.CMD_REVERT_ONLINEUPDATE, '', '')
 
     def set_tap_param(self, key, val):
-        print("setting tap param:", key, val)
+        self.log.info("setting tap param: {} {}".format(key, val))
         return self._doCmd(memcacheConstants.CMD_SET_TAP_PARAM, key, val)
 
     def set_vbucket_state(self, vbucket, stateName):
@@ -571,30 +693,32 @@ class MemcachedClient(object):
     def get_vbucket_state(self, vbucket):
         assert isinstance(vbucket, int)
         self.vbucketId = vbucket
-        return self._doCmd(memcacheConstants.CMD_GET_VBUCKET_STATE,
-                           str(vbucket), '')
+        return self._doCmd(memcacheConstants.CMD_GET_VBUCKET_STATE, '', '')
 
     def delete_vbucket(self, vbucket):
         assert isinstance(vbucket, int)
         self.vbucketId = vbucket
         return self._doCmd(memcacheConstants.CMD_DELETE_VBUCKET, '', '')
 
-    def evict_key(self, key, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doCmd(memcacheConstants.CMD_EVICT_KEY, key, '')
+    def evict_key(self, key, vbucket=-1, scope=None, collection=None):
+        scope, collection = self.collection_name(scope, collection)
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doCmd(memcacheConstants.CMD_EVICT_KEY, key, '', scope=scope, collection=collection)
 
-    def getMulti(self, keys, vbucket= -1):
+    def getMulti(self, keys, vbucket=-1, scope=None, collection=None):
         """Get values for any available keys in the given iterable.
 
         Returns a dict of matched keys to their values."""
+        scope, collection = self.collection_name(scope, collection)
+
         opaqued = dict(enumerate(keys))
         terminal = len(opaqued) + 10
         # Send all of the keys in quiet
         vbs = set()
-        for k, v in opaqued.iteritems():
-            self._set_vbucket(v, vbucket)
+        for k, v in opaqued.items():
+            self._set_vbucket(v, vbucket, scope=scope, collection=collection)
             vbs.add(self.vbucketId)
-            self._sendCmd(memcacheConstants.CMD_GETQ, v, '', k)
+            self._sendCmd(memcacheConstants.CMD_GETQ, v, '', k, scope=scope, collection=collection)
 
         for vb in vbs:
             self.vbucketId = vb
@@ -614,14 +738,16 @@ class MemcachedClient(object):
 
         return rv
 
-    def setMulti(self, exp, flags, items, vbucket= -1):
+    def setMulti(self, exp, flags, items, vbucket=-1, scope=None, collection=None):
         """Multi-set (using setq).
 
         Give me (key, value) pairs."""
 
         # If this is a dict, convert it to a pair generator
-        if hasattr(items, 'iteritems'):
-            items = items.iteritems()
+        scope, collection = self.collection_name(scope, collection)
+
+        if hasattr(items, 'items'):
+            items = iter(items.items())
 
         opaqued = dict(enumerate(items))
         terminal = len(opaqued) + 10
@@ -629,10 +755,10 @@ class MemcachedClient(object):
 
         # Send all of the keys in quiet
         vbs = set()
-        for opaque, kv in opaqued.iteritems():
-            self._set_vbucket(kv[0], vbucket)
+        for opaque, kv in opaqued.items():
+            self._set_vbucket(kv[0], vbucket, scope=scope, collection=collection)
             vbs.add(self.vbucketId)
-            self._sendCmd(memcacheConstants.CMD_SETQ, kv[0], kv[1], opaque, extra)
+            self._sendCmd(memcacheConstants.CMD_SETQ, kv[0], kv[1], opaque, extra, scope=scope, collection=collection)
 
         for vb in vbs:
             self.vbucketId = vb
@@ -652,6 +778,14 @@ class MemcachedClient(object):
 
         return failed
 
+    def collection_name(self, scope, collection):
+        if self.collections_supported:
+            if scope is None:
+                scope = '_default'
+            if collection is None:
+                collection = '_default'
+        return scope, collection
+
     def stats(self, sub=''):
         """Get stats."""
         opaque = self.r.randint(0, 2 ** 32)
@@ -659,9 +793,9 @@ class MemcachedClient(object):
         done = False
         rv = {}
         while not done:
-            cmd, opaque, cas, klen, extralen, dtype, data, frameextralen = self._handleKeyedResponse(None)
+            cmd, opaque, cas, klen, extralen, data = self._handleKeyedResponse(None)
             if klen:
-                rv[data[0:klen]] = data[klen:]
+                rv[data[0:klen].decode()] = data[klen:].decode()
             else:
                 done = True
         return rv
@@ -670,15 +804,17 @@ class MemcachedClient(object):
         """Send a noop command."""
         return self._doCmd(memcacheConstants.CMD_NOOP, '', '')
 
-    def delete(self, key, cas=0, vbucket= -1):
+    def delete(self, key, cas=0, vbucket=-1, scope=None, collection=None):
         """Delete the value for a given key within the memcached server."""
-        self._set_vbucket(key, vbucket)
-        return self._doCmd(memcacheConstants.CMD_DELETE, key, '', '', cas)
+        scope, collection = self.collection_name(scope, collection)
+
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doCmd(memcacheConstants.CMD_DELETE, key, '', '', cas, scope=scope, collection=collection)
 
     def flush(self, timebomb=0):
         """Flush all storage in a memcached instance."""
         return self._doCmd(memcacheConstants.CMD_FLUSH, '', '',
-            struct.pack(memcacheConstants.FLUSH_PKT_FMT, timebomb))
+                           struct.pack(memcacheConstants.FLUSH_PKT_FMT, timebomb))
 
     def bucket_select(self, name):
         return self._doCmd(memcacheConstants.CMD_SELECT_BUCKET, name, '')
@@ -718,7 +854,7 @@ class MemcachedClient(object):
         print("sending sync for replication and persistence command for the "
               "following keyspecs:", keyspecs)
         (opaque, cas, data) = self._doCmd(memcacheConstants.CMD_SYNC, "", payload)
-        return (opaque, cas, self._parse_sync_response(data))
+        return opaque, cas, self._parse_sync_response(data)
 
     def _build_sync_payload(self, flags, keyspecs):
         payload = struct.pack(">I", flags)
@@ -727,9 +863,9 @@ class MemcachedClient(object):
         for spec in keyspecs:
             if not isinstance(spec, dict):
                 raise TypeError("each keyspec must be a dict")
-            if not spec.has_key('vbucket'):
+            if 'vbucket' not in spec:
                 raise TypeError("missing vbucket property in keyspec")
-            if not spec.has_key('key'):
+            if 'key' not in spec:
                 raise TypeError("missing key property in keyspec")
 
             payload += struct.pack(">Q", spec.get('cas', 0))
@@ -741,16 +877,16 @@ class MemcachedClient(object):
 
     def _parse_sync_response(self, data):
         keyspecs = []
-        nkeys = struct.unpack(">H", data[0:struct.calcsize("H")])[0]
+        nkeys = struct.unpack(">H", data[0: struct.calcsize("H")])[0]
         offset = struct.calcsize("H")
 
-        for i in xrange(nkeys):
+        for i in range(nkeys):
             spec = {}
             width = struct.calcsize("QHHB")
             (spec['cas'], spec['vbucket'], keylen, eventid) = \
-                struct.unpack(">QHHB", data[offset : offset + width])
+                struct.unpack(">QHHB", data[offset: offset + width])
             offset += width
-            spec['key'] = data[offset : offset + keylen]
+            spec['key'] = data[offset: offset + keylen]
             offset += keylen
 
             if eventid == memcacheConstants.CMD_SYNC_EVENT_PERSISTED:
@@ -788,9 +924,9 @@ class MemcachedClient(object):
         """Reset the replication chain."""
         return self._doCmd(memcacheConstants.CMD_RESET_REPLICATION_CHAIN, '', '', '', 0)
 
-    def _set_vbucket(self, key, vbucket= -1):
-        if vbucket < 0:
-            self.vbucketId = (((zlib.crc32(key)) >> 16) & 0x7fff) & (self.vbucket_count - 1)
+    def _set_vbucket(self, key, vbucket=-1, scope=None, collection=None):
+        if not vbucket or vbucket < 0:
+            self.vbucketId = (((zlib.crc32(key.encode())) >> 16) & 0x7fff) & (self.vbucket_count - 1)
         else:
             self.vbucketId = vbucket
 
@@ -807,78 +943,191 @@ class MemcachedClient(object):
             try:
                 return fn(*args, **kwargs)
             except Exception as ex:
-                raise ex
+                raise
+
         return new_func
 
     @sd_function
-    def get_sd(self, key, path, cas=0, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_GET, key, path, cas=cas)
+    def get_sd(self, key, path, cas=0, vbucket=-1, scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_GET, key, path, cas=cas, scope=scope, collection=collection)
 
     @sd_function
-    def exists_sd(self, key, path, opaque=0, cas=0, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_EXISTS, key, path, opaque=opaque, cas=cas)
+    def exists_sd(self, key, path, opaque=0, cas=0, vbucket=-1, scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_EXISTS, key, path, opaque=opaque, cas=cas,
+                             scope=scope, collection=collection)
 
     @sd_function
-    def dict_add_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
+    def dict_add_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                    scope=None,  collection=None):
         self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_DICT_ADD, key, path, value, expiry, opaque, cas, create)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_DICT_ADD, key, path, value, expiry, opaque, cas, create,
+                             scope=scope, collection=collection)
 
     @sd_function
-    def dict_upsert_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_DICT_UPSERT, key, path, value, expiry, opaque, cas, create)
+    def dict_upsert_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                       scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_DICT_UPSERT, key, path, value, expiry, opaque, cas, create,
+                             scope=scope, collection=collection)
 
     @sd_function
-    def delete_sd(self, key, path, opaque=0, cas=0, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_DELETE, key, path, opaque=opaque, cas=cas)
+    def delete_sd(self, key, path, opaque=0, cas=0, vbucket=-1, scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_DELETE, key, path, opaque=opaque, cas=cas,
+                             scope=scope, collection=collection)
 
     @sd_function
-    def replace_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_REPLACE, key, path, value, expiry, opaque, cas, create)
+    def replace_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                   scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_REPLACE, key, path, value, expiry, opaque, cas, create,
+                             scope=scope, collection=collection)
 
     @sd_function
-    def array_push_last_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_ARRAY_PUSH_LAST, key, path, value, expiry, opaque, cas, create)
+    def array_push_last_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                           scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_ARRAY_PUSH_LAST, key, path, value, expiry, opaque, cas,
+                             create, scope=scope, collection=collection)
 
     @sd_function
-    def array_push_first_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_ARRAY_PUSH_FIRST, key, path, value, expiry, opaque, cas, create)
+    def array_push_first_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                            scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_ARRAY_PUSH_FIRST, key, path, value, expiry, opaque, cas,
+                             create, scope=scope, collection=collection)
 
     @sd_function
-    def array_add_unique_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_ARRAY_ADD_UNIQUE, key, path, value, expiry, opaque, cas, create)
+    def array_add_unique_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                            scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_ARRAY_ADD_UNIQUE, key, path, value, expiry, opaque, cas,
+                             create, scope=scope, collection=collection)
 
     @sd_function
-    def array_add_insert_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_ARRAY_INSERT, key, path, value, expiry, opaque, cas, create)
+    def array_add_insert_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                            scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_ARRAY_INSERT, key, path, value, expiry, opaque, cas, create,
+                             scope=scope, collection=collection)
 
     @sd_function
-    def counter_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_COUNTER, key, path, value, expiry, opaque, cas, create)
+    def counter_sd(self, key, path, value, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                   scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_COUNTER, key, path, value, expiry, opaque, cas, create,
+                             scope=scope, collection=collection)
 
     '''
     usage:
     cmdDict["add_unique"] = {"create_parents" : False, "path": array, "value": 0}
     res  = mc.multi_mutation_sd(key, cmdDict)
     '''
-    @sd_function
-    def multi_mutation_sd(self, key, cmdDict, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doMultiSdCmd(memcacheConstants.CMD_SUBDOC_MULTI_MUTATION, key, cmdDict, opaque)
 
     @sd_function
-    def multi_lookup_sd(self, key, path, expiry=0, opaque=0, cas=0, create=False, vbucket= -1):
-        self._set_vbucket(key, vbucket)
-        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_MULTI_LOOKUP, key, path, expiry, opaque, cas, create)
+    def multi_mutation_sd(self, key, cmdDict, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                          scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doMultiSdCmd(memcacheConstants.CMD_SUBDOC_MULTI_MUTATION, key, cmdDict, opaque,
+                                  scope=scope, collection=collection)
+
+    @sd_function
+    def multi_lookup_sd(self, key, path, expiry=0, opaque=0, cas=0, create=False, vbucket=-1,
+                        scope=None, collection=None):
+        self._set_vbucket(key, vbucket, scope=scope, collection=collection)
+        return self._doSdCmd(memcacheConstants.CMD_SUBDOC_MULTI_LOOKUP, key, path, expiry, opaque, cas, create,
+                             scope=scope, collection=collection)
+
+    def list_buckets(self):
+        """Get the name of all buckets."""
+        opaque, cas, data = self._doCmd(
+            memcacheConstants.CMD_LIST_BUCKETS, '', '', '', 0)
+        return data.strip().split(' ')
+
+    def get_error_map(self):
+        _, _, errmap = self._doCmd(memcacheConstants.CMD_GET_ERROR_MAP, '',
+                                   struct.pack("!H", self.error_map_version))
+
+        errmap = json.loads(errmap)
+
+        d = {}
+
+        for k, v in errmap['errors'].items():
+            d[int(k, 16)] = v
+
+        errmap['errors'] = d
+        return errmap
+
+    def set_collections(self, manifest):
+        rv = self._doCmd(memcacheConstants.CMD_COLLECTIONS_SET_MANIFEST,
+                         '',
+                         manifest)
+
+        # Load up the collection map from the JSON
+        self._update_collection_map(manifest)
+
+    def get_collections(self, update_map=False):
+        if self.collections_supported:
+            rv = self._doCmd(memcacheConstants.CMD_COLLECTIONS_GET_MANIFEST,
+                             '',
+                             '')
+            if update_map:
+                self._update_collection_map(rv[2])
+            return rv
+
+    def enable_xerror(self):
+        self.feature_flag.add(memcacheConstants.FEATURE_XERROR)
+
+    def enable_collections(self):
+        self.feature_flag.add(memcacheConstants.FEATURE_COLLECTIONS)
+
+    def is_xerror_supported(self):
+        return memcacheConstants.FEATURE_XERROR in self.features
+
+    def is_collections_supported(self):
+        return memcacheConstants.FEATURE_COLLECTIONS in self.features
+
+    # Collections on the wire uses a varint encoding for the collection-ID
+    # A simple unsigned_leb128 encoded is used:
+    #    https://en.wikipedia.org/wiki/LEB128
+    # @return a string with the binary encoding
+    def _encodeCollectionId(self, key, scope, collection):
+        if not self.is_collections_supported():
+            raise exceptions.RuntimeError("Collections are not enabled")
+
+        if type(collection) == str:
+            # expect scope.collection for name API
+            try:
+                collection = self.collection_map[scope][collection]
+            except KeyError as e:
+                self.log.info("Error: cannot map collection \"{}\" to an ID".format(collection))
+                self.log.info("name API expects \"scope.collection\" as the key")
+                raise e
+
+        output = array.array('B', [0])
+        while collection > 0:
+            byte = collection & 0xFF
+            collection >>= 7
+            # collection has more bits?
+            if collection > 0:
+                # Set the 'continue' bit of this byte
+                byte |= 0x80
+                output[-1] = byte
+                output.append(0)
+            else:
+                output[-1] = byte
+        return output.tobytes().decode() + key
+
+    def _update_collection_map(self, manifest):
+        parsed = json.loads(manifest)
+        for scope in parsed['scopes']:
+            try:
+                for collection in scope['collections']:
+                    self.collection_map[scope['name']][collection['name']] = int(collection['uid'], 16)
+            except KeyError:
+                pass
 
 
 def error_to_str(errno):

@@ -28,6 +28,7 @@ class TestInput(object):
         self.test_params = dict()
         self.tuq_client = dict()
         self.elastic = list()
+        self.capella = dict()
         # servers, each server can have u_name, passwd, port, directory
 
     def param(self, name, *args):
@@ -91,6 +92,7 @@ class TestInputServer(object):
         self.upgraded = False
         self.remote_info = None
         self.use_sudo = False
+        self.hosted_on_cloud = False
 
     def __str__(self):
         ip_str = "ip:{0} port:{1}".format(self.ip, self.port)
@@ -194,7 +196,9 @@ class TestInputParser:
         t_input.ui_conf = {}
         for section in sections:
             result = re.search('^cluster', section)
-            if section == 'servers':
+            if section == "capella":
+                t_input.capella = TestInputParser.get_capella_config(config, section)  
+            elif section == 'servers':
                 ips = TestInputParser.get_server_ips(config, section)
             elif section == 'clients':
                 client_ips = TestInputParser.get_server_ips(config, section)
@@ -255,6 +259,14 @@ class TestInputParser:
         return t_input
 
     @staticmethod
+    def get_capella_config(config, section):
+        capella = dict()
+        for option in config.options(section):
+            capella[option] = config.get(section, option)
+        return capella
+
+
+    @staticmethod
     def get_server_options(servers, membase_settings, global_properties):
         for server in servers:
             if server.ssh_username == '' and 'username' in global_properties:
@@ -290,7 +302,6 @@ class TestInputParser:
                 server.es_username = global_properties['es_username']
             if server.es_password == '' and 'es_password' in global_properties:
                 server.es_password = global_properties['es_password']
-
         return servers
 
     @staticmethod

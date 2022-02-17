@@ -367,3 +367,4 @@ ALLOW_HTP = True
 IS_CONTAINER = False
 FUZZY_FTS_LARGE_DATASET = "https://s3-us-west-1.amazonaws.com/qebucket/testrunner/data/fuzzy_large_dataset.json"
 FUZZY_FTS_SMALL_DATASET = "https://s3-us-west-1.amazonaws.com/qebucket/testrunner/data/fuzzy_small_dataset.json"
+ON_CLOUD = False

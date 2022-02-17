@@ -56,8 +56,10 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
         self.log.info("Will simulate error condition on %s" % target_nodes)
         for node in target_nodes:
-            shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            shell_conn[node.ip] = None
+            if not node.hosted_on_cloud:
+                shell_conn[node.ip] = RemoteMachineShellConnection(node)
+            cbstat_obj[node.ip] = Cbstats(node)
             active_vbs_in_target_nodes += cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name,
                 "active")
@@ -75,12 +77,10 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             error_sim.create(action=self.simulate_error)
         else:
             for node in target_nodes:
-                # Create shell_connections
-                shell_conn[node.ip] = RemoteMachineShellConnection(node)
-
                 # Perform specified action
                 error_sim[node.ip] = CouchbaseError(self.log,
-                                                    shell_conn[node.ip])
+                                                    shell_conn[node.ip],
+                                                    node)
                 error_sim[node.ip].create(self.simulate_error,
                                           bucket_name=self.bucket.name)
 

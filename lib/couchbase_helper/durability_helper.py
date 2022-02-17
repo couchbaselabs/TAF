@@ -249,10 +249,8 @@ class DurabilityHelper:
 
         # Fetch stats for all available vbuckets into 'vb_details_stats'
         for server in kv_servers:
-            shell = RemoteMachineShellConnection(server)
-            cbstat_obj = Cbstats(shell)
+            cbstat_obj = Cbstats(server)
             vb_details_stats.update(cbstat_obj.vbucket_details(bucket.name))
-            shell.disconnect()
 
         for vb_num in range(0, vbuckets):
             vb_num = str(vb_num)

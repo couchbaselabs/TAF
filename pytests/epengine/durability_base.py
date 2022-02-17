@@ -19,7 +19,7 @@ class DurabilityTestsBase(ClusterSetup):
         super(DurabilityTestsBase, self).setUp()
 
         # Create default bucket
-        self.create_bucket(self.cluster)
+        # self.create_bucket(self.cluster)
 
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
@@ -42,7 +42,6 @@ class DurabilityTestsBase(ClusterSetup):
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
             .update_autofailover_settings(False, 120)
-        self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         self.bucket = self.cluster.buckets[0]
 

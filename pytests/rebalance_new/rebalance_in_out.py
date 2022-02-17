@@ -397,6 +397,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
                 tasks_info, self.cluster,
                 sdk_client_pool=self.sdk_client_pool)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
+            for task, task_info in tasks_info.items():
+                self.assertFalse(
+                    task_info["ops_failed"],
+                    "Doc ops failed for task: {}".format(task.thread_name))
 
             self.sleep(10)
 

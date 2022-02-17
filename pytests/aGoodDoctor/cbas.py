@@ -19,13 +19,13 @@ from com.couchbase.client.core.error import RequestCanceledException,\
 queries = ['select name from {} where age between 30 and 50 limit 10;',
            'select age, count(*) from {} where marital = "M" group by age order by age limit 10;',
            'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" limit 10;',
-           # 'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 10;',
            'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 10;']
 datasets = ['create dataset ds{} on {}.{}.{} where age between 30 and 50;',
-           'create dataset ds{} on {}.{}.{};',
-           'create dataset ds{} on {}.{}.{} where attributes.hair = "Burgundy";',
-           'CREATE dataset ds{} on {}.{}.{} where gender="F" and attributes.hair = "Burgundy";',
-           'create dataset ds{} on {}.{}.{};']
+            'create dataset ds{} on {}.{}.{};',
+            'create dataset ds{} on {}.{}.{} where attributes.hair = "Burgundy";',
+            'CREATE dataset ds{} on {}.{}.{} where gender="F" and attributes.hair = "Burgundy";',
+            'create dataset ds{} on {}.{}.{};']
+
 
 class DoctorCBAS():
 

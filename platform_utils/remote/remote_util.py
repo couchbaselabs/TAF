@@ -173,6 +173,7 @@ class RemoteMachineShellConnection:
         self.ssh_key = serverInfo.ssh_key
         self.port = serverInfo.port
         self.memcached_port = serverInfo.memcached_port
+        self.is_cloud = serverInfo.hosted_on_cloud
 
         self.bin_path = LINUX_COUCHBASE_BIN_PATH
         self.cmd_ext = ""
@@ -205,6 +206,8 @@ class RemoteMachineShellConnection:
             self.bin_path = WIN_COUCHBASE_BIN_PATH
 
     def connect(self):
+        if self.is_cloud:
+            raise Exception("Running in Capella env. ssh isn't supported!")
         # For cluster_run case
         if not self.remote:
             return

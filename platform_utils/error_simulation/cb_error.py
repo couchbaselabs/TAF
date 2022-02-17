@@ -1,4 +1,6 @@
-from cb_tools.cbepctl import Cbepctl
+from BucketLib.bucket import Bucket
+from common_lib import sleep
+from memcached.helper.data_helper import MemcachedClientHelper
 
 
 class CouchbaseError:
@@ -13,9 +15,10 @@ class CouchbaseError:
     KILL_MEMCACHED = "kill_memcached"
     KILL_BEAMSMP = "kill_beam.smp"
 
-    def __init__(self, logger, shell_conn):
+    def __init__(self, logger, shell_conn, node=None):
         self.log = logger
         self.shell_conn = shell_conn
+        self.server = node
 
     def __handle_shell_error(self, error):
         if len(error) != 0:
@@ -37,7 +40,7 @@ class CouchbaseError:
 
     def create(self, action=None, bucket_name="default"):
         self.log.info("Simulating '{0}' in {1}".format(action,
-                                                       self.shell_conn.ip))
+                                                       self.server.ip))
         if action == CouchbaseError.STOP_MEMCACHED:
             _, error = self.__interrupt_process("memcached", "stop")
             self.__handle_shell_error(error)
@@ -59,8 +62,17 @@ class CouchbaseError:
         elif action == CouchbaseError.STOP_SERVER:
             self.shell_conn.stop_server()
         elif action == CouchbaseError.STOP_PERSISTENCE:
-            cbepctl_obj = Cbepctl(self.shell_conn)
-            cbepctl_obj.persistence(bucket_name, "stop")
+            mc_client = MemcachedClientHelper.direct_client(
+                self.server, Bucket({"name": bucket_name}), 30,
+                self.server.rest_username, self.server.rest_password)
+            mc_client.stop_persistence()
+            stopped = False
+            while not stopped:
+                sleep(0.5)
+                stats = mc_client.stats()
+                if stats['ep_flusher_state'] == 'paused':
+                    stopped = True
+            self.log.debug('Persistence stopped for bucket %s' % bucket_name)
         else:
             self.log.error("Unsupported action: '{0}'".format(action))
 
@@ -80,8 +92,10 @@ class CouchbaseError:
                 or action == CouchbaseError.STOP_SERVER:
             self.shell_conn.start_server()
         elif action == CouchbaseError.STOP_PERSISTENCE:
-            cbepctl_obj = Cbepctl(self.shell_conn)
-            cbepctl_obj.persistence(bucket_name, "start")
+            mc_client = MemcachedClientHelper.direct_client(
+                self.server, Bucket({"name": bucket_name}), 30,
+                self.server.rest_username, self.server.rest_password)
+            mc_client.start_persistence()
         else:
             self.log.error("Unsupported action to revert: '{0}'"
                            .format(action))

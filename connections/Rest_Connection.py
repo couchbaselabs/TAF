@@ -67,7 +67,7 @@ class RestConnection(object):
             self.ip = serverInfo["ip"]
             self.username = serverInfo["username"]
             self.password = serverInfo["password"]
-            port = serverInfo["port"]
+            self.port = serverInfo["port"]
             if "index_port" in serverInfo.keys():
                 index_port = serverInfo["index_port"]
             if "fts_port" in serverInfo.keys():
@@ -136,13 +136,20 @@ class RestConnection(object):
         self.ftsUrl = generic_url % (url_host, fts_port)
         self.eventing_baseUrl = generic_url % (url_host, eventing_port)
         self.backup_url = generic_url % (url_host, backup_port)
-
+        try:
+            self.on_cloud = serverInfo.hosted_on_cloud
+        except:
+            self.on_cloud = False
+        if self.on_cloud:
+            nodes_self_url = self.baseUrl + "pools/default"
+        else:
+            nodes_self_url = self.baseUrl + 'nodes/self'
         # for Node is unknown to this cluster error
         node_unknown_msg = "Node is unknown to this cluster"
         unexpected_server_err_msg = "Unexpected server error, request logged"
         for iteration in xrange(5):
             http_res, success = \
-                self.init_http_request(self.baseUrl + 'nodes/self', timeout)
+                self.init_http_request(nodes_self_url, timeout)
             if not success and type(http_res) == unicode \
                     and (http_res.find(node_unknown_msg) > -1
                          or http_res.find(unexpected_server_err_msg) > -1):

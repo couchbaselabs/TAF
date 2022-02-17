@@ -51,7 +51,8 @@ from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from testconstants import INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA, MIN_KV_QUOTA
 from gsiLib.GsiHelper_Rest import GsiHelper
-
+from capella.internal_api import capella_utils as CapellaAPI
+from TestInput import TestInputSingleton, TestInputServer
 
 class Task(Callable):
     def __init__(self, thread_name):
@@ -194,6 +195,66 @@ class TimerTask(Task):
             self.sleep(interval)
         self.complete_task()
         return result
+
+
+class RebalanceTaskCapella(Task):
+    def __init__(self, pod, tenant, cluster, scale_params,
+                 timeout=1200):
+        Task.__init__(self, "Scaling_task_{}".format(str(time.time())))
+        self.pod = pod
+        self.tenant = tenant
+        self.cluster = cluster
+        for spec in scale_params:
+            for key, val in spec.items():
+                if key == "services":
+                    service_dict = [{"type":service} for service in val]
+                    spec[key] = service_dict
+                if key == "compute":
+                    compute_dict = {"type":val}
+                    spec[key] = compute_dict
+        self.scale_params = {"specs":scale_params}
+        self.timeout = timeout
+        print self.scale_params
+        
+    def call(self):    
+        CapellaAPI.scale(
+            self.pod, self.tenant, self.cluster, self.scale_params)
+        self.cluster.details.update(self.scale_params)
+        end = time.time() + self.timeout
+        while end > time.time():
+            try:
+                content = CapellaAPI.jobs(self.pod, self.tenant, self.cluster.id)
+                state = CapellaAPI.get_cluster_state(self.pod, self.tenant, self.cluster.id)
+                if content.get("data") or state != "healthy":
+                    for data in content.get("data"):
+                        data = data.get("data")
+                        if data.get("clusterId") == self.cluster.id:
+                            step, progress = data.get("currentStep"), data.get("completionPercentage")
+                            self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", state, step, progress))
+                    time.sleep(2)
+                else:
+                    self.log.info("Scaling the cluster completed. State == {}".format(state))
+                    break
+            except:
+                self.log.info("ERROR!!!")
+                break
+        self.servers = CapellaAPI.get_nodes(self.pod, self.tenant, self.cluster.id)
+        nodes = list()
+        for server in self.servers:
+            temp_server = TestInputServer()
+            temp_server.ip = server.get("hostname")
+            temp_server.hostname = server.get("hostname")
+            temp_server.services = server.get("services")
+            temp_server.port = "18091"
+            temp_server.rest_username = self.cluster.username
+            temp_server.rest_password = self.cluster.password
+            temp_server.hosted_on_cloud = True
+            temp_server.memcached_port = "11207"
+            nodes.append(temp_server)
+        
+        self.cluster.refresh_object(nodes)
+        self.result = True
+        return self.result
 
 
 class RebalanceTask(Task):
@@ -2638,13 +2699,13 @@ class StatsWaitTask(Task):
     GREATER_THAN = '>'
     GREATER_THAN_EQ = '>='
 
-    def __init__(self, shell_conn_list, bucket, stat_cmd, stat, comparison,
+    def __init__(self, servers, bucket, stat_cmd, stat, comparison,
                  value, timeout=300):
         super(StatsWaitTask, self).__init__("StatsWaitTask_%s_%s_%s"
                                             % (bucket.name,
                                                stat,
                                                str(time.time())))
-        self.shellConnList = shell_conn_list
+        self.servers = servers
         self.bucket = bucket
         self.statCmd = stat_cmd
         self.stat = stat
@@ -2658,8 +2719,8 @@ class StatsWaitTask(Task):
         self.start_task()
         start_time = time.time()
         timeout = start_time + self.timeout
-        for remote_conn in self.shellConnList:
-            self.cbstatObjList.append(Cbstats(remote_conn))
+        for server in self.servers:
+            self.cbstatObjList.append(Cbstats(server))
         try:
             while not self.stop and time.time() < timeout:
                 if self.statCmd in ["all", "dcp"]:
@@ -2690,7 +2751,7 @@ class StatsWaitTask(Task):
                 for cb_stat_obj in self.cbstatObjList:
                     tem_stat = cb_stat_obj.all_stats(self.bucket.name,
                                                      stat_name=self.statCmd)
-                    val_dict[cb_stat_obj.shellConn.ip] = tem_stat[self.stat]
+                    val_dict[cb_stat_obj.server.ip] = tem_stat[self.stat]
                     if self.stat in tem_stat:
                         stat_result += int(tem_stat[self.stat])
                 break
@@ -2699,8 +2760,6 @@ class StatsWaitTask(Task):
                     retry -= 1
                     sleep(5, "MC is down. Retrying.. %s" % str(error))
                     continue
-                for shell in self.shellConnList:
-                    shell.disconnect()
                 self.set_exception(error)
                 self.stop = True
 
@@ -2729,7 +2788,7 @@ class StatsWaitTask(Task):
                     node_stat_val = 0
                     for vb in tem_stat:
                         node_stat_val += tem_stat[vb][self.stat]
-                    val_dict[cb_stat_obj.shellConn.ip] = node_stat_val
+                    val_dict[cb_stat_obj.server.ip] = node_stat_val
                     stat_result += node_stat_val
                 break
             except Exception as error:
@@ -2737,8 +2796,6 @@ class StatsWaitTask(Task):
                     retry -= 1
                     sleep(5, "MC is down. Retrying.. %s" % str(error))
                     continue
-                for shell in self.shellConnList:
-                    shell.disconnect()
                 self.set_exception(error)
                 self.stop = True
         if not self._compare(self.comparison, str(stat_result), self.value):

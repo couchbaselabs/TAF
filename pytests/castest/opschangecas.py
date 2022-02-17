@@ -44,7 +44,7 @@ class OpsChangeCasTests(CasBaseTest):
         For expire, We want to verify using the latest CAS value of that item
         can not mutate it because it is expired already.
         """
-
+        nodes = [node for node in self.cluster_util.get_kv_nodes(self.cluster)]
         for bucket in self.cluster.buckets:
             client = SDKClient([self.cluster.master], bucket)
             gen = generator
@@ -52,9 +52,9 @@ class OpsChangeCasTests(CasBaseTest):
                 key, value = gen.next()
                 vb_of_key = self.bucket_util.get_vbucket_num_for_key(key)
                 active_node_ip = None
-                for node_ip in self.shell_conn.keys():
-                    if vb_of_key in self.vb_details[node_ip]["active"]:
-                        active_node_ip = node_ip
+                for node in nodes:
+                    if vb_of_key in self.vb_details[node.ip]["active"]:
+                        active_node_ip = node.ip
                         break
                 self.log.info("Performing %s on key %s" % (ops, key))
                 if ops in ["update", "touch"]:
@@ -206,16 +206,14 @@ class OpsChangeCasTests(CasBaseTest):
                                                      self.cluster.buckets)
 
         # Create cbstat objects
-        self.shell_conn = dict()
         self.cb_stat = dict()
         self.vb_details = dict()
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             self.vb_details[node.ip] = dict()
             self.vb_details[node.ip]["active"] = list()
             self.vb_details[node.ip]["replica"] = list()
-
-            self.shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            self.cb_stat[node.ip] = Cbstats(self.shell_conn[node.ip])
+        
+            self.cb_stat[node.ip] = Cbstats(node)
             self.vb_details[node.ip]["active"] = \
                 self.cb_stat[node.ip].vbucket_list(self.bucket.name, "active")
             self.vb_details[node.ip]["replica"] = \

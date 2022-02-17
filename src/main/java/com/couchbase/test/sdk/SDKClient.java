@@ -5,6 +5,9 @@ import java.time.Duration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import com.couchbase.client.core.env.IoConfig;
+import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.AuthenticationFailureException;
 import com.couchbase.client.java.Bucket;
@@ -27,9 +30,8 @@ public class SDKClient {
     public Collection connection;
 
     public static ClusterEnvironment env = ClusterEnvironment.builder()
-//          .seedNodes(SeedNode.create(this.server.ip, Optional.of(Integer.parseInt(this.server.memcached_port)), Optional.of(Integer.parseInt(this.server.port))))
-          .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
-          .build();
+            .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
+            .build();
 
     public SDKClient(Server master, String bucket, String scope, String collection) {
         super();
@@ -37,6 +39,13 @@ public class SDKClient {
         this.bucket = bucket;
         this.scope = scope;
         this.collection = collection;
+        if(this.master.memcached_port.equals("11207"))
+            env = ClusterEnvironment.builder()
+            .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
+            .securityConfig(SecurityConfig.enableTls(true)
+            .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+            .ioConfig(IoConfig.enableDnsSrv(true))
+            .build();
     }
 
     public SDKClient() {

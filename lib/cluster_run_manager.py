@@ -43,6 +43,8 @@ import threading
 import logging as log
 import subprocess
 import platform
+import weakref
+from _collections import defaultdict
 
 log.basicConfig(level=log.INFO)
 
@@ -50,6 +52,16 @@ os.environ.copy()
 CTXDIR = os.path.dirname(os.path.abspath(__file__))
 NSDIR = "{0}{1}..{1}..{1}ns_server".format(CTXDIR, os.sep)
 
+class KeepRefs(object):
+    __refs__ = defaultdict(list)
+
+    def __init__(self):
+        self.__refs__[self.__class__].append(weakref.ref(self)())
+
+    @classmethod
+    def get_instances(cls):
+        for ins in cls.__refs__[cls]:
+            yield ins
 
 class CRManager:
     """ cluster run management api """
