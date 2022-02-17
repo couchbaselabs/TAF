@@ -323,7 +323,7 @@ class CBASExternalLinks(CBASBaseTest):
             {
                 "description": "Create a link with a name of form Local*",
                 "name": "Local123",
-                "expected_error": 'Links starting with \"Local\" are reserved by the system'
+                "expected_error": "Links starting with \'Local\' are reserved by the system"
             },
             {
                 "description": "Create a link when remote host is unreachable",
