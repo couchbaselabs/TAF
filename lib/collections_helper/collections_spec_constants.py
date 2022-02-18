@@ -1,4 +1,5 @@
 class MetaConstants(object):
+    USE_SIMPLE_NAMES = "use_simple_names"
     NUM_BUCKETS = "num_buckets"
     NUM_SCOPES_PER_BUCKET = "num_scopes_per_bucket"
     NUM_COLLECTIONS_PER_SCOPE = "num_collections_per_scope"

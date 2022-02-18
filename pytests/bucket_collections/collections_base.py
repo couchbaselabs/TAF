@@ -23,6 +23,8 @@ class CollectionBase(ClusterSetup):
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
         self.doc_ops = self.input.param("doc_ops", None)
+        # If True, creates bucket/scope/collections with simpler names
+        self.use_simple_names = self.input.param("use_simple_names", True)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
         self.data_spec_name = self.input.param("data_spec_name",
@@ -142,6 +144,8 @@ class CollectionBase(ClusterSetup):
         else:
             buckets_spec = self.bucket_util.get_bucket_template_from_package(
                 self.spec_name)
+        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
+
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(
                 self.data_spec_name)

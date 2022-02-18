@@ -1317,11 +1317,20 @@ class BucketUtils(ScopeUtils):
 
     @staticmethod
     def get_random_name(invalid_name=False,
-                        max_length=CbServer.max_bucket_name_len):
+                        max_length=CbServer.max_bucket_name_len,
+                        use_simple_names=False):
         """
         API to generate random name which can be used to name
         a bucket/scope/collection
         """
+        # use_simple_names cannot create invalid_names
+        if use_simple_names:
+            # Returns string for format "[a-zA-Z]{5}-[0-9]{3}"
+            char_set = string.ascii_letters + string.digits
+            prefix = ''.join(random.choice(char_set) for _ in range(5))
+            postfix = ''.join(random.choice(string.digits) for _ in range(3))
+            return "%s-%s" % (prefix, postfix)
+
         invalid_start_chars = "_%"
         spl_chars = "-"
         invalid_chars = "!@#$^&*()~`:;?/>.,<{}|\]["
@@ -1753,7 +1762,8 @@ class BucketUtils(ScopeUtils):
         collection_obj_index = len(scope_spec["collections"])
         while collection_obj_index < req_num_collections:
             collection_name = BucketUtils.get_random_name(
-                max_length=CbServer.max_collection_name_len)
+                max_length=CbServer.max_collection_name_len,
+                use_simple_names=buckets_spec[MetaConstants.USE_SIMPLE_NAMES])
             if collection_name in scope_spec["collections"].keys():
                 continue
             scope_spec["collections"][collection_name] = dict()
@@ -1797,9 +1807,9 @@ class BucketUtils(ScopeUtils):
         scope_obj_index = len(scope_spec)
         while scope_obj_index < req_num_scopes:
             scope_name = BucketUtils.get_random_name(
-                max_length=CbServer.max_scope_name_len)
-            if scope_name in \
-                    scope_spec.keys():
+                max_length=CbServer.max_scope_name_len,
+                use_simple_names=buckets_spec[MetaConstants.USE_SIMPLE_NAMES])
+            if scope_name in scope_spec.keys():
                 continue
 
             scope_spec[scope_name] = dict()
@@ -1864,7 +1874,8 @@ class BucketUtils(ScopeUtils):
 
         bucket_obj_index = len(buckets_spec["buckets"])
         while bucket_obj_index < req_num_buckets:
-            bucket_name = BucketUtils.get_random_name()
+            bucket_name = BucketUtils.get_random_name(
+                use_simple_names=buckets_spec[MetaConstants.USE_SIMPLE_NAMES])
             if bucket_name in buckets_spec["buckets"]:
                 continue
 
@@ -4821,7 +4832,8 @@ class BucketUtils(ScopeUtils):
                     created_scope_collection_details = dict()
                     for _ in range(scopes_num):
                         scope_name = BucketUtils.get_random_name(
-                            max_length=CbServer.max_scope_name_len)
+                            max_length=CbServer.max_scope_name_len,
+                            use_simple_names=True)
                         ScopeUtils.create_scope(cluster.master,
                                                 bucket,
                                                 {"name": scope_name})
@@ -4832,7 +4844,8 @@ class BucketUtils(ScopeUtils):
                             with requests.Session() as session:
                                 for _ in range(collection_count):
                                     collection_name = BucketUtils.get_random_name(
-                                        max_length=CbServer.max_collection_name_len)
+                                        max_length=CbServer.max_collection_name_len,
+                                        use_simple_names=True)
                                     futures[executor.submit(
                                         BucketUtils.create_collection,
                                         cluster.master, bucket, scope_name,
@@ -4905,7 +4918,8 @@ class BucketUtils(ScopeUtils):
                             scope = sample(ops_spec[bucket_name]["scopes"].keys(),
                                            1)[0]
                             collection_name = BucketUtils.get_random_name(
-                                max_length=CbServer.max_collection_name_len)
+                                max_length=CbServer.max_collection_name_len,
+                                use_simple_names=True)
                             if bucket_name not in net_dict["buckets"]:
                                 net_dict["buckets"][bucket_name] = dict()
                                 net_dict["buckets"][bucket_name]["scopes"] = dict()
