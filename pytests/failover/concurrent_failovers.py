@@ -179,9 +179,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 if self.min_bucket_replica > 0 \
                         and node_count[CbServer.Services.KV] > 2:
                     is_safe = True
-            elif service == CbServer.Services.INDEX:
-                if node_count[CbServer.Services.INDEX] > 1:
-                    is_safe = True
+            # elif service == CbServer.Services.INDEX:
+            #     if node_count[CbServer.Services.INDEX] > 1:
+            #         is_safe = True
             else:
                 # All other services require at least 2 nodes to FO
                 if node_count[service] > 1:
@@ -195,7 +195,6 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         fo_nodes = list()
         num_unreachable_nodes = 0
-        fo_not_possible_for_service = None
         active_cluster_nodes = len(self.rest.get_nodes(inactive=False))
         total_nodes = active_cluster_nodes + self.fo_events + self.nodes_in
         min_nodes_for_quorum = int(total_nodes/2) + 1
@@ -225,10 +224,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             else:
                 non_kv_nodes[node] = failure_type
 
+        kv_service = CbServer.Services.KV
         for node, failure_type in kv_nodes.items():
-            if CbServer.Services.KV in node.services:
+            if kv_service in node.services:
                 # KV takes priority over other nodes in deciding the Auto-FO
-                if is_safe_to_fo(CbServer.Services.KV):
+                if is_safe_to_fo(kv_service):
                     fo_nodes.append(node)
                     for service_type in node.services:
                         # Decrement the node count for the service
@@ -237,6 +237,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.log.warning("KV failover not possible")
                     # No nodes should be FO'ed if KV FO is not possible
                     fo_nodes = list()
+                    # Break to make sure no other service failover
+                    # will be expected
                     break
         else:
             for node, failure_type in non_kv_nodes.items():
@@ -246,6 +248,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     if not is_safe_to_fo(service_type):
                         self.log.warning("Service '%s' not safe to failover"
                                          % service_type)
+                        for t_node in fo_nodes:
+                            if service_type in t_node.services \
+                                    and kv_service not in t_node.services:
+                                fo_nodes.remove(t_node)
                         break
                 else:
                     fo_nodes.append(node)
@@ -430,6 +436,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         except Exception as e:
             self.log.error("Exception occurred: %s" % str(e))
         finally:
+            # Disable auto-fo after the expected time limit
+            self.rest.update_autofailover_settings(
+                enabled=False, timeout=self.timeout, maxCount=self.max_count,
+                canAbortRebalance=self.can_abort_rebalance)
+
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 failover_task = ConcurrentFailoverTask(
                     task_manager=self.task_manager, master=self.orchestrator,
@@ -439,6 +450,12 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 self.task_manager.get_task_result(failover_task)
                 if failover_task.result is False:
                     self.fail("Failure during failover operation")
+
+            # Enable back prev auto_fo settings
+            self.sleep(5, "Wait before enabling back auto-fo")
+            self.rest.update_autofailover_settings(
+                enabled=True, timeout=self.timeout, maxCount=self.max_count,
+                canAbortRebalance=self.can_abort_rebalance)
 
         # After failure - failed nodes' information
         self.__display_failure_node_status("Nodes status failure")
@@ -490,11 +507,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         def get_nodes_based_on_services(services):
             nodes = list()
             services = services.split(":")
-            for service in services:
-                service = service.split("_")
-                service.sort()
+            for t_service in services:
+                t_service = t_service.split("_")
+                t_service.sort()
                 for t_node in cluster_nodes:
-                    if t_node.services == service:
+                    if t_node.services == t_service:
                         nodes.append(self.__get_server_obj(t_node))
                         # Remove nodes from cluster_nodes once picked
                         # to avoid picking same node again
@@ -605,12 +622,14 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     if len(node_split_2) > len(node_split_1):
                         new_master = node_split_2[0]
 
-                    self.log.info("FO expected wrt node %s" % new_master.ip)
+                    self.sleep(10, "FO expected wrt node %s" % new_master.ip)
                     self.rest = RestConnection(new_master)
                     self.cluster.master = new_master
 
                     post_failover_procedure()
         finally:
+            reb_result = self.cluster_util.rebalance(self.cluster)
+            self.assertTrue(reb_result, "Final rebalance failed")
             recover_from_split(node_split_1 + node_split_2)
 
     def test_concurrent_failover_timer_reset(self):
