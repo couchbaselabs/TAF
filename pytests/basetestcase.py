@@ -517,10 +517,6 @@ class BaseTestCase(unittest.TestCase):
             sys_event_validation_failure = \
                 self.system_events.validate(self.cluster.master)
 
-        self.task_manager.shutdown_task_manager()
-        self.task.shutdown(force=True)
-        self.task_manager.abort_all_tasks()
-
         if self.ipv4_only or self.ipv6_only:
             for _, cluster in self.cb_clusters.items():
                 self.cluster_util.enable_disable_ip_address_family_type(
@@ -560,6 +556,10 @@ class BaseTestCase(unittest.TestCase):
         elif sys_event_validation_failure:
             self.log.critical("System event log validation failed: %s"
                               % sys_event_validation_failure)
+
+        self.task_manager.shutdown_task_manager()
+        self.task.shutdown(force=True)
+        self.task_manager.abort_all_tasks()
 
     def tearDownEverything(self):
         if self.skip_setup_cleanup:
