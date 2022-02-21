@@ -1323,12 +1323,14 @@ class BucketUtils(ScopeUtils):
         API to generate random name which can be used to name
         a bucket/scope/collection
         """
+        now = datetime.datetime.now()
         # use_simple_names cannot create invalid_names
         if use_simple_names:
-            # Returns string for format "[a-zA-Z]{5}-[0-9]{3}"
+            # Returns string for format "[a-zA-Z]{5}-[0-9]{3}-[0-9]{3}"
             char_set = string.ascii_letters + string.digits
             prefix = ''.join(random.choice(char_set) for _ in range(5))
-            postfix = ''.join(random.choice(string.digits) for _ in range(3))
+            postfix = ''.join(random.choice(string.digits) for _ in range(3)) + "-" + \
+                      str(int(round(now.microsecond, 6)))[:3]
             return "%s-%s" % (prefix, postfix)
 
         invalid_start_chars = "_%"
@@ -1342,7 +1344,6 @@ class BucketUtils(ScopeUtils):
             char_set += invalid_chars
 
         rand_name = ""
-        now = datetime.datetime.now()
         postfix = str(now.second) + "-" + str(int(round(now.microsecond, 6)))
         name_len = random.randint(1, (max_length - len(postfix) - 1))
 
