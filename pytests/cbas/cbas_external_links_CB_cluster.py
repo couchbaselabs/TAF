@@ -23,15 +23,6 @@ rbac_users_created = {}
 class CBASExternalLinks(CBASBaseTest):
 
     def setUp(self):
-        self.input = TestInputSingleton.input
-
-        if self.input.param('setup_infra', True):
-            if "bucket_spec" not in self.input.test_params:
-                self.input.test_params.update(
-                    {'bucket_spec': "analytics.single_bucket"})
-            if "cluster_kv_infra" not in self.input.test_params:
-                self.input.test_params.update(
-                    {"cluster_kv_infra": "None|bkt_spec"})
 
         super(CBASExternalLinks, self).setUp()
 
@@ -2899,5 +2890,3 @@ class CBASExternalLinks(CBASBaseTest):
             self.analytics_cluster.cbas_cc_node.ip,
             CBASHelper.metadata_format(link.dataverse_name),
             CBASHelper.metadata_format(link.name)))
-
-
