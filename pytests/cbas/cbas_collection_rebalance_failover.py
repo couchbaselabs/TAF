@@ -3,7 +3,6 @@
 TO-DO : Extend this to support remote cluster rebalance operations also, once cbas_base refactoring is done
 '''
 
-from TestInput import TestInputSingleton
 from cbas.cbas_base import CBASBaseTest
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 
@@ -11,17 +10,6 @@ from cbas_utils.cbas_utils import CBASRebalanceUtil
 class CBASRebalance(CBASBaseTest):
 
     def setUp(self):
-        self.input = TestInputSingleton.input
-
-        self.input.test_params.update(
-            {"services_init": "kv:n1ql:index-cbas-cbas-kv"})
-        self.input.test_params.update(
-            {"nodes_init": "4"})
-
-        if "bucket_spec" not in self.input.test_params:
-            self.input.test_params.update({"bucket_spec": "analytics.default"})
-        self.input.test_params.update(
-                {"cluster_kv_infra": "bkt_spec"})
 
         super(CBASRebalance, self).setUp()
         self.log_setup_status(self.__class__.__name__, "Started",
