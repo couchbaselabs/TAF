@@ -15,13 +15,6 @@ class CBASBugAutomation(CBASBaseTest):
 
     def setUp(self):
 
-        self.input = TestInputSingleton.input
-        if "bucket_spec" not in self.input.test_params:
-            self.input.test_params.update(
-                {"bucket_spec": "analytics.default"})
-        self.input.test_params.update(
-            {"cluster_kv_infra": "bkt_spec"})
-
         super(CBASBugAutomation, self).setUp()
 
         self.num_dataverses = int(self.input.param("no_of_dv", 1))
