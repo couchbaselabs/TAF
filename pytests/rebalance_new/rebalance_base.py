@@ -216,6 +216,8 @@ class RebalanceBaseTest(BaseTestCase):
         super(RebalanceBaseTest, self).tearDown()
 
     def collection_setup(self):
+        # If True, creates bucket/scope/collections with simpler names
+        self.use_simple_names = self.input.param("use_simple_names", True)
         self.over_ride_spec_params = self.input.param("override_spec_params", "").split(";")
         self.log.info("Creating buckets from spec")
         # Create bucket(s)
@@ -238,6 +240,8 @@ class RebalanceBaseTest(BaseTestCase):
                 self.spec_name)
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
+
+        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)

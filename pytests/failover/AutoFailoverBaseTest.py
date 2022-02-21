@@ -111,6 +111,8 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def collectionSetUp(self):
+        # If True, creates bucket/scope/collections with simpler names
+        self.use_simple_names = self.input.param("use_simple_names", True)
         self.over_ride_spec_params = \
             self.input.param("override_spec_params", "").split(";")
 
@@ -132,6 +134,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         else:
             buckets_spec = self.bucket_util.get_bucket_template_from_package(
                 self.spec_name)
+        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
 
@@ -1019,6 +1022,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.log.info("=========Finished Diskautofailover base setup=========")
 
     def collectionSetUp(self):
+        # If True, creates bucket/scope/collections with simpler names
+        self.use_simple_names = self.input.param("use_simple_names", True)
         # Create bucket(s)
         if self.bucket_storage == Bucket.StorageBackend.magma:
             # get the TTL value
@@ -1037,6 +1042,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         else:
             buckets_spec = self.bucket_util.get_bucket_template_from_package(
                 self.spec_name)
+        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
         self.bucket_util.create_buckets_using_json_data(self.cluster,

@@ -287,6 +287,8 @@ class volume(BaseTestCase):
         """
         Setup the buckets, scopes and collecitons based on the spec passed.
         """
+        # If True, creates bucket/scope/collections with simpler names
+        self.use_simple_names = self.input.param("use_simple_names", True)
         self.over_ride_spec_params = self.input.param(
             "override_spec_params", "").split(";")
         self.remove_default_collection = self.input.param(
@@ -298,6 +300,8 @@ class volume(BaseTestCase):
             self.bucket_spec)
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(
             self.data_load_spec)
+
+        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
 
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(buckets_spec,cluster)
