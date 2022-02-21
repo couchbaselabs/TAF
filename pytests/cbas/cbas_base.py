@@ -409,9 +409,12 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("Setting {0} memory quota for {1}".format(
                         memory_quota_available, service))
                     if memory_quota_available >= self.service_mem_dict[service][1]:
-                        cluster.rest.set_service_mem_quota(
-                            {property_name: memory_quota_available})
-                        self.service_mem_dict[service][2] = memory_quota_available
+                        if self.service_mem_dict[service][2] and \
+                                memory_quota_available <= \
+                                self.service_mem_dict[service][2]:
+                            cluster.rest.set_service_mem_quota(
+                                {property_name: memory_quota_available})
+                            self.service_mem_dict[service][2] = memory_quota_available
                     else:
                         self.fail(
                             "Error while setting service mem quota %s for %s"
