@@ -5,14 +5,12 @@ from Jython_tasks.task import CreateDatasetsTask, DropDatasetsTask, \
     CreateSynonymsTask, DropSynonymsTask, DropDataversesTask, \
     CreateCBASIndexesTask, DropCBASIndexesTask, CreateUDFTask, DropUDFTask
 from cbas_utils.cbas_utils import BackupUtils
-from TestInput import TestInputSingleton
 import urllib
 
 
 class BackupRestoreTest(CBASBaseTest):
 
     def setUp(self):
-        self.input = TestInputSingleton.input
 
         super(BackupRestoreTest, self).setUp()
         self.log_setup_status(self.__class__.__name__, "Started",

@@ -6,7 +6,6 @@ Created on 11-October-2021
 import random
 from cbas.cbas_base import CBASBaseTest
 from security_utils.security_utils import SecurityUtils
-from TestInput import TestInputSingleton
 from Cb_constants import CbServer
 from cbas_utils.cbas_utils import CBASRebalanceUtil, FlushToDiskTask
 import copy

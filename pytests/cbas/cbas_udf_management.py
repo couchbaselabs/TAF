@@ -9,7 +9,6 @@ import random
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import Dataverse, Synonym, CBAS_Index, CBAS_UDF
 from cbas.cbas_base import CBASBaseTest
-from TestInput import TestInputSingleton
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 
 

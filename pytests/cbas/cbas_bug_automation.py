@@ -6,7 +6,6 @@ Created on 6-October-2021
 import random
 from cbas.cbas_base import CBASBaseTest
 from security_utils.security_utils import SecurityUtils
-from TestInput import TestInputSingleton
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 

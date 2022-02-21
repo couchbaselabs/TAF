@@ -8,7 +8,6 @@ import json
 from cbas.cbas_base import CBASBaseTest
 from security_utils.audit_ready_functions import audit
 from rbac_utils.Rbac_ready_functions import RbacUtils
-from TestInput import TestInputSingleton
 
 
 class CBASAuditLogs(CBASBaseTest):
@@ -19,7 +18,6 @@ class CBASAuditLogs(CBASBaseTest):
     expected_node_parameter_dict = {}
 
     def setUp(self):
-        self.input = TestInputSingleton.input
 
         super(CBASAuditLogs, self).setUp()
         # Since all the test cases are being run on 1 cluster only

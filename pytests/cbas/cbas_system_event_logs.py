@@ -5,7 +5,6 @@ Created on 7-December-2021
 
 import random
 from cbas.cbas_base import CBASBaseTest
-from TestInput import TestInputSingleton
 from cbas_utils.cbas_utils import CBASRebalanceUtil, FlushToDiskTask
 import copy
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper

@@ -3,7 +3,6 @@ Created on 13-May-2020
 
 @author: umang.agrawal
 """
-from TestInput import TestInputSingleton
 from cbas.cbas_base import CBASBaseTest
 import random, json, copy, time, os
 from threading import Thread
