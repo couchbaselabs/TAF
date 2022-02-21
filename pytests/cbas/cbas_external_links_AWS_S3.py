@@ -18,21 +18,18 @@ class CBASExternalLinks(CBASBaseTest):
 
     def setUp(self):
 
-        self.input = TestInputSingleton.input
-
-        if self.input.param('setup_infra', True):
-            self.input.test_params.update(
-                {"cluster_kv_infra": "default"})
+        super(CBASExternalLinks, self).setUp()
 
         # Randomly choose name cardinality of links and datasets.
-        if "link_cardinality" not in self.input.test_params:
-            self.input.test_params.update(
-                {"link_cardinality": random.randrange(1,4)})
-        if "dataset_cardinality" not in self.input.test_params:
-            self.input.test_params.update(
-                {"dataset_cardinality": random.randrange(1,4)})
+        if "link_cardinality" in self.input.test_params:
+            self.link_cardinality = self.input.param("link_cardinality")
+        else:
+            self.link_cardinality = random.randrange(1, 4)
 
-        super(CBASExternalLinks, self).setUp()
+        if "dataset_cardinality" in self.input.test_params:
+            self.dataset_cardinality = self.input.param("dataset_cardinality")
+        else:
+            self.dataset_cardinality = random.randrange(1, 4)
 
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.setUp.__name__)
@@ -97,8 +94,7 @@ class CBASExternalLinks(CBASBaseTest):
                        create_datasets=False, initialize_helper_objs=True,
                        rebalance_util=False):
         self.cbas_util.create_link_obj(
-            self.cluster, "s3",
-            link_cardinality=self.input.param("link_cardinality", 1),
+            self.cluster, "s3", link_cardinality=self.link_cardinality,
             accessKeyId=self.aws_access_key, secretAccessKey=self.aws_secret_key,
             regions=self.aws_region_list,
             no_of_objs=self.input.param("no_of_links", 1))
@@ -109,8 +105,8 @@ class CBASExternalLinks(CBASBaseTest):
 
             for link_obj in link_objs:
                 if not self.cbas_util.create_link(
-                    self.cluster, link_obj.properties,
-                    username=self.analytics_username):
+                        self.cluster, link_obj.properties,
+                        username=self.analytics_username):
                     self.fail("link creation failed")
 
         if create_aws_buckets:
@@ -153,7 +149,7 @@ class CBASExternalLinks(CBASBaseTest):
             self.cbas_util.create_external_dataset_obj(
                 self.cluster, self.aws_buckets,
                 same_dv_for_link_and_dataset=same_dv_for_link_and_dataset,
-                dataset_cardinality=self.input.param("dataset_cardinality", 1),
+                dataset_cardinality=self.dataset_cardinality,
                 object_construction_def=None, path_on_aws_bucket=None,
                 file_format="json", redact_warning=None, header=None,
                 null_string=None, include=None, exclude=None,
@@ -251,7 +247,7 @@ class CBASExternalLinks(CBASBaseTest):
             create_dataset_objs=False, same_dv_for_link_and_dataset=False,
             initialize_helper_objs=False)
 
-        if self.input.param("link_cardinality", 1) - 1 > 1:
+        if self.link_cardinality - 1 > 1:
             invalid_dv = "invalid.invalid"
         else:
             invalid_dv = "invalid"
@@ -487,7 +483,7 @@ class CBASExternalLinks(CBASBaseTest):
             create_dataset_objs=True, same_dv_for_link_and_dataset=True,
             create_datasets=True, initialize_helper_objs=True)
 
-        if self.input.param("link_cardinality", 1) - 1 > 1:
+        if self.link_cardinality - 1 > 1:
             invalid_dv = "invalid.invalid"
         else:
             invalid_dv = "invalid"
