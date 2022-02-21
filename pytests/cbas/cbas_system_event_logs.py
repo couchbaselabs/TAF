@@ -16,19 +16,6 @@ from CbasLib.CBASOperations import CBASHelper
 class CBASSystemEventLogs(CBASBaseTest):
 
     def setUp(self):
-        self.input = TestInputSingleton.input
-        if self.input.param('setup_infra', True):
-            if "bucket_spec" not in self.input.test_params:
-                self.input.test_params.update(
-                    {"bucket_spec": "analytics.default"})
-            self.input.test_params.update(
-                {"cluster_kv_infra": "bkt_spec"})
-        if "cbas_spec" not in self.input.test_params:
-            self.input.test_params.update(
-                {"cbas_spec": "local_datasets"})
-        if "validate_sys_event_logs" not in self.input.test_params:
-            self.input.test_params.update(
-                {"validate_sys_event_logs": True})
 
         super(CBASSystemEventLogs, self).setUp()
 
