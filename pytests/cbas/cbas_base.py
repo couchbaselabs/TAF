@@ -165,7 +165,7 @@ class CBASBaseTest(BaseTestCase):
 
         self.expected_error = self.input.param("error", None)
 
-        self.bucket_spec = self.input.param("bucket_spec", None)
+        self.bucket_spec = self.input.param("bucket_spec", "analytics.default")
         self.doc_spec_name = self.input.param("doc_spec_name", "initial_load")
 
         self.set_default_cbas_memory = self.input.param(
@@ -347,8 +347,16 @@ class CBASBaseTest(BaseTestCase):
             cluster_services = self.cluster_util.get_services_map(cluster)
             cluster_info = cluster.rest.get_nodes_self()
             rest = RestConnection(server)
-            info = rest.get_nodes_self()
-            memory_quota_available = info.mcdMemoryReserved
+            memory_quota_available = 0
+            while memory_quota_available == 0:
+                info = rest.get_nodes_self()
+                self.log.debug("Info from server - {0}".format(info.__dict__))
+                memory_quota_available = info.mcdMemoryReserved
+                if memory_quota_available:
+                    break
+                else:
+                    self.sleep(5, "Waiting before retrying to fetch node "
+                                  "stats")
             if len(services) == 1:
                 service = services[0]
                 if service in cluster_services:
@@ -358,13 +366,19 @@ class CBASBaseTest(BaseTestCase):
                         property_name = self.service_mem_dict[service][0]
                         service_mem_in_cluster = cluster_info.__getattribute__(
                             property_name)
-                        # If service is already in cluster,
-                        # we cannot increase the RAM allocation,
-                        # but we can reduce the RAM allocation if needed.
+
+                        """If service is already in cluster, we cannot
+                        increase the RAM allocation, but we can reduce the
+                        RAM allocation if needed."""
                         if service == "cbas":
                             memory_quota_available = memory_quota_available * \
                                            self.cbas_memory_quota_percent / 100
 
+                        """if memory_quota_available is greater than
+                        service_mem_in_cluster, then we don't need to
+                        reallocate memory, as the total memory available is
+                        sufficient to absorb the memory that is already
+                        allocated to the service"""
                         if memory_quota_available <= service_mem_in_cluster:
                             if self.service_mem_dict[service][2] and \
                                     memory_quota_available <= \
@@ -395,20 +409,16 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("Setting {0} memory quota for {1}".format(
                         memory_quota_available, service))
                     if memory_quota_available >= self.service_mem_dict[service][1]:
-                        if self.service_mem_dict[service][2] and \
-                                memory_quota_available <= \
-                                self.service_mem_dict[service][2]:
-                            cluster.rest.set_service_mem_quota(
-                                {property_name: memory_quota_available})
-                            self.service_mem_dict[service][
-                                2] = memory_quota_available
+                        cluster.rest.set_service_mem_quota(
+                            {property_name: memory_quota_available})
+                        self.service_mem_dict[service][2] = memory_quota_available
                     else:
                         self.fail(
                             "Error while setting service mem quota %s for %s"
                             % (self.service_mem_dict[service][1], service))
             else:
-                # if KV is present, then don't change the KV memory quota
-                # Assuming that KV node will always be present in the master
+                """If KV is present, then don't change the KV memory quota
+                Assuming that KV node will always be present in the master"""
                 if "kv" in services:
                     services.remove("kv")
                     memory_quota_available -= cluster_info\

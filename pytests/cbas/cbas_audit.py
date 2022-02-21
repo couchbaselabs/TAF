@@ -21,13 +21,6 @@ class CBASAuditLogs(CBASBaseTest):
     def setUp(self):
         self.input = TestInputSingleton.input
 
-        if self.input.param('setup_infra', False):
-            if "bucket_spec" not in self.input.test_params:
-                self.input.test_params.update(
-                    {"bucket_spec": "analytics.default"})
-            self.input.test_params.update(
-                {"cluster_kv_infra": "bkt_spec"})
-
         super(CBASAuditLogs, self).setUp()
         # Since all the test cases are being run on 1 cluster only
         self.cluster = self.cb_clusters.values()[0]
