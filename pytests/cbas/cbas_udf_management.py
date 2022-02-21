@@ -16,24 +16,6 @@ from SystemEventLogLib.analytics_events import AnalyticsEvents
 class CBASUDF(CBASBaseTest):
 
     def setUp(self):
-        # Setting default value for common test parameters
-        self.input = TestInputSingleton.input
-
-        self.input.test_params.update(
-            {"services_init": "kv:n1ql:index-cbas-cbas-kv"})
-        self.input.test_params.update(
-            {"nodes_init": "4"})
-
-        if "bucket_spec" not in self.input.test_params:
-            self.input.test_params.update({"bucket_spec": "analytics.default"})
-        if "cbas_spec" not in self.input.test_params:
-            self.input.test_params.update({"cbas_spec": "local_datasets"})
-        if "override_spec_params" not in self.input.test_params:
-            self.input.test_params.update(
-                {"override_spec_params":
-                     "num_buckets;num_scopes;num_collections;num_items"})
-        self.input.test_params.update(
-                {"cluster_kv_infra": "bkt_spec"})
 
         super(CBASUDF, self).setUp()
 
