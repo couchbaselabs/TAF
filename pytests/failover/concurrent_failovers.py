@@ -193,7 +193,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             if service == CbServer.Services.KV:
                 self.min_bucket_replica -= 1
 
-        fo_nodes = list()
+        fo_nodes = set()
         num_unreachable_nodes = 0
         active_cluster_nodes = len(self.rest.get_nodes(inactive=False))
         total_nodes = active_cluster_nodes + self.fo_events + self.nodes_in
@@ -229,18 +229,19 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             if kv_service in node.services:
                 # KV takes priority over other nodes in deciding the Auto-FO
                 if is_safe_to_fo(kv_service):
-                    fo_nodes.append(node)
+                    fo_nodes.add(node)
                     for service_type in node.services:
                         # Decrement the node count for the service
                         decr_node_count(service_type)
                 else:
                     self.log.warning("KV failover not possible")
                     # No nodes should be FO'ed if KV FO is not possible
-                    fo_nodes = list()
+                    fo_nodes = set()
                     # Break to make sure no other service failover
                     # will be expected
                     break
         else:
+            nodes_not_failed = set()
             for node, failure_type in non_kv_nodes.items():
                 # For other nodes, we need to check if the node running
                 # other services are also safe to failover
@@ -251,14 +252,14 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                         for t_node in fo_nodes:
                             if service_type in t_node.services \
                                     and kv_service not in t_node.services:
-                                fo_nodes.remove(t_node)
+                                nodes_not_failed.add(t_node)
                         break
                 else:
-                    fo_nodes.append(node)
+                    fo_nodes.add(node)
                     for service_type in node.services:
                         # Decrement the node count for the service
                         decr_node_count(service_type)
-
+            fo_nodes = fo_nodes.difference(nodes_not_failed)
         expected_num_nodes = len(fo_nodes)
         self.log.info("Expected nodes to be failed over: %d"
                       % expected_num_nodes)
@@ -485,7 +486,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 self.__perform_doc_ops(durability="NONE",
                                        validate_num_items=False)
 
-        self.log.info("Rebalance out all failed nodes")
+        self.sleep(5, "Wait before rebalance out all failed nodes")
         result = self.cluster_util.rebalance(self.cluster)
         self.assertTrue(result, "Final rebalance failed")
 
