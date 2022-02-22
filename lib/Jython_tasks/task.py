@@ -4754,14 +4754,19 @@ class AutoFailoverNodesFailureTask(Task):
 
     def _recover_disk(self, node):
         shell = RemoteMachineShellConnection(node)
+        # we need to stop couchbase server before mounting partition to avoid inconsistencies
+        shell.stop_couchbase()
         o, r = shell.mount_partition(self.disk_location)
         for line in o:
             if self.disk_location in line:
                 self.test_log.debug("Mounted disk at location : {0} on {1}"
                                     .format(self.disk_location, node.ip))
+                shell.start_couchbase()
+                shell.disconnect()
                 return
         self.set_exception(Exception("Failed mount disk at location {0} on {1}"
                                      .format(self.disk_location, node.ip)))
+        shell.start_couchbase()
         shell.disconnect()
         raise Exception()
 
