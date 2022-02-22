@@ -168,12 +168,11 @@ class OPD:
             elif error_condition == "enable_firewall":
                 self.cluster_util.stop_firewall_on_node(node)
 
-        for node in self.cluster.nodes_in_cluster:
+        for node in self.cluster.kv_nodes + self.cluster.master:
+            self.check_warmup_complete(node)
             result = self.cluster_util.wait_for_ns_servers_or_assert([node],
                                                                      wait_time=1200)
             self.assertTrue(result, "Server warmup failed")
-            if "kv" in node.services:
-                self.check_warmup_complete(node)
 
     def rebalance(self, nodes_in=0, nodes_out=0, services=[],
                   retry_get_process_num=3000):
@@ -778,7 +777,7 @@ class OPD:
 
             if not RestHelper(rest).is_cluster_rebalanced():
                 self.log.info("Abort rebalance")
-                self._induce_error(error_type)
+                self._induce_error(error_type, self.cluster.nodes_in_cluster)
                 result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
                 if result:
                     self.task_manager.abort_all_tasks()

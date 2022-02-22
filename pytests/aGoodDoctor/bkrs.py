@@ -58,7 +58,7 @@ class DoctorBKRS():
 
         shell = RemoteMachineShellConnection(self.cluster.backup_nodes[0])
         shell.log.info('Restore backup using cbbackupmgr')
-        restore_cmd = '{0} restore -a {1} -r {2} --cluster couchbase://{3} --threads 48 --username {4} --password {5} &'.format(
+        restore_cmd = '{0} restore -a {1} -r {2} --cluster couchbase://{3} --threads 60 --username {4} --password {5} &'.format(
             self.cbbackupmgr, archive, repo, self.cluster.master.ip, username, password)
         print(restore_cmd)
         o, r = shell.execute_command(restore_cmd)

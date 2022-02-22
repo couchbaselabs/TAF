@@ -1642,6 +1642,7 @@ class volume(BaseTestCase):
             creates: 0 - 10M
             Final Docs = 20M (0-20M)
             '''
+            self.key_type = self.input.param("key_type", "SimpleKey")
             self.create_perc = 200
             self.PrintStep("Step 4: Load %s items, sequential keys" %
                            str(self.num_items*self.create_perc/100))

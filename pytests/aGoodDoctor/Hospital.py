@@ -254,6 +254,14 @@ class Murphy(BaseTestCase, OPD):
                                                kvstore=0))
         stat_th.start()
 
+        self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
+        perc = 100/len(self.doc_ops)
+        self.expiry_perc = perc
+        self.create_perc = perc
+        self.update_perc = perc
+        self.delete_perc = perc
+        self.read_perc = perc
+        self.mutation_perc = self.input.param("mutation_perc", 100)
         while self.loop <= self.iterations:
             #######################################################################
             '''
@@ -345,7 +353,7 @@ class Murphy(BaseTestCase, OPD):
 
         self.rebl_services = self.input.param("rebl_services", "kv").split("-")
         self.sleep(30)
-        self.mutation_perc = self.input.param("mutation_perc", 20)
+        self.mutation_perc = self.input.param("mutation_perc", 100)
         while self.loop <= self.iterations:
             self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             self.generate_docs()
@@ -603,30 +611,33 @@ class Murphy(BaseTestCase, OPD):
             # Chose node to failover
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                       howmany=1)
+            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
 
-            # Failover Node
-            self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
-                                                           graceful=True)
-            self.sleep(30)
-            self.rest.monitorRebalance()
+            # Mark Node for failover
+            self.success_failed_over = True
+            for node in self.chosen:
+                failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                node.id = failover_node.id
+                success_failed_over = self.rest.fail_over(failover_node.id,
+                                                               graceful=True)
+                self.success_failed_over = self.success_failed_over and success_failed_over
+                self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+            self.sleep(600, "Waiting for data to go in after failover.")
 
             # Rebalance out failed over node
-            self.otpNodes = self.rest.node_statuses()
-            self.rest.rebalance(otpNodes=[otpNode.id for otpNode in self.otpNodes],
-                                ejectedNodes=[self.chosen[0].id])
-            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
-                            msg="Rebalance failed")
-
-            # Maintain nodes availability
-            servs_out = [node for node in self.cluster.servers
-                         if node.ip == self.chosen[0].ip]
+            self.nodes = self.rest.node_statuses()
+            self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
+                                ejectedNodes=[node.id for node in self.chosen])
+            self.assertTrue(self.rest.monitorRebalance(), msg="Rebalance failed")
+            servs_out = []
+            for failed_over in self.chosen:
+                servs_out += [node for node in self.cluster.servers
+                              if node.ip == failed_over.ip]
             self.cluster.nodes_in_cluster = list(
                 set(self.cluster.nodes_in_cluster) - set(servs_out))
-            for server in servs_out:
-                self.cluster.kv_nodes.remove(server)
             self.available_servers += servs_out
+            self.cluster.kv_nodes = list(set(self.cluster.kv_nodes) - set(servs_out))
             self.print_stats()
 
             th = threading.Thread(target=self.crash_memcached,
@@ -643,22 +654,29 @@ class Murphy(BaseTestCase, OPD):
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                       howmany=1)
+            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
 
             # Mark Node for failover
-            self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
-                                                           graceful=True)
-            self.sleep(30)
+            self.success_failed_over = True
+            for node in self.chosen:
+                failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                node.id = failover_node.id
+                success_failed_over = self.rest.fail_over(failover_node.id,
+                                                               graceful=True)
+                self.success_failed_over = self.success_failed_over and success_failed_over
+                self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+            self.sleep(600, "Waiting for data to go in after failover.")
             self.rest.monitorRebalance()
 
             # Mark Node for full recovery
             if self.success_failed_over:
-                self.rest.set_recovery_type(otpNode=self.chosen[0].id,
-                                            recoveryType="full")
+                for node in self.chosen:
+                    self.rest.set_recovery_type(otpNode=node.id,
+                                                recoveryType="full")
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [],
+                self.cluster.nodes_in_cluster, [], [],
                 retry_get_process_num=3000)
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -678,22 +696,34 @@ class Murphy(BaseTestCase, OPD):
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                       howmany=1)
+            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
 
+#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
+#             tasks = self.perform_load(wait_for_load=False)
             # Mark Node for failover
-            self.success_failed_over = self.rest.fail_over(self.chosen[0].id,
-                                                           graceful=True)
-            self.sleep(30)
+            self.success_failed_over = True
+            for node in self.chosen:
+                failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                node.id = failover_node.id
+                success_failed_over = self.rest.fail_over(failover_node.id,
+                                                               graceful=True)
+                self.success_failed_over = self.success_failed_over and success_failed_over
+                self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+            self.sleep(600, "Waiting for data to go in after failover.")
             self.rest.monitorRebalance()
-            if self.success_failed_over:
-                self.rest.set_recovery_type(otpNode=self.chosen[0].id,
-                                            recoveryType="delta")
 
+            # Mark Node for delta recovery
+            if self.success_failed_over:
+                for node in self.chosen:
+                    self.rest.set_recovery_type(otpNode=node.id,
+                                                recoveryType="delta")
+
+            self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [],
+                self.cluster.nodes_in_cluster, [], [],
                 retry_get_process_num=3000)
-            self.task_manager.get_task_result(rebalance_task)
+            self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.print_stats()
 
@@ -766,7 +796,7 @@ class Murphy(BaseTestCase, OPD):
                     nodes_cluster.remove(self.cluster.master)
                     servs_out = random.sample(
                         nodes_cluster,
-                        int(len(self.cluster.nodes_in_cluster)
+                        int(len(self.cluster.kv_nodes)
                             - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
                         self.cluster.servers[:self.nodes_init], [], servs_out,
@@ -1286,7 +1316,8 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(result, "Flush bucket failed!")
                 self.sleep(600)
                 if len(self.cluster.kv_nodes) > self.nodes_init:
-                    rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.nodes_in_cluster)- self.nodes_init))
+                    rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes)- self.nodes_init),
+                                                    services=["kv"])
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
             else:
