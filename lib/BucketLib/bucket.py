@@ -2,6 +2,7 @@ from _threading import Lock
 
 import Jython_tasks
 from Cb_constants import CbServer
+from common_lib import Counter
 
 
 class BucketStats(object):
@@ -138,6 +139,11 @@ class Bucket(object):
     purge_interval = "purge_interval"
     autoCompactionDefined = "autoCompactionDefined"
     fragmentationPercentage = "fragmentationPercentage"
+
+    # Tracks the last bucket/scope/collection counter created in the cluster
+    bucket_counter = Counter()
+    scope_counter = Counter()
+    collection_counter = Counter()
 
     class Type(object):
         EPHEMERAL = "ephemeral"

@@ -1,5 +1,6 @@
 import inspect
 import time
+from threading import Lock
 
 from global_vars import logger
 
@@ -46,3 +47,15 @@ def humanbytes(B):
         return '{0:.2f} GiB'.format(B / GB)
     elif TB <= B:
         return '{0:.2f} TiB'.format(B / TB)
+
+
+class Counter(object):
+    def __init__(self):
+        self.__index = 0
+        self.__lock = Lock()
+
+    def get_next(self):
+        with self.__lock:
+            ret_val = self.__index
+            self.__index += 1
+        return ret_val
