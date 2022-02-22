@@ -18,7 +18,6 @@ from cbas.cbas_base import CBASBaseTest
 from collections_helper.collections_spec_constants import MetaCrudParams
 from security.rbac_base import RbacBase
 from Jython_tasks.task import RunQueriesTask, CreateDatasetsTask, DropDatasetsTask
-from TestInput import TestInputSingleton
 
 
 class CBASDataverseAndScopes(CBASBaseTest):
@@ -251,16 +250,10 @@ class CBASDataverseAndScopes(CBASBaseTest):
 class CBASDatasetsAndCollections(CBASBaseTest):
 
     def setUp(self):
-        self.input = TestInputSingleton.input
-        self.iterations = int(self.input.param("iterations", 1))
-        if self.input.param('setup_infra', True):
-            if "bucket_spec" not in self.input.test_params:
-                self.input.test_params.update(
-                    {"bucket_spec": "analytics.default"})
-            self.input.test_params.update(
-                {"cluster_kv_infra": "bkt_spec"})
 
         super(CBASDatasetsAndCollections, self).setUp()
+
+        self.iterations = int(self.input.param("iterations", 1))
 
         # Since all the test cases are being run on 1 cluster only
         self.cluster = self.cb_clusters.values()[0]
