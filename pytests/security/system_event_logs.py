@@ -159,8 +159,10 @@ class SystemEventLogs(ClusterSetup):
             new_settings_copy = copy.deepcopy(new_settings)
             old_settings_copy["clientTLSCert"] = "redacted"
             old_settings_copy["cacert"] = "redacted"
+            old_settings_copy["bindDN"] = "redacted"
             new_settings_copy["clientTLSCert"] = "redacted"
             new_settings_copy["cacert"] = "redacted"
+            new_settings_copy["bindDN"] = "redacted"
             for key, val in old_settings_copy.items():
                 if val == "false":
                     old_settings_copy[key] = False
