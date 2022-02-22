@@ -7,7 +7,6 @@ from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from cbas.cbas_base import CBASBaseTest
 from collections_helper.collections_spec_constants import MetaCrudParams
-from TestInput import TestInputSingleton
 from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.documentgenerator import DocumentGenerator
 from CbasLib.CBASOperations import CBASHelper
@@ -16,23 +15,6 @@ from CbasLib.CBASOperations import CBASHelper
 class CBASBucketOperations(CBASBaseTest):
 
     def setUp(self):
-        self.input = TestInputSingleton.input
-        if "cbas_spec" not in self.input.test_params:
-            self.input.test_params.update(
-                {"cbas_spec": "local_datasets"})
-
-        if "bucket_spec" not in self.input.test_params:
-            self.input.test_params.update(
-                {"bucket_spec": "analytics.default"})
-        self.input.test_params.update(
-            {"cluster_kv_infra": "bkt_spec"})
-        if "override_spec_params" not in self.input.test_params:
-            self.input.test_params.update(
-                {"override_spec_params": "num_items"})
-        else:
-            temp = self.input.test_params.get("override_spec_params")
-            self.input.test_params.update(
-                {"override_spec_params": temp + ";num_items"})
 
         super(CBASBucketOperations, self).setUp()
 
