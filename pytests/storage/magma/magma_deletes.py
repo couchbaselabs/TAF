@@ -179,7 +179,7 @@ class BasicDeleteTests(BasicCrudTests):
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
 
-            time_end = time.time() + 60 * 2
+            time_end = time.time() + 60 * 10
             while time.time() < time_end:
                 disk_usage = self.get_disk_usage(self.buckets[0],
                                                  self.cluster.nodes_in_cluster)
@@ -290,7 +290,7 @@ class BasicDeleteTests(BasicCrudTests):
                 self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True, msg_stats.format("KV"))
 
-            time_end = time.time() + 60 * 2
+            time_end = time.time() + 60 * 10
             while time.time() < time_end:
                 disk_usage = self.get_disk_usage(self.buckets[0],
                                                  self.cluster.nodes_in_cluster)

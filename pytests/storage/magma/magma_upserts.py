@@ -80,7 +80,7 @@ class BasicUpsertTests(BasicCrudTests):
             self.assertIs(_r, True,
                          msg.format("KV"))
 
-            time_end = time.time() + 60 * 2
+            time_end = time.time() + 60 * 10
             while time.time() < time_end:
                 disk_usage = self.get_disk_usage(self.buckets[0],
                                             self.cluster.nodes_in_cluster)
@@ -169,7 +169,7 @@ class BasicUpsertTests(BasicCrudTests):
                     ) / self.num_items) + 0.5)
             self.log.debug("Disk usage factor = {}".format(usage_factor))
 
-            time_end = time.time() + 60 * 2
+            time_end = time.time() + 60 * 10
             while time.time() < time_end:
                 disk_usage = self.get_disk_usage(self.buckets[0],
                                             self.cluster.nodes_in_cluster)
@@ -260,7 +260,7 @@ class BasicUpsertTests(BasicCrudTests):
                     self.buckets[0], self.cluster.nodes_in_cluster)
                 self.assertIs(_r, True,
                               msg_stats.format("KV"))
-                time_end = time.time() + 60 * 2
+                time_end = time.time() + 60 * 10
                 while time.time() < time_end:
                     disk_usage = self.get_disk_usage(self.buckets[0],
                                                      self.cluster.nodes_in_cluster)
@@ -323,12 +323,15 @@ class BasicUpsertTests(BasicCrudTests):
                  self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
-
-            disk_usage = self.get_disk_usage(self.buckets[0],
-                                             self.cluster.nodes_in_cluster)
-            _res = disk_usage[0]
-            self.log.info("Delete Iteration {}, Disk Usage- {}MB\
-            ".format(i+1, _res))
+            time_end = time.time() + 60 * 10
+            while time.time() < time_end:
+                disk_usage = self.get_disk_usage(self.buckets[0],
+                                                     self.cluster.nodes_in_cluster)
+                _res = disk_usage[0]
+                self.log.info("Delete Iteration-{}, Disk Usage at time {} is {}MB \
+                ".format(i+1, time_end - time.time(), _res))
+                if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                    break
             self.assertIs(
                 _res > 2.5 * self.disk_usage[
                     self.disk_usage.keys()[0]],
