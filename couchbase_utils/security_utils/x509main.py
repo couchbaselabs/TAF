@@ -2,6 +2,8 @@ import logging
 
 from Cb_constants import CbServer
 
+from TestInput import TestInputServer
+
 log = logging.getLogger("x509")
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
@@ -45,7 +47,11 @@ class x509main:
     CHAINFILEPATH = "inbox"
     GOCERTGENFILE = "gencert.go"
     INCORRECT_ROOT_CERT = "incorrect_root_cert.crt"
-    SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase',11210)
+    SLAVE_HOST = TestInputServer()
+    SLAVE_HOST.ip = '127.0.0.1'
+    SLAVE_HOST.port = 22
+    SLAVE_HOST.ssh_username = "root"
+    SLAVE_HOST.ssh_password = "couchbase"
     CLIENT_CERT_AUTH_JSON = 'client_cert_auth1.json'
     CLIENT_CERT_AUTH_TEMPLATE = 'client_cert_config_template.txt'
     IP_ADDRESS = '172.16.1.174'
