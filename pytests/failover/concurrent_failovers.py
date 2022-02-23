@@ -1,3 +1,4 @@
+import random
 from random import choice
 from time import time
 
@@ -116,7 +117,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         Set doc_ttl for loading doc during failover operations
         """
         d_level = Bucket.DurabilityLevel.NONE
-        if self.num_replicas != 3:
+        if self.num_replicas != Bucket.ReplicaNum.THREE:
+            random.seed(round(time()*1000))
             # Since durability is not supported with replicas=3
             d_level = choice([
                 Bucket.DurabilityLevel.NONE,
@@ -167,10 +169,6 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
     def num_nodes_to_be_failover(self):
         def is_safe_to_fo(service):
             is_safe = False
-
-            # Check to see whether the max_fo count is reached
-            if self.max_count == (self.fo_events + len(fo_nodes)):
-                return is_safe
 
             # Reference doc:
             # https://docs.couchbase.com/server/7.0/learn/clusters-and-availability/automatic-failover.html#failover-policy
@@ -228,7 +226,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         for node, failure_type in kv_nodes.items():
             if kv_service in node.services:
                 # KV takes priority over other nodes in deciding the Auto-FO
-                if is_safe_to_fo(kv_service):
+                if self.max_count > (len(fo_nodes) + self.fo_events) \
+                        and is_safe_to_fo(kv_service):
                     fo_nodes.add(node)
                     for service_type in node.services:
                         # Decrement the node count for the service
@@ -246,6 +245,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 # For other nodes, we need to check if the node running
                 # other services are also safe to failover
                 for service_type in node.services:
+                    if self.max_count == (len(fo_nodes) + self.fo_events):
+                        # Check to see whether the max_fo count is reached
+                        self.log.info("Max auto-fo count already reached")
+                        break
                     if not is_safe_to_fo(service_type):
                         self.log.warning("Service '%s' not safe to failover"
                                          % service_type)
@@ -287,7 +290,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
     def __perform_doc_ops(self, durability=None, validate_num_items=True):
         load_spec = self.__get_collection_load_spec()
-        if durability:
+        if durability and self.num_replicas != Bucket.ReplicaNum.THREE:
             load_spec[MetaCrudParams.DURABILITY_LEVEL] = durability
 
         self.log.info("Performing doc_ops with durability level=%s"
@@ -411,6 +414,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.__display_failure_node_status("Nodes to be failed")
 
         try:
+            rest_nodes = self.rest.get_nodes()
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 expected_fo_nodes = self.num_nodes_to_be_failover
                 self.fo_events += expected_fo_nodes
@@ -426,14 +430,24 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.fail("Failure during concurrent failover procedure")
             elif self.current_fo_strategy == CbServer.Failover.Type.GRACEFUL:
                 for node in self.nodes_to_fail:
-                    status = self.rest.fail_over(node.otpNode, graceful=True)
+                    node = [t_node for t_node in rest_nodes
+                            if t_node.ip == node.ip][0]
+                    status = self.rest.fail_over(node.id, graceful=True)
                     if status is False:
                         self.fail("Graceful failover failed for %s" % node)
+                    self.sleep(5, "Wait for failover to start")
+                    reb_result = self.rest.monitorRebalance()
+                    self.assertTrue(reb_result, "Graceful failover failed")
             elif self.current_fo_strategy == CbServer.Failover.Type.FORCEFUL:
                 for node in self.nodes_to_fail:
-                    status = self.rest.fail_over(node.otpNode, graceful=False)
+                    node = [t_node for t_node in rest_nodes
+                            if t_node.ip == node.ip][0]
+                    status = self.rest.fail_over(node.id, graceful=False)
                     if status is False:
                         self.fail("Hard failover failed for %s" % node)
+                    self.sleep(5, "Wait for failover to start")
+                    reb_result = self.rest.monitorRebalance()
+                    self.assertTrue(reb_result, "Hard failover failed")
         except Exception as e:
             self.log.error("Exception occurred: %s" % str(e))
         finally:
@@ -472,6 +486,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         """
         self.current_fo_strategy = None
         load_data_after_fo = self.input.param("post_failover_data_load", True)
+        exception = None
         for index, services_to_fo in enumerate(self.failover_order):
             self.current_fo_strategy = self.failover_type[index]
             # servers_to_fail -> kv:index / kv:index_kv / index:n1ql
@@ -479,15 +494,40 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # servers_to_fail -> [kv, index] / [kv, index_kv]
             self.nodes_to_fail = self.get_nodes_to_fail(services_to_fo)
             self.__update_unaffected_node()
-            self.__run_test()
+            try:
+                self.__run_test()
+            except Exception as e:
+                # Making sure to remove failed nodes before failing the test
+                self.cluster_util.rebalance(self.cluster)
+                self.fail("Exception occurred: %s" % str(e))
 
             # Perform collection crud + doc_ops before rebalance operation
             if load_data_after_fo:
-                self.__perform_doc_ops(durability="NONE",
-                                       validate_num_items=False)
+                try:
+                    self.__perform_doc_ops(durability="NONE",
+                                           validate_num_items=False)
+                except Exception as e:
+                    exception = e
+                    break
 
-        self.sleep(5, "Wait before rebalance out all failed nodes")
-        result = self.cluster_util.rebalance(self.cluster)
+        self.sleep(20, "Wait for failed nodes to recover completely")
+        if choice([True, False]):
+            # Add back all nodes and rebalance
+            self.log.info("Performing node add back operation")
+            rest_nodes = self.rest.get_nodes(inactive=True)
+            for node in rest_nodes:
+                if node.clusterMembership == "inactiveFailed":
+                    self.rest.add_back_node(node.id)
+                    if CbServer.Services.KV in node.services:
+                        self.rest.set_recovery_type(node.id, "delta")
+            result = self.cluster_util.rebalance(self.cluster)
+        else:
+            # Eject nodes and rebalance
+            self.log.info("Ejecting all failed nodes from the cluster")
+            result = self.cluster_util.rebalance(self.cluster)
+
+        if exception:
+            self.fail(exception)
         self.assertTrue(result, "Final rebalance failed")
 
         # Validate count is reset back to 0 after rebalance operation
@@ -495,7 +535,13 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         # Perform collection crud + doc_ops
         if load_data_after_fo:
-            self.__perform_doc_ops()
+            durability_val = None
+            for bucket in self.cluster.buckets:
+                # If we have ephemeral bucket, force use level=MAJORITY
+                if bucket.bucketType == Bucket.Type.EPHEMERAL:
+                    durability_val = "MAJORITY"
+                    break
+            self.__perform_doc_ops(durability=durability_val)
 
     def test_split_brain(self):
         """
@@ -598,11 +644,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                                                   service_count[0],
                                                   service_count[1])
 
-        self.log.info("Creating split between nodes %s || %s. "
-                      "Expected %s failover events"
-                      % (nodes_to_split[0], nodes_to_split[1],
+        self.log.info("N/w split between -> [%s] || [%s]. Expect %s fo_events"
+                      % ([n.ip for n in node_split_1],
+                         [n.ip for n in node_split_2],
                          num_nodes_to_fo))
-
         try:
             create_split_between_nodes(node_split_1, node_split_2)
             create_split_between_nodes(node_split_2, node_split_1)
@@ -629,9 +674,18 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
                     post_failover_procedure()
         finally:
+            recover_from_split(node_split_1 + node_split_2)
+            self.sleep(5, "Wait for n/w split to heal")
+            rest_nodes = self.rest.get_nodes(inactive=True)
+            for t_node in rest_nodes:
+                if t_node.clusterMembership == "active":
+                    for node in self.cluster.servers:
+                        if node.ip == t_node.ip:
+                            self.cluster.master = node
+                            break
+                    break
             reb_result = self.cluster_util.rebalance(self.cluster)
             self.assertTrue(reb_result, "Final rebalance failed")
-            recover_from_split(node_split_1 + node_split_2)
 
     def test_concurrent_failover_timer_reset(self):
         """
@@ -806,7 +860,12 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.log.info("Wait for failover task to complete")
             self.task_manager.get_task_result(failover_task)
 
-            self.assertTrue(failover_task.result, "Auto-failover task failed")
+            failure_msg = "Auto-failover task failed"
+            if expected_fo_nodes == 0:
+                # Task is expected to fail since no failover is triggered
+                self.assertFalse(failover_task.result, failure_msg)
+            else:
+                self.assertTrue(failover_task.result, failure_msg)
         finally:
             # Recover all nodes from induced failures
             recovery_task = ConcurrentFailoverTask(
