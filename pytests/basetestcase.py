@@ -256,7 +256,6 @@ class BaseTestCase(unittest.TestCase):
         self.log.setLevel(self.log_level)
         self.infra_log.setLevel(self.infra_log_level)
 
-
         self.sleep = sleep
 
         self.cleanup = False

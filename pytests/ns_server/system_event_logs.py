@@ -111,7 +111,7 @@ class SystemEventLogs(ClusterSetup):
 
     def get_last_event_from_cluster(self):
         return self.event_rest_helper.get_events(
-            server=self.cluster.master, events_count=-1)["events"][-1]
+            server=self.cluster.master, events_count=1)["events"][0]
 
     def test_event_id_range(self):
         """
@@ -197,7 +197,8 @@ class SystemEventLogs(ClusterSetup):
         }
         for mandatory_field in Event.Fields.values(only_mandatory_fields=True):
             invalid_event = get_invalid_event()
-            status, content = self.event_rest_helper.create_event(invalid_event)
+            status, content = \
+                self.event_rest_helper.create_event(invalid_event)
             if status:
                 self.fail("Event with the missing '%s' field accepted: %s"
                           % (mandatory_field, event_dict))
@@ -212,7 +213,7 @@ class SystemEventLogs(ClusterSetup):
         """
         1. Load 10K events under random components and corresponding event_ids
         2. Validate last 10K events are there in the cluster
-        3. Load more event to make sure the first event is rolled over correctly
+        3. Load more event to make sure the 1st event is rolled over correctly
         """
         self.__reset_events()
 
@@ -320,6 +321,7 @@ class SystemEventLogs(ClusterSetup):
 
         # Event with empty extra_attr
         self.log.info("Adding event with empty extra_attr field")
+        event_dict = deepcopy(event_dict)
         event_dict.pop(Event.Fields.NODE_NAME)
         event_dict[Event.Fields.EXTRA_ATTRS] = ""
         event_dict[Event.Fields.UUID] = self.system_events.get_rand_uuid()
@@ -335,6 +337,7 @@ class SystemEventLogs(ClusterSetup):
 
         # Event with max size extra_attr
         self.log.info("Adding event with max sized extra attribute field")
+        event_dict = deepcopy(event_dict)
         event_dict.pop(Event.Fields.NODE_NAME)
         event_dict[Event.Fields.EXTRA_ATTRS] = \
             "a" * (CbServer.sys_event_log_max_size - 179)
@@ -382,81 +385,97 @@ class SystemEventLogs(ClusterSetup):
         self.log.info("Add duplicate events within 1min time frame")
         # Create duplicate events back to back within same component
         # Event-1 definition
-        event_1 = NsServerEvents.service_started(target_node.ip)
-        event_1[Event.Fields.UUID] = uuid_to_test
-        event_1[Event.Fields.TIMESTAMP] = \
+        event_serv_started = NsServerEvents.service_started(target_node.ip)
+        event_serv_started[Event.Fields.UUID] = uuid_to_test
+        event_serv_started[Event.Fields.TIMESTAMP] = \
             EventHelper.get_timestamp_format(curr_time)
 
         # Add valid event to the list for validation
-        self.system_events.add_event(event_1)
+        self.system_events.add_event(event_serv_started)
 
         # Event-2 definition
-        event_2 = NsServerEvents.node_added(target_node.ip,
-                                            "new_nodes.ip",
-                                            CbServer.Services.KV)
-        event_2.pop(Event.Fields.EXTRA_ATTRS)
-        event_2.pop(Event.Fields.NODE_NAME)
-        event_2[Event.Fields.UUID] = uuid_to_test
-        event_2[Event.Fields.TIMESTAMP] = \
+        event_node_added = NsServerEvents.node_added(target_node.ip,
+                                                     "new_nodes.ip",
+                                                     CbServer.Services.KV)
+        event_node_added.pop(Event.Fields.EXTRA_ATTRS)
+        event_node_added.pop(Event.Fields.NODE_NAME)
+        event_node_added[Event.Fields.UUID] = uuid_to_test
+        event_node_added[Event.Fields.TIMESTAMP] = \
             EventHelper.get_timestamp_format(datetime.utcnow())
 
         self.log.info("Adding events with similar UUID")
-        event_1 = deepcopy(event_1)
-        event_1.pop(Event.Fields.NODE_NAME)
-        self.event_rest_helper.create_event(event_1, server=target_node)
-        self.event_rest_helper.create_event(event_2)
+        event_serv_started = deepcopy(event_serv_started)
+        event_serv_started.pop(Event.Fields.NODE_NAME)
+        self.event_rest_helper.create_event(event_serv_started,
+                                            server=target_node)
+        # This event will not be created due to de-dup
+        self.event_rest_helper.create_event(event_node_added,
+                                            server=target_node)
 
         last_event = self.get_last_event_from_cluster()
         if last_event[Event.Fields.UUID] != uuid_to_test \
                 or (last_event[Event.Fields.DESCRIPTION]
-                    != event_1[Event.Fields.DESCRIPTION]):
+                    != event_serv_started[Event.Fields.DESCRIPTION]):
             self.fail("Event-id mismatch. Cluster event: %s" % last_event)
 
-        # Create required event dictionaries for testing
-        event_1 = DataServiceEvents.scope_created(target_node.ip, "bucket_1",
-                                                  "scope_1")
-        event_1[Event.Fields.UUID] = uuid_to_test
-        event_1.pop(Event.Fields.NODE_NAME)
+        last_event_desc = "Service started"
+        if self.nodes_init > 1:
+            # This event will be created due to different node_name
+            # though event_id is same
+            tem_node = [node for node in self.cluster.nodes_in_cluster
+                        if node.ip != target_node.ip][0]
+            self.event_rest_helper.create_event(event_node_added,
+                                                server=tem_node)
 
-        # Add valid event to the list for validation
+            event_node_added[Event.Fields.NODE_NAME] = tem_node.ip
+            self.system_events.add_event(event_node_added)
+            last_event_desc = "Node successfully joined the cluster"
+
+        # Create required event dictionaries for testing
+        event_scope_created = DataServiceEvents.scope_created(
+            target_node.ip, "bucket_1", "scope_1")
+        event_scope_created[Event.Fields.UUID] = uuid_to_test
+        event_scope_created.pop(Event.Fields.NODE_NAME)
+
         self.log.info("Adding event with same uuid")
         end_time = curr_time + timedelta(
             seconds=CbServer.sys_event_log_uuid_uniqueness_time - 1)
-        event_1[Event.Fields.TIMESTAMP] = \
-            EventHelper.get_timestamp_format(datetime.utcnow())
+        event_scope_created[Event.Fields.TIMESTAMP] = curr_time
 
         self.log.info("Add duplicate events across allowed time frame")
-        while curr_time <= end_time:
-            curr_time = curr_time + timedelta(seconds=1)
-            event_1[Event.Fields.TIMESTAMP] = \
+        curr_time = datetime.utcnow()
+        while curr_time < end_time:
+            event_scope_created[Event.Fields.TIMESTAMP] = \
                 EventHelper.get_timestamp_format(curr_time)
-            self.event_rest_helper.create_event(event_1)
-
-        curr_time = curr_time + timedelta(milliseconds=1)
+            self.event_rest_helper.create_event(event_scope_created,
+                                                server=target_node)
+            self.sleep(1)
+            curr_time = datetime.utcnow()
 
         # Validate the event
         last_event = self.get_last_event_from_cluster()
-        if last_event[Event.Fields.DESCRIPTION] != "Service started":
+        if last_event[Event.Fields.DESCRIPTION] != last_event_desc:
             self.fail("Last cluster event mismatch. Cluster event: %s"
                       % last_event)
 
-        self.log.info("Adding same event_id after the allowed time frame")
-        event_2[Event.Fields.TIMESTAMP] = \
+        self.sleep(65, "Adding same event_id after the allowed time frame")
+        curr_time = datetime.utcnow()
+        event_scope_created[Event.Fields.TIMESTAMP] = \
             EventHelper.get_timestamp_format(curr_time)
-        status, _ = self.event_rest_helper.create_event(event_2,
+        status, _ = self.event_rest_helper.create_event(event_scope_created,
                                                         server=target_node)
         if not status:
-            self.fail("Event creation failed: %s" % event_2)
+            self.fail("Event creation failed: %s" % event_scope_created)
 
-        event_2[Event.Fields.NODE_NAME] = target_node.ip
-        self.system_events.add_event(event_2)
+        event_scope_created[Event.Fields.NODE_NAME] = target_node.ip
+        self.system_events.add_event(event_scope_created)
 
         last_event = self.get_last_event_from_cluster()
         if last_event[Event.Fields.UUID] != uuid_to_test \
                 or (last_event[Event.Fields.DESCRIPTION]
-                    != event_2[Event.Fields.DESCRIPTION]):
+                    != event_scope_created[Event.Fields.DESCRIPTION]):
             self.fail("UUID / desc mismatch. Cluster event: %s, "
-                      "Expected: %s" % (last_event, event_2))
+                      "Expected: %s" % (last_event, event_scope_created))
 
         # Validate the events
         self.__validate(self.system_events.test_start_time)
@@ -544,7 +563,8 @@ class SystemEventLogs(ClusterSetup):
         for value in ["debug", "warning", "critical"]:
             invalid_event = deepcopy(valid_event)
             invalid_event[Event.Fields.SEVERITY] = value
-            status, content = self.event_rest_helper.create_event(invalid_event)
+            status, content = \
+                self.event_rest_helper.create_event(invalid_event)
             if status:
                 self.fail("Event creation succeeded with severity=%s" % value)
             if content["errors"][Event.Fields.SEVERITY] != expected_error:

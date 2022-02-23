@@ -133,7 +133,7 @@ class EventHelper(object):
         :returns boolean: 'True' in case of failure due to duplicate UUID
         """
         duplicates_present = False
-        timestamps = dict()
+        node_events = dict()
         prev_timestamp = None
         for event in events:
             event_uuid = event[Event.Fields.UUID]
@@ -155,22 +155,29 @@ class EventHelper(object):
             # End of timestamp validation
 
             # Check whether the events are not duplicated within desired time
-            if event_uuid in timestamps:
-                ts_for_prev_uuid = EventHelper.get_datetime_obj_from_str(
-                    timestamps[event_uuid])
-                ts_for_curr_uuid = EventHelper.get_datetime_obj_from_str(
-                    event_timestamp)
+            if event[Event.Fields.NODE_NAME] not in node_events:
+                # Holds dict of events per node
+                node_events[event[Event.Fields.NODE_NAME]] = dict()
+
+            if event_uuid in node_events[event[Event.Fields.NODE_NAME]]:
+                prev_timestamp_str = \
+                    node_events[event[Event.Fields.NODE_NAME]][event_uuid]
+                ts_for_prev_uuid = \
+                    EventHelper.get_datetime_obj_from_str(prev_timestamp_str)
+                ts_for_curr_uuid = \
+                    EventHelper.get_datetime_obj_from_str(event_timestamp)
                 blocked_window = CbServer.sys_event_log_uuid_uniqueness_time
                 if (ts_for_curr_uuid - ts_for_prev_uuid) \
                         < timedelta(seconds=blocked_window):
                     duplicates_present = True
                     failures.append("Duplicate UUID detected for timestamps!! "
                                     "%s is present during %s and %s"
-                                    % (event_uuid, timestamps[event_uuid],
+                                    % (event_uuid, prev_timestamp_str,
                                        event_timestamp))
 
             # Save the last known timestamp for the current UUID
-            timestamps[event_uuid] = event_timestamp
+            node_events[event[Event.Fields.NODE_NAME]][event_uuid] \
+                = event_timestamp
 
             # End of duplicate UUID validation
         return duplicates_present
