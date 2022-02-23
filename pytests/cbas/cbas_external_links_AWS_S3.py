@@ -288,7 +288,7 @@ class CBASExternalLinks(CBASBaseTest):
                 {
                     "description": "Create a link with a name of form Local*",
                     "name": "Local123",
-                    "expected_error": 'Links starting with \"Local\" are reserved by the system'
+                    "expected_error": "Links starting with 'Local' are reserved by the system"
                 }
             ]
 
@@ -822,7 +822,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "description": "Create dataset with unsupported file format",
                 "file_format": "txt",
                 "validate_error_msg": True,
-                "expected_error": "Invalid value for parameter \"format\""
+                "expected_error": "Invalid value for parameter 'format'"
             },
             {
                 "description": "Create dataset with missing header flag for csv file format",
@@ -845,7 +845,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "file_format": "json",
                 "header": False,
                 "validate_error_msg": True,
-                "expected_error": "Invalid parameter \"header\""
+                "expected_error": "Invalid parameter 'header'"
             },
             {
                 "description": "Create dataset with invalid header flag for tsv file format",
@@ -853,7 +853,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "object_construction_def": "name STRING",
                 "header": "False1",
                 "validate_error_msg": True,
-                "expected_error": "Invalid value for parameter \"header\""
+                "expected_error": "Invalid value for parameter 'header'"
             },
             {
                 "description": "Create dataset with invalid null flag",
@@ -875,14 +875,14 @@ class CBASExternalLinks(CBASBaseTest):
                 "file_format": "json",
                 "null_string": "\N",
                 "validate_error_msg": True,
-                "expected_error": "Invalid parameter \"null\""
+                "expected_error": "Invalid parameter 'null'"
             },
             {
                 "description": "Create dataset with invalid redact warning flag",
                 "file_format": "json",
                 "redact_warning": "False1",
                 "validate_error_msg": True,
-                "expected_error": "Invalid value for parameter \"redact-warnings\""
+                "expected_error": "Invalid value for parameter 'redact-warnings'"
             },
             {
                 "description": "Create dataset with both include and exclude flag set",
@@ -890,7 +890,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "include": "*.json",
                 "exclude": "*.csv",
                 "validate_error_msg": True,
-                "expected_error": "The parameters \"include\" and \"exclude\" cannot be provided at the same time"
+                "expected_error": "The parameters 'include' and 'exclude' cannot be provided at the same time"
             },
             {
                 "description": "Create dataset with include flag set with invalid pattern",

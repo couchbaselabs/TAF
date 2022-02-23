@@ -1318,8 +1318,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
     def test_docs_deleted_in_dataset_once_MaxTTL_reached(self):
         self.log.info("Test started")
-        if not self.bucket_spec:
-            self.bucket_spec = "analytics.multi_bucket"
+        self.bucket_spec = "analytics.multi_bucket"
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.bucket_spec)
         doc_loading_spec = None
