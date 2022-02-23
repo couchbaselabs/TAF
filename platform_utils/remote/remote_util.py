@@ -1775,18 +1775,14 @@ class RemoteMachineShellConnection:
                           forcefully=False, fts_query_limit=None,
                           debug_logs=False):
         success_upgrade = False
-        server_type = None
         success = True
         if fts_query_limit is None:
             fts_query_limit = 10000000
-        start_server_after_install = True
         track_words = ("warning", "error", "fail")
         if build.name.lower().find("membase") != -1:
             server_type = 'membase'
-            abbr_product = "mb"
         elif build.name.lower().find("couchbase") != -1:
             server_type = 'couchbase'
-            abbr_product = "cb"
         else:
             self.test_log.error("Its not a membase or couchbase?")
             return success_upgrade
@@ -1797,12 +1793,11 @@ class RemoteMachineShellConnection:
         self.test_log.info('Deliverable_type: %s' % self.info.deliverable_type)
         self.test_log.info('/tmp/%s or /tmp/%s' % (build.name, build.product))
         command = ''
-        if self.info.type.lower() == 'windows':
-            print("build name in couchbase upgrade ", build.product_version)
+        if self.info.type.lower() == OS.WINDOWS:
             self.couchbase_upgrade_win(self.info.architecture_type,
                                        self.info.windows_name,
                                        build.product_version)
-            log.info('********* continue upgrade process **********')
+            self.test_log.info('********* continue upgrade process **********')
 
         elif self.info.deliverable_type == 'rpm':
             # run rpm -i to install
@@ -1811,7 +1806,7 @@ class RemoteMachineShellConnection:
                 install_command = 'rpm -i /tmp/{0}'.format(build.name)
                 command = \
                     'INSTALL_UPGRADE_CONFIG_DIR=/opt/couchbase/var/lib/membase/config {0}' \
-                        .format(install_command)
+                    .format(install_command)
             else:
                 command = 'rpm -U /tmp/{0}'.format(build.name)
                 if forcefully:
@@ -1822,7 +1817,7 @@ class RemoteMachineShellConnection:
                 install_command = 'dpkg -i /tmp/{0}'.format(build.name)
                 command = \
                     'INSTALL_UPGRADE_CONFIG_DIR=/opt/couchbase/var/lib/membase/config {0}' \
-                        .format(install_command)
+                    .format(install_command)
             else:
                 command = 'dpkg -i /tmp/{0}'.format(build.name)
                 if forcefully:
@@ -1844,9 +1839,9 @@ class RemoteMachineShellConnection:
                         "sed -i 's/export PATH/export PATH\\n"
                         "export CBFT_ENV_OPTIONS=bleveMaxResultWindow={1}/'\
                         {2}opt/{0}/bin/{0}-server"
-                            .format(server_type,
-                                    int(fts_query_limit),
-                                    nonroot_path_start))
+                        .format(server_type,
+                                int(fts_query_limit),
+                                nonroot_path_start))
                 success &= self.log_command_output(o, e, track_words)
                 sleep(5, "Wait for server up before stop it", log_type="infra")
                 self.stop_couchbase()

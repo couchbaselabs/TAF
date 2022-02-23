@@ -5,7 +5,7 @@ from basetestcase import BaseTestCase
 from builds.build_query import BuildQuery
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
+from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection
 from scripts.old_install import InstallerJob
 from testconstants import CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \
@@ -103,7 +103,7 @@ class UpgradeBase(BaseTestCase):
             self.cluster.servers[0:self.nodes_init])
         self.cluster_util.print_cluster_stats(self.cluster)
 
-        # Disable auto-failover to avaid failover of nodes
+        # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
@@ -305,60 +305,6 @@ class UpgradeBase(BaseTestCase):
             raise Exception("Build %s not found" % version)
         return appropriate_build
 
-    def _upgrade(self, upgrade_version, server, queue=None, skip_init=False,
-                 info=None, save_upgrade_config=False, fts_query_limit=None,
-                 debug_logs=False):
-        try:
-            remote = RemoteMachineShellConnection(server)
-            appropriate_build = self.__get_build(server, upgrade_version,
-                                                 remote, info=info)
-            self.assertTrue(appropriate_build.url,
-                            msg="unable to find build {0}"
-                            .format(upgrade_version))
-            self.assertTrue(remote.download_build(appropriate_build),
-                            "Build wasn't downloaded!")
-            o, e = remote.couchbase_upgrade(
-                appropriate_build,
-                save_upgrade_config=save_upgrade_config,
-                forcefully=self.is_downgrade,
-                fts_query_limit=fts_query_limit,
-                debug_logs=debug_logs)
-            self.log.info("upgrade {0} to version {1} is completed"
-                          .format(server.ip, upgrade_version))
-            if 5.0 > float(self.initial_version[:3]) and self.is_centos7:
-                remote.execute_command("systemctl daemon-reload")
-                remote.start_server()
-            self.rest = RestConnection(server)
-            if self.is_linux:
-                self.wait_node_restarted(server, wait_time=testconstants.NS_SERVER_TIMEOUT * 4, wait_if_warmup=True)
-            else:
-                self.wait_node_restarted(server, wait_time=testconstants.NS_SERVER_TIMEOUT * 10, wait_if_warmup=True, check_service=True)
-            if not skip_init:
-                self.rest.init_cluster(self.rest_settings.rest_username, self.rest_settings.rest_password)
-            self.sleep(self.sleep_time)
-            remote.disconnect()
-            self.sleep(10)
-            return o, e
-        except Exception, e:
-            self.log.error(e)
-            if queue is not None:
-                queue.put(False)
-                if not self.is_linux:
-                    remote = RemoteMachineShellConnection(server)
-                    output, error = remote.execute_command(
-                        "cmd /c schtasks /Query /FO LIST /TN removeme /V")
-                    remote.log_command_output(output, error)
-                    output, error = remote.execute_command(
-                        "cmd /c schtasks /Query /FO LIST /TN installme /V")
-                    remote.log_command_output(output, error)
-                    output, error = remote.execute_command(
-                        "cmd /c schtasks /Query /FO LIST /TN upgrademe /V")
-                    remote.log_command_output(output, error)
-                    remote.disconnect()
-                raise e
-        if queue is not None:
-            queue.put(True)
-
     def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True):
         rest = self.__get_rest_node(node_to_upgrade)
         otp_node = self.__get_otp_node(rest, node_to_upgrade)
@@ -470,7 +416,6 @@ class UpgradeBase(BaseTestCase):
         # Update spare_node to rebalanced-out node
         self.spare_node = node_to_upgrade
         self.cluster.nodes_in_cluster.remove(node_to_upgrade)
-
 
     def online_rebalance_out_in(self, node_to_upgrade, version,
                                 install_on_spare_node=True):
@@ -614,5 +559,30 @@ class UpgradeBase(BaseTestCase):
     def failover_full_recovery(self, node_to_upgrade, graceful=True):
         self.failover_recovery(node_to_upgrade, "full", graceful)
 
-    def offline(self, node_to_upgrade, version):
-        self.fail("Yet to be implemented")
+    def offline(self, node_to_upgrade):
+        rest = RestConnection(node_to_upgrade)
+        shell = RemoteMachineShellConnection(node_to_upgrade)
+        appropriate_build = self.__get_build(self.upgrade_version,
+                                             shell)
+        self.assertTrue(appropriate_build.url,
+                        msg="Unable to find build %s" % self.upgrade_version)
+        self.assertTrue(shell.download_build(appropriate_build),
+                        "Failed while downloading the build!")
+
+        self.log.info("Starting node upgrade")
+        upgrade_success = shell.couchbase_upgrade(appropriate_build,
+                                                  save_upgrade_config=False,
+                                                  forcefully=self.is_downgrade)
+        shell.disconnect()
+        if not upgrade_success:
+            self.log_failure("Upgrade failed")
+            return
+
+        rest_helper = RestHelper(rest)
+        self.log.info("Wait for ns_server to accept connections")
+        if not rest_helper.is_ns_server_running(timeout_in_seconds=120):
+            self.fail("Server not started post upgrade")
+
+        self.log.info("Validate the cluster rebalance status")
+        if not rest.cluster_status()["balanced"]:
+            self.fail("Cluster reported (/pools/default) balanced=false")
