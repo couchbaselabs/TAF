@@ -48,6 +48,7 @@ class StorageBase(BaseTestCase):
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket_name = self.input.param("bucket_name", None)
         self.magma_buckets = self.input.param("magma_buckets", 0)
+        self.change_magma_quota = self.input.param("change_magma_quota", False)
 
         # SDK Exceptions
         self.check_temporary_failure_exception = False
@@ -118,6 +119,10 @@ class StorageBase(BaseTestCase):
                 fragmentation_percentage=self.fragmentation,
                 flush_enabled=self.flush_enabled)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
+        if self.change_magma_quota:
+            bucket_helper = BucketHelper(self.cluster.master)
+            bucket_helper.set_magma_quota_percentage()
+            self.sleep(30, "Sleep while magma storage quota setting is taking effect")
 
         self.buckets = self.cluster.buckets
         # Setting reader and writer threads

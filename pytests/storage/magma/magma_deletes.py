@@ -1,5 +1,6 @@
 import copy
 import time
+import threading
 
 from magma_basic_crud import BasicCrudTests
 
@@ -124,10 +125,8 @@ class BasicDeleteTests(BasicCrudTests):
                 self.num_items_per_collection += self.create_end - self.create_start
                 self.new_loader(wait=True)
             count += 1
-
         self.log.info("====test_create_delete_n_times_new ends====")
 
-    ##################################################
     def test_create_delete_n_times(self):
         """
         STEPS:
@@ -233,6 +232,88 @@ class BasicDeleteTests(BasicCrudTests):
             count += 1
 
         self.log.info("====test_create_delete_n_times ends====")
+
+    def test_create_delete_n_times_bloomfilter(self):
+        """
+        STEPS:
+           -- Create n items
+           -- Delete all n items
+           -- Check Space Amplification
+           -- Repeat above step n times
+        """
+        self.log.info("test_create_delete_n_times_bloomfilter starts ")
+
+        msg_stats = "Fragmentation value for {} stats exceeds\
+        the configured value"
+
+        self.delete_start = 0
+        self.delete_end = self.num_items
+        self.generate_docs(doc_ops="delete")
+        count = 0
+        while count < self.test_itr:
+            ##################################################################
+            '''
+            STEP - 1, Delete all the items
+
+            '''
+            self.log.debug("Step 1, Iteration= {}".format(count+1))
+            self.doc_ops = "delete"
+            self.bloom_stats_th = threading.Thread(target=self.bloomfilters)
+            self.bloom_stats_th.start()
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets,
+                                                         timeout=3600)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
+            self.stop_stats = True
+            self.bloom_stats_th.join()
+            self.assertFalse(self.stats_failure, "BloomFilter memory has exceeded MAGMA mem quota")
+            ##################################################################
+            '''
+            STEP - 2
+              -- Space Amplification check after
+                 deleting all the items
+            '''
+            self.log.debug("Step 2, Iteration= {}".format(count+1))
+            _result = self.check_fragmentation_using_magma_stats(
+                self.buckets[0],
+                self.cluster.nodes_in_cluster)
+            self.assertIs(_result, True,
+                          msg_stats.format("magma"))
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.cluster.nodes_in_cluster)
+            self.assertIs(_r, True,
+                          msg_stats.format("KV"))
+
+            ######################################################################
+            '''
+            STEP - 3
+              -- Recreate n items
+            '''
+
+            if count != self.test_itr - 1:
+                self.log.info("Step 2, Iteration= {}".format(count+1))
+                self.doc_ops = "create"
+                self.bloom_stats_th = None
+                self.bloom_stats_th = threading.Thread(target=self.bloomfilters)
+                self.bloom_stats_th.start()
+                _ = self.loadgen_docs(self.retry_exceptions,
+                                      self.ignore_exceptions,
+                                      _sync=True)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    self.cluster, self.cluster.buckets, timeout=3600)
+                self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                          self.num_items)
+                self.stop_stats = True
+                self.bloom_stats_th.join()
+                self.assertFalse(self.stats_failure, "BloomFilter memory has exceeded MAGMA mem quota after recreates")
+            count += 1
+        self.bloom_stats_th = None
+        self.log.info("====test_create_delete_n_times_bloomfilter ends====")
 
     def test_parallel_creates_deletes(self):
         """

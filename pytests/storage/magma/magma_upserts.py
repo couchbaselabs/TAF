@@ -9,6 +9,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
 
+
 class BasicUpsertTests(BasicCrudTests):
     def test_update_n_times_new(self):
         """
@@ -196,6 +197,65 @@ class BasicUpsertTests(BasicCrudTests):
             self.change_swap_space(self.cluster.nodes_in_cluster,
                                disable=False)
         self.log.info("====test_update_n_times ends====")
+
+    def test_update_n_times_bloomfilter(self):
+        """
+        Test Focus: Update items n times and
+                    test space amplification
+        STEPS:
+          -- Update items n times (where n gets calculated
+             from fragmentation value
+          -- Check space amplification
+          -- Repeat the above steps n times
+          -- After all iterations validate the data
+        """
+
+        self.log.info("test_update_n_times_bloomfilter starts")
+        self.update_start = 0
+        self.update_end = self.init_items_per_collection
+        self.doc_ops = "update"
+        self.mutate = 0
+        count = 0
+
+        while count < self.test_itr:
+            self.log.info("Iteration == {}".format(count+1))
+            #################################################################
+            '''
+            STEP - 1, Update Items
+
+            '''
+            self.generate_docs(doc_ops="update")
+            self.bloom_stats_th = threading.Thread(target=self.bloomfilters)
+            self.bloom_stats_th.start()
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.log.info("Waiting for ep-queues to get drained")
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets, timeout=3600)
+            self.stop_stats = True
+            self.bloom_stats_th.join()
+            self.assertFalse(self.stats_failure, "BloomFilter memory has exceeded MAGMA mem quota")
+            #################################################################
+            '''
+            STEP - 2, Space Amplification Check
+
+            '''
+            msg = "Fragmentation value for {} stats exceeds\
+            the configured value"
+
+            _result = self.check_fragmentation_using_magma_stats(
+                self.buckets[0],
+                self.cluster.nodes_in_cluster)
+            self.assertIs(_result, True,
+                          msg.format("magma"))
+
+            _r = self.check_fragmentation_using_bucket_stats(
+                self.buckets[0], self.cluster.nodes_in_cluster)
+            self.assertIs(_r, True,
+                          msg.format("KV"))
+
+            count += 1
 
     def test_multi_update_delete(self):
         """

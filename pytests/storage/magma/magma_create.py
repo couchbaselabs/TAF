@@ -1,4 +1,6 @@
 import copy
+import threading
+
 from magma_basic_crud import BasicCrudTests
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -103,3 +105,50 @@ class BasicCreateTests(BasicCrudTests):
             count += 1
 
         self.log.info("====test_basic_create_read ends====")
+
+    def test_basic_create_read_bloomfilter(self):
+        """
+        Test Focus: Perform create and read Doc-OPs parallely.
+
+        STEPS:
+           -- Create new items
+           -- Read existing items
+        """
+        self.log.info("test_basic_create_read_bloomfilter starts")
+        count = 0
+        init_items = self.num_items
+        self.generate_docs(doc_ops="read")
+
+        while count < self.test_itr:
+            self.log.info("Iteration == {}".format(count))
+            for node in self.cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(node)
+                shell.restart_couchbase()
+                shell.disconnect()
+
+            self.doc_ops = "create:read"
+            self.create_start = self.num_items
+            self.create_end = self.num_items+init_items
+
+            self.read_start = self.num_items
+            self.read_end = self.num_items+init_items
+
+            self.generate_docs(doc_ops="create")
+            self.bloom_stats_th = threading.Thread(target=self.bloomfilters)
+            self.bloom_stats_th.start()
+            _ = self.loadgen_docs(self.retry_exceptions,
+                                  self.ignore_exceptions,
+                                  _sync=True)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
+            self.stop_stats = True
+            self.bloom_stats_th.join()
+            self.assertFalse(self.stats_failure, "BloomFilter memory has exceeded MAGMA mem quota")
+
+            self.generate_docs(doc_ops="read")
+
+            count += 1
+
+        self.log.info("====test_basic_create_read_bloomfilter ends====")

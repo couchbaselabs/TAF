@@ -367,6 +367,20 @@ class BucketHelper(RestConnection):
 
         return True
 
+    def set_magma_quota_percentage(self, bucket="default", storageQuotaPercentage=10):
+        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
+                                 urllib.quote_plus("%s" % bucket))
+        params_dict = {}
+        params_dict["storageQuotaPercentage"] = storageQuotaPercentage
+        params = urllib.urlencode(params_dict)
+        self.log.info("Updating bucket properties for %s" % bucket)
+        self.log.debug("%s with param: %s" % (api, params))
+        status, content, _ = self._http_request(api, 'POST', params)
+        if not status:
+            self.log.error("Failed to update magma storage quota percentage: %s"
+                           % content)
+        return status
+
     def update_memcached_settings(self, **params):
         api = self.baseUrl + "pools/default/settings/memcached/global"
         params = urllib.urlencode(params)

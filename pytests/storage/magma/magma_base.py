@@ -78,6 +78,10 @@ class MagmaBaseTest(StorageBase):
                 self.load_buckets_in_dgm(self.gen_create, "create", 0)
             else:
                 self.initial_load()
+                self.totalBloomFilterMemUsed = self.get_magma_params(self.buckets[0], self.cluster.nodes_in_cluster)
+                self.memoryQuota = self.get_magma_params(self.buckets[0], self.cluster.nodes_in_cluster, param="MemoryQuota")
+                self.memory_quota = max([max(val) for val in self.memoryQuota.values()])
+                self.log.info("magma_memory_quota :: {}".format(self.memory_quota))
             self.dgm_prcnt = self.get_bucket_dgm(self.buckets[0])
             self.log.info("DGM percentage after init loading is {}".format(self.dgm_prcnt))
         if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:
@@ -282,6 +286,60 @@ class MagmaBaseTest(StorageBase):
         self.log.info("Fragmentation value that exceeds the configured value is ==> {}".format(max(res)))
         self.log.info(stats)
         return False
+
+    def get_magma_params(self, bucket, servers=None, param="TotalBloomFilterMemUsed"):
+        result = dict()
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+        if type(servers) is not list:
+            servers = [servers]
+        stats = list()
+        for server in servers:
+            param_values = list()
+            shell = RemoteMachineShellConnection(server)
+            if not self.windows_platform:
+                output = shell.execute_command(
+                    "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
+                    )[0][0].split('\n')[0]
+            else:
+                output = shell.execute_command(
+                    "cat /proc/cpuinfo | grep 'processor' | tail -1 | awk '{print $3}'"
+                    )[0][0].split('\n')[0]
+                output = str(int(output) + 1)
+            self.log.debug("%s - core(s): %s" % (server.ip, output))
+            for i in range(int(output)):
+                grep_field = "rw_{}:magma".format(i)
+                _res = self.get_magma_stats(
+                    bucket, [server],
+                    field_to_grep=grep_field)
+                param_values.append(
+                    float(_res[server.ip][grep_field][
+                        param]))
+                stats.append(_res)
+            result.update({server.ip: param_values})
+        self.log.info("{} for each shard is {}".format(param, result))
+        return result
+
+    def bloomfilters(self):
+        self.stop_stats = False
+        self.stats_failure = False
+        self.iteration = 0
+        while not self.stop_stats:
+            self.iteration += 1
+            self.log.info("Stats iteration {}".format(self.iteration))
+            self.totalBloomFilterMemUsed = self.get_magma_params(self.buckets[0], self.cluster.nodes_in_cluster)
+            max_bloom_mem_used = max([max(val) for val in self.totalBloomFilterMemUsed.values()])
+            self.log.info("max_bloom_mem_used ::{}".format(max_bloom_mem_used))
+            time_end = time.time() + 20
+            while max_bloom_mem_used > self.memory_quota and time.time() < time_end:
+                self.totalBloomFilterMemUsed = self.get_magma_params(self.buckets[0], self.cluster.nodes_in_cluster)
+                max_bloom_mem_used = max([max(val) for val in self.totalBloomFilterMemUsed.values()])
+
+            if max_bloom_mem_used > self.memory_quota:
+                self.log.info("exceeded max_bloom_mem_used is {}".format(max_bloom_mem_used))
+                self.stats_failure = True
+                self.stop_stats = True
+            self.log.debug("total bloom filter mem used ::{}".format(self.totalBloomFilterMemUsed))
 
     def get_fragmentation_upsert_docs_list(self):
         """
