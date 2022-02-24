@@ -1,8 +1,10 @@
 from math import floor
 
 from BucketLib.BucketOperations import BucketHelper
+from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import DurabilityHelper
+from couchbase_helper.durability_helper import DurabilityHelper, \
+    BucketDurability
 from rebalance_base import RebalanceBaseTest
 from rebalance_new import rebalance_base
 
@@ -130,8 +132,9 @@ class RebalanceDurability(RebalanceBaseTest):
         # Override docs_ops to perform CREATE/UPDATE during all rebalance
         self.doc_ops = ["create", "update"]
 
-        is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
-            self.bucket_durability_level, self.durability_level)
+        bucket_durability_set = \
+            (self.bucket_durability_level
+             != BucketDurability[Bucket.DurabilityLevel.NONE])
         expected_err = "You do not have enough data servers to support " \
                        "this durability level"
         self.sleep(10, "Wait for cluster to be ready after rebalance")
@@ -139,12 +142,9 @@ class RebalanceDurability(RebalanceBaseTest):
         for replicas in range(self.num_replicas+1, 3):
             # Start document CRUDs
             tasks_info = self.__load_docs_in_all_buckets()
-            self.log.info("Increasing the bucket replicas to {0}"
-                          .format(replicas))
+            self.log.info("Setting bucket replicas to %s" % replicas)
             exception = None
             try:
-                self.log.info("Update replica=%s and expect it to fail"
-                              % replicas)
                 self.bucket_util.update_all_bucket_replicas(self.cluster,
                                                             replicas=replicas)
             except Exception as e:
@@ -153,7 +153,7 @@ class RebalanceDurability(RebalanceBaseTest):
             # Only replica [1,3] requires more len(nodes) > replica.
             # Replica=2 works with 1 less node since it required only
             # two nodes to satisfy the durability settings
-            if is_sync_write_enabled and replicas in [1, 3] \
+            if bucket_durability_set and replicas in [1, 3] \
                     and expected_err not in str(exception):
                 self.fail("Bucket replica update worked")
 
@@ -165,7 +165,7 @@ class RebalanceDurability(RebalanceBaseTest):
             self.cluster.nodes_in_cluster.extend(
                 [self.cluster.servers[replicas]])
 
-            if is_sync_write_enabled and replicas == 1:
+            if bucket_durability_set and replicas == 1:
                 self.log.info("Updating replica=%s and performing rebalance"
                               % replicas)
                 self.bucket_util.update_all_bucket_replicas(self.cluster,
