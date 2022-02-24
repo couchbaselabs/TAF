@@ -61,7 +61,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.log.info("drop collection list:: {}".format(drop_lst))
         while not self.stop_crash:
             self._itr += 1
-            self.log.info("collection drop iteration {}".format(self.drop_collection_itr))
+            self.log.info("collection drop iteration {}".format(self._itr))
             for collection in drop_lst:
                 self.bucket_util.drop_collection(self.cluster.master,
                                                  self.buckets[0],
