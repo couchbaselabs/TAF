@@ -6,6 +6,7 @@ Created on Dec 12, 2019
 
 import copy
 import threading
+import random
 
 from Cb_constants.CBServer import CbServer
 from TestInput import TestInputSingleton
@@ -54,10 +55,35 @@ class MagmaCrashTests(MagmaBaseTest):
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
+    def drop_recreate_collections(self):
+        self._itr = 0
+        drop_lst = [collection for collection in self.collections[::2] if collection != "_default"]
+        self.log.info("drop collection list:: {}".format(drop_lst))
+        while not self.stop_crash:
+            self._itr += 1
+            self.log.info("collection drop iteration {}".format(self.drop_collection_itr))
+            for collection in drop_lst:
+                self.bucket_util.drop_collection(self.cluster.master,
+                                                 self.buckets[0],
+                                                 scope_name=CbServer.default_scope,
+                                                 collection_name=collection)
+                self.sleep(2, "sleep before dropping collection")
+            self.sleep(10, "sleep before recreating collections")
+            for collection in drop_lst:
+                self.bucket_util.create_collection(self.cluster.master,
+                                                   self.buckets[0],
+                                                   CbServer.default_scope,
+                                                   {"name": collection})
+                self.sleep(2, "sleep before recreating collection")
+
+            sleep = random.randint(30, 60)
+            self.sleep(sleep, "Wait for next drop/create collection iteration")
+
     def test_crash_during_ops_new(self):
         self.graceful = self.input.param("graceful", False)
         self.ops_rate = self.input.param("ops_rate", 10000)
-        self.log.info("====test_crash_during_ops starts====")
+        self.drop_collections = self.input.param("drop_collections", False)
+        self.log.info("====test_crash_during_ops_new starts====")
         self.create_start = 0
         self.create_end = self.init_items_per_collection
 
@@ -80,8 +106,13 @@ class MagmaCrashTests(MagmaBaseTest):
                                          kwargs=dict(graceful=self.graceful,
                                                      wait=wait_warmup))
         self.crash_th.start()
+        if self.drop_collections:
+            self.drop_collection_th = threading.Thread(target=self.drop_recreate_collections)
+            self.drop_collection_th.start()
         self.doc_loading_tm.getAllTaskResult()
         self.stop_crash = True
+        if self.drop_collections:
+            self.drop_collection_th.join()
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
         for node in self.cluster.nodes_in_cluster:
