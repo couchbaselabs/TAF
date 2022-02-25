@@ -246,7 +246,7 @@ class StorageBase(BaseTestCase):
         self.deep_copy = self.input.param("deep_copy", False)
         self.suppress_error_table = True
         self.skip_read_on_error = False
-        self.track_failures = True
+        self.track_failures = self.input.param("track_failures", True)
 
     def find_nodes_with_service(self, service_type, nodes_list):
         filter_list = list()

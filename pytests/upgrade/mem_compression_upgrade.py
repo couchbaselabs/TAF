@@ -3,6 +3,7 @@ Created on 10-Feb-2022
 @author: Sanjit
 '''
 
+from math import ceil
 from Cb_constants import CbServer, DocLoading
 from couchbase_helper.documentgenerator import doc_generator
 from gsiLib.gsiHelper import GsiHelper
@@ -52,12 +53,11 @@ class MemCompressionUpgradeTests(UpgradeBase):
         return filter_list
 
     def test_upgrade(self):
-        # self.cluster.query_nodes = self.find_nodes_with_service("n1ql", self.cluster)
-        # self.cluster.index_nodes = self.find_nodes_with_service("index", self.cluster.servers[0:self.nodes_init])
         self.log.info("Upgrading cluster nodes to target version")
         self.index_replicas = self.input.param("index_replicas", 0)
         self.index_count = self.input.param("index_count", 1)
-        major_version = float(self.upgrade_version[:3])
+        major_version = float(self.initial_version[:3])
+        self.log.info("major version is {}".format(major_version))
         rest = RestConnection(self.cluster.master)
         # Update RAM quota allocated to buckets created before upgrade
         cluster_info = rest.get_nodes_self()
@@ -139,6 +139,111 @@ class MemCompressionUpgradeTests(UpgradeBase):
 
         for taskInstance in createIndexTasklist:
             self.task.jython_task_manager.get_task_result(taskInstance)
+        node_to_upgrade = self.fetch_node_to_upgrade()
+        while node_to_upgrade is not None:
+            self.log.info("Selected node for upgrade: %s"
+                          % node_to_upgrade.ip)
+            self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                     self.upgrade_version)
+            self.cluster_util.print_cluster_stats(self.cluster)
+            self.log.info("Changing master")
+            try:
+                self.cluster.update_master_using_diag_eval(
+                    self.cluster.servers[0])
+            except Exception:
+                self.cluster.update_master_using_diag_eval(
+                    self.cluster.servers[self.nodes_init - 1])
+            node_to_upgrade = self.fetch_node_to_upgrade()
+
+        self.cluster.index_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="index",
+                                                                                 get_all_nodes=True)
+        self.cluster.query_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="n1ql",
+                                                                                 get_all_nodes=True)
+        self.sweep_interval = self.input.param("sweep_interval", 120)
+        rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+        self.moi_snapshot_interval = self.input.param("moi_snapshot_interval", 120)
+        rest.set_index_settings({"indexer.settings.persisted_snapshot.moi.interval": self.moi_snapshot_interval})
+        rest.set_index_settings({"indexer.plasma.mainIndex.evictSweepInterval": self.sweep_interval})
+        rest.set_index_settings({"indexer.plasma.backIndex.evictSweepInterval": self.sweep_interval})
+        rest.set_index_settings({"indexer.plasma.backIndex.enableInMemoryCompression": True})
+        rest.set_index_settings({"indexer.plasma.mainIndex.enableInMemoryCompression": True})
+        rest.set_index_settings({"indexer.plasma.backIndex.enableCompressDuringBurst": True})
+        rest.set_index_settings({"indexer.plasma.mainIndex.enableCompressDuringBurst": True})
+        self.sleep(2 * self.sweep_interval, "Waiting for items to compress")
+        self.check_compression_stat(self.cluster.index_nodes)
+
+    def test_upgrade_without_collections(self):
+        self.log.info("Upgrading cluster nodes to target version")
+        self.index_replicas = self.input.param("index_replicas", 0)
+        self.index_count = self.input.param("index_count", 1)
+        major_version = float(self.initial_version[:3])
+        self.log.info("major version is {}".format(major_version))
+        rest = RestConnection(self.cluster.master)
+        # Update RAM quota allocated to buckets created before upgrade
+        cluster_info = rest.get_nodes_self()
+        kv_quota = \
+            cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
+        bucket_size = kv_quota // (self.input.param("num_buckets", 1) + 1)
+        for bucket in self.cluster.buckets:
+            self.bucket_util.update_bucket_property(
+                self.cluster.master, bucket, bucket_size)
+        self.log.info("Creating new buckets with scopes and collections")
+        for i in range(1, self.input.param("num_buckets", 1) + 1):
+            self.bucket_util.create_default_bucket(
+                self.cluster,
+                replica=self.num_replicas,
+                compression_mode=self.compression_mode,
+                ram_quota=bucket_size,
+                bucket_type=self.bucket_type,
+                storage=self.bucket_storage,
+                eviction_policy=self.bucket_eviction_policy,
+                bucket_durability=self.bucket_durability_level,
+                bucket_name="bucket_{0}".format(i))
+
+        for bucket in self.cluster.buckets[1:]:
+            gen_load = doc_generator(
+                    self.key, 0, self.num_items,
+                    randomize_doc_size=True, randomize_value=True,
+                    randomize=True)
+            async_load_task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, gen_load,
+                    DocLoading.Bucket.DocOps.CREATE,
+                    active_resident_threshold=self.active_resident_threshold,
+                    timeout_secs=self.sdk_timeout,
+                    process_concurrency=8,
+                    batch_size=500,
+                    sdk_client_pool=self.sdk_client_pool)
+            self.task_manager.get_task_result(async_load_task)
+            # Update num_items in case of DGM run
+            if self.active_resident_threshold != 100:
+                self.num_items = async_load_task.doc_index
+            bucket.scopes[CbServer.default_scope].collections[
+                CbServer.default_collection].num_items = self.num_items
+            # Verify doc load count
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            self.sleep(30, "Wait for num_items to get reflected")
+            current_items = self.bucket_util.get_bucket_current_item_count(
+                self.cluster, bucket)
+        field = 'body'
+        self.timer = self.input.param("timer", 600)
+        self.indexUtil = IndexUtils(server_task=self.task)
+        rest.set_indexer_storage_mode(storageMode="plasma")
+        self.cluster.index_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="index",
+                                                                                 get_all_nodes=True)
+        self.cluster.query_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="n1ql",
+                                                                                 get_all_nodes=True)
+
+        for bucket in self.cluster.buckets:
+            for i in range(self.index_count):
+                indexName = "Index0" + str(i)
+                index_query = "CREATE INDEX `%s` ON `%s`(`body`)" % (indexName,
+                                                                     bucket.name)
+                self.query_client = RestConnection(self.cluster.query_nodes[0])
+                #indexDict[indexName] = index_query
+                result = self.query_client.query_tool(index_query)
+                self.assertTrue(result["status"] == "success", "Index query failed!")
+
         node_to_upgrade = self.fetch_node_to_upgrade()
         while node_to_upgrade is not None:
             self.log.info("Selected node for upgrade: %s"

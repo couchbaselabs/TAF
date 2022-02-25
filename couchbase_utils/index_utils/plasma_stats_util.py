@@ -38,10 +38,16 @@ class PlasmaStatsUtil(IndexUtils):
             index_node = self.index_node
         api = self.get_index_baseURL() + 'stats/storage'
         self.log.info("api is:"+str(api))
-        rest_client = RestConnection(index_node)
-        status, content, header = rest_client._http_request(api, timeout=timeout)
-        if not status:
-            raise Exception(content)
+        content = None
+        counter = 0
+        while content is None:
+            rest_client = RestConnection(index_node)
+            status, content, header = rest_client._http_request(api, timeout=timeout)
+            if not status:
+                raise Exception(content)
+            counter += 1
+            if counter > 10:
+                break
         json_parsed = json.loads(content)
         index_storage_stats = {}
         for index_stats in json_parsed:

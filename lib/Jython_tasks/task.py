@@ -4104,15 +4104,14 @@ class CompareIndexKVData(Task):
             indexer_rest = GsiHelper(self.server, self.log)
             self.log.info("starting call")
             contentType = 'application/x-www-form-urlencoded'
-            connection = 'keep-alive'
+            connection = 'close'
             status, content, header = indexer_rest.execute_query(server=self.server, query=self.query,
                                                                  contentType=contentType,
                                                                  connection=connection)
             newContent = json.loads(content)
             resultList = newContent['results']
 
-            if self.sdk_client_pool is not None:
-                self.client = \
+            self.client = \
                     self.sdk_client_pool.get_client_for_bucket(self.bucket,
                                                                self.scope.name,
                                                                self.collection.name)
@@ -4125,8 +4124,10 @@ class CompareIndexKVData(Task):
             self.log.error("Exception while comparing")
             self.test_log.error(e)
             self.set_exception(e)
-            return
-        self.complete_task()
+        finally:
+            self.sdk_client_pool.release_client(self.client)
+            self.complete_task()
+
 
     def compareResult(self, kvList, indexList, field='body'):
         if len(kvList) != len(indexList):

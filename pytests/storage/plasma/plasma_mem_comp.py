@@ -31,6 +31,7 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.time_out = self.input.param("time_out", 60)
         self.resident_ratio = \
             float(self.input.param("resident_ratio", .99))
+        self.exp_compression_count = self.input.param("exp_compression_count", 1000)
 
     def tearDown(self):
         super(PlasmaMemCompTest, self).tearDown()
@@ -333,17 +334,12 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.sleep(600, "waiting before triggering compact")
         # Perform explicit compress operation
         self.perform_plasma_mem_ops("compactAll")
-        isTotal_record = False
-        for count in range(self.counter):
-            field_value_list = self.get_plasma_index_stat_value("total_records", stat_obj_list)
-            for field_value in field_value_list:
-                if field_value == self.create_end:
-                    isTotal_record = True
-                    break
-            if isTotal_record:
-                break
-            else:
-                self.sleep(self.counter, "waiting for total record value to come down")
+        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "total_records", self.create_end, ops='equal', timeout=100),
+                        "Total records stats not settled down")
+        self.assertTrue(self.compare_plasma_stat_field_value(stat_obj_list, "lss_data_size", lss_data_size_list,
+                                                             ops='equalOrLessThan', timeout=100),
+                        "data_size stats not settled down")
+        self.assertTrue(self.compare_aggregate_stat(stat_obj_list, 'compacts', 0, ops='greater', retry=10, sleep=20), "Compacts count is not as expected")
 
     """
     1. Enable compression
@@ -495,7 +491,7 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.indexer_client = RestConnection(self.cluster.index_nodes[0])
         self.indexer_client.set_service_mem_quota(
             {CbServer.Settings.INDEX_MEM_QUOTA: index_mem_quota / 2})
-        query_tasks_info = self.indexUtil.run_full_scan(self.cluster, indexMap, key='mody_body', totalCount=totalCount, limit=totalCount)
+        query_tasks_info = self.indexUtil.run_full_scan(self.cluster, indexMap, key='mod_body', totalCount=totalCount, limit=totalCount)
         for taskInstance in query_tasks_info:
             self.task.jython_task_manager.get_task_result(taskInstance)
         index_list = self.extract_index_list(new_indexMap)
@@ -783,6 +779,9 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.sleep(2 * self.sweep_interval, "waiting for compression to happen")
 
         stat_obj_list = self.create_Stats_Obj_list()
+        self.assertTrue(self.compare_aggregate_stat(stat_obj_list, 'num_rec_compressed', self.exp_compression_count, ops='greater',
+                                        retry=10, sleep=20),
+            "Compression count is not as expected")
         self.assertTrue(self.verify_compression_stat(self.cluster.index_nodes),
                         "Compressed items count is either 0 or less than 0")
         mem_comp_compare_task = self.validate_index_data(indexMap, self.create_end, field, limit=self.query_limit)
@@ -846,12 +845,16 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         data_load_task = self.data_load()
         self.log.debug("update from {} to {}".format(self.upsert_start, self.upsert_end))
         self.wait_for_doc_load_completion(data_load_task)
+        self.wait_for_stats_to_settle_down(stat_obj_list, "equal", "lss_fragmentation")
+        self.wait_for_stats_to_settle_down(stat_obj_list, "equal", "purges")
+        self.wait_for_stats_to_settle_down(stat_obj_list, "equal", "inserts")
         self.sleep(2 * self.sweep_interval, "waiting for compression to complete")
-        self.assertTrue(self.verify_compression_stat(self.cluster.index_nodes), "Compression not triggered")
+        self.assertTrue(self.compare_aggregate_stat(stat_obj_list, 'num_rec_compressed', self.exp_compression_count, ops='greater', retry=10, sleep=20),
+                        "Compression count is not as expected")
         compressed_items_dict = self.get_plasma_index_stat_value("num_rec_compressed", stat_obj_list)
 
         new_Count = self.upsert_end - self.upsert_start
-        query_tasks_info = self.indexUtil.run_full_scan(self.cluster, new_indexMap, key='mody_body',
+        query_tasks_info = self.indexUtil.run_full_scan(self.cluster, new_indexMap, key='mod_body',
                                                         totalCount=new_Count,
                                                         limit=self.query_limit)
         for taskInstance in query_tasks_info:
@@ -870,7 +873,7 @@ class PlasmaMemCompTest(PlasmaBaseTest):
                                                          limit=self.query_limit)
         for taskInstance in mem_comp_compare_task:
             self.task.jython_task_manager.get_task_result(taskInstance)
-        mem_comp_compare_task = self.validate_index_data(new_indexMap, totalCount, 'mod_body',
+        mem_comp_compare_task = self.validate_index_data(new_indexMap, new_Count, 'mod_body',
                                                          limit=self.query_limit)
         for taskInstance in mem_comp_compare_task:
             self.task.jython_task_manager.get_task_result(taskInstance)
@@ -930,9 +933,11 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.log.info("items loaded from {} to {}".format(self.create_start, self.create_end))
         self.wait_for_mutuations_to_settle_down(stat_obj_list)
         self.sleep(self.wait_timeout, "Wait for merges to complete")
-        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "merges", 0, ops='greater',
-                                                              check_single_collection=True),
-                        "Merging not happening after deletion")
+        self.exp_merge_count= self.input.param("exp_merge_count", 100)
+        self.assertTrue(
+            self.compare_aggregate_stat(stat_obj_list, 'merges', self.exp_merge_count, ops='greater',
+                                        retry=10, sleep=20),
+            "Merging count is not as expected")
         merges_dict = self.get_plasma_index_stat_value("merges", stat_obj_list)
 
         end = self.create_end
@@ -954,7 +959,10 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.wait_for_mutuations_to_settle_down(stat_obj_list)
 
         self.sleep(2 * self.sweep_interval, "Waiting for compression to complete")
-        self.assertTrue(self.verify_compression_stat(self.cluster.index_nodes), "Compression not triggered")
+        self.assertTrue(
+            self.compare_aggregate_stat(stat_obj_list, 'num_rec_compressed', self.exp_compression_count, ops='greater',
+                                        retry=10, sleep=20),
+            "Compression count is not as expected")
         # Perform explicit swapout operation
         self.sleep(self.wait_timeout, "waiting before triggering evictAll")
         self.perform_plasma_mem_ops("evictAll")
@@ -975,11 +983,11 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.gen_update = None
         self.indexUtil.delete_docs_with_field(self.cluster, indexMap)
         self.log.debug("After delete")
-
         self.sleep(self.wait_timeout, "Waiting for merges to settle down")
-        self.assertTrue(self.validate_plasma_stat_field_value(stat_obj_list, "merges", 0, ops='greater',
-                                                              check_single_collection=True),
-                        "Merging not happening after deletion")
+        self.assertTrue(
+            self.compare_aggregate_stat(stat_obj_list, 'merges', self.exp_compression_count, ops='greater',
+                                        retry=10, sleep=20),
+            "Merging count is not as expected")
 
     """
             1. Create indexer with num_replica as 2 

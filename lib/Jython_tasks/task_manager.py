@@ -1,5 +1,4 @@
 import threading
-
 from java.util.concurrent import Executors, TimeUnit, CancellationException
 from threading import InterruptedException
 
@@ -29,6 +28,7 @@ class TaskManager:
             result = future.get()
         except CancellationException:
             self.log.warning("%s is already cancelled" % task.thread_name)
+
         self.futures.pop(task.thread_name)
         return result
 

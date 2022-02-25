@@ -12,6 +12,7 @@ from storage.storage_base import StorageBase
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from gsiLib.gsiHelper import GsiHelper
 
+
 class PlasmaBaseTest(StorageBase):
     def setUp(self):
         super(PlasmaBaseTest, self).setUp()
@@ -77,7 +78,7 @@ class PlasmaBaseTest(StorageBase):
             self.log.info("Output value is:" + str(output))
             self.log.info("Counter value is {0} and max count is {1}".format(str(counter), str(timeout)))
             indexerkill_shell.disconnect()
-            self.sleep(kill_sleep_time)
+            self.sleep(kill_sleep_time, "Waiting for indexer to warm up")
         self.log.info("Kill indexer process for node: {} completed".format(str(server.ip)))
 
     def polling_for_All_Indexer_to_Ready(self, indexes_to_build, buckets=None, timeout=600, sleep_time=10):
@@ -88,7 +89,8 @@ class PlasmaBaseTest(StorageBase):
                 for collection, gsi_index_names in collection_data.items():
                     for gsi_index_name in gsi_index_names:
                         self.assertTrue(
-                            self.indexUtil.wait_for_indexes_to_go_online(self.cluster, buckets, gsi_index_name,timeout=timeout, sleep_time=sleep_time),
+                            self.indexUtil.wait_for_indexes_to_go_online(self.cluster, buckets, gsi_index_name,
+                                                                         timeout=timeout, sleep_time=sleep_time),
                             "Index {} is not up".format(gsi_index_name))
         return True
 
@@ -152,14 +154,17 @@ class PlasmaBaseTest(StorageBase):
                     index_stat_map = index_stat[bucket][index]
                     for key in index_stat_map["MainStore"].keys():
                         self.log.debug("Key considered {}".format(key))
-                        if type(index_stat_map['MainStore'].get(key)) == int or type(
-                                index_stat_map['MainStore'].get(key)) == float and index_stat_map['MainStore'].get(
-                                key) < 0:
+                        if (type(index_stat_map['MainStore'].get(key)) == int or type(
+                                index_stat_map['MainStore'].get(key)) == float) and index_stat_map['MainStore'].get(
+                            key) < 0:
+                            self.log.info("MainStore key is {0} and value is {1}".format(key,
+                                          str(index_stat_map['BackStore'].get(key))))
                             self.fail("Negative field value for key {} in MainStore".format(key))
                     for key in index_stat_map["BackStore"].keys():
-                        if type(index_stat_map['BackStore'].get(key)) == int or type(
-                                index_stat_map['BackStore'].get(key)) == float and index_stat_map['BackStore'].get(
-                                key) < 0:
+                        if (type(index_stat_map['BackStore'].get(key)) == int or type(
+                                index_stat_map['BackStore'].get(key)) == float) and index_stat_map['BackStore'].get(
+                            key) < 0:
+                            self.log.info("BackStore key is {0} and value is {1}".format(key, str(index_stat_map['BackStore'].get(key))))
                             self.fail("Negative field value for key {} in BackStore".format(key))
 
     def find_mem_used_percent(self, index_stats_map):
@@ -177,7 +182,8 @@ class PlasmaBaseTest(StorageBase):
             stats_obj_dict[str(node.ip)] = stat_obj
         return stats_obj_dict
 
-    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='lesser', timeout=30, check_single_collection=False, sleep_time=10):
+    def validate_plasma_stat_field_value(self, stat_obj_list, field, value, ops='lesser', timeout=30,
+                                         check_single_collection=False, sleep_time=10):
         isFound = True
         value = "{:.2f}".format(value)
         for count in range(timeout):
@@ -196,7 +202,7 @@ class PlasmaBaseTest(StorageBase):
                     if not field_value > value:
                         isFound = False
                 elif ops == 'equalOrLessThan':
-                    self.log.debug("greater operation")
+                    self.log.debug("equal or less than operation")
                     if not field_value <= value:
                         isFound = False
                 else:
@@ -213,7 +219,28 @@ class PlasmaBaseTest(StorageBase):
                 self.sleep(sleep_time, "waiting to settle down the plasma stat value")
         return isFound
 
-    def validate_plasma_stat_index_specific(self, stat_obj_list, field, index_list, field_value, ops='lesser', timeout=30):
+    def get_aggregate_stat(self, stat_obj_list, field):
+        field_value_list = self.get_plasma_index_stat_value(field, stat_obj_list)
+        self.log.debug("size is:{}".format(len(field_value_list.values())))
+        agg_Value = 0
+        for field_value in field_value_list.values():
+            agg_Value += field_value
+
+        return agg_Value
+
+    def compare_aggregate_stat(self, stat_obj_list, field, exp_field_Value, ops='lesser', retry=10, sleep=20):
+        for x in range(retry):
+            agg_Value = self.get_aggregate_stat(stat_obj_list, field)
+            self.log.debug("Actual aggregate value for field {} is {}".format(field, agg_Value))
+            self.log.debug("Expected aggregate value for field {} is {}".format(field, exp_field_Value))
+            if self.compareField(agg_Value, exp_field_Value, ops):
+                return True
+            else:
+                self.sleep(sleep, "wait for stats to settle down")
+        return False
+
+    def validate_plasma_stat_index_specific(self, stat_obj_list, field, index_list, field_value, ops='lesser',
+                                            timeout=30):
         isCompare = False
         field_value = "{:.2f}".format(field_value)
         for index in index_list:
@@ -260,8 +287,8 @@ class PlasmaBaseTest(StorageBase):
                 self.log.debug("Comparing field value: {}".format(field_value_map[key]))
                 if ops == 'equal':
                     if field_value_map[key] == value_map[key]:
-                         isCompare = True
-                         break
+                        isCompare = True
+                        break
                 elif ops == 'greater':
                     if field_value_map[key] > value_map[key]:
                         isCompare = True
@@ -308,26 +335,33 @@ class PlasmaBaseTest(StorageBase):
                 for index in index_storage_stats[bucket].keys():
                     index_stat_map = index_storage_stats[bucket][index]
                     self.assertTrue(index_stat_map["MainStore"]["num_rec_compressible"] <= (
-                                index_stat_map["MainStore"]["num_rec_allocs"] - index_stat_map["MainStore"]["num_rec_frees"] + index_stat_map["MainStore"][
-                            "num_rec_compressed"]),
+                            index_stat_map["MainStore"]["num_rec_allocs"] - index_stat_map["MainStore"][
+                        "num_rec_frees"] + index_stat_map["MainStore"][
+                                "num_rec_compressed"]),
                                     "For MainStore num_rec_compressible is {} num_rec_allocs is {} num_rec_frees is {} num_rec_compressed is {}".format(
-                                        index_stat_map["MainStore"]["num_rec_compressible"], index_stat_map["MainStore"]["num_rec_allocs"],
-                                        index_stat_map["MainStore"]["num_rec_frees"], index_stat_map["MainStore"]["num_rec_compressed"]))
+                                        index_stat_map["MainStore"]["num_rec_compressible"],
+                                        index_stat_map["MainStore"]["num_rec_allocs"],
+                                        index_stat_map["MainStore"]["num_rec_frees"],
+                                        index_stat_map["MainStore"]["num_rec_compressed"]))
                     self.assertTrue(index_stat_map["BackStore"]["num_rec_compressible"] <= (
                             index_stat_map["BackStore"]["num_rec_allocs"] - index_stat_map["BackStore"][
                         "num_rec_frees"] + index_stat_map["BackStore"][
                                 "num_rec_compressed"]),
                                     "For BackStore num_rec_compressible is {} num_rec_allocs is {} num_rec_frees is {} num_rec_compressed is {}".format(
-                                        index_stat_map["BackStore"]["num_rec_compressible"], index_stat_map["BackStore"]["num_rec_allocs"],
-                                        index_stat_map["BackStore"]["num_rec_frees"], index_stat_map["BackStore"]["num_rec_compressed"]))
+                                        index_stat_map["BackStore"]["num_rec_compressible"],
+                                        index_stat_map["BackStore"]["num_rec_allocs"],
+                                        index_stat_map["BackStore"]["num_rec_frees"],
+                                        index_stat_map["BackStore"]["num_rec_compressed"]))
                     self.log.debug("Compression value is: {}".format(index_stat_map["MainStore"]["num_rec_compressed"]))
                     if index_stat_map["MainStore"]["num_rec_compressed"] == 0:
                         if index_stat_map["MainStore"]["num_rec_compressible"] > 0:
-                            self.log.debug("num_rec_compressible value is {}".format(index_stat_map["MainStore"]["num_rec_compressible"]))
+                            self.log.debug("num_rec_compressible value is {}".format(
+                                index_stat_map["MainStore"]["num_rec_compressible"]))
                             return False
                         else:
                             self.log.debug("Items not compressing as num_rec_compressed is 0")
-                    elif index_stat_map["MainStore"]["num_rec_compressed"] < 0 or index_stat_map["BackStore"]["num_rec_compressed"] < 0:
+                    elif index_stat_map["MainStore"]["num_rec_compressed"] < 0 or index_stat_map["BackStore"][
+                        "num_rec_compressed"] < 0:
                         self.fail("Negative digit in compressed count")
         return comp_stat_verified
 
@@ -337,6 +371,7 @@ class PlasmaBaseTest(StorageBase):
                 return True
             self.sleep(5, "Waiting for compression to complete")
         return False
+
     def findBucket(self, bucket_name, cluster=None):
         if cluster is None:
             cluster = self.cluster
@@ -353,6 +388,63 @@ class PlasmaBaseTest(StorageBase):
         for _, collection in scope.collections.items():
             if collection.name == collection_name:
                 return collection
+
+    def full_scan_with_latency(self, cluster, indexMap, totalCount, stats_obj_list, field='body', limit=5000,
+                               is_sync=True):
+        query_tasks_info = list()
+        x = 0
+        query_len = len(cluster.query_nodes)
+        self.log.debug("Limit is {} and total Count is {}".format(limit, totalCount))
+        avg_Scan_latency = 0
+        for bucket, bucket_data in indexMap.items():
+            for scope, collection_data in bucket_data.items():
+                for collection, gsi_index_names in collection_data.items():
+                    for gsi_index_name in gsi_index_names:
+                        offset = 0
+                        while True:
+                            query_node_index = x % query_len
+                            query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s is not missing order by meta().id limit %s offset %s" % (
+                                bucket, scope, collection, gsi_index_name, field, limit, offset)
+                            self.log.debug("Query is {}".format(query))
+                            self.log.debug("Offset is {} ".format(offset))
+                            task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query)
+                            query_tasks_info.append(task)
+                            x += 1
+                            for plasma_obj in stats_obj_list.values():
+                                index_stat = plasma_obj.get_all_index_stat_map()
+                                if bucket in index_stat['bucket_index_map'].keys():
+                                    if scope in index_stat['bucket_index_map'][bucket].keys():
+                                        bucket_index_map = index_stat['bucket_index_map'][bucket]
+                                        if collection in bucket_index_map[scope]:
+                                            scope_index_map = bucket_index_map[scope]
+                                            if gsi_index_name in scope_index_map[collection]:
+                                                gsi_index_map = scope_index_map[collection][gsi_index_name]
+                                                self.log.debug(
+                                                    "Avg_latency for bucket {} scope {} collection {} is {}".format(
+                                                        bucket, scope, collection, gsi_index_map['avg_scan_latency']))
+                                                if avg_Scan_latency > 0:
+                                                    self.log.debug("Existing avg_scan_latency is {}".format(avg_Scan_latency))
+                                                    if gsi_index_map['avg_scan_latency'] > 0:
+                                                        avg_Scan_latency += gsi_index_map['avg_scan_latency']
+                                                        avg_Scan_latency = avg_Scan_latency/2
+                                                    self.log.debug("Updated avg_scan_latency is {}".format(avg_Scan_latency))
+                                                else:
+                                                    self.log.debug("Avg scan latency is zero")
+                                                    avg_Scan_latency = gsi_index_map['avg_scan_latency']
+                                                    self.log.debug("Avg scan latency initiated to {}".format(avg_Scan_latency))
+                            if is_sync:
+                                self.log.debug("Is sync is true")
+                                if x == query_len:
+                                    self.log.debug("Getting status for each query")
+                                    for task in query_tasks_info:
+                                        self.task_manager.get_task_result(task)
+                                    self.log.debug("Resetting the list")
+                                    query_tasks_info = list()
+                                    x = 0
+                            offset += limit
+                            if offset > totalCount:
+                                break
+        return query_tasks_info, avg_Scan_latency
 
     def validate_index_data(self, indexMap, totalCount, field='body', limit=5000, is_sync=True):
         query_len = len(self.cluster.query_nodes)
@@ -407,7 +499,7 @@ class PlasmaBaseTest(StorageBase):
                                 offset = totalCount
             return query_task_list
 
-    def perform_plasma_mem_ops(self,ops='compactAll'):
+    def perform_plasma_mem_ops(self, ops='compactAll'):
         for index_node in self.cluster.index_nodes:
             self.cluster_util.indexer_id_ops(node=index_node, ops=ops)
 
@@ -425,8 +517,8 @@ class PlasmaBaseTest(StorageBase):
                 for collection, gsi_index_names in collection_data.items():
                     for gsi_index_name in gsi_index_names:
                         count_query = "select count(*) from `%s`.`%s`.`%s` use index(`%s`) where %s is not missing" \
-                                             % (bucket,
-                                                scope, collection, gsi_index_name, field)
+                                      % (bucket,
+                                         scope, collection, gsi_index_name, field)
                         self.log.debug("Count query is {}".format(count_query))
                         status, content, header = indexer_rest.execute_query(server=self.cluster.query_nodes[0],
                                                                              query=count_query)
@@ -436,6 +528,7 @@ class PlasmaBaseTest(StorageBase):
                             return False
         self.log.info("Items Indexed Verified with bucket count...")
         return True
+
     def _verify_items_count(self):
         """
         Compares Items indexed count is sample
@@ -466,9 +559,10 @@ class PlasmaBaseTest(StorageBase):
     def check_stats_values_changing(self, stat_obj_list, ops='greater', field='merges'):
         field_dict = self.get_plasma_index_stat_value(field, stat_obj_list)
         return self.compare_plasma_stat_field_value(stat_obj_list, field, field_dict,
-                                             ops, timeout=1)
+                                                    ops, timeout=1)
 
     def compareField(self, actual_field, expected_field, ops):
+        self.log.debug("Actual field is {} and expected field is {}".format(actual_field, expected_field))
         if ops == 'equal':
             self.log.debug("Equal operation")
             if actual_field == expected_field:
@@ -487,8 +581,10 @@ class PlasmaBaseTest(StorageBase):
                 return True
         return False
 
-    def check_for_stat_field(self, stats_obj_list, field='resident_ratio', fieldValue=1.00, ops='equalOrLessThan', avg=False):
+    def check_for_stat_field(self, stats_obj_list, field='resident_ratio', fieldValue=1.00, ops='equalOrLessThan',
+                             avg=False):
         if avg:
+            self.log.info("Calculating average")
             fieldValue = "{:.2f}".format(fieldValue)
             for count in range(5):
                 field_value_map = self.get_plasma_index_stat_value(field, stats_obj_list)
@@ -509,7 +605,7 @@ class PlasmaBaseTest(StorageBase):
     def load_item_till_dgm_reached(self, stats_obj_list, resident_ratio, start_item=0, items_add=30000, avg=False):
         initial_count = start_item
         self.create_end = start_item
-        while not self.check_for_stat_field(stats_obj_list, 'resident_ratio', resident_ratio, 'equalOrLessThan',avg):
+        while not self.check_for_stat_field(stats_obj_list, 'resident_ratio', resident_ratio, 'equalOrLessThan', avg):
             self.create_start = self.create_end
             self.create_end = self.create_start + items_add
             self.generate_docs(doc_ops="create")
