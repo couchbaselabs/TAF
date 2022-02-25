@@ -139,7 +139,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
             # Doc loading params
             "doc_crud": {
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "concurrent_fo_docs",
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
 
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 5000,
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 20,
