@@ -4916,14 +4916,18 @@ class NodeFailureTask(Task):
             self.set_exception(Exception(exception_str))
 
     def _recover_disk(self, node):
+        # we need to stop couchbase server before mounting partition to avoid inconsistencies
+        self.shell.stop_couchbase()
         o, r = self.shell.mount_partition(self.disk_location)
         for line in o:
             if self.disk_location in line:
                 self.test_log.debug("Mounted disk at location : {0} on {1}"
                                     .format(self.disk_location, node.ip))
+                self.shell.start_couchbase()
                 return
         self.test_log.critical("Failed mount disk at location %s on %s"
                                % (self.disk_location, node.ip))
+        self.shell.start_couchbase()
         self.set_result(False)
 
     def _disk_full_failure(self, node):
