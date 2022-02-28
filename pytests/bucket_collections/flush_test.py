@@ -17,9 +17,10 @@ class FlushTests(CollectionBase):
 
     @staticmethod
     def __get_random_doc_ttl_and_durability_level():
-        # Max doc_ttl value=2147483648. Reference:
-        # docs.couchbase.com/server/6.5/learn/buckets-memory-and-storage/expiration.html
-        doc_ttl = sample([0, 30000, 2147483648], 1)[0]
+        # Although the max TTL that can be set is 2147483648, we cannot set it to more than 1576800000
+        # using javs SDK's "Duration". Refer:
+        # https://docs.couchbase.com/java-sdk/current/howtos/kv-operations.html#document-expiration
+        doc_ttl = sample([0, 30000, 1576800000], 1)[0]
         durability_level = sample(
             BucketUtils.get_supported_durability_levels() + [""], 1)[0]
         return doc_ttl, durability_level
