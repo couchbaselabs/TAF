@@ -1226,3 +1226,36 @@ class CollectionsRebalance(CollectionBase):
             self.wait_for_rebalance_to_complete(rebalance_task)
             for node in failover_nodes:
                 self.nodes_in_cluster.append(node)
+
+    def test_MB_50868(self):
+        """
+        1. setup cluster of 1 node containing 2 buckets
+        2. Issue command to add test condition to fail rebalance on a particular bucket
+        3. Add a node and rebalance => should fail
+        4. Issue command to remove the test condition
+        5. Rebalance the cluster => should pass
+        """
+
+        bucket_name = self.cluster.buckets[0]
+        status, content = self.rest.fail_bucket_rebalance_at_bucket(bucket_name)
+        self.assertEquals("ok", content, msg="Error occurred while adding the test condition")
+
+        known_nodes = self.cluster.servers[:self.nodes_init]
+        add_nodes = self.cluster.servers[self.nodes_init:self.nodes_init + 1]
+        operation = self.task.rebalance(known_nodes, add_nodes, [],
+                                        retry_get_process_num=self.retry_get_process_num)
+        if operation:
+            self.fail("Rebalance should have failed because of the test condition")
+        else:
+            self.log.info("Rebalance failed as expected")
+
+        status, content = self.rest.remove_fail_bucket_rebalance_at_bucket()
+        self.assertEquals("ok", content, msg="Error occurred while removing the test condition")
+
+        known_nodes = self.cluster.servers[:self.nodes_init + 1]
+        operation = self.task.rebalance(known_nodes, [], [],
+                                        retry_get_process_num=self.retry_get_process_num)
+        if operation:
+            self.log.info("Rebalance completed as expected")
+        else:
+            self.fail("Rebalance failed")

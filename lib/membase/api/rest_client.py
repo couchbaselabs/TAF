@@ -1503,6 +1503,17 @@ class RestConnection(object):
         status, content = self.diag_eval(code)
         return status, content
 
+    def fail_bucket_rebalance_at_bucket(self, bucket_name):
+        code = 'testconditions:set({{fail_bucket_rebalance_at_bucket,"{0}"}}, fail)' \
+                .format(bucket_name)
+        status, content = self.diag_eval(code)
+        return status, content
+
+    def remove_fail_bucket_rebalance_at_bucket(self):
+        code = 'testconditions:delete(fail_bucket_rebalance_at_bucket)'
+        status, content = self.diag_eval(code)
+        return status, content
+
     def diag_master_events(self):
         api = '{0}{1}'.format(self.baseUrl, 'diag/masterEvents?o=1')
         status, content, header = self._http_request(api, "GET")
