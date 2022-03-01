@@ -84,22 +84,31 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             if self.durability_level and task.result is False:
                 self.fail("Doc_loading failed")
 
-    def test_autofailover(self):
-        """
-        Test the basic autofailover for different failure scenarios.
-        1. Enable autofailover and validate
-        2. Fail a node and validate if node is failed over if required.
-        3. Disable autofailover and validate.
-        :return: None
-        """
-        task = None
+    def enable_logic(self, sleep_after_enabling=5):
         if self.auto_reprovision:
             self.disable_autofailover_and_validate()
             self.enable_autoreprovision()
         else:
             self.enable_autofailover_and_validate()
-        self.sleep(5)
+        self.sleep(sleep_after_enabling, "Wait after enabling auto-failover/auto-reprovision")
 
+    def disable_logic(self):
+        if self.auto_reprovision:
+            self.disable_autoreprovision()
+        else:
+            self.disable_autofailover_and_validate()
+
+    def test_autofailover(self):
+        """
+        Test the basic autofailover for different failure scenarios.
+        1. Enable autofailover/autoreprovision and validate
+        2. Induce failure
+        3. Rebalance-out the failed-over-nodes
+        4. Disable AF/Auto-reprovision
+        # TODo: Autoreprovision does not make sense for this test since we do not remove the failure.
+        """
+        task = None
+        self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
@@ -109,19 +118,21 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             # this is for collections, so load from spec
             task = self.data_load_from_spec(async_load=True)
 
+        self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
+                                                                 self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300)
+        self.sleep(300, "Wait after inducing failure")
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
                 for task in self.loadgen_tasks:
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
-        rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
+
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
+                                              retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
-        self.sleep(60)
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
                         if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
@@ -132,44 +143,37 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.data_load_from_spec(async_load=False)
             self.data_validation_collection()
-        if self.auto_reprovision:
-            self.disable_autoreprovision()
-        else:
-            self.disable_autofailover_and_validate()
+        self.disable_logic()
 
     def test_autofailover_during_rebalance(self):
         """
-        Test autofailover for different failure scenarios while rebalance
-        of nodes in progress
-        1. Enable autofailover and validate
+        Test autofailover for different failure scenarios during rebalance
+        1. Enable autofailover/autoreprovision and validate
         2. Start rebalance of nodes by either adding or removing nodes.
-        3. Fail a node and validate if node is failed over if required.
-        4. Disable autofailover and validate.
-
-        :return: None
+        3. While step2 is going on, induce failure in a node and assert that the rebalance fails.
+        4. Do another rebalance in order to remove the failed-over nodes
+        5. Disable AF/Auto-reprovision
+        # TODo: Autoreprovision does not make sense for this test since we do not remove the failure.
         """
         task = None
-        if self.auto_reprovision:
-            self.disable_autofailover_and_validate()
-            self.enable_autoreprovision()
-        else:
-            self.enable_autofailover_and_validate()
-        self.sleep(5)
-
+        self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
                 self.loadgen_tasks = self._loadgen()
         else:
+            # this is for collections, so load from spec
             task = self.data_load_from_spec(async_load=True)
 
         rebalance_task = self.task.async_rebalance(self.servers,
                                                    self.servers_to_add,
                                                    self.servers_to_remove)
-        self.sleep(5)
+        self.sleep(5, "Wait for rebalance to make progress")
+        self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
+                                                                 self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300)
+        self.sleep(300, "Wait after inducing failure")
         self.task.jython_task_manager.get_task_result(rebalance_task)
         self.assertFalse(rebalance_task.result,
                          "Rebalance should fail since a node went down")
@@ -180,9 +184,9 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.wait_for_async_data_load_to_complete(task)
 
-        self.sleep(60)
-        rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
+        self.sleep(60, "Wait before starting another rebalance")
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
+                                              retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
@@ -195,30 +199,21 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.data_load_from_spec(async_load=False)
             self.data_validation_collection()
-        if self.auto_reprovision:
-            self.disable_autoreprovision()
-        else:
-            self.disable_autofailover_and_validate()
+        self.disable_logic()
 
     def test_autofailover_after_rebalance(self):
         """
         Test autofailover for different failure scenarios after rebalance
-        of nodes
-        1. Enable autofailover and validate
+        1. Enable autofailover/autoreprovision and validate
         2. Start rebalance of nodes by either adding or removing nodes and
         wait for the rebalance to be completed
-        3. Fail a node and validate if node is failed over if required.
-        4. Disable autofailover and validate.
-        :return: None
+        3. Induce failure in a node(s)
+        4. Do another rebalance to remove failed-over-nodes
+        5. Disable AF/Auto-reprovision
+        # TODo: Autoreprovision does not make sense for this test since we do not remove the failure.
         """
         task = None
-        if self.auto_reprovision:
-            self.disable_autofailover_and_validate()
-            self.enable_autoreprovision()
-        else:
-            self.enable_autofailover_and_validate()
-        self.sleep(5)
-
+        self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
@@ -237,17 +232,19 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if not rebalance_task.result:
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
+        self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
+                                                                 self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300)
+        self.sleep(300, "Wait after inducing failure")
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
                 for task in self.loadgen_tasks:
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
-        self.sleep(60)
-        rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
+        self.sleep(60, "Wait before starting another rebalance")
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
+                                              retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
@@ -260,30 +257,22 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.data_load_from_spec(async_load=False)
             self.data_validation_collection()
-        if self.auto_reprovision:
-            self.disable_autoreprovision()
-        else:
-            self.disable_autofailover_and_validate()
+        self.disable_logic()
 
     def test_rebalance_after_autofailover(self):
         """
         Test autofailover for different failure scenarios and then rebalance
         nodes
-        1. Enable autofailover and validate
-        2. Start rebalance of nodes by either adding or removing nodes and
+        1. Enable autofailover/autoreprovision and validate
+        2. Induce failure in node(s)
+        3. Start rebalance of nodes by either adding or removing nodes and
         wait for the rebalance to be completed
-        3. Fail a node and validate if node is failed over if required.
-        4. Disable autofailover and validate.
-        :return: None
+        4. Start another rebalance
+        5. Disable AF/Auto-reprovision
+        # TODo: Autoreprovision does not make sense for this test since we do not remove the failure.
         """
         task = None
-        if self.auto_reprovision:
-            self.disable_autofailover_and_validate()
-            self.enable_autoreprovision()
-        else:
-            self.enable_autofailover_and_validate()
-        self.sleep(5)
-
+        self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
@@ -292,8 +281,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             task = self.data_load_from_spec(async_load=True)
 
+        self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
+                                                                 self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300)
+        self.sleep(300, "Wait after inducing failure")
 
         # Update replica before rebalance due to failover
         if self.replica_update_during == "before_rebalance":
@@ -301,10 +292,12 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                                                         self.new_replica)
 
         for node in self.servers_to_add:
+            self.log.info("Adding node {0}".format(node.ip))
             self.rest.add_node(user=self.orchestrator.rest_username,
                                password=self.orchestrator.rest_password,
                                remoteIp=node.ip)
         nodes = self.rest.node_statuses()
+        self.log.info("Marking {0} for removal".format(self.servers_to_remove))
         nodes_to_remove = [node.id for node in nodes if
                            node.ip in [t.ip for t in self.servers_to_remove]]
         nodes = [node.id for node in nodes]
@@ -348,31 +341,23 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.data_load_from_spec(async_load=False)
             self.data_validation_collection()
-        if self.auto_reprovision:
-            self.disable_autoreprovision()
-        else:
-            self.disable_autofailover_and_validate()
+        self.disable_logic()
 
     def test_autofailover_and_addback_of_node(self):
         """
         Test autofailover of nodes and then addback of the node after failover
-        1. Enable autofailover and validate
-        2. Fail a node and validate if node is failed over if required
-        3. Addback node and validate that the addback was successful.
-        :return: None
+        1. Enable autofailover/autoreprovision and validate
+        2. Induce failure in node(s)
+        3. Delta/full recover the failed-over-nodes to add them back and rebalance
+        4. Start another rebalance
+        5. Disable AF/Auto-reprovision
         """
         task = None
         if not self.failover_expected:
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
             return
-        if self.auto_reprovision:
-            self.disable_autofailover_and_validate()
-            self.enable_autoreprovision()
-        else:
-            self.enable_autofailover_and_validate()
-        self.sleep(5)
-
+        self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
@@ -381,8 +366,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             task = self.data_load_from_spec(async_load=True)
 
+        self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
+                                                                 self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300)
+        self.sleep(300, "Wait after inducing failure")
 
         # Update replica before rebalance due to failover
         if self.replica_update_during == "before_rebalance":
@@ -390,11 +377,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                                                         self.new_replica)
 
         self.bring_back_failed_nodes_up()
-        self.sleep(30)
-        self.log.info(self.server_to_fail[0])
+        self.sleep(30, "Wait after removing failures")
         self.nodes = self.rest.node_statuses()
-        self.log.info(self.nodes[0].id)
-        self.rest.add_back_node("ns_1@{}".format(self.server_to_fail[0].ip))
+        self.rest.add_back_node("{0} node ns_1@{1}".format(self.recovery_strategy,
+                                                           self.server_to_fail[0].ip))
         self.rest.set_recovery_type("ns_1@{}".format(self.server_to_fail[
                                                          0].ip),
                                     self.recovery_strategy)
@@ -417,8 +403,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
-        rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
+        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
+                                              retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
@@ -431,10 +417,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.data_load_from_spec(async_load=False)
             self.data_validation_collection()
-        if self.auto_reprovision:
-            self.disable_autoreprovision()
-        else:
-            self.disable_autofailover_and_validate()
+        self.disable_logic()
 
     def test_autofailover_and_remove_failover_node(self):
         """
@@ -450,13 +433,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
             return
-        if self.auto_reprovision:
-            self.disable_autofailover_and_validate()
-            self.enable_autoreprovision()
-        else:
-            self.enable_autofailover_and_validate()
-        self.sleep(5)
-
+        self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
@@ -465,8 +442,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             task = self.data_load_from_spec(async_load=True)
 
+        self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
+                                                                 self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300)
+        self.sleep(300, "Wait after inducing failure")
         self.nodes = self.rest.node_statuses()
         self.remove_after_failover = True
 
@@ -509,7 +488,4 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             self.data_load_from_spec(async_load=False)
             self.data_validation_collection()
-        if self.auto_reprovision:
-            self.disable_autoreprovision()
-        else:
-            self.disable_autofailover_and_validate()
+        self.disable_logic()
