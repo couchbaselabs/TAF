@@ -135,6 +135,12 @@ class CBASExternalLinks(CBASBaseTest):
                         self.sleep(60, "Sleeping for 60 seconds to ensure that AWS bucket is created")
                     except Exception as err:
                         self.log.error(str(err))
+                        if "InvalidLocationConstraint" in str(err):
+                            link_regions.remove(region)
+                            if not link_regions:
+                                region = random.choice(self.aws_region_list)
+                            else:
+                                region = random.choice(link_regions)
                         aws_bucket_name = self.input.param(
                             "aws_bucket_name", "cbas-regression-{0}".format(
                                 random.randint(1, 10000)))
