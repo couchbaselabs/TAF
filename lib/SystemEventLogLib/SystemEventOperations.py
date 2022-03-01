@@ -60,9 +60,11 @@ class SystemEventRestHelper:
 
         rest = self.get_rest_object(rest, server, username, password)
         api = rest.baseUrl + "_event"
+        header = rest.get_headers_for_content_type_json()
+        header['Connection'] = "close"
         status, content, _ = rest._http_request(
-            api, method=RestConnection.POST, params=get_str(event_dict),
-            headers=rest.get_headers_for_content_type_json())
+            api, method=RestConnection.POST, headers=header,
+            params=get_str(event_dict))
         return status, json.loads(content)
 
     def create_event_stream(self, rest=None, server=None,
