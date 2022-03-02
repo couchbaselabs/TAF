@@ -42,7 +42,7 @@ class CollectionBase(ClusterSetup):
         self.process_concurrency = self.input.param("process_concurrency", 1)
         self.retry_get_process_num = \
             self.input.param("retry_get_process_num", 200)
-
+        self.change_magma_quota = self.input.param("change_magma_quota", False)
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
         if self.num_replicas > 1:
@@ -160,6 +160,12 @@ class CollectionBase(ClusterSetup):
 
         # Prints bucket stats before doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Change magma quota only for bloom filter testing
+        if self.change_magma_quota:
+            bucket_helper = BucketHelper(self.cluster.master)
+            bucket_helper.set_magma_quota_percentage()
+            self.sleep(30, "Sleep while magma storage quota setting is taking effect")
 
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
