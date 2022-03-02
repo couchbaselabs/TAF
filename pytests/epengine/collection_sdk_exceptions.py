@@ -44,7 +44,7 @@ class SDKExceptionTests(CollectionBase):
     def __get_random_doc_ttl_and_durability_level():
         # Max doc_ttl value=2147483648. Reference:
         # docs.couchbase.com/server/6.5/learn/buckets-memory-and-storage/expiration.html
-        doc_ttl = sample([0, 30000, 2147483648], 1)[0]
+        doc_ttl = sample([0, 30000, 1576800000], 1)[0]
         durability_level = sample(
             BucketUtils.get_supported_durability_levels() + [""], 1)[0]
         return doc_ttl, durability_level
@@ -80,6 +80,8 @@ class SDKExceptionTests(CollectionBase):
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
 
+        sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
+            self.bucket_durability_level, self.durability_level)
         num_cols_in_bucket = 0
         for _, scope in self.bucket.scopes.items():
             for _, _ in scope.collections.items():
@@ -132,7 +134,7 @@ class SDKExceptionTests(CollectionBase):
                     self.log_failure("Create doc failed for key: %s" % key)
                 else:
                     verification_dict["ops_create"] += 1
-                    if self.durability_level:
+                    if sync_write_enabled:
                         verification_dict["sync_write_committed_count"] += 1
                     self.bucket.scopes[
                         self.scope_name].collections[
@@ -186,7 +188,7 @@ class SDKExceptionTests(CollectionBase):
                 else:
                     verification_dict["ops_update"] += 1
 
-                if self.durability_level:
+                if sync_write_enabled:
                     verification_dict["sync_write_committed_count"] += 1
         validate_vb_detail_stats()
         self.validate_test_failure()
@@ -233,7 +235,7 @@ class SDKExceptionTests(CollectionBase):
                                      "for key %s: %s" % (key, result["error"]))
                 else:
                     verification_dict["ops_create"] += 1
-                    if self.durability_level:
+                    if sync_write_enabled:
                         verification_dict["sync_write_committed_count"] += 1
                     self.bucket.scopes[
                         self.scope_name].collections[
