@@ -105,7 +105,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         2. Induce failure
         3. Rebalance-out the failed-over-nodes
         4. Disable AF/Auto-reprovision
-        # TODo: Autoreprovision does not make sense for this test since we do not remove the failure.
         """
         task = None
         self.enable_logic()
@@ -153,7 +152,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         3. While step2 is going on, induce failure in a node and assert that the rebalance fails.
         4. Do another rebalance in order to remove the failed-over nodes
         5. Disable AF/Auto-reprovision
-        # TODo: Autoreprovision does not make sense for this test since we do not remove the failure.
         """
         task = None
         self.enable_logic()
@@ -208,9 +206,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         2. Start rebalance of nodes by either adding or removing nodes and
         wait for the rebalance to be completed
         3. Induce failure in a node(s)
-        4. Do another rebalance to remove failed-over-nodes
+        4. Rebalance the cluster
         5. Disable AF/Auto-reprovision
-        # TODo: Autoreprovision does not make sense for this test since we do not remove the failure.
         """
         task = None
         self.enable_logic()
@@ -269,7 +266,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         wait for the rebalance to be completed
         4. Start another rebalance
         5. Disable AF/Auto-reprovision
-        # TODo: Autoreprovision does not make sense for this test since we do not remove the failure.
         """
         task = None
         self.enable_logic()
@@ -426,7 +422,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         1. Enable autofailover and validate
         2. Fail a node and validate if node is failed over if required
         3. Rebalance of node if failover was successful and validate.
-        :return: None
         """
         task = None
         if not self.failover_expected:

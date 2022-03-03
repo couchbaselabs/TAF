@@ -152,9 +152,9 @@ class AutoFailoverBaseTest(ClusterSetup):
             self.init_sdk_pool_object()
 
         self.log.info("Creating required SDK clients for client_pool to node {0}".
-                      format(self.cluster.master))
+                      format(self.orchestrator))
         CollectionBase.create_sdk_clients(self.task_manager.number_of_threads,
-                                          self.cluster.master,
+                                          self.orchestrator,
                                           self.cluster.buckets,
                                           self.sdk_client_pool,
                                           self.sdk_compression)
