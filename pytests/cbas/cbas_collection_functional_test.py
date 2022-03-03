@@ -1317,6 +1317,11 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.log.info("Test finished")
 
     def test_docs_deleted_in_dataset_once_MaxTTL_reached(self):
+        """
+        In Case both collectionTTL and BucketTTL are set, collectionTTL
+        takes preference.
+        In case collectionTTL/BucketTTL + docTTL, then min among them.
+        """
         self.log.info("Test started")
         self.bucket_spec = "analytics.multi_bucket"
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
@@ -1349,19 +1354,37 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
         ttl_to_check = None
         if len(list(set(list(ttl_dict.values())))) == 1:
-            if "bucketTTL" in ttl_dict:
+            if "docTTL" in ttl_dict:
+                ttl_to_check = "docTTL"
+            elif "bucketTTL" in ttl_dict:
                 ttl_to_check = "bucketTTL"
             elif "collectionTTL" in ttl_dict:
                 ttl_to_check = "collectionTTL"
-            elif "docTTL" in ttl_dict:
-                ttl_to_check = "docTTL"
         else:
             for ttl in ttl_dict:
                 if not ttl_to_check:
                     ttl_to_check = ttl
                 elif ttl_dict[ttl] < ttl_dict[ttl_to_check]:
                     ttl_to_check = ttl
-        end_time = time.time() + ttl_dict[ttl_to_check]
+
+        end_time = 0
+        if collectionTTL > 0 and bucketTTL > 0:
+            if docTTL > 0:
+                if (collectionTTL > bucketTTL) and (collectionTTL <= docTTL):
+                    if collectionTTL == docTTL:
+                        end_time = time.time() + ttl_dict["docTTL"]
+                        ttl_to_check = "docTTL"
+                    else:
+                        end_time = time.time() + ttl_dict["collectionTTL"]
+                elif (docTTL > bucketTTL) and (docTTL < collectionTTL):
+                    end_time = time.time() + ttl_dict["docTTL"]
+                    ttl_to_check = "docTTL"
+            else:
+                if collectionTTL > bucketTTL:
+                    end_time = time.time() + ttl_dict["collectionTTL"]
+
+        if not end_time:
+            end_time = time.time() + ttl_dict[ttl_to_check]
 
         self.collectionSetUp(self.cluster, True, buckets_spec, doc_loading_spec)
         #inserting docs parallel
