@@ -1980,6 +1980,8 @@ class RestConnection(object):
                 stat_dict[node_stat['hostname']]['services'] = node_stat['services']
                 stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats'].get(
                     'cpu_utilization_rate')
+                stat_dict[node_stat['hostname']]['clusterMembership'] = node_stat['clusterMembership']
+                stat_dict[node_stat['hostname']]['recoveryType'] = node_stat['recoveryType']
                 stat_dict[node_stat['hostname']]['mem_free'] = node_stat['systemStats'].get('mem_free')
                 stat_dict[node_stat['hostname']]['mem_total'] = node_stat['systemStats'].get('mem_total')
                 stat_dict[node_stat['hostname']]['swap_mem_used'] = node_stat['systemStats'].get('swap_used')

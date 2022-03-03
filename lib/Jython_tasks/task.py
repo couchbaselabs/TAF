@@ -230,7 +230,7 @@ class RebalanceTask(Task):
         cluster_stats = self.rest.get_cluster_stats()
         self.table = TableView(self.test_log.info)
         self.table.set_headers(["Nodes", "Services", "Version",
-                                "CPU", "Status"])
+                                "CPU", "Status", "Membership / Recovery"])
         node_ips_to_remove = [node.ip for node in to_remove]
         for node, stat in cluster_stats.items():
             node_ip = node.split(':')[0]
@@ -239,7 +239,7 @@ class RebalanceTask(Task):
                 node_status = "--- OUT --->"
             self.table.add_row([node_ip, ", ".join(stat["services"]),
                                 stat["version"], stat["cpu_utilization"],
-                                node_status])
+                                node_status, stat["clusterMembership"] + " / " + stat["recoveryType"]])
 
         # Fetch last rebalance task to track starting of current rebalance
         self.prev_rebalance_status_id = None
@@ -338,7 +338,7 @@ class RebalanceTask(Task):
                 services_for_node = [self.services[node_index]]
                 node_index += 1
             self.table.add_row([node.ip, services_for_node, "", "",
-                                "<--- IN ---"])
+                                "<--- IN ---", ""])
             if self.use_hostnames:
                 self.rest.add_node(master.rest_username, master.rest_password,
                                    node.hostname, node.port,
@@ -6220,7 +6220,7 @@ class NodeInitializeTask(Task):
 
         # Display memory quota allocated
         tbl = TableView(self.test_log.critical)
-        tbl.set_headers(["Service", "RAM mb"])
+        tbl.set_headers(["Service", "RAM MiB"])
         for service, mem_quota in service_quota.items():
             tbl.add_row([service, str(mem_quota)])
         tbl.display("Memory quota allocated:")
