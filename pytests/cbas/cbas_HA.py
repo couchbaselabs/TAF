@@ -1425,6 +1425,9 @@ class CBASHighAvailability(CBASBaseTest):
                 self.fail("Error while restarting server on {0}".format(
                     selected_node))
 
+            self.sleep(30, "Waiting for node to warm before starting "
+                           "rebalance")
+
             self.log.info("Checking if server is running on {0}".format(
                 selected_node.ip))
             if not selected_node_rest_helper.is_ns_server_running():
