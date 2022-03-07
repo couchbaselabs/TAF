@@ -197,6 +197,20 @@ class ClusterUtils:
             return False
         return True
 
+    # this method will rebalance the cluster by passing the remote_node as
+    # ejected node
+    def remove_nodes(self, rest, knownNodes, ejectedNodes,
+                     wait_for_rebalance=True):
+        self.log.debug("Ejecting nodes '{0}' from cluster"
+                       .format(ejectedNodes))
+        if len(ejectedNodes) == 0:
+            return False
+        rest.rebalance(knownNodes, ejectedNodes)
+        if wait_for_rebalance:
+            return rest.monitorRebalance()
+        else:
+            return False
+
     def cleanup_cluster(self, cluster, wait_for_rebalance=True, master=None):
         if master is None:
             master = cluster.master
@@ -217,7 +231,8 @@ class ClusterUtils:
             self.log.debug("Rebalancing all nodes in order to remove nodes")
             rest.log_client_error("Starting rebalance from test, ejected nodes %s" %
                                   [node.id for node in nodes if node.id != master_id])
-            removed = helper.remove_nodes(
+            _ = self.remove_nodes(
+                rest,
                 knownNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in nodes
                               if node.id != master_id],
@@ -845,9 +860,9 @@ class ClusterUtils:
         if len(nodes) <= len(otpnode):
             return
 
-        helper = RestHelper(rest)
         try:
-            removed = helper.remove_nodes(
+            _ = self.remove_nodes(
+                rest,
                 knownNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in otpnode],
                 wait_for_rebalance=wait_for_rebalance)
@@ -855,7 +870,8 @@ class ClusterUtils:
             self.log.error("First time rebalance failed on Removal. "
                            "Wait and try again. THIS IS A BUG.")
             sleep(5)
-            removed = helper.remove_nodes(
+            _ = self.remove_nodes(
+                rest,
                 knownNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in otpnode],
                 wait_for_rebalance=wait_for_rebalance)

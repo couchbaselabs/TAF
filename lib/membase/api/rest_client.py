@@ -126,19 +126,6 @@ class RestHelper(object):
         self.test_log.critical("Can't define if cluster balanced")
         return None
 
-    # this method will rebalance the cluster by passing the remote_node as
-    # ejected node
-    def remove_nodes(self, knownNodes, ejectedNodes, wait_for_rebalance=True):
-        self.test_log.debug("Ejecting nodes '{0}' from cluster"
-                            .format(ejectedNodes))
-        if len(ejectedNodes) == 0:
-            return False
-        self.rest.rebalance(knownNodes, ejectedNodes)
-        if wait_for_rebalance:
-            return self.rest.monitorRebalance()
-        else:
-            return False
-
 
 class RestConnection(object):
     def __init__(self, serverInfo):
