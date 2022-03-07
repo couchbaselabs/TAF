@@ -864,6 +864,26 @@ class ClusterUtils:
         #         removed,
         #         "Rebalance operation failed while removing %s," % otpnode)
 
+    def wait_for_node_status(self, node, rest, expected_status,
+                             timeout_in_seconds):
+        status_reached = False
+        end_time = time.time() + timeout_in_seconds
+        while time.time() <= end_time and not status_reached:
+            nodes = rest.node_statuses()
+            for n in nodes:
+                if node.id == n.id:
+                    self.log.debug('Node {0} status : {1}'
+                                   .format(node.id, n.status))
+                    if n.status.lower() == expected_status.lower():
+                        status_reached = True
+                    break
+            if not status_reached:
+                self.log.debug("Wait before reading the node.status")
+                sleep(5)
+        self.log.debug('Node {0} status_reached: {1}'
+                       .format(node.id, status_reached))
+        return status_reached
+
     @staticmethod
     def get_victim_nodes(cluster, nodes, master=None, chosen=None,
                          victim_type="master", victim_count=1):

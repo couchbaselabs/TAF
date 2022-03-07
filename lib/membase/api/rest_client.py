@@ -139,25 +139,6 @@ class RestHelper(object):
         else:
             return False
 
-    def wait_for_node_status(self, node, expected_status, timeout_in_seconds):
-        status_reached = False
-        end_time = time.time() + timeout_in_seconds
-        while time.time() <= end_time and not status_reached:
-            nodes = self.rest.node_statuses()
-            for n in nodes:
-                if node.id == n.id:
-                    self.test_log.debug('Node {0} status : {1}'
-                                        .format(node.id, n.status))
-                    if n.status.lower() == expected_status.lower():
-                        status_reached = True
-                    break
-            if not status_reached:
-                self.test_log.debug("Wait before reading the node.status")
-                sleep(5)
-        self.test_log.debug('Node {0} status_reached: {1}'
-                            .format(node.id, status_reached))
-        return status_reached
-
 
 class RestConnection(object):
     def __init__(self, serverInfo):
