@@ -746,7 +746,8 @@ class OPD:
         expected_progress = 20
         while expected_progress < 100:
             expected_progress = 20 * i
-            reached = RestHelper(rest).rebalance_reached(expected_progress)
+            reached = self.cluster_util.rebalance_reached(
+                rest, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
             if not RestHelper(rest).is_cluster_rebalanced():
@@ -769,9 +770,8 @@ class OPD:
         rebalance_task = rebalance
         while expected_progress < 80:
             expected_progress = 20 * i
-            reached = RestHelper(rest).rebalance_reached(expected_progress,
-                                                         wait_step=10,
-                                                         num_retry=3600)
+            reached = self.cluster_util.rebalance_reached(
+                rest, expected_progress, wait_step=10, num_retry=3600)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
 

@@ -107,7 +107,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 add_in_once = []
             self.sleep(20)
             expected_progress = 20 * i
-            reached = RestHelper(rest).rebalance_reached(expected_progress)
+            reached = self.cluster_util.rebalance_reached(
+                rest, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
             if not RestHelper(rest).is_cluster_rebalanced():
@@ -172,7 +173,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 add_in_once = []
             self.sleep(20)
             expected_progress = 20 * i
-            reached = RestHelper(rest).rebalance_reached(expected_progress)
+            reached = self.cluster_util.rebalance_reached(
+                rest, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
             if not RestHelper(rest).is_cluster_rebalanced():
@@ -241,7 +243,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 add_in_once = []
             self.sleep(20)
             expected_progress = 20 * i
-            reached = RestHelper(rest).rebalance_reached(expected_progress)
+            reached = self.cluster_util.rebalance_reached(
+                rest, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
             if not RestHelper(rest).is_cluster_rebalanced():
@@ -316,7 +319,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.servers[:self.nodes_init], self.servs_in, self.servs_out)
         expected_progress = 50
         rest = RestConnection(self.cluster.master)
-        reached = RestHelper(rest).rebalance_reached(expected_progress)
+        reached = self.cluster_util.rebalance_reached(rest, expected_progress)
         self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                         .format(expected_progress))
         if not RestHelper(rest).is_cluster_rebalanced():

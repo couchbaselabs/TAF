@@ -835,6 +835,40 @@ class ClusterUtils:
             result = rest.monitorRebalance()
         return result
 
+    def rebalance_reached(self, rest, percentage=100, wait_step=2,
+                          num_retry=40):
+        start = time.time()
+        progress = 0
+        previous_progress = 0
+        retry = 0
+        while progress is not -1 and progress < percentage and retry < num_retry:
+            # -1 is error , -100 means could not retrieve progress
+            progress = rest._rebalance_progress()
+            if progress == -100:
+                self.log.error("Unable to retrieve rebalance progress. "
+                               "Retrying..")
+                retry += 1
+            else:
+                if previous_progress == progress:
+                    retry += 0.5
+                else:
+                    retry = 0
+                    previous_progress = progress
+            # Wait before fetching rebalance progress
+            sleep(wait_step)
+        if progress <= 0:
+            self.log.error("Rebalance progress: {0}".format(progress))
+
+            return False
+        elif retry >= num_retry:
+            self.log.error("Rebalance stuck at {0}%".format(progress))
+            return False
+        else:
+            duration = time.time() - start
+            self.log.info('Rebalance reached >{0}% in {1} seconds '
+                          .format(progress, duration))
+            return True
+
     def remove_all_nodes_then_rebalance(self, cluster, otpnodes=None,
                                         rebalance=True):
         return self.remove_node(cluster, otpnodes, rebalance)
