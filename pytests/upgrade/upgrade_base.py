@@ -581,9 +581,8 @@ class UpgradeBase(BaseTestCase):
             self.log_failure("Upgrade failed")
             return
 
-        rest_helper = RestHelper(rest)
         self.log.info("Wait for ns_server to accept connections")
-        if not rest_helper.is_ns_server_running(timeout_in_seconds=120):
+        if not rest.is_ns_server_running(timeout_in_seconds=120):
             self.fail("Server not started post upgrade")
 
         self.log.info("Validate the cluster rebalance status")

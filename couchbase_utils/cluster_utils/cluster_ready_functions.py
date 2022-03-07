@@ -18,6 +18,7 @@ from TestInput import TestInputSingleton, TestInputServer
 from cb_tools.cb_collectinfo import CbCollectInfo
 from common_lib import sleep, humanbytes
 from couchbase_cli import CouchbaseCLI
+from custom_exceptions.exception import ServerUnavailableException
 from global_vars import logger
 from membase.api.rest_client import RestConnection, RestHelper
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
@@ -185,10 +186,9 @@ class ClusterUtils:
         return True
 
     def _wait_for_ns_servers(self, server, wait_time):
-        rest = RestConnection(server)
         self.log.debug("Waiting for ns_server @ {0}:{1}"
                        .format(server.ip, server.port))
-        if RestHelper(rest).is_ns_server_running(wait_time):
+        if RestConnection(server).is_ns_server_running(wait_time):
             self.log.debug("ns_server @ {0}:{1} is running"
                            .format(server.ip, server.port))
         else:
@@ -218,8 +218,8 @@ class ClusterUtils:
         rest.remove_all_replications()
         rest.remove_all_remote_clusters()
         rest.remove_all_recoveries()
-        helper = RestHelper(rest)
-        helper.is_ns_server_running(timeout_in_seconds=testconstants.NS_SERVER_TIMEOUT)
+        rest.is_ns_server_running(
+            timeout_in_seconds=testconstants.NS_SERVER_TIMEOUT)
         nodes = rest.node_statuses()
         master_id = rest.get_nodes_self().id
         for node in nodes:

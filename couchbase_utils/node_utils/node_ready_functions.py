@@ -229,7 +229,7 @@ class NodeUtils(object):
                     shell.cleanup_data_config(core_path)
 
                 cluster_util.start_server(cluster, node)
-                if not RestHelper(RestConnection(node)).is_ns_server_running():
+                if not RestConnection(node).is_ns_server_running():
                     self.log.error("%s ns_server not running" % node.ip)
         except Exception as e:
             self.log.critical(e)

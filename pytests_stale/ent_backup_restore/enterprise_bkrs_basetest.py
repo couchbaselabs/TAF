@@ -285,7 +285,7 @@ class EnterpriseBKRSNewBaseTest(BaseTestCase):
         """ Print out of cbbackupmgr from 6.5 is different with older version """
         self.cbbkmgr_version = "6.5"
         self.bk_printout = "Backup successfully completed".split(",")
-        if RestHelper(RestConnection(self.backupset.backup_host)).is_ns_server_running():
+        if RestConnection(self.backupset.backup_host).is_ns_server_running():
             self.cbbkmgr_version = RestConnection(self.backupset.backup_host).get_nodes_version()
 
         if "4.6" <= self.cbbkmgr_version[:3]:
@@ -599,4 +599,3 @@ class Backupset:
         self.new_buckets = []
         self.flushed_buckets = []
         self.deleted_backups = []
-

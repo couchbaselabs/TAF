@@ -122,7 +122,7 @@ class CollectionsNetworkSplit(CollectionBase):
             shell.cleanup_data_config(data_path)
             shell.start_server()
             self.sleep(10)
-            if not RestHelper(rest).is_ns_server_running():
+            if not rest.is_ns_server_running():
                 self.log.error("ns_server {0} is not running.".format(node.ip))
             shell.disconnect()
 

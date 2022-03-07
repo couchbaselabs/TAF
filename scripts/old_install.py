@@ -506,7 +506,7 @@ class MembaseServerInstaller(Installer):
                                                     vbuckets=vbuckets,
                                                     swappiness=swappiness,
                                                     openssl=openssl)
-            ready = RestHelper(RestConnection(params["server"]))\
+            ready = RestConnection(params["server"])\
                 .is_ns_server_running(60)
             if not ready:
                 log.error("membase-server did not start...")
@@ -842,7 +842,7 @@ class CouchbaseServerInstaller(Installer):
                         fts_query_limit=fts_query_limit,
                         enable_ipv6=enable_ipv6,
                         force=force_upgrade)
-                    ready = RestHelper(RestConnection(params["server"]))\
+                    ready = RestConnection(params["server"])\
                         .is_ns_server_running(60)
                     if not ready:
                         log.error("membase-server did not start...")

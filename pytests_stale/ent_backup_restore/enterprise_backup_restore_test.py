@@ -908,7 +908,7 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                         shell.kill_memcached()
                         ready = False
                         while not ready:
-                            if not RestHelper(RestConnection(server)).is_ns_server_running():
+                            if not RestConnection(server).is_ns_server_running():
                                 self.sleep(10)
                             else:
                                 ready = True

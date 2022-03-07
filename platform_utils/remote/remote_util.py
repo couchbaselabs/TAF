@@ -4806,9 +4806,10 @@ class RemoteMachineShellConnection:
     def set_cbauth_env(self, server):
         """ from Watson, we need to set cbauth environment variables
             so cbq could connect to the host """
-        ready = RestHelper(RestConnection(server)).is_ns_server_running(300)
+        rest = RestConnection(server)
+        ready = rest.is_ns_server_running(300)
         if ready:
-            version = RestConnection(server).get_nodes_version()
+            version = rest.get_nodes_version()
         else:
             sys.exit("*****  Node %s failed to up in 5 mins **** " % server.ip)
 

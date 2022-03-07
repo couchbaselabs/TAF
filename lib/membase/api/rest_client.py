@@ -55,35 +55,6 @@ class RestHelper(object):
         self.rest = rest_connection
         self.test_log = logger.get("test")
 
-    def is_ns_server_running(self, timeout_in_seconds=360):
-        self.test_log.debug(
-            "Checking if ns_server is running with timeout {0}secs"
-                .format(timeout_in_seconds))
-        end_time = time.time() + timeout_in_seconds
-        while time.time() <= end_time:
-            try:
-                status = self.rest.get_nodes_self(5)
-                if status is not None and status.status == 'healthy':
-                    return True
-                else:
-                    if status is not None:
-                        self.test_log.warn("Server {0}:{1} status is {2}"
-                                           .format(self.rest.ip,
-                                                   self.rest.port,
-                                                   status.status))
-                    else:
-                        self.test_log.warn("Server {0}:{1} status is down"
-                                           .format(self.rest.ip,
-                                                   self.rest.port))
-            except ServerUnavailableException:
-                self.test_log.error("Server {0}:{1} is unavailable"
-                                    .format(self.rest.ip, self.rest.port))
-            # Wait before next retry
-            sleep(2)
-        msg = 'Unable to connect to the node {0} even after waiting {1} secs'
-        self.test_log.fatal(msg.format(self.rest.ip, timeout_in_seconds))
-        return False
-
 
 class RestConnection(object):
     def __init__(self, serverInfo):
@@ -802,6 +773,33 @@ class RestConnection(object):
                 "This node is already provisioned with services, "
                 "we do not consider this as failure for test case")
         return status
+
+    def is_ns_server_running(self, timeout_in_seconds=360):
+        self.test_log.debug(
+            "Checking if ns_server is running with timeout {0}secs"
+            .format(timeout_in_seconds))
+        end_time = time.time() + timeout_in_seconds
+        while time.time() <= end_time:
+            try:
+                status = self.get_nodes_self(5)
+                if status is not None and status.status == 'healthy':
+                    return True
+                else:
+                    if status is not None:
+                        self.test_log.warn("Server {0}:{1} status is {2}"
+                                           .format(self.ip, self.port,
+                                                   status.status))
+                    else:
+                        self.test_log.warn("Server {0}:{1} status is down"
+                                           .format(self.ip, self.port))
+            except ServerUnavailableException:
+                self.test_log.error("Server {0}:{1} is unavailable"
+                                    .format(self.ip, self.port))
+            # Wait before next retry
+            sleep(2)
+        msg = 'Unable to connect to the node {0} even after waiting {1} secs'
+        self.test_log.fatal(msg.format(self.ip, timeout_in_seconds))
+        return False
 
     def get_cluster_settings(self):
         settings = {}
