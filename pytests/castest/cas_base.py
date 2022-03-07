@@ -133,7 +133,6 @@ class CasBaseTest(BaseTestCase):
 
     # KETAKI tochange this
     def _modify_bucket(self):
-        helper = RestHelper(self.rest)
         node_ram_ratio = BucketOperationHelper.base_bucket_ratio(
             self.servers)
         info = self.rest.get_nodes_self()

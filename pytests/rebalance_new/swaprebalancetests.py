@@ -4,7 +4,7 @@ from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from rebalance_base import RebalanceBaseTest
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from custom_exceptions.exception import RebalanceFailedException
 from remote.remote_util import RemoteMachineShellConnection

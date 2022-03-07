@@ -8,7 +8,7 @@ from com.couchbase.client.java.query import *
 
 from Cb_constants import CbServer
 from FtsLib.FtsOperations import FtsHelper
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from TestInput import TestInputSingleton
 from bucket_collections.collections_base import CollectionBase
 

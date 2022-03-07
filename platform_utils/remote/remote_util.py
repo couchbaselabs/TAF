@@ -45,7 +45,7 @@ from testconstants import WIN_COUCHBASE_BIN_PATH, WIN_COUCHBASE_BIN_PATH_RAW, \
 from testconstants import RPM_DIS_NAME, SYSTEMD_SERVER
 from testconstants import NR_INSTALL_LOCATION_FILE
 
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from com.jcraft.jsch import JSchException, JSchAuthCancelException, \
     JSchPartialAuthException, SftpException
 

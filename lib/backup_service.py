@@ -16,7 +16,7 @@ from backup_service_client.models.plan import Plan
 from backup_service_client.models.archive_request import ArchiveRequest
 from backup_service_client.models.create_active_repository_request import CreateActiveRepositoryRequest
 from nfs import NfsConnection
-from membase.api.rest_client import RestHelper, RestConnection
+from membase.api.rest_client import RestConnection
 from threading import Timer
 
 log = logger.get("test")

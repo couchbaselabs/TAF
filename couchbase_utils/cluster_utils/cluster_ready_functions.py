@@ -18,9 +18,8 @@ from TestInput import TestInputSingleton, TestInputServer
 from cb_tools.cb_collectinfo import CbCollectInfo
 from common_lib import sleep, humanbytes
 from couchbase_cli import CouchbaseCLI
-from custom_exceptions.exception import ServerUnavailableException
 from global_vars import logger
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from table_view import TableView
 

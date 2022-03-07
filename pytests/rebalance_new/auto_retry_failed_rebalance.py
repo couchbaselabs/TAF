@@ -4,7 +4,7 @@ import random
 from rebalance_base import RebalanceBaseTest
 
 from collections_helper.collections_spec_constants import MetaCrudParams
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
 from sdk_exceptions import SDKException

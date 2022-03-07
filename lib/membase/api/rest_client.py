@@ -50,12 +50,6 @@ import urllib3
 urllib3.disable_warnings()
 
 
-class RestHelper(object):
-    def __init__(self, rest_connection):
-        self.rest = rest_connection
-        self.test_log = logger.get("test")
-
-
 class RestConnection(object):
     def __init__(self, serverInfo):
         self.log = logger.get("infra")

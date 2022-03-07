@@ -9,7 +9,7 @@ from couchbase_helper.cluster import Cluster
 from membase.helper.rebalance_helper import RebalanceHelper
 from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
 from ent_backup_restore.enterprise_backup_restore_base import EnterpriseBackupRestoreBase
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from BucketLib.bucket import Bucket
 from membase.helper.bucket_helper import BucketOperationHelper
 from pytests.query_tests_helper import QueryHelperTests
@@ -2637,9 +2637,8 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
         rest = RestConnection(self.backupset.cluster_host)
         rest.delete_bucket()
         bucket_name = "default"
-        rest_helper = RestHelper(rest)
         rest.create_bucket(bucket=bucket_name, ramQuotaMB=512)
-        bucket_ready = rest_helper.vbucket_map_ready(bucket_name)
+        bucket_ready = self.bucket_helper.vbucket_map_ready(bucket_name)
         if not bucket_ready:
             self.fail("Bucket {0} is not created after 120 seconds.".format(bucket_name))
         self.log.info("Deleted {0} bucket and recreated it - restoring it now.."\

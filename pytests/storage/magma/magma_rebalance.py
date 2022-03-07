@@ -5,7 +5,7 @@ from BucketLib.BucketOperations import BucketHelper
 from Cb_constants.CBServer import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from magma_base import MagmaBaseTest
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 

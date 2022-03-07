@@ -3,7 +3,7 @@ from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
 
 from collections_helper.collections_spec_constants import MetaCrudParams
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from TestInput import TestInputSingleton
 
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest

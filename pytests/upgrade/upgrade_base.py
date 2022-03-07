@@ -5,7 +5,7 @@ from basetestcase import BaseTestCase
 from builds.build_query import BuildQuery
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from scripts.old_install import InstallerJob
 from testconstants import CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \

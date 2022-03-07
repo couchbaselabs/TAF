@@ -13,7 +13,7 @@ from rbac_utils.Rbac_ready_functions import RbacUtils
 from remote.remote_util import RemoteMachineShellConnection
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 from security_config import trust_all_certs
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 
 rbac_users_created = {}
 

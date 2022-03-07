@@ -2,7 +2,7 @@ from random import shuffle
 
 from Cb_constants import constants
 from global_vars import logger
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
 num_nodes_mismatch = "self.server has {0} nodes but cluster has {1} nodes"
@@ -50,8 +50,8 @@ class FailoverHelper(object):
             for f in failed:
                 if f.port == constants.port:
                     self.test.assertTrue(
-                        RestHelper(rest).wait_for_node_status(f, "unhealthy",
-                                                              300),
+                        self.cluster_util.wait_for_node_status(
+                            rest, f, "unhealthy", 300),
                         msg="node status is not unhealthy even "
                             "after waiting for 5 minutes")
                 self.test.assertTrue(rest.fail_over(f.id),

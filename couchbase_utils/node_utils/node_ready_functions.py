@@ -9,7 +9,7 @@ import Jython_tasks.task as jython_tasks
 from couchbase_cli import CouchbaseCLI
 from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from cb_tools.cb_cli import CbCli
 
 """

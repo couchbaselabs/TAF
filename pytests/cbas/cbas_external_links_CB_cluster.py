@@ -8,7 +8,6 @@ import random, json, copy, time, os
 from threading import Thread
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from rbac_utils.Rbac_ready_functions import RbacUtils
-from membase.api.rest_client import RestHelper
 from CbasLib.CBASOperations import CBASHelper
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams

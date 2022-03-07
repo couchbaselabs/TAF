@@ -2556,12 +2556,11 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
                                                      [])
             rebalance.result()
 
-            rest_helper = RestHelper(rest_src)
             ram_size = rest_src.get_nodes_self().memoryQuota
             bucket_size = self._get_bucket_size(ram_size, self.total_buckets)
             for bucket in self.buckets:
                 bucket_name = bucket.name
-                if not rest_helper.bucket_exists(self.cluster, bucket_name):
+                if not self.bucket_util.bucket_exists(self.cluster, bucket_name):
                     self.log.info("Creating bucket {0} in restore host {1}"
                                               .format(bucket_name,
                                               self.backupset.restore_cluster_host.ip))

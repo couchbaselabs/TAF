@@ -9,10 +9,8 @@ import os
 from remote.remote_util import RemoteMachineShellConnection
 import random
 from BucketLib.BucketOperations import BucketHelper
-import math
 from table_view import TableView
-import copy
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from cb_tools.cbstats import Cbstats
 from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.sdk import Server, SDKClient
@@ -23,7 +21,6 @@ from com.couchbase.test.loadgen import WorkLoadGenerate
 from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
 from couchbase.test.docgen import DRConstants
-from com.couchbase.test.key import SimpleKey
 from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time

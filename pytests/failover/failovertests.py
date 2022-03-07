@@ -6,7 +6,7 @@ from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from failover.failoverbasetest import FailoverBaseTest
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 

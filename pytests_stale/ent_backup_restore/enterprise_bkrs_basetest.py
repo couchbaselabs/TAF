@@ -1,8 +1,6 @@
 import subprocess
 from basetestcase import BaseTestCase
-from cluster_utils.cluster_ready_functions import ClusterUtils
-from bucket_utils.bucket_ready_functions import BucketUtils
-from membase.api.rest_client import RestHelper, RestConnection
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from testconstants import COUCHBASE_DATA_PATH, WIN_COUCHBASE_DATA_PATH_RAW,\
                           WIN_TMP_PATH_RAW,\

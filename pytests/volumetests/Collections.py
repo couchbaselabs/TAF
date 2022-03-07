@@ -13,7 +13,7 @@ from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from TestInput import TestInputSingleton
 from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection

@@ -6,7 +6,7 @@ from BucketLib.BucketOperations_Rest import BucketHelper
 from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 from bucket_utils.bucket_ready_functions import BucketUtils
 

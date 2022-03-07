@@ -21,7 +21,7 @@ import time
 from builds.build_query import BuildQuery
 import logging.config
 from custom_exceptions.exception import ServerUnavailableException
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from platform_utils.remote.remote_util import \
     RemoteMachineShellConnection, \
     RemoteUtilHelper

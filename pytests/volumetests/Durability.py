@@ -3,7 +3,7 @@ from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
 
 from Cb_constants import CbServer
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase

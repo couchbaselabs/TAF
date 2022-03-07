@@ -6,7 +6,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
 
 from couchbase_utils.bucket_utils.bucket_ready_functions import BucketUtils
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
