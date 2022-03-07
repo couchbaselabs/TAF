@@ -84,11 +84,6 @@ class RestHelper(object):
         self.test_log.fatal(msg.format(self.rest.ip, timeout_in_seconds))
         return False
 
-    def is_cluster_healthy(self, timeout=120):
-        # get the nodes and verify that all the nodes.status are healthy
-        nodes = self.rest.node_statuses(timeout)
-        return all(node.status == 'healthy' for node in nodes)
-
     def rebalance_reached(self, percentage=100, wait_step=2, num_retry=40):
         start = time.time()
         progress = 0

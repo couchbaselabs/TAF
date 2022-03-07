@@ -782,6 +782,12 @@ class ClusterUtils:
                     initial_list.remove(server)
         return initial_list
 
+    def is_cluster_healthy(self, rest_conn, timeout=120):
+        # get the nodes and verify that all the nodes.status are healthy
+        nodes = rest_conn.node_statuses(timeout)
+        self.log.debug("Nodes: %s" % nodes)
+        return all(node.status == 'healthy' for node in nodes)
+
     def add_all_nodes_then_rebalance(self, cluster, nodes,
                                      wait_for_completion=True):
         otp_nodes = list()

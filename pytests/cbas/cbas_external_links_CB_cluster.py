@@ -356,14 +356,13 @@ class CBASExternalLinks(CBASBaseTest):
 
         def start_server():
             self.cluster_util.start_server(to_cluster, to_cluster.master)
-            helper = RestHelper(to_cluster.rest)
             service_up = False
             count = 0
             while not service_up:
                 count += 1
                 self.sleep(10, "waiting for couchbase service to come up")
                 try:
-                    if helper.is_cluster_healthy():
+                    if self.cluster_util.is_cluster_healthy(to_cluster.rest):
                         service_up = True
                 except Exception as err:
                     self.log.error(str(err))

@@ -2459,7 +2459,8 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
         healthy = False
         timeout = 0
         while not healthy:
-            healthy = RestHelper(RestConnection(self.backupset.cluster_host)).is_cluster_healthy()
+            healthy = self.cluster_util.is_cluster_healthy(
+                RestConnection(self.backupset.cluster_host))
             if not healthy:
                 if timeout == 120:
                     self.fail("Node %s is not ready after 2 mins" % self.backupset.cluster_host)
@@ -3668,4 +3669,3 @@ class EnterpriseBackupRestoreTest(EnterpriseBackupRestoreBase, NewUpgradeBaseTes
                     items = self.rest.get_active_key_count(bucket)
                 self.undeploy_and_delete_function(body)
             self.rest = RestConnection(self.master)
-
