@@ -1,7 +1,7 @@
 from Cb_constants import DocLoading
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from rebalance_base import RebalanceBaseTest
 
@@ -111,12 +111,12 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 rest, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
-            if not RestHelper(rest).is_cluster_rebalanced():
+            if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
             self.task_manager.get_task_result(rebalance)
-            if RestHelper(rest).is_cluster_rebalanced():
+            if self.cluster_util.is_cluster_rebalanced(rest):
                 self.validate_docs()
                 self.log.info(
                     "Rebalance was completed when tried to stop rebalance on {0}%".format(str(expected_progress)))
@@ -177,7 +177,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 rest, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
-            if not RestHelper(rest).is_cluster_rebalanced():
+            if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
@@ -187,7 +187,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     self.tasks_result(task)
                 self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
-            if RestHelper(rest).is_cluster_rebalanced():
+            if self.cluster_util.is_cluster_rebalanced(rest):
                 self.validate_docs()
                 self.log.info("Rebalance was completed when tried "
                               "to stop rebalance on %s%%" % expected_progress)
@@ -247,7 +247,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 rest, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
-            if not RestHelper(rest).is_cluster_rebalanced():
+            if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
@@ -257,7 +257,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     self.tasks_result(task)
                 self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
-            if RestHelper(rest).is_cluster_rebalanced():
+            if self.cluster_util.is_cluster_rebalanced(rest):
                 self.validate_docs()
                 self.log.info("Rebalance was completed when tried to "
                               "stop rebalance on %s%%" % expected_progress)
@@ -322,7 +322,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         reached = self.cluster_util.rebalance_reached(rest, expected_progress)
         self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                         .format(expected_progress))
-        if not RestHelper(rest).is_cluster_rebalanced():
+        if not self.cluster_util.is_cluster_rebalanced(rest):
             self.log.info("Stop the rebalance")
             stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
             self.assertTrue(stopped, msg="Unable to stop rebalance")

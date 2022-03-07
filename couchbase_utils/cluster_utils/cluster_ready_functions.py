@@ -869,6 +869,15 @@ class ClusterUtils:
                           .format(progress, duration))
             return True
 
+    # return true if cluster balanced, false if it needs rebalance
+    def is_cluster_rebalanced(self, rest):
+        command = "ns_orchestrator:needs_rebalance()"
+        status, content = rest.diag_eval(command)
+        if status:
+            return content.lower() == "false"
+        self.log.critical("Can't define if cluster balanced")
+        return None
+
     def remove_all_nodes_then_rebalance(self, cluster, otpnodes=None,
                                         rebalance=True):
         return self.remove_node(cluster, otpnodes, rebalance)

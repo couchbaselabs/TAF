@@ -750,7 +750,7 @@ class OPD:
                 rest, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
-            if not RestHelper(rest).is_cluster_rebalanced():
+            if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
@@ -775,7 +775,7 @@ class OPD:
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
 
-            if not RestHelper(rest).is_cluster_rebalanced():
+            if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Abort rebalance")
                 self._induce_error(error_type, self.cluster.nodes_in_cluster)
                 result = self.check_coredump_exist(self.cluster.nodes_in_cluster)

@@ -301,7 +301,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                       .format(self.percentage_progress))
         reached = self.cluster_util.rebalance_reached(
             self.rest, self.percentage_progress)
-        if reached and RestHelper(self.rest).is_cluster_rebalanced():
+        if reached and self.cluster_util.is_cluster_rebalanced(self.rest):
             # handle situation when rebalance failed at the beginning
             self.log.error('seems rebalance failed!')
             self.rest.print_UI_logs()
@@ -347,8 +347,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
             # retry rebalance if it failed
             self.log.warn("Rebalance failed but it's expected")
             self.sleep(30)
-            self.assertFalse(RestHelper(self.rest).is_cluster_rebalanced(),
-                             msg="cluster need rebalance")
+            self.assertFalse(
+                self.cluster_util.is_cluster_rebalanced(self.rest),
+                msg="cluster need rebalance")
             known_nodes = self.rest.node_statuses()
             self.log.info("Nodes are still in cluster: %s"
                           % ([(node.ip, node.port) for node in known_nodes]))

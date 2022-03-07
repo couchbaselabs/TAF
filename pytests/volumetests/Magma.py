@@ -8,13 +8,10 @@ import random
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
-from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import doc_generator
-from error_simulation.cb_error import CouchbaseError
-from membase.api.rest_client import RestConnection, RestHelper
+from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import SDKException
 from table_view import TableView
 from Cb_constants.CBServer import CbServer
 import os
@@ -27,7 +24,6 @@ import math
 import subprocess
 from math import ceil
 from Jython_tasks.task_manager import TaskManager as local_tm
-import copy
 
 from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.sdk import Server, SDKClient
@@ -38,7 +34,6 @@ from com.couchbase.test.loadgen import WorkLoadGenerate
 from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
 from couchbase.test.docgen import DRConstants
-from com.couchbase.test.key import SimpleKey
 from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 
@@ -981,7 +976,7 @@ class volume(BaseTestCase):
                 rest, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
-            if not RestHelper(rest).is_cluster_rebalanced():
+            if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
@@ -1006,7 +1001,7 @@ class volume(BaseTestCase):
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
 
-            if not RestHelper(rest).is_cluster_rebalanced():
+            if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Abort rebalance")
                 self._induce_error(error_type)
                 result = self.check_coredump_exist(self.cluster.nodes_in_cluster)

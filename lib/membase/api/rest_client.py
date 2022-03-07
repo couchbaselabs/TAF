@@ -84,15 +84,6 @@ class RestHelper(object):
         self.test_log.fatal(msg.format(self.rest.ip, timeout_in_seconds))
         return False
 
-    # return true if cluster balanced, false if it needs rebalance
-    def is_cluster_rebalanced(self):
-        command = "ns_orchestrator:needs_rebalance()"
-        status, content = self.rest.diag_eval(command)
-        if status:
-            return content.lower() == "false"
-        self.test_log.critical("Can't define if cluster balanced")
-        return None
-
 
 class RestConnection(object):
     def __init__(self, serverInfo):
