@@ -158,55 +158,6 @@ class RestHelper(object):
                             .format(node.id, status_reached))
         return status_reached
 
-    def _wait_for_task_pid(self, pid, end_time, ddoc_name):
-        while time.time() < end_time:
-            new_pid, _ = self.rest._get_indexer_task_pid(ddoc_name)
-            if pid == new_pid:
-                # Sleep before fetching task_pid in retry logic
-                sleep(5)
-                continue
-            else:
-                return
-
-    def _wait_for_indexer_ddoc(self, servers, ddoc_name, timeout=300):
-        nodes = self.rest.get_nodes()
-        servers_to_check = []
-        for node in nodes:
-            for server in servers:
-                if node.ip == server.ip and str(node.port) == str(server.port):
-                    servers_to_check.append(server)
-        for server in servers_to_check:
-            try:
-                rest = RestConnection(server)
-                self.test_log.debug('Check index for ddoc %s , server %s'
-                                    % (ddoc_name, server.ip))
-                end_time = time.time() + timeout
-                self.test_log.debug('Start getting index for ddoc %s, server %s'
-                                    % (ddoc_name, server.ip))
-                old_pid, is_pid_blocked = rest._get_indexer_task_pid(ddoc_name)
-                if not old_pid:
-                    self.test_log.info('Index for ddoc %s is not going on, server %s'
-                                       % (ddoc_name, server.ip))
-                    continue
-                while is_pid_blocked:
-                    self.test_log.debug('Index for ddoc %s is blocked, server %s'
-                                        % (ddoc_name, server.ip))
-                    self._wait_for_task_pid(old_pid, end_time, ddoc_name)
-                    old_pid, is_pid_blocked = rest._get_indexer_task_pid(ddoc_name)
-                    if time.time() > end_time:
-                        self.test_log.error(
-                            "Index is still BLOCKED node %s ddoc % pid %"
-                            % (server, ddoc_name, old_pid))
-                        break
-                if old_pid:
-                    self.test_log.debug('Index for ddoc %s is running, server %s'
-                                        % (ddoc_name, server.ip))
-                    self._wait_for_task_pid(old_pid, end_time, ddoc_name)
-            except Exception as ex:
-                self.test_log.error(
-                    "Unable to check index on server %s because of %s"
-                    % (server.ip, str(ex)))
-
 
 class RestConnection(object):
     def __init__(self, serverInfo):
