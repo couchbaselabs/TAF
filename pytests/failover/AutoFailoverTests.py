@@ -375,8 +375,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.bring_back_failed_nodes_up()
         self.sleep(30, "Wait after removing failures")
         self.nodes = self.rest.node_statuses()
-        self.rest.add_back_node("{0} node ns_1@{1}".format(self.recovery_strategy,
-                                                           self.server_to_fail[0].ip))
+        self.log.info("Adding back {0} using {1} recovery".format(self.server_to_fail[0].ip,
+                                                                  self.recovery_strategy))
         self.rest.set_recovery_type("ns_1@{}".format(self.server_to_fail[
                                                          0].ip),
                                     self.recovery_strategy)
