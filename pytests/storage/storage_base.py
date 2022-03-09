@@ -221,6 +221,7 @@ class StorageBase(BaseTestCase):
         self.mutate = 0
         self.validate = False
         self.key_type = self.input.param("key_type", "RandomKey")
+        self.val_type = self.input.param("val_type", "SimpleValue")
         self.init_items_per_collection = self.num_items
         self.doc_loading_tm = None
         self.num_items_per_collection = copy.deepcopy(self.init_items_per_collection)
@@ -379,7 +380,7 @@ class StorageBase(BaseTestCase):
                                DRConstants.read_e: self.read_end})
                     dr = DocRange(hm)
                     ws.dr = dr
-                    dg = DocumentGenerator(ws, self.key_type, None)
+                    dg = DocumentGenerator(ws, self.key_type, self.val_type)
                     self.loader_map.update({bucket.name+scope+collection: dg})
 
     def retry_failures(self, tasks, wait_for_stats=True):
@@ -509,7 +510,7 @@ class StorageBase(BaseTestCase):
                                                   cmd.get("deleted", False),
                                                   cmd.get("mutated", self.mutate))
                             ws.dr = dr
-                            dg = DocumentGenerator(ws, self.key_type, None)
+                            dg = DocumentGenerator(ws, self.key_type, self.val_type)
                             self.loader_map.update({bucket.name+scope+collection+op_type: dg})
             self.log.info("loader_map is {}".format(self.loader_map))
 
