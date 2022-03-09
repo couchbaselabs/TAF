@@ -391,6 +391,8 @@ class BaseTestCase(unittest.TestCase):
                     self.initialize_cluster(
                         cluster_name, cluster, services=None,
                         services_mem_quota_percent=mem_quota_percent)
+                    # Set this unconditionally
+                    RestConnection(cluster.master).set_internalSetting("magmaMinMemoryQuota", 256)
             else:
                 self.quota = ""
 
