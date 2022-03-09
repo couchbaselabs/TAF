@@ -537,10 +537,13 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         if load_data_after_fo:
             durability_val = None
             for bucket in self.cluster.buckets:
+                # If we have bucket_replica=3, force use level=NONE
+                if bucket.replicaNumber == Bucket.ReplicaNum.THREE:
+                    durability_val = Bucket.DurabilityLevel.NONE
+                    break
                 # If we have ephemeral bucket, force use level=MAJORITY
                 if bucket.bucketType == Bucket.Type.EPHEMERAL:
-                    durability_val = "MAJORITY"
-                    break
+                    durability_val = Bucket.DurabilityLevel.MAJORITY
             self.__perform_doc_ops(durability=durability_val)
 
     def test_split_brain(self):
@@ -557,18 +560,18 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             for t_service in services:
                 t_service = t_service.split("_")
                 t_service.sort()
-                for t_node in cluster_nodes:
-                    if t_node.services == t_service:
-                        nodes.append(self.__get_server_obj(t_node))
+                for c_node in cluster_nodes:
+                    if c_node.services == t_service:
+                        nodes.append(self.__get_server_obj(c_node))
                         # Remove nodes from cluster_nodes once picked
                         # to avoid picking same node again
-                        cluster_nodes.remove(t_node)
+                        cluster_nodes.remove(c_node)
                         break
             return nodes
 
         def create_split_between_nodes(dest_nodes, src_nodes):
-            for t_node in dest_nodes:
-                shell_conn = RemoteMachineShellConnection(t_node)
+            for ssh_node in dest_nodes:
+                shell_conn = RemoteMachineShellConnection(ssh_node)
                 for src_node in src_nodes:
                     shell_conn.execute_command(
                         "iptables -A INPUT -s %s -j DROP" % src_node.ip)
@@ -578,16 +581,16 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                                 service_count_affected_nodes,
                                 service_count_unaffected_nodes):
             nodes_to_fo = num_nodes_affected
-            for t_serv, count in service_count_affected_nodes.items():
-                if t_serv not in service_count_unaffected_nodes \
-                        or service_count_unaffected_nodes[t_serv] < 1:
-                    nodes_to_fo -= service_count_affected_nodes[t_serv]
+            for t_server, count in service_count_affected_nodes.items():
+                if t_server not in service_count_unaffected_nodes \
+                        or service_count_unaffected_nodes[t_server] < 1:
+                    nodes_to_fo -= service_count_affected_nodes[t_server]
             return nodes_to_fo
 
         def recover_from_split(node_list):
             self.log.info("Flushing iptables rules from all nodes")
-            for t_node in node_list:
-                ssh_shell = RemoteMachineShellConnection(t_node)
+            for ssh_node in node_list:
+                ssh_shell = RemoteMachineShellConnection(ssh_node)
                 ssh_shell.execute_command("iptables -F")
                 ssh_shell.disconnect()
             self.sleep(5, "Wait for nodes to be reachable")
@@ -599,8 +602,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                                             self.max_count)
             recover_from_split(node_split_1 + node_split_2)
             self.log.info("Rebalance out failed nodes")
-            reb_result = self.cluster_util.rebalance(self.cluster)
-            self.assertTrue(reb_result, "Post failover rebalance failed")
+            rebalance_res = self.cluster_util.rebalance(self.cluster)
+            self.assertTrue(rebalance_res, "Post failover rebalance failed")
 
             # Validate failover count reset post rebalance
             self.validate_failover_settings(True, self.timeout,
@@ -658,7 +661,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             if fo_happens:
                 self.log.info("Expecting failover to be triggered")
                 post_failover_procedure()
-            else:
+            elif len([t_serv for t_serv in self.services_init.split("-")
+                      if CbServer.Services.KV in t_serv]) > 2:
                 self.log.info("Expecting no failover will be triggered")
                 self.validate_failover_settings(True, self.timeout,
                                                 0, self.max_count)
@@ -867,6 +871,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             else:
                 self.assertTrue(failover_task.result, failure_msg)
         finally:
+            # Disable auto-fo after the expected time limit
+            self.rest.update_autofailover_settings(
+                enabled=False, timeout=self.timeout, maxCount=self.max_count,
+                canAbortRebalance=self.can_abort_rebalance)
+
             # Recover all nodes from induced failures
             recovery_task = ConcurrentFailoverTask(
                 task_manager=self.task_manager, master=self.orchestrator,
@@ -876,6 +885,12 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.task_manager.add_new_task(recovery_task)
             self.task_manager.get_task_result(recovery_task)
             self.task_manager.stop_task(rebalance_task)
+
+            # Enable back prev auto_fo settings
+            self.sleep(5, "Wait before enabling back auto-fo")
+            self.rest.update_autofailover_settings(
+                enabled=True, timeout=self.timeout, maxCount=self.max_count,
+                canAbortRebalance=self.can_abort_rebalance)
 
         # Validate auto_failover_settings after failover
         self.validate_failover_settings(True, self.timeout,
