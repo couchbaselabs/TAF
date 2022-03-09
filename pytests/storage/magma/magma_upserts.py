@@ -612,10 +612,13 @@ class BasicUpsertTests(BasicCrudTests):
                  self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
-
-            disk_usage = self.get_disk_usage(self.buckets[0],
+            time_end = time.time() + 60 * 10
+            while time.time() < time_end:
+                disk_usage = self.get_disk_usage(self.buckets[0],
                                              self.cluster.nodes_in_cluster)
-            _res = disk_usage[0]
+                _res = disk_usage[0]
+                if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
+                    break
             self.log.info("Delete Iteration {}, Disk Usage- {}MB\
             ".format(i+1, _res))
             self.assertIs(
@@ -664,7 +667,7 @@ class BasicUpsertTests(BasicCrudTests):
             _res = disk_usage[0]
             self.log.info("Create Iteration{}, Disk Usage= {}MB \
             ".format(i+1, _res))
-            self.assertIs(_res > 1.5 * self.disk_usage[
+            self.assertIs(_res > 2 * self.disk_usage[
                 self.disk_usage.keys()[0]],
                 False, msg.format("Create", _res, i+1, 1.5,
                                   self.disk_usage[self.disk_usage.keys()[0]]))
