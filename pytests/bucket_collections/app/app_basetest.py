@@ -44,8 +44,7 @@ class AppBase(BaseTestCase):
 
         # Update cluster node-service map and create cbas_util
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
-        self.cbas_util = CbasUtil(self.cluster.master,
-                                  self.cluster.cbas_nodes[0])
+        self.cbas_util = CbasUtil(self.task)
 
         # Load bucket conf
         if self.bucket_conf is not None:
