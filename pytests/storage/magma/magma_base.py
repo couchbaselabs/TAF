@@ -295,6 +295,8 @@ class MagmaBaseTest(StorageBase):
             servers = [servers]
         stats = list()
         for server in servers:
+            if "kv" not in server.services.lower():
+                continue
             param_values = list()
             shell = RemoteMachineShellConnection(server)
             if not self.windows_platform:
