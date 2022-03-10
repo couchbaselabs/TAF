@@ -121,8 +121,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.bucket_util.validate_docs_per_collections_all_buckets()
 
     def _common_test_body_swap_rebalance(self, do_stop_start=False):
-        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(
-            retry_exceptions=retry_exceptions)
+        self.loaders = self.loadgen_docs(retry_exceptions=retry_exceptions)
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(self.cluster.master)
         self.log.info("Current nodes: %s" % current_nodes)
@@ -257,8 +256,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
     def _common_test_body_failed_swap_rebalance(self):
         # Start the swap rebalance
         retry_exceptions.append(SDKException.TemporaryFailureException)
-        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(
-            retry_exceptions=retry_exceptions)
+        self.loaders = self.loadgen_docs(retry_exceptions=retry_exceptions)
         current_nodes = RebalanceHelper.getOtpNodeIds(self.cluster.master)
         self.log.info("current nodes : {0}".format(current_nodes))
         to_eject_nodes = self.cluster_util.pick_nodes(self.cluster.master,
@@ -380,8 +378,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.validate_docs()
 
     def _add_back_failed_node(self):
-        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(
-            retry_exceptions=retry_exceptions)
+        self.loaders = self.loadgen_docs(retry_exceptions=retry_exceptions)
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(self.cluster.master)
         self.log.info("current nodes : {0}".format(current_nodes))
@@ -476,8 +473,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.validate_docs()
 
     def _failover_swap_rebalance(self):
-        self.loaders = super(SwapRebalanceBase, self).loadgen_docs(
-            retry_exceptions=retry_exceptions)
+        self.loaders = self.loadgen_docs(retry_exceptions=retry_exceptions)
         # Start the swap rebalance
         self.log.info("current nodes: %s"
                       % RebalanceHelper.getOtpNodeIds(self.cluster.master))
