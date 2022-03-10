@@ -391,7 +391,7 @@ class CBASHelper(RestConnection):
     # return analytics diagnostics info
     def get_analytics_diagnostics(self, cbas_node, timeout=120):
         analytics_base_url = "http://{0}:{1}/".format(cbas_node.ip, 8095)
-        api = analytics_base_url + 'analytics/node/diagnostics'
+        api = analytics_base_url + 'analytics/cluster/diagnostics'
         status, content, header = self._http_request(api, timeout=timeout)
         if status:
             json_parsed = json.loads(content)

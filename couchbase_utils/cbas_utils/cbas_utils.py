@@ -242,10 +242,10 @@ class BaseUtil(object):
                                             for _ in range(
                         random.randint(1, max_name_len)))
                                     for _ in range(name_cardinality))
-            if generated_name.lower() in ["at", "in", "for", "by", "which",
-                                          "select", "from", "like", "or",
-                                          "and", "to", "if", "else", "as",
-                                          "with", "on", "where"]:
+            if generated_name.lower() in [
+                "at", "in", "for", "by", "which", "select", "from", "like",
+                "or", "and", "to", "if", "else", "as", "with", "on", "where",
+                "is", "all", "end"]:
                 return BaseUtil.generate_name(
                     name_cardinality, max_length, fixed_length, name_key, seed)
             else:
@@ -3893,37 +3893,6 @@ class CbasUtil(UDFUtil):
                 "0}".format(response))
             return response
 
-    def retrieve_nodes_config(self, cluster, only_cc_node_url=True):
-        """
-        Retrieves status of a request from /analytics/status endpoint
-        """
-        response = self.fetch_analytics_cluster_response(cluster)
-        if response:
-            cc_node_id = ""
-            nodes = None
-            cc_node_config_url = None
-            if 'ccNodeId' in response:
-                cc_node_id = response['ccNodeId']
-            if 'nodes' in response:
-                nodes = response['nodes']
-                for node in nodes:
-                    if only_cc_node_url and node["nodeId"] == cc_node_id:
-                        # node['apiBase'] will not be present in pre-6.5.0 clusters,
-                        # hence the check
-                        if 'apiBase' in node:
-                            cc_node_config_url = node['apiBase'] + response[
-                                'nodeConfigUri']
-                        else:
-                            cc_node_config_url = node['configUri']
-                        break
-
-            self.log.debug("cc_config_urls=%s, ccNodeId=%s"
-                           % (cc_node_config_url, cc_node_id))
-            self.log.debug("Nodes: %s" % nodes)
-            return nodes, cc_node_id, cc_node_config_url
-        else:
-            return None,None,None
-
     def fetch_analytics_cluster_response(self, cluster):
         """
         Retrieves response from /analytics/cluster endpoint
@@ -3985,130 +3954,56 @@ class CbasUtil(UDFUtil):
                 counter += 1
         return False
 
-    def retrieve_analyticsHttpAdminListen_address_port(
-            self, cluster, node_config_url, shell=None):
-        """
-        Retrieves status of a request from /analytics/status endpoint
-        """
-        if not shell:
-            shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
-        output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}""".format(
-                node_config_url, cluster.cbas_cc_node.rest_username,
-                cluster.cbas_cc_node.rest_password))
-
-        response = ""
-        for line in output:
-            response = response + line
+    def get_replicas_info(self, cluster, timeout=300):
+        end_time = time.time() + timeout
+        response = None
+        counter = 1
+        while time.time() < end_time:
+            try:
+                response = self.fetch_analytics_cluster_response(cluster)
+                if response:
+                    break
+            except Exception:
+                pass
+            finally:
+                time.sleep(min(10, 2 * counter))
+                counter += 1
+        replica_info = dict()
         if response:
-            response = json.loads(response)
+            for partition in response["partitionsTopology"]["partitions"]:
+                if partition["id"] in replica_info:
+                    replica_info[partition["id"]].extend(partition["replicas"])
+                else:
+                    replica_info[partition["id"]] = partition["replicas"]
+        return replica_info
 
-        if not shell:
-            shell.disconnect()
-
-        analytics_http_admin_listen_addr = None
-        analytics_http_admin_listen_port = None
-
-        if 'analyticsHttpAdminListenAddress' in response:
-            analytics_http_admin_listen_addr = \
-                response['analyticsHttpAdminPublicAddress']
-            if analytics_http_admin_listen_addr.find(":") != -1:
-                analytics_http_admin_listen_addr = \
-                    '[' + analytics_http_admin_listen_addr + ']'
-        if 'analyticsHttpAdminListenPort' in response:
-            analytics_http_admin_listen_port = \
-                response['analyticsHttpAdminPublicPort']
-
-        return analytics_http_admin_listen_addr, \
-               analytics_http_admin_listen_port
-
-    def retrive_replica_from_storage_data(
-            self, cluster, analytics_http_admin_listen_addr,
-            analytics_http_admin_listen_port, shell=None):
-        url = "http://{0}:{1}/analytics/node/storage" \
-            .format(analytics_http_admin_listen_addr,
-                    analytics_http_admin_listen_port)
-
-        if not shell:
-            shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
-        output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-                .format(url,
-                        cluster.cbas_cc_node.rest_username,
-                        cluster.cbas_cc_node.rest_password))
-
-        response = ""
-        for line in output:
-            response = response + line
+    def get_partitions_info(self, cluster, timeout=300):
+        end_time = time.time() + timeout
+        response = None
+        counter = 1
+        while time.time() < end_time:
+            try:
+                response = self.fetch_analytics_cluster_response(cluster)
+                if response:
+                    break
+            except Exception:
+                pass
+            finally:
+                time.sleep(min(10, 2 * counter))
+                counter += 1
+        partitions = dict()
         if response:
-            response = json.loads(response)
-        self.log.debug("Api %s: %s" % (url, response))
+            nodes_info = dict()
+            for node in response["nodes"]:
+                nodes_info[node["nodeId"]] = node["nodeName"]
 
-        if not shell:
-            shell.disconnect()
+            for partition in response["partitionsTopology"]["partitions"]:
+                if nodes_info[partition["master"]] in partitions:
+                    partitions[nodes_info[partition["master"]]].append(partition)
+                else:
+                    partitions[nodes_info[partition["master"]]] = [partition]
 
-        for partition in response:
-            if 'replicas' in partition and len(partition['replicas']) > 0:
-                return partition['replicas']
-        return []
-
-    def get_replicas_info(self, cluster, shell=None):
-        cc__metadata_replicas_info = []
-        start_time = time.time()
-        cc_node_id = None
-        nodes = []
-        while (not cc_node_id or not nodes) and start_time + 60 > time.time():
-            nodes, cc_node_id, cc_config_url = \
-                self.retrieve_nodes_config(cluster)
-        if cc_config_url:
-            address, port = \
-                self.retrieve_analyticsHttpAdminListen_address_port(
-                    cluster, cc_config_url, shell)
-            cc__metadata_replicas_info = \
-                self.retrive_replica_from_storage_data(
-                    cluster, address, port, shell)
-
-        return cc__metadata_replicas_info
-
-    def get_num_partitions(self, cluster, shell=None):
-        partitons = dict()
-        nodes, cc_node_id, cc_config_url = \
-            self.retrieve_nodes_config(cluster)
-        for node in nodes:
-            address, port = \
-                self.retrieve_analyticsHttpAdminListen_address_port(
-                    cluster, node['apiBase'] + "/analytics/node/config", shell)
-            partitons[node['nodeName']] = \
-                self.retrieve_number_of_partitions(cluster, address, port, shell)
-
-        return partitons
-
-    def retrieve_number_of_partitions(
-            self, cluster, analytics_http_admin_listen_addr,
-            analytics_http_admin_listen_port, shell=None):
-        url = "http://{0}:{1}/analytics/node/storage" \
-            .format(analytics_http_admin_listen_addr,
-                    analytics_http_admin_listen_port)
-
-        if not shell:
-            shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
-        output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}"""
-                .format(url,
-                        cluster.cbas_cc_node.rest_username,
-                        cluster.cbas_cc_node.rest_password))
-
-        response = ""
-        for line in output:
-            response = response + line
-        if response:
-            response = json.loads(response)
-        self.log.debug("Api %s: %s" % (url, response))
-
-        if not shell:
-            shell.disconnect()
-
-        return len(response)
+        return partitions
 
     def set_log_level_on_cbas(self, cluster, log_level_dict, timeout=120,
                               username=None, password=None):
@@ -4313,8 +4208,8 @@ class CbasUtil(UDFUtil):
 
     def get_analytics_diagnostics(self, cluster, cbas_node, timeout=120):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
-        response = cbas_helper.get_analytics_diagnostics(cbas_node,
-                                                              timeout=timeout)
+        response = cbas_helper.get_analytics_diagnostics(
+            cbas_node, timeout=timeout)
         return response
 
     def set_global_compression_type(self, cluster, compression_type="snappy",
@@ -5169,7 +5064,8 @@ class CBASRebalanceUtil(object):
     def failover(self, cluster, kv_nodes=0, cbas_nodes=0, failover_type="Hard",
                  action=None, timeout=7200, available_servers=[],
                  exclude_nodes=[], kv_failover_nodes=None,
-                 cbas_failover_nodes=None, all_at_once=False):
+                 cbas_failover_nodes=None, all_at_once=False,
+                 wait_for_complete=True, reset_cbas_cc=True):
         """
         This fucntion fails over KV or CBAS node/nodes.
         :param cluster <cluster_obj> cluster in which the nodes are present
@@ -5264,55 +5160,78 @@ class CBASRebalanceUtil(object):
                             node.id, graceful=False, all_at_once=False)
                 failover_count += cbas_nodes
                 cbas_failover_nodes.extend(chosen)
-                self.reset_cbas_cc_node(cluster)
+                if reset_cbas_cc:
+                    self.reset_cbas_cc_node(cluster)
         if kv_nodes or cbas_nodes:
             time.sleep(30)
             self.wait_for_failover_or_assert(cluster, failover_count, timeout)
 
+        kv_failover_nodes = [node for kv_node in kv_failover_nodes for
+                             node in (cluster.nodes_in_cluster +
+                                      available_servers) if kv_node.ip == node.ip]
+        cbas_failover_nodes = [node for cbas_node in cbas_failover_nodes for
+                               node in (cluster.nodes_in_cluster +
+                                      available_servers) if cbas_node.ip ==
+                               node.ip]
+
         if action and fail_over_status:
             self.perform_action_on_failed_over_nodes(
-                cluster, action, available_servers, kv_failover_nodes, cbas_failover_nodes)
+                cluster, action, available_servers, kv_failover_nodes,
+                cbas_failover_nodes, wait_for_complete)
         return available_servers, kv_failover_nodes, cbas_failover_nodes
 
     def perform_action_on_failed_over_nodes(
             self, cluster, action="FullRecovery", available_servers=[],
-            kv_failover_nodes=[], cbas_failover_nodes=[]):
+            kv_failover_nodes=[], cbas_failover_nodes=[],
+            wait_for_complete=True):
         # Perform the action
         if action == "RebalanceOut":
-            nodes = cluster.rest.node_statuses()
-            cluster.rest.rebalance(
-                otpNodes=[node.id for node in nodes],
-                ejectedNodes=[node.id for node in
-                              (kv_failover_nodes + cbas_failover_nodes)]
-            )
-            # self.sleep(600)
-            if not cluster.rest.monitorRebalance(stop_if_loop=False):
-                raise Exception("Rebalance failed")
-            servs_out = [node for node in cluster.nodes_in_cluster for
-                         fail_node in (kv_failover_nodes + cbas_failover_nodes)
-                         if node.ip == fail_node.ip]
-            actual_nodes_in_cluster = list(set(cluster.nodes_in_cluster) - set(servs_out))
-            cluster.nodes_in_cluster = actual_nodes_in_cluster
-            cluster.server = actual_nodes_in_cluster
-            available_servers += servs_out
-            time.sleep(10)
+            rebalance_task = self.task.async_rebalance(
+                cluster.nodes_in_cluster, [],
+                kv_failover_nodes + cbas_failover_nodes,
+                check_vbucket_shuffling=self.vbucket_check,
+                retry_get_process_num=200)
+
+            if wait_for_complete:
+                if not self.wait_for_rebalance_task_to_complete(
+                        rebalance_task, cluster):
+                    raise Exception(
+                        "Rebalance failed while rebalancing nodes after failover")
+                time.sleep(10)
+                servs_out = [node for node in cluster.nodes_in_cluster for
+                             fail_node in (kv_failover_nodes + cbas_failover_nodes)
+                             if node.ip == fail_node.ip]
+                actual_nodes_in_cluster = list(set(cluster.nodes_in_cluster) - set(servs_out))
+                cluster.nodes_in_cluster = actual_nodes_in_cluster
+                cluster.server = actual_nodes_in_cluster
+                available_servers += servs_out
+                time.sleep(10)
+            else:
+                return rebalance_task
         else:
+            node_ids = dict()
+            for node in cluster.rest.get_nodes(True):
+                node_ids[node.ip] = node.id
+
             if action == "FullRecovery":
                 for node in kv_failover_nodes + cbas_failover_nodes:
                     cluster.rest.set_recovery_type(
-                        otpNode=node.id, recoveryType="full")
+                        otpNode=node_ids[node.ip], recoveryType="full")
             elif action == "DeltaRecovery":
                 for node in kv_failover_nodes:
                     cluster.rest.set_recovery_type(
-                        otpNode=node.id, recoveryType="delta")
+                        otpNode=node_ids[node.ip], recoveryType="delta")
             rebalance_task = self.task.async_rebalance(
                 cluster.nodes_in_cluster, [], [],
                 retry_get_process_num=200)
-            if not self.wait_for_rebalance_task_to_complete(
-                    rebalance_task, cluster):
-                raise Exception(
-                    "Rebalance failed while doing recovery after failover")
-            time.sleep(10)
+            if wait_for_complete:
+                if not self.wait_for_rebalance_task_to_complete(
+                        rebalance_task, cluster):
+                    raise Exception(
+                        "Rebalance failed while doing recovery after failover")
+                time.sleep(10)
+            else:
+                return rebalance_task
         if cbas_failover_nodes:
             self.reset_cbas_cc_node(cluster)
         # After the action has been performed on failed over node,
