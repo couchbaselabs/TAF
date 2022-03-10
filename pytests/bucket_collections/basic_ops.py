@@ -1037,6 +1037,7 @@ class BasicOps(CollectionBase):
         client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
 
         expected_err = "Not allowed on this type of bucket"
+        expected_err_sdk = "com.couchbase.client.core.error"
         self.log.info("Random name: %s" % rand_name)
         self.log.info("Trying to create new scope for memcached bucket")
         # REST API way of creating scope
@@ -1048,7 +1049,7 @@ class BasicOps(CollectionBase):
         try:
             client.create_scope(rand_name)
         except CouchbaseException as e:
-            if expected_err not in str(e):
+            if expected_err_sdk not in str(e):
                 self.fail("Invalid error message: %s" % e)
 
         self.log.info("Trying to create new collection for memcached bucket")
@@ -1062,7 +1063,7 @@ class BasicOps(CollectionBase):
         try:
             client.create_collection(rand_name)
         except CouchbaseException as e:
-            if expected_err not in str(e):
+            if expected_err_sdk not in str(e):
                 self.fail("Invalid error message: %s" % e)
 
         self.log.info("Trying to perform non-default collection operation")
@@ -1070,7 +1071,7 @@ class BasicOps(CollectionBase):
         result = client.crud(DocLoading.Bucket.DocOps.CREATE, "test", "")
         if result["error"] is None:
             self.fail("Non_default collection crud succeeded")
-        if SDKException.AmbiguousTimeoutException not in str(result["error"]):
+        if SDKException.FeatureNotAvailableException not in str(result["error"]):
             self.fail("Invalid exception")
 
         self.log.info("Perform default collection operation")
