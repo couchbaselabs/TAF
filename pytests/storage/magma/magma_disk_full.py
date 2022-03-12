@@ -121,7 +121,8 @@ class MagmaDiskFull(MagmaBaseTest):
         self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
 
         if self.crash_on_disk_full:
-            th = threading.Thread(target=self.crash)
+            th = threading.Thread(target=self.crash,
+                                  kwargs=dict(wait=False))
             th.start()
             self.sleep(300)
             self.stop_crash = True
@@ -130,9 +131,9 @@ class MagmaDiskFull(MagmaBaseTest):
 
         for node in self.cluster.nodes_in_cluster:
             self.free_disk(node)
-
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+        if not self.crash_on_disk_full:
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
         self.doc_ops = "update"
         self.generate_docs(update_start=self.create_start,
                            update_end=self.create_end)
@@ -207,17 +208,17 @@ class MagmaDiskFull(MagmaBaseTest):
 
         ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                              mem_only_items}
-        ep_data_write_failed = {self.cluster.nodes_in_cluster[-1]: 0}
+        #ep_data_write_failed = {self.cluster.nodes_in_cluster[-1]: 0}
 
         for bucket in self.cluster.buckets:
             self.bucket_util._wait_for_stat(bucket, ep_queue_size_map)
-            self.bucket_util._wait_for_stat(
-                bucket,
-                ep_data_write_failed,
-                cbstat_cmd="all",
-                stat_name="ep_data_write_failed",
-                stat_cond=">",
-                timeout=300)
+            #self.bucket_util._wait_for_stat(
+            #    bucket,
+            #    ep_data_write_failed,
+            #    cbstat_cmd="all",
+            #    stat_name="ep_data_write_failed",
+            #    stat_cond=">",
+            #    timeout=300)
 
         # Kill memcached on NodeA to trigger rollback on other Nodes
         # replica vBuckets
@@ -239,6 +240,7 @@ class MagmaDiskFull(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
+                sdk_client_pool=self.sdk_client_pool,
                 timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
@@ -285,7 +287,6 @@ class MagmaDiskFull(MagmaBaseTest):
             shell = RemoteMachineShellConnection(server)
             shell.execute_command("chmod {} {}".format("777", keyIndex))
             shell.disconnect()
-
         self.doc_ops = "update"
         self.update_start = self.init_items_per_collection
         self.update_end = self.init_items_per_collection*2
@@ -299,9 +300,10 @@ class MagmaDiskFull(MagmaBaseTest):
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
-        for task in tasks_info:
-            self.assertTrue(len(task.fail) == 0,
-                            "Doc ops failed for task: {}".format(task.thread_name))
+
+        for task, task_info in tasks_info.items():
+            self.assertFalse(task_info["ops_failed"],
+                             "Doc ops failed for task: {}".format(task.thread_name))
 
     def test_random_seqTree_chmod(self):
         self.gen_read = copy.deepcopy(self.gen_create)
@@ -344,7 +346,6 @@ class MagmaDiskFull(MagmaBaseTest):
             shell = RemoteMachineShellConnection(server)
             shell.execute_command("chmod {} {}".format("777", seqIndex))
             shell.disconnect()
-
         self.doc_ops = "update"
         self.update_start = self.init_items_per_collection
         self.update_end = self.init_items_per_collection*2
@@ -358,9 +359,10 @@ class MagmaDiskFull(MagmaBaseTest):
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
-        for task in tasks_info:
-            self.assertTrue(len(task.fail) == 0,
-                            "Doc ops failed for task: {}".format(task.thread_name))
+
+        for task, task_info in tasks_info.items():
+            self.assertFalse(task_info["ops_failed"],
+                             "Doc ops failed for task: {}".format(task.thread_name))
 
     def test_random_wal_chmod(self):
         self.gen_read = copy.deepcopy(self.gen_create)
@@ -403,7 +405,6 @@ class MagmaDiskFull(MagmaBaseTest):
             shell = RemoteMachineShellConnection(server)
             shell.execute_command("chmod {} {}".format("777", wal))
             shell.disconnect()
-
         self.doc_ops = "update"
         self.update_start = self.init_items_per_collection
         self.update_end = self.init_items_per_collection*2
@@ -417,9 +418,10 @@ class MagmaDiskFull(MagmaBaseTest):
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
-        for task in tasks_info:
-            self.assertTrue(len(task.fail) == 0,
-                            "Doc ops failed for task: {}".format(task.thread_name))
+
+        for task, task_info in tasks_info.items():
+            self.assertFalse(task_info["ops_failed"],
+                             "Doc ops failed for task: {}".format(task.thread_name))
 
     def test_random_kvStore_chmod(self):
         self.gen_read = copy.deepcopy(self.gen_create)
@@ -457,12 +459,10 @@ class MagmaDiskFull(MagmaBaseTest):
         for task in tasks_info:
             self.task_manager.get_task_result(task)
         self.stop_chmod = True
-
         for server in self.cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(server)
             shell.execute_command("chmod {} {}".format("777", kvstore))
             shell.disconnect()
-
         self.doc_ops = "update"
         self.update_start = self.init_items_per_collection
         self.update_end = self.init_items_per_collection*2
@@ -476,9 +476,10 @@ class MagmaDiskFull(MagmaBaseTest):
                                                collection=collection,
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
-        for task in tasks_info:
-            self.assertTrue(len(task.fail) == 0,
-                            "Doc ops failed for task: {}".format(task.thread_name))
+
+        for task, task_info in tasks_info.items():
+            self.assertFalse(task_info["ops_failed"],
+                             "Doc ops failed for task: {}".format(task.thread_name))
 
     def test_crash_during_write_failures(self):
         self.log.info("===== test_crash_during_write_failures starts===")
@@ -601,9 +602,9 @@ class MagmaDiskFull(MagmaBaseTest):
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
 
-        for task in tasks_info:
-            self.assertTrue(len(task.fail) == 0,
-                            "Doc ops failed for task: {}".format(task.thread_name))
+        for task, task_info in tasks_info.items():
+            self.assertFalse(task_info["ops_failed"],
+                             "Doc ops failed for task: {}".format(task.thread_name))
 
     def test_disk_full_on_increasing_replica(self):
         self.gen_read = copy.deepcopy(self.gen_create)
@@ -655,9 +656,9 @@ class MagmaDiskFull(MagmaBaseTest):
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
 
-        for task in tasks_info:
-            self.assertTrue(len(task.fail) == 0,
-                            "Doc ops failed for task: {}".format(task.thread_name))
+        for task, task_info in tasks_info.items():
+            self.assertFalse(task_info["ops_failed"],
+                             "Doc ops failed for task: {}".format(task.thread_name))
 
     def test_deletes_disk_full(self):
         self.gen_delete = copy.deepcopy(self.gen_create)
@@ -702,9 +703,9 @@ class MagmaDiskFull(MagmaBaseTest):
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
 
-        for task in tasks_info:
-            self.assertTrue(len(task.fail) == 0,
-                            "Doc ops failed for task: {}".format(task.thread_name))
+        for task, task_info in tasks_info.items():
+            self.assertFalse(task_info["ops_failed"],
+                             "Doc ops failed for task: {}".format(task.thread_name))
 
     def test_delete_bucket_disk_full(self):
         th = list()
@@ -763,7 +764,6 @@ class MagmaDiskFull(MagmaBaseTest):
 
         # Insert items so that disk gets full
         self.simulate_persistence_failure(self.cluster.nodes_in_cluster)
-
         # Check for data write failures due to disk full
         for bucket in self.cluster.buckets:
             self.assertTrue(self.bucket_util.flush_bucket(self.cluster,
@@ -809,6 +809,6 @@ class MagmaDiskFull(MagmaBaseTest):
                                                doc_ops=self.doc_ops)
             tasks_info.update(tem_tasks_info.items())
 
-        for task in tasks_info:
-            self.assertTrue(len(task.fail) == 0,
-                            "Doc ops failed for task: {}".format(task.thread_name))
+        for task, task_info in tasks_info.items():
+            self.assertFalse(task_info["ops_failed"],
+                             "Doc ops failed for task: {}".format(task.thread_name))

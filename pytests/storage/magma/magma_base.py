@@ -22,6 +22,8 @@ class MagmaBaseTest(StorageBase):
         self.disable_magma_commit_points = self.input.param(
             "disable_magma_commit_points", False)
         self.max_commit_points = self.input.param("max_commit_points", None)
+        self.check_bloom_filters = self.input.param("check_bloom_filters", False)
+
 
         if self.disable_magma_commit_points:
             self.max_commit_points = 0
@@ -78,10 +80,11 @@ class MagmaBaseTest(StorageBase):
                 self.load_buckets_in_dgm(self.gen_create, "create", 0)
             else:
                 self.initial_load()
-                self.totalBloomFilterMemUsed = self.get_magma_params(self.buckets[0], self.cluster.nodes_in_cluster)
-                self.memoryQuota = self.get_magma_params(self.buckets[0], self.cluster.nodes_in_cluster, param="MemoryQuota")
-                self.memory_quota = max([max(val) for val in self.memoryQuota.values()])
-                self.log.info("magma_memory_quota :: {}".format(self.memory_quota))
+                if self.check_bloom_filters:
+                    self.totalBloomFilterMemUsed = self.get_magma_params(self.buckets[0], self.cluster.nodes_in_cluster)
+                    self.memoryQuota = self.get_magma_params(self.buckets[0], self.cluster.nodes_in_cluster, param="MemoryQuota")
+                    self.memory_quota = max([max(val) for val in self.memoryQuota.values()])
+                    self.log.info("magma_memory_quota :: {}".format(self.memory_quota))
             self.dgm_prcnt = self.get_bucket_dgm(self.buckets[0])
             self.log.info("DGM percentage after init loading is {}".format(self.dgm_prcnt))
         if self.standard_buckets == 1 or self.standard_buckets == self.magma_buckets:

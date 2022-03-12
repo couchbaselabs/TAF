@@ -9,6 +9,12 @@ file_name_patterns:
           - 'No space left on device'
           - 'Permission denied'
           - 'write traffic will be disabled for this node'
+          - 'Status:DiskFull'
+          - 'Status:ReadOnly'
+          - 'Error occured during memtable flush (D'
+          - 'WriteDocs cannot be invoked in read only mode'
+          - 'status:ReadOnly: Rollback unsupported in read only mode'
+          - 'Unable to open file err=No space left on device'
       - string: ' ERROR '
         exclude_patterns:
           - 'XERROR'
@@ -43,6 +49,12 @@ file_name_patterns:
           - 'No space left on device'
           - 'Permission denied'
           - 'write traffic will be disabled for this node'
+          - 'Status:DiskFull'
+          - 'Status:ReadOnly'
+          - 'Error occured during memtable flush (D'
+          - 'WriteDocs cannot be invoked in read only mode'
+          - 'status:ReadOnly: Rollback unsupported in read only mode'
+          - 'Unable to open file err=No space left on device'
 
   - file: 'indexer.log*'
     grep_for:
