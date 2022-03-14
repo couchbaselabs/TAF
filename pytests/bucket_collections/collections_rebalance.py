@@ -904,7 +904,7 @@ class CollectionsRebalance(CollectionBase):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
-                    self.cluster, num_zone=num_zone)
+                    self.cluster, num_zone=num_zone, timeout=2400)
 
     def shuffle_nodes_between_zones_and_rebalance(self):
         """
