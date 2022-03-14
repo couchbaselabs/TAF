@@ -1000,6 +1000,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.set_num_writer_and_reader_threads(
                 num_writer_threads="disk_io_optimized",
                 num_reader_threads="disk_io_optimized")
+        RestConnection(self.cluster.master).set_internalSetting("magmaMinMemoryQuota", 256)
         if self.spec_name is None:
             if self.read_loadgen:
                 self.bucket_size = 100
