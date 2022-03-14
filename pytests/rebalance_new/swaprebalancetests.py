@@ -417,7 +417,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         # Failover selected nodes
         for node in opt_nodes_ids:
             self.log.info("Failover node %s and rebalance afterwards" % node)
-            if self.durability_level:
+            if self.durability_level not in [None, "None", "NONE"]:
                 self.rest.fail_over(node)
             else:
                 self.rest.fail_over(node, graceful=True)
@@ -489,7 +489,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         # Failover selected nodes
         for node in opt_nodes_ids:
             self.log.info("Failover node %s and rebalance afterwards" % node)
-            if self.durability_level:
+            if self.durability_level not in [None, "None", "NONE"]:
                 self.rest.fail_over(node)
             else:
                 self.rest.fail_over(node, graceful=True)
