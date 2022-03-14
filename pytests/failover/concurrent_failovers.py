@@ -467,7 +467,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.fail("Failure during failover operation")
 
             # Enable back prev auto_fo settings
-            self.sleep(5, "Wait before enabling back auto-fo")
+            self.sleep(15, "Wait before enabling back auto-fo")
             self.rest.update_autofailover_settings(
                 enabled=True, timeout=self.timeout, maxCount=self.max_count,
                 canAbortRebalance=self.can_abort_rebalance)
