@@ -4,6 +4,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 
 from sdk_exceptions import SDKException
+from Cb_constants import constants, CbServer
 
 
 class AutoFailoverTests(AutoFailoverBaseTest):
@@ -291,7 +292,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.log.info("Adding node {0}".format(node.ip))
             self.rest.add_node(user=self.orchestrator.rest_username,
                                password=self.orchestrator.rest_password,
-                               remoteIp=node.ip)
+                               remoteIp=node.ip,
+                               port=CbServer.ssl_port)
         nodes = self.rest.node_statuses()
         self.log.info("Marking {0} for removal".format(self.servers_to_remove))
         nodes_to_remove = [node.id for node in nodes if
