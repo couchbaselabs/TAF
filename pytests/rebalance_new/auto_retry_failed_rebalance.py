@@ -478,10 +478,12 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             cb_collect_err_str = "failed"
             shell = RemoteMachineShellConnection(self.servers[1])
             shell.reboot_node()
+            shell.disconnect()
         elif error_condition == "kill_erlang":
             cb_collect_err_str = "failed"
             shell = RemoteMachineShellConnection(self.servers[1])
             shell.kill_erlang()
+            shell.disconnect()
             self.sleep(self.sleep_time * 3)
         else:
             self.fail("Invalid error induce option")
@@ -499,6 +501,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                                                     self.servers[1])
         elif error_condition == "reboot_server":
             self.sleep(self.sleep_time * 4)
+            self.cluster_util.stop_firewall_on_node(self.cluster,
+                                                    self.servers[1])
 
     def _induce_rebalance_test_condition(self, test_failure_condition,
                                          bucket_name="default",
