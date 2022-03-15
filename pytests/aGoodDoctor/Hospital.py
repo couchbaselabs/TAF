@@ -139,7 +139,9 @@ class Murphy(BaseTestCase, OPD):
             self.drXDCR = DoctorXDCR(self.cluster, self.xdcr_remote_cluster)
 
         self.rest = RestConnection(self.cluster.master)
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.af_timeout = self.input.param("af_timeout", 600)
+        self.af_enable = self.input.param("af_enable", False)
+        self.assertTrue(self.rest.update_autofailover_settings(self.af_enable, self.af_timeout),
                         "AutoFailover disabling failed")
         self.max_commit_points = self.input.param("max_commit_points", None)
         props = "magma"

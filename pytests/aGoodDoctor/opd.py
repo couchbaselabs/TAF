@@ -100,7 +100,7 @@ class OPD:
             self.num_scopes += 1
         for bucket in cluster.buckets:
             for scope in bucket.scopes.keys():
-                if num_collections > 1:
+                if num_collections > 0:
                     self.collection_prefix = self.input.param("collection_prefix",
                                                               "VolumeCollection")
 
