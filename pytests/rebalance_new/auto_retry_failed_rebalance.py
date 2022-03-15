@@ -484,7 +484,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             shell = RemoteMachineShellConnection(self.servers[1])
             shell.kill_erlang()
             shell.disconnect()
-            self.sleep(self.sleep_time * 3)
+	    self.sleep(self.sleep_time * 3)
         else:
             self.fail("Invalid error induce option")
 
