@@ -2319,7 +2319,8 @@ class BucketUtils(ScopeUtils):
         if check_items:
             if check_bucket_stats:
                 self.verify_stats_all_buckets(cluster, items=items,
-                                              timeout=(timeout or 120))
+                                              timeout=(timeout or 120),
+                                              num_zone=num_zone)
             if verify_total_items:
                 verified = True
                 for bucket in cluster.buckets:

@@ -56,7 +56,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                                                          self.cluster.buckets)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster,
-                timeout=self.wait_timeout)
+                timeout=self.wait_timeout, num_zone=self.zone)
             self.sleep(20)
             prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(
                 self.cluster.servers[:self.nodes_init], self.cluster.buckets)
@@ -70,11 +70,11 @@ class RebalanceInOutTests(RebalanceBaseTest):
         if not self.atomicity:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster,
-                timeout=self.wait_timeout)
+                timeout=self.wait_timeout, num_zone=self.zone)
             self.bucket_util.verify_cluster_stats(
                 self.cluster, self.num_items,
                 check_ep_items_remaining=True,
-                timeout=self.wait_timeout)
+                timeout=self.wait_timeout, num_zone=self.zone)
             new_failover_stats = self.bucket_util.compare_failovers_logs(
                 self.cluster, prev_failover_stats, result_nodes,
                 self.cluster.buckets)
@@ -85,7 +85,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.data_analysis_active_replica_all(disk_active_dataset, disk_replica_dataset, result_nodes, self.cluster.buckets,
                                                   path=None)
             self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
-            nodes = self.cluster.nodes_in_cluster
         #self.bucket_util.vb_distribution_analysis(servers=nodes, std=1.0, total_vbuckets=self.cluster.vbuckets)
 
     def test_rebalance_in_out_with_failover_addback_recovery(self):
