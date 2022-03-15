@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from custom_exceptions.exception import FailoverFailedException
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from failoverbasetest import FailoverBaseTest
@@ -89,22 +90,20 @@ class NegativeFailoverTests(FailoverBaseTest):
                             "unexpected exception {0}".format(ex))
 
     def failover_failed_node(self):
+        self.rest = RestConnection(self.cluster.master)
+        _ = self.cluster_util.get_nodes(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        success_failed_over = self.rest.fail_over(chosen[0].id,
+                                                  graceful=False)
+        self.assertTrue(success_failed_over,
+                        "Failover did not happen as expected")
         try:
-            self.rest = RestConnection(self.cluster.master)
-            _ = self.cluster_util.get_nodes(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=False)
-            self.assertTrue(success_failed_over,
-                            "Failover did not happen as expected")
-            fail_failed_over = self.rest.fail_over(chosen[0].id,
-                                                   graceful=False)
-            self.assertFalse(fail_failed_over,
-                             "Failover did not fail as expected")
-        except Exception as ex:
-            self.assertTrue(("Unknown server given" in str(ex)),
-                            "unexpected exception {0}".format(ex))
+            self.rest.fail_over(chosen[0].id, graceful=False)
+            self.fail("Failover of already failed node succeeded")
+        except FailoverFailedException as ex:
+            self.assertTrue(("Inactive server given" in str(ex)),
+                            "Unexpected exception {0}".format(ex))
 
     def addback_non_existant_node(self):
         try:
