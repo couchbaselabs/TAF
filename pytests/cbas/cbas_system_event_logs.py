@@ -304,6 +304,11 @@ class CBASSystemEventLogs(CBASBaseTest):
         if not self.cbas_util.wait_for_ingestion_complete(
                 self.cluster, dataset_obj.full_name, 0, timeout=300):
             self.fail("Data is present in the dataset when it should not")
+        self.log.info("Adding event for collection_detach events")
+        self.system_events.add_event(AnalyticsEvents.collection_detached(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format(dataset_obj.dataverse_name),
+            CBASHelper.unformat_name(dataset_obj.name)))
 
         self.log.info("Creating collection {0}".format(
             dataset_obj.full_kv_entity_name))
@@ -316,11 +321,6 @@ class CBASSystemEventLogs(CBASBaseTest):
                 self.cluster, dataset_obj.full_name, 0, timeout=300):
             self.fail("Data ingestion failed.")
 
-        self.log.info("Adding event for collection_detach events")
-        self.system_events.add_event(AnalyticsEvents.collection_detached(
-            self.cluster.cbas_cc_node.ip,
-            CBASHelper.metadata_format(dataset_obj.dataverse_name),
-            CBASHelper.unformat_name(dataset_obj.name)))
         self.log.info("Adding event for collection_attach events")
         self.system_events.add_event(AnalyticsEvents.collection_attached(
             self.cluster.cbas_cc_node.ip,
