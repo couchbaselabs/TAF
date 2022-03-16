@@ -562,20 +562,19 @@ class UpgradeBase(BaseTestCase):
     def failover_full_recovery(self, node_to_upgrade, graceful=True):
         self.failover_recovery(node_to_upgrade, "full", graceful)
 
-    def offline(self, node_to_upgrade):
+    def offline(self, node_to_upgrade, version):
         rest = RestConnection(node_to_upgrade)
         shell = RemoteMachineShellConnection(node_to_upgrade)
-        appropriate_build = self.__get_build(self.upgrade_version,
-                                             shell)
+        appropriate_build = self.__get_build(version, shell)
         self.assertTrue(appropriate_build.url,
-                        msg="Unable to find build %s" % self.upgrade_version)
+                        msg="Unable to find build %s" % version)
         self.assertTrue(shell.download_build(appropriate_build),
                         "Failed while downloading the build!")
 
         self.log.info("Starting node upgrade")
-        upgrade_success = shell.couchbase_upgrade(appropriate_build,
-                                                  save_upgrade_config=False,
-                                                  forcefully=self.is_downgrade)
+        upgrade_success = shell.couchbase_upgrade(
+            appropriate_build, save_upgrade_config=False,
+            forcefully=self.is_downgrade)
         shell.disconnect()
         if not upgrade_success:
             self.log_failure("Upgrade failed")
