@@ -871,16 +871,17 @@ class CollectionsRebalance(CollectionBase):
             self.wait_for_compaction_to_complete()
 
     def data_validation_collection(self):
-        nodes_in_zones = self.get_zone_info()
-        num_zone = len(nodes_in_zones.keys())
-        if num_zone > 1:
-            for bucket in self.cluster.buckets:
-                self.cluster_util.verify_replica_distribution_in_zones(self.cluster,
-                                                                       nodes_in_zones,
-                                                                       bucket=bucket.name)
-            self.bucket_util.verify_vbucket_distribution_in_zones(self.cluster,
-                                                                  nodes_in_zones,
-                                                                  self.servers)
+        num_zone = 1
+        if self.cluster_util.is_enterprise_edition(self.cluster):
+            nodes_in_zones = self.get_zone_info()
+            num_zone = len(nodes_in_zones.keys())
+
+            if num_zone > 1:
+                for bucket in self.cluster.buckets:
+                    self.cluster_util.verify_replica_distribution_in_zones(
+                        self.cluster, nodes_in_zones, bucket=bucket.name)
+                self.bucket_util.verify_vbucket_distribution_in_zones(
+                    self.cluster, nodes_in_zones, self.servers)
         if not self.skip_validations:
             if self.data_load_spec == "ttl_load" or self.data_load_spec == "ttl_load1":
                 self.bucket_util._expiry_pager(self.cluster)
