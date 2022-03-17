@@ -15,6 +15,7 @@ file_name_patterns:
           - 'WriteDocs cannot be invoked in read only mode'
           - 'status:ReadOnly: Rollback unsupported in read only mode'
           - 'Unable to open file err=No space left on device'
+          - 'Invalid packet header detected'
       - string: ' ERROR '
         exclude_patterns:
           - 'XERROR'
