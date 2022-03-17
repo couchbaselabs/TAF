@@ -360,9 +360,7 @@ class CBASBaseTest(BaseTestCase):
             if len(services) == 1:
                 service = services[0]
                 if service in cluster_services:
-                    if service is not "kv":
-                        self.log.info("Setting {0} memory quota for {1}"
-                                      .format(memory_quota_available, service))
+                    if service != "kv":
                         property_name = self.service_mem_dict[service][0]
                         service_mem_in_cluster = cluster_info.__getattribute__(
                             property_name)
@@ -380,17 +378,31 @@ class CBASBaseTest(BaseTestCase):
                         sufficient to absorb the memory that is already
                         allocated to the service"""
                         if memory_quota_available <= service_mem_in_cluster:
-                            if self.service_mem_dict[service][2] and \
-                                    memory_quota_available <= \
-                                    self.service_mem_dict[service][2]:
-                                if memory_quota_available < \
-                                        self.service_mem_dict[service][1]:
-                                    memory_quota_available = self.service_mem_dict[service][1]
-                                cluster.rest.set_service_mem_quota(
-                                    {property_name: memory_quota_available})
-                                self.service_mem_dict[service][2] = memory_quota_available
+                            if self.service_mem_dict[service][2]:
+                                if memory_quota_available <= \
+                                        self.service_mem_dict[service][2]:
+                                    if memory_quota_available < \
+                                            self.service_mem_dict[service][1]:
+                                        self.fail(
+                                            "Minimum memory required for {0} "
+                                            "is {1}MB, but only {2}MB is "
+                                            "available".format(
+                                                service,
+                                                self.service_mem_dict[service][1],
+                                                memory_quota_available))
+                                    else:
+                                        self.log.info(
+                                            "Setting {0} memory quota for {1}"
+                                            .format(memory_quota_available,
+                                                    service))
+                                        cluster.rest.set_service_mem_quota(
+                                            {property_name: memory_quota_available})
+                                        self.service_mem_dict[service][2] = memory_quota_available
                             elif memory_quota_available >= \
                                     self.service_mem_dict[service][1]:
+                                self.log.info(
+                                    "Setting {0} memory quota for {1}"
+                                    .format(memory_quota_available, service))
                                 cluster.rest.set_service_mem_quota(
                                     {property_name: memory_quota_available})
                                 self.service_mem_dict[service][
@@ -409,9 +421,18 @@ class CBASBaseTest(BaseTestCase):
                     self.log.info("Setting {0} memory quota for {1}".format(
                         memory_quota_available, service))
                     if memory_quota_available >= self.service_mem_dict[service][1]:
-                        if self.service_mem_dict[service][2] and \
-                                memory_quota_available <= \
-                                self.service_mem_dict[service][2]:
+                        if self.service_mem_dict[service][2]:
+                            if memory_quota_available <= self.service_mem_dict[service][2]:
+                                self.log.info(
+                                    "Setting {0} memory quota for {1}".format(
+                                        memory_quota_available, service))
+                                cluster.rest.set_service_mem_quota(
+                                    {property_name: memory_quota_available})
+                                self.service_mem_dict[service][2] = memory_quota_available
+                        else:
+                            self.log.info(
+                                "Setting {0} memory quota for {1}".format(
+                                    memory_quota_available, service))
                             cluster.rest.set_service_mem_quota(
                                 {property_name: memory_quota_available})
                             self.service_mem_dict[service][2] = memory_quota_available
@@ -434,8 +455,6 @@ class CBASBaseTest(BaseTestCase):
 
                 for service in services:
                     # setting minimum possible memory for other services.
-                    self.log.info("Setting {0} memory quota for {1}".format(
-                        self.service_mem_dict[service][1], service))
                     if memory_quota_available >= self.service_mem_dict[service][1]:
                         if self.service_mem_dict[service][2]:
                             if memory_quota_available > self.service_mem_dict[service][2]:
@@ -444,6 +463,9 @@ class CBASBaseTest(BaseTestCase):
                                 memory_quota = memory_quota_available
                         else:
                             memory_quota = self.service_mem_dict[service][1]
+                        self.log.info(
+                            "Setting {0} memory quota for {1}".format(
+                                memory_quota, service))
                         cluster.rest.set_service_mem_quota(
                             {self.service_mem_dict[service][0]: memory_quota})
                         self.service_mem_dict[service][2] = memory_quota
