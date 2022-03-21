@@ -146,9 +146,9 @@ class MagmaDiskFull(MagmaBaseTest):
 
         for node in self.cluster.nodes_in_cluster:
             if "kv" in node.services:
-                result = self.bucket_util._wait_warmup_completed(
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
                     [node], self.cluster.buckets[0],
-                    wait_time=self.wait_timeout * 5)
+                    wait_time=self.wait_timeout * 5))
 
         self.doc_ops = "update"
         self.generate_docs(update_start=self.create_start,
