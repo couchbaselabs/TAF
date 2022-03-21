@@ -71,7 +71,7 @@ class DoctorBKRS():
         while time.time() < end_time:
             curr_items = bucket_util.get_bucket_current_item_count(self.cluster, self.cluster.buckets[0])
             self.log.info("Current/Expected items during restore: %s == %s" % (curr_items, items) )
-            self.sleep(5, "Wait for items restoration")
+            time.sleep(5, "Wait for items restoration")
             if items == curr_items:
                 return True
         self.log.info("cbbackupmgr restore did not finish in %s seconds: Actual:%s, Expected:%s" % (timeout, curr_items, items) )
