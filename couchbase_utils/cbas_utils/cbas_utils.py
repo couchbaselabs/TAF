@@ -245,7 +245,7 @@ class BaseUtil(object):
             if generated_name.lower() in [
                 "at", "in", "for", "by", "which", "select", "from", "like",
                 "or", "and", "to", "if", "else", "as", "with", "on", "where",
-                "is", "all", "end"]:
+                "is", "all", "end", "div"]:
                 return BaseUtil.generate_name(
                     name_cardinality, max_length, fixed_length, name_key, seed)
             else:
@@ -4705,6 +4705,21 @@ class CbasUtil(UDFUtil):
                     break
             shell = RemoteMachineShellConnection(node)
             shell.list_files(partition_paths[partition_id]["path"])
+
+    def connect_disconnect_all_local_links(self, cluster, disconnect=False):
+        result = True
+        for dv in self.dataverses.values():
+            if disconnect:
+                if not self.disconnect_link(cluster, link_name=dv.name + ".Local"):
+                    self.log.error("Failed to disconnect link - {0}".format(
+                        dv.name + ".Local"))
+                    result = result and False
+            else:
+                if not self.connect_link(cluster, link_name=dv.name + ".Local"):
+                    self.log.error("Failed to connect link - {0}".format(
+                        dv.name + ".Local"))
+                    result = result and False
+        return result
 
 
 class FlushToDiskTask(Task):

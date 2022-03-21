@@ -17,6 +17,8 @@ from upgrade.upgrade_base import UpgradeBase
 from cbas_utils.cbas_utils import CbasUtil, CBASRebalanceUtil
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
+from security_utils.security_utils import SecurityUtils
+from security_config import trust_all_certs
 
 
 class UpgradeTests(UpgradeBase):
@@ -28,6 +30,28 @@ class UpgradeTests(UpgradeBase):
         self.rebalance_util = CBASRebalanceUtil(
             self.cluster_util, self.bucket_util, self.task,
             vbucket_check=True, cbas_util=self.cbas_util)
+
+        if self.input.param("n2n_encryption", False):
+            CbServer.use_https = True
+            trust_all_certs()
+
+            self.security_util = SecurityUtils(self.log)
+
+            rest = RestConnection(self.cluster.master)
+            self.log.info("Disabling Auto-Failover")
+            if not rest.update_autofailover_settings(
+                    False, 120, False):
+                self.fail("Disabling Auto-Failover failed")
+
+            self.log.info("Setting node to node encryption level to all")
+            self.security_util.set_n2n_encryption_level_on_nodes(
+                self.cluster.nodes_in_cluster, level="all")
+
+            CbServer.use_https = True
+            self.log.info("Enabling Auto-Failover")
+            if not rest.update_autofailover_settings(
+                    True, 300, False):
+                self.fail("Enabling Auto-Failover failed")
 
         cbas_cc_node_ip = None
         retry = 0
@@ -65,6 +89,8 @@ class UpgradeTests(UpgradeBase):
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
+        self.cluster.master = self.cluster_util.get_kv_nodes(self.cluster)[0]
+        self.cluster_util.cluster_cleanup(self.cluster, self.bucket_util)
         super(UpgradeTests, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)

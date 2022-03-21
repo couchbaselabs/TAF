@@ -18,17 +18,17 @@ class StatsHelper(RestConnection):
         super(StatsHelper, self).__init__(server)
         self.server = server
         protocol = "https" if CbServer.use_https else "http"
-        rest_port = CbServer.ssl_port_map.get(CbServer.port, CbServer.port) \
-            if CbServer.use_https else CbServer.port
-        fts_port = CbServer.ssl_port_map.get(CbServer.fts_port, CbServer.fts_port) \
+        rest_port = CbServer.ssl_port_map.get(
+            str(CbServer.port), CbServer.port) if CbServer.use_https else CbServer.port
+        fts_port = CbServer.ssl_port_map.get(str(CbServer.fts_port), CbServer.fts_port) \
             if CbServer.use_https else CbServer.fts_port
-        n1ql_port = CbServer.ssl_port_map.get(CbServer.n1ql_port, CbServer.n1ql_port) \
+        n1ql_port = CbServer.ssl_port_map.get(str(CbServer.n1ql_port), CbServer.n1ql_port) \
             if CbServer.use_https else CbServer.n1ql_port
-        cbas_port = CbServer.ssl_port_map.get(CbServer.cbas_port, CbServer.cbas_port) \
+        cbas_port = CbServer.ssl_port_map.get(str(CbServer.cbas_port), CbServer.cbas_port) \
             if CbServer.use_https else CbServer.cbas_port
-        eventing_port = CbServer.ssl_port_map.get(CbServer.eventing_port, CbServer.eventing_port) \
+        eventing_port = CbServer.ssl_port_map.get(str(CbServer.eventing_port), CbServer.eventing_port) \
             if CbServer.use_https else CbServer.eventing_port
-        index_port = CbServer.ssl_port_map.get(CbServer.index_port, CbServer.index_port) \
+        index_port = CbServer.ssl_port_map.get(str(CbServer.index_port), CbServer.index_port) \
             if CbServer.use_https else CbServer.index_port
 
         self.base_url = "{0}://{1}:{2}".format(protocol, self.ip, rest_port)
