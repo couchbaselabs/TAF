@@ -16,7 +16,6 @@ from error_simulation.cb_error import CouchbaseError
 from mc_bin_client import MemcachedClient, MemcachedError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from sdk_constants.java_client import SDKConstants
 from sdk_exceptions import SDKException
 from table_view import TableView
 
@@ -1102,16 +1101,17 @@ class basic_ops(ClusterSetup):
             start = self.num_items
             if op_type == DocLoading.Bucket.DocOps.DELETE:
                 start = self.del_items
-            doc_gen = doc_generator(self.key, start, start+load_batch,
-                                    doc_size=self.doc_size)
+            doc_gen = doc_generator(self.key, start, start + load_batch,
+                                    doc_size=self.doc_size,
+                                    randomize_value=True)
             doc_op_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, op_type,
                 timeout_secs=self.sdk_timeout,
                 print_ops_rate=False,
                 skip_read_on_error=True,
                 suppress_error_table=True,
-                batch_size=100,
-                process_concurrency=8,
+                batch_size=1,
+                process_concurrency=1,
                 sdk_client_pool=self.sdk_client_pool)
             self.task_manager.get_task_result(doc_op_task)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -1139,7 +1139,7 @@ class basic_ops(ClusterSetup):
         nodes_data = dict()
         self.num_items = 0
         self.del_items = 0
-        load_batch = 5000
+        load_batch = 20
         # To provide little 'headroom' while loading/deleting docs in batches
         mem_buffer_gap = 10000
         low_wm_reached = False
@@ -1180,6 +1180,7 @@ class basic_ops(ClusterSetup):
                     cbepctl.set(bucket.name,
                                 "flush_param", "num_nonio_threads", 0)
 
+        load_batch = 1
         self.log.info("Loading docs till high_water_mark is reached")
         while not high_wm_reached:
             perform_doc_op(DocLoading.Bucket.DocOps.CREATE)
