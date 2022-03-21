@@ -2486,11 +2486,14 @@ class BucketUtils(ScopeUtils):
         while time.time() < end_time:
             bucket_helper = BucketHelper(cluster.master)
             bucket_stats = bucket_helper.fetch_bucket_stats(bucket)
-            active_count = bucket_stats['op']['samples']['curr_items'][-1]
-            replica_count = bucket_stats['op']['samples'][
-                'vb_replica_curr_items'][-1]
-            self.log.debug("Bucket '%s' items count. Active: %s, Replica : %s"
-                           % (bucket.name, active_count, replica_count))
+            try:
+                active_count = bucket_stats['op']['samples']['curr_items'][-1]
+                replica_count = bucket_stats['op']['samples'][
+                    'vb_replica_curr_items'][-1]
+                self.log.debug("Bucket '%s' items count. Active: %s, Replica : %s"
+                       % (bucket.name, active_count, replica_count))
+            except KeyError:
+                continue
             if (active_count * bucket.replicaNumber) == replica_count:
                 return True
         self.log.critical("Mismatch!!! Bucket '%s' items count. Active: %s, Replica : %s"
