@@ -2093,12 +2093,14 @@ class XattrTests(SubdocBaseTest):
 
         # A generator for regular documents
         doc_gen = doc_generator(
-            doc_prefix, key_min, key_max, doc_type=self.doc_type, doc_size=self.doc_size)
+            doc_prefix, key_min, key_max, doc_type=self.doc_type,
+            doc_size=self.doc_size)
 
         # Create docs between keys_min and keys_max. This is required because
         # documents must previously exist before xattrs can be added to them.
         task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, doc_gen, "create", exp=exp, **self.async_gen_common)
+            self.cluster, self.bucket, doc_gen, "create", exp=exp,
+            **self.async_gen_common)
 
         self.task.jython_task_manager.get_task_result(task)
 
@@ -2118,7 +2120,8 @@ class XattrTests(SubdocBaseTest):
             sub_doc_gen = SubdocDocumentGenerator(
                 doc_prefix, xattribute_template, template_value, start=key_min, end=key_max)
             task = self.task.async_load_gen_sub_docs(
-                self.cluster, self.bucket, sub_doc_gen, "upsert", xattr=True,
+                self.cluster, self.bucket, sub_doc_gen,
+                DocLoading.Bucket.SubDocOps.UPSERT, exp=exp, xattr=True,
                 path_create=True, store_semantics=StoreSemantics.UPSERT,
                 **self.async_gen_common)
             tasks.append(task)
@@ -2153,15 +2156,17 @@ class XattrTests(SubdocBaseTest):
         doc_gen = doc_generator(doc_prefix, key_min, key_max)
 
         # Delete documents between keys_min and keys_max.
-        task = self.task.async_load_gen_docs(self.cluster, self.bucket, doc_gen,
-                                             "delete", **self.async_gen_common)
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, doc_gen,
+            DocLoading.Bucket.DocOps.DELETE, **self.async_gen_common)
         self.task.jython_task_manager.get_task_result(task)
 
     def get_xattribute(self, doc_key, path, access_deleted=True):
         """ Returns a tuple where the first element indicates the tuple was
         accessible and the second element contains the value. """
         success, failed = self.client.crud(
-            "subdoc_read", doc_key, path, xattr=True, access_deleted=True)
+            "subdoc_read", doc_key, path, xattr=True,
+            access_deleted=access_deleted)
 
         accessible = success and (
             success[doc_key]['value'][0] != "PATH_NOT_FOUND")
@@ -2174,7 +2179,7 @@ class XattrTests(SubdocBaseTest):
         return accessible, xattrvalue
 
     def verify_purged_tombstones(self, key_min, key_max):
-        """ Validate documents xattributes once they have been deleted and purged.
+        """ Validate documents xattrs once they have been deleted and purged.
 
         Check that there is at most 1 tombstones with system xattribute per
         vbucket once tombstones have been purged.
@@ -2189,8 +2194,8 @@ class XattrTests(SubdocBaseTest):
             for xattr in self.paths:
                 if self.get_xattribute(doc_key, xattr, access_deleted=True)[0]:
                     if self.to_vbucket(doc_key) in seen_vbuckets:
-                        self.fail(
-                            "Found multiple tombstones in the same vbucket post purging.")
+                        self.fail("Found multiple tombstones in the same "
+                                  "vbucket post purging.")
                     else:
                         seen_vbuckets.add(self.to_vbucket(doc_key))
                         break
@@ -2217,8 +2222,8 @@ class XattrTests(SubdocBaseTest):
                 if is_deleted and self.xattr_type(path) == 'USR_ATTR':
                     self.assertFalse(accessible)
                 else:
-                    self.assertEqual(
-                        xattrvalue, self.get_subdoc_val(), "for key {}".format(doc_key))
+                    self.assertEqual(xattrvalue, self.get_subdoc_val(),
+                                     "for key %s" % doc_key)
 
     def parallel(self, function, key_min, key_max, **kwargs):
         """ Execute the workload in parallel by batching keys between key_max
@@ -2231,8 +2236,9 @@ class XattrTests(SubdocBaseTest):
 
         for lower_bound in range(key_min, key_max, batch_size):
             upper_bound = min(lower_bound + batch_size, key_max)
-            tasks.append(FunctionCallTask(function, args=[
-                         lower_bound, upper_bound], kwds=kwargs))
+            tasks.append(FunctionCallTask(function,
+                                          args=[lower_bound, upper_bound],
+                                          kwds=kwargs))
             self.task_manager.add_new_task(tasks[-1])
 
         for task in tasks:
@@ -2322,7 +2328,7 @@ class XattrTests(SubdocBaseTest):
         self.parallel(self.verify_workload, key_min, key_max, is_deleted=True)
 
     def verify_expired_workload(self, key_min, key_max):
-        """ Ensures documents xattrs are no longer accessible following expiration.
+        """ Ensures doc's xattrs are no longer accessible following expiration.
 
         Args:
             key_min (int): The first key in the interval.
@@ -2335,6 +2341,9 @@ class XattrTests(SubdocBaseTest):
                 accessible, xattrvalue = self.get_xattribute(
                     doc_key, path, access_deleted=False)
 
+                if accessible:
+                    self.log.info("%s %s is True, xattrvalue: %s"
+                                  % (doc_key, path, xattrvalue))
                 self.assertFalse(accessible)
 
     def wait_for_expiration(self, ttl, expiry_pager_time):
@@ -2352,8 +2361,9 @@ class XattrTests(SubdocBaseTest):
 
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, [self.bucket])
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     [self.bucket], cbstat_cmd="all", stat_name="vb_replica_queue_size")
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, [self.bucket], cbstat_cmd="all",
+            stat_name="vb_replica_queue_size")
 
     @cyclic
     def test_xattribute_expiry(self):
@@ -2401,7 +2411,8 @@ class XattrTests(SubdocBaseTest):
         # Delete keys between a certain range
         self.delete_workload(key_min, key_max)
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, [self.bucket])
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     [self.bucket])
 
         # Set the metadata purge interval to 120 seconds.
         # The autoCompactionDefined field must be set to true, otherwise the
@@ -2433,7 +2444,7 @@ class XattrTests(SubdocBaseTest):
             for path in self.paths:
                 accessible, xattrvalue = self.get_xattribute(
                     doc_key, path, access_deleted=True)
-                # If vbucket belongs to a node 1 vbucket, then xattribute should not exist
+                # If vb belongs to a node 1, then xattr should not exist
                 if self.to_vbucket(doc_key) in vbuckets:
                     self.assertFalse(accessible)
                 else:
@@ -2493,7 +2504,7 @@ class XattrTests(SubdocBaseTest):
                 # Fetch xattribute
                 accessible, xattrvalue = self.get_xattribute(
                     doc_key, path, access_deleted=True)
-                # If vbucket belongs to a node 1 vbucket, then that xattribute should be accessible
+                # If vb belongs to a node 1, then that xattr should be accessible
                 if self.to_vbucket(doc_key) in vbuckets:
                     self.assertEqual(
                         xattrvalue, self.get_subdoc_val())
@@ -2558,7 +2569,8 @@ class XattrTests(SubdocBaseTest):
 
         # Lose a single node by performing a hard-failover
         self.task.failover(servers=self.cluster.servers,
-                           failover_nodes=self.cluster.servers[-1:], graceful=False)
+                           failover_nodes=self.cluster.servers[-1:],
+                           graceful=False)
 
         # Perform validation
         self.parallel(self.verify_workload, key_min, key_max)
@@ -2585,7 +2597,8 @@ class XattrTests(SubdocBaseTest):
         key_max = self.key_max
 
         props = "magma;magma_max_checkpoints={}".format(0)
-        self.bucket_util.update_bucket_props("backend", props, self.cluster, self.cluster.buckets)
+        self.bucket_util.update_bucket_props("backend", props, self.cluster,
+                                             self.cluster.buckets)
 
         # Load initial set of xattribuites xattributes
         self.xattrs_workload(key_min, key_max)
@@ -2599,7 +2612,8 @@ class XattrTests(SubdocBaseTest):
         while time.time() < timeout:
             # The cost of storing the additional documents
             update_cost = self.average_kvstore_usage()
-            self.log.info("Initial cost: {} Update cost: {}".format(initial_cost, update_cost))
+            self.log.info("Initial cost: {} Update cost: {}"
+                          .format(initial_cost, update_cost))
             if update_cost <= initial_cost * 2.5:
                 return
 
@@ -2608,7 +2622,8 @@ class XattrTests(SubdocBaseTest):
     @cyclic
     def test_crashing_processes(self):
         """
-        Asynchronously kill memcached while data is loading and optionally while compaction is in progress.
+        Asynchronously kill memcached while data is loading and optionally
+        while compaction is in progress.
         """
         key_min = self.key_min
         key_max = self.key_max
@@ -2620,11 +2635,13 @@ class XattrTests(SubdocBaseTest):
 
         # Start compaction after a delay of 8 seconds
         if start_compaction:
-            tasks.append(FunctionCallTask(self.apply_start_compaction, kwds={'delay': 8}))
+            tasks.append(FunctionCallTask(self.apply_start_compaction,
+                                          kwds={'delay': 8}))
             self.task_manager.add_new_task(tasks[-1])
 
         # Kill memcached after a delay of 15 seconds
-        tasks.append(FunctionCallTask(self.apply_kill_memcached, kwds={'delay': 15}))
+        tasks.append(FunctionCallTask(self.apply_kill_memcached,
+                                      kwds={'delay': 15}))
         self.task_manager.add_new_task(tasks[-1])
 
         # Load xattributes data
@@ -2647,7 +2664,8 @@ class XattrTests(SubdocBaseTest):
         workloads = ["shadow", "regular"]
 
         if loadtype not in workloads:
-            self.fail("Loadtype '{}' is not in {}".format(workloads, workloads))
+            self.fail("Loadtype '{}' is not in {}"
+                      .format(workloads, workloads))
 
         if loadtype == "shadow":
             workloads = self.txn.get_shadow_workloads()
@@ -2657,7 +2675,8 @@ class XattrTests(SubdocBaseTest):
         if workload not in workloads:
             self.fail("Workload does not exist")
 
-        self.log.info("Running workload {0} of type {1}".format(workload, loadtype))
+        self.log.info("Running workload {0} of type {1}"
+                      .format(workload, loadtype))
 
         self.txn.apply_transitions(workloads[workload])
 
@@ -2677,7 +2696,8 @@ class XattrTests(SubdocBaseTest):
         while time.time() < timeout:
             # The cost of storing the additional documents
             update_cost = self.average_kvstore_usage()
-            self.log.info("Initial cost: {} Update cost: {}".format(initial_cost, update_cost))
+            self.log.info("Initial cost: {} Update cost: {}"
+                          .format(initial_cost, update_cost))
             if update_cost <= initial_cost * 2.5:
                 return
 
@@ -2688,14 +2708,15 @@ class XattrTests(SubdocBaseTest):
         # Creates shadow documents
         self.txn.staged_insert()
 
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, [self.bucket])
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     [self.bucket])
 
         # Set the metadata purge interval to 120 seconds.
         # The autoCompactionDefined field must be set to true, otherwise the
         # metadata purge interval will reset back to 3 days.
         self.bucket_util.modify_fragmentation_config(self.cluster, {})
-        self.bucket_util.set_metadata_purge_interval(self.cluster,
-            0.0014, [self.bucket], self.cluster.master)
+        self.bucket_util.set_metadata_purge_interval(
+            self.cluster, 0.0014, [self.bucket], self.cluster.master)
 
         self.sleep(120, "Waiting for the metadata purge interval to pass.")
 
@@ -2711,8 +2732,8 @@ class XattrTests(SubdocBaseTest):
 class TxnTransition:
     """ Represents the state transitions for documents. """
 
-    # Note: Any sequence that starts with a non-existant document and ends with a remove
-    # does not require an unstage
+    # Note: Any sequence that starts with a non-existant document
+    # and ends with a remove does not require an unstage
 
     def __init__(self, base):
         """ Constructor """
@@ -2726,8 +2747,10 @@ class TxnTransition:
         self.task = base.task
 
         # Document loading methods
-        self.load_docs = functools.partial(self.task.async_load_gen_docs, base.cluster, base.bucket)
-        self.load_sub_docs = functools.partial(self.task.async_load_gen_sub_docs, base.cluster, base.bucket)
+        self.load_docs = functools.partial(
+            self.task.async_load_gen_docs, base.cluster, base.bucket)
+        self.load_sub_docs = functools.partial(
+            self.task.async_load_gen_sub_docs, base.cluster, base.bucket)
 
         # The xattribute to use
         self.path = 'just_a_path'
@@ -2764,16 +2787,17 @@ class TxnTransition:
 
     def get_body(self):
         """ The document body """
-        return {'key': 'value' * (self.token + 1), 'padding': 'a' * self.doc_size}
+        return {'key': 'value' * (self.token + 1),
+                'padding': 'a' * self.doc_size}
 
     def get_value(self, op_type='unknown', body=None):
         """ The value of the xattribute """
         if body is None:
             body = self.get_body()
-        return json.dumps({'op_type':  op_type,
-                              'key2': 'value2',
-                              'key3': 'value3',
-                              'body':  body})
+        return json.dumps({'op_type': op_type,
+                           'key2': 'value2',
+                           'key3': 'value3',
+                           'body': body})
 
     def get_template(self, path=None, binary=False):
         """ Returns a template
@@ -2788,7 +2812,8 @@ class TxnTransition:
         if path is None:
             path = self.path
 
-        return '{{ "' + path + '": "{0}" }}' if binary else '{{ "' + path + '": {0} }}'
+        return '{{ "' + path + '": "{0}" }}' \
+            if binary else '{{ "' + path + '": {0} }}'
 
     def get_generator(self, template=None, value=None):
         """ Returns a SubdocDocumentGenerator
@@ -2801,7 +2826,8 @@ class TxnTransition:
             value = self.get_value()
         if template is None:
             template = self.get_template()
-        return SubdocDocumentGenerator(self.doc_prefix, template, [value], start=self.key_min, end=self.key_max)
+        return SubdocDocumentGenerator(self.doc_prefix, template, [value],
+                                       start=self.key_min, end=self.key_max)
 
     def merge_dicts(self, a, b):
         """ Merges two dictionaries """
@@ -2814,7 +2840,8 @@ class TxnTransition:
         # Note the template and value doesn't really matter here as we are
         # performing deletes
         task = self.load_docs(
-            DocumentGenerator(self.doc_prefix, '{{ "key": "{0}" }}', [''], start=self.key_min, end=self.key_max),
+            DocumentGenerator(self.doc_prefix, '{{ "key": "{0}" }}', [''],
+                              start=self.key_min, end=self.key_max),
             "delete",
             **self.base.async_gen_common)
         self.task.jython_task_manager.get_task_result(task)
@@ -2822,10 +2849,9 @@ class TxnTransition:
 
     def subdoc_task(self, sub_doc_gen, op_type, kwds):
         """ Performs a sub-document task """
-        task = self.load_sub_docs(sub_doc_gen,
-                                  op_type,
-                                  **self.merge_dicts(kwds,
-                                                     self.base.async_gen_common))
+        task = self.load_sub_docs(
+            sub_doc_gen, op_type,
+            **self.merge_dicts(kwds, self.base.async_gen_common))
         self.task.jython_task_manager.get_task_result(task)
         return task
 
@@ -2861,59 +2887,79 @@ class TxnTransition:
 
     def create_documents(self):
         """ Creates regular documents """
-        self.base.apply_preload_storage(key_min=0, key_max=self.key_max, doc_prefix=self.doc_prefix)
+        self.base.apply_preload_storage(key_min=0, key_max=self.key_max,
+                                        doc_prefix=self.doc_prefix)
 
     def staged_insert(self):
         """ Document does not exist -> Create an xattribute with the given
         value.
 
         Creates Shadow Documents. """
-        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.INSERT, 'access_deleted': True, 'create_as_deleted': True}
-        task = self.subdoc_task(self.get_generator(), "insert", kwds)
+        kwds = {'xattr': True, 'path_create': True,
+                'store_semantics': StoreSemantics.INSERT,
+                'access_deleted': True, 'create_as_deleted': True}
+        _ = self.subdoc_task(self.get_generator(), "insert", kwds)
 
         self.check(self.get_generator(), xattr=True, access_deleted=True)
 
     def staged_insert_from_staged(self):
         """ Previous operation was a remove -> Create an xattribute with the
         given value. """
-        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.REPLACE, 'access_deleted': True}
-        task = self.subdoc_task(self.get_generator(), "insert", kwds)
+        kwds = {'xattr': True, 'path_create': True,
+                'store_semantics': StoreSemantics.REPLACE,
+                'access_deleted': True}
+        _ = self.subdoc_task(self.get_generator(), "insert", kwds)
 
         self.check(self.get_generator(), xattr=True, access_deleted=True)
 
     def staged_replace(self):
         """ Stage a replace.  """
-        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.REPLACE, 'access_deleted': True}
-        task = self.subdoc_task(self.get_generator(), "upsert", kwds)
+        kwds = {'xattr': True, 'path_create': True,
+                'store_semantics': StoreSemantics.REPLACE,
+                'access_deleted': True}
+        _ = self.subdoc_task(self.get_generator(), "upsert", kwds)
 
         self.check(self.get_generator(), xattr=True, access_deleted=True)
 
     def staged_remove_from_staged(self):
         """ Document didn't previously exists and is staged -> Delete
         xattribute (No Unstage or Rollback should follow this). """
-        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.REPLACE, 'access_deleted': True}
-        task = self.subdoc_task(self.get_generator(), "remove", kwds)
+        kwds = {'xattr': True, 'path_create': True,
+                'store_semantics': StoreSemantics.REPLACE,
+                'access_deleted': True}
+        _ = self.subdoc_task(self.get_generator(), "remove", kwds)
 
-        self.check(self.get_generator(), xattr=True, access_deleted=True, exists=False)
+        self.check(self.get_generator(), xattr=True, access_deleted=True,
+                   exists=False)
 
     def staged_remove_from_document(self):
         """ Document exists -> Mark xattribute as a remove operation. """
-        kwds = {'xattr': True, 'path_create': True, 'store_semantics': StoreSemantics.REPLACE, 'access_deleted': True}
-        task = self.subdoc_task(self.get_generator(value=self.get_value(op_type='remove')), "upsert", kwds)
+        kwds = {'xattr': True, 'path_create': True,
+                'store_semantics': StoreSemantics.REPLACE,
+                'access_deleted': True}
+        _ = self.subdoc_task(
+            self.get_generator(value=self.get_value(op_type='remove')),
+            "upsert", kwds)
 
-        self.check(self.get_generator(value=self.get_value(op_type='remove')), xattr=True, access_deleted=False)
+        self.check(
+            self.get_generator(value=self.get_value(op_type='remove')),
+            xattr=True, access_deleted=False)
 
     def upsert_and_remove(self, access_deleted=False):
         """ Clear and remove xattribute. """
         # Clear xattribute by setting it to an empty value
         kwds = {'xattr': True, 'access_deleted': access_deleted}
-        task = self.subdoc_task(self.get_generator(template=self.get_template(binary=True), value=''), "upsert", kwds)
+        _ = self.subdoc_task(
+            self.get_generator(template=self.get_template(binary=True),
+                               value=''),
+            "upsert", kwds)
 
         # Remove xattribute
-        task = self.subdoc_task(self.get_generator(), "remove", kwds)
+        _ = self.subdoc_task(self.get_generator(), "remove", kwds)
 
         # check xattribute does not exist
-        self.check(self.get_generator(), xattr=True, access_deleted=access_deleted, exists=False)
+        self.check(self.get_generator(), xattr=True,
+                   access_deleted=access_deleted, exists=False)
 
     def unstage_insert_or_replace(self):
         """ Read staged document -> Insert/Replace document """
@@ -2929,17 +2975,25 @@ class TxnTransition:
 
         # Write body to document using a CMD_SET
         kwds = {'store_semantics': StoreSemantics.UPSERT}
-        task = self.subdoc_task(self.get_generator(template=self.get_template(path=''), value=body), "replace", kwds)
+        _ = self.subdoc_task(
+            self.get_generator(template=self.get_template(path=''),
+                               value=body),
+            "replace", kwds)
 
         # Check body contains the expected value
-        self.check(self.get_generator(template=self.get_template(path=''), value=body), xattr=False, access_deleted=False)
+        self.check(
+            self.get_generator(template=self.get_template(path=''),
+                               value=body),
+            xattr=False, access_deleted=False)
 
     def unstage_remove(self):
         """ Perform a KV remove on the document """
         self.kv_delete()
 
         # Check the document does not exist
-        self.check(self.get_generator(template=self.get_template(path='')), xattr=False, exists=False)
+        self.check(
+            self.get_generator(template=self.get_template(path='')),
+            xattr=False, exists=False)
 
     def rollback_insert_or_replace(self):
         """ Remove Staged document """
@@ -2969,25 +3023,46 @@ class TxnTransition:
 
     def insert_replace_and_unstage(self):
         """ Insert, replace and unstage a document """
-        return self.compose_transition(self.staged_insert, self.staged_replace, self.unstage_insert_or_replace)
+        return self.compose_transition(self.staged_insert, self.staged_replace,
+                                       self.unstage_insert_or_replace)
 
     def get_shadow_workloads(self):
         """ Returns workloads in which the document does not initially exist
         and work with shadow documents. """
 
-        remove_and_replace = self.compose_transition(self.staged_remove_from_staged, self.staged_replace)
+        _ = self.compose_transition(self.staged_remove_from_staged,
+                                    self.staged_replace)
 
         workloads = \
-            {"workload_a": [self.staged_insert, self.staged_replace, self.unstage_insert_or_replace],
-             "workload_b": [self.staged_insert, self.staged_replace, self.staged_remove_from_staged, self.staged_replace, self.unstage_insert_or_replace],
-             "workload_c": [self.staged_insert, self.rep_staged_replace, self.staged_remove_from_staged, self.staged_replace, self.unstage_insert_or_replace],
-             "workload_d": [self.staged_insert, self.rep_staged_replace, self.staged_remove_from_staged],
-             "workload_e": [self.insert_replace_and_unstage(), self.staged_remove_from_document, self.unstage_remove],
-             "workload_f": [self.insert_replace_and_unstage(), self.staged_replace, self.unstage_insert_or_replace],
-             "workload_g": [self.staged_insert, self.staged_replace, self.rollback_insert_or_replace],
-             "workload_h": [self.staged_insert, self.staged_remove_from_staged, self.staged_insert, self.rollback_insert_or_replace],
-             "workload_i": [self.insert_replace_and_unstage(), self.staged_remove_from_document, self.rollback_remove],
-             "workload_j": [self.insert_replace_and_unstage(), self.rep_staged_replace, self.rollback_insert_or_replace]}
+            {"workload_a": [self.staged_insert, self.staged_replace,
+                            self.unstage_insert_or_replace],
+             "workload_b": [self.staged_insert, self.staged_replace,
+                            self.staged_remove_from_staged,
+                            self.staged_replace,
+                            self.unstage_insert_or_replace],
+             "workload_c": [self.staged_insert, self.rep_staged_replace,
+                            self.staged_remove_from_staged,
+                            self.staged_replace,
+                            self.unstage_insert_or_replace],
+             "workload_d": [self.staged_insert, self.rep_staged_replace,
+                            self.staged_remove_from_staged],
+             "workload_e": [self.insert_replace_and_unstage(),
+                            self.staged_remove_from_document,
+                            self.unstage_remove],
+             "workload_f": [self.insert_replace_and_unstage(),
+                            self.staged_replace,
+                            self.unstage_insert_or_replace],
+             "workload_g": [self.staged_insert, self.staged_replace,
+                            self.rollback_insert_or_replace],
+             "workload_h": [self.staged_insert, self.staged_remove_from_staged,
+                            self.staged_insert,
+                            self.rollback_insert_or_replace],
+             "workload_i": [self.insert_replace_and_unstage(),
+                            self.staged_remove_from_document,
+                            self.rollback_remove],
+             "workload_j": [self.insert_replace_and_unstage(),
+                            self.rep_staged_replace,
+                            self.rollback_insert_or_replace]}
 
         return workloads
 
@@ -2995,15 +3070,43 @@ class TxnTransition:
         """ Returns workloads in which a document initially exists.
         """
         workloads = \
-            {"workload_a": [self.create_documents, self.staged_remove_from_document, self.unstage_remove],
-             "workload_b": [self.create_documents, self.staged_replace, self.unstage_insert_or_replace],
-             "workload_c": [self.create_documents, self.staged_remove_from_document, self.staged_replace, self.unstage_insert_or_replace],
-             "workload_d": [self.create_documents, self.staged_replace, self.unstage_insert_or_replace, self.staged_remove_from_document, self.unstage_remove],
-             "workload_e": [self.create_documents, self.staged_remove_from_document, self.unstage_remove, self.staged_insert, self.unstage_insert_or_replace],
-             "workload_f": [self.create_documents, self.staged_remove_from_document, self.staged_replace, self.staged_remove_from_staged,  self.unstage_remove],
-             "workload_g": [self.create_documents, self.staged_replace, self.rollback_insert_or_replace],
-             "workload_h": [self.create_documents, self.staged_remove_from_document, self.rollback_remove],
-             "workload_i": [self.create_documents, self.rep_staged_replace, self.rollback_insert_or_replace],
-             "workload_j": [self.create_documents, self.staged_replace, self.rollback_insert_or_replace, self.staged_remove_from_document, self.rollback_remove]}
-
+            {"workload_a": [self.create_documents,
+                            self.staged_remove_from_document,
+                            self.unstage_remove],
+             "workload_b": [self.create_documents,
+                            self.staged_replace,
+                            self.unstage_insert_or_replace],
+             "workload_c": [self.create_documents,
+                            self.staged_remove_from_document,
+                            self.staged_replace,
+                            self.unstage_insert_or_replace],
+             "workload_d": [self.create_documents,
+                            self.staged_replace,
+                            self.unstage_insert_or_replace,
+                            self.staged_remove_from_document,
+                            self.unstage_remove],
+             "workload_e": [self.create_documents,
+                            self.staged_remove_from_document,
+                            self.unstage_remove,
+                            self.staged_insert,
+                            self.unstage_insert_or_replace],
+             "workload_f": [self.create_documents,
+                            self.staged_remove_from_document,
+                            self.staged_replace,
+                            self.staged_remove_from_staged,
+                            self.unstage_remove],
+             "workload_g": [self.create_documents,
+                            self.staged_replace,
+                            self.rollback_insert_or_replace],
+             "workload_h": [self.create_documents,
+                            self.staged_remove_from_document,
+                            self.rollback_remove],
+             "workload_i": [self.create_documents,
+                            self.rep_staged_replace,
+                            self.rollback_insert_or_replace],
+             "workload_j": [self.create_documents,
+                            self.staged_replace,
+                            self.rollback_insert_or_replace,
+                            self.staged_remove_from_document,
+                            self.rollback_remove]}
         return workloads
