@@ -46,12 +46,12 @@ class KVStoreTests(MagmaBaseTest):
     def loadgen_docs_per_bucket(self, bucket,
                      retry_exceptions=[],
                      ignore_exceptions=[],
-                     skip_read_on_error=False,
-                     suppress_error_table=False,
+                     skip_read_on_error=True,
+                     suppress_error_table=True,
                      scope=CbServer.default_scope,
                      collection=CbServer.default_collection,
                      _sync=True,
-                     track_failures=True,
+                     track_failures=False,
                      doc_ops=None):
         doc_ops = doc_ops or self.doc_ops
 
