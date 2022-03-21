@@ -134,6 +134,22 @@ class MagmaDiskFull(MagmaBaseTest):
         if not self.crash_on_disk_full:
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
+        connections = dict()
+        for node in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(node)
+            connections.update({node: shell})
+        for node, shell in connections.items():
+            if "kv" in node.services:
+                shell.restart_couchbase()
+        for _, shell in connections.items():
+            shell.disconnect()
+
+        for node in self.cluster.nodes_in_cluster:
+            if "kv" in node.services:
+                result = self.bucket_util._wait_warmup_completed(
+                    [node], self.cluster.buckets[0],
+                    wait_time=self.wait_timeout * 5)
+
         self.doc_ops = "update"
         self.generate_docs(update_start=self.create_start,
                            update_end=self.create_end)
