@@ -265,11 +265,11 @@ class DCPUtils(object):
 
     def checkSnapshot(self, vb, se, current, stream):
         if se == current:
-            self.log.info("Snapshot for vb:%s has completed, end:%s, " \
+            self.log.debug("Snapshot for vb:%s has completed, end:%s, " \
                           "stream.mutation_count:%s" % (vb, se, stream.mutation_count))
 
     def handleMarker(self, response):
-        self.log.info("Snapshot Marker vb:{}, sid:{}, " \
+        self.log.debug("Snapshot Marker vb:{}, sid:{}, " \
                       "start:{}, end:{}, flag:{}".format(response['vbucket'],
                                                          response['streamId'],
                                                          response['snap_start_seqno'],
