@@ -541,8 +541,8 @@ class CBASBucketOperations(CBASBaseTest):
             'select count(*) from %s'
             % CBASHelper.format_name(dataset.kv_bucket.name))["results"][0][
             "$1"]
-        if not self.cbas_util.validate_cbas_dataset_items_count(
-                self.cluster, dataset.full_name, count_n1ql):
+        if not self.cbas_util.wait_for_ingestion_complete(
+                self.cluster, dataset.full_name, count_n1ql, timeout=300):
             self.fail("No. of items in CBAS dataset do not match "
                       "that in the KV bucket")
 
