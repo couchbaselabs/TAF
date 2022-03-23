@@ -235,6 +235,7 @@ class FailoverTests(FailoverBaseTest):
                                                 prev_failover_stats,
                                                 durability_will_fail=False):
         """ Method to run rebalance after failover and verify """
+        tasks_info = list()
         # Need a delay > min because MB-7168
         _servers_ = self.filter_servers(self.servers[:self.nodes_init], chosen)
         if not self.atomicity:
@@ -247,13 +248,6 @@ class FailoverTests(FailoverBaseTest):
         # Rebalance after Failover operation
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                             ejectedNodes=[node.id for node in chosen])
-        if not self.atomicity:
-            for task in tasks_info:
-                self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster,
-                sdk_client_pool=self.sdk_client_pool)
-            self.bucket_util.log_doc_ops_task_failures(tasks_info)
         # Perform Compaction
         if self.compact:
             for bucket in self.buckets:
@@ -290,7 +284,15 @@ class FailoverTests(FailoverBaseTest):
 
         self.sleep(30)
         if not self.atomicity:
-            # Retry of failed keys after rebalance
+            # Retry of failed CRUDs during rebalance phase
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster,
+                sdk_client_pool=self.sdk_client_pool)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+
+            # Loading new data post rebalance
             tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                            task_verification=True)
             for task in tasks_info:
