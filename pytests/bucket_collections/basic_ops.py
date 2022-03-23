@@ -103,7 +103,7 @@ class BasicOps(CollectionBase):
                              CbServer.default_collection))
             task = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, load_gen, "create", self.maxttl,
-                batch_size=10, process_concurrency=8,
+                batch_size=1, process_concurrency=1,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
@@ -125,6 +125,7 @@ class BasicOps(CollectionBase):
         # Data validation
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
+        self.sleep(100, "Waiting for the data to get loaded")
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.validate_doc_count_as_per_collections(
@@ -328,7 +329,7 @@ class BasicOps(CollectionBase):
         load_gen = doc_generator(self.key, 0, self.num_items)
         task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, load_gen, "create", self.maxttl,
-            batch_size=10, process_concurrency=8,
+            batch_size=1, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             compression=self.sdk_compression,
@@ -354,6 +355,7 @@ class BasicOps(CollectionBase):
         # Doc count validation
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
+        self.sleep(100, "Waiting for the data to get loaded")
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.validate_doc_count_as_per_collections(
