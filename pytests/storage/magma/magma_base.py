@@ -248,6 +248,9 @@ class MagmaBaseTest(StorageBase):
 
     def check_fragmentation_using_magma_stats(self, bucket, servers=None):
         result = dict()
+        frag_factor = 1.1
+        if self.fragmentation == 10:
+            frag_factor = 1.2
         time_end = time.time() + 60 * 5
         if servers is None:
             servers = self.cluster.nodes_in_cluster
@@ -281,7 +284,8 @@ class MagmaBaseTest(StorageBase):
             res = list()
             for value in result.values():
                 res.append(max(value))
-            if (max(res)) <= 1.1 * (float(self.fragmentation)/100):
+            self.log.info("frag_factor is {}".format(frag_factor))
+            if (max(res)) <= frag_factor * (float(self.fragmentation)/100):
                 self.log.info("magma stats fragmentation result %s" % result)
                 self.log.debug(stats)
                 return True

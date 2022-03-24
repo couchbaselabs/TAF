@@ -962,6 +962,9 @@ class StorageBase(BaseTestCase):
         # Disabling the check for time being
         #return True
         result = dict()
+        frag_factor = 1.1
+        if self.fragmentation <= 10:
+            frag_factor = 1.7
         if servers is None:
             servers = self.cluster.nodes_in_cluster
         if type(servers) is not list:
@@ -974,7 +977,7 @@ class StorageBase(BaseTestCase):
                 self.log.debug("Current Fragmentation for node {} is {} \
                 ".format(server.ip, frag_val))
                 result.update({server.ip: frag_val})
-            if (max(result.values())) <= 1.1 * (self.fragmentation):
+            if (max(result.values())) <= frag_factor * (self.fragmentation):
                 self.log.info("KV stats fragmentation values {}".format(result))
                 return True
         self.log.info("KV stats fragmentation values {}".format(result))

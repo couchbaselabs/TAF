@@ -169,22 +169,21 @@ class BasicUpsertTests(BasicCrudTests):
                     self.num_items + sum(upsert_doc_list)
                     ) / self.num_items) + 0.5)
             self.log.debug("Disk usage factor = {}".format(usage_factor))
-
-            time_end = time.time() + 60 * 10
-            while time.time() < time_end:
-                disk_usage = self.get_disk_usage(self.buckets[0],
-                                            self.cluster.nodes_in_cluster)
-                _res = disk_usage[0]
-                self.log.debug("usage at time {} is {}".format((time_end - time.time()), _res))
-                if _res < usage_factor * self.disk_usage[self.disk_usage.keys()[0]]:
-                    break
-
-            msg = "Iteration= {}, Disk Usage = {}MB\
-            exceeds {} times from Actual disk usage = {}MB"
-            self.assertIs(_res > usage_factor * self.disk_usage[
-                self.disk_usage.keys()[0]],
-                False, msg.format(count+1, _res, usage_factor,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
+            if not self.windows_platform:
+                time_end = time.time() + 60 * 10
+                while time.time() < time_end:
+                    disk_usage = self.get_disk_usage(self.buckets[0],
+                                                     self.cluster.nodes_in_cluster)
+                    _res = disk_usage[0]
+                    self.log.debug("usage at time {} is {}".format((time_end - time.time()), _res))
+                    if _res < usage_factor * self.disk_usage[self.disk_usage.keys()[0]]:
+                        break
+                msg = "Iteration= {}, Disk Usage = {}MB\
+                exceeds {} times from Actual disk usage = {}MB"
+                self.assertIs(_res > usage_factor * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                    False, msg.format(count+1, _res, usage_factor,
+                                      self.disk_usage[self.disk_usage.keys()[0]]))
 
             count += 1
         #######################################################################
@@ -565,6 +564,13 @@ class BasicUpsertTests(BasicCrudTests):
                 _res = disk_usage[0]
                 self.log.info("Update Iteration- {}, Disk Usage- {}MB\
                 ".format(count+1, _res))
+                time_end = time.time() + 60 * 10
+                while time.time() < time_end:
+                    disk_usage = self.get_disk_usage(self.buckets[0],
+                                                     self.cluster.nodes_in_cluster)
+                    _res = disk_usage[0]
+                    if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                        break
                 self.assertIs(
                     _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
                     False, msg.format("update", count+1, _res, 2.5,
@@ -973,15 +979,16 @@ class BasicUpsertTests(BasicCrudTests):
                     ".format(disk_usage[3],
                              count,
                              disk_usage[2]))
-            self.assertIs(
-                disk_usage[0] > 2.2 * ((count+1) * self.disk_usage[
-                    self.disk_usage.keys()[0]]),
-                False, "Disk Usage {}MB After '\n\'\
-                Updates exceeds '\n\'\
-                Actual disk usage {}MB by '\n'\
-                2.2 times".format(disk_usage[0],
-                                  ((count+1) * self.disk_usage[
-                                      self.disk_usage.keys()[0]])))
+            if not self.windows_platform:
+                self.assertIs(
+                    disk_usage[0] > 2.2 * ((count+1) * self.disk_usage[
+                        self.disk_usage.keys()[0]]),
+                    False, "Disk Usage {}MB After '\n\'\
+                    Updates exceeds '\n\'\
+                    Actual disk usage {}MB by '\n'\
+                    2.2 times".format(disk_usage[0],
+                                      ((count+1) * self.disk_usage[
+                                          self.disk_usage.keys()[0]])))
             count += 1
         if not self.windows_platform:
             self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)
