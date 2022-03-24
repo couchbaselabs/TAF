@@ -20,6 +20,7 @@ class BasicOps(CollectionBase):
         self.bucket = self.cluster.buckets[0]
         # To override default num_items to '0'
         self.num_items = self.input.param("num_items", 10000)
+        self.remote_shell = RemoteMachineShellConnection(self.cluster.master)
 
     def tearDown(self):
         super(BasicOps, self).tearDown()
@@ -125,7 +126,10 @@ class BasicOps(CollectionBase):
         # Data validation
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
-        self.sleep(100, "Waiting for the data to get loaded")
+        if self.remote_shell.info.type.lower() == 'windows':
+            self.sleep(100, "Waiting for the data to get loaded")
+            if data_load == "during_drop":
+                self.sleep(100, "Waiting for the data to get loaded")
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.validate_doc_count_as_per_collections(
@@ -355,7 +359,8 @@ class BasicOps(CollectionBase):
         # Doc count validation
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
-        self.sleep(100, "Waiting for the data to get loaded")
+        if self.remote_shell.info.type.lower() == 'windows':
+            self.sleep(100, "Waiting for the data to get loaded")
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.validate_doc_count_as_per_collections(
