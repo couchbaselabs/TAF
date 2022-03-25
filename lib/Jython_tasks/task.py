@@ -1021,7 +1021,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  sdk_retry_strategy=None,
                  store_semantics=None,
                  access_deleted=False,
-                 create_as_deleted=False):
+                 create_as_deleted=False,
+                 track_failures=True):
         super(LoadSubDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
             timeout_secs=timeout_secs,
@@ -1055,6 +1056,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
         self.fail = dict()
         self.success = dict()
         self.skip_read_success_results = skip_read_success_results
+        self.track_failures = track_failures
 
     def has_next(self):
         return self.generator.has_next()
@@ -1078,7 +1080,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 store_semantics=self.store_semantics,
                 access_deleted=self.access_deleted,
                 create_as_deleted=self.create_as_deleted)
-            self.fail.update(fail)
+            if self.track_failures:
+                self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == DocLoading.Bucket.SubDocOps.UPSERT:
             success, fail = self.batch_sub_doc_upsert(
@@ -1091,7 +1094,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 store_semantics=self.store_semantics,
                 access_deleted=self.access_deleted,
                 create_as_deleted=self.create_as_deleted)
-            self.fail.update(fail)
+            if self.track_failures:
+                self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == DocLoading.Bucket.SubDocOps.REMOVE:
             success, fail = self.batch_sub_doc_remove(
@@ -1102,7 +1106,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 xattr=self.xattr,
                 access_deleted=self.access_deleted,
                 create_as_deleted=self.create_as_deleted)
-            self.fail.update(fail)
+            if self.track_failures:
+                self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type == "replace":
             success, fail = self.batch_sub_doc_replace(
@@ -1114,14 +1119,16 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                 store_semantics=self.store_semantics,
                 access_deleted=self.access_deleted,
                 create_as_deleted=self.create_as_deleted)
-            self.fail.update(fail)
+            if self.track_failures:
+                self.fail.update(fail)
             # self.success.update(success)
         elif self.op_type in ['read', 'lookup']:
             success, fail = self.batch_sub_doc_read(
                     key_value,
                     xattr=self.xattr,
                     access_deleted=self.access_deleted)
-            self.fail.update(fail)
+            if self.track_failures:
+                self.fail.update(fail)
             if not self.skip_read_success_results:
                 self.success.update(success)
         else:
@@ -3997,6 +4004,8 @@ class MutateDocsFromSpecTask(Task):
             # Create success, fail dict per load_gen task
             op_data["success"] = dict()
             op_data["fail"] = dict()
+            track_failures = op_data.get("track_failures",
+                                         self.track_failures)
 
             generators = list()
             generator = op_data["doc_gen"]
@@ -4022,8 +4031,6 @@ class MutateDocsFromSpecTask(Task):
                                                   scope_name, col_name,
                                                   op_data["doc_ttl"])
                 if op_type in DocLoading.Bucket.DOC_OPS:
-                    track_failures = op_data.get("track_failures",
-                                                 self.track_failures)
                     doc_load_task = LoadDocumentsTask(
                         self.cluster, bucket, None, doc_gen,
                         op_type, op_data["doc_ttl"],
@@ -4053,6 +4060,7 @@ class MutateDocsFromSpecTask(Task):
                         durability=op_data["durability_level"],
                         timeout_secs=op_data["sdk_timeout"],
                         time_unit=op_data["sdk_timeout_unit"],
+                        track_failures=track_failures,
                         skip_read_success_results=op_data[
                             "skip_read_success_results"])
                     self.load_subdoc_gen_tasks.append(subdoc_load_task)
