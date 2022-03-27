@@ -900,10 +900,10 @@ class BasicUpsertTests(BasicCrudTests):
                 ".format(count+1, _res))
             if self.doc_size > 32:
                 self.assertIs(
-                    _res > 1.5 * self.disk_usage[self.disk_usage.keys()[0]],
+                    _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
                     False, "Disk Usage {} After \
                     update count {} exceeds \
-                    Actual disk usage {} by 1.5 \
+                    Actual disk usage {} by 2.5 \
                     times".format(_res, count+1,
                                   self.disk_usage[self.disk_usage.keys()[0]]))
             else:
