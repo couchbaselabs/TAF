@@ -6,6 +6,7 @@ from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from pytests.bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
 from security_config import trust_all_certs
+from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 
 
 class EnforceTls(CollectionBase):
@@ -28,10 +29,36 @@ class EnforceTls(CollectionBase):
         self.log.info("Changing security settings to trust all CAs")
         trust_all_certs()
         self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        self.curl_path = "/opt/couchbase/bin/curl"
+        if shell.extract_remote_info().distribution_type == "windows":
+            self.curl_path = "C:/Program Files/Couchbase/Server/bin/curl"
+        shell.disconnect()
 
     def tearDown(self):
         self.disable_n2n_encryption_cli_on_nodes(nodes=self.cluster.servers)
         super(CollectionBase, self).tearDown()
+
+    def validate_tls_min_version(self, node=None, version="1.2", expect="fail"):
+        """
+        Makes https curl request to /pools endpoint from VM using tls version
+        """
+        if node is None:
+            node = self.cluster.master
+        cmd = self.curl_path + " -v --tlsv" + version + " --tls-max " + version + \
+                    " -u " + node.rest_username + ":" + node.rest_password + \
+                    " https://" + node.ip + ":18091/pools/ -k"
+        shell = RemoteMachineShellConnection(node)
+        o, e = shell.execute_command(cmd)
+        if expect == "fail":
+            if len(o) != 0:
+                shell.disconnect()
+                self.fail("Command worked when it should have failed")
+        else:
+            if len(o) == 0 or "pools" not in o[0]:
+                shell.disconnect()
+                self.fail("Command failed when it should have worked")
+        shell.disconnect()
 
     def set_n2n_encryption_level_on_nodes(self, nodes, level="control"):
         for node in nodes:
@@ -176,3 +203,42 @@ class EnforceTls(CollectionBase):
             self.log.info("Enforcing TLS by invalid user failed as expected {0} ".format(e))
         else:
             self.fail("Enforcing TLS by invalid user did not fail")
+
+    def test_tls_min_version(self):
+        """
+        1. Create multiple x509 certs
+        2. Enforce TLS
+        3. Set TLS min version to 1.3
+        4. Validate tls 1.2 requests fail and validate tls 1.3 requests pass using curl
+        5. Switch back tls min verison to 1.2
+        6. Validate tls 1.2 requests pass
+        """
+        self.x509 = x509main(host=self.cluster.master)
+        self.x509.generate_multiple_x509_certs(servers=self.cluster.servers)
+        for server in self.cluster.servers:
+            _ = self.x509.upload_root_certs(server)
+        self.x509.upload_node_certs(servers=self.cluster.servers)
+        self.x509.delete_unused_out_of_the_box_CAs(self.cluster.master)
+        self.x509.upload_client_cert_settings(server=self.cluster.servers[0])
+
+        self.enable_tls_encryption_cli_on_nodes(nodes=[self.cluster.master])
+
+        rest = RestConnection(self.cluster.master)
+        status, content = rest.set_min_tls_version(version='tlsv1.3')
+        if not status:
+            self.fail("Setting tls min version to 1.3 failed with content {0}".format(content))
+
+        self.validate_tls_min_version(node=self.cluster.master, version="1.2", expect="fail")
+        self.validate_tls_min_version(node=self.cluster.master, version="1.3", expect="pass")
+
+        self.disable_n2n_encryption_cli_on_nodes(nodes=self.cluster.servers)
+        CbServer.use_https = False
+        rest = RestConnection(self.cluster.master)
+        status, content = rest.set_min_tls_version(version='tlsv1.2')
+        if not status:
+            self.fail("Setting tls min version to 1.2 failed with content {0}".format(content))
+        self.enable_tls_encryption_cli_on_nodes(nodes=[self.cluster.master])
+        self.validate_tls_min_version(node=self.cluster.master, version="1.2", expect="pass")
+
+        self.x509 = x509main(host=self.cluster.master)
+        self.x509.teardown_certs(servers=self.cluster.servers)
