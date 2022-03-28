@@ -126,10 +126,9 @@ class BasicOps(CollectionBase):
         # Data validation
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
-        if self.remote_shell.info.type.lower() == 'windows':
+        self.sleep(100, "Waiting for the data to get loaded")
+        if data_load == "during_drop":
             self.sleep(100, "Waiting for the data to get loaded")
-            if data_load == "during_drop":
-                self.sleep(100, "Waiting for the data to get loaded")
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.validate_doc_count_as_per_collections(
