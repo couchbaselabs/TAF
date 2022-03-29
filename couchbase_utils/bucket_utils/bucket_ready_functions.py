@@ -1933,6 +1933,8 @@ class BucketUtils(ScopeUtils):
                 cluster.buckets.append(task.bucket_obj)
 
         for bucket in cluster.buckets:
+            if not buckets_spec.get(bucket.name):
+                continue
             for scope_name, scope_spec \
                     in buckets_spec[bucket.name]["scopes"].items():
                 if type(scope_spec) is not dict:
