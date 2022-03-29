@@ -217,7 +217,7 @@ class CollectionBase(ClusterSetup):
                                                      timeout=1200)
         if self.spec_name not in ttl_buckets:
             self.bucket_util.validate_docs_per_collections_all_buckets(
-                self.cluster)
+                self.cluster, timeout=2400)
 
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
