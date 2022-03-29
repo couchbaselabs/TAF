@@ -61,6 +61,8 @@ class volume(CollectionBase):
         self.use_x509 = self.input.param("use_x509", False)
         if self.use_x509:
             self.x509_setup()
+        self.force_x509_reload_after_rebalance_out = \
+            self.input.param("force_x509_reload_after_rebalance_out", False)
         self.enable_n2n_encryption = self.input.param("enable_n2n_encryption", False)
         if self.enable_n2n_encryption:
             shell_conn = RemoteMachineShellConnection(self.cluster.master)
@@ -555,7 +557,7 @@ class volume(CollectionBase):
         """
         Reloads certs after a node got rebalanced-out
         """
-        if not self.use_x509:
+        if not self.use_x509 and not self.force_x509_reload_after_rebalance_out:
             return
         else:
             self.log.info("Re-uploading certs to servers {0}".format(servers))
@@ -775,30 +777,31 @@ class volume(CollectionBase):
             self.bucket_util.print_bucket_stats(self.cluster)
             self.check_logs()
             ######################################################################################################
-            self.log.info("Enabling autoreprovison before inducing failure to prevent data loss "
-                          "for if there are ephemeral buckets")
-            status = self.rest.update_autoreprovision_settings(True, maxNodes=1)
-            if not status:
-                self.fail("Failed to enable autoreprovison")
-            step_count = 9
-            for action in [CouchbaseError.STOP_MEMCACHED, CouchbaseError.STOP_PROMETHEUS]:
-                step_count = step_count + 1
-                self.log.info("Step {0}: {1}".format(step_count, action))
-                # TODO Uncomment this after debugging CBQE-6721
-                # self.log.info("Forcing durability level: MAJORITY")
-                # self.durability_level = "MAJORITY"
-                task = self.data_load_collection()
-                self.induce_and_revert_failure(action)
-                # Rebalance is required after error is reverted
-                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [],
-                                                           retry_get_process_num=self.retry_get_process_num)
-                self.wait_for_rebalance_to_complete(rebalance_task)
-                self.wait_for_async_data_load_to_complete(task)
-                self.data_validation_collection()
-                if self.fts_indexes_to_recreate > 0:
-                    self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
-                self.bucket_util.print_bucket_stats(self.cluster)
-                self.check_logs()
+            if not self.capella_run:
+                self.log.info("Enabling autoreprovison before inducing failure to prevent data loss "
+                              "for if there are ephemeral buckets")
+                status = self.rest.update_autoreprovision_settings(True, maxNodes=1)
+                if not status:
+                    self.fail("Failed to enable autoreprovison")
+                step_count = 9
+                for action in [CouchbaseError.STOP_MEMCACHED, CouchbaseError.STOP_PROMETHEUS]:
+                    step_count = step_count + 1
+                    self.log.info("Step {0}: {1}".format(step_count, action))
+                    # TODO Uncomment this after debugging CBQE-6721
+                    # self.log.info("Forcing durability level: MAJORITY")
+                    # self.durability_level = "MAJORITY"
+                    task = self.data_load_collection()
+                    self.induce_and_revert_failure(action)
+                    # Rebalance is required after error is reverted
+                    rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [],
+                                                               retry_get_process_num=self.retry_get_process_num)
+                    self.wait_for_rebalance_to_complete(rebalance_task)
+                    self.wait_for_async_data_load_to_complete(task)
+                    self.data_validation_collection()
+                    if self.fts_indexes_to_recreate > 0:
+                        self.create_and_drop_fts_indexes(count=self.fts_indexes_to_recreate)
+                    self.bucket_util.print_bucket_stats(self.cluster)
+                    self.check_logs()
             self.durability_level = ""
             #######################################################################################################
             step_count = 11
@@ -809,20 +812,21 @@ class volume(CollectionBase):
                         "Step {0}: {1} Failover a node and {2} that node with data load in parallel".
                             format(step_count, failover, action))
 
-                    self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
-                    std = self.std_vbucket_dist or 1.0
+                    if not self.capella_run:
+                        self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
+                        std = self.std_vbucket_dist or 1.0
 
-                    kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
-                    self.log.info("Collecting pre_failover_stats. KV nodes are {0}".format(kv_nodes))
-                    prev_failover_stats = self.bucket_util.get_failovers_logs(kv_nodes,
-                                                                              self.cluster.buckets)
-                    prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(kv_nodes,
-                                                                             self.cluster.buckets)
-                    self.sleep(10)
+                        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+                        self.log.info("Collecting pre_failover_stats. KV nodes are {0}".format(kv_nodes))
+                        prev_failover_stats = self.bucket_util.get_failovers_logs(kv_nodes,
+                                                                                  self.cluster.buckets)
+                        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(kv_nodes,
+                                                                                 self.cluster.buckets)
+                        self.sleep(10)
 
-                    disk_replica_dataset, disk_active_dataset = self.bucket_util. \
-                        get_and_compare_active_replica_data_set_all(kv_nodes, self.cluster.buckets,
-                                                                    path=None)
+                        disk_replica_dataset, disk_active_dataset = self.bucket_util. \
+                            get_and_compare_active_replica_data_set_all(kv_nodes, self.cluster.buckets,
+                                                                        path=None)
 
                     # Pick node(s) for failover
                     failover_nodes = list()
@@ -889,22 +893,23 @@ class volume(CollectionBase):
                     self.wait_for_async_data_load_to_complete(task)
                     self.data_validation_collection()
 
-                    kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
-                    self.log.info("Collecting post_failover_stats. KV nodes are {0}".format(kv_nodes))
-                    self.bucket_util.compare_failovers_logs(self.cluster, prev_failover_stats, kv_nodes,
-                                                            self.cluster.buckets)
-                    self.sleep(10)
+                    if not self.capella_run:
+                        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+                        self.log.info("Collecting post_failover_stats. KV nodes are {0}".format(kv_nodes))
+                        self.bucket_util.compare_failovers_logs(self.cluster, prev_failover_stats, kv_nodes,
+                                                                self.cluster.buckets)
+                        self.sleep(10)
 
-                    self.bucket_util.data_analysis_active_replica_all(
-                        disk_active_dataset, disk_replica_dataset,
-                        kv_nodes,
-                        self.cluster.buckets, path=None)
-                    self.bucket_util.vb_distribution_analysis(
-                        self.cluster,
-                        servers=kv_nodes, buckets=self.cluster.buckets,
-                        num_replicas=2,
-                        std=std, total_vbuckets=self.cluster.vbuckets)
-                    self.sleep(10)
+                        self.bucket_util.data_analysis_active_replica_all(
+                            disk_active_dataset, disk_replica_dataset,
+                            kv_nodes,
+                            self.cluster.buckets, path=None)
+                        self.bucket_util.vb_distribution_analysis(
+                            self.cluster,
+                            servers=kv_nodes, buckets=self.cluster.buckets,
+                            num_replicas=2,
+                            std=std, total_vbuckets=self.cluster.vbuckets)
+                        self.sleep(10)
                     # Bring back the rebalance out node back to cluster for further steps
                     if action == "RebalanceOut":
                         self.sleep(120)
