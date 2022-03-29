@@ -562,7 +562,7 @@ class UpgradeBase(BaseTestCase):
     def failover_full_recovery(self, node_to_upgrade, graceful=True):
         self.failover_recovery(node_to_upgrade, "full", graceful)
 
-    def offline(self, node_to_upgrade, version):
+    def offline(self, node_to_upgrade, version, rebalance_required=False):
         rest = RestConnection(node_to_upgrade)
         shell = RemoteMachineShellConnection(node_to_upgrade)
         appropriate_build = self.__get_build(version, shell)
@@ -582,8 +582,20 @@ class UpgradeBase(BaseTestCase):
 
         self.log.info("Wait for ns_server to accept connections")
         if not rest.is_ns_server_running(timeout_in_seconds=120):
-            self.fail("Server not started post upgrade")
+            self.log_failure("Server not started post upgrade")
+            return
 
         self.log.info("Validate the cluster rebalance status")
         if not rest.cluster_status()["balanced"]:
-            self.fail("Cluster reported (/pools/default) balanced=false")
+            if rebalance_required:
+                otp_nodes = [node.id for node in rest.node_statuses()]
+                rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
+                rebalance_passed = rest.monitorRebalance()
+                if not rebalance_passed:
+                    self.log_failure(
+                        "Rebalance failed post node upgrade of {0}"
+                        .format(node_to_upgrade))
+                    return
+            else:
+                self.log_failure("Cluster reported (/pools/default) balanced=false")
+                return

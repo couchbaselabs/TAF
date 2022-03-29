@@ -566,8 +566,12 @@ class UpgradeTests(UpgradeBase):
         while node_to_upgrade is not None:
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
-            self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                     self.upgrade_version)
+            if self.upgrade_type == "offline":
+                self.upgrade_function[self.upgrade_type](
+                    node_to_upgrade, self.upgrade_version, True)
+            else:
+                self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                         self.upgrade_version)
             self.cluster_util.print_cluster_stats(self.cluster)
             node_to_upgrade = self.fetch_node_to_upgrade()
         if not all(self.post_upgrade_validation().values()):
