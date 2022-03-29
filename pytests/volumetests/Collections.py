@@ -32,7 +32,9 @@ class volume(CollectionBase):
         if self.backup_service_test:
             self.backup_service = BackupServiceTest(self.input.servers)
         super(volume, self).setUp()
-        self.bucket_util._expiry_pager(self.cluster, val=5)
+        self.capella_run = self.input.param("capella_run", False)
+        if not self.capella_run:
+            self.bucket_util._expiry_pager(self.cluster, val=5)
         self.rest = RestConnection(self.servers[0])
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.exclude_nodes = [self.cluster.master]
@@ -41,7 +43,7 @@ class volume(CollectionBase):
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.retry_get_process_num = self.input.param("retry_get_process_num", 400)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load_for_volume_test")
-        self.perform_quorum_failover = self.input.param("perform_quorum_failover", True)
+        self.perform_quorum_failover = self.input.param("perform_quorum_failover", False)
         self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 4)
         self.cluster_util.set_rebalance_moves_per_nodes(
             self.cluster.master,
@@ -168,7 +170,7 @@ class volume(CollectionBase):
             self.backup_service.clean()
         self.log.info("Printing bucket stats before teardown")
         self.bucket_util.print_bucket_stats(self.cluster)
-        if self.collect_pcaps:
+        if not self.capella_run and not self.collect_pcaps:
             self.start_fetch_pcaps()
         if not self.skip_check_logs:
             self.check_logs()
@@ -193,6 +195,9 @@ class volume(CollectionBase):
             self.ui_stats_thread = None
 
     def check_logs(self):
+        if self.capella_run:
+            self.log.info("Skipping log scanning since it is a capella run")
+            return
         self.log.info("Checking logs on {0}".format(self.servers))
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if not self.crash_warning:
