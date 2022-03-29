@@ -1837,13 +1837,13 @@ class CBASExternalLinks(CBASBaseTest):
                 self.analytics_cluster, statement, "async",
                 self.input.param("num_queries", 0), wait_for_execution=False)
 
-        if self.input.param("rebalance_type", "swap"):
+        if self.input.param("rebalance_type") == "swap":
             kv_nodes_in = 1
             kv_nodes_out = 1
-        elif self.input.param("rebalance_type", "rebalance-in"):
+        elif self.input.param("rebalance_type") == "rebalance-in":
             kv_nodes_in = 1
             kv_nodes_out = 0
-        elif self.input.param("rebalance_type", "rebalance-out"):
+        elif self.input.param("rebalance_type") == "rebalance-out":
             kv_nodes_in = 0
             kv_nodes_out = 1
 
