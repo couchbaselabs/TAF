@@ -525,7 +525,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     the curr_items_total. Once successful view queries the test is finished."""
 
     def rebalance_out_with_queries(self):
-        num_views = self.input.param("num_views", 5)
+        num_views = self.input.param("num_views", 2)
         is_dev_ddoc = self.input.param("is_dev_ddoc", False)
         ddoc_name = "ddoc1"
         prefix = ("", "dev_")[is_dev_ddoc]
@@ -631,7 +631,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     the curr_items_total. Once all nodes have been rebalanced in the test is finished."""
 
     def incremental_rebalance_out_with_queries(self):
-        num_views = self.input.param("num_views", 5)
+        num_views = self.input.param("num_views", 2)
         is_dev_ddoc = self.input.param("is_dev_ddoc", True)
         views = self.bucket_util.make_default_views(self.default_view,
                                                     self.default_view_name,
