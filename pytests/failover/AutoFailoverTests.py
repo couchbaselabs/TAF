@@ -174,8 +174,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.failover_actions[self.failover_action](self)
         self.sleep(300, "Wait after inducing failure")
         self.task.jython_task_manager.get_task_result(rebalance_task)
-        self.assertFalse(rebalance_task.result,
-                         "Rebalance should fail since a node went down")
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
                 for task in self.loadgen_tasks:
