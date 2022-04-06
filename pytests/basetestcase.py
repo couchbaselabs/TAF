@@ -255,7 +255,6 @@ class BaseTestCase(unittest.TestCase):
 
         self.sleep = sleep
 
-        self.cleanup = False
         self.nonroot = False
         self.test_failure = None
         self.crash_warning = self.input.param("crash_warning", False)
@@ -372,8 +371,7 @@ class BaseTestCase(unittest.TestCase):
                 if self.case_number > 1000:
                     self.log.warn("TearDown for prev test failed. Will retry")
                     self.case_number -= 1000
-                self.cleanup = True
-                self.tearDownEverything()
+                self.tearDownEverything(reset_cluster_env_vars=False)
             for cluster_name, cluster in self.cb_clusters.items():
                 self.initialize_cluster(
                     cluster_name, cluster, services=None,
@@ -548,7 +546,7 @@ class BaseTestCase(unittest.TestCase):
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
 
-    def tearDownEverything(self):
+    def tearDownEverything(self, reset_cluster_env_vars=True):
         if self.skip_setup_cleanup:
             return
         for _, cluster in self.cb_clusters.items():
@@ -591,10 +589,7 @@ class BaseTestCase(unittest.TestCase):
                 # Increase case_number to retry tearDown in setup for next test
                 self.case_number += 1000
             finally:
-                # stop all existing task manager threads
-                if self.cleanup:
-                    self.cleanup = False
-                else:
+                if reset_cluster_env_vars:
                     self.cluster_util.reset_env_variables(cluster)
         self.infra_log.info("========== tasks in thread pool ==========")
         self.task_manager.print_tasks_in_pool()
