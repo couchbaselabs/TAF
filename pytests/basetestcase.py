@@ -40,8 +40,6 @@ class BaseTestCase(unittest.TestCase):
         self.infra_log_level = self.input.param("infra_log_level",
                                                 "error").upper()
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
-        self.tear_down_while_setup = self.input.param("tear_down_while_setup",
-                                                      True)
         self.test_timeout = self.input.param("test_timeout", 3600)
         self.thread_to_use = self.input.param("threads_to_use", 30)
         self.case_number = self.input.param("case_number", 0)
@@ -320,11 +318,6 @@ class BaseTestCase(unittest.TestCase):
                     break
             shell.disconnect()
 
-        """ some tests need to bypass checking cb server at set up
-            to run installation """
-        self.skip_init_check_cbserver = \
-            self.input.param("skip_init_check_cbserver", False)
-
         try:
             if self.skip_setup_cleanup:
                 self.cluster.buckets = self.bucket_util.get_all_buckets(
@@ -355,8 +348,7 @@ class BaseTestCase(unittest.TestCase):
 
             self.log_setup_status("BaseTestCase", "started")
             for cluster_name, cluster in self.cb_clusters.items():
-                if not self.skip_buckets_handle \
-                        and not self.skip_init_check_cbserver:
+                if not self.skip_buckets_handle:
                     self.log.debug("Cleaning up cluster")
                     self.cluster_util.cluster_cleanup(cluster,
                                                       self.bucket_util)
@@ -381,16 +373,14 @@ class BaseTestCase(unittest.TestCase):
                     self.log.warn("TearDown for prev test failed. Will retry")
                     self.case_number -= 1000
                 self.cleanup = True
-                if not self.skip_init_check_cbserver:
-                    self.tearDownEverything()
-                    self.tear_down_while_setup = False
-            if not self.skip_init_check_cbserver:
-                for cluster_name, cluster in self.cb_clusters.items():
-                    self.initialize_cluster(
-                        cluster_name, cluster, services=None,
-                        services_mem_quota_percent=mem_quota_percent)
-                    # Set this unconditionally
-                    RestConnection(cluster.master).set_internalSetting("magmaMinMemoryQuota", 256)
+                self.tearDownEverything()
+            for cluster_name, cluster in self.cb_clusters.items():
+                self.initialize_cluster(
+                    cluster_name, cluster, services=None,
+                    services_mem_quota_percent=mem_quota_percent)
+                # Set this unconditionally
+                RestConnection(cluster.master).set_internalSetting(
+                    "magmaMinMemoryQuota", 256)
             else:
                 self.quota = ""
 
@@ -450,9 +440,7 @@ class BaseTestCase(unittest.TestCase):
             if self.validate_system_event_logs:
                 self.system_events.set_test_start_time()
             self.log_setup_status("BaseTestCase", "finished")
-
-            if not self.skip_init_check_cbserver:
-                self.__log("started")
+            self.__log("started")
         except Exception as e:
             traceback.print_exc()
             self.task.shutdown(force=True)
@@ -611,9 +599,6 @@ class BaseTestCase(unittest.TestCase):
         self.infra_log.info("========== tasks in thread pool ==========")
         self.task_manager.print_tasks_in_pool()
         self.infra_log.info("==========================================")
-        if not self.tear_down_while_setup:
-            self.task_manager.shutdown_task_manager()
-            self.task.shutdown(force=True)
 
     def is_test_failed(self):
         return (hasattr(self, '_resultForDoCleanups')
