@@ -57,7 +57,6 @@ class BaseTestCase(unittest.TestCase):
         self.cb_clusters = OrderedDict()
         self.num_servers = self.input.param("servers", len(self.servers))
         self.vbuckets = self.input.param("vbuckets", CbServer.total_vbuckets)
-        self.primary_index_created = False
         self.gsi_type = self.input.param("gsi_type", 'plasma')
         # Memory quota settings
         # Max memory quota to utilize per node
@@ -369,7 +368,6 @@ class BaseTestCase(unittest.TestCase):
                     str(self.__class__).find('Upgrade_EpTests') != -1 or \
                     self.skip_buckets_handle:
                 self.log.warning("Cluster operation in setup will be skipped")
-                self.primary_index_created = True
 
                 # Track test start time only if we need system log validation
                 if self.validate_system_event_logs:
