@@ -17,7 +17,6 @@ class QueryTests(BaseTestCase):
         self.expiry = self.input.param("expiry", 0)
         self.scan_consistency = self.input.param("scan_consistency",
                                                  "request_plus")
-        self.skip_cleanup = self.input.param("skip_cleanup", False)
         self.run_async = self.input.param("run_async", True)
         self.version = self.input.param("cbq_version", "git_repo")
         for server in self.cluster.servers:
@@ -115,7 +114,7 @@ class QueryTests(BaseTestCase):
     def tearDown(self):
         self.check_gsi_logs_for_panic()
         if hasattr(self, 'n1ql_helper'):
-            if hasattr(self, 'skip_cleanup') and not self.skip_cleanup:
+            if not self.skip_cluster_reset:
                 self.n1ql_node = self.cluster_util.get_nodes_from_services_map(
                     cluster=self.cluster,
                     service_type=CbServer.Services.N1QL)
@@ -123,7 +122,7 @@ class QueryTests(BaseTestCase):
                     using_gsi=self.use_gsi_for_primary,
                     server=self.n1ql_node)
         if hasattr(self, 'shell') and self.shell is not None:
-            if not self.skip_cleanup:
+            if not self.skip_cluster_reset:
                 self.n1ql_helper._restart_indexer()
                 self.n1ql_helper.killall_tuq_process()
         super(QueryTests, self).tearDown()

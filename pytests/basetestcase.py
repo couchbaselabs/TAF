@@ -39,7 +39,10 @@ class BaseTestCase(unittest.TestCase):
         self.log_level = self.input.param("log_level", "info").upper()
         self.infra_log_level = self.input.param("infra_log_level",
                                                 "error").upper()
+        self.skip_cluster_reset = self.input.param("skip_cluster_reset", False)
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
+        self.skip_teardown_cleanup = self.input.param("skip_teardown_cleanup",
+                                                      False)
         self.test_timeout = self.input.param("test_timeout", 3600)
         self.thread_to_use = self.input.param("threads_to_use", 30)
         self.case_number = self.input.param("case_number", 0)
@@ -198,8 +201,6 @@ class BaseTestCase(unittest.TestCase):
             self.input.param("maxParallelIndexers", None)
         self.maxParallelReplicaIndexers = \
             self.input.param("maxParallelReplicaIndexers", None)
-        self.skip_buckets_handle = self.input.param("skip_buckets_handle",
-                                                    False)
         self.use_https = self.input.param("use_https", False)
         self.enforce_tls = self.input.param("enforce_tls", False)
         self.ipv4_only = self.input.param("ipv4_only", False)
@@ -317,12 +318,8 @@ class BaseTestCase(unittest.TestCase):
                     break
             shell.disconnect()
 
+        self.log_setup_status("BaseTestCase", "started")
         try:
-            if self.skip_setup_cleanup:
-                self.cluster.buckets = self.bucket_util.get_all_buckets(
-                    self.cluster)
-                return
-
             # Construct dict of mem. quota percent / mb per service
             mem_quota_percent = dict()
             # Construct dict of mem. quota percent per service
@@ -345,42 +342,36 @@ class BaseTestCase(unittest.TestCase):
             if not mem_quota_percent:
                 mem_quota_percent = None
 
-            self.log_setup_status("BaseTestCase", "started")
-            for cluster_name, cluster in self.cb_clusters.items():
-                if not self.skip_buckets_handle:
-                    self.log.debug("Cleaning up cluster")
+            if self.skip_setup_cleanup:
+                self.cluster.buckets = \
+                    self.bucket_util.get_all_buckets(self.cluster)
+                return
+            else:
+                for cluster_name, cluster in self.cb_clusters.items():
+                    self.log.info("Rebalance out other nodes from '%s'"
+                                  % cluster_name)
                     self.cluster_util.cluster_cleanup(cluster,
                                                       self.bucket_util)
 
             reload(Cb_constants)
-            # Avoid cluster operations in setup for new upgrade / upgradeXDCR
-            if str(self.__class__).find('newupgradetests') != -1 or \
-                    str(self.__class__).find('upgradeXDCR') != -1 or \
-                    str(self.__class__).find('Upgrade_EpTests') != -1 or \
-                    self.skip_buckets_handle:
-                self.log.warning("Cluster operation in setup will be skipped")
 
-                # Track test start time only if we need system log validation
-                if self.validate_system_event_logs:
-                    self.system_events.set_test_start_time()
-
-                self.log_setup_status("BaseTestCase", "finished")
-                return
             # avoid clean up if the previous test has been tear down
             if self.case_number == 1 or self.case_number > 1000:
                 if self.case_number > 1000:
                     self.log.warn("TearDown for prev test failed. Will retry")
                     self.case_number -= 1000
                 self.tearDownEverything(reset_cluster_env_vars=False)
+
             for cluster_name, cluster in self.cb_clusters.items():
-                self.initialize_cluster(
-                    cluster_name, cluster, services=None,
-                    services_mem_quota_percent=mem_quota_percent)
+                if not self.skip_cluster_reset:
+                    self.initialize_cluster(
+                        cluster_name, cluster, services=None,
+                        services_mem_quota_percent=mem_quota_percent)
+                else:
+                    self.quota = ""
                 # Set this unconditionally
                 RestConnection(cluster.master).set_internalSetting(
                     "magmaMinMemoryQuota", 256)
-            else:
-                self.quota = ""
 
             # Enable dp_version since we need collections enabled
             if self.enable_dp:
@@ -443,6 +434,12 @@ class BaseTestCase(unittest.TestCase):
             traceback.print_exc()
             self.task.shutdown(force=True)
             self.fail(e)
+        finally:
+            # Track test start time only if we need system log validation
+            if self.validate_system_event_logs:
+                self.system_events.set_test_start_time()
+
+            self.log_setup_status("BaseTestCase", "finished")
 
     def initialize_cluster(self, cluster_name, cluster, services=None,
                            services_mem_quota_percent=None):
@@ -529,7 +526,10 @@ class BaseTestCase(unittest.TestCase):
             self.log.info("Starting Pcaps collection!!")
             self.start_fetch_pcaps()
         result = self.check_coredump_exist(self.servers, force_collect=True)
-        self.tearDownEverything()
+        if self.skip_teardown_cleanup:
+            self.log.debug("Skipping tearDownEverything")
+        else:
+            self.tearDownEverything()
         if not self.crash_warning:
             self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
@@ -547,12 +547,8 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager.abort_all_tasks()
 
     def tearDownEverything(self, reset_cluster_env_vars=True):
-        if self.skip_setup_cleanup:
-            return
         for _, cluster in self.cb_clusters.items():
             try:
-                if self.skip_buckets_handle:
-                    return
                 test_failed = self.is_test_failed()
                 if test_failed:
                     # Collect logs because we have not shut things down
@@ -571,16 +567,10 @@ class BaseTestCase(unittest.TestCase):
                     else:
                         self.log.critical("Skipping get_trace !!")
 
-                if test_failed \
-                        and TestInputSingleton.input.param("stop-on-failure",
-                                                           False) \
-                        or self.input.param("skip_cleanup", False):
-                    self.log.warn("CLEANUP WAS SKIPPED")
-                else:
-                    rest = RestConnection(cluster.master)
-                    alerts = rest.get_alerts()
-                    if alerts is not None and len(alerts) != 0:
-                        self.infra_log.warn("Alerts found: {0}".format(alerts))
+                rest = RestConnection(cluster.master)
+                alerts = rest.get_alerts()
+                if alerts:
+                    self.log.warn("Alerts found: {0}".format(alerts))
             except BaseException as e:
                 # kill memcached
                 traceback.print_exc()

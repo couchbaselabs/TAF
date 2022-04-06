@@ -55,7 +55,6 @@ class BaseSecondaryIndexingTests(QueryTests):
                 self.targetIndexManager)
         self.memory_create_list = []
         self.memory_drop_list = []
-        self.skip_cleanup = self.input.param("skip_cleanup", False)
         self.index_loglevel = self.input.param("index_loglevel", None)
         if self.index_loglevel:
             self.set_indexer_logLevel(self.index_loglevel)
@@ -526,7 +525,7 @@ class BaseSecondaryIndexingTests(QueryTests):
             raise
         finally:
             if drop_index and not self.skip_cleanup:
-                self.multi_drop_index(buckets,query_definitions)
+                self.multi_drop_index(buckets, query_definitions)
 
     def async_run_multi_operations(self, buckets=None, query_definitions=None,
                                    expected_results=None,
