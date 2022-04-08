@@ -52,7 +52,7 @@ DEFAULT_INSTALL_DIR = {
     "WINDOWS_SERVER": "/cygdrive/c/Program\ Files/Couchbase/Server"}
 
 DEFAULT_NONROOT_INSTALL_DIR = {
-    "LINUX_DISTROS": "/home/nonroot/opt/couchbase/",
+    "LINUX_DISTROS": "/home/nonroot/cb/opt/couchbase/",
     "MACOS_VERSIONS": "/Applications/Couchbase\ Server.app",
     "WINDOWS_SERVER": "/cygdrive/c/Program\ Files/Couchbase/Server"}
 

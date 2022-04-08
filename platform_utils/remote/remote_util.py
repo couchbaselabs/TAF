@@ -14,7 +14,8 @@ from builds.build_query import BuildQuery
 from Cb_constants import constants
 from common_lib import sleep
 from global_vars import logger
-from testconstants import VERSION_FILE, LINUX_DIST_CONFIG
+from testconstants import VERSION_FILE, LINUX_DIST_CONFIG, \
+    LINUX_NONROOT_CB_BIN_PATH
 from testconstants import MEMBASE_VERSIONS
 from testconstants import MISSING_UBUNTU_LIB
 from testconstants import MV_LATESTBUILD_REPO, SHERLOCK_BUILD_REPO
@@ -177,7 +178,7 @@ class RemoteMachineShellConnection:
         self.cmd_ext = ""
         self.msi = False
         self.nonroot = False
-        self.nr_home_path = "/home/%s/" % self.username
+        self.nr_home_path = "/home/%s/cb" % self.username
         self.use_sudo = True
 
         self.remote = (self.ip != "localhost" and self.ip != "127.0.0.1")
@@ -383,8 +384,8 @@ class RemoteMachineShellConnection:
                 if self.nonroot:
                     self.log.debug("%s - Start couchbase-server as non root"
                                    % self.ip)
-                    o, r = self.execute_command('%s%scouchbase-server \-- -noinput -detached ' \
-                                                % (self.nr_home_path, LINUX_COUCHBASE_BIN_PATH))
+                    o, r = self.execute_command('%scouchbase-server \-- -noinput -detached ' \
+                                                % LINUX_NONROOT_CB_BIN_PATH)
                     self.log_command_output(o, r)
                 else:
                     fv, sv, bn = self.get_cbversion("linux")
@@ -416,9 +417,8 @@ class RemoteMachineShellConnection:
         elif os == "unix" or os == "linux":
             if self.is_couchbase_installed():
                 if self.nonroot:
-                    o, r = self.execute_command("%s%scouchbase-server -k"
-                                                % (self.nr_home_path,
-                                                   LINUX_COUCHBASE_BIN_PATH))
+                    o, r = self.execute_command("%scouchbase-server -k"
+                                                % LINUX_NONROOT_CB_BIN_PATH)
                     self.log_command_output(o, r)
                 else:
                     fv, sv, bn = self.get_cbversion("linux")
@@ -892,8 +892,7 @@ class RemoteMachineShellConnection:
             command_1 = "/sbin/iptables -F"
             command_2 = "/sbin/iptables -t nat -F"
             if self.nonroot:
-                self.log.info("\n%s - Non root or non sudo has no right to disable firewall"
-                              % self.ip)
+                self.log.debug("Nonroot user, skipping firewall cmds")
                 return
             output, error = self.execute_command(command_1)
             self.log_command_output(output, error)
@@ -2005,10 +2004,9 @@ class RemoteMachineShellConnection:
                     output, error = self.execute_command("ls -lh ")
                     self.log_command_output(output, error)
                     if start_server_after_install:
-                        output, error = self.execute_command('%s%scouchbase-server '
+                        output, error = self.execute_command('%scouchbase-server '
                                                              '\-- -noinput -detached '
-                                                             % (self.nr_home_path,
-                                                                LINUX_COUCHBASE_BIN_PATH))
+                                                             % LINUX_NONROOT_CB_BIN_PATH)
                 else:
                     self.check_pkgconfig(self.info.deliverable_type, openssl)
                     if rpm_upgrade:
@@ -2038,10 +2036,9 @@ class RemoteMachineShellConnection:
                         as in centos above
                     """
                     if start_server_after_install:
-                        output, error = self.execute_command('%s%scouchbase-server '
+                        output, error = self.execute_command('%scouchbase-server '
                                                              '\-- -noinput -detached '
-                                                             % (self.nr_home_path,
-                                                                LINUX_COUCHBASE_BIN_PATH))
+                                                             % LINUX_NONROOT_CB_BIN_PATH)
                 else:
                     self.install_missing_lib()
                     if force:
@@ -2795,7 +2792,7 @@ class RemoteMachineShellConnection:
             output, error = self.execute_command("rm -rf ~/Library/Application\ Support/Couchbase")
             self.log_command_output(output, error)
         if self.nonroot:
-            if self.nr_home_path != "/home/%s/" % self.username:
+            if self.nr_home_path != "/home/%s/cb" % self.username:
                 self.log.info("remove all non default install dir")
                 output, error = self.execute_command("rm -rf %s"
                                                      % self.nr_home_path)
@@ -2811,7 +2808,7 @@ class RemoteMachineShellConnection:
                                                      % self.nr_home_path)
                 self.log_command_output(output, error)
             if "nr_install_dir" not in self.input.test_params:
-                self.nr_home_path = "/home/%s/" % self.username
+                self.nr_home_path = "/home/%s/cb" % self.username
                 output, error = self.execute_command(" :> %s"
                                                      % NR_INSTALL_LOCATION_FILE)
                 self.log_command_output(output, error)
@@ -3708,8 +3705,8 @@ class RemoteMachineShellConnection:
             if self.nonroot:
                 self.log.debug("{0} - stopping couchbase-server as non-root"
                                .format(self.ip))
-                o, r = self.execute_command('%s%scouchbase-server -k '
-                                            % (self.nr_home_path, LINUX_COUCHBASE_BIN_PATH))
+                o, r = self.execute_command('%scouchbase-server -k '
+                                            % LINUX_NONROOT_CB_BIN_PATH)
                 self.log_command_output(o, r)
             else:
                 fv, sv, bn = self.get_cbversion("linux")
@@ -3808,8 +3805,8 @@ class RemoteMachineShellConnection:
         if self.info.type.lower() == "linux":
             if self.nonroot:
                 self.log.info("Start Couchbase Server with non root method")
-                o, r = self.execute_command('%s%scouchbase-server \-- -noinput -detached ' \
-                                            % (self.nr_home_path, LINUX_COUCHBASE_BIN_PATH))
+                o, r = self.execute_command('%scouchbase-server \-- -noinput -detached ' \
+                                            % (LINUX_NONROOT_CB_BIN_PATH))
                 self.log_command_output(o, r)
             else:
                 fv, sv, bn = self.get_cbversion("linux")
@@ -3834,7 +3831,10 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command(cmd)
             self.log_command_output(o, [])
         else:
-            o, r = self.execute_command("killall -SIGSTOP memcached")
+            if self.nonroot:
+                o, r = self.execute_command("killall -SIGSTOP memcached.bin")
+            else:
+                o, r = self.execute_command("killall -SIGSTOP memcached")
             self.log_command_output(o, r)
         sleep(timesleep, "Waiting for node to become down", log_type="infra")
 
@@ -3845,15 +3845,18 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command(cmd)
             self.log_command_output(o, [])
         else:
-            o, r = self.execute_command("killall -SIGCONT memcached")
+            if self.nonroot:
+                o, r = self.execute_command("killall -SIGCONT memcached.bin")
+            else:
+                o, r = self.execute_command("killall -SIGCONT memcached")
             self.log_command_output(o, r)
 
     def pause_beam(self):
-        o, r = self.execute_command("killall -SIGSTOP beam")
+        o, r = self.execute_command("killall -SIGSTOP beam.smp")
         self.log_command_output(o, r)
 
     def unpause_beam(self):
-        o, r = self.execute_command("killall -SIGCONT beam")
+        o, r = self.execute_command("killall -SIGCONT beam.smp")
         self.log_command_output(o, r)
 
     # TODO: Windows
