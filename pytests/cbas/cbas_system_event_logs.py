@@ -321,6 +321,8 @@ class CBASSystemEventLogs(CBASBaseTest):
                 self.cluster, dataset_obj.full_name, 0, timeout=300):
             self.fail("Data ingestion failed.")
 
+        self.sleep(3, "Waiting for event to be generated")
+
         self.log.info("Adding event for collection_attach events")
         self.system_events.add_event(AnalyticsEvents.collection_attached(
             self.cluster.cbas_cc_node.ip,
