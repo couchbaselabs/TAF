@@ -17,6 +17,7 @@ from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
+from security_utils.security_utils import SecurityUtils
 
 
 class CBASBaseTest(BaseTestCase):
@@ -268,6 +269,27 @@ class CBASBaseTest(BaseTestCase):
                 if not self.cbas_util.is_analytics_running(cluster):
                     self.fail("Analytics service did not come up even after 10\
                                  mins of wait after initialisation")
+
+            if self.input.param("n2n_encryption", False):
+
+                self.security_util = SecurityUtils(self.log)
+
+                rest = RestConnection(cluster.master)
+                self.log.info("Disabling Auto-Failover")
+                if not rest.update_autofailover_settings(
+                        False, 120, False):
+                    self.fail("Disabling Auto-Failover failed")
+
+                self.log.info("Setting node to node encryption level to all")
+                self.security_util.set_n2n_encryption_level_on_nodes(
+                    cluster.nodes_in_cluster,
+                    level=self.input.param("n2n_encryption_level", "control"))
+
+                CbServer.use_https = True
+                self.log.info("Enabling Auto-Failover")
+                if not rest.update_autofailover_settings(
+                        True, 300, False):
+                    self.fail("Enabling Auto-Failover failed")
 
             if self.input.param("analytics_loggers", None):
                 """
