@@ -1553,7 +1553,7 @@ class BucketUtils(ScopeUtils):
                 status = False
         if status is True:
             status = False
-            retry_count = 120
+            retry_count = 600
             sleep_time = 5
             while retry_count > 0:
                 item_count = self.get_buckets_itemCount(cluster)

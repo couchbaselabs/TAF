@@ -114,6 +114,7 @@ class RestConnection(object):
             query_port = CbServer.ssl_n1ql_port
             fts_port = CbServer.ssl_fts_port
             eventing_port = CbServer.ssl_eventing_port
+            backup_port = CbServer.ssl_backup_port
         self.input = TestInputSingleton.input
         if self.input is not None:
             """ from watson, services param order and format:

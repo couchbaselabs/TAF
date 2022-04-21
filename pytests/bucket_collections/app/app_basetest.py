@@ -31,6 +31,8 @@ class AppBase(BaseTestCase):
         self.service_conf = self.input.param("service_conf", None)
         self.rbac_conf = self.input.param("rbac_conf", None)
 
+        self.index_storage_mode = self.input.param("index_storage_mode",
+                                                   "plasma")
         self.rbac_util = RbacUtil()
         self.sdk_clients = global_vars.sdk_clients
         self.app_path = "pytests/bucket_collections/app/"
@@ -234,6 +236,10 @@ class AppBase(BaseTestCase):
 
     def create_indexes(self):
         self.__print_step("Creating required Indexes")
+
+        self.log.info("Setting index storage mode=gsi")
+        RestConnection(self.cluster.master).set_indexer_storage_mode(
+            storageMode=self.index_storage_mode)
 
         self.log.info("Dropping default indexes on _default collection")
         select_result = self.sdk_clients["bucket_admin"].cluster.query(
