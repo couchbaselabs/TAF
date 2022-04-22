@@ -6243,7 +6243,7 @@ class NodeInitializeTask(Task):
         password = self.server.rest_password
 
         rest.set_service_mem_quota(service_quota)
-        rest.set_indexer_storage_mode(username, password, self.gsi_type)
+        rest.set_indexer_storage_mode(self.gsi_type)
 
         if self.services:
             status = rest.init_node_services(

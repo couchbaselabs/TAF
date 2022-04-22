@@ -821,9 +821,7 @@ class RestConnection(object):
         status, content, header = self._http_request(api, 'POST', params)
         return status
 
-    def set_indexer_storage_mode(self, username='Administrator',
-                                 password='password',
-                                 storageMode='plasma'):
+    def set_indexer_storage_mode(self, storageMode='plasma'):
         """
            From spock, we replace forestdb with plasma
         """
