@@ -18,6 +18,7 @@ from collections_helper.collections_spec_constants import \
 from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
 from security_utils.security_utils import SecurityUtils
+from BucketLib.BucketOperations import BucketHelper
 
 
 class CBASBaseTest(BaseTestCase):
@@ -330,6 +331,13 @@ class CBASBaseTest(BaseTestCase):
                 else:
                     self.fail("Error while fetching log levels")
 
+            self.disk_optimized_thread_settings = self.input.param(
+                "disk_optimized_thread_settings", False)
+            if self.disk_optimized_thread_settings:
+                self.set_num_writer_and_reader_threads(
+                    cluster, num_writer_threads="disk_io_optimized",
+                    num_reader_threads="disk_io_optimized")
+
             if self.cluster_kv_infra[i] == "bkt_spec":
                 if self.bucket_spec is not None:
                     try:
@@ -358,6 +366,11 @@ class CBASBaseTest(BaseTestCase):
                       .format(self.case_number, self._testMethodName))
 
     def tearDown(self):
+        if self.disk_optimized_thread_settings:
+            for cluster in self.cb_clusters.values():
+                self.set_num_writer_and_reader_threads(
+                    cluster, num_writer_threads="default",
+                    num_reader_threads="default")
         super(CBASBaseTest, self).tearDown()
 
     def set_memory_for_services(self, cluster, server, services):
@@ -525,8 +538,6 @@ class CBASBaseTest(BaseTestCase):
         """
         # If True, creates bucket/scope/collections with simpler names
         self.use_simple_names = self.input.param("use_simple_names", True)
-        self.over_ride_spec_params = self.input.param(
-            "override_spec_params", "").split(";")
         self.remove_default_collection = self.input.param(
             "remove_default_collection", False)
 
@@ -562,6 +573,27 @@ class CBASBaseTest(BaseTestCase):
         if load_data:
             self.load_data_into_buckets(cluster, doc_loading_spec)
 
+    def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
+        retry_exceptions = list()
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        retry_exceptions.append(SDKException.DocumentNotFoundException)
+        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        if self.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
+
+    def set_num_writer_and_reader_threads(
+            self, cluster, num_writer_threads="default",
+            num_reader_threads="default", num_storage_threads="default"):
+        bucket_helper = BucketHelper(cluster.master)
+        bucket_helper.update_memcached_settings(
+            num_writer_threads=num_writer_threads,
+            num_reader_threads=num_reader_threads,
+            num_storage_threads=num_storage_threads)
+
     def load_data_into_buckets(self, cluster, doc_loading_spec=None,
                                async_load=False, validate_task=True,
                                mutation_num=0):
@@ -572,9 +604,8 @@ class CBASBaseTest(BaseTestCase):
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
                 self.doc_spec_name)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
-        # MB-38438, adding CollectionNotFoundException in retry exception
-        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
-            SDKException.CollectionNotFoundException)
+        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
+
         doc_loading_task = self.bucket_util.run_scenario_from_spec(
             self.task, cluster, cluster.buckets, doc_loading_spec,
             mutation_num=mutation_num, batch_size=self.batch_size,
@@ -585,59 +616,64 @@ class CBASBaseTest(BaseTestCase):
             "multi_bucket.buckets_for_rebalance_tests_with_ttl",
             "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
             "volume_templates.buckets_for_volume_tests_with_ttl"]
-        self.bucket_util.print_bucket_stats(self.cluster)
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets(cluster, cluster.buckets)
         if self.bucket_spec not in ttl_buckets:
-            self.bucket_util.validate_docs_per_collections_all_buckets(cluster)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                cluster, timeout=2400)
+
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def over_ride_bucket_template_params(self, cluster, bucket_spec):
-        for over_ride_param in self.over_ride_spec_params:
-            if over_ride_param == "replicas":
+        for key, val in self.input.test_params.items():
+            if key == "replicas":
                 bucket_spec[Bucket.replicaNumber] = self.num_replicas
-            elif over_ride_param == "remove_default_collection":
+            elif key == "remove_default_collection":
                 bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
-                    self.remove_default_collection
-            elif over_ride_param == "enable_flush":
-                if self.input.param("enable_flush", False):
-                    bucket_spec[
-                        Bucket.flushEnabled] = Bucket.FlushBucket.ENABLED
-                else:
-                    bucket_spec[
-                        Bucket.flushEnabled] = Bucket.FlushBucket.DISABLED
-            elif over_ride_param == "num_buckets":
+                    self.input.param(key)
+            elif key == "flushEnabled":
+                bucket_spec[Bucket.flushEnabled] = int(self.flush_enabled)
+            elif key == "num_buckets":
                 bucket_spec[MetaConstants.NUM_BUCKETS] = int(
                     self.input.param("num_buckets", 1))
-            elif over_ride_param == "bucket_size":
+            elif key == "num_scopes":
+                bucket_spec[MetaConstants.NUM_SCOPES_PER_BUCKET] = int(
+                    self.input.param("num_scopes", 1))
+            elif key == "num_collections":
+                bucket_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE] = int(
+                    self.input.param("num_collections", 1))
+            elif key == "num_items":
+                bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                    self.num_items
+            elif key == "bucket_type":
+                bucket_spec[Bucket.bucketType] = self.bucket_type
+            elif key == "bucket_eviction_policy":
+                bucket_spec[Bucket.evictionPolicy] = self.bucket_eviction_policy
+            elif key == "bucket_storage":
+                bucket_spec[Bucket.storageBackend] = self.bucket_storage
+            elif key == "compression_mode":
+                bucket_spec[Bucket.compressionMode] = self.compression_mode
+            elif key == "bucket_size":
                 if self.bucket_size == "auto":
                     cluster_info = cluster.rest.get_nodes_self()
                     kv_quota = cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
                     self.bucket_size = kv_quota // bucket_spec[
                         MetaConstants.NUM_BUCKETS]
                 bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
-            elif over_ride_param == "num_scopes":
-                bucket_spec[MetaConstants.NUM_SCOPES_PER_BUCKET] = int(
-                    self.input.param("num_scopes", 1))
-            elif over_ride_param == "num_collections":
-                bucket_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE] = int(
-                    self.input.param("num_collections", 1))
-            elif over_ride_param == "num_items":
-                bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
-                    self.num_items
-            elif over_ride_param == "bucket_type":
-                bucket_spec[Bucket.bucketType] = self.bucket_type
-            elif over_ride_param == "bucket_eviction_policy":
-                bucket_spec[Bucket.evictionPolicy] = self.bucket_eviction_policy
 
     def over_ride_doc_loading_template_params(self, target_spec):
-        for over_ride_param in self.over_ride_spec_params:
-            if over_ride_param == "durability":
+        for key, value in self.input.test_params.items():
+            if key == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
                     self.durability_level
-            elif over_ride_param == "sdk_timeout":
+            elif key == "sdk_timeout":
                 target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
-            elif over_ride_param == "doc_size":
-                target_spec[MetaCrudParams.DocCrud.DOC_SIZE] = self.doc_size
+            elif key == "doc_size":
+                target_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_SIZE] \
+                    = self.doc_size
+            elif key == "randomize_value":
+                target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
+                    = self.randomize_value
 
     @staticmethod
     def create_or_delete_users(rbac_util, rbac_users_created, delete=False):
