@@ -3,23 +3,12 @@ Created on March 4, 2022
 @author: Umang Agrawal
 """
 
-import json
-import random
-from Queue import Queue
-from threading import Thread
 import time
 import copy
 
-from BucketLib.BucketOperations import BucketHelper
-from CbasLib.CBASOperations import CBASHelper
-from CbasLib.cbas_entity import Dataverse, Synonym, CBAS_Index
-from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cbas.cbas_base import CBASBaseTest
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from remote.remote_util import RemoteMachineShellConnection
-from collections_helper.collections_spec_constants import MetaCrudParams
-from security.rbac_base import RbacBase
-from Jython_tasks.task import RunQueriesTask, CreateDatasetsTask, DropDatasetsTask
 
 
 class MetadataReplication(CBASBaseTest):
@@ -60,29 +49,6 @@ class MetadataReplication(CBASBaseTest):
         super(MetadataReplication, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
-
-    def setup_for_test(self, wait_for_ingestion=True):
-        update_spec = {
-            "no_of_dataverses": self.input.param('no_of_dv', 1),
-            "no_of_datasets_per_dataverse": self.input.param('ds_per_dv',
-                                                             1),
-            "no_of_synonyms": 0,
-            "no_of_indexes": self.input.param('no_of_idx', 1),
-            "max_thread_count": self.input.param('no_of_threads', 1),
-            "dataset": {
-                "creation_methods": ["cbas_collection", "cbas_dataset"]}}
-        if self.cbas_spec_name:
-            self.cbas_spec = self.cbas_util.get_cbas_spec(
-                self.cbas_spec_name)
-            if update_spec:
-                self.cbas_util.update_cbas_spec(self.cbas_spec, update_spec)
-            cbas_infra_result = self.cbas_util.create_cbas_infra_from_spec(
-                self.cluster, self.cbas_spec, self.bucket_util,
-                wait_for_ingestion=wait_for_ingestion)
-            if not cbas_infra_result[0]:
-                self.fail(
-                    "Error while creating infra from CBAS spec -- " +
-                    cbas_infra_result[1])
 
     def test_rebalance(self):
         self.setup_for_test()

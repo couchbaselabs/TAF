@@ -43,57 +43,6 @@ class CBASHighAvailability(CBASBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
 
-    def setup_for_test(self, update_spec={}, wait_for_ingestion=True):
-        if not update_spec:
-            update_spec = {
-                "no_of_dataverses": self.input.param('no_of_dv', 1),
-                "no_of_datasets_per_dataverse": self.input.param('ds_per_dv',
-                                                                 1),
-                "no_of_synonyms": 0,
-                "no_of_indexes": self.input.param('no_of_idx', 1),
-                "max_thread_count": self.input.param('no_of_threads', 1),
-                "dataset": {
-                    "creation_methods": ["cbas_collection", "cbas_dataset"]}}
-        if self.cbas_spec_name:
-            self.cbas_spec = self.cbas_util.get_cbas_spec(
-                self.cbas_spec_name)
-            if update_spec:
-                self.cbas_util.update_cbas_spec(self.cbas_spec, update_spec)
-            cbas_infra_result = self.cbas_util.create_cbas_infra_from_spec(
-                self.cluster, self.cbas_spec, self.bucket_util,
-                wait_for_ingestion=wait_for_ingestion)
-            if not cbas_infra_result[0]:
-                self.fail(
-                    "Error while creating infra from CBAS spec -- " +
-                    cbas_infra_result[1])
-        self.replica_num = self.input.param('replica_num', 0)
-        set_result = self.cbas_util.set_replica_number_from_settings(
-            self.cluster.master, replica_num=self.replica_num)
-        if set_result != self.replica_num:
-            self.fail("Error while setting replica for CBAS")
-
-        self.log.info("Rebalancing for CBAS replica setting change to take "
-                      "effect.")
-        rebalance_task, self.available_servers = self.rebalance_util.rebalance(
-            self.cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
-            cbas_nodes_out=0, available_servers=self.available_servers, exclude_nodes=[])
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-            rebalance_task, self.cluster):
-            self.fail("Rebalance failed")
-
-    def connect_disconnect_all_local_links(self, disconnect=False):
-        for dv in self.cbas_util.dataverses.values():
-            if disconnect:
-                if not self.cbas_util.disconnect_link(
-                        self.cluster, link_name=dv.name + ".Local"):
-                    self.fail("Failed to disconnect link - {0}".format(
-                        dv.name + ".Local"))
-            else:
-                if not self.cbas_util.connect_link(
-                        self.cluster, link_name=dv.name + ".Local"):
-                    self.fail("Failed to connect link - {0}".format(
-                        dv.name + ".Local"))
-
     def test_getting_replica_number_for_cbas(self):
         testcases = [
             {
@@ -350,7 +299,9 @@ class CBASHighAvailability(CBASBaseTest):
                 durability_level=self.durability_level)
 
             self.log.info("Connecting all the Local links")
-            self.connect_disconnect_all_local_links(disconnect=False)
+            if not self.cbas_util.connect_disconnect_all_local_links(
+                self.cluster, disconnect=False):
+                self.fail("Unable to connect some Local links")
 
             if not self.rebalance_util.wait_for_data_load_to_complete(
                     doc_loading_task, False):
@@ -444,7 +395,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the data "
                       "can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+            self.cluster, disconnect=True):
+            self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
             self.fail("Replication could not complete before timeout")
@@ -500,7 +453,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the data "
                       "can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+            self.cluster, disconnect=True):
+            self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
             self.fail("Replication could not complete before timeout")
@@ -589,7 +544,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the data "
                       "can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+        self.cluster, disconnect=True):
+        self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
             self.fail("Replication could not complete before timeout")
@@ -638,7 +595,9 @@ class CBASHighAvailability(CBASBaseTest):
             durability_level=self.durability_level)
 
         self.log.info("Connecting all the Local links")
-        self.connect_disconnect_all_local_links(disconnect=False)
+        if not self.cbas_util.connect_disconnect_all_local_links(self.cluster, 
+        disconnect=False):
+        self.fail("Unable to disconnect some Local links")
 
         if not self.rebalance_util.wait_for_data_load_to_complete(
                 doc_loading_task, False):
@@ -702,7 +661,9 @@ class CBASHighAvailability(CBASBaseTest):
 
                 self.log.info("Disconnecting all the Local links, so that the "
                               "data can be persisted")
-                self.connect_disconnect_all_local_links(disconnect=True)
+                if not self.cbas_util.connect_disconnect_all_local_links(
+                    self.cluster, disconnect=True):
+                    self.fail("Unable to disconnect some Local links")
 
                 if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
                     self.fail("Replication could not complete before timeout")
@@ -764,7 +725,9 @@ class CBASHighAvailability(CBASBaseTest):
             else:
                 self.log.info("Disconnecting all the Local links, so that the "
                               "data can be persisted")
-                self.connect_disconnect_all_local_links(disconnect=True)
+                if not self.cbas_util.connect_disconnect_all_local_links(
+                    self.cluster, disconnect=True):
+                    self.fail("Unable to disconnect some Local links")
 
                 if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
                     self.fail("Replication could not complete before timeout")
@@ -827,7 +790,9 @@ class CBASHighAvailability(CBASBaseTest):
 
             self.log.info("Disconnecting all the Local links, so that the "
                           "data can be persisted")
-            self.connect_disconnect_all_local_links(disconnect=True)
+            if not self.cbas_util.connect_disconnect_all_local_links(
+                self.cluster, disconnect=True):
+                self.fail("Unable to disconnect some Local links")
 
             if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
                 self.fail("Replication could not complete before timeout")
@@ -895,7 +860,9 @@ class CBASHighAvailability(CBASBaseTest):
             else:
                 self.log.info("Disconnecting all the Local links, so that the "
                               "data can be persisted")
-                self.connect_disconnect_all_local_links(disconnect=True)
+                if not self.cbas_util.connect_disconnect_all_local_links(
+                        self.cluster, disconnect=True):
+                    self.fail("Unable to disconnect some Local links")
 
                 if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
                     self.fail("Replication could not complete before timeout")
@@ -943,7 +910,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the data "
                       "can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+                self.cluster, disconnect=True):
+            self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
             self.fail("Replication could not complete before timeout")
@@ -996,7 +965,9 @@ class CBASHighAvailability(CBASBaseTest):
         else:
             self.log.info("Disconnecting all the Local links, so that the "
                           "data can be persisted")
-            self.connect_disconnect_all_local_links(disconnect=True)
+            if not self.cbas_util.connect_disconnect_all_local_links(
+                    self.cluster, disconnect=True):
+                self.fail("Unable to disconnect some Local links")
 
             if not self.cbas_util.wait_for_replication_to_finish(
                     self.cluster):
@@ -1113,7 +1084,9 @@ class CBASHighAvailability(CBASBaseTest):
 
             self.log.info("Disconnecting all the Local links, so that the "
                           "data can be persisted")
-            self.connect_disconnect_all_local_links(disconnect=True)
+            if not self.cbas_util.connect_disconnect_all_local_links(
+                    self.cluster, disconnect=True):
+                self.fail("Unable to disconnect some Local links")
 
             if not self.cbas_util.wait_for_replication_to_finish(
                     self.cluster):
@@ -1169,7 +1142,9 @@ class CBASHighAvailability(CBASBaseTest):
         else:
             self.log.info("Disconnecting all the Local links, so that the "
                           "data can be persisted")
-            self.connect_disconnect_all_local_links(disconnect=True)
+            if not self.cbas_util.connect_disconnect_all_local_links(
+                    self.cluster, disconnect=True):
+                self.fail("Unable to disconnect some Local links")
 
             if not self.cbas_util.wait_for_replication_to_finish(
                     self.cluster):
@@ -1302,7 +1277,9 @@ class CBASHighAvailability(CBASBaseTest):
 
             self.log.info("Disconnecting all the Local links, so that the "
                           "data can be persisted")
-            self.connect_disconnect_all_local_links(disconnect=True)
+            if not self.cbas_util.connect_disconnect_all_local_links(
+                    self.cluster, disconnect=True):
+                self.fail("Unable to disconnect some Local links")
 
             if not self.cbas_util.wait_for_replication_to_finish(
                     self.cluster):
@@ -1353,7 +1330,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the "
                       "data can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+                self.cluster, disconnect=True):
+            self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(
                 self.cluster):
@@ -1452,7 +1431,9 @@ class CBASHighAvailability(CBASBaseTest):
 
             self.log.info("Disconnecting all the Local links, so that the "
                           "data can be persisted")
-            self.connect_disconnect_all_local_links(disconnect=True)
+            if not self.cbas_util.connect_disconnect_all_local_links(
+                    self.cluster, disconnect=True):
+                self.fail("Unable to disconnect some Local links")
 
             if not self.cbas_util.wait_for_replication_to_finish(
                     self.cluster):
@@ -1507,7 +1488,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the "
                       "data can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+                self.cluster, disconnect=True):
+            self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(
                 self.cluster):
@@ -1664,7 +1647,9 @@ class CBASHighAvailability(CBASBaseTest):
 
             self.log.info("Disconnecting all the Local links, so that the "
                           "data can be persisted")
-            self.connect_disconnect_all_local_links(disconnect=True)
+            if not self.cbas_util.connect_disconnect_all_local_links(
+                    self.cluster, disconnect=True):
+                self.fail("Unable to disconnect some Local links")
 
             if not self.cbas_util.wait_for_replication_to_finish(
                     self.cluster):
@@ -1748,7 +1733,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the "
                       "data can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+                self.cluster, disconnect=True):
+            self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(
                 self.cluster):
@@ -1786,7 +1773,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the data "
                       "can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+                self.cluster, disconnect=True):
+            self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
             self.fail("Replication could not complete before timeout")
@@ -1806,7 +1795,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the data "
                       "can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+                self.cluster, disconnect=True):
+            self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
             self.fail("Replication could not complete before timeout")
@@ -1834,7 +1825,9 @@ class CBASHighAvailability(CBASBaseTest):
 
         self.log.info("Disconnecting all the Local links, so that the data "
                       "can be persisted")
-        self.connect_disconnect_all_local_links(disconnect=True)
+        if not self.cbas_util.connect_disconnect_all_local_links(
+                self.cluster, disconnect=True):
+            self.fail("Unable to disconnect some Local links")
 
         if not self.cbas_util.wait_for_replication_to_finish(self.cluster):
             self.fail("Replication could not complete before timeout")

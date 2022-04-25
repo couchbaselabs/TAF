@@ -4721,6 +4721,21 @@ class CbasUtil(UDFUtil):
                     result = result and False
         return result
 
+    def get_cbas_nodes(self, cluster, cluster_util, servers=None):
+        if servers is None:
+            servers = cluster.servers
+        cbas_servers = cluster_util.get_nodes_from_services_map(
+            cluster, service_type=CbServer.Services.CBAS,
+            get_all_nodes=True, servers=servers)
+        new_servers = []
+        for server in servers:
+            for cbas_server in cbas_servers:
+                if cbas_server.ip == server.ip and \
+                        cbas_server.port == server.port and \
+                        server not in new_servers:
+                    new_servers.append(server)
+        return new_servers
+
 
 class FlushToDiskTask(Task):
     def __init__(self, cluster, cbas_util, datasets=[], run_infinitely=False,
