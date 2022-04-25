@@ -274,7 +274,7 @@ class SystemEventLogs(ClusterSetup):
         validate_saslauthd_event(event=actual_event, user_event=expected_event)
 
     def test_security_config_changed_event(self):
-        _ = self.rest.update_autofailover_settings(False, 120, False)
+        _ = self.rest.update_autofailover_settings(False, 120)
         shell_conn = RemoteMachineShellConnection(self.cluster.master)
         cb_cli = CbCli(shell_conn)
         o = cb_cli.enable_n2n_encryption()

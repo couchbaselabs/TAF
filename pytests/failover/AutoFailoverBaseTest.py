@@ -420,8 +420,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         False
         """
         status = self.rest.update_autofailover_settings(
-            True, self.timeout, canAbortRebalance=self.can_abort_rebalance,
-            maxCount=self.max_count)
+            True, self.timeout, maxCount=self.max_count)
         return status
 
     def enable_autoreprovision(self):
@@ -439,7 +438,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         :return: True If the setting was disabled, else return
         False
         """
-        status = self.rest.update_autofailover_settings(False, 120, False)
+        status = self.rest.update_autofailover_settings(False, 120)
         return status
 
     def disable_autoreprovision(self):
@@ -467,10 +466,6 @@ class AutoFailoverBaseTest(ClusterSetup):
                          "Incorrect timeout set. Expected timeout : {0} "
                          "Actual timeout set : {1}"
                          .format(self.timeout, settings.timeout))
-        self.assertEqual(self.can_abort_rebalance, settings.can_abort_rebalance,
-                         "Incorrect can_abort_rebalance set. Expected can_abort_rebalance : {0} "
-                         "Actual can_abort_rebalance set : {1}"
-                         .format(self.can_abort_rebalance, settings.can_abort_rebalance))
 
     def disable_autofailover_and_validate(self):
         """
@@ -734,8 +729,6 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.add_back_node = self.input.param("add_back_node", True)
         self.recovery_strategy = self.input.param("recovery_strategy",
                                                   "delta")
-        self.can_abort_rebalance = self.input.param("can_abort_rebalance",
-                                                    True)
         self.num_node_failures = self.input.param("num_node_failures", 1)
         self.services = self.input.param("services", None)
         self.zone = self.input.param("zone", 1)

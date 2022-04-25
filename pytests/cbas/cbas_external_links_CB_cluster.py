@@ -2326,14 +2326,14 @@ class CBASExternalLinks(CBASBaseTest):
         self.log.info("Step {0}: Disabling Auto-Failover on remote "
                       "cluster".format(step_count))
         step_count += 1
-        if not to_cluster.rest.update_autofailover_settings(False, 120, False):
+        if not to_cluster.rest.update_autofailover_settings(False, 120):
             self.fail("Disabling Auto-Failover on remote cluster failed")
 
         self.log.info("Step {0}: Disabling Auto-Failover on analytics "
                       "cluster".format(step_count))
         step_count += 1
         if not self.analytics_cluster.rest.update_autofailover_settings(
-                False, 120, False):
+                False, 120):
             self.fail("Disabling Auto-Failover on analytics cluster failed")
 
         self.log.info("Step {0}: Setting node to node encryption level to "

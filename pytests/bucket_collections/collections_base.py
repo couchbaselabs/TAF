@@ -57,7 +57,7 @@ class CollectionBase(ClusterSetup):
 
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120, False)
+            .update_autofailover_settings(False, 120)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
         self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)

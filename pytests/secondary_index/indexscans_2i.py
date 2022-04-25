@@ -210,7 +210,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
 
         self.log.info("Disabling auto_failover to avoid node failures")
         status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120, False)
+            .update_autofailover_settings(False, 120)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         # Validate vbucket stats

@@ -875,7 +875,7 @@ class RestConnection(object):
         return status, content, header
 
     def set_encryption_level(self, level="control"):
-        _ = self.update_autofailover_settings(False, 120, False)
+        _ = self.update_autofailover_settings(False, 120)
         api = self.baseUrl + "settings/security"
         params = urllib.urlencode({'clusterEncryptionLevel': level})
         status, content, header = self._http_request(api, 'POST', params)
@@ -1918,27 +1918,23 @@ class RestConnection(object):
             settings.enabled = json_parsed["enabled"]
             settings.count = json_parsed["count"]
             settings.timeout = json_parsed["timeout"]
-            settings.can_abort_rebalance = json_parsed["canAbortRebalance"]
-            settings.failoverOnDataDiskIssuesEnabled = json_parsed["failoverOnDataDiskIssues"]["enabled"]
-            settings.failoverOnDataDiskIssuesTimeout = json_parsed["failoverOnDataDiskIssues"]["timePeriod"]
+            settings.failoverOnDataDiskIssuesEnabled = \
+                json_parsed["failoverOnDataDiskIssues"]["enabled"]
+            settings.failoverOnDataDiskIssuesTimeout = \
+                json_parsed["failoverOnDataDiskIssues"]["timePeriod"]
             settings.maxCount = json_parsed["maxCount"]
         return settings
 
     def update_autofailover_settings(self, enabled, timeout,
-                                     canAbortRebalance=False,
                                      enable_disk_failure=False,
                                      disk_timeout=120, maxCount=1):
-        params_dict = {}
+        params_dict = dict()
         params_dict['timeout'] = timeout
         if enabled:
             params_dict['enabled'] = 'true'
 
         else:
             params_dict['enabled'] = 'false'
-        if canAbortRebalance:
-            params_dict['canAbortRebalance'] = 'true'
-        else:
-            params_dict['canAbortRebalance'] = 'false'
         if enable_disk_failure:
             params_dict['failoverOnDataDiskIssues[enabled]'] = 'true'
             params_dict['failoverOnDataDiskIssues[timePeriod]'] = disk_timeout
@@ -3826,7 +3822,6 @@ class AutoFailoverSettings(object):
         self.failoverOnDataDiskIssuesTimeout = 0
         self.maxCount = 1
         self.failoverServerGroup = False
-        self.can_abort_rebalance = False
 
 
 class AutoReprovisionSettings(object):

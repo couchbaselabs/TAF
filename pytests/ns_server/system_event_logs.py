@@ -1115,7 +1115,7 @@ class SystemEventLogs(ClusterSetup):
         rest = RestConnection(self.cluster.master)
         if fo_type == "auto":
             self.log.info("Setting failover timeout = 5 seconds")
-            rest.update_autofailover_settings(True, auto_fo_threshold, True)
+            rest.update_autofailover_settings(True, auto_fo_threshold)
 
         bucket = self.cluster.buckets[0]
         target_node = self.cluster.nodes_in_cluster[-1]

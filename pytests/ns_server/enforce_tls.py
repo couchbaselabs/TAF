@@ -24,7 +24,8 @@ class EnforceTls(CollectionBase):
 
         self.log.info("Disabling AF on all nodes before beginning the test")
         for node in self.cluster.servers:
-            status = RestConnection(node).update_autofailover_settings(False, 120, False)
+            status = RestConnection(node)\
+                .update_autofailover_settings(False, 120)
             self.assertTrue(status)
         self.log.info("Changing security settings to trust all CAs")
         trust_all_certs()

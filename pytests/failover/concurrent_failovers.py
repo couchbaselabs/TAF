@@ -59,8 +59,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         self.log.info("Updating Auto-failover settings")
         self.rest.update_autofailover_settings(
-            enabled=True, timeout=self.timeout, maxCount=self.max_count,
-            canAbortRebalance=self.can_abort_rebalance)
+            enabled=True, timeout=self.timeout, maxCount=self.max_count)
 
         # Find the bucket with least replica to check the Auto-FO possibility
         self.min_bucket_replica = Bucket.ReplicaNum.THREE
@@ -105,8 +104,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         self.log.info("Resetting auto-failover settings to default")
         self.rest.update_autofailover_settings(
-            enabled=True, timeout=120, maxCount=1,
-            canAbortRebalance=self.can_abort_rebalance)
+            enabled=True, timeout=120, maxCount=1)
         self.log_setup_status(self.__class__.__name__, "complete",
                               self.tearDown.__name__)
 
@@ -453,8 +451,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         finally:
             # Disable auto-fo after the expected time limit
             self.rest.update_autofailover_settings(
-                enabled=False, timeout=self.timeout, maxCount=self.max_count,
-                canAbortRebalance=self.can_abort_rebalance)
+                enabled=False, timeout=self.timeout, maxCount=self.max_count)
 
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 failover_task = ConcurrentFailoverTask(
@@ -469,8 +466,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Enable back prev auto_fo settings
             self.sleep(15, "Wait before enabling back auto-fo")
             self.rest.update_autofailover_settings(
-                enabled=True, timeout=self.timeout, maxCount=self.max_count,
-                canAbortRebalance=self.can_abort_rebalance)
+                enabled=True, timeout=self.timeout, maxCount=self.max_count)
 
         # After failure - failed nodes' information
         self.__display_failure_node_status("Nodes status failure")
@@ -873,8 +869,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         finally:
             # Disable auto-fo after the expected time limit
             self.rest.update_autofailover_settings(
-                enabled=False, timeout=self.timeout, maxCount=self.max_count,
-                canAbortRebalance=self.can_abort_rebalance)
+                enabled=False, timeout=self.timeout, maxCount=self.max_count)
 
             # Recover all nodes from induced failures
             recovery_task = ConcurrentFailoverTask(
@@ -889,8 +884,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Enable back prev auto_fo settings
             self.sleep(5, "Wait before enabling back auto-fo")
             self.rest.update_autofailover_settings(
-                enabled=True, timeout=self.timeout, maxCount=self.max_count,
-                canAbortRebalance=self.can_abort_rebalance)
+                enabled=True, timeout=self.timeout, maxCount=self.max_count)
 
         # Validate auto_failover_settings after failover
         self.validate_failover_settings(True, self.timeout,

@@ -277,8 +277,7 @@ class CBASBaseTest(BaseTestCase):
 
                 rest = RestConnection(cluster.master)
                 self.log.info("Disabling Auto-Failover")
-                if not rest.update_autofailover_settings(
-                        False, 120, False):
+                if not rest.update_autofailover_settings(False, 120):
                     self.fail("Disabling Auto-Failover failed")
 
                 self.log.info("Setting node to node encryption level to all")
@@ -288,8 +287,7 @@ class CBASBaseTest(BaseTestCase):
 
                 CbServer.use_https = True
                 self.log.info("Enabling Auto-Failover")
-                if not rest.update_autofailover_settings(
-                        True, 300, False):
+                if not rest.update_autofailover_settings(True, 300):
                     self.fail("Enabling Auto-Failover failed")
 
             if self.input.param("analytics_loggers", None):

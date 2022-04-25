@@ -383,7 +383,7 @@ class CrashTest(BaseTestCase):
 
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120, False)
+            .update_autofailover_settings(False, 120)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         # Can take 'all_nodes' / 'single node'

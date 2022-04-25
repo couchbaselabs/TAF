@@ -167,8 +167,7 @@ class NodeUtils(object):
         shell_conn.disconnect()
 
     def _enable_tls(self, server):
-        RestConnection(server).update_autofailover_settings(
-            False, 120, False)
+        RestConnection(server).update_autofailover_settings(False, 120)
         self.log.info(
             "Setting cluster encryption level to strict on cluster "
             "with node {0}".format(server))
@@ -181,8 +180,7 @@ class NodeUtils(object):
         shell_conn.disconnect()
 
     def _disable_tls(self, server):
-        RestConnection(server).update_autofailover_settings(
-            False, 120, False)
+        RestConnection(server).update_autofailover_settings(False, 120)
         self.log.info("Disabling n2n encryption on cluster "
                       "with node {0}".format(server))
         shell_conn = RemoteMachineShellConnection(server)
@@ -206,7 +204,7 @@ class NodeUtils(object):
         rest = RestConnection(node)
         try:
             if '.com' in node.ip or ':' in node.ip:
-                _ = rest.update_autofailover_settings(False, 120, False)
+                _ = rest.update_autofailover_settings(False, 120)
                 cli = CouchbaseCLI(node, node.rest_username,
                                    node.rest_password)
                 output, err, result = cli.set_address_family("ipv6")

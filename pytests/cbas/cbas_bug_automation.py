@@ -28,7 +28,7 @@ class CBASBugAutomation(CBASBaseTest):
 
         self.log.info("Disabling Auto-Failover")
         if not self.cluster.rest.update_autofailover_settings(
-                False, 120, False):
+                False, 120):
             self.fail("Disabling Auto-Failover failed")
 
         self.log_setup_status(self.__class__.__name__, "Finished",

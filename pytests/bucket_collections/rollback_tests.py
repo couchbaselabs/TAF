@@ -20,7 +20,7 @@ class RollbackTests(CollectionBase):
 
         # Disable auto-fail_over to avoid fail_over of nodes
         status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120, False)
+            .update_autofailover_settings(False, 120)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         # Used to calculate expected queue size of validation before rollback
