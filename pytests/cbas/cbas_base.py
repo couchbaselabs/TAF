@@ -731,3 +731,44 @@ class CBASBaseTest(BaseTestCase):
             test_params["username"] = user
             testcases.append(test_params)
         return testcases
+
+    def setup_for_test(self, update_spec={}, wait_for_ingestion=True):
+        if not update_spec:
+            update_spec = {
+                "no_of_dataverses": self.input.param('no_of_dv', 1),
+                "no_of_datasets_per_dataverse": self.input.param('ds_per_dv',
+                                                                 1),
+                "no_of_synonyms": self.input.param('no_of_syn', 0),
+                "no_of_indexes": self.input.param('no_of_idx', 1),
+                "max_thread_count": self.input.param('no_of_threads', 1),
+                "dataset": {
+                    "creation_methods": ["cbas_collection", "cbas_dataset"]}}
+        if self.cbas_spec_name:
+            self.cbas_spec = self.cbas_util.get_cbas_spec(
+                self.cbas_spec_name)
+            if update_spec:
+                self.cbas_util.update_cbas_spec(self.cbas_spec, update_spec)
+            cbas_infra_result = self.cbas_util.create_cbas_infra_from_spec(
+                self.cluster, self.cbas_spec, self.bucket_util,
+                wait_for_ingestion=wait_for_ingestion)
+            if not cbas_infra_result[0]:
+                self.fail(
+                    "Error while creating infra from CBAS spec -- " +
+                    cbas_infra_result[1])
+        self.replica_num = self.input.param('replica_num', 0)
+        if self.replica_num:
+            set_result = self.cbas_util.set_replica_number_from_settings(
+                self.cluster.master, replica_num=self.replica_num)
+            if set_result != self.replica_num:
+                self.fail("Error while setting replica for CBAS")
+
+            self.log.info(
+                "Rebalancing for CBAS replica setting change to take "
+                "effect.")
+            rebalance_task, self.available_servers = self.rebalance_util.rebalance(
+                self.cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
+                cbas_nodes_out=0, available_servers=self.available_servers,
+                exclude_nodes=[])
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.cluster):
+                self.fail("Rebalance failed")
