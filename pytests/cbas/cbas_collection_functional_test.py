@@ -1323,7 +1323,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         In case collectionTTL/BucketTTL + docTTL, then min among them.
         """
         self.log.info("Test started")
-        self.bucket_spec = "analytics.multi_bucket"
+        self.bucket_spec = self.input.param("bucket_spec", "analytics.multi_bucket")
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
             self.bucket_spec)
         doc_loading_spec = None
@@ -1562,7 +1562,8 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                     jobs.put((func_name, {
                         "cluster":self.cluster,
                         "dataset_name": dataset.full_name,
-                        "num_items": dataset.num_of_items}))
+                        "num_items": dataset.num_of_items,
+                        "timeout": 1200}))
                 elif func_name == self.cbas_util.create_cbas_index:
                     index = CBAS_Index(
                         "idx_{0}".format(count), dataset.name,
