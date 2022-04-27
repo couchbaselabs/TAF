@@ -796,7 +796,7 @@ class Murphy(BaseTestCase, OPD):
             self.loop += 1
             if self.loop < self.iterations:
                 self.sleep(10)
-                if len(self.cluster.kv_nodes) > self.nodes_init:
+                if len(self.cluster.kv_nodes) + 1 > self.nodes_init:
                     nodes_cluster = self.cluster.nodes_in_cluster[:]
                     nodes_cluster.remove(self.cluster.master)
                     servs_out = random.sample(
@@ -1320,7 +1320,7 @@ class Murphy(BaseTestCase, OPD):
                 result = self.bucket_util.flush_all_buckets(self.cluster)
                 self.assertTrue(result, "Flush bucket failed!")
                 self.sleep(600)
-                if len(self.cluster.kv_nodes) > self.nodes_init:
+                if len(self.cluster.kv_nodes) + 1 > self.nodes_init:
                     rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes)- self.nodes_init),
                                                     services=["kv"])
                     self.task.jython_task_manager.get_task_result(rebalance_task)
