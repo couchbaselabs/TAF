@@ -126,13 +126,13 @@ class DoctorN1QL():
 
     def _run_concurrent_queries(self, num_queries):
         threads = []
-        total_query_count = 0
+        self.total_query_count = 0
         query_count = 0
         for i in range(0, num_queries):
-            total_query_count += 1
+            self.total_query_count += 1
             threads.append(Thread(
                 target=self._run_query,
-                name="query_thread_{0}".format(total_query_count),
+                name="query_thread_{0}".format(self.total_query_count),
                 args=(random.choice(self.queries), False, 0)))
 
         i = 0
@@ -141,7 +141,6 @@ class DoctorN1QL():
             if i % self.concurrent_batch_size == 0:
                 time.sleep(5)
             thread.start()
-            self.total_query_count += 1
             query_count += 1
 
         i = 0
@@ -149,10 +148,10 @@ class DoctorN1QL():
             threads = []
             new_queries_to_run = num_queries - self.total_count
             for i in range(0, new_queries_to_run):
-                total_query_count += 1
+                self.total_query_count += 1
                 threads.append(Thread(
                     target=self._run_query,
-                    name="query_thread_{0}".format(total_query_count),
+                    name="query_thread_{0}".format(self.total_query_count),
                     args=(random.choice(self.queries), False, 0)))
             i = 0
             self.total_count += new_queries_to_run
@@ -161,7 +160,6 @@ class DoctorN1QL():
                 thread.start()
 
             time.sleep(2)
-#             print("Submitted %s new queries" % new_queries_to_run)
         if self.failed_count + self.error_count != 0:
             raise Exception("Queries Failed:%s , Queries Error Out:%s" %
                             (self.failed_count, self.error_count))

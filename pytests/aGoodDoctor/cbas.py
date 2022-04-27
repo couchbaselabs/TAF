@@ -16,6 +16,16 @@ from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutExcep
 from com.couchbase.client.core.error import RequestCanceledException,\
     CouchbaseException
 
+queries = ['select name from {} where age between 30 and 50 limit 10;',
+           'select age, count(*) from {} where marital = "M" group by age order by age limit 10;',
+           'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" limit 10;',
+           # 'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 10;',
+           'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 10;']
+datasets = ['create dataset ds{} on {}.{}.{} where age between 30 and 50;',
+           'create dataset ds{} on {}.{}.{};',
+           'create dataset ds{} on {}.{}.{} where attributes.hair = "Burgundy";',
+           'CREATE dataset ds{} on {}.{}.{} where gender="F" and attributes.hair = "Burgundy";',
+           'create dataset ds{} on {}.{}.{};']
 
 class DoctorCBAS():
 
@@ -32,41 +42,57 @@ class DoctorCBAS():
         self.total_query_count = 0
         self.concurrent_batch_size = batch_size
         self.total_count = querycount
+        self.num_datasets = num_idx
+        self.bucket_util = bucket_util
         self.cluster = cluster
 
-        self.sdkClient = SDKClient(self.cluster.cbas_nodes, None)
+        self.sdkClient = SDKClient(cluster.cbas_nodes, None)
         self.cluster_conn = self.sdkClient.cluster
         self.stop_run = False
         self.queries = list()
-        self.num_indexes = num_idx
+        self.datasets = dict()
         i = 0
-        while i < self.num_indexes:
-            for bucket in self.cluster.buckets:
-                for scope in bucket_util.get_active_scopes(bucket, only_names=True):
-                    for collection in sorted(bucket_util.get_active_collections(bucket, scope, only_names=True)):
-                        self.initial_idx = "ds"
-                        self.initial_idx_q = "CREATE DATASET %s%s on `%s`.`%s`.`%s`;" % (
-                            self.initial_idx, i, bucket.name,
-                            scope, collection)
-                        self.execute_statement_on_cbas_util(self.initial_idx_q)
-                        self.queries.append("select body from %s%s limit 1;" % (self.initial_idx, i))
+        while i < self.num_datasets:
+            for b in self.cluster.buckets:
+                for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                    for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
+                        self.idx_q = datasets[i % len(datasets)].format(i, b.name, s, c)
+                        self.datasets.update({"ds"+str(i): (self.idx_q, b.name, s, c)})
+                        self.queries.append(queries[i % len(queries)].format("ds"+str(i)))
                         i += 1
-        th = threading.Thread(target=self._run_concurrent_queries,
-                              kwargs=dict(num_queries=self.num_indexes))
-        th.start()
+                        if i >= self.num_datasets:
+                            break
+                    if i >= self.num_datasets:
+                        break
+                if i >= self.num_datasets:
+                    break
 
     def discharge_CBAS(self):
         self.stop_run = True
 
+    def create_datasets(self):
+        for index in self.datasets.values():
+            time.sleep(1)
+            self.execute_statement_on_cbas(index[0])
+
+    def start_query_load(self):
+        th = threading.Thread(target=self._run_concurrent_queries,
+                              kwargs=dict(num_queries=self.num_datasets))
+        th.start()
+
+        monitor = threading.Thread(target=self.monitor_query_status,
+                                   kwargs=dict(duration=0,
+                                               print_duration=60))
+        monitor.start()
+
     def _run_concurrent_queries(self, num_queries):
         threads = []
-        total_query_count = 0
-        query_count = 0
-        for i in range(0, num_queries):
-            total_query_count += 1
+        self.total_query_count = 0
+        for _ in range(0, num_queries):
+            self.total_query_count += 1
             threads.append(Thread(
                 target=self._run_query,
-                name="query_thread_{0}".format(total_query_count),
+                name="query_thread_{0}".format(self.total_query_count),
                 args=(random.choice(self.queries), False, 0)))
 
         i = 0
@@ -75,18 +101,16 @@ class DoctorCBAS():
             if i % self.concurrent_batch_size == 0:
                 time.sleep(5)
             thread.start()
-            self.total_query_count += 1
-            query_count += 1
 
         i = 0
         while not self.stop_run:
             threads = []
             new_queries_to_run = num_queries - self.total_count
             for i in range(0, new_queries_to_run):
-                total_query_count += 1
+                self.total_query_count += 1
                 threads.append(Thread(
                     target=self._run_query,
-                    name="query_thread_{0}".format(total_query_count),
+                    name="query_thread_{0}".format(self.total_query_count),
                     args=(random.choice(self.queries), False, 0)))
             i = 0
             self.total_count += new_queries_to_run
@@ -103,7 +127,7 @@ class DoctorCBAS():
         name = threading.currentThread().getName()
         client_context_id = name
         try:
-            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+            status, _, _, results, _ = self.execute_statement_on_cbas(
                 query, client_context_id=client_context_id)
             if status == AnalyticsStatus.SUCCESS:
                 if validate_item_count:
@@ -133,13 +157,13 @@ class DoctorCBAS():
                 self.error_count += 1
                 self.total_count -= 1
 
-    def execute_statement_on_cbas_util(self, statement,
-                                       client_context_id=None):
+    def execute_statement_on_cbas(self, statement,
+                                  client_context_id=None):
         """
         Executes a statement on CBAS using the REST API using REST Client
         """
         try:
-            response = self.execute_statement_on_cbas(
+            response = self.execute_via_sdk(
                 statement, False, client_context_id)
 
             if type(response) == str:
@@ -168,7 +192,7 @@ class DoctorCBAS():
         except Exception as e:
             raise Exception(str(e))
 
-    def execute_statement_on_cbas(self, statement, readonly=False,
+    def execute_via_sdk(self, statement, readonly=False,
                                   client_context_id=None):
         options = AnalyticsOptions.analyticsOptions()
         options.scanConsistency(AnalyticsScanConsistency.NOT_BOUNDED)

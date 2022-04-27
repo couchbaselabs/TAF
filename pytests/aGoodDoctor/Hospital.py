@@ -166,8 +166,8 @@ class Murphy(BaseTestCase, OPD):
                                 services=["cbas"]*self.cbas_nodes)
             self.cluster.cbas_nodes = self.servers[nodes:nodes+self.cbas_nodes]
             self.cluster.nodes_in_cluster.extend(self.cluster.cbas_nodes)
-            DoctorCBAS(self.cluster, self.bucket_util,
-                       self.num_indexes)
+            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util,
+                                     self.num_indexes)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.cbas_nodes]
 
@@ -239,6 +239,10 @@ class Murphy(BaseTestCase, OPD):
                            create_start=self.num_items,
                            create_end=self.num_items*2)
         self.perform_load(validate_data=False)
+
+        if self.cbas_nodes:
+            self.drCBAS.create_datasets()
+            self.drCBAS.start_query_load()
 
         if self.index_nodes:
             self.drIndex.create_indexes()
@@ -334,6 +338,10 @@ class Murphy(BaseTestCase, OPD):
         self.perform_load(validate_data=False)
 #         self.stop_stats = False
 #         stat_th.join()
+
+        if self.cbas_nodes:
+            self.drCBAS.create_datasets()
+            self.drCBAS.start_query_load()
 
         if self.index_nodes:
             self.drIndex.create_indexes()
@@ -475,6 +483,10 @@ class Murphy(BaseTestCase, OPD):
                            update_end=self.end)
         self.perform_load(validate_data=False)
         self.track_failures = False
+
+        if self.cbas_nodes:
+            self.drCBAS.create_datasets()
+            self.drCBAS.start_query_load()
 
         if self.index_nodes:
             self.drIndex.create_indexes()
@@ -797,24 +809,10 @@ class Murphy(BaseTestCase, OPD):
             if self.loop < self.iterations:
                 self.sleep(10)
                 if len(self.cluster.kv_nodes) + 1 > self.nodes_init:
-                    nodes_cluster = self.cluster.nodes_in_cluster[:]
-                    nodes_cluster.remove(self.cluster.master)
-                    servs_out = random.sample(
-                        nodes_cluster,
-                        int(len(self.cluster.kv_nodes)
-                            - self.nodes_init))
-                    rebalance_task = self.task.async_rebalance(
-                        self.cluster.servers[:self.nodes_init], [], servs_out,
-                        retry_get_process_num=3000)
-
-                    self.task_manager.get_task_result(
-                        rebalance_task)
+                    rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes) + 1 - self.nodes_init),
+                                                    services=["kv"])
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                    self.available_servers += servs_out
-                    self.cluster.nodes_in_cluster = list(
-                        set(self.cluster.nodes_in_cluster) - set(servs_out))
-                    self.cluster.kv_nodes = list(
-                        set(self.cluster.kv_nodes) - set(servs_out))
             self.print_stats()
 
         self.log.info("Volume Test Run Complete")
@@ -869,6 +867,10 @@ class Murphy(BaseTestCase, OPD):
             self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             ###################################################################
             if self.loop == 0:
+                if self.cbas_nodes:
+                    self.drCBAS.create_datasets()
+                    self.drCBAS.start_query_load()
+                
                 if self.index_nodes:
                     self.drIndex.create_indexes()
                     self.drIndex.build_indexes()
@@ -1321,7 +1323,7 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(result, "Flush bucket failed!")
                 self.sleep(600)
                 if len(self.cluster.kv_nodes) + 1 > self.nodes_init:
-                    rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes)- self.nodes_init),
+                    rebalance_task = self.rebalance(nodes_in=[], nodes_out=int(len(self.cluster.kv_nodes) + 1 - self.nodes_init),
                                                     services=["kv"])
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
