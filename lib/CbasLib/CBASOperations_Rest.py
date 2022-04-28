@@ -52,14 +52,19 @@ class CBASHelper(RestConnection):
         if scan_wait is not None:
             params['scan_wait'] = scan_wait
         params = json.dumps(params)
-        status, content, header = self._http_request(
+        status, content, response = self._http_request(
             api, 'POST', headers=headers, params=params, timeout=timeout)
+        if hasattr(response, "status"):
+            status_code = response.status
+        elif hasattr(response, "status_code"):
+            status_code = response.status_code
+
         if status:
             return content
-        elif str(header['status']) == '503':
+        elif status_code == 503:
             self.log.info("Request Rejected")
             raise Exception("Request Rejected")
-        elif str(header['status']) in ['500', '400', '401', '403', '409']:
+        elif status_code in [500, 400, 401, 403, 409]:
             json_content = json.loads(content)
             msg = json_content['errors'][0]['msg']
             if "Job requirement" in  msg and "exceeds capacity" in msg:
@@ -116,14 +121,20 @@ class CBASHelper(RestConnection):
         params.update(parameters)
 
         params = json.dumps(params)
-        status, content, header = self._http_request(
+        status, content, response = self._http_request(
             api, 'POST', headers=headers, params=params, timeout=timeout)
+
+        if hasattr(response, "status"):
+            status_code = response.status
+        elif hasattr(response, "status_code"):
+            status_code = response.status_code
+
         if status:
             return content
-        elif str(header['status']) == '503':
+        elif status_code == 503:
             self.log.info("Request Rejected")
             raise Exception("Request Rejected")
-        elif str(header['status']) in ['500', '400', '401', '403']:
+        elif status_code in [500, 400, 401, 403, 409]:
             json_content = json.loads(content)
             msg = json_content['errors'][0]['msg']
             if "Job requirement" in msg and "exceeds capacity" in msg:
@@ -143,13 +154,19 @@ class CBASHelper(RestConnection):
             password = self.password
 
         api = self.cbas_base_url + "/analytics/admin/active_requests"
-        status, content, header = self._http_request(
+        status, content, response = self._http_request(
             api, 'DELETE',params=payload, timeout=60)
+
+        if hasattr(response, "status"):
+            status_code = response.status
+        elif hasattr(response, "status_code"):
+            status_code = response.status_code
+
         if status:
-            return header['status']
-        elif str(header['status']) == '404':
+            return status_code
+        elif status_code == 404:
             self.log.info("Request Not Found")
-            return header['status']
+            return status_code
         else:
             self.log.error("/analytics/admin/active_requests "
                            "status:{0}, content:{1}"
@@ -204,7 +221,7 @@ class CBASHelper(RestConnection):
             if verbose:
                 self.log.info('Query params: {0}'.format(params))
             api = "%s/analytics/service?%s" % (self.cbas_base_url, params)
-        status, content, header = self._http_request(
+        status, content, reponse = self._http_request(
             api, 'POST', timeout=timeout, headers=headers)
         try:
             return json.loads(content)
@@ -265,8 +282,7 @@ class CBASHelper(RestConnection):
         if not password:
             password = self.password
         headers = self._create_capi_headers(username, password)
-        cbas_base_url = "http://{0}:{1}".format(self.ip, 9110)
-        api = cbas_base_url + "/analytics/node/stats"
+        api = self.cbas_base_url + "/analytics/node/stats"
         status, content, response = self._http_request(
             api, method="GET", headers=headers)
         return status, content, response
@@ -277,8 +293,7 @@ class CBASHelper(RestConnection):
         if not password:
             password = self.password
         headers = self._create_capi_headers(username, password)
-        cbas_base_url = "http://{0}:{1}".format(self.ip, 9110)
-        api = cbas_base_url + "/analytics/node/storage/stats"
+        api = self.cbas_base_url + "/analytics/node/storage/stats"
         status, content, response = self._http_request(api, method="GET", headers=headers)
         content = json.loads(content)
         return status, content, response
@@ -289,8 +304,7 @@ class CBASHelper(RestConnection):
         if not password:
             password = self.password
         headers = self._create_capi_headers(username, password)
-        cbas_base_url = "http://{0}:{1}".format(self.ip, 8095)
-        api = cbas_base_url + "/analytics/config/service"
+        api = self.cbas_base_url + "/analytics/config/service"
         status, content, response = self._http_request(
             api, method=method, params=params, headers=headers)
         return status, content, response
@@ -304,8 +318,7 @@ class CBASHelper(RestConnection):
         if not password:
             password = self.password
         headers = self._create_capi_headers(username, password)
-        cbas_base_url = "http://{0}:{1}".format(self.ip, 8095)
-        api = cbas_base_url + "/analytics/config/node"
+        api = self.cbas_base_url + "/analytics/config/node"
         status, content, response = self._http_request(
             api, method=method, params=params, headers=headers)
         return status, content, response
@@ -328,8 +341,7 @@ class CBASHelper(RestConnection):
         if not password:
             password = self.password
         headers = self._create_capi_headers(username, password)
-        node_url = "http://{0}:{1}".format(node_ip, port)
-        api = node_url + "/analytics/node/restart"
+        api = self.cbas_base_url + "/analytics/node/restart"
         status, content, response = self._http_request(
             api, method="POST", headers=headers)
         return status, content, response
@@ -354,8 +366,7 @@ class CBASHelper(RestConnection):
         if not password:
             password = self.password
         headers = self._create_capi_headers(username, password)
-        node_url = "http://{0}:{1}".format(node_ip, port)
-        api = node_url + "/analytics/node/stats"
+        api = self.cbas_base_url + "/analytics/node/stats"
         status, content, response = self._http_request(
             api, method=method, headers=headers)
         return status, content, response
@@ -368,8 +379,7 @@ class CBASHelper(RestConnection):
         if not password:
             password = self.password
         headers = self._create_capi_headers(username, password)
-        node_url = "http://{0}:{1}".format(self.ip, port)
-        api = node_url + "/analytics/node/agg/stats/remaining"
+        api = self.cbas_base_url + "/analytics/node/agg/stats/remaining"
         status, content, response = self._http_request(
             api, method=method, headers=headers)
         return status, content, response
@@ -390,9 +400,8 @@ class CBASHelper(RestConnection):
 
     # return analytics diagnostics info
     def get_analytics_diagnostics(self, cbas_node, timeout=120):
-        analytics_base_url = "http://{0}:{1}/".format(cbas_node.ip, 8095)
-        api = analytics_base_url + 'analytics/cluster/diagnostics'
-        status, content, header = self._http_request(api, timeout=timeout)
+        api = self.cbas_base_url + 'analytics/cluster/diagnostics'
+        status, content, response = self._http_request(api, timeout=timeout)
         if status:
             json_parsed = json.loads(content)
             return json_parsed
@@ -507,7 +516,8 @@ class CBASHelper(RestConnection):
         setting = {'storageCompressionBlock': compression_type}
         setting = json.dumps(setting)
 
-        status, content, header = self._http_request(url, 'PUT', setting, headers=headers)
+        status, content, response = self._http_request(url, 'PUT', setting,
+                                                headers=headers)
         return status
 
     def analytics_link_operations(self, method="GET", uri="", params="",
@@ -522,7 +532,7 @@ class CBASHelper(RestConnection):
             api += "?{0}".format(params)
             params = ""
         try:
-            status, content, header = self._http_request(
+            status, content, response = self._http_request(
                 api, method, headers=headers, params=params, timeout=timeout)
             try:
                 content = json.loads(content)
@@ -544,7 +554,11 @@ class CBASHelper(RestConnection):
                     else:
                         content = content.split(":")
                         errors.append({"msg": content[1], "code": content[0] })
-            return status, header['status'], content, errors
+            if hasattr(response, "status"):
+                status_code = response.status
+            elif hasattr(response, "status_code"):
+                status_code = response.status_code
+            return status, status_code, content, errors
         except Exception as err:
             self.log.error("Exception occured while calling rest APi through httplib2.")
             self.log.error("Exception msg - (0)".format(str(err)))
