@@ -217,11 +217,40 @@ class RestConnection(object):
                                            timeout=timeout, verify=verify)
                 status = response.status_code
                 content = response.content
-                if status in [200, 201, 202]:
+                if status in [200, 201, 202, 204]:
                     return True, content, response
                 else:
-                    self.log.error("Status: {0} Content: {1} Reason: {2}".
-                                   format(status, content, response.reason))
+                    try:
+                        json_parsed = json.loads(content)
+                    except ValueError:
+                        json_parsed = dict()
+                        json_parsed["error"] = "status: {0}, content: {1}".format(
+                            response['status'], content)
+                    reason = "unknown"
+                    if "error" in json_parsed:
+                        reason = json_parsed["error"]
+                    elif "errors" in json_parsed:
+                        reason = json_parsed["errors"]
+                    if ("accesskey" in params.lower()) or (
+                            "secretaccesskey" in params.lower()) or (
+                            "password" in params.lower()) or (
+                            "secretkey" in params.lower()):
+                        message = '{0} {1} body: {2} headers: {3} ' \
+                                  'error: {4} reason: {5} {6} {7}'. \
+                            format(method, api,
+                                   "Body is being redacted because it contains sensitive info",
+                                   headers, response.status_code, reason,
+                                   content.rstrip('\n'),
+                                   RestConnection.get_auth(headers))
+                    else:
+                        message = '{0} {1} body: {2} headers: {3} ' \
+                                  'error: {4} reason: {5} {6} {7}'. \
+                            format(method, api, params, headers,
+                                   response.status_code, reason,
+                                   content.rstrip('\n'),
+                                   RestConnection.get_auth(headers))
+                    self.log.error(message)
+                    self.log.debug(''.join(traceback.format_stack()))
                     return False, content, response
             except requests.exceptions.HTTPError as errh:
                 self.log.error("HTTP Error {0}".format(errh))
@@ -257,7 +286,7 @@ class RestConnection(object):
             try:
                 response, content = httplib2.Http(timeout=timeout).request(
                     api, method, params, headers)
-                if response['status'] in ['200', '201', '202', '204']:
+                if response.status in [200, 201, 202, 204]:
                     return True, content, response
                 else:
                     try:
