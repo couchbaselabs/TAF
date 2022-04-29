@@ -5031,6 +5031,19 @@ class RemoteMachineShellConnection:
             self.log_command_output(output, error, debug=True)
         return output
 
+    def set_allowedhosts(self, host, user, password, allowedhosts = None):
+        cmd = "curl -X POST %s:8091/settings/security -d " \
+                "'allowedHosts=%s' -u %s:%s" % \
+                (host, allowedhosts, user, password)
+        output, _ = self.execute_command(cmd)
+        return output
+
+    def get_allowedhosts(self, user, password):
+        cmd = "curl -X GET localhost:8091/settings/security -u %s:%s" % (user, password)
+        output, _ = self.execute_command(cmd)
+        pattern = re.compile(r"\"allowedHosts\":(\[.*?])")
+        return pattern.findall(output[0])[0]
+
 
 class RemoteUtilHelper(object):
 
