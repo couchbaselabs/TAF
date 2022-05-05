@@ -129,6 +129,9 @@ class Murphy(BaseTestCase, OPD):
             self.xdcr_remote_cluster.nodes_in_cluster.extend(remote_nodes)
         #######################################################################
         self.PrintStep("Step 2: Create required buckets and collections.")
+        if self.num_buckets > 10:
+            self.bucket_util.change_max_buckets(self.cluster.master,
+                                                self.num_buckets)
         self.create_required_buckets(self.cluster)
         self.create_required_collections(self.cluster, self.num_scopes, self.num_collections)
         if self.xdcr_remote_nodes > 0:

@@ -2119,7 +2119,7 @@ class BucketUtils(ScopeUtils):
                     cluster_node.rest_password, total_buckets,
                     cluster_node.ip, cluster_node.port)
         shell = RemoteMachineShellConnection(cluster_node)
-        output, error = shell.execute_command_raw(command)
+        output, error = shell.execute_command_raw_jsch(command)
         shell.log_command_output(output, error)
         shell.disconnect()
 
