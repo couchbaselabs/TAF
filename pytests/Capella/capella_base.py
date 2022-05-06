@@ -5,10 +5,6 @@ Created on Apr 20, 2022
 '''
 
 
-import math
-import os
-import random
-import subprocess
 import time
 import copy
 
@@ -30,17 +26,18 @@ from com.couchbase.test.docgen import DocRange
 from couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import ServerOutOfMemoryException,\
     DocumentExistsException, DocumentNotFoundException, TimeoutException
-from capella.internal_api import capella_utils as CapellaAPI
+from capella.internal_api import CapellaUtils as CapellaAPI
+
 
 class CapellaBase(BaseTestCase):
-    
+
     def tearDown(self):
         self.cluster_util.print_cluster_stats(self.cluster)
         for bucket in self.cluster.buckets:
             CapellaAPI.delete_bucket(self.pod, self.tenant, self.cluster, bucket.name)
 
         super(CapellaBase, self).tearDown()
-    
+
     def setUp(self):
         super(CapellaBase, self).setUp()
         self.rest = RestConnection(self.cluster.master)

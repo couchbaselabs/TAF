@@ -5,10 +5,10 @@ Created on Apr 20, 2022
 '''
 from Capella.capella_base import CapellaBase
 # from TestInput import TestInputServer
-# from capella.internal_api import capella_utils as CapellaAPI
+# from capella.internal_api import CapellaUtils as CapellaAPI
+
 
 class ScalingTests(CapellaBase):
-    
     def setUp(self):
         super(ScalingTests, self).setUp()
 
@@ -20,7 +20,7 @@ class ScalingTests(CapellaBase):
         self.create_end = self.init_items_per_collection
         self.new_loader(wait=True)
         self.data_validation()
-        
+
         self.delete_start = self.create_start
         self.delete_end = self.create_end
         self.delete_perc = 50

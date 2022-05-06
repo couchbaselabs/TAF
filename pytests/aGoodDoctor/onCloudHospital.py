@@ -6,21 +6,18 @@ Created on May 2, 2022
 
 from basetestcase import BaseTestCase
 from remote.remote_util import RemoteMachineShellConnection
-from Cb_constants.CBServer import CbServer
 from membase.api.rest_client import RestConnection
 from aGoodDoctor.cbas import DoctorCBAS
 from aGoodDoctor.n1ql import DoctorN1QL
-from aGoodDoctor.xdcr import DoctorXDCR
 from fts_utils.fts_ready_functions import FTSUtils
 from aGoodDoctor.opd import OPD
 from BucketLib.BucketOperations import BucketHelper
-from cluster_utils.cluster_ready_functions import CBCluster
 import threading
 import random
 from aGoodDoctor.bkrs import DoctorBKRS
 import os
 from BucketLib.bucket import Bucket
-from capella.internal_api import capella_utils as CapellaAPI
+from capella.internal_api import CapellaUtils as CapellaAPI
 
 
 class Murphy(BaseTestCase, OPD):

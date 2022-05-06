@@ -1,8 +1,8 @@
-'''
+"""
 Created on Feb 16, 2022
 
 @author: ritesh.agarwal
-'''
+"""
 from collections import OrderedDict
 from datetime import datetime
 import traceback
@@ -14,15 +14,14 @@ from Jython_tasks.task_manager import TaskManager
 from SystemEventLogLib.Events import EventHelper
 from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
-from capella.internal_api import capella_utils as CapellaAPI
-from capella.internal_api import pod, tenant
+from capella.internal_api import CapellaUtils as CapellaAPI
+from capella.internal_api import Pod, Tenant
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from common_lib import sleep
 from couchbase_helper.cluster import ServerTasks
 from couchbase_helper.durability_helper import BucketDurability
 from global_vars import logger
 import global_vars
-from java.time import Duration
 from membase.api.rest_client import RestConnection
 from node_utils.node_ready_functions import NodeUtils
 from sdk_client3 import SDKClientPool
@@ -171,13 +170,11 @@ class BaseTestCase(unittest.TestCase):
         pod_url = self.input.capella.get("pod")
         pod_url = "https://{}".format(pod_url)
         pod_url_basic = "https://cloud{}".format(pod_url)
-        self.pod = pod(pod_url, pod_url_basic)
+        self.pod = Pod(pod_url, pod_url_basic)
 
-        self.tenant = tenant(
-            self.input.capella.get("tenant_id"),
-            self.input.capella.get("capella_user"),
-            self.input.capella.get("capella_pwd"),
-            )
+        self.tenant = Tenant(self.input.capella.get("tenant_id"),
+                             self.input.capella.get("capella_user"),
+                             self.input.capella.get("capella_pwd"))
 
         # SDKClientPool object for creating generic clients across tasks
         if self.sdk_client_pool is True:
@@ -225,8 +222,10 @@ class BaseTestCase(unittest.TestCase):
         self.test_failure = None
         self.crash_warning = self.input.param("crash_warning", False)
         self.summary = TestSummary(self.log)
-        self.rest_username = TestInputSingleton.input.membase_settings.rest_username
-        self.rest_password = TestInputSingleton.input.membase_settings.rest_password
+        self.rest_username = \
+            TestInputSingleton.input.membase_settings.rest_username
+        self.rest_password = \
+            TestInputSingleton.input.membase_settings.rest_password
 
         self.log_setup_status(self.__class__.__name__, "started")
         cluster_name_format = "C%s"
@@ -244,10 +243,10 @@ class BaseTestCase(unittest.TestCase):
             "description": ""
             }
 
-        services = self.input.param("services", "kv")
+        services = self.input.param("services", CbServer.Services.KV)
         for service_group in services.split("-"):
             service_group = service_group.split(":")
-            min_nodes = 3 if "kv" in service_group else 2
+            min_nodes = 3 if CbServer.Services.KV in service_group else 2
             service_config = {
                 "count": max(min_nodes, self.nodes_init),
                 "services": service_group,
@@ -267,8 +266,10 @@ class BaseTestCase(unittest.TestCase):
 
         for _ in range(self.num_clusters):
             cluster_name = cluster_name_format % counter_index
-            self.capella_cluster_config["name"] = "aTAF_{}".format(cluster_name)
-            cluster_id, srv, servers = CapellaAPI.create_cluster(self.pod, self.tenant, self.capella_cluster_config)
+            self.capella_cluster_config["name"] = "aTAF_%s" % cluster_name
+            cluster_id, srv, servers = \
+                CapellaAPI.create_cluster(self.pod, self.tenant,
+                                          self.capella_cluster_config)
             CapellaAPI.create_db_user(self.pod, self.tenant, cluster_id,
                                       self.rest_username,
                                       self.rest_password)

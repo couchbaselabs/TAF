@@ -51,8 +51,9 @@ from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from testconstants import INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA, MIN_KV_QUOTA
 from gsiLib.GsiHelper_Rest import GsiHelper
-from capella.internal_api import capella_utils as CapellaAPI
-from TestInput import TestInputSingleton, TestInputServer
+from capella.internal_api import CapellaUtils as CapellaAPI
+from TestInput import TestInputServer
+
 
 class Task(Callable):
     def __init__(self, thread_name):
