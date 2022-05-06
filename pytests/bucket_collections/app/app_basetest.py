@@ -2,13 +2,13 @@ import time
 from copy import deepcopy
 from ruamel.yaml import YAML
 
-from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
 from Cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
 from backup_lib.backup import BackupHelper
 from basetestcase import BaseTestCase
 from bucket_collections.app.constants import global_vars
+from capella.internal_api import CapellaUtils as CapellaAPI
 from cb_tools.cbstats import Cbstats
 from cbas_utils.cbas_utils import CbasUtil
 from membase.api.rest_client import RestConnection
@@ -37,6 +37,7 @@ class AppBase(BaseTestCase):
         self.sdk_clients = global_vars.sdk_clients
         self.app_path = "pytests/bucket_collections/app/"
         self.config_path = self.app_path + "config/"
+        self.capella_run = self.input.param("capella_run", False)
 
         if self.cluster_conf is not None:
             with open(self.config_path+self.cluster_conf+".yaml", "r") as fp:
@@ -70,8 +71,9 @@ class AppBase(BaseTestCase):
             with open(self.config_path+self.service_conf+".yaml", "r") as fp:
                 self.service_conf = YAML().load(fp.read())["services"]
 
-            # Configure backup settings
-            self.configure_bucket_backups()
+            if not self.capella_run:
+                # Configure backup settings
+                self.configure_bucket_backups()
 
             # Create required GSIs
             self.create_indexes()
@@ -111,11 +113,12 @@ class AppBase(BaseTestCase):
         self.cluster.nodes_in_cluster.extend(
             [self.cluster.master] + nodes_init)
 
-        # Create RBAC users
-        self.create_rbac_users(
-            self.cluster.master.rest_username,
-            self.cluster.master.rest_password,
-            self.cluster_conf["cb_cluster"]["rbac_users"])
+        if not self.capella_run:
+            # Create RBAC users
+            self.create_on_prem_rbac_users(
+                self.cluster.master.rest_username,
+                self.cluster.master.rest_password,
+                self.cluster_conf["cb_cluster"]["rbac_users"])
 
     def __setup_buckets(self):
         self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
@@ -139,13 +142,38 @@ class AppBase(BaseTestCase):
                         self.fail("Invalid sample bucket '%s'"
                                   % bucket["name"])
 
-                    if self.bucket_util.load_sample_bucket(
+                    if self.capella_run:
+                        CapellaAPI.load_sample_bucket(self.pod, self.tenant,
+                                                      self.cluster.id,
+                                                      "travel-sample")
+                        self.sleep(15, "Wait for bucket to get warmed up")
+                        retry_count = 600
+                        sleep_time = 5
+                        buckets = \
+                            self.bucket_util.get_all_buckets(self.cluster)
+                        for c_bucket in buckets:
+                            if c_bucket.name == s_bucket.name:
+                                # Append loaded bucket into buckets list
+                                self.cluster.buckets.append(c_bucket)
+                                break
+                        while retry_count > 0:
+                            docs = self.bucket_util.get_buckets_itemCount(
+                                self.cluster)
+                            if docs[s_bucket.name] == \
+                                    s_bucket.stats.expected_item_count:
+                                break
+                            self.sleep(sleep_time, "Bucket still loading")
+                            retry_count -= sleep_time
+                        else:
+                            self.fail("Sample bucket '%s' not loaded" %
+                                      s_bucket.name)
+                    elif self.bucket_util.load_sample_bucket(
                             self.cluster, s_bucket) is False:
                         self.fail("Failed to load sample bucket")
-                    if Bucket.ramQuotaMB in bucket:
-                        BucketHelper(self.cluster.master).change_bucket_props(
-                            self.cluster.buckets[-1],
-                            ramQuotaMB=bucket[Bucket.ramQuotaMB])
+                    # if Bucket.ramQuotaMB in bucket:
+                    #     BucketHelper(self.cluster.master).change_bucket_props(
+                    #         self.cluster.buckets[-1],
+                    #         ramQuotaMB=bucket[Bucket.ramQuotaMB])
                 else:
                     self.bucket_util.create_default_bucket(
                         cluster=self.cluster,
@@ -193,11 +221,15 @@ class AppBase(BaseTestCase):
             # Create RBAC users
             for t_bucket in self.rbac_conf["rbac_roles"]:
                 if t_bucket["bucket"] == bucket["name"]:
-                    self.create_rbac_users("rbac_admin", "rbac_admin",
-                                           t_bucket["roles"])
+                    if self.capella_run:
+                        self.create_capella_users(t_bucket["roles"])
+                    else:
+                        self.create_on_prem_rbac_users(
+                            "rbac_admin", "rbac_admin", t_bucket["roles"])
                     break
 
-    def create_rbac_users(self, rest_username, rest_password, user_role_list):
+    def create_on_prem_rbac_users(self, rest_username, rest_password,
+                                  user_role_list):
         self.__print_step("Creating RBAC users")
         master = deepcopy(self.cluster.master)
         master.rest_username = rest_username
@@ -216,6 +248,14 @@ class AppBase(BaseTestCase):
                           'roles': user_roles})
         self.rbac_util.create_user_source(users, 'builtin', master)
         _ = self.rbac_util.add_user_role(roles, rest_conn, 'builtin')
+
+    def create_capella_users(self, user_role_list):
+        for user_role in user_role_list:
+            u_name = user_role["user_name"]
+            password = user_role["password"]
+            self.log.debug("Create user %s" % u_name)
+            print CapellaAPI.create_db_user(self.pod, self.tenant, self.cluster.id,
+                                      u_name, password)
 
     def create_sdk_clients(self, rbac_roles):
         self.__print_step("Creating required SDK clients")
@@ -376,8 +416,7 @@ class AppBase(BaseTestCase):
         collection_data = None
 
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            shell = RemoteMachineShellConnection(node)
-            cb_stat_objects.append(Cbstats(shell))
+            cb_stat_objects.append(Cbstats(node))
 
         for cb_stat in cb_stat_objects:
             tem_collection_data = cb_stat.get_collections(bucket)
@@ -402,7 +441,3 @@ class AppBase(BaseTestCase):
                     bucket, s_name,
                     {"name": c_name, "num_items": c_data["items"],
                      "maxTTL": c_data.get("maxTTL", 0)})
-
-        # Close shell connections
-        for cb_stat in cb_stat_objects:
-            cb_stat.shellConn.disconnect()

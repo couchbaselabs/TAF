@@ -2,65 +2,65 @@ rbac_roles:
   - bucket: "travel-sample"
     roles:
       - user_name: "bucket_admin"
-        password: "bucket_admin"
+        password: "Bucket_admin@123"
         roles:
           - "bucket_admin[travel-sample]"
           - "query_manage_index[travel-sample]"
       - user_name: "guest"
-        password: "guest123"
+        password: "Guest@123"
         roles:
           - "query_select[travel-sample]"
       - user_name: "cbas_admin"
-        password: "cbas_admin"
+        password: "Cbas_admin@123"
         select_bucket: False
         roles:
           - "analytics_admin"
           - "analytics_manager[*]"
       - user_name: "user_query"
-        password: "user_query"
+        password: "User_query@123"
         roles:
           - "query_select[travel-sample]"
           - "query_update[travel-sample]"
       - user_name: "user_manager"
-        password: "user_manager"
+        password: "User_manager@123"
         roles:
           - "data_reader[travel-sample]"
           - "data_writer[travel-sample]"
           - "query_select[travel-sample]"
       - user_name: "user_booking"
-        password: "user_booking"
+        password: "User_booking@123"
         roles:
           - "data_reader[travel-sample]"
           - "data_writer[travel-sample]"
       - user_name: "review_writer"
-        password: "review_writer"
+        password: "Review_writer@123"
         roles:
           - "data_reader[travel-sample]"
           - "data_writer[travel-sample]"
       - user_name: "bucket_data_writer"
-        password: "bucket_data_writer"
+        password: "Bucket_data_writer@123"
         roles:
           - "data_writer[travel-sample]"
           - "query_select[travel-sample]"
       - user_name: "airline_admin"
-        password: "airline_admin"
+        password: "Airline_admin@123"
         roles:
           - "data_reader[travel-sample]"
           - "data_writer[travel-sample]"
       - user_name: "airline_booking"
-        password: "airline_booking"
+        password: "Airline_booking@123"
         roles:
           - "data_reader[travel-sample]"
           - "data_writer[travel-sample]"
           - "query_select[travel-sample]"
           - "query_update[travel-sample]"
       - user_name: "hotel_admin"
-        password: "hotel_admin"
+        password: "Hotel_admin@123"
         roles:
           - "data_reader[travel-sample]"
           - "data_writer[travel-sample]"
       - user_name: "hotel_booking"
-        password: "hotel_booking"
+        password: "Hotel_booking@123"
         roles:
           - "data_reader[travel-sample]"
           - "data_writer[travel-sample]"
