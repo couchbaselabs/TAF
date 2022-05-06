@@ -254,7 +254,7 @@ class AppBase(BaseTestCase):
             u_name = user_role["user_name"]
             password = user_role["password"]
             self.log.debug("Create user %s" % u_name)
-            print CapellaAPI.create_db_user(self.pod, self.tenant, self.cluster.id,
+            CapellaAPI.create_db_user(self.pod, self.tenant, self.cluster.id,
                                       u_name, password)
 
     def create_sdk_clients(self, rbac_roles):
@@ -277,9 +277,10 @@ class AppBase(BaseTestCase):
     def create_indexes(self):
         self.__print_step("Creating required Indexes")
 
-        self.log.info("Setting index storage mode=gsi")
-        RestConnection(self.cluster.master).set_indexer_storage_mode(
-            storageMode=self.index_storage_mode)
+        if not self.capella_run:
+            self.log.info("Setting index storage mode=gsi")
+            RestConnection(self.cluster.master).set_indexer_storage_mode(
+                storageMode=self.index_storage_mode)
 
         self.log.info("Dropping default indexes on _default collection")
         select_result = self.sdk_clients["bucket_admin"].cluster.query(
