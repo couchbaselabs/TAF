@@ -3210,6 +3210,18 @@ class RestConnection(newRC):
             raise Exception(content)
         return json.loads(content)
 
+    '''
+    Update user password
+    '''
+    def update_password(self, user_id, password):
+        url = "settings/rbac/users/local/" + user_id
+        api = self.baseUrl + url
+        params = urllib.urlencode({'password': password})
+        status, content, header = self._http_request(api, 'PATCH', params)
+        if not status:
+            raise Exception(content)
+        return content
+
     def add_set_bulitin_group(self, group_name, payload):
         url = "settings/rbac/groups/" + group_name
         api = self.baseUrl + url
