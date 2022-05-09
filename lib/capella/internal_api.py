@@ -216,6 +216,27 @@ class CapellaUtils(object):
             CapellaUtils.log.info("Bucket not found.")
 
     @staticmethod
+    def get_all_buckets(pod, tenant, cluster):
+        uri = "{}/v2/organizations/{}/projects/{}/clusters/{}/buckets" \
+            .format(pod.url, tenant.id, tenant.project_id, cluster.id)
+        header = CapellaUtils.get_authorization_internal(pod, tenant)
+        _, content = http.request(uri, method="GET", body='', headers=header)
+        return json.loads(content)["buckets"]["data"]
+
+    @staticmethod
+    def update_bucket_settings(pod, tenant, cluster, bucket_id, bucket_params):
+        uri = "{}/v2/organizations/{}/projects/{}/clusters/{}/buckets/{}" \
+            .format(pod.url, tenant.id, tenant.project_id,
+                    cluster.id, bucket_id)
+        header = CapellaUtils.get_authorization_internal(pod, tenant)
+        response, content = http.request(uri, method="PUT", headers=header,
+                                         body=json.dumps(bucket_params))
+        code = int(response.get("status"))
+        if 200 > code or code >= 300:
+            CapellaUtils.log.critical("Bucket update failed: %s" % content)
+        return response
+
+    @staticmethod
     def scale(pod, tenant, cluster, scale_params):
         base_url_internal = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
             .format(pod.url, tenant.id, tenant.project_id, cluster.id)
@@ -275,7 +296,6 @@ class CapellaUtils(object):
         header = CapellaUtils.get_authorization_internal(pod, tenant)
         response, content = http.request(uri, method="GET", body='',
                                          headers=header)
-        CapellaUtils.log.info(json.loads(content))
         return [server.get("data")
                 for server in json.loads(content).get("data")]
 
