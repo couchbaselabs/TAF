@@ -261,7 +261,7 @@ class BaseTestCase(unittest.TestCase):
 
         self.tenant.project_id = \
             TestInputSingleton.input.capella.get("project", None)
-        if self.tenant.project_id is None:
+        if not self.tenant.project_id:
             CapellaAPI.create_project(self.pod, self.tenant, "a_taf_run")
 
         for _ in range(self.num_clusters):
