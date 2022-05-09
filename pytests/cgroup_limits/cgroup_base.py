@@ -47,15 +47,12 @@ class CGroupBase(unittest.TestCase):
         self.shell = RemoteMachineShellConnection(self.node)
         self.skip_setup_teardown = self.input.param("skip_setup_teardown", None)
         self.skip_teardown = self.input.param("skip_teardown", None)
-        self.cpus = self.input.param("cpus", 2)
-        self.mem = self.input.param("mem", 1073741824)
-        self.limits = True
-        if self.cpus is None and self.mem is None:
-            self.limits = False
+        self.cpus = self.input.param("cpus", 2)  # cpus limit for the container
+        self.mem = self.input.param("mem", 1073741824)  # mem limit for the container in bytes
         if self.skip_setup_teardown is None:
             self.start_docker()
             self.remove_all_containers()
-            self.start_couchbase_container(limits=self.limits, mem=self.mem, cpus=self.cpus)
+            self.start_couchbase_container(mem=self.mem, cpus=self.cpus)
             self.initialize_node()
         self.log.info("Finished CGroupBase")
 
@@ -75,7 +72,7 @@ class CGroupBase(unittest.TestCase):
         o, e = self.shell.execute_command(cmd)
         self.log.info("Output:{0}, Error{1}".format(o, e))
 
-    def start_couchbase_container(self, limits=True, mem=1073741824, cpus=2, sleep=20):
+    def start_couchbase_container(self,mem=1073741824, cpus=2, sleep=20):
         """
         Starts couchbase server inside a container on the VM
         (Assumes a docker image 'couchbase-neo' is present on the VM)
@@ -84,13 +81,15 @@ class CGroupBase(unittest.TestCase):
         :cpus: int - max number of cpus for the container
         """
         self.log.info("Starting couchbase server inside a container")
-        if limits:
-            cmd = "docker run -d --name db -m " + str(mem) + " --cpus=" + str(cpus) + \
-                  " -p 8091-8096:8091-8096 -p 11210-11211:11210-11211 couchbase-neo"
-        else:
-            cmd = "docker run -d --name db -p 8091-8096:8091-8096 " \
-                  "-p 11210-11211:11210-11211 couchbase-neo"
+        flags = ""
+        if self.mem not in [None, "None"]:
+            flags = flags + "-m " + str(mem) + "b"
+        if self.cpus not in [None, "None"]:
+            flags = flags + " --cpus " + str(cpus)
+        cmd = "docker run -d --name db " + flags + \
+              " -p 8091-8096:8091-8096 -p 11210-11211:11210-11211 couchbase-neo"
         o, e = self.shell.execute_command(cmd)
+        self.log.info("Docker command run: {0}".format(cmd))
         self.log.info("Output:{0}, Error{1}".format(o, e))
         self.log.info("Sleeping for {0} secs post starting couchbase container".format(sleep))
         time.sleep(sleep)
