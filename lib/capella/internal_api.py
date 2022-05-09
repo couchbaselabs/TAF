@@ -48,20 +48,23 @@ class CapellaUtils(object):
         return cbc_api_request_headers
 
     @staticmethod
-    def get_authorization_v3(cbc_api_method, cbc_api_endpoint):
+    def get_authorization_v3(tenant, method, endpoint):
         # Epoch time in milliseconds
         cbc_api_now = int(datetime.datetime.now().timestamp() * 1000)
 
         # Form the message string for the Hmac hash
-        cbc_api_message= cbc_api_method + '\n' + cbc_api_endpoint + '\n' + str(cbc_api_now)
+        cbc_api_message = method + '\n' + endpoint + '\n' + str(cbc_api_now)
 
         # Calculate the hmac hash value with secret key and message
-        cbc_api_signature = base64.b64encode(hmac.new(bytes(self.api_secret_key, 'utf-8'), bytes(cbc_api_message,'utf-8'), digestmod=hashlib.sha256).digest())
+        cbc_api_signature = base64.b64encode(
+            hmac.new(bytes(tenant.api_secret_key, 'utf-8'),
+                     bytes(cbc_api_message, 'utf-8'),
+                     digestmod=hashlib.sha256).digest())
 
         # Values for the header
         cbc_api_request_headers = {
-           'Authorization' : 'Bearer ' + self.api_access_key + ':' + cbc_api_signature.decode() ,
-           'Couchbase-Timestamp' : str(cbc_api_now),
+           'Authorization': 'Bearer ' + tenant.api_access_key + ':' + cbc_api_signature.decode(),
+           'Couchbase-Timestamp': str(cbc_api_now),
         }
         return cbc_api_request_headers
 
@@ -71,9 +74,9 @@ class CapellaUtils(object):
 
         uri = '{}/v2/organizations/{}/projects'.format(pod.url, tenant.id)
         capella_header = CapellaUtils.get_authorization_internal(pod, tenant)
-        response, content = http.request(uri, method="POST",
-                                         body=json.dumps(project_details),
-                                         headers=capella_header)
+        _, content = http.request(uri, method="POST",
+                                  body=json.dumps(project_details),
+                                  headers=capella_header)
         project_id = json.loads(content).get("id")
         tenant.project_id = project_id
         CapellaUtils.log.info("Project ID: {}".format(project_id))
@@ -83,8 +86,8 @@ class CapellaUtils(object):
         header = CapellaUtils.get_authorization_internal(pod, tenant)
         uri = '{}/v2/organizations/{}/projects/{}'.format(pod.url, tenant.id,
                                                           tenant.project_id)
-        response, content = http.request(uri, method="DELETE", body='',
-                                         headers=header)
+        _, _ = http.request(uri, method="DELETE", body='',
+                            headers=header)
         CapellaUtils.log.info("Project Deleted: {}".format(tenant.project_id))
 
     @staticmethod
@@ -113,7 +116,8 @@ class CapellaUtils(object):
 
         cluster_id = json.loads(content).get("id")
         CapellaUtils.log.info("Cluster created with cluster ID: {}".format(cluster_id))
-        CapellaUtils.wait_until_done(pod, tenant, cluster_id, "Creating Cluster")
+        CapellaUtils.wait_until_done(pod, tenant, cluster_id,
+                                     "Creating Cluster")
         cluster_srv = CapellaUtils.get_cluster_srv(pod, tenant, cluster_id)
         CapellaUtils.add_allowed_ip(pod, tenant, cluster_id)
         servers = CapellaUtils.get_nodes(pod, tenant, cluster_id)
@@ -140,7 +144,7 @@ class CapellaUtils(object):
                 else:
                     CapellaUtils.log.info("{} Ready!!!".format(msg))
                     break
-            except:
+            except Exception:
                 CapellaUtils.log.info("ERROR!!!")
                 break
 
@@ -155,8 +159,8 @@ class CapellaUtils(object):
 
         header = CapellaUtils.get_authorization_internal(pod, tenant)
         while True:
-            response, content = http.request(base_url_internal, method="GET",
-                                             body='', headers=header)
+            _, content = http.request(base_url_internal, method="GET",
+                                      body='', headers=header)
             content = json.loads(content)
             if content.get("data"):
                 CapellaUtils.log.info("Cluster status: {}"
@@ -184,31 +188,56 @@ class CapellaUtils(object):
                    "durabilityLevel": "none", "timeToLive": None}
         default.update(bucket_params)
         header = CapellaUtils.get_authorization_internal(pod, tenant)
-        response, content = http.request(uri, method="POST",
-                                         body=json.dumps(default),
-                                         headers=header)
+        response, _ = http.request(uri, method="POST",
+                                   body=json.dumps(default),
+                                   headers=header)
         if 200 <= int(response.get("status")) < 300:
             CapellaUtils.log.info("Bucket create successfully!")
+
+    @staticmethod
+    def get_bucket_id(pod, tenant, cluster, name):
+        base_url_internal = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
+            .format(pod.url, tenant.id, tenant.project_id, cluster.id)
+        uri = '{}/buckets'.format(base_url_internal)
+        header = CapellaUtils.get_authorization_internal(pod, tenant)
+        _, content = http.request(uri, method="GET", body='', headers=header)
+        content = json.loads(content)
+        bucket_id = None
+        for bucket in content.get("buckets").get("data"):
+                if bucket.get("data").get("name") == name:
+                        bucket_id = bucket.get("data").get("id")
+        return bucket_id
+
+    @staticmethod
+    def flush_bucket(pod, tenant, cluster, name):
+        base_url_internal = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
+            .format(pod.url, tenant.id, tenant.project_id, cluster.id)
+        uri = '{}/buckets'.format(base_url_internal)
+        bucket_id = CapellaUtils.get_bucket_id(tenant, cluster, name)
+        if bucket_id:
+            uri = uri + "/" + bucket_id + "/flush"
+            header = CapellaUtils.get_authorization_internal(pod, tenant)
+            response, content = http.request(uri, method="POST",
+                                             headers=header)
+            if int(response.get("status")) >= 200 and int(response.get("status")) < 300 :
+                CapellaUtils.log.info("Bucket deleted successfully!")
+            else:
+                CapellaUtils.log.info(content)
+        else:
+            CapellaUtils.log.info("Bucket not found.")
 
     @staticmethod
     def delete_bucket(pod, tenant, cluster, name):
         base_url_internal = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
             .format(pod.url, tenant.id, tenant.project_id, cluster.id)
         uri = '{}/buckets'.format(base_url_internal)
-        header = CapellaUtils.get_authorization_internal(pod, tenant)
-        response, content = http.request(uri, method="GET", body='',
-                                         headers=header)
-        content = json.loads(content)
-        bucket_id = None
-        for bucket in content.get("buckets").get("data"):
-            if bucket.get("data").get("name") == name:
-                    bucket_id = bucket.get("data").get("id")
+        bucket_id = CapellaUtils.get_bucket_id(tenant, cluster, name)
         if bucket_id:
             uri = uri + "/" + bucket_id
             header = CapellaUtils.get_authorization_internal(pod, tenant)
             response, content = http.request(uri, method="DELETE",
                                              headers=header)
-            if 200 <= int(response.get("status")) < 300:
+            if int(response.get("status")) >= 200 and int(response.get("status")) < 300 :
                 CapellaUtils.log.info("Bucket deleted successfully!")
             else:
                 CapellaUtils.log.info(content)
@@ -247,8 +276,6 @@ class CapellaUtils(object):
         response, content = http.request(uri, method="POST", body=scale_params,
                                          headers=header)
         return response, content
-        # time.sleep(10)
-        # CapellaUtils.wait_until_done(pod, tenant, cluster.id, "Scaling Operation")
 
     @staticmethod
     def jobs(pod, tenant, cluster_id):
@@ -256,8 +283,8 @@ class CapellaUtils(object):
             .format(pod.url, tenant.id, tenant.project_id, cluster_id)
         uri = '{}/jobs'.format(base_url_internal)
         header = CapellaUtils.get_authorization_internal(pod, tenant)
-        response, content = http.request(uri, method="GET", body='',
-                                         headers=header)
+        _, content = http.request(uri, method="GET", body='',
+                                  headers=header)
         return json.loads(content)
 
     @staticmethod
@@ -265,8 +292,8 @@ class CapellaUtils(object):
         endpoint = '/v3/clusters/{}'.format(cluster_id)
         uri = pod.url_public + endpoint
         header = CapellaUtils.get_authorization_v3("GET", endpoint)
-        response, content = http.request(uri, method="GET", body='',
-                                         headers=header)
+        _, content = http.request(uri, method="GET", body='',
+                                  headers=header)
         return json.loads(content)
 
     @staticmethod
@@ -274,8 +301,8 @@ class CapellaUtils(object):
         uri = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
             .format(pod.url, tenant.id, tenant.project_id, cluster_id)
         header = CapellaUtils.get_authorization_internal(pod, tenant)
-        response, content = http.request(uri, method="GET", body='',
-                                         headers=header)
+        _, content = http.request(uri, method="GET", body='',
+                                  headers=header)
         return json.loads(content)
 
     @staticmethod
@@ -294,8 +321,9 @@ class CapellaUtils(object):
             .format(pod.url, tenant.id, tenant.project_id, cluster_id)
         uri = '{}/nodes'.format(base_url_internal)
         header = CapellaUtils.get_authorization_internal(pod, tenant)
-        response, content = http.request(uri, method="GET", body='',
-                                         headers=header)
+        _, content = http.request(uri, method="GET", body='',
+                                  headers=header)
+        CapellaUtils.log.info(json.loads(content))
         return [server.get("data")
                 for server in json.loads(content).get("data")]
 
@@ -305,7 +333,7 @@ class CapellaUtils(object):
         uri = '{}/v2/organizations/{}/projects/{}/clusters/{}' \
               .format(pod.url, tenant.id, tenant.project_id, cluster_id)
         uri = uri + '/users?page=%s&perPage=%s' % (page, limit)
-        response, content = http.request(uri, method="GET", headers=header)
+        _, content = http.request(uri, method="GET", headers=header)
         return json.loads(content)
 
     @staticmethod
@@ -323,9 +351,9 @@ class CapellaUtils(object):
                 "permissions": {"data_reader": {}, "data_writer": {}}}
         uri = '{}/users'.format(base_url_internal)
         header = CapellaUtils.get_authorization_internal(pod, tenant)
-        response, content = http.request(uri, method="POST",
-                                         body=json.dumps(body),
-                                         headers=header)
+        _, content = http.request(uri, method="POST",
+                                  body=json.dumps(body),
+                                  headers=header)
         CapellaUtils.log.info(json.loads(content))
         return json.loads(content)
 
@@ -344,9 +372,9 @@ class CapellaUtils(object):
     @staticmethod
     def load_sample_bucket(pod, tenant, cluster_id, bucket_name):
         header = CapellaUtils.get_authorization_internal(pod, tenant)
-        uri = "{}/v2/organizations/{}/projects/{}/clusters/{}/buckets/samples" \
+        uri = "{}/v2/organizations/{}/projects/{}/clusters/{}/buckets/samples"\
               .format(pod.url, tenant.id, tenant.project_id, cluster_id)
         param = {'name': bucket_name}
-        response, content = http.request(uri, method="POST",
-                                         body=json.dumps(param),
-                                         headers=header)
+        _, _ = http.request(uri, method="POST",
+                            body=json.dumps(param),
+                            headers=header)
