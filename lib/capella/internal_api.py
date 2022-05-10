@@ -93,7 +93,10 @@ class CapellaUtils(object):
     @staticmethod
     def get_next_cidr():
         addr = CapellaUtils.cidr.split(".")
-        addr[1] = str(int(addr[1]) + 1)
+        if int(addr[1]) < 255:
+            addr[1] = str(int(addr[1]) + 1)
+        elif int(addr[2]) < 255:
+            addr[2] = str(int(addr[2]) + 1)
         CapellaUtils.cidr = ".".join(addr)
         return CapellaUtils.cidr
 
@@ -105,6 +108,7 @@ class CapellaUtils(object):
             CapellaUtils.log.info("Trying with cidr: {}".format(subnet))
             cluster_details.update({"cidr": subnet,
                                     "projectId": tenant.project_id})
+            print(cluster_details)
             uri = '{}/v2/organizations/{}/clusters'.format(pod.url, tenant.id)
             response, content = http.request(uri, method="POST",
                                              body=json.dumps(cluster_details),
@@ -117,7 +121,7 @@ class CapellaUtils(object):
         cluster_id = json.loads(content).get("id")
         CapellaUtils.log.info("Cluster created with cluster ID: {}".format(cluster_id))
         CapellaUtils.wait_until_done(pod, tenant, cluster_id,
-                                     "Creating Cluster")
+                                     "Creating Cluster {}".format(cluster_details.get("name")))
         cluster_srv = CapellaUtils.get_cluster_srv(pod, tenant, cluster_id)
         CapellaUtils.add_allowed_ip(pod, tenant, cluster_id)
         servers = CapellaUtils.get_nodes(pod, tenant, cluster_id)
@@ -163,8 +167,9 @@ class CapellaUtils(object):
                                       body='', headers=header)
             content = json.loads(content)
             if content.get("data"):
-                CapellaUtils.log.info("Cluster status: {}"
-                                      .format(content.get("data").get("status").get("state")))
+                CapellaUtils.log.info("Cluster status {}: {}"
+                                      .format(cluster.details.get("name"),
+                                              content.get("data").get("status").get("state")))
                 if content.get("data").get("status").get("state") == "destroying":
                     time.sleep(5)
                     continue

@@ -533,7 +533,7 @@ class ServerTasks(object):
             retry_get_process_num=retry_get_process_num)
         self.jython_task_manager.add_new_task(_task)
         return _task
-    
+
     def async_rebalance_capella(self, pod, tenant, cluster, params):
         """
         Asynchronously rebalances a cluster

@@ -53,6 +53,7 @@ from testconstants import INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA, MIN_KV_QUOTA
 from gsiLib.GsiHelper_Rest import GsiHelper
 from capella.internal_api import CapellaUtils as CapellaAPI
 from TestInput import TestInputServer
+# from cluster_utils.cluster_ready_functions import CBCluster
 
 
 class Task(Callable):
@@ -198,6 +199,27 @@ class TimerTask(Task):
         return result
 
 
+class DeployCloud(Task):
+    def __init__(self, pod, tenant, name, config):
+        Task.__init__(self, "Deploy_Cluster_{}".format(name))
+        self.name = name
+        self.config = config
+        self.pod = pod
+        self.tenant = tenant
+
+    def call(self):
+        cluster_id, srv, servers = \
+                CapellaAPI.create_cluster(self.pod, self.tenant,
+                                          self.config)
+        # CapellaAPI.create_db_user(self.pod, self.tenant, cluster_id,
+        #                           self.rest_username,
+        #                           self.rest_password)
+        self.cluster_id = cluster_id
+        self.srv = srv
+        self.servers = servers
+        return True
+
+
 class RebalanceTaskCapella(Task):
     def __init__(self, pod, tenant, cluster, scale_params,
                  timeout=1200):
@@ -208,16 +230,16 @@ class RebalanceTaskCapella(Task):
         for spec in scale_params:
             for key, val in spec.items():
                 if key == "services":
-                    service_dict = [{"type":service} for service in val]
+                    service_dict = [{"type": service} for service in val]
                     spec[key] = service_dict
                 if key == "compute":
-                    compute_dict = {"type":val}
+                    compute_dict = {"type": val}
                     spec[key] = compute_dict
-        self.scale_params = {"specs":scale_params}
+        self.scale_params = {"specs": scale_params}
         self.timeout = timeout
         print self.scale_params
-        
-    def call(self):    
+
+    def call(self):
         CapellaAPI.scale(
             self.pod, self.tenant, self.cluster, self.scale_params)
         self.cluster.details.update(self.scale_params)
@@ -252,7 +274,7 @@ class RebalanceTaskCapella(Task):
             temp_server.hosted_on_cloud = True
             temp_server.memcached_port = "11207"
             nodes.append(temp_server)
-        
+
         self.cluster.refresh_object(nodes)
         self.result = True
         return self.result

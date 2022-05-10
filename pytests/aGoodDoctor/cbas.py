@@ -237,18 +237,20 @@ class DoctorCBAS():
                 if st_time + print_duration < time.time():
                     print("%s queries submitted, %s failed, \
                         %s passed, %s rejected, \
-                        %s cancelled, %s timeout" % (
+                        %s cancelled, %s timeout %s errored" % (
                         self.total_query_count, self.failed_count,
                         self.success_count, self.rejected_count,
-                        self.cancel_count, self.timeout_count))
+                        self.cancel_count, self.timeout_count,
+                        self.error_count))
                     st_time = time.time()
         else:
             while st_time + duration > time.time():
                 if update_time + print_duration < time.time():
                     print("%s queries submitted, %s failed, \
                         %s passed, %s rejected, \
-                        %s cancelled, %s timeout" % (
+                        %s cancelled, %s timeout %s errored" % (
                         self.total_query_count, self.failed_count,
                         self.success_count, self.rejected_count,
-                        self.cancel_count, self.timeout_count))
+                        self.cancel_count, self.timeout_count,
+                        self.error_count))
                     update_time = time.time()

@@ -27,6 +27,7 @@ from node_utils.node_ready_functions import NodeUtils
 from sdk_client3 import SDKClientPool
 from security_config import trust_all_certs
 from test_summary import TestSummary
+from Jython_tasks.task import DeployCloud
 
 
 class BaseTestCase(unittest.TestCase):
@@ -257,6 +258,8 @@ class BaseTestCase(unittest.TestCase):
                     "iops": self.input.param("iops", 3000)
                 }
             }
+            if self.capella_cluster_config["provider"] != "aws":
+                service_config["disk"].pop("iops")
             self.capella_cluster_config["specs"].append(service_config)
 
         self.tenant.project_id = \
@@ -264,12 +267,25 @@ class BaseTestCase(unittest.TestCase):
         if not self.tenant.project_id:
             CapellaAPI.create_project(self.pod, self.tenant, "a_taf_run")
 
+        tasks = list()
         for _ in range(self.num_clusters):
             cluster_name = cluster_name_format % counter_index
             self.capella_cluster_config["name"] = "aTAF_%s" % cluster_name
-            cluster_id, srv, servers = \
-                CapellaAPI.create_cluster(self.pod, self.tenant,
-                                          self.capella_cluster_config)
+            deploy_task = DeployCloud(self.pod,
+                                      self.tenant,
+                                      cluster_name, self.capella_cluster_config)
+            self.task_manager.add_new_task(deploy_task)
+            tasks.append(deploy_task)
+            counter_index += 1
+            # cluster_id, srv, servers = \
+            #     CapellaAPI.create_cluster(self.pod, self.tenant,
+            #                               self.capella_cluster_config)
+            # CapellaAPI.create_db_user(self.pod, self.tenant, cluster_id,
+            #                           self.rest_username,
+            #                           self.rest_password)
+        for task in tasks:
+            cluster = self.task_manager.get_task_result(task)
+            cluster_id, srv, servers = task.cluster_id, task.srv, task.servers
             CapellaAPI.create_db_user(self.pod, self.tenant, cluster_id,
                                       self.rest_username,
                                       self.rest_password)
@@ -305,12 +321,10 @@ class BaseTestCase(unittest.TestCase):
                 if "FTS" in temp_server.services:
                     cluster.fts_nodes.append(temp_server)
                 cluster.nodes_in_cluster.append(temp_server)
-
             self.tenant.clusters.update({cluster.id: cluster})
 
             self.cb_clusters[cluster_name] = cluster
             self.cb_clusters[cluster_name].cloud_cluster = True
-            counter_index += 1
 
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[cluster_name_format
