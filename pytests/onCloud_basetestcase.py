@@ -227,6 +227,12 @@ class BaseTestCase(unittest.TestCase):
             TestInputSingleton.input.membase_settings.rest_username
         self.rest_password = \
             TestInputSingleton.input.membase_settings.rest_password
+        self.skip_teardown = self.input.param("skip_teardown",
+                                              False)
+        self.skip_setup = self.input.param("skip_setup",
+                                           False)
+        if self.skip_setup:
+            return
 
         self.log_setup_status(self.__class__.__name__, "started")
         cluster_name_format = "C%s"
@@ -270,7 +276,7 @@ class BaseTestCase(unittest.TestCase):
         tasks = list()
         for _ in range(self.num_clusters):
             cluster_name = cluster_name_format % counter_index
-            self.capella_cluster_config["name"] = "a_%s_%s_%s_%sGB" % (
+            self.capella_cluster_config["name"] = "a_%s_%s_%sGB_%s" % (
                 self.capella_cluster_config["provider"],
                 self.input.param("compute", "m5.xlarge"),
                 self.input.param("sizeInGb", 50),
@@ -348,6 +354,10 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager.abort_all_tasks()
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
+
+        if self.skip_teardown:
+            return
+
         for name, cluster in self.cb_clusters.items():
             self.log.info("Destroying cluster: {}".format(name))
             CapellaAPI.destroy_cluster(self.pod, self.tenant, cluster)
