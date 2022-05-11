@@ -208,16 +208,20 @@ class DeployCloud(Task):
         self.tenant = tenant
 
     def call(self):
-        cluster_id, srv, servers = \
-                CapellaAPI.create_cluster(self.pod, self.tenant,
-                                          self.config)
-        # CapellaAPI.create_db_user(self.pod, self.tenant, cluster_id,
-        #                           self.rest_username,
-        #                           self.rest_password)
-        self.cluster_id = cluster_id
-        self.srv = srv
-        self.servers = servers
-        return True
+        try:
+            cluster_id, srv, servers = \
+                    CapellaAPI.create_cluster(self.pod, self.tenant,
+                                              self.config)
+            # CapellaAPI.create_db_user(self.pod, self.tenant, cluster_id,
+            #                           self.rest_username,
+            #                           self.rest_password)
+            self.cluster_id = cluster_id
+            self.srv = srv
+            self.servers = servers
+            self.result = True
+        except Exception as e:
+            self.result = False
+        return self.result
 
 
 class RebalanceTaskCapella(Task):

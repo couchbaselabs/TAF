@@ -371,6 +371,7 @@ class GsiHelper(RestConnection):
         self.log.info("Starting polling for index:"+str(index))
         for x in range(timeout):
             result = self.index_status()
+            print(result)
             if bucket.name in result:
                 if result[bucket.name].has_key(index):
                     if result[bucket.name][index]['status'] == 'Ready':

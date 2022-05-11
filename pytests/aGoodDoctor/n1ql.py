@@ -16,11 +16,13 @@ from com.couchbase.client.java.query import QueryOptions,\
     QueryScanConsistency, QueryStatus
 from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutException
 from com.couchbase.client.core.error import RequestCanceledException,\
-    CouchbaseException, InternalServerFailureException
+    CouchbaseException, InternalServerFailureException,\
+    AmbiguousTimeoutException
 from string import ascii_uppercase, ascii_lowercase
 from encodings.punycode import digits
 from remote.remote_util import RemoteMachineShellConnection
 from gsiLib.gsiHelper import GsiHelper
+import traceback
 
 letters = ascii_uppercase + ascii_lowercase + digits
 
@@ -87,16 +89,17 @@ class DoctorN1QL():
     def wait_for_indexes_online(self, logger, indexes, timeout=86400):
         self.rest = GsiHelper(self.cluster.master, logger)
         status = False
-        for bucket in self.cluster.buckets:
-            for index in indexes:
-                stop_time = time.time() + timeout
-                while time.time() < stop_time:
-                    status = self.rest.polling_create_index_status(bucket, index)
-                    if status is True:
-                        break
-                    time.sleep(5)
-                if status is False:
-                    return status
+        for index_name, details in indexes.items():
+            stop_time = time.time() + timeout
+            while time.time() < stop_time:
+                bucket = [bucket for bucket in self.cluster.buckets if bucket.name == details[1]]
+                status = self.rest.polling_create_index_status(bucket[0], index_name)
+                print("index: {}, status: {}".format(index_name, status))
+                if status is True:
+                    break
+                time.sleep(5)
+            if status is False:
+                return status
         return status
 
     def build_indexes(self):
@@ -185,7 +188,7 @@ class DoctorN1QL():
                 self.failed_count += 1
                 self.total_count -= 1
         except Exception as e:
-            if e == TimeoutException:
+            if e == TimeoutException or e == AmbiguousTimeoutException:
                 self.timeout_count += 1
                 self.total_count -= 1
             elif e == RequestCanceledException:
@@ -267,13 +270,18 @@ class DoctorN1QL():
                 raise Exception("N1QL query failed")
 
         except InternalServerFailureException as e:
+            print(e)
+            traceback.print_exc()
             raise Exception(e)
-        except TimeoutException as e:
+        except TimeoutException | AmbiguousTimeoutException as e:
             raise Exception(e)
         except RequestCanceledException as e:
             raise Exception(e)
         except CouchbaseException as e:
             raise Exception(e)
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
         return output
 
     def monitor_query_status(self, duration=0, print_duration=600):
@@ -282,7 +290,7 @@ class DoctorN1QL():
         if duration == 0:
             while not self.stop_run:
                 if st_time + print_duration < time.time():
-                    print("%s queries submitted, %s failed, \
+                    print("%s N1QL queries submitted, %s failed, \
                         %s passed, %s rejected, \
                         %s cancelled, %s timeout, %s errored" % (
                         self.total_query_count, self.failed_count,
@@ -293,7 +301,7 @@ class DoctorN1QL():
         else:
             while st_time + duration > time.time():
                 if update_time + print_duration < time.time():
-                    print("%s queries submitted, %s failed, \
+                    print("%s N1QL queries submitted, %s failed, \
                         %s passed, %s rejected, \
                         %s cancelled, %s timeout, %s errored" % (
                         self.total_query_count, self.failed_count,

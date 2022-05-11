@@ -14,11 +14,12 @@ from com.couchbase.client.java.analytics import AnalyticsOptions,\
     AnalyticsScanConsistency, AnalyticsStatus
 from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutException
 from com.couchbase.client.core.error import RequestCanceledException,\
-    CouchbaseException
+    CouchbaseException, AmbiguousTimeoutException
+import traceback
 
 queries = ['select name from {} where age between 30 and 50 limit 10;',
            'select age, count(*) from {} where marital = "M" group by age order by age limit 10;',
-           'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" limit 10;',
+           'select v.name, animal from {} as v unnest v.animals as animal where v.attributes.hair = "Burgundy" limit 10;',
            'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 10;']
 datasets = ['create dataset ds{} on {}.{}.{} where age between 30 and 50;',
             'create dataset ds{} on {}.{}.{};',
@@ -144,7 +145,7 @@ class DoctorCBAS():
                 self.failed_count += 1
                 self.total_count -= 1
         except Exception as e:
-            if e == TimeoutException:
+            if e == AmbiguousTimeoutException:
                 self.timeout_count += 1
                 self.total_count -= 1
             elif e == RequestCanceledException:
@@ -154,6 +155,8 @@ class DoctorCBAS():
                 self.rejected_count += 1
                 self.total_count -= 1
             else:
+                print(e)
+                traceback.print_exc()
                 self.error_count += 1
                 self.total_count -= 1
 
@@ -221,12 +224,15 @@ class DoctorCBAS():
             else:
                 raise Exception("Analytics Service API failed")
 
-        except TimeoutException as e:
+        except AmbiguousTimeoutException as e:
             raise Exception(e)
         except RequestCanceledException as e:
             raise Exception(e)
         except CouchbaseException as e:
             raise Exception(e)
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
         return output
 
     def monitor_query_status(self, duration=0, print_duration=600):
@@ -235,7 +241,7 @@ class DoctorCBAS():
         if duration == 0:
             while True:
                 if st_time + print_duration < time.time():
-                    print("%s queries submitted, %s failed, \
+                    print("%s CBAS queries submitted, %s failed, \
                         %s passed, %s rejected, \
                         %s cancelled, %s timeout %s errored" % (
                         self.total_query_count, self.failed_count,
@@ -246,7 +252,7 @@ class DoctorCBAS():
         else:
             while st_time + duration > time.time():
                 if update_time + print_duration < time.time():
-                    print("%s queries submitted, %s failed, \
+                    print("%s CBAS queries submitted, %s failed, \
                         %s passed, %s rejected, \
                         %s cancelled, %s timeout %s errored" % (
                         self.total_query_count, self.failed_count,

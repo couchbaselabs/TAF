@@ -275,8 +275,9 @@ class BaseTestCase(unittest.TestCase):
 
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
         cluster_ids = TestInputSingleton.input.capella \
-            .get("clusters", "").split(",")
+            .get("clusters", "")
         if cluster_ids:
+            cluster_ids = cluster_ids.split(",")
             self.__get_existing_cluster_details(cluster_ids)
         else:
             tasks = list()
