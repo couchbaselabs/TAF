@@ -270,7 +270,11 @@ class BaseTestCase(unittest.TestCase):
         tasks = list()
         for _ in range(self.num_clusters):
             cluster_name = cluster_name_format % counter_index
-            self.capella_cluster_config["name"] = "aTAF_%s" % cluster_name
+            self.capella_cluster_config["name"] = "a_%s_%s_%s_%sGB" % (
+                self.capella_cluster_config["provider"],
+                self.input.param("compute", "m5.xlarge"),
+                self.input.param("sizeInGb", 50),
+                cluster_name)
             deploy_task = DeployCloud(self.pod,
                                       self.tenant,
                                       cluster_name, self.capella_cluster_config)
