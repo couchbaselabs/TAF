@@ -47,6 +47,7 @@ class CGroupBase(unittest.TestCase):
         self.shell = RemoteMachineShellConnection(self.node)
         self.skip_setup_teardown = self.input.param("skip_setup_teardown", None)
         self.skip_teardown = self.input.param("skip_teardown", None)
+        self.cb_cpu_count_env = self.input.param("cb_cpu_count_env", None)  # COUCHBASE_CPU_COUNT env
         self.cpus = self.input.param("cpus", 2)  # cpus limit for the container
         self.mem = self.input.param("mem", 1073741824)  # mem limit for the container in bytes
         if self.skip_setup_teardown is None:
@@ -58,7 +59,7 @@ class CGroupBase(unittest.TestCase):
 
     def initialize_node(self, sleep=15):
         self.log.info("initializing the node")
-        cmd = "docker exec -d db " \
+        cmd = "docker exec db " \
               "/opt/couchbase/bin/couchbase-cli cluster-init -c 127.0.0.1 --cluster-username Administrator " \
               "--cluster-password password --services data --cluster-ramsize 500"
         o, e = self.shell.execute_command(cmd)
@@ -72,7 +73,7 @@ class CGroupBase(unittest.TestCase):
         o, e = self.shell.execute_command(cmd)
         self.log.info("Output:{0}, Error{1}".format(o, e))
 
-    def start_couchbase_container(self,mem=1073741824, cpus=2, sleep=20):
+    def start_couchbase_container(self, mem=1073741824, cpus=2, sleep=20):
         """
         Starts couchbase server inside a container on the VM
         (Assumes a docker image 'couchbase-neo' is present on the VM)
@@ -86,7 +87,9 @@ class CGroupBase(unittest.TestCase):
             flags = flags + "-m " + str(mem) + "b"
         if self.cpus not in [None, "None"]:
             flags = flags + " --cpus " + str(cpus)
-        cmd = "docker run -d --name db " + flags + \
+        if self.cb_cpu_count_env not in [None, "None"]:
+            flags = flags + " -e COUCHBASE_CPU_COUNT=" + str(self.cb_cpu_count_env)
+        cmd = "docker run -d -t --name db " + flags + \
               " -p 8091-8096:8091-8096 -p 11210-11211:11210-11211 couchbase-neo"
         o, e = self.shell.execute_command(cmd)
         self.log.info("Docker command run: {0}".format(cmd))

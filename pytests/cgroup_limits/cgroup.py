@@ -1,3 +1,5 @@
+import time
+
 from StatsLib.StatsOperations import StatsHelper
 from pytests.cgroup_limits.cgroup_base import CGroupBase
 
@@ -16,6 +18,25 @@ class CGroup(CGroupBase):
 
     def tearDown(self):
         pass
+
+    def restart_server(self):
+        self.log.info("Stopping and starting server...")
+        self.shell.execute_command("docker exec db service couchbase-server stop")
+        time.sleep(10)
+        self.shell.execute_command("docker exec db service couchbase-server start")
+        time.sleep(20)
+
+    def update_container_mem_limit(self, mem):
+        """
+        Updates mem limit of a running docker container
+        :mem: memory limit in bytes
+        """
+        self.log.info("Updating the running container's mem limit from {0} to {1}".
+                      format(self.mem, mem))
+        cmd = "docker update -m " + str(mem) + " --memory-swap -1 db"
+        o, e = self.shell.execute_command(cmd)
+        print(o, e)
+        self.mem = mem
 
     def get_host_mem_in_bytes(self):
         """
@@ -43,6 +64,7 @@ class CGroup(CGroupBase):
             content = StatsHelper(self.node).get_range_api_metrics(stat)
             val = content['data'][0]['values'][-1][1]
             latest_cgroup_aware_stats_map[stat] = val
+        self.log.info("latest_cgroup_aware_stats_map {0}".format(latest_cgroup_aware_stats_map))
         return latest_cgroup_aware_stats_map
 
     def read_latest_host_aware_stats(self):
@@ -54,6 +76,7 @@ class CGroup(CGroupBase):
             content = StatsHelper(self.node).get_range_api_metrics(stat)
             val = content['data'][0]['values'][-1][1]
             latest_host_aware_stats_map[stat] = val
+        self.log.info("latest_host_aware_stats_map {0}".format(latest_host_aware_stats_map))
         return latest_host_aware_stats_map
 
     def verify_values_of_host_stats(self, stats_map):
@@ -88,11 +111,55 @@ class CGroup(CGroupBase):
             self.fail("Mismatch, actual cgroup mem {0}, but sys_mem_limit {1}".
                       format(expected_mem, stats_map["sys_mem_limit"]))
 
+    def get_total_threads_of_process(self):
+        """
+        Get the total thread count of each process running
+        If a process has more than 1 copy (for eg: beam.smp has 3 copies
+        - babysitter, ns_server, ns_couchdb), then we total them
+        Returns a dict with key as the process name and value as it's total thread count
+        """
+        # TODo add other golang & java processes to the list
+        processes = ["beam.smp", "memcached", "projector"]
+        thread_map = dict()
+        for process in processes:
+            cmd = "ps huH p $(pidof " + process + ") | wc -l"
+            self.log.info("Running cmd {0}".format(cmd))
+            o, e = self.shell.execute_command(cmd)
+            thread_map[process] = o[0].strip()
+        self.log.info("Process-thread_total map {0}".format(thread_map))
+
     def test_nsserver_resource_stats(self):
+        """
+        1. Start a container with/without cpu container limit & witht/without mem container limit
+        2. Verify prom stats
+        3. Verify threads count of various processes
+        """
         latest_host_aware_stats_map = self.read_latest_host_aware_stats()
         latest_cgroup_aware_stats_map = self.read_latest_cgroup_aware_stats()
-        self.log.info("latest_host_aware_stats_map {0}".format(latest_host_aware_stats_map))
-        self.log.info("latest_cgroup_aware_stats_map {0}".format(latest_cgroup_aware_stats_map))
+        self.verify_values_of_host_stats(latest_host_aware_stats_map)
+        self.verify_values_of_cgroup_stats(latest_cgroup_aware_stats_map)
+        self.log.info("Stats verification successful!")
+
+        # ToDo validate if threads count are correct
+        self.get_total_threads_of_process()
+
+    def test_dynamic_updation_of_mem_limit(self):
+        """
+        1. Start a container with/without mem limit of continer
+        2. Update the running container' mem limit
+        3. Verify if prometheus stats get updated dynamically
+        """
+        dynamic_update_mem = self.input.param("dynamic_update_mem", 1073741824)
+
+        latest_host_aware_stats_map = self.read_latest_host_aware_stats()
+        latest_cgroup_aware_stats_map = self.read_latest_cgroup_aware_stats()
+        self.verify_values_of_host_stats(latest_host_aware_stats_map)
+        self.verify_values_of_cgroup_stats(latest_cgroup_aware_stats_map)
+
+        self.update_container_mem_limit(mem=dynamic_update_mem)
+
+        latest_host_aware_stats_map = self.read_latest_host_aware_stats()
+        latest_cgroup_aware_stats_map = self.read_latest_cgroup_aware_stats()
         self.verify_values_of_host_stats(latest_host_aware_stats_map)
         self.verify_values_of_cgroup_stats(latest_cgroup_aware_stats_map)
         self.log.info("Stats verification successful!")
