@@ -235,8 +235,8 @@ class BaseTestCase(unittest.TestCase):
             return
 
         self.log_setup_status(self.__class__.__name__, "started")
-        cluster_name_format = "C%s"
-        default_cluster_index = counter_index = 1
+        self.cluster_name_format = "C%s"
+        default_cluster_index = cluster_index = 1
         self.capella_cluster_config = {
             "region": self.input.param("region", "us-west-2"),
             "provider": self.input.param("provider", "aws"),
@@ -273,71 +273,35 @@ class BaseTestCase(unittest.TestCase):
         if not self.tenant.project_id:
             CapellaAPI.create_project(self.pod, self.tenant, "a_taf_run")
 
-        tasks = list()
-        for _ in range(self.num_clusters):
-            cluster_name = cluster_name_format % counter_index
-            self.capella_cluster_config["name"] = "a_%s_%s_%sGB_%s" % (
-                self.capella_cluster_config["provider"],
-                self.input.param("compute", "m5.xlarge"),
-                self.input.param("sizeInGb", 50),
-                cluster_name)
-            deploy_task = DeployCloud(self.pod,
-                                      self.tenant,
-                                      cluster_name, self.capella_cluster_config)
-            self.task_manager.add_new_task(deploy_task)
-            tasks.append(deploy_task)
-            counter_index += 1
-            # cluster_id, srv, servers = \
-            #     CapellaAPI.create_cluster(self.pod, self.tenant,
-            #                               self.capella_cluster_config)
-            # CapellaAPI.create_db_user(self.pod, self.tenant, cluster_id,
-            #                           self.rest_username,
-            #                           self.rest_password)
-        for task in tasks:
-            cluster = self.task_manager.get_task_result(task)
-            cluster_id, srv, servers = task.cluster_id, task.srv, task.servers
-            CapellaAPI.create_db_user(self.pod, self.tenant, cluster_id,
-                                      self.rest_username,
-                                      self.rest_password)
-            nodes = list()
-            for server in servers:
-                temp_server = TestInputServer()
-                temp_server.ip = server.get("hostname")
-                temp_server.hostname = server.get("hostname")
-                temp_server.services = server.get("services")
-                temp_server.port = "18091"
-                temp_server.rest_username = self.rest_username
-                temp_server.rest_password = self.rest_password
-                temp_server.hosted_on_cloud = True
-                temp_server.memcached_port = "11207"
-                nodes.append(temp_server)
-            cluster = CBCluster(username=self.rest_username,
-                                password=self.rest_password,
-                                servers=nodes)
-            cluster.id = cluster_id
-            cluster.srv = srv
-            cluster.details = self.capella_cluster_config
-            for temp_server in nodes:
-                if "Data" in temp_server.services:
-                    cluster.kv_nodes.append(temp_server)
-                if "Query" in temp_server.services:
-                    cluster.query_nodes.append(temp_server)
-                if "Index" in temp_server.services:
-                    cluster.index_nodes.append(temp_server)
-                if "Eventing" in temp_server.services:
-                    cluster.eventing_nodes.append(temp_server)
-                if "Analytics" in temp_server.services:
-                    cluster.cbas_nodes.append(temp_server)
-                if "FTS" in temp_server.services:
-                    cluster.fts_nodes.append(temp_server)
-                cluster.nodes_in_cluster.append(temp_server)
-            self.tenant.clusters.update({cluster.id: cluster})
-
-            self.cb_clusters[cluster_name] = cluster
-            self.cb_clusters[cluster_name].cloud_cluster = True
+        # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
+        cluster_ids = TestInputSingleton.input.capella \
+            .get("clusters", "").split(",")
+        if cluster_ids:
+            self.__get_existing_cluster_details(cluster_ids)
+        else:
+            tasks = list()
+            for _ in range(self.num_clusters):
+                cluster_name = self.cluster_name_format % cluster_index
+                self.capella_cluster_config["name"] = "a_%s_%s_%sGB_%s" % (
+                    self.capella_cluster_config["provider"],
+                    self.input.param("compute", "m5.xlarge"),
+                    self.input.param("sizeInGb", 50),
+                    cluster_name)
+                deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
+                                          self.capella_cluster_config)
+                self.task_manager.add_new_task(deploy_task)
+                tasks.append(deploy_task)
+                cluster_index += 1
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+                CapellaAPI.create_db_user(
+                    self.pod, self.tenant, task.cluster_id,
+                    self.rest_username, self.rest_password)
+                self.__populate_cluster_info(task.cluster_id, task.servers,
+                                             task.srv, task.name)
 
         # Initialize self.cluster with first available cluster as default
-        self.cluster = self.cb_clusters[cluster_name_format
+        self.cluster = self.cb_clusters[self.cluster_name_format
                                         % default_cluster_index]
         self.servers = self.cluster.servers
         self.cluster_util = ClusterUtils(self.task_manager)
@@ -363,10 +327,63 @@ class BaseTestCase(unittest.TestCase):
             CapellaAPI.destroy_cluster(self.pod, self.tenant, cluster)
         CapellaAPI.delete_project(self.pod, self.tenant)
 
+    def __get_existing_cluster_details(self, cluster_ids):
+        cluster_index = 1
+        for cluster_id in cluster_ids:
+            cluster_name = self.cluster_name_format % cluster_index
+            self.log.info("Fetching cluster details for: %s" % cluster_id)
+            CapellaAPI.wait_until_done(self.pod, self.tenant, cluster_id,
+                                       "Cluster not healthy")
+            cluster_srv = CapellaAPI.get_cluster_srv(self.pod, self.tenant,
+                                                     cluster_id)
+            CapellaAPI.add_allowed_ip(self.pod, self.tenant, cluster_id)
+            servers = CapellaAPI.get_nodes(self.pod, self.tenant, cluster_id)
+            self.__populate_cluster_info(cluster_id, servers, cluster_srv,
+                                         cluster_name)
+
+    def __populate_cluster_info(self, cluster_id, servers, cluster_srv,
+                                cluster_name):
+        nodes = list()
+        for server in servers:
+            temp_server = TestInputServer()
+            temp_server.ip = server.get("hostname")
+            temp_server.hostname = server.get("hostname")
+            temp_server.services = server.get("services")
+            temp_server.port = "18091"
+            temp_server.rest_username = self.rest_username
+            temp_server.rest_password = self.rest_password
+            temp_server.hosted_on_cloud = True
+            temp_server.memcached_port = "11207"
+            nodes.append(temp_server)
+        cluster = CBCluster(username=self.rest_username,
+                            password=self.rest_password,
+                            servers=nodes)
+        cluster.id = cluster_id
+        cluster.srv = cluster_srv
+        cluster.details = self.capella_cluster_config
+        for temp_server in nodes:
+            if "Data" in temp_server.services:
+                cluster.kv_nodes.append(temp_server)
+            if "Query" in temp_server.services:
+                cluster.query_nodes.append(temp_server)
+            if "Index" in temp_server.services:
+                cluster.index_nodes.append(temp_server)
+            if "Eventing" in temp_server.services:
+                cluster.eventing_nodes.append(temp_server)
+            if "Analytics" in temp_server.services:
+                cluster.cbas_nodes.append(temp_server)
+            if "FTS" in temp_server.services:
+                cluster.fts_nodes.append(temp_server)
+            cluster.nodes_in_cluster.append(temp_server)
+        self.tenant.clusters.update({cluster.id: cluster})
+
+        self.cb_clusters[cluster_name] = cluster
+        self.cb_clusters[cluster_name].cloud_cluster = True
+
     def is_test_failed(self):
         return (hasattr(self, '_resultForDoCleanups')
                 and len(self._resultForDoCleanups.failures
-                or self._resultForDoCleanups.errors)) \
+                        or self._resultForDoCleanups.errors)) \
                or (hasattr(self, '_exc_info')
                    and self._exc_info()[1] is not None)
 
