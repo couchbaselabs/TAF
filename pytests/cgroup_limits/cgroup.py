@@ -38,6 +38,18 @@ class CGroup(CGroupBase):
         print(o, e)
         self.mem = mem
 
+    def update_container_cpu_limit(self, cpus):
+        """
+        Updates cpu cores limit of a running docker container
+        :cpus: cpu cores limit
+        """
+        self.log.info("Updating the running container's cpu cores limit from {0} to {1}".
+                      format(self.cpus, cpus))
+        cmd = "docker update --cpus " + str(cpus) + "  db"
+        o, e = self.shell.execute_command(cmd)
+        print(o, e)
+        self.cpus = cpus
+
     def get_host_mem_in_bytes(self):
         """
         returns mem(int) available by directly issuing a command on the VM
@@ -145,7 +157,7 @@ class CGroup(CGroupBase):
 
     def test_dynamic_updation_of_mem_limit(self):
         """
-        1. Start a container with/without mem limit of continer
+        1. Start a container with/without mem limit of container
         2. Update the running container' mem limit
         3. Verify if prometheus stats get updated dynamically
         """
@@ -163,3 +175,31 @@ class CGroup(CGroupBase):
         self.verify_values_of_host_stats(latest_host_aware_stats_map)
         self.verify_values_of_cgroup_stats(latest_cgroup_aware_stats_map)
         self.log.info("Stats verification successful!")
+
+    def test_dynamic_updation_of_cpus_limit(self):
+        """
+        1. Start a container with/without cpus limit of container
+        2. Update the running container' cpus limit
+        3. Restart server
+        4. Verify if prometheus stats get updated dynamically
+        5. Verify if threads of processes are reduced/increased appropriately
+        """
+        dynamic_update_cpus = self.input.param("dynamic_update_cpus", 2)
+
+        latest_host_aware_stats_map = self.read_latest_host_aware_stats()
+        latest_cgroup_aware_stats_map = self.read_latest_cgroup_aware_stats()
+        self.verify_values_of_host_stats(latest_host_aware_stats_map)
+        self.verify_values_of_cgroup_stats(latest_cgroup_aware_stats_map)
+        # ToDo validate if threads count are correct
+        self.get_total_threads_of_process()
+
+        self.update_container_cpu_limit(cpus=dynamic_update_cpus)
+        self.restart_server()
+
+        latest_host_aware_stats_map = self.read_latest_host_aware_stats()
+        latest_cgroup_aware_stats_map = self.read_latest_cgroup_aware_stats()
+        self.verify_values_of_host_stats(latest_host_aware_stats_map)
+        self.verify_values_of_cgroup_stats(latest_cgroup_aware_stats_map)
+        self.log.info("Stats verification successful!")
+        # ToDo validate if threads count are correct
+        self.get_total_threads_of_process()
