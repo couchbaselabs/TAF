@@ -168,14 +168,16 @@ class BaseTestCase(unittest.TestCase):
         trust_all_certs()
 
         # initialise pod object
-        pod_url = self.input.capella.get("pod")
-        pod_url = "https://{}".format(pod_url)
-        pod_url_basic = "https://cloud{}".format(pod_url)
+        url = self.input.capella.get("pod")
+        pod_url = "https://{}".format(url)
+        pod_url_basic = "https://cloud{}".format(url)
         self.pod = Pod(pod_url, pod_url_basic)
 
         self.tenant = Tenant(self.input.capella.get("tenant_id"),
                              self.input.capella.get("capella_user"),
-                             self.input.capella.get("capella_pwd"))
+                             self.input.capella.get("capella_pwd"),
+                             self.input.capella.get("secret_key"),
+                             self.input.capella.get("access_key"))
 
         # SDKClientPool object for creating generic clients across tasks
         if self.sdk_client_pool is True:
@@ -237,36 +239,43 @@ class BaseTestCase(unittest.TestCase):
         self.log_setup_status(self.__class__.__name__, "started")
         self.cluster_name_format = "C%s"
         default_cluster_index = cluster_index = 1
-        self.capella_cluster_config = {
-            "region": self.input.param("region", "us-west-2"),
-            "provider": self.input.param("provider", "aws"),
-            "name": "aaTAF_",
-            "cidr": None,
-            "singleAZ": False,
-            "specs": [],
-            "plan": "Developer Pro",
-            "projectId": None,
-            "timezone": "PT",
-            "description": ""
-            }
+        temp = {"environment": "hosted",
+                "clusterName": "",
+                "projectId": "",
+                "description": "Amazing Cloud",
+                "place": {"singleAZ": False,
+                          "hosted": {
+                              "provider": self.input.param("provider",
+                                                           "aws").lower(),
+                              "region": self.input.param("region",
+                                                         "us-west-2"),
+                              "CIDR": None
+                              }
+                          },
+                "servers": list(),
+                "supportPackage": {"timezone": "PT",
+                                   "type": "DeveloperPro"
+                                   }
+                }
+        self.capella_cluster_config = temp
 
         services = self.input.param("services", CbServer.Services.KV)
         for service_group in services.split("-"):
             service_group = service_group.split(":")
             min_nodes = 3 if CbServer.Services.KV in service_group else 2
             service_config = {
-                "count": max(min_nodes, self.nodes_init),
+                "size": max(min_nodes, self.nodes_init),
                 "services": service_group,
                 "compute": self.input.param("compute", "m5.xlarge"),
-                "disk": {
-                    "type": self.input.param("type", "gp3"),
-                    "sizeInGb": self.input.param("sizeInGb", 50),
+                "storage": {
+                    "type": self.input.param("type", "GP3"),
+                    "size": self.input.param("size", 50),
                     "iops": self.input.param("iops", 3000)
                 }
             }
-            if self.capella_cluster_config["provider"] != "aws":
-                service_config["disk"].pop("iops")
-            self.capella_cluster_config["specs"].append(service_config)
+            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                service_config["storage"].pop("iops")
+            self.capella_cluster_config["servers"].append(service_config)
 
         self.tenant.project_id = \
             TestInputSingleton.input.capella.get("project", None)
@@ -283,10 +292,11 @@ class BaseTestCase(unittest.TestCase):
             tasks = list()
             for _ in range(self.num_clusters):
                 cluster_name = self.cluster_name_format % cluster_index
-                self.capella_cluster_config["name"] = "a_%s_%s_%sGB_%s" % (
-                    self.capella_cluster_config["provider"],
-                    self.input.param("compute", "m5.xlarge"),
-                    self.input.param("sizeInGb", 50),
+                self.capella_cluster_config["clusterName"] = "a_%s_%s_%sGB_%s" % (
+                    self.input.param("provider", "aws"),
+                    self.input.param("compute", "m5.xlarge")
+                    .replace(".", ""),
+                    self.input.param("size", 50),
                     cluster_name)
                 deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
                                           self.capella_cluster_config)
@@ -295,6 +305,7 @@ class BaseTestCase(unittest.TestCase):
                 cluster_index += 1
             for task in tasks:
                 self.task_manager.get_task_result(task)
+                self.assertTrue(task.result, "Cluster deployment failed!")
                 CapellaAPI.create_db_user(
                     self.pod, self.tenant, task.cluster_id,
                     self.rest_username, self.rest_password)
@@ -338,6 +349,9 @@ class BaseTestCase(unittest.TestCase):
             cluster_srv = CapellaAPI.get_cluster_srv(self.pod, self.tenant,
                                                      cluster_id)
             CapellaAPI.add_allowed_ip(self.pod, self.tenant, cluster_id)
+            CapellaAPI.create_db_user(
+                    self.pod, self.tenant, cluster_id,
+                    self.rest_username, self.rest_password)
             servers = CapellaAPI.get_nodes(self.pod, self.tenant, cluster_id)
             self.__populate_cluster_info(cluster_id, servers, cluster_srv,
                                          cluster_name)

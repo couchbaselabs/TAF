@@ -89,13 +89,13 @@ class CapellaBase(BaseTestCase):
                  Bucket.flushEnabled: True,
                  Bucket.fragmentationPercentage: self.fragmentation})
             self.bucket_params = {
-                "name":bucket.name,
-                "bucketConflictResolution":"seqno",
-                "memoryAllocationInMb":bucket.ramQuotaMB,
-                "flush":bucket.flushEnabled,
-                "replicas":bucket.replicaNumber,
-                "durabilityLevel":bucket.durability_level,
-                "timeToLive":{"unit":"seconds", "value": bucket.maxTTL}
+                "name": bucket.name,
+                "bucketConflictResolution": "seqno",
+                "memoryAllocationInMb": bucket.ramQuotaMB,
+                "flush": bucket.flushEnabled,
+                "replicas": bucket.replicaNumber,
+                "durabilityLevel": bucket.durability_level,
+                "timeToLive": {"unit": "seconds", "value": bucket.maxTTL}
                 }
             CapellaAPI.create_bucket(self.pod, self.tenant, self.cluster, self.bucket_params)
             self.cluster.buckets.append(bucket)

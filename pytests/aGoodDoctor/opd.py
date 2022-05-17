@@ -647,6 +647,7 @@ class OPD:
 
     def print_stats(self):
         self.bucket_util.print_bucket_stats(self.cluster)
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.print_crud_stats()
         for bucket in self.cluster.buckets:
             self.get_bucket_dgm(bucket)

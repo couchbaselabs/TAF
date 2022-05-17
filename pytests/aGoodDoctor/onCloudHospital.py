@@ -228,14 +228,31 @@ class Murphy(BaseTestCase, OPD):
             result = self.drBackup.monitor_restore(self.bucket_util, items, timeout=self.restore_timeout)
             self.assertTrue(result, "Restore failed")
 
+    def rebalance_config(self, num):
+        initial_services = self.input.param("services", "data")
+        services = self.input.param("rebl_services", initial_services)
+        server_group_list = list()
+        for service_group in services.split("-"):
+            service_group = service_group.split(":")
+            config = {
+                "size": num,
+                "services": service_group,
+                "compute": self.input.param("compute", "m5.xlarge"),
+                "storage": {
+                    "type": self.input.param("type", "GP3"),
+                    "size": self.input.param("size", 50),
+                    "iops": self.input.param("iops", 3000)
+                }
+            }
+            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                config["storage"].pop("iops")
+            server_group_list.append(config)
+        return server_group_list
+
     def test_rebalance(self):
         self.loop = 1
         self.skip_read_on_error = True
         self.suppress_error_table = True
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        shell.enable_diag_eval_on_non_local_hosts()
-        shell.disconnect()
-
         '''
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)
@@ -247,33 +264,17 @@ class Murphy(BaseTestCase, OPD):
                            create_end=self.num_items)
         self.perform_load(validate_data=False)
 
-        self.PrintStep("Step 2.1: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
-        self.update_perc = 100
-        self.generate_docs(doc_ops=["update"],
-                           update_start=self.start,
-                           update_end=self.end)
-        self.perform_load(validate_data=False)
-
         self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
         self.generate_docs(doc_ops=["create"],
                            create_start=self.num_items,
                            create_end=self.num_items*2)
         self.perform_load(validate_data=False)
 
-        self.PrintStep("Step 3.1: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
-        self.update_perc = 100
-        self.generate_docs(doc_ops=["update"],
-                           update_start=self.start,
-                           update_end=self.end)
-        self.perform_load(validate_data=False)
-#         self.stop_stats = False
-#         stat_th.join()
-
         if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets()
             self.drCBAS.start_query_load()
 
-        if self.index_nodes:
+        if self.cluster.index_nodes:
             self.drIndex.create_indexes()
             self.drIndex.build_indexes()
             self.drIndex.wait_for_indexes_online(self.log, self.drIndex.indexes)
@@ -284,8 +285,9 @@ class Murphy(BaseTestCase, OPD):
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
-        self.rebl_nodes = self.input.param("rebl_nodes", 0)
-        self.max_rebl_nodes = self.input.param("max_rebl_nodes", 1)
+        self.rebl_nodes = self.nodes_init
+        self.max_rebl_nodes = self.input.param("max_rebl_nodes",
+                                               self.nodes_init + 5)
         self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
         perc = 100/len(self.doc_ops)
         self.expiry_perc = perc
@@ -303,46 +305,36 @@ class Murphy(BaseTestCase, OPD):
             tasks = self.perform_load(wait_for_load=False)
             self.rebl_nodes += 1
             if self.rebl_nodes > self.max_rebl_nodes:
-                self.rebl_nodes = 1
-            for service in self.rebl_services:
-                ###################################################################
-                self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
-                               format(self.loop))
-                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
-                                                nodes_out=0,
-                                                services=[service]*self.rebl_nodes,
-                                                retry_get_process_num=3000)
-                self.sleep(60, "Sleep for 60s for rebalance to start")
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.sleep(10, "Sleep for 60s after rebalance")
+                self.rebl_nodes = self.nodes_init
+            config = self.rebalance_config(self.rebl_nodes)
 
-                self.PrintStep("Step 5.{}: Scale OUT with Loading of docs".
-                               format(self.loop))
-                rebalance_task = self.rebalance(nodes_in=0,
-                                                nodes_out=self.rebl_nodes,
-                                                services=[service],
-                                                retry_get_process_num=3000)
-                self.sleep(60, "Sleep for 60s for rebalance to start")
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.sleep(10, "Sleep for 60s after rebalance")
+            ###################################################################
+            self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
+                           format(self.loop))
+            rebalance_task = self.task.async_rebalance_capella(self.pod,
+                                                               self.tenant,
+                                                               self.cluster,
+                                                               config)
 
-                self.PrintStep("Step 6.{}: Rebalance SWAP with Loading of docs".
-                               format(self.loop))
-                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
-                                                nodes_out=self.rebl_nodes,
-                                                services=[service]*self.rebl_nodes,
-                                                retry_get_process_num=3000)
-                self.sleep(60, "Sleep for 60s for rebalance to start")
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.sleep(10, "Sleep for 60s after rebalance")
+            self.task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+            self.sleep(60, "Sleep for 60s after rebalance")
 
-                self.loop += 1
+            self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
+                           format(self.loop))
+            config = self.rebalance_config(self.nodes_init)
+            rebalance_task = self.task.async_rebalance_capella(self.pod,
+                                                               self.tenant,
+                                                               self.cluster,
+                                                               config)
+
+            self.task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.print_stats()
+            self.sleep(60, "Sleep for 60s after rebalance")
+
+            self.loop += 1
             self.wait_for_doc_load_completion(tasks)
             if self.track_failures:
                 self.data_validation()

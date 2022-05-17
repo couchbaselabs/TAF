@@ -220,26 +220,19 @@ class DeployCloud(Task):
             self.servers = servers
             self.result = True
         except Exception as e:
+            self.log.error(e)
             self.result = False
         return self.result
 
 
 class RebalanceTaskCapella(Task):
-    def __init__(self, pod, tenant, cluster, scale_params,
+    def __init__(self, pod, tenant, cluster, scale_params=list(),
                  timeout=1200):
         Task.__init__(self, "Scaling_task_{}".format(str(time.time())))
         self.pod = pod
         self.tenant = tenant
         self.cluster = cluster
-        for spec in scale_params:
-            for key, val in spec.items():
-                if key == "services":
-                    service_dict = [{"type": service} for service in val]
-                    spec[key] = service_dict
-                if key == "compute":
-                    compute_dict = {"type": val}
-                    spec[key] = compute_dict
-        self.scale_params = {"specs": scale_params}
+        self.scale_params = {"servers": scale_params}
         self.timeout = timeout
         print self.scale_params
 
@@ -252,6 +245,12 @@ class RebalanceTaskCapella(Task):
             try:
                 content = CapellaAPI.jobs(self.pod, self.tenant, self.cluster.id)
                 state = CapellaAPI.get_cluster_state(self.pod, self.tenant, self.cluster.id)
+                if state in ["deployment_failed",
+                             "deploymentFailed",
+                             "redeploymentFailed",
+                             "rebalance_failed"]:
+                    raise Exception("{} for cluster {}".format(
+                        state, self.cluster.id))
                 if content.get("data") or state != "healthy":
                     for data in content.get("data"):
                         data = data.get("data")
@@ -261,9 +260,10 @@ class RebalanceTaskCapella(Task):
                     time.sleep(2)
                 else:
                     self.log.info("Scaling the cluster completed. State == {}".format(state))
+                    self.sleep(300)
                     break
-            except:
-                self.log.info("ERROR!!!")
+            except Exception as e:
+                self.log.critical(e)
                 break
         self.servers = CapellaAPI.get_nodes(self.pod, self.tenant, self.cluster.id)
         nodes = list()
