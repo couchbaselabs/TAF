@@ -133,26 +133,9 @@ class CollectionsRebalance(CollectionBase):
                 self.retry_n1qltxn = True
 
     def execute_allowedhosts(self):
-        """ First set_allowed hosts is expected to fail, second set_allowedhosts should pass"""
         if self.allowed_hosts:
-            allowedhosts = "[\"*.couchbase.com\",\"10.112.0.0/16\",\"172.23.0.0/24\"]"
             self.sleep(12, "wait for rebalance to start")
-            for node in self.cluster.nodes_in_cluster:
-                shell = RemoteMachineShellConnection(node)
-                host = "[\"*.couchbase.com\"]"
-                output = shell.set_allowedhosts("localhost", self.cluster.master.rest_username,
-                                                self.cluster.master.rest_password, host)
-                self.log.info("expected failure from set_allowedhosts {0}".format(output))
-                if "errors" not in output[0]:
-                    self.fail("Invalid address should fail, address {0}".format(host))
-                output = shell.set_allowedhosts("localhost", self.cluster.master.rest_username,
-                                                self.cluster.master.rest_password, allowedhosts)
-                if len(output) > 2:
-                    self.fail("Allowed hosts is not changed and error is {0}".format(output))
-                output = shell.get_allowedhosts(self.cluster.master.rest_username,
-                                                self.cluster.master.rest_password)
-                self.assertEqual(output, allowedhosts)
-                shell.disconnect()
+            self.set_allowed_hosts()
 
     def load_metakv_entries_using_fts(self):
         self.fts_index_partitions = self.input.param("fts_index_partition", 6)

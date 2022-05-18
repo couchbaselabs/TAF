@@ -13,6 +13,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.tuq_helper import N1QLHelper
 
 from sdk_exceptions import SDKException
+import threading
 
 
 class CrashTest(CollectionBase):
@@ -26,6 +27,7 @@ class CrashTest(CollectionBase):
         self.target_node = self.input.param("target_node", "active")
         self.client_type = self.input.param("client_type", "sdk").lower()
         self.N1qltxn = self.input.param("N1qltxn", False)
+        self.allowed_hosts = self.input.param("allowed_hosts", False)
 
         self.pre_warmup_stats = dict()
         self.timeout = 120
@@ -466,6 +468,9 @@ class CrashTest(CollectionBase):
         # Induce the error condition
         error_sim.create(error_to_simulate)
 
+        if self.allowed_hosts:
+            self.set_allowed_hosts()
+
         self.sleep(20, "Wait before reverting the error condition")
         # Revert the simulated error condition and close the ssh session
         error_sim.revert(error_to_simulate)
@@ -621,3 +626,27 @@ class CrashTest(CollectionBase):
         if not self.N1qltxn and self.atomicity is False:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
+
+    def execute_allowedhosts(self):
+        self.sleep(2, "wait for the process to get killed or stopped")
+        self.set_allowed_hosts()
+
+    def test_crash_process_while_setting_allowedhosts(self):
+        target_node = self.getTargetNode()
+        remote = RemoteMachineShellConnection(target_node)
+
+        t1 = threading.Thread(target=self.execute_allowedhosts(), name="t1")
+        t1.start()
+
+        self.log.info("Killing {0}:{1} on node {2}"
+                      .format(self.process_name, self.service_name,
+                              target_node.ip))
+        remote.kill_process(self.process_name, self.service_name,
+                            signum=signum[self.sig_type])
+        remote.disconnect()
+        t1.join()
+        rebalance_task = self.task.async_rebalance(
+            self.cluster.servers[:self.nodes_init], [self.cluster.servers[self.nodes_init]], [])
+        self.task.jython_task_manager.get_task_result(rebalance_task)
+        if not rebalance_task.result:
+            self.fail("rebalance failed")
