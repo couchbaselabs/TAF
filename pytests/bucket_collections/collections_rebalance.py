@@ -131,6 +131,14 @@ class CollectionsRebalance(CollectionBase):
                 self.log.info("error is %s" % error)
                 self.retry_n1qltxn = True
 
+<<<<<<< HEAD   (a519fc CBQE-7594: Adding basic tests)
+=======
+    def execute_allowedhosts(self):
+        if self.allowed_hosts:
+            self.sleep(12, "wait for rebalance to start")
+            self.set_allowed_hosts()
+
+>>>>>>> CHANGE (ff5587 CBQE-7594: set allowedhost when memcached process crash test)
     def load_metakv_entries_using_fts(self):
         self.fts_index_partitions = self.input.param("fts_index_partition", 6)
         self.fts_indexes_to_create_drop = self.input.param("fts_indexes_to_create_drop", 500)

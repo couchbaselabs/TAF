@@ -354,3 +354,23 @@ class CollectionBase(ClusterSetup):
         bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
                                                 num_reader_threads=num_reader_threads,
                                                 num_storage_threads=num_storage_threads)
+
+    def set_allowed_hosts(self):
+        """ First operation will fail and the second operation will succeed"""
+        allowedhosts = "[\"*.couchbase.com\",\"10.112.0.0/16\",\"172.23.0.0/24\"]"
+        host = "[\"*.couchbase.com\"]"
+        for node in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(node)
+            output = shell.set_allowedhosts("localhost", self.cluster.master.rest_username,
+                                            self.cluster.master.rest_password, host)
+            self.log.info("expected failure from set_allowedhosts {0}".format(output))
+            if "errors" not in output[0]:
+                self.fail("Invalid address should fail, address {0}".format(host))
+            output = shell.set_allowedhosts("localhost", self.cluster.master.rest_username,
+                                            self.cluster.master.rest_password, allowedhosts)
+            if len(output) > 2:
+                self.fail("Allowed hosts is not changed and error is {0}".format(output))
+            output = shell.get_allowedhosts(self.cluster.master.rest_username,
+                                            self.cluster.master.rest_password)
+            self.assertEqual(output, allowedhosts)
+            shell.disconnect()
