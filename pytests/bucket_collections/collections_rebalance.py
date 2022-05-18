@@ -79,6 +79,7 @@ class CollectionsRebalance(CollectionBase):
             self.log.info("Creating metakv entries start")
             self.load_metakv_entries_using_fts()
             self.log.info("Creating metakv entries end")
+        self.allowed_hosts = self.input.param("allowed_hosts", False)
 
     def tearDown(self):
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -130,6 +131,28 @@ class CollectionsRebalance(CollectionBase):
             except Exception as error:
                 self.log.info("error is %s" % error)
                 self.retry_n1qltxn = True
+
+    def execute_allowedhosts(self):
+        """ First set_allowed hosts is expected to fail, second set_allowedhosts should pass"""
+        if self.allowed_hosts:
+            allowedhosts = "[\"*.couchbase.com\",\"10.112.0.0/16\",\"172.23.0.0/24\"]"
+            self.sleep(12, "wait for rebalance to start")
+            for node in self.cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(node)
+                host = "[\"*.couchbase.com\"]"
+                output = shell.set_allowedhosts("localhost", self.cluster.master.rest_username,
+                                                self.cluster.master.rest_password, host)
+                self.log.info("expected failure from set_allowedhosts {0}".format(output))
+                if "errors" not in output[0]:
+                    self.fail("Invalid address should fail, address {0}".format(host))
+                output = shell.set_allowedhosts("localhost", self.cluster.master.rest_username,
+                                                self.cluster.master.rest_password, allowedhosts)
+                if len(output) > 2:
+                    self.fail("Allowed hosts is not changed and error is {0}".format(output))
+                output = shell.get_allowedhosts(self.cluster.master.rest_username,
+                                                self.cluster.master.rest_password)
+                self.assertEqual(output, allowedhosts)
+                shell.disconnect()
 
     def load_metakv_entries_using_fts(self):
         self.fts_index_partitions = self.input.param("fts_index_partition", 6)
@@ -368,6 +391,7 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
+                    self.execute_allowedhosts()
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -390,6 +414,7 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
+                    self.execute_allowedhosts()
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -422,6 +447,7 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn()
+                    self.execute_allowedhosts()
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -444,6 +470,7 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn()
+                    self.execute_allowedhosts()
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -480,6 +507,7 @@ class CollectionsRebalance(CollectionBase):
                                                           check_vbucket_shuffling=False,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
+                    self.execute_allowedhosts()
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -505,6 +533,7 @@ class CollectionsRebalance(CollectionBase):
                                                           check_vbucket_shuffling=False,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
+                    self.execute_allowedhosts()
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -588,6 +617,7 @@ class CollectionsRebalance(CollectionBase):
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(failover_nodes[0])
+                self.execute_allowedhosts()
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
             else:
@@ -603,6 +633,7 @@ class CollectionsRebalance(CollectionBase):
                 for new_failover_nodes in failover_list:
                     self.log.info("failing over nodes {0}".format(new_failover_nodes))
                     self.execute_N1qltxn(new_failover_nodes[0])
+                    self.execute_allowedhosts()
                     for failover_node in new_failover_nodes:
                         result = self.task.failover(known_nodes, failover_nodes=[failover_node],
                                                     graceful=True, wait_for_pending=wait_for_pending)
@@ -635,6 +666,7 @@ class CollectionsRebalance(CollectionBase):
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(failover_nodes[0])
+                self.execute_allowedhosts()
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
             else:
