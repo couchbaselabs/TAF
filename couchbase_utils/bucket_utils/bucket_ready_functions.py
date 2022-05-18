@@ -3613,13 +3613,13 @@ class BucketUtils(ScopeUtils):
 
     def _run_compaction(self, cluster, number_of_times=1,
                         async_run=False):
-        compaction_tasks = list()
+        compaction_tasks = dict()
         for _ in range(number_of_times):
             for bucket in cluster.buckets:
-                compaction_tasks.append(self.task.async_compact_bucket(
-                    cluster.master, bucket))
+                compaction_tasks[bucket.name] = self.task.async_compact_bucket(
+                    cluster.master, bucket)
             if not async_run:
-                for task in compaction_tasks:
+                for task in compaction_tasks.values():
                     self.task_manager.get_task_result(task)
         return compaction_tasks
 

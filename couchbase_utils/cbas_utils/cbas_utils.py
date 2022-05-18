@@ -5026,7 +5026,8 @@ class CBASRebalanceUtil(object):
         return task
 
     def data_validation_collection(self, cluster, skip_validations=True,
-                                   doc_and_collection_ttl=False):
+                                   doc_and_collection_ttl=False,
+                                   task_manager=None):
         retry_count = 0
         while retry_count < 10:
             try:
@@ -5045,17 +5046,17 @@ class CBASRebalanceUtil(object):
                 cluster, cluster.buckets)
         if doc_and_collection_ttl:
             self.bucket_util._expiry_pager(cluster, val=5)
+            self.bucket_util._compaction_exp_mem_threshold(cluster)
             self.log.info("wait for doc/collection maxttl to finish")
             time.sleep(400)
-            items = 0
+            compaction_tasks = self.bucket_util._run_compaction(
+                cluster, number_of_times=1, async_run=True)
+            for bucket, task in compaction_tasks.iteritems():
+                if not task.result:
+                    raise Exception("Compaction failed on bucket - %s" % bucket)
+            time.sleep(60)
             self.bucket_util._wait_for_stats_all_buckets(
                 cluster, cluster.buckets)
-            bucket_helper_obj = BucketHelper(cluster.master)
-            for bucket in cluster.buckets:
-                items = items + bucket_helper_obj.get_active_key_count(
-                    bucket)
-            if items != 0:
-                raise Exception("doc count!=0, TTL + rebalance failed")
         else:
             if not skip_validations:
                 self.bucket_util.validate_docs_per_collections_all_buckets(cluster)

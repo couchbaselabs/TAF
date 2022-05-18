@@ -18,6 +18,7 @@ from cbas.cbas_base import CBASBaseTest
 from collections_helper.collections_spec_constants import MetaCrudParams
 from security.rbac_base import RbacBase
 from Jython_tasks.task import RunQueriesTask, CreateDatasetsTask, DropDatasetsTask
+from cbas_utils.cbas_utils import CBASRebalanceUtil
 
 
 class CBASDataverseAndScopes(CBASBaseTest):
@@ -1408,6 +1409,14 @@ class CBASDatasetsAndCollections(CBASBaseTest):
 
         while time.time() < end_time + 15:
             self.sleep(5, "waiting for maxTTL to complete")
+
+        if "magma" in self.bucket_spec:
+            rebalance_util = CBASRebalanceUtil(
+                self.cluster_util, self.bucket_util, self.task,
+                self.input.param("vbucket_check", True), self.cbas_util)
+            rebalance_util.data_validation_collection(
+                self.cluster, skip_validations=False,
+                doc_and_collection_ttl=True, task_manager=self.task_manager)
 
         self.log.info("Validating item count")
         datasets = self.cbas_util.list_all_dataset_objs()
