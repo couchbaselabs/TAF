@@ -361,7 +361,10 @@ class BaseTestCase(unittest.TestCase):
                             servers=nodes)
         cluster.id = cluster_id
         cluster.srv = cluster_srv
-        cluster.details = self.capella_cluster_config
+        cluster.cluster_config = self.capella_cluster_config
+        cluster.pod = self.pod
+        cluster.tenant = self.tenant
+
         for temp_server in nodes:
             if "Data" in temp_server.services:
                 cluster.kv_nodes.append(temp_server)

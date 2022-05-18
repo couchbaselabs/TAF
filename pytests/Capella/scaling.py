@@ -28,7 +28,7 @@ class ScalingTests(CapellaBase):
         self.create_end += self.init_items_per_collection
         self.create_perc = 50
         tasks = self.new_loader(wait=False)
-        new_config = self.cluster.details
+        new_config = self.cluster.cluster_config
         new_config["specs"][0]["count"] += 2
         rebalance_task = self.task.async_rebalance_capella(self.pod,
                                                            self.tenant,

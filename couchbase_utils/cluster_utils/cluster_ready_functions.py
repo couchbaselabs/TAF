@@ -49,6 +49,11 @@ class CBCluster:
         self.edition = None
         self.cloud_cluster = False
 
+        # Capella specific params
+        self.pod = None
+        self.tenant = None
+        self.cluster_config = None
+
     def __str__(self):
         return "Couchbase Cluster: %s, Nodes: %s" % (
             self.name, ', '.join([s.ip for s in self.servers]))
@@ -64,7 +69,7 @@ class CBCluster:
         self.eventing_nodes = list()
         self.backup_nodes = list()
         self.nodes_in_cluster = list()
-        
+
         for server in servers:
             if "Data" in server.services:
                 self.kv_nodes.append(server)

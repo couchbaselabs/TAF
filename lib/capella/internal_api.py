@@ -200,9 +200,10 @@ class CapellaUtils(object):
                                          params='', headers=header)
             content = json.loads(content)
             if content.get("data"):
-                CapellaUtils.log.info("Cluster status {}: {}"
-                                      .format(cluster.details.get("name"),
-                                              content.get("data").get("status").get("state")))
+                CapellaUtils.log.info(
+                    "Cluster status %s: %s"
+                    % (cluster.cluster_config.get("name"),
+                       content.get("data").get("status").get("state")))
                 if content.get("data").get("status").get("state") == "destroying":
                     time.sleep(5)
                     continue

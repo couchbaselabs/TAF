@@ -246,7 +246,7 @@ class RebalanceTaskCapella(Task):
     def call(self):
         CapellaAPI.scale(
             self.pod, self.tenant, self.cluster, self.scale_params)
-        self.cluster.details.update(self.scale_params)
+        self.cluster.cluster_config.update(self.scale_params)
         end = time.time() + self.timeout
         while end > time.time():
             try:
