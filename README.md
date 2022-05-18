@@ -4,10 +4,15 @@
 
 1. Install Java. sdkman is a very useful tool for this.  JDK 11 is preferred as Jython doesn't seem to like JDK8 on Ubuntu 18+.
 
-2. Install Jython. Download Jython Installer from [here](https://www.jython.org/downloads.html)
+2. Install Jython. Download Jython Installer from [here](https://repo1.maven.org/maven2/org/python/jython-installer/2.7.2/jython-installer-2.7.2.jar)
 
 ```bash
-java -jar jython-installer-2.7.0.jar Install it wherever you like.
+# jython_path=/opt/jython 
+mkdir <jython_path>
+java -jar jython-installer-2.7.2.jar -d <jython_path> -s
+
+# Installing dependency packages
+<jython_path>/bin/easy_install futures==3.3.0 requests==2.24.0 urllib3==1.25.10 ruamel.yaml==0.16.12 six==1.15.0 httplib2
 ```
 
 ## Test Environment Requirement
