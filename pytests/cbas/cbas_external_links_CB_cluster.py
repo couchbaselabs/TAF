@@ -1003,7 +1003,7 @@ class CBASExternalLinks(CBASBaseTest):
             users_with_permission=[self.analytics_username])
 
         for testcase in rbac_testcases:
-            testcase["name"] = link.properties["name"]
+            testcase["name"] = link.name
             if testcase["username"] in [
                 "analytics_manager", "data_backup", "analytics_select",
                 "analytics_reader"]:

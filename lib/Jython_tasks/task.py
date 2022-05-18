@@ -3418,7 +3418,7 @@ class RunQueriesTask(Task):
     def prepare_n1ql_queries(self):
         buckets = self.n1ql_helper.buckets
         prepared_queries = []
-        bucket_helper = BucketHelper(self.server)
+        bucket_helper = BucketHelper(self.cluster.master)
         for bucket in buckets:
             status, content = bucket_helper.list_collections(
                 bucket.name)

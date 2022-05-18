@@ -71,8 +71,8 @@ class CBASRebalance(CBASBaseTest):
 
         if self.data_load_stage == "before":
             if not self.rebalance_util.data_load_collection(
-                self.cluster, self.doc_spec_name, self.skip_validations,
-                async_load=False, durability_level=self.durability_level):
+                    self.cluster, self.doc_spec_name, self.skip_validations,
+                    async_load=False, durability_level=self.durability_level):
                 self.fail("Doc loading failed")
 
         if self.data_load_stage == "during":
@@ -98,8 +98,8 @@ class CBASRebalance(CBASBaseTest):
 
         if self.data_load_stage == "after":
             if not self.rebalance_util.data_load_collection(
-                self.cluster, self.doc_spec_name, self.skip_validations,
-                async_load=False, durability_level=self.durability_level):
+                    self.cluster, self.doc_spec_name, self.skip_validations,
+                    async_load=False, durability_level=self.durability_level):
                 self.fail("Doc loading failed")
 
         self.rebalance_util.data_validation_collection(
@@ -111,7 +111,8 @@ class CBASRebalance(CBASBaseTest):
             self.fail("Doc count mismatch between KV and CBAS")
 
     def load_collections_with_failover(
-            self, failover_type="Hard", action="RebalanceOut", kv_nodes=0, cbas_nodes=0):
+            self, failover_type="Hard", action="RebalanceOut", kv_nodes=0,
+            cbas_nodes=0):
 
         self.log.info(
             "{0} Failover a node and {1} that node with data load in "
@@ -119,8 +120,8 @@ class CBASRebalance(CBASBaseTest):
 
         if self.data_load_stage == "before":
             if not self.rebalance_util.data_load_collection(
-                self.cluster, self.doc_spec_name, self.skip_validations,
-                async_load=False, durability_level=self.durability_level):
+                    self.cluster, self.doc_spec_name, self.skip_validations,
+                    async_load=False, durability_level=self.durability_level):
                 self.fail("Doc loading failed")
 
         if self.data_load_stage == "during":
@@ -145,13 +146,13 @@ class CBASRebalance(CBASBaseTest):
 
         if self.data_load_stage == "during":
             if not self.rebalance_util.wait_for_data_load_to_complete(
-                data_load_task, self.skip_validations):
+                    data_load_task, self.skip_validations):
                 self.fail("Doc loading failed")
 
         if self.data_load_stage == "after":
             if not self.rebalance_util.data_load_collection(
-                self.cluster, self.doc_spec_name, self.skip_validations,
-                async_load=False, durability_level=self.durability_level):
+                    self.cluster, self.doc_spec_name, self.skip_validations,
+                    async_load=False, durability_level=self.durability_level):
                 self.fail("Doc loading failed")
 
         self.rebalance_util.data_validation_collection(
@@ -160,7 +161,7 @@ class CBASRebalance(CBASBaseTest):
 
         self.bucket_util.print_bucket_stats(self.cluster)
         if not self.cbas_util.validate_docs_in_all_datasets(
-            self.cluster, self.bucket_util):
+                self.cluster, self.bucket_util):
             self.fail("Doc count mismatch between KV and CBAS")
 
     def test_cbas_with_kv_rebalance_in(self):
