@@ -5,8 +5,7 @@ from capellaAPI.CapellaAPI import CapellaAPI
 
 
 class Pod:
-    def __init__(self, url, url_public):
-        self.url = url
+    def __init__(self, url_public):
         self.url_public = url_public
 
 
@@ -34,7 +33,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.create_project(pod.url, tenant.id, name)
+        resp = capella_api.create_project(tenant.id, name)
         if resp.status_code != 201:
             raise Exception("Creating capella project failed.")
         project_id = json.loads(resp.content).get("id")
@@ -48,7 +47,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        capella_api.delete_project(pod.url, tenant.id, tenant.project_id)
+        capella_api.delete_project(tenant.id, tenant.project_id)
         CapellaUtils.log.info("Project Deleted: {}".format(tenant.project_id))
 
     @staticmethod
@@ -138,7 +137,7 @@ class CapellaUtils(object):
 
         time.sleep(10)
         while True:
-            resp = capella_api.get_cluster_internal(pod.url, tenant.id,
+            resp = capella_api.get_cluster_internal(tenant.id,
                                                     tenant.project_id,
                                                     cluster.id)
             content = json.loads(resp.content)
@@ -167,7 +166,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.create_bucket(pod.url, tenant.id, tenant.project_id,
+        resp = capella_api.create_bucket(tenant.id, tenant.project_id,
                                          cluster.id, bucket_params)
         if resp.status_code in [200, 201, 202]:
             CapellaUtils.log.info("Bucket create successfully!")
@@ -179,7 +178,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.get_buckets(pod.url, tenant.id, tenant.project_id, cluster.id)
+        resp = capella_api.get_buckets(tenant.id, tenant.project_id, cluster.id)
         content = json.loads(resp.content)
         bucket_id = None
         for bucket in content.get("buckets").get("data"):
@@ -196,7 +195,7 @@ class CapellaUtils(object):
                                      tenant.api_access_key,
                                      tenant.user,
                                      tenant.pwd)
-            resp = capella_api.flush_bucket(pod.url, tenant.id,
+            resp = capella_api.flush_bucket(tenant.id,
                                             tenant.project_id, cluster.id,
                                             bucket_id)
             if resp.status >= 200 and resp.status < 300:
@@ -215,7 +214,7 @@ class CapellaUtils(object):
                                      tenant.api_access_key,
                                      tenant.user,
                                      tenant.pwd)
-            resp = capella_api.delete_bucket(pod.url, tenant.id,
+            resp = capella_api.delete_bucket(tenant.id,
                                              tenant.project_id, cluster.id,
                                              bucket_id)
             if resp.status_code == 204:
@@ -266,11 +265,11 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.jobs(pod.url, tenant.project_id, tenant.id, cluster_id)
+        resp = capella_api.jobs(tenant.project_id, tenant.id, cluster_id)
         if resp.status_code != 200:
             if resp.status_code == 502:
                 CapellaUtils.log.critical("LOG A BUG: Internal API returns :\
-                {}".format(json.loads(resp.content)))
+                {}".format(resp.content))
                 return CapellaUtils.jobs(pod, tenant, cluster_id)
             raise Exception("Fetch capella cluster jobs failed: %s"
                             % resp.content)
@@ -305,7 +304,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.get_nodes(pod.url, tenant.id, tenant.project_id,
+        resp = capella_api.get_nodes(tenant.id, tenant.project_id,
                                      cluster_id)
         if resp.status_code != 200:
             raise Exception("Fetch capella cluster nodes failed!")
@@ -320,14 +319,14 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.get_db_users(pod.url, tenant.id, tenant.project_id,
+        resp = capella_api.get_db_users(tenant.id, tenant.project_id,
                                         cluster_id, page, limit)
         return json.loads(resp.content)
 
     @staticmethod
     def delete_db_user(pod, tenant, cluster_id, user_id):
         uri = "{}/v2/organizations/{}/projects/{}/clusters/{}/users/{}" \
-              .format(pod.url, tenant.id, tenant.project_id, cluster_id,
+              .format(tenant.id, tenant.project_id, cluster_id,
                       user_id)
         print(uri)
 
@@ -338,7 +337,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.create_db_user(pod.url, tenant.id, tenant.project_id,
+        resp = capella_api.create_db_user(tenant.id, tenant.project_id,
                                           cluster_id, user, pwd)
         if resp.status_code != 200:
             result = json.loads(resp.content)
@@ -357,7 +356,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.add_allowed_ip(pod.url, tenant.id, tenant.project_id,
+        resp = capella_api.add_allowed_ip(tenant.id, tenant.project_id,
                                           cluster_id)
         if resp.status_code != 202:
             result = json.loads(resp.content)
@@ -374,5 +373,5 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.load_sample_bucket(pod.url, tenant.id, tenant.project_id,
+        resp = capella_api.load_sample_bucket(tenant.id, tenant.project_id,
                                               cluster_id, bucket_name)

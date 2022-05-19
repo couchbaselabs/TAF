@@ -13,14 +13,15 @@ class CapellaAPI(CapellaAPIRequests):
         super(CapellaAPI, self).__init__(url, sceret, access)
         self.user = user
         self.pwd = pwd
+        self.internal_url = url.replace("cloud", "")
         self._log = logging.getLogger(__name__)
         self.perPage = 100
 
-    def get_authorization_internal(self, url):
+    def get_authorization_internal(self):
         basic = base64.encodestring('{}:{}'.format(self.user, self.pwd)).strip("\n")
         header = {'Authorization': 'Basic %s' % basic}
         resp = self._urllib_request(
-            "{}/sessions".format(url), method="POST",
+            "{}/sessions".format(self.internal_url), method="POST",
             headers=header)
         jwt = json.loads(resp.content).get("jwt")
         cbc_api_request_headers = {
@@ -149,30 +150,30 @@ class CapellaAPI(CapellaAPIRequests):
         capella_api_response = self.capella_api_get('/v2/users?perPage=' + str(self.perPage))
         return (capella_api_response)
 
-    def create_project(self, url, tenant_id, name):
-        capella_header = self.get_authorization_internal(url)
+    def create_project(self, tenant_id, name):
+        capella_header = self.get_authorization_internal()
         project_details = {"name": name, "tenantId": tenant_id}
 
-        url = '{}/v2/organizations/{}/projects'.format(url, tenant_id)
+        url = '{}/v2/organizations/{}/projects'.format(self.internal_url, tenant_id)
         capella_api_response = self._urllib_request(url, method="POST",
                                                     params=json.dumps(project_details),
                                                     headers=capella_header)
         return capella_api_response
 
-    def delete_project(self, url, tenant_id, project_id):
-        capella_header = self.get_authorization_internal(url)
-        url = '{}/v2/organizations/{}/projects/{}'.format(url, tenant_id,
+    def delete_project(self, tenant_id, project_id):
+        capella_header = self.get_authorization_internal()
+        url = '{}/v2/organizations/{}/projects/{}'.format(self.internal_url, tenant_id,
                                                           project_id)
         capella_api_response = self._urllib_request(url, method="DELETE",
                                                     params='',
                                                     headers=capella_header)
         return capella_api_response
 
-    def create_bucket(self, url, tenant_id, project_id, cluster_id,
+    def create_bucket(self, tenant_id, project_id, cluster_id,
                       bucket_params):
-        capella_header = self.get_authorization_internal(url)
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
-            .format(url, tenant_id, project_id, cluster_id)
+            .format(self.internal_url, tenant_id, project_id, cluster_id)
         url = '{}/buckets'.format(url)
         default = {"name": "default", "bucketConflictResolution": "seqno",
                    "memoryAllocationInMb": 100, "flush": False, "replicas": 0,
@@ -183,91 +184,91 @@ class CapellaAPI(CapellaAPIRequests):
                                     headers=capella_header)
         return resp
 
-    def get_buckets(self, url, tenant_id, project_id, cluster_id):
-        capella_header = self.get_authorization_internal(url)
+    def get_buckets(self, tenant_id, project_id, cluster_id):
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
-            .format(url, tenant_id, project_id, cluster_id)
+            .format(self.internal_url, tenant_id, project_id, cluster_id)
         url = '{}/buckets'.format(url)
         resp = self._urllib_request(url, method="GET", params='',
                                     headers=capella_header)
         return resp
 
-    def flush_bucket(self, url, tenant_id, project_id, cluster_id, bucket_id):
-        capella_header = self.get_authorization_internal(url)
+    def flush_bucket(self, tenant_id, project_id, cluster_id, bucket_id):
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
-            .format(url, tenant_id, project_id, cluster_id)
+            .format(self.internal_url, tenant_id, project_id, cluster_id)
         url = url + "/" + bucket_id + "/flush"
         resp = self._urllib_request(url, method="POST",
                                     headers=capella_header)
         return resp
 
-    def delete_bucket(self, url, tenant_id, project_id, cluster_id,
+    def delete_bucket(self, tenant_id, project_id, cluster_id,
                       bucket_id):
-        capella_header = self.get_authorization_internal(url)
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
-            .format(url, tenant_id, project_id, cluster_id)
+            .format(self.internal_url, tenant_id, project_id, cluster_id)
         url = '{}/buckets/{}'.format(url, bucket_id)
         resp = self._urllib_request(url, method="DELETE",
                                     headers=capella_header)
         return resp
 
-    def update_bucket_settings(self, url, tenant_id, project_id, cluster_id,
+    def update_bucket_settings(self, tenant_id, project_id, cluster_id,
                                bucket_id, bucket_params):
-        capella_header = self.get_authorization_internal(url)
+        capella_header = self.get_authorization_internal()
         url = "{}/v2/organizations/{}/projects/{}/clusters/{}/buckets/{}" \
-            .format(url, tenant_id, project_id,
+            .format(self.internal_url, tenant_id, project_id,
                     cluster_id, bucket_id)
         resp = self._urllib_request(url, method="PUT", headers=capella_header,
                                     params=json.dumps(bucket_params))
         return resp
 
-    def jobs(self, url, project_id, tenant_id, cluster_id):
-        capella_header = self.get_authorization_internal(url)
+    def jobs(self, project_id, tenant_id, cluster_id):
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
-            .format(url, tenant_id, project_id, cluster_id)
+            .format(self.internal_url, tenant_id, project_id, cluster_id)
         url = '{}/jobs'.format(url)
         resp = self._urllib_request(url, method="GET", params='',
                                     headers=capella_header)
         return resp
 
-    def get_cluster_internal(self, url, tenant_id, project_id, cluster_id):
-        capella_header = self.get_authorization_internal(url)
+    def get_cluster_internal(self, tenant_id, project_id, cluster_id):
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
-            .format(url, tenant_id, project_id, cluster_id)
+            .format(self.internal_url, tenant_id, project_id, cluster_id)
 
         resp = self._urllib_request(url, method="GET",
                                     params='', headers=capella_header)
         return resp
 
-    def get_nodes(self, url, tenant_id, project_id, cluster_id):
-        capella_header = self.get_authorization_internal(url)
+    def get_nodes(self, tenant_id, project_id, cluster_id):
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
-            .format(url, tenant_id, project_id, cluster_id)
+            .format(self.internal_url, tenant_id, project_id, cluster_id)
         url = '{}/nodes'.format(url)
         resp = self._urllib_request(url, method="GET", params='',
                                     headers=capella_header)
         return resp
 
-    def get_db_users(self, url, tenant_id, project_id, cluster_id,
+    def get_db_users(self, tenant_id, project_id, cluster_id,
                      page=1, limit=100):
-        capella_header = self.get_authorization_internal(url)
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}' \
-              .format(url, tenant_id, project_id, cluster_id)
+              .format(self.internal_url, tenant_id, project_id, cluster_id)
         url = url + '/users?page=%s&perPage=%s' % (page, limit)
         resp = self._urllib_request(url, method="GET", headers=capella_header)
         return resp
 
-    def delete_db_user(self, url, tenant_id, project_id, cluster_id, user_id):
+    def delete_db_user(self, tenant_id, project_id, cluster_id, user_id):
         url = "{}/v2/organizations/{}/projects/{}/clusters/{}/users/{}" \
-              .format(url, tenant_id, project_id, cluster_id,
+              .format(self.internal_url, tenant_id, project_id, cluster_id,
                       user_id)
         print(url)
 
-    def create_db_user(self, url, tenant_id, project_id, cluster_id,
+    def create_db_user(self, tenant_id, project_id, cluster_id,
                        user, pwd):
-        capella_header = self.get_authorization_internal(url)
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
-            .format(url, tenant_id, project_id, cluster_id)
+            .format(self.internal_url, tenant_id, project_id, cluster_id)
         body = {"name": user, "password": pwd,
                 "permissions": {"data_reader": {}, "data_writer": {}}}
         url = '{}/users'.format(url)
@@ -276,10 +277,10 @@ class CapellaAPI(CapellaAPIRequests):
                                     headers=capella_header)
         return resp
 
-    def add_allowed_ip(self, url, tenant_id, project_id, cluster_id):
-        capella_header = self.get_authorization_internal(url)
+    def add_allowed_ip(self, tenant_id, project_id, cluster_id):
+        capella_header = self.get_authorization_internal()
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}'\
-            .format(url, tenant_id, project_id, cluster_id)
+            .format(self.internal_url, tenant_id, project_id, cluster_id)
         resp = self._urllib_request("https://ifconfig.me", method="GET")
         if resp.status_code != 200:
             raise Exception("Fetch public IP failed!")
@@ -291,11 +292,11 @@ class CapellaAPI(CapellaAPIRequests):
                                     headers=capella_header)
         return resp
 
-    def load_sample_bucket(self, url, tenant_id, project_id, cluster_id,
+    def load_sample_bucket(self, tenant_id, project_id, cluster_id,
                            bucket_name):
-        capella_header = self.get_authorization_internal(url)
+        capella_header = self.get_authorization_internal()
         url = "{}/v2/organizations/{}/projects/{}/clusters/{}/buckets/samples"\
-              .format(url, tenant_id, project_id, cluster_id)
+              .format(self.internal_url, tenant_id, project_id, cluster_id)
         param = {'name': bucket_name}
         resp = self._urllib_request(url, method="POST",
                                     params=json.dumps(param),

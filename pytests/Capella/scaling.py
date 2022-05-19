@@ -21,7 +21,7 @@ class ScalingTests(CapellaBase):
         self.create_end = self.init_items_per_collection
         self.new_loader(wait=True)
         self.data_validation()
-        
+
         self.delete_start = self.create_start
         self.delete_end = self.create_end
         self.delete_perc = 50

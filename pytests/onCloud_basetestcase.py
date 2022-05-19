@@ -169,9 +169,8 @@ class BaseTestCase(unittest.TestCase):
 
         # initialise pod object
         url = self.input.capella.get("pod")
-        pod_url = "https://{}".format(url)
-        pod_url_basic = "https://cloud{}".format(url)
-        self.pod = Pod(pod_url, pod_url_basic)
+        API_BASE_URL = "https://{}".format(url)
+        self.pod = Pod(API_BASE_URL)
 
         self.tenant = Tenant(self.input.capella.get("tenant_id"),
                              self.input.capella.get("capella_user"),
