@@ -79,6 +79,7 @@ class CollectionsRebalance(CollectionBase):
             self.log.info("Creating metakv entries start")
             self.load_metakv_entries_using_fts()
             self.log.info("Creating metakv entries end")
+        self.allowed_hosts = self.input.param("allowed_hosts", False)
 
     def tearDown(self):
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -131,14 +132,11 @@ class CollectionsRebalance(CollectionBase):
                 self.log.info("error is %s" % error)
                 self.retry_n1qltxn = True
 
-<<<<<<< HEAD   (a519fc CBQE-7594: Adding basic tests)
-=======
     def execute_allowedhosts(self):
         if self.allowed_hosts:
             self.sleep(12, "wait for rebalance to start")
             self.set_allowed_hosts()
 
->>>>>>> CHANGE (ff5587 CBQE-7594: set allowedhost when memcached process crash test)
     def load_metakv_entries_using_fts(self):
         self.fts_index_partitions = self.input.param("fts_index_partition", 6)
         self.fts_indexes_to_create_drop = self.input.param("fts_indexes_to_create_drop", 500)
@@ -376,6 +374,7 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
+                    self.execute_allowedhosts()
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -398,6 +397,7 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
+                    self.execute_allowedhosts()
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -430,6 +430,7 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn()
+                    self.execute_allowedhosts()
                     self.task.jython_task_manager.get_task_result(operation)
                     if not operation.result:
                         self.log.info("rebalance was failed as expected")
@@ -452,6 +453,7 @@ class CollectionsRebalance(CollectionBase):
                     operation = self.task.async_rebalance(known_nodes, add_nodes, [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn()
+                    self.execute_allowedhosts()
                     if self.compaction:
                         self.compact_all_buckets()
                     if self.change_ram_quota_cluster:
@@ -596,6 +598,7 @@ class CollectionsRebalance(CollectionBase):
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(failover_nodes[0])
+                self.execute_allowedhosts()
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
             else:
@@ -643,6 +646,7 @@ class CollectionsRebalance(CollectionBase):
                 operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(failover_nodes[0])
+                self.execute_allowedhosts()
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
             else:
