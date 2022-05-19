@@ -155,3 +155,29 @@ class CapellaAPIRequests(object):
             raise CbcAPIError(e)
 
         return (cbc_api_response)
+
+    def _urllib_request(self, api, method='GET', headers=None,
+                        params='', timeout=300, verify=False):
+        session = requests.Session()
+        try:
+            if method == "GET":
+                resp = session.get(api, params=params, headers=headers,
+                                   timeout=timeout, verify=verify)
+            elif method == "POST":
+                resp = session.post(api, data=params, headers=headers,
+                                    timeout=timeout, verify=verify)
+            elif method == "DELETE":
+                resp = session.delete(api, data=params, headers=headers,
+                                      timeout=timeout, verify=verify)
+            elif method == "PUT":
+                resp = session.put(api, data=params, headers=headers,
+                                   timeout=timeout, verify=verify)
+            return resp
+        except requests.exceptions.HTTPError as errh:
+            self._log.error("HTTP Error {0}".format(errh))
+        except requests.exceptions.ConnectionError as errc:
+            self._log.error("Error Connecting {0}".format(errc))
+        except requests.exceptions.Timeout as errt:
+            self._log.error("Timeout Error: {0}".format(errt))
+        except requests.exceptions.RequestException as err:
+            self._log.error("Something else: {0}".format(err))

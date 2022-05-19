@@ -14,8 +14,8 @@ from Jython_tasks.task_manager import TaskManager
 from SystemEventLogLib.Events import EventHelper
 from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
-from capella.internal_api import CapellaUtils as CapellaAPI
-from capella.internal_api import Pod, Tenant
+from capella.capella_utils import CapellaUtils as CapellaAPI
+from capella.capella_utils import Pod, Tenant
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from common_lib import sleep
 from couchbase_helper.cluster import ServerTasks

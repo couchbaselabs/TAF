@@ -8,7 +8,7 @@ from SecurityLib.rbac import RbacUtil
 from backup_lib.backup import BackupHelper
 from basetestcase import BaseTestCase
 from bucket_collections.app.constants import global_vars
-from capella.internal_api import CapellaUtils as CapellaAPI
+from capella.capella_utils import CapellaUtils as CapellaAPI
 from cb_tools.cbstats import Cbstats
 from cbas_utils.cbas_utils import CbasUtil
 from membase.api.rest_client import RestConnection

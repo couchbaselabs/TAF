@@ -51,7 +51,7 @@ from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from testconstants import INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA, MIN_KV_QUOTA
 from gsiLib.GsiHelper_Rest import GsiHelper
-from capella.internal_api import CapellaUtils as CapellaAPI
+from capella.capella_utils import CapellaUtils as CapellaAPI
 from TestInput import TestInputServer
 # from cluster_utils.cluster_ready_functions import CBCluster
 
@@ -212,9 +212,6 @@ class DeployCloud(Task):
             cluster_id, srv, servers = \
                     CapellaAPI.create_cluster(self.pod, self.tenant,
                                               self.config)
-            # CapellaAPI.create_db_user(self.pod, self.tenant, cluster_id,
-            #                           self.rest_username,
-            #                           self.rest_password)
             self.cluster_id = cluster_id
             self.srv = srv
             self.servers = servers

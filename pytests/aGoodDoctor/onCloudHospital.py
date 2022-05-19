@@ -17,7 +17,7 @@ import random
 from aGoodDoctor.bkrs import DoctorBKRS
 import os
 from BucketLib.bucket import Bucket
-from capella.internal_api import CapellaUtils as CapellaAPI
+from capella.capella_utils import CapellaUtils as CapellaAPI
 
 
 class Murphy(BaseTestCase, OPD):
