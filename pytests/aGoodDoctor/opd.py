@@ -447,7 +447,8 @@ class OPD:
                     self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items,
                                                               timeout=14400)
             except Exception as e:
-                self.get_gdb()
+                if not self.cluster.cloud_cluster:
+                    self.get_gdb()
                 raise e
 
     def get_gdb(self):

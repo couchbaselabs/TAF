@@ -77,7 +77,8 @@ class CapellaUtils(object):
                                  tenant.pwd)
         resp = capella_api.create_project(tenant.id, name)
         if resp.status_code != 201:
-            raise Exception("Creating capella project failed.")
+            raise Exception("Creating capella project failed: {}".
+                            format(resp.content))
         project_id = json.loads(resp.content).get("id")
         tenant.project_id = project_id
         CapellaUtils.log.info("Project ID: {}".format(project_id))

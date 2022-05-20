@@ -59,8 +59,6 @@ class CBCluster:
             self.name, ', '.join([s.ip for s in self.servers]))
 
     def refresh_object(self, servers):
-        self.master = servers[0]
-        self.servers = servers
         self.kv_nodes = list()
         self.fts_nodes = list()
         self.cbas_nodes = list()
@@ -84,6 +82,7 @@ class CBCluster:
             if "FTS" in server.services:
                 self.fts_nodes.append(server)
             self.nodes_in_cluster.append(server)
+        self.master = self.kv_nodes[0]
 
     def update_master_using_diag_eval(self, node_in_cluster=None):
         if node_in_cluster is None:
@@ -777,6 +776,7 @@ class ClusterUtils:
             RestConnection(server).set_index_settings(json)
 
     def get_kv_nodes(self, cluster, servers=None):
+        return cluster.kv_nodes
         if servers is None:
             servers = cluster.servers
         kv_servers = self.get_nodes_from_services_map(

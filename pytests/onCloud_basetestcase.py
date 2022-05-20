@@ -400,7 +400,8 @@ class BaseTestCase(unittest.TestCase):
                 cluster.cbas_nodes.append(temp_server)
             if "FTS" in temp_server.services:
                 cluster.fts_nodes.append(temp_server)
-            cluster.nodes_in_cluster.append(temp_server)
+        cluster.master = cluster.kv_nodes[0]
+        self.tenant.clusters.update({cluster.id: cluster})
 
         cluster.master = cluster.kv_nodes[0]
         self.tenant.clusters.update({cluster.id: cluster})

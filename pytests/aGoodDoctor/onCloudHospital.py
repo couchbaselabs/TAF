@@ -64,7 +64,6 @@ class Murphy(BaseTestCase, OPD):
             self.doc_ops = self.doc_ops.split(':')
 
         self.threads_calculation()
-        self.rest = RestConnection(self.servers[0])
         self.op_type = self.input.param("op_type", "create")
         self.dgm = self.input.param("dgm", None)
         self.num_buckets = self.input.param("num_buckets", 1)
@@ -312,9 +311,7 @@ class Murphy(BaseTestCase, OPD):
             ###################################################################
             self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
                            format(self.loop))
-            rebalance_task = self.task.async_rebalance_capella(self.pod,
-                                                               self.tenant,
-                                                               self.cluster,
+            rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                config)
 
             self.task_manager.get_task_result(rebalance_task)
@@ -325,9 +322,7 @@ class Murphy(BaseTestCase, OPD):
             self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                            format(self.loop))
             config = self.rebalance_config(self.nodes_init)
-            rebalance_task = self.task.async_rebalance_capella(self.pod,
-                                                               self.tenant,
-                                                               self.cluster,
+            rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                config)
 
             self.task_manager.get_task_result(rebalance_task)
