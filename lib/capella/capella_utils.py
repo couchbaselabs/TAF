@@ -284,19 +284,20 @@ class CapellaUtils(object):
         return resp.status
 
     @staticmethod
-    def scale(pod, tenant, cluster, new_config):
-        capella_api = CapellaAPI(pod.url_public,
-                                 tenant.api_secret_key,
-                                 tenant.api_access_key,
-                                 tenant.user,
-                                 tenant.pwd)
+    def scale(cluster, new_config):
+        capella_api = CapellaAPI(cluster.pod.url_public,
+                                 cluster.tenant.api_secret_key,
+                                 cluster.tenant.api_access_key,
+                                 cluster.tenant.user,
+                                 cluster.tenant.pwd)
         while True:
             resp = capella_api.update_cluster_servers(cluster.id, new_config)
             if resp.status_code != 202:
                 result = json.loads(resp.content)
                 if result["errorType"] == "ClusterModifySpecsInvalidState":
-                    CapellaUtils.wait_until_done(pod, tenant, cluster.id,
-                                                 "Wait for healthy cluster state")
+                    CapellaUtils.wait_until_done(
+                        cluster.pod, cluster.tenant, cluster.id,
+                        "Wait for healthy cluster state")
             else:
                 break
 

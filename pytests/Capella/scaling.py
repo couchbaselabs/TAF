@@ -49,9 +49,7 @@ class ScalingTests(CapellaBase):
                 config["storage"].pop("iops")
             server_group_list.append(config)
 
-        rebalance_task = self.task.async_rebalance_capella(self.pod,
-                                                           self.tenant,
-                                                           self.cluster,
+        rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                            server_group_list)
 
         self.task_manager.get_task_result(rebalance_task)

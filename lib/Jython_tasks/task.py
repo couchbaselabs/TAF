@@ -223,25 +223,24 @@ class DeployCloud(Task):
 
 
 class RebalanceTaskCapella(Task):
-    def __init__(self, pod, tenant, cluster, scale_params=list(),
-                 timeout=1200):
+    def __init__(self, cluster, scale_params=list(), timeout=1200):
         Task.__init__(self, "Scaling_task_{}".format(str(time.time())))
-        self.pod = pod
-        self.tenant = tenant
         self.cluster = cluster
         self.scale_params = {"servers": scale_params}
         self.timeout = timeout
-        print self.scale_params
+        self.servers = None
+        self.test_log.critical("Scale_params: %s" % scale_params)
 
     def call(self):
-        CapellaAPI.scale(
-            self.pod, self.tenant, self.cluster, self.scale_params)
+        CapellaAPI.scale(self.cluster, self.scale_params)
         self.cluster.cluster_config.update(self.scale_params)
         end = time.time() + self.timeout
         while end > time.time():
             try:
-                content = CapellaAPI.jobs(self.pod, self.tenant, self.cluster.id)
-                state = CapellaAPI.get_cluster_state(self.pod, self.tenant, self.cluster.id)
+                content = CapellaAPI.jobs(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                state = CapellaAPI.get_cluster_state(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
                 if state in ["deployment_failed",
                              "deploymentFailed",
                              "redeploymentFailed",
@@ -252,17 +251,20 @@ class RebalanceTaskCapella(Task):
                     for data in content.get("data"):
                         data = data.get("data")
                         if data.get("clusterId") == self.cluster.id:
-                            step, progress = data.get("currentStep"), data.get("completionPercentage")
+                            step, progress = data.get("currentStep"), \
+                                             data.get("completionPercentage")
                             self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", state, step, progress))
                     time.sleep(2)
                 else:
-                    self.log.info("Scaling the cluster completed. State == {}".format(state))
+                    self.log.info("Scaling the cluster completed. State == {}"
+                                  % state)
                     self.sleep(300)
                     break
             except Exception as e:
                 self.log.critical(e)
                 break
-        self.servers = CapellaAPI.get_nodes(self.pod, self.tenant, self.cluster.id)
+        self.servers = CapellaAPI.get_nodes(
+            self.cluster.pod, self.cluster.tenant, self.cluster.id)
         nodes = list()
         for server in self.servers:
             temp_server = TestInputServer()
@@ -282,7 +284,6 @@ class RebalanceTaskCapella(Task):
 
 
 class RebalanceTask(Task):
-
     def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,
                  progress=30, use_hostnames=False, services=None,
                  check_vbucket_shuffling=True, sleep_before_rebalance=0,

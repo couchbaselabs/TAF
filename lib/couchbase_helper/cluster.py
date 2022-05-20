@@ -534,7 +534,7 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_rebalance_capella(self, pod, tenant, cluster, params):
+    def async_rebalance_capella(self, cluster, params):
         """
         Asynchronously rebalances a cluster
 
@@ -547,8 +547,7 @@ class ServerTasks(object):
         Returns:
           RebalanceTask - A task future that is a handle to the scheduled task
         """
-        _task = jython_tasks.RebalanceTaskCapella(
-            pod, tenant, cluster, params)
+        _task = jython_tasks.RebalanceTaskCapella(cluster, params)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
