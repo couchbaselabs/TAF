@@ -262,7 +262,7 @@ class BaseTestCase(unittest.TestCase):
             description="Amazing Cloud",
             single_az=False,
             provider=self.input.param("provider", AWS.__str__).lower(),
-            region=AWS.Region.US_WEST_2,
+            region=self.input.param("region", AWS.Region.US_WEST_2),
             timezone=Cluster.Timezone.PT,
             plan=Cluster.Plan.DEV_PRO,
             cluster_name="taf_cluster")
