@@ -4,6 +4,7 @@ Created on 30-Aug-2021
 @author: riteshagarwal
 '''
 import subprocess
+import json
 from BucketLib.bucket import Bucket
 import os
 from remote.remote_util import RemoteMachineShellConnection
@@ -717,10 +718,8 @@ class OPD:
                                                               output))
             for i in range(min(int(output), 64)):
                 grep_field = "rw_{}:magma".format(i)
-                _res = self.get_magma_stats(bucket, server,
-                                            field_to_grep=grep_field)
-                fragmentation_values.append(float(_res[server.ip][grep_field]
-                                                  ["Fragmentation"]))
+                _res = self.get_magma_stats(bucket, server)
+                fragmentation_values.append(json.loads(_res[server.ip][grep_field])["Fragmentation"])
                 stats.append(_res)
             result.update({server.ip: fragmentation_values})
         self.log.info(stats[0])
@@ -735,11 +734,10 @@ class OPD:
         ".format(result))
         return False
 
-    def get_magma_stats(self, bucket, server=None, field_to_grep=None):
+    def get_magma_stats(self, bucket, server=None):
         magma_stats_for_all_servers = dict()
         cbstat_obj = Cbstats(server)
-        result = cbstat_obj.magma_stats(bucket.name,
-                                        field_to_grep=field_to_grep)
+        result = cbstat_obj.magma_stats(bucket.name)
         magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
 

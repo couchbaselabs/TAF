@@ -252,8 +252,7 @@ class Cbstats:
                 result[vb_num][stat_name] = stat_value
         return result
 
-    def magma_stats(self, bucket_name, field_to_grep=None,
-                    stat_name="kvstore"):
+    def magma_stats(self, bucket_name, stat_name="kvstore"):
         """
         Get a particular value of "kvstore" stat from the command,
         cbstats localhost:port kvstore
@@ -262,33 +261,12 @@ class Cbstats:
         Arguments:
         :bucket_name   - Name of the bucket to get the stats
         :stat_name     - Any valid stat_command accepted by cbstats
-        :field_to_grep - Target stat name string to grep.
 
         Returns:
-        :result - Return a dict with key as  'field_to_grep' or an empty dict
-                  if field_to_grep does not exist or invalid
-
-        Raise:
-        :Exception returned from command line execution (if any)
+        :result - Return a dict
         """
-
-        result = dict()
-        output, error = self.get_stats(bucket_name, stat_name,
-                                       field_to_grep=field_to_grep)
-        if len(error) != 0:
-            raise Exception("\n".join(error))
-        pattern = ":[ \t]+"
-        pattern_for_key = "^[ \s]+"
-        bucket_absent_error = "No access to bucket:%s - permission \
-                               denied or bucket does not exist" % bucket_name
-        if type(output) is not list:
-            output = [output]
-        if field_to_grep is None and bucket_absent_error in output[0]:
-            raise Exception("\n", bucket_absent_error)
-        for ele in output:
-            result[re.sub(pattern_for_key, "", re.split(pattern, ele)[0])] = \
-                json.loads(re.split(pattern, ele)[1])
-        return result
+        output = self.get_stats_memc(bucket_name, stat_name)
+        return output
 
     def vbucket_list(self, bucket_name, vbucket_type="active"):
         """
