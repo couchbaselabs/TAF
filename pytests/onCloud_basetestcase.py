@@ -18,6 +18,7 @@ from capella.capella_utils import CapellaUtils as CapellaAPI
 from capella.capella_utils import Pod, Tenant
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from common_lib import sleep
+from constants.cloud_constants.capella_constants import AWS, Cluster
 from couchbase_helper.cluster import ServerTasks
 from couchbase_helper.durability_helper import BucketDurability
 from global_vars import logger
@@ -256,23 +257,30 @@ class BaseTestCase(unittest.TestCase):
                                    "type": "DeveloperPro"
                                    }
                 }
-        self.capella_cluster_config = temp
+        self.capella_cluster_config = CapellaAPI.get_cluster_config(
+            environment="hosted",
+            description="Amazing Cloud",
+            single_az=False,
+            provider=self.input.param("provider", AWS.__str__).lower(),
+            region=AWS.Region.US_WEST_2,
+            timezone=Cluster.Timezone.PT,
+            plan=Cluster.Plan.DEV_PRO,
+            cluster_name="taf_cluster")
 
         services = self.input.param("services", CbServer.Services.KV)
         for service_group in services.split("-"):
             service_group = service_group.split(":")
             min_nodes = 3 if CbServer.Services.KV in service_group else 2
-            service_config = {
-                "size": max(min_nodes, self.nodes_init),
-                "services": service_group,
-                "compute": self.input.param("compute", "m5.xlarge"),
-                "storage": {
-                    "type": self.input.param("type", "GP3"),
-                    "size": self.input.param("size", 50),
-                    "iops": self.input.param("iops", 3000)
-                }
-            }
-            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+            service_config = CapellaAPI.get_cluster_config_spec(
+                services=service_group,
+                count=max(min_nodes, self.nodes_init),
+                compute=self.input.param("compute",
+                                         AWS.ComputeNode.VCPU4_RAM16),
+                storage_type=self.input.param("type", AWS.StorageType.GP3),
+                storage_size_gb=self.input.param("size", AWS.StorageSize.MIN),
+                storage_iops=self.input.param("iops", AWS.StorageIOPS.MIN))
+            if self.capella_cluster_config["place"]["hosted"]["provider"] \
+                    != AWS.__str__:
                 service_config["storage"].pop("iops")
             self.capella_cluster_config["servers"].append(service_config)
 
@@ -371,9 +379,10 @@ class BaseTestCase(unittest.TestCase):
             nodes.append(temp_server)
         cluster = CBCluster(username=self.rest_username,
                             password=self.rest_password,
-                            servers=nodes)
+                            servers=[None] * 40)
         cluster.id = cluster_id
         cluster.srv = cluster_srv
+        cluster.nodes_in_cluster = nodes
         cluster.cluster_config = self.capella_cluster_config
         cluster.pod = self.pod
         cluster.tenant = self.tenant

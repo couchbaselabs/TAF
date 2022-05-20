@@ -1,5 +1,7 @@
 import time
 import json
+
+from constants.cloud_constants.capella_constants import AWS, Cluster
 from global_vars import logger
 from capellaAPI.CapellaAPI import CapellaAPI
 
@@ -25,6 +27,46 @@ class CapellaUtils(object):
     cidr = "10.0.0.0"
     memcached_port = "11207"
     log = logger.get("infra")
+
+    @staticmethod
+    def get_cluster_config(environment="hosted",
+                           provider=AWS.__str__,
+                           region=AWS.Region.US_WEST_2,
+                           single_az=False,
+                           plan=Cluster.Plan.DEV_PRO,
+                           timezone=Cluster.Timezone.PT,
+                           cluster_name="taf_cluster",
+                           description=""):
+        return {"environment": environment,
+                "clusterName": cluster_name,
+                "projectId": "",
+                "description": description,
+                "place": {"singleAZ": single_az,
+                          "hosted": {"provider": provider,
+                                     "region": region,
+                                     "CIDR": None
+                                     }
+                          },
+                "servers": list(),
+                "supportPackage": {"timezone": timezone,
+                                   "type": plan}
+                }
+
+    @staticmethod
+    def get_cluster_config_spec(services, count,
+                                compute=AWS.ComputeNode.VCPU4_RAM16,
+                                storage_type=AWS.StorageType.GP3,
+                                storage_size_gb=AWS.StorageSize.MIN,
+                                storage_iops=AWS.StorageIOPS.MIN):
+        return {
+            "services": services,
+            "size": count,
+            "compute": compute,
+            "storage": {"type": storage_type,
+                        "size": storage_size_gb,
+                        "iops": storage_iops,
+                        }
+        }
 
     @staticmethod
     def create_project(pod, tenant, name):
