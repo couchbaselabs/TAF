@@ -244,7 +244,8 @@ class RebalanceTaskCapella(Task):
                 if state in ["deployment_failed",
                              "deploymentFailed",
                              "redeploymentFailed",
-                             "rebalance_failed"]:
+                             "rebalance_failed",
+                             "scaleFailed"]:
                     raise Exception("{} for cluster {}".format(
                         state, self.cluster.id))
                 if content.get("data") or state != "healthy":
