@@ -73,13 +73,13 @@ class CapellaBase(BaseTestCase):
 
         # Creating buckets for data loading purpose
         self.log.info("Create CB buckets")
-        ramQuota = self.input.param("ramQuota", kv_memory)
+        ram_quota = self.input.param("ramQuota", kv_memory)
         buckets = ["default"]*self.num_buckets
         bucket_type = self.bucket_type.split(';')*self.num_buckets
         for i in range(self.num_buckets):
             bucket = Bucket(
                 {Bucket.name: buckets[i] + str(i),
-                 Bucket.ramQuotaMB: ramQuota/self.num_buckets,
+                 Bucket.ramQuotaMB: ram_quota/self.num_buckets,
                  Bucket.maxTTL: self.bucket_ttl,
                  Bucket.replicaNumber: self.num_replicas,
                  Bucket.storageBackend: self.bucket_storage,
@@ -97,7 +97,7 @@ class CapellaBase(BaseTestCase):
                 "durabilityLevel": bucket.durability_level,
                 "timeToLive": {"unit": "seconds", "value": bucket.maxTTL}
                 }
-            CapellaAPI.create_bucket(self.pod, self.tenant, self.cluster, self.bucket_params)
+            CapellaAPI.create_bucket(self.cluster, self.bucket_params)
             self.cluster.buckets.append(bucket)
 
         self.buckets = self.cluster.buckets

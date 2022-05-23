@@ -128,11 +128,12 @@ class Murphy(BaseTestCase, OPD):
                 "durabilityLevel": bucket.durability_level,
                 "timeToLive": {"unit": "seconds", "value": bucket.maxTTL}
                 }
-            CapellaAPI.create_bucket(self.pod, self.tenant, self.cluster, self.bucket_params)
+            CapellaAPI.create_bucket(self.cluster, self.bucket_params)
             self.cluster.buckets.append(bucket)
 
         self.buckets = self.cluster.buckets
-        self.create_required_collections(self.cluster, self.num_scopes, self.num_collections)
+        self.create_required_collections(self.cluster, self.num_scopes,
+                                         self.num_collections)
         if self.xdcr_remote_nodes > 0:
             pass
 

@@ -197,18 +197,20 @@ class CapellaUtils(object):
                 break
 
     @staticmethod
-    def create_bucket(pod, tenant, cluster, bucket_params={}):
+    def create_bucket(cluster, bucket_params):
         while True:
-            state = CapellaUtils.get_cluster_state(pod, tenant, cluster.id)
+            state = CapellaUtils.get_cluster_state(
+                cluster.pod, cluster.tenant, cluster.id)
             if state == "healthy":
                 break
             time.sleep(1)
-        capella_api = CapellaAPI(pod.url_public,
-                                 tenant.api_secret_key,
-                                 tenant.api_access_key,
-                                 tenant.user,
-                                 tenant.pwd)
-        resp = capella_api.create_bucket(tenant.id, tenant.project_id,
+        capella_api = CapellaAPI(cluster.pod.url_public,
+                                 cluster.tenant.api_secret_key,
+                                 cluster.tenant.api_access_key,
+                                 cluster.tenant.user,
+                                 cluster.tenant.pwd)
+        resp = capella_api.create_bucket(cluster.tenant.id,
+                                         cluster.tenant.project_id,
                                          cluster.id, bucket_params)
         if resp.status_code in [200, 201, 202]:
             CapellaUtils.log.info("Bucket create successfully!")
