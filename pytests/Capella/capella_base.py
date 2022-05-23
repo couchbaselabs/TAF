@@ -30,11 +30,10 @@ from capella.capella_utils import CapellaUtils as CapellaAPI
 
 
 class CapellaBase(BaseTestCase):
-
     def tearDown(self):
         self.cluster_util.print_cluster_stats(self.cluster)
         for bucket in self.cluster.buckets:
-            CapellaAPI.delete_bucket(self.pod, self.tenant, self.cluster, bucket.name)
+            CapellaAPI.delete_bucket(self.cluster, bucket.name)
 
         super(CapellaBase, self).tearDown()
 

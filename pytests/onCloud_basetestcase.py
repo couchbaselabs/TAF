@@ -344,7 +344,7 @@ class BaseTestCase(unittest.TestCase):
 
         for name, cluster in self.cb_clusters.items():
             self.log.info("Destroying cluster: {}".format(name))
-            CapellaAPI.destroy_cluster(self.pod, self.tenant, cluster)
+            CapellaAPI.destroy_cluster(cluster)
         CapellaAPI.delete_project(self.pod, self.tenant)
 
     def __get_existing_cluster_details(self, cluster_ids):
