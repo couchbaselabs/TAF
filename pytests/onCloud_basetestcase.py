@@ -383,7 +383,6 @@ class BaseTestCase(unittest.TestCase):
                             servers=[None] * 40)
         cluster.id = cluster_id
         cluster.srv = cluster_srv
-        cluster.nodes_in_cluster = nodes
         cluster.cluster_config = self.capella_cluster_config
         cluster.pod = self.pod
         cluster.tenant = self.tenant
@@ -402,8 +401,9 @@ class BaseTestCase(unittest.TestCase):
             if "FTS" in temp_server.services:
                 cluster.fts_nodes.append(temp_server)
             cluster.nodes_in_cluster.append(temp_server)
-        self.tenant.clusters.update({cluster.id: cluster})
 
+        cluster.master = cluster.kv_nodes[0]
+        self.tenant.clusters.update({cluster.id: cluster})
         self.cb_clusters[cluster_name] = cluster
         self.cb_clusters[cluster_name].cloud_cluster = True
 
