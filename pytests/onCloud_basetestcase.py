@@ -267,10 +267,10 @@ class BaseTestCase(unittest.TestCase):
             plan=Cluster.Plan.DEV_PRO,
             cluster_name="taf_cluster")
 
-        services = self.input.param("services", CbServer.Services.KV)
+        services = self.input.param("services", "data")
         for service_group in services.split("-"):
             service_group = service_group.split(":")
-            min_nodes = 3 if CbServer.Services.KV in service_group else 2
+            min_nodes = 3 if "data" in service_group else 2
             service_config = CapellaAPI.get_cluster_config_spec(
                 services=service_group,
                 count=max(min_nodes, self.nodes_init),
@@ -305,6 +305,7 @@ class BaseTestCase(unittest.TestCase):
                     .replace(".", ""),
                     self.input.param("size", 50),
                     cluster_name)
+                self.log.info(self.capella_cluster_config)
                 deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
                                           self.capella_cluster_config)
                 self.task_manager.add_new_task(deploy_task)
