@@ -56,6 +56,9 @@ class CollectionsRebalance(CollectionBase):
         self.failover_nodes_different_zone = self.input.param("failover_nodes_different_zone", False)
         self.failover_entire_zone = self.input.param("failover_entire_zone", False)
         self.failover_same_zone = self.input.param("failover_same_zone", False)
+        self.add_zone = self.input.param("add_zone", 0)
+        self.remove_zone = self.input.param("remove_zone", 0)
+        self.continous_update_replica = self.input.param("continous_update_replica", False)
         if self.scrape_interval:
             self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
             # scrape_timeout cannot be greater than scrape_interval,
@@ -910,7 +913,7 @@ class CollectionsRebalance(CollectionBase):
                 for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
                 if items != 0:
-                    self.fail("Items did not go to 0. Number of items left in the bukcet : {0}". format(items))
+                    self.fail("Items did not go to 0. Number of items left in the bukcet : {0}".format(items))
             elif self.forced_hard_failover:
                 pass
             else:
@@ -919,7 +922,7 @@ class CollectionsRebalance(CollectionBase):
                 self.bucket_util.validate_docs_per_collections_all_buckets(
                     self.cluster, num_zone=num_zone, timeout=2400)
 
-    def shuffle_nodes_between_zones_and_rebalance(self):
+    def shuffle_nodes_between_zones_and_rebalance(self, load_data=False):
         """
         Shuffle the nodes present in the cluster if zone > 1.
         Rebalance the nodes in the end.
@@ -953,20 +956,33 @@ class CollectionsRebalance(CollectionBase):
                                     set([node for node in rest.get_nodes_in_zone(zones[i])]))
                 rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[i])
         # Start rebalance and monitor it.
-        self.check_balanced_attribute(rest, self.balanced)
         self.task.rebalance(self.cluster.servers[:self.nodes_init], [], [],
                             retry_get_process_num=self.retry_get_process_num)
         # Verify replicas of one node should not be in the same zone
         # as active vbuckets of the node.
-        self.check_balanced_attribute(rest, True)
         self.data_validation_collection()
+        if load_data:
+            self.sync_data_load()
+            self.data_validation_collection()
 
-    def check_balanced_attribute(self, rest, balanced):
+    def update_replica_and_validate_vbuckets(self):
+        """ update replica, rebalance and validate vbucket distribution"""
+        for replica in range(4):
+            self.log.info("updating replica to {0}".format(replica))
+            self.bucket_util.update_all_bucket_replicas(
+                self.cluster, replica)
+            self.bucket_util.print_bucket_stats(self.cluster)
+            self.task.rebalance(self.cluster.servers[:self.nodes_init], [], [],
+                                retry_get_process_num=self.retry_get_process_num)
+            self.data_validation_collection()
+
+    def check_balanced_attribute(self, balanced=True):
+        rest = RestConnection(self.servers[0])
         content = rest.cluster_status()
         try:
             if content['balanced'] != balanced:
                 raise Exception("actual balanced attribute {0} but expected {1}".
-                                format(content['balanced'], balanced))
+                              format(content['balanced'], balanced))
         except KeyError:
             self.log.info("balanced attribute is not present")
 
@@ -1024,7 +1040,6 @@ class CollectionsRebalance(CollectionBase):
         if self.N1ql_txn:
             self.setup_N1ql_txn()
         if self.num_zone > 1:
-            self.balanced = False
             self.shuffle_nodes_between_zones_and_rebalance()
         if rebalance_operation == "rebalance_in":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_in",
@@ -1081,9 +1096,6 @@ class CollectionsRebalance(CollectionBase):
             rebalance = self.forced_failover_operation(known_nodes=self.cluster.servers[:self.nodes_init],
                                                        failover_nodes=failover_nodes
                                                        )
-        if self.num_zone > 1 and ("rebalance_out" in rebalance_operation
-                                  or "recovery" in rebalance_operation):
-            self.balanced = True
         if self.data_load_stage == "during":
             if self.data_load_type == "async":
                 tasks = self.async_data_load()
@@ -1100,12 +1112,24 @@ class CollectionsRebalance(CollectionBase):
                     self.wait_for_async_data_load_to_complete(tasks)
             self.data_validation_collection()
         if self.num_zone > 1:
+            self.check_balanced_attribute()
+            if self.add_zone > 0:
+                for i in range(self.add_zone):
+                    self.num_zone += 1
+                    self.shuffle_nodes_between_zones_and_rebalance(load_data=True)
+            if self.remove_zone > 0:
+                for i in range(self.remove_zone):
+                    self.num_zone -= 1
+                    if self.num_zone > 0:
+                        self.shuffle_nodes_between_zones_and_rebalance(load_data=True)
             self.shuffle_nodes_between_zones_and_rebalance()
         if self.data_load_stage == "after":
             self.sync_data_load()
             self.data_validation_collection()
         if self.N1ql_txn:
             self.validate_N1qltxn_data()
+        if self.continous_update_replica:
+            self.update_replica_and_validate_vbuckets()
 
     def test_data_load_collections_with_rebalance_in(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in")
