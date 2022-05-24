@@ -232,7 +232,7 @@ class RestConnection(object):
                     except ValueError:
                         json_parsed = dict()
                         json_parsed["error"] = "status: {0}, content: {1}".format(
-                            response['status'], content)
+                            response.status_code, content)
                     reason = "unknown"
                     if "error" in json_parsed:
                         reason = json_parsed["error"]

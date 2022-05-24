@@ -416,6 +416,7 @@ class OPD:
 
     def wait_for_doc_load_completion(self, tasks, wait_for_stats=True):
         self.doc_loading_tm.getAllTaskResult()
+        self.get_memory_footprint()
         for task in tasks:
             task.result = True
             unique_str = "{}:{}:{}:".format(task.sdk.bucket, task.sdk.scope, task.sdk.collection)
@@ -461,7 +462,9 @@ class OPD:
             gdb_shell.disconnect()
 
     def data_validation(self):
+        self.get_memory_footprint()
         doc_ops = self.mutations_to_validate
+        pc = min(self.process_concurrency, 20)
         if self._data_validation:
             self.log.info("Validating Active/Replica Docs")
             cmd = dict()
@@ -499,7 +502,7 @@ class OPD:
                                                   cmd.get("up", 0),
                                                   cmd.get("dl", 0),
                                                   cmd.get("ex", 0),
-                                                  cmd.get("workers", self.process_concurrency),
+                                                  cmd.get("workers", pc),
                                                   cmd.get("ops", self.ops_rate),
                                                   cmd.get("loadType", None),
                                                   cmd.get("keyType", None),
@@ -513,7 +516,7 @@ class OPD:
                             self.loader_map.update({bucket.name+scope+collection+op_type: dg})
 
             tasks = list()
-            i = self.process_concurrency
+            i = pc
             while i > 0:
                 for bucket in self.cluster.buckets:
                     for scope in bucket.scopes.keys():
@@ -542,6 +545,7 @@ class OPD:
                 print(e)
         for task in tasks:
             self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
+        self.get_memory_footprint()
 
     def print_crud_stats(self):
         self.table = TableView(self.log.info)
@@ -563,6 +567,7 @@ class OPD:
 
     def perform_load(self, crash=False, num_kills=1, wait_for_load=True,
                      validate_data=True):
+        self.get_memory_footprint()
         self._loader_dict()
         master = Server(self.cluster.master.ip, self.cluster.master.port,
                         self.cluster.master.rest_username, self.cluster.master.rest_password,
@@ -589,6 +594,7 @@ class OPD:
 
         if wait_for_load:
             self.wait_for_doc_load_completion(tasks)
+            self.get_memory_footprint()
         else:
             return tasks
 
@@ -657,7 +663,7 @@ class OPD:
             if bucket.storageBackend == Bucket.StorageBackend.magma and not self.cluster.cloud_cluster:
                 self.get_magma_disk_usage(bucket)
                 self.check_fragmentation_using_magma_stats(bucket)
-            self.check_fragmentation_using_kv_stats(bucket)
+                self.check_fragmentation_using_kv_stats(bucket)
 
     def PrintStep(self, msg=None):
         print "\n"

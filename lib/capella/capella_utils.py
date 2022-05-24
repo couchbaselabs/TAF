@@ -226,6 +226,10 @@ class CapellaUtils(object):
                                          cluster.id, bucket_params)
         if resp.status_code in [200, 201, 202]:
             CapellaUtils.log.info("Bucket create successfully!")
+        else:
+            CapellaUtils.log.critical("Bucket creation failed: {}, {}".
+                                      format(resp.status_code, resp.content))
+            raise Exception("Bucket creation failed")
 
     @staticmethod
     def get_bucket_id(cluster, name):
@@ -333,7 +337,13 @@ class CapellaUtils(object):
                 return CapellaUtils.jobs(pod, tenant, cluster_id)
             raise Exception("Fetch capella cluster jobs failed: %s"
                             % resp.content)
-        return json.loads(resp.content)
+        try:
+            content = json.loads(resp.content)
+        except Exception as e:
+            CapellaUtils.log.critical("LOG A BUG: Internal API returns :\
+                {}".format(resp.content))
+            return CapellaUtils.jobs(pod, tenant, cluster_id)
+        return content
 
     @staticmethod
     def get_cluster_info(pod, tenant, cluster_id):
