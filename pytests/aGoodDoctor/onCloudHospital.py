@@ -312,7 +312,8 @@ class Murphy(BaseTestCase, OPD):
             self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
                            format(self.loop))
             rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                               config)
+                                                               config,
+                                                               timeout=5*60*60)
 
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -323,7 +324,8 @@ class Murphy(BaseTestCase, OPD):
                            format(self.loop))
             config = self.rebalance_config(self.nodes_init)
             rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                               config)
+                                                               config,
+                                                               timeout=5*60*60)
 
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
