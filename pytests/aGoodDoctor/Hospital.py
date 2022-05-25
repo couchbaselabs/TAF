@@ -105,7 +105,6 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.nodes_in_cluster.extend([self.cluster.master])
         self.available_servers = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
         self.cluster.kv_nodes = self.cluster.nodes_in_cluster[:]
-        self.cluster.kv_nodes.remove(self.cluster.master)
         self.cluster_util.set_metadata_purge_interval(self.cluster.master,
                                                       interval=self.bucket_purge_interval)
         if self.xdcr_remote_nodes > 0:

@@ -621,7 +621,7 @@ class DataCollector(object):
                 #client = MemcachedClientHelper.direct_client(server, bucket)
                 #stats = client.stats('failovers')
                 cbstat = Cbstats(server)
-                stats = cbstat.failover_stats(bucket)
+                stats = cbstat.failover_stats(bucket.name)
                 map_data = {}
                 num_map ={}
                 for okey,ovalue in stats.items():

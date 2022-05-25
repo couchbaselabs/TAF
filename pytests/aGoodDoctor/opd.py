@@ -215,7 +215,8 @@ class OPD:
                 for server in servers:
                     self.cluster.eventing_nodes.remove(server)
             if "kv" in services:
-                servers = random.sample(self.cluster.kv_nodes, nodes_out)
+                nodes = [node for node in self.cluster.kv_nodes if node.ip != self.cluster.master.ip]
+                servers = random.sample(nodes, nodes_out)
                 self.servs_out.extend(servers)
                 for server in servers:
                     self.cluster.kv_nodes.remove(server)
