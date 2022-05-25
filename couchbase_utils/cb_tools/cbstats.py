@@ -137,6 +137,7 @@ class Cbstats:
             self.server, Bucket({"name": bucket_name}), 30,
             self.username, self.password)
         output = client.stats(stat_name)
+        client.close()
         return output if key is None else output[key]
 
     def get_timings(self, bucket_name, command="raw"):
