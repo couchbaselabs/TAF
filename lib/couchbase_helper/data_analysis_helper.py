@@ -694,9 +694,10 @@ class DataCollector(object):
                 #client = MemcachedClientHelper.direct_client(server, bucket)
                 #stats = client.stats('')
                 cbstat = Cbstats(server)
-                stats = cbstat.vbucket_list(bucket)
+                stats = cbstat.vbucket_list(bucket.name)
                 active_map_data[server.ip] = len(stats)
-                stats = cbstat.vbucket_list(bucket,vbucket_type="replica")
+                stats = cbstat.vbucket_list(bucket.name,
+                                            vbucket_type="replica")
                 replica_map_data[server.ip] = len(stats)
                 # for key in stats.keys():
                 #     if key == 'vb_active_num':
