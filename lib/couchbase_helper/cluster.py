@@ -1,8 +1,13 @@
+from copy import deepcopy
+
 import Jython_tasks.task as jython_tasks
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from Jython_tasks.task import MutateDocsFromSpecTask
 from Jython_tasks.task import CompareIndexKVData
+from capella.capella_utils import CapellaUtils
+from common_lib import sleep
+from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
 from global_vars import logger
@@ -513,7 +518,8 @@ class ServerTasks(object):
     def async_rebalance(self, servers, to_add=[], to_remove=[],
                         use_hostnames=False, services=None,
                         check_vbucket_shuffling=True,
-                        sleep_before_rebalance=0, retry_get_process_num=25):
+                        sleep_before_rebalance=0, retry_get_process_num=25,
+                        cluster=None):
         """
         Asynchronously rebalances a cluster
 
@@ -526,11 +532,50 @@ class ServerTasks(object):
         Returns:
           RebalanceTask - A task future that is a handle to the scheduled task
         """
-        _task = jython_tasks.RebalanceTask(
-            servers, to_add, to_remove, use_hostnames=use_hostnames,
-            services=services, check_vbucket_shuffling=check_vbucket_shuffling,
-            sleep_before_rebalance=sleep_before_rebalance,
-            retry_get_process_num=retry_get_process_num)
+        if cluster and cluster.cloud_cluster:
+            if not services:
+                services = [CloudCluster.Services.KV]
+
+            service_group_len = dict()
+            new_service_groups = list()
+            cluster_config_to_update = \
+                deepcopy(cluster.cluster_config["servers"])
+
+            for service_group in services:
+                service_group_len[service_group] = \
+                    services.count(service_group)
+
+            for service_group, nodes_to_add in service_group_len.items():
+                services_list = service_group.split(",")
+                services_list.sort()
+                for cluster_config_spec in cluster_config_to_update:
+                    cluster_config_spec["services"].sort()
+                    if services_list == cluster_config_spec["services"]:
+                        cluster_config_spec["size"] += \
+                            service_group_len[service_group]
+                        """
+                        WARNING: Currently passing to_remove is considered
+                                 only for rebalancing out the KV nodes.
+                        TODO: Need to address to_remove in framework level
+                              to make it work uniformly for all services
+                        """
+                        if CloudCluster.Services.KV in services_list:
+                            cluster_config_spec["size"] -= len(to_remove)
+                    else:
+                        new_service_groups.append(
+                            CapellaUtils.get_cluster_config_spec(
+                                services, service_group_len[service_group]))
+
+            cluster_config_to_update.extend(new_service_groups)
+            _task = jython_tasks.RebalanceTaskCapella(
+                cluster, cluster_config_to_update)
+        else:
+            _task = jython_tasks.RebalanceTask(
+                servers, to_add, to_remove, use_hostnames=use_hostnames,
+                services=services,
+                check_vbucket_shuffling=check_vbucket_shuffling,
+                sleep_before_rebalance=sleep_before_rebalance,
+                retry_get_process_num=retry_get_process_num)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

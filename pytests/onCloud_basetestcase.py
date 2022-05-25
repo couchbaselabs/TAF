@@ -340,7 +340,6 @@ class BaseTestCase(unittest.TestCase):
                                        "Cluster not healthy")
             cluster_info = CapellaAPI.get_cluster_info(self.pod, self.tenant,
                                                        cluster_id)
-            service_config = cluster_info.get("servers")
             cluster_srv = cluster_info.get("endpointsSrv")
             CapellaAPI.add_allowed_ip(self.pod, self.tenant, cluster_id)
             CapellaAPI.create_db_user(
@@ -348,7 +347,7 @@ class BaseTestCase(unittest.TestCase):
                     self.rest_username, self.rest_password)
             servers = CapellaAPI.get_nodes(self.pod, self.tenant, cluster_id)
             self.__populate_cluster_info(cluster_id, servers, cluster_srv,
-                                         cluster_name, service_config)
+                                         cluster_name, cluster_info)
             self.__populate_cluster_buckets(self.cb_clusters[cluster_name])
 
     def __populate_cluster_info(self, cluster_id, servers, cluster_srv,
