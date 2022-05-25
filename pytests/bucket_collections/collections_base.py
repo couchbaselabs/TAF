@@ -357,7 +357,7 @@ class CollectionBase(ClusterSetup):
 
     def set_allowed_hosts(self):
         """ First operation will fail and the second operation will succeed"""
-        allowedhosts = "[\"*.couchbase.com\",\"10.112.0.0/16\",\"172.23.0.0/24\"]"
+        allowedhosts = "[\"*.couchbase.com\",\"10.112.0.0/16\",\"172.23.0.0/16\"]"
         host = "[\"*.couchbase.com\"]"
         for node in self.cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(node)
