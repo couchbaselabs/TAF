@@ -198,6 +198,17 @@ class CapellaUtils(object):
                 break
 
     @staticmethod
+    def get_all_buckets(cluster):
+        capella_api = CapellaAPI(cluster.pod.url_public,
+                                 cluster.tenant.api_secret_key,
+                                 cluster.tenant.api_access_key,
+                                 cluster.tenant.user,
+                                 cluster.tenant.pwd)
+        resp = capella_api.get_buckets(
+            cluster.tenant.id, cluster.tenant.project_id, cluster.id)
+        return resp
+
+    @staticmethod
     def create_bucket(cluster, bucket_params):
         while True:
             state = CapellaUtils.get_cluster_state(

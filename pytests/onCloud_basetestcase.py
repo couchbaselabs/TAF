@@ -3,6 +3,7 @@ Created on Feb 16, 2022
 
 @author: ritesh.agarwal
 """
+import json
 from collections import OrderedDict
 from datetime import datetime
 import traceback
@@ -363,6 +364,7 @@ class BaseTestCase(unittest.TestCase):
             servers = CapellaAPI.get_nodes(self.pod, self.tenant, cluster_id)
             self.__populate_cluster_info(cluster_id, servers, cluster_srv,
                                          cluster_name)
+            self.__populate_cluster_buckets(self.cb_clusters[cluster_name])
 
     def __populate_cluster_info(self, cluster_id, servers, cluster_srv,
                                 cluster_name):
@@ -407,6 +409,27 @@ class BaseTestCase(unittest.TestCase):
         self.tenant.clusters.update({cluster.id: cluster})
         self.cb_clusters[cluster_name] = cluster
         self.cb_clusters[cluster_name].cloud_cluster = True
+
+    def __populate_cluster_buckets(self, cluster):
+        self.log.debug("Fetching bucket details from cluster %s" % cluster.id)
+        buckets = json.loads(CapellaAPI.get_all_buckets(cluster)
+                             .content)["buckets"]["data"]
+        for bucket in buckets:
+            bucket = bucket["data"]
+            bucket_obj = Bucket({
+                Bucket.name: bucket["name"],
+                Bucket.ramQuotaMB: bucket["memoryAllocationInMb"],
+                Bucket.replicaNumber: bucket["replicas"],
+                Bucket.conflictResolutionType:
+                    bucket["bucketConflictResolution"],
+                Bucket.flushEnabled: bucket["flush"],
+                Bucket.durabilityMinLevel: bucket["durabilityLevel"],
+                Bucket.maxTTL: bucket["timeToLive"],
+            })
+            bucket_obj.uuid = bucket["id"]
+            bucket_obj.stats.itemCount = bucket["stats"]["itemCount"]
+            bucket_obj.stats.memUsed = bucket["stats"]["memoryUsedInMib"]
+            cluster.buckets.append(bucket_obj)
 
     def is_test_failed(self):
         return (hasattr(self, '_resultForDoCleanups')
