@@ -8,7 +8,7 @@ class AllowedHosts(ClusterSetup):
     def setUp(self):
         super(AllowedHosts, self).setUp()
         self.users_list = list()
-        self.allowedhosts = "[\"*.couchbase.com\",\"10.112.0.0/16\",\"172.23.0.0/24\"]"
+        self.allowedhosts = "[\"*.couchbase.com\",\"10.112.0.0/16\",\"172.23.0.0/16\"]"
         self.shell = RemoteMachineShellConnection(self.cluster.master)
 
     def tearDown(self):
@@ -102,7 +102,7 @@ class AllowedHosts(ClusterSetup):
             for j in range(255):
                 host = ",\"172.23." + str(i) + "." + str(j) + "\""
                 hosts += host
-        hosts += ",\"172.23.0.0/24\"" + "]"
+        hosts += ",\"172.23.0.0/16\"" + "]"
         self.__create_user("user1", "password", "cluster_admin:admin")
         self.shell.set_allowedhosts("localhost", "user1", "password", hosts)
         self.add_node_and_rebalance()
@@ -122,7 +122,7 @@ class AllowedHosts(ClusterSetup):
     def test_wild_card_characters(self):
         """ this tests case mostly validates host names"""
         self.__create_user("user1", "password", "cluster_admin:admin")
-        hosts = "[\"s*-ip6.qe.couchbase.com\", \"172.23.0.0/24\", \"*.qe.couchbase.com\"]"
+        hosts = "[\"s*-ip6.qe.couchbase.com\", \"172.23.0.0/16\", \"*.qe.couchbase.com\"]"
         self.shell.set_allowedhosts("localhost", "user1", "password", hosts)
         self.add_node_and_rebalance()
 
@@ -142,7 +142,7 @@ class AllowedHosts(ClusterSetup):
         # expect cluster init to pass
         cmd = "curl -X POST %s:8091/clusterInit -d 'allowedHosts=%s'" \
               " -d username=%s -d port=8091 -d password=%s -d services=\"kv\" " % \
-              (node.ip, "10.112.0.0/16,172.23.0.0/24", "Administrator", "password")
+              (node.ip, "10.112.0.0/16,172.23.0.0/16", "Administrator", "password")
         output, _ = self.shell.execute_command(cmd)
         if "errors" in output[0]:
             raise Exception("Not able to set allowedhosts during clusterInit")
