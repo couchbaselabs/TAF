@@ -319,7 +319,8 @@ class BaseTestCase(unittest.TestCase):
                     self.pod, self.tenant, task.cluster_id,
                     self.rest_username, self.rest_password)
                 self.__populate_cluster_info(task.cluster_id, task.servers,
-                                             task.srv, task.name)
+                                             task.srv, task.name,
+                                             self.capella_cluster_config)
 
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[self.cluster_name_format
@@ -355,19 +356,21 @@ class BaseTestCase(unittest.TestCase):
             self.log.info("Fetching cluster details for: %s" % cluster_id)
             CapellaAPI.wait_until_done(self.pod, self.tenant, cluster_id,
                                        "Cluster not healthy")
-            cluster_srv = CapellaAPI.get_cluster_srv(self.pod, self.tenant,
-                                                     cluster_id)
+            cluster_info = CapellaAPI.get_cluster_info(self.pod, self.tenant,
+                                                       cluster_id)
+            service_config = cluster_info.get("servers")
+            cluster_srv = cluster_info.get("endpointsSrv")
             CapellaAPI.add_allowed_ip(self.pod, self.tenant, cluster_id)
             CapellaAPI.create_db_user(
                     self.pod, self.tenant, cluster_id,
                     self.rest_username, self.rest_password)
             servers = CapellaAPI.get_nodes(self.pod, self.tenant, cluster_id)
             self.__populate_cluster_info(cluster_id, servers, cluster_srv,
-                                         cluster_name)
+                                         cluster_name, service_config)
             self.__populate_cluster_buckets(self.cb_clusters[cluster_name])
 
     def __populate_cluster_info(self, cluster_id, servers, cluster_srv,
-                                cluster_name):
+                                cluster_name, service_config):
         nodes = list()
         for server in servers:
             temp_server = TestInputServer()
@@ -385,7 +388,7 @@ class BaseTestCase(unittest.TestCase):
                             servers=[None] * 40)
         cluster.id = cluster_id
         cluster.srv = cluster_srv
-        cluster.cluster_config = self.capella_cluster_config
+        cluster.cluster_config = service_config
         cluster.pod = self.pod
         cluster.tenant = self.tenant
 
