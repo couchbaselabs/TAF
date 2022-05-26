@@ -1,51 +1,33 @@
 import os
 import re
 import traceback
-import unittest
 
 import Cb_constants
-import global_vars
-from SystemEventLogLib.Events import EventHelper, Event
+from SystemEventLogLib.Events import Event
 from SystemEventLogLib.data_service_events import DataServiceEvents
+from cb_basetest import CouchbaseBaseTest
 from security_config import trust_all_certs
-from collections import OrderedDict
 
 from datetime import datetime
 from ruamel.yaml import YAML
 
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
-from common_lib import sleep
-from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
-from global_vars import logger
-from couchbase_helper.durability_helper import BucketDurability
 from membase.api.rest_client import RestConnection
-from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
+from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from remote.remote_util import RemoteMachineShellConnection
-from Jython_tasks.task_manager import TaskManager
-from sdk_client3 import SDKClientPool
-from test_summary import TestSummary
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
-from node_utils.node_ready_functions import NodeUtils
 
 
-class BaseTestCase(unittest.TestCase):
+class OnPremBaseTest(CouchbaseBaseTest):
     def setUp(self):
-        self.input = TestInputSingleton.input
+        super(OnPremBaseTest, self).setUp()
 
-        # Framework specific parameters
-        self.log_level = self.input.param("log_level", "info").upper()
-        self.infra_log_level = self.input.param("infra_log_level",
-                                                "error").upper()
+        # Framework specific parameters (Extension from cb_basetest)
         self.skip_cluster_reset = self.input.param("skip_cluster_reset", False)
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
-        self.skip_teardown_cleanup = self.input.param("skip_teardown_cleanup",
-                                                      False)
-        self.test_timeout = self.input.param("test_timeout", 3600)
-        self.thread_to_use = self.input.param("threads_to_use", 30)
-        self.case_number = self.input.param("case_number", 0)
         # End of framework parameters
 
         # Cluster level info settings
@@ -55,7 +37,6 @@ class BaseTestCase(unittest.TestCase):
         self.port = self.input.param("port", None)
         self.port_info = self.input.param("port_info", None)
         self.servers = self.input.servers
-        self.cb_clusters = OrderedDict()
         self.num_servers = self.input.param("servers", len(self.servers))
         self.vbuckets = self.input.param("vbuckets", CbServer.total_vbuckets)
         self.gsi_type = self.input.param("gsi_type", 'plasma')
@@ -78,114 +59,16 @@ class BaseTestCase(unittest.TestCase):
         # End of cluster info parameters
 
         # Bucket specific params
-        self.bucket_type = self.input.param("bucket_type",
-                                            Bucket.Type.MEMBASE)
-        self.bucket_ttl = self.input.param("bucket_ttl", 0)
-        self.bucket_size = self.input.param("bucket_size", None)
-        self.bucket_conflict_resolution_type = \
-            self.input.param("bucket_conflict_resolution",
-                             Bucket.ConflictResolution.SEQ_NO)
-        self.bucket_replica_index = self.input.param("bucket_replica_index",
-                                                     1)
+        # Note: Over riding bucket_eviction_policy from CouchbaseBaseTest
         self.bucket_eviction_policy = \
             self.input.param("bucket_eviction_policy",
                              Bucket.EvictionPolicy.VALUE_ONLY)
-        self.flush_enabled = self.input.param("flushEnabled",
-                                              Bucket.FlushBucket.DISABLED)
-        self.bucket_time_sync = self.input.param("bucket_time_sync", False)
-        self.standard_buckets = self.input.param("standard_buckets", 1)
-        self.num_replicas = self.input.param("replicas",
-                                             Bucket.ReplicaNum.ONE)
-        self.active_resident_threshold = \
-            int(self.input.param("active_resident_threshold", 100))
-        self.compression_mode = \
-            self.input.param("compression_mode",
-                             Bucket.CompressionMode.PASSIVE)
-        self.bucket_storage = \
-            self.input.param("bucket_storage",
-                             Bucket.StorageBackend.couchstore)
+        self.bucket_replica_index = self.input.param("bucket_replica_index",
+                                                     1)
         if self.bucket_storage == Bucket.StorageBackend.magma:
             self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
-
-        self.scope_name = self.input.param("scope", CbServer.default_scope)
-        self.collection_name = self.input.param("collection",
-                                                CbServer.default_collection)
-        self.bucket_durability_level = self.input.param(
-            "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
-        self.bucket_purge_interval = self.input.param("bucket_purge_interval",
-                                                      1)
-        self.bucket_durability_level = \
-            BucketDurability[self.bucket_durability_level]
         # End of bucket parameters
 
-        # Doc specific params
-        self.key = self.input.param("key", "test_docs")
-        self.key_size = self.input.param("key_size", 8)
-        self.doc_size = self.input.param("doc_size", 256)
-        self.sub_doc_size = self.input.param("sub_doc_size", 10)
-        self.doc_type = self.input.param("doc_type", "json")
-        self.num_items = self.input.param("num_items", 100000)
-        self.target_vbucket = self.input.param("target_vbucket", None)
-        self.maxttl = self.input.param("maxttl", 0)
-        self.random_exp = self.input.param("random_exp", False)
-        self.randomize_doc_size = self.input.param("randomize_doc_size", False)
-        self.randomize_value = self.input.param("randomize_value", False)
-        self.rev_write = self.input.param("rev_write", False)
-        self.rev_read = self.input.param("rev_read", False)
-        self.rev_update = self.input.param("rev_update", False)
-        self.rev_del = self.input.param("rev_del", False)
-        self.random_key = self.input.param("random_key", False)
-        self.mix_key_size = self.input.param("mix_key_size", False)
-        # End of doc specific parameters
-
-        # Transactions parameters
-        self.transaction_timeout = self.input.param("transaction_timeout", 100)
-        self.transaction_commit = self.input.param("transaction_commit", True)
-        self.transaction_durability_level = \
-            self.input.param("transaction_durability", "")
-        self.update_count = self.input.param("update_count", 1)
-        self.sync = self.input.param("sync", True)
-        self.default_bucket = self.input.param("default_bucket", True)
-        self.num_buckets = self.input.param("num_buckets", 0)
-        self.atomicity = self.input.param("atomicity", False)
-        self.defer = self.input.param("defer", False)
-        # end of transaction parameters
-
-        # Client specific params
-        self.sdk_client_type = self.input.param("sdk_client_type", "java")
-        self.replicate_to = self.input.param("replicate_to", 0)
-        self.persist_to = self.input.param("persist_to", 0)
-        self.sdk_retries = self.input.param("sdk_retries", 5)
-        self.sdk_timeout = self.input.param("sdk_timeout", 5)
-        self.time_unit = self.input.param("time_unit", "seconds")
-        self.durability_level = self.input.param("durability", "NONE").upper()
-        self.sdk_client_pool = self.input.param("sdk_client_pool", None)
-        self.sdk_pool_capacity = self.input.param("sdk_pool_capacity", 1)
-        # Client compression settings
-        self.sdk_compression = self.input.param("sdk_compression", None)
-        compression_min_ratio = self.input.param("min_ratio", None)
-        compression_min_size = self.input.param("min_size", None)
-        if type(self.sdk_compression) is bool:
-            self.sdk_compression = {"enabled": self.sdk_compression}
-            if compression_min_size:
-                self.sdk_compression["minSize"] = compression_min_size
-            if compression_min_ratio:
-                self.sdk_compression["minRatio"] = compression_min_ratio
-
-        # Doc Loader Params
-        self.process_concurrency = self.input.param("process_concurrency", 20)
-        self.batch_size = self.input.param("batch_size", 2000)
-        self.dgm_batch = self.input.param("dgm_batch", 5000)
-        self.ryow = self.input.param("ryow", False)
-        self.check_persistence = self.input.param("check_persistence", False)
-        self.ops_rate = self.input.param("ops_rate", 10000)
-        # End of client specific parameters
-
-        # initial number of items in the cluster
-        self.services_init = self.input.param("services_init", None)
-        self.nodes_init = self.input.param("nodes_init", 1)
-        self.nodes_in = self.input.param("nodes_in", 1)
-        self.nodes_out = self.input.param("nodes_out", 1)
         self.services_in = self.input.param("services_in", None)
         self.forceEject = self.input.param("forceEject", False)
         self.wait_timeout = self.input.param("wait_timeout", 120)
@@ -210,32 +93,10 @@ class BaseTestCase(unittest.TestCase):
             CbServer.use_https = True
             trust_all_certs()
 
-        # SDKClientPool object for creating generic clients across tasks
-        if self.sdk_client_pool is True:
-            self.init_sdk_pool_object()
-
-        # Initiate logging variables
-        self.log = logger.get("test")
-        self.infra_log = logger.get("infra")
-        global_vars.system_event_logs = EventHelper()
-        self.system_events = global_vars.system_event_logs
-
-        # Support lib objects for testcase execution
-        self.task_manager = TaskManager(self.thread_to_use)
-        self.task = ServerTasks(self.task_manager)
-        self.node_utils = NodeUtils(self.task_manager)
-        # End of library object creation
-
         self.node_utils.cleanup_pcaps(self.servers)
         self.collect_pcaps = self.input.param("collect_pcaps", False)
         if self.collect_pcaps:
             self.node_utils.start_collect_pcaps(self.servers)
-
-        # variable for log collection using cbCollect
-        self.get_cbcollect_info = self.input.param("get-cbcollect-info", False)
-
-        # Variable for initializing the current (start of test) timestamp
-        self.start_timestamp = datetime.now()
 
         '''
         Be careful while using this flag.
@@ -250,16 +111,8 @@ class BaseTestCase(unittest.TestCase):
         self.validate_system_event_logs = \
             self.input.param("validate_sys_event_logs", False)
 
-        # Configure loggers
-        self.log.setLevel(self.log_level)
-        self.infra_log.setLevel(self.infra_log_level)
-
-        self.sleep = sleep
-
         self.nonroot = False
-        self.test_failure = None
         self.crash_warning = self.input.param("crash_warning", False)
-        self.summary = TestSummary(self.log)
 
         # Populate memcached_port in case of cluster_run
         cluster_run_base_port = ClusterRun.port
@@ -318,7 +171,7 @@ class BaseTestCase(unittest.TestCase):
                     break
             shell.disconnect()
 
-        self.log_setup_status("BaseTestCase", "started")
+        self.log_setup_status("OnPremBaseTest", "started")
         try:
             # Construct dict of mem. quota percent / mb per service
             mem_quota_percent = dict()
@@ -428,7 +281,7 @@ class BaseTestCase(unittest.TestCase):
             # Track test start time only if we need system log validation
             if self.validate_system_event_logs:
                 self.system_events.set_test_start_time()
-            self.log_setup_status("BaseTestCase", "finished")
+            self.log_setup_status("OnPremBaseTest", "finished")
             self.__log("started")
         except Exception as e:
             traceback.print_exc()
@@ -439,7 +292,7 @@ class BaseTestCase(unittest.TestCase):
             if self.validate_system_event_logs:
                 self.system_events.set_test_start_time()
 
-            self.log_setup_status("BaseTestCase", "finished")
+            self.log_setup_status("OnPremBaseTest", "finished")
 
     def initialize_cluster(self, cluster_name, cluster, services=None,
                            services_mem_quota_percent=None):
@@ -542,9 +395,7 @@ class BaseTestCase(unittest.TestCase):
             self.log.critical("System event log validation failed: %s"
                               % sys_event_validation_failure)
 
-        self.task_manager.shutdown_task_manager()
-        self.task.shutdown(force=True)
-        self.task_manager.abort_all_tasks()
+        self.shutdown_task_manager()
 
     def tearDownEverything(self, reset_cluster_env_vars=True):
         for _, cluster in self.cb_clusters.items():
@@ -585,22 +436,6 @@ class BaseTestCase(unittest.TestCase):
         self.task_manager.print_tasks_in_pool()
         self.infra_log.info("==========================================")
 
-    def is_test_failed(self):
-        return (hasattr(self, '_resultForDoCleanups')
-                and len(self._resultForDoCleanups.failures
-                or self._resultForDoCleanups.errors)) \
-               or (hasattr(self, '_exc_info')
-                   and self._exc_info()[1] is not None)
-
-    def handle_setup_exception(self, exception_obj):
-        # Shutdown client pool in case of any error before failing
-        if self.sdk_client_pool is not None:
-            self.sdk_client_pool.shutdown()
-        # print the tracback of the failure
-        traceback.print_exc()
-        # Throw the exception so that the test will fail at setUp
-        raise exception_obj
-
     def __log(self, status):
         try:
             msg = "{0}: {1} {2}" \
@@ -608,12 +443,6 @@ class BaseTestCase(unittest.TestCase):
             RestConnection(self.servers[0]).log_client_error(msg)
         except Exception as e:
             self.log.warning("Exception during REST log_client_error: %s" % e)
-
-    def log_setup_status(self, class_name, status, stage="setup"):
-        self.log.info(
-            "========= %s %s %s for test #%d %s ========="
-            % (class_name, stage, status, self.case_number,
-               self._testMethodName))
 
     def _initialize_nodes(self, task, cluster, disabled_consistent_view=None,
                           rebalance_index_waiting_disabled=None,
@@ -701,29 +530,6 @@ class BaseTestCase(unittest.TestCase):
                                                        log_path)
             else:
                 self.log.error("API perform_cb_collect returned False")
-
-    def log_failure(self, message):
-        self.log.error(message)
-        self.summary.set_status("FAILED")
-        if self.test_failure is None:
-            self.test_failure = message
-
-    def validate_test_failure(self):
-        if self.test_failure is not None:
-            self.fail(self.test_failure)
-
-    def get_clusters(self):
-        return [self.cb_clusters[name] for name in self.cb_clusters.keys()]
-
-    def get_task(self):
-        return self.task
-
-    def get_task_mgr(self):
-        return self.task_manager
-
-    def init_sdk_pool_object(self):
-        self.sdk_client_pool = SDKClientPool()
-        DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
 
     def check_coredump_exist(self, servers, force_collect=False):
         bin_cb = "/opt/couchbase/bin/"
@@ -1033,7 +839,7 @@ class BaseTestCase(unittest.TestCase):
             x509.upload_client_cert_settings(server=servers[0])
 
 
-class ClusterSetup(BaseTestCase):
+class ClusterSetup(OnPremBaseTest):
     def setUp(self):
         super(ClusterSetup, self).setUp()
 
