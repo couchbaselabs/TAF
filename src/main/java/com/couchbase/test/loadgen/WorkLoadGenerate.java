@@ -120,8 +120,8 @@ public class WorkLoadGenerate extends Task{
             Instant trackFailureTime_end = Instant.now();
             Duration timeElapsed = Duration.between(trackFailureTime_start, trackFailureTime_end);
             if(timeElapsed.toMinutes() > 5) {
-            	for (Entry<String, List<Result>> optype: failedMutations.entrySet())
-            		System.out.println("Failed mutations count so far: " + optype.getKey() + " == " + optype.getValue().size());
+                for (Entry<String, List<Result>> optype: failedMutations.entrySet())
+                    System.out.println("Failed mutations count so far: " + optype.getKey() + " == " + optype.getValue().size());
                 trackFailureTime_start = Instant.now();
             }
             Instant start = Instant.now();

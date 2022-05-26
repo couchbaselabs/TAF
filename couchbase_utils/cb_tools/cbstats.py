@@ -48,6 +48,7 @@ class Cbstats:
         client.collections_supported = True
         collection_details = json.loads(client.get_collections()[2])
         collection_stats = client.stats("collections")
+        client.close()
         scope_data["manifest_uid"] = int(collection_stats["manifest_uid"])
         scope_data["count"] = 0
         for s_details in collection_details["scopes"]:
@@ -84,6 +85,7 @@ class Cbstats:
         client.collections_supported = True
         collection_details = json.loads(client.get_collections()[2])
         collection_stats = client.stats("collections")
+        client.close()
 
         collection_data["count"] = 0
         collection_data["manifest_uid"] = collection_stats["manifest_uid"]
@@ -201,6 +203,7 @@ class Cbstats:
             self.server, Bucket(bucket_name), 30,
             self.username, self.password)
         output = client.stats("{} {}".format(stat_name, vbucket_num))
+        client.close()
         return output
 
     # Below are wrapper functions for above command executor APIs

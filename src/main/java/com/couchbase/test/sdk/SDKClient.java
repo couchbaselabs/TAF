@@ -29,23 +29,24 @@ public class SDKClient {
 
     public Collection connection;
 
-    public static ClusterEnvironment env = ClusterEnvironment.builder()
+    public static ClusterEnvironment env1 = ClusterEnvironment.builder()
             .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
+            .securityConfig(SecurityConfig.enableTls(true)
+            .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+            .ioConfig(IoConfig.enableDnsSrv(true))
             .build();
 
+    public static ClusterEnvironment env2 = ClusterEnvironment.builder()
+            .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
+            .ioConfig(IoConfig.enableDnsSrv(true))
+            .build();
+    
     public SDKClient(Server master, String bucket, String scope, String collection) {
         super();
         this.master = master;
         this.bucket = bucket;
         this.scope = scope;
         this.collection = collection;
-        if(this.master.memcached_port.equals("11207"))
-            env = ClusterEnvironment.builder()
-            .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
-            .securityConfig(SecurityConfig.enableTls(true)
-            .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
-            .ioConfig(IoConfig.enableDnsSrv(true))
-            .build();
     }
 
     public SDKClient() {
@@ -61,7 +62,11 @@ public class SDKClient {
 
     public void connectCluster(){
         try{
-            ClusterOptions cluster_options = ClusterOptions.clusterOptions(master.rest_username, master.rest_password).environment(env);
+            ClusterOptions cluster_options;
+            if(this.master.memcached_port.equals("11207"))
+                cluster_options = ClusterOptions.clusterOptions(master.rest_username, master.rest_password).environment(env1);
+            else
+                cluster_options = ClusterOptions.clusterOptions(master.rest_username, master.rest_password).environment(env2);
             this.cluster = Cluster.connect(master.ip, cluster_options);
             logger.info("Cluster connection is successful");
         }

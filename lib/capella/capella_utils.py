@@ -162,7 +162,7 @@ class CapellaUtils(object):
                         CapellaUtils.log.info(
                             "{}: Status=={}, State=={}, Progress=={}%"
                             .format(msg, state, step, progress))
-                time.sleep(2)
+                time.sleep(5)
             else:
                 CapellaUtils.log.info("{} Ready!!!".format(msg))
                 break
@@ -331,17 +331,18 @@ class CapellaUtils(object):
                                  tenant.pwd)
         resp = capella_api.jobs(tenant.project_id, tenant.id, cluster_id)
         if resp.status_code != 200:
-            if resp.status_code == 502:
-                CapellaUtils.log.critical("LOG A BUG: Internal API returns :\
-                {}".format(resp.content))
-                return CapellaUtils.jobs(pod, tenant, cluster_id)
-            raise Exception("Fetch capella cluster jobs failed: %s"
-                            % resp.content)
+            CapellaUtils.log.critical("LOG A BUG: Internal API returns :\
+            {}".format(resp.status_code))
+            print(resp.content)
+            time.sleep(5)
+            return CapellaUtils.jobs(pod, tenant, cluster_id)
         try:
             content = json.loads(resp.content)
         except Exception as e:
             CapellaUtils.log.critical("LOG A BUG: Internal API returns :\
-                {}".format(resp.content))
+            {}".format(resp.status_code))
+            print(resp.content)
+            time.sleep(5)
             return CapellaUtils.jobs(pod, tenant, cluster_id)
         return content
 
@@ -354,7 +355,11 @@ class CapellaUtils(object):
                                  tenant.pwd)
         resp = capella_api.get_cluster_info(cluster_id)
         if resp.status_code != 200:
-            raise Exception("Fetch capella cluster details failed!")
+            CapellaUtils.log.critical("LOG A BUG: Fetch Cluster API returns :\
+            {}".format(resp.status_code))
+            print(resp.content)
+            time.sleep(5)
+            return CapellaUtils.get_cluster_info(pod, tenant, cluster_id)
         return json.loads(resp.content)
 
     @staticmethod
@@ -377,7 +382,11 @@ class CapellaUtils(object):
         resp = capella_api.get_nodes(tenant.id, tenant.project_id,
                                      cluster_id)
         if resp.status_code != 200:
-            raise Exception("Fetch capella cluster nodes failed!")
+            CapellaUtils.log.critical("LOG A BUG: Fetch Cluster Node API returns :\
+            {}".format(resp.status_code))
+            print(resp.content)
+            time.sleep(5)
+            return CapellaUtils.get_nodes(pod, tenant, cluster_id)
         CapellaUtils.log.info(json.loads(resp.content))
         return [server.get("data")
                 for server in json.loads(resp.content).get("data")]
@@ -411,10 +420,13 @@ class CapellaUtils(object):
                                           cluster_id, user, pwd)
         if resp.status_code != 200:
             result = json.loads(resp.content)
+            CapellaUtils.log.critical("Add capella cluster user failed: (}".format(
+                resp.status_code))
+            CapellaUtils.log.critical(result)
             if result["errorType"] == "ErrDataplaneUserNameExists":
                 CapellaUtils.log.warn("User is already added: %s" % result["message"])
                 return
-            raise Exception("Add capella cluster user failed!")
+            CapellaUtils.create_db_user(pod, tenant, cluster_id, user, pwd)
             CapellaUtils.log.critical(json.loads(resp.content))
         CapellaUtils.log.info(json.loads(resp.content))
         return json.loads(resp.content)

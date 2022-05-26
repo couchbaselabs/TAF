@@ -583,6 +583,7 @@ class OPD:
                         client = NewSDKClient(master, bucket.name, scope, collection)
                         client.initialiseSDK()
                         self.sleep(1)
+                        self.get_memory_footprint()
                         taskName = "Loader_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, str(i), time.time())
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
                                                 client, self.durability_level,

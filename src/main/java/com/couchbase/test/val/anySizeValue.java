@@ -50,7 +50,7 @@ public class anySizeValue {
         Random random_obj = new Random();
         random_obj.setSeed(key.hashCode());
         Person1 person = new Person1(this.ws.mutated,
-        		this.get_random_string(key, this.ws.docSize - fixedSize, random_obj));
+                this.get_random_string(key, this.ws.docSize - fixedSize, random_obj));
         return person;
     }
 }

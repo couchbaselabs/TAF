@@ -13,7 +13,7 @@ class CapellaAPI(CapellaAPIRequests):
         super(CapellaAPI, self).__init__(url, sceret, access)
         self.user = user
         self.pwd = pwd
-        self.internal_url = url.replace("cloud", "")
+        self.internal_url = url.replace("cloud", "", 1)
         self._log = logging.getLogger(__name__)
         self.perPage = 100
 

@@ -257,8 +257,8 @@ class RebalanceTaskCapella(Task):
                             self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", state, step, progress))
                     time.sleep(2)
                 else:
-                    self.log.info("Scaling the cluster completed. State == {}"
-                                  % state)
+                    self.log.info("Scaling the cluster completed. State == {}".
+                                  format(state))
                     self.sleep(300)
                     break
             except Exception as e:

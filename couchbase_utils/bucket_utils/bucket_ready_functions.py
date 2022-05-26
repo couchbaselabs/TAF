@@ -2364,6 +2364,7 @@ class BucketUtils(ScopeUtils):
             for server in servers:
                 client = MemcachedClientHelper.direct_client(server, bucket)
                 items_actual += int(client.stats()["curr_items"])
+                client.close()
             if items != items_actual:
                 raise Exception("Items are not correct")
             return
@@ -3626,6 +3627,7 @@ class BucketUtils(ScopeUtils):
     @staticmethod
     def get_item_count_mc(server, bucket):
         client = MemcachedClientHelper.direct_client(server, bucket)
+        client.close()
         return int(client.stats()["curr_items"])
 
     def get_bucket_current_item_count(self, cluster, bucket):
@@ -4517,6 +4519,7 @@ class BucketUtils(ScopeUtils):
             for bucket in buckets:
                 mc = MemcachedClientHelper.direct_client(server, bucket)
                 stats = mc.stats()
+                mc.close()
                 self.assertTrue(int(stats['ep_flusher_total_batch_limit'])
                                 == flusher_total_batch_limit)
 
