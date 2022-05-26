@@ -47,29 +47,35 @@ class RebalanceBaseTest(BaseTestCase):
         self.items = self.num_items
         self.logs_folder = self.input.param("logs_folder")
         self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
-        node_ram_ratio = self.bucket_util.base_bucket_ratio(
-            self.cluster.servers)
-        info = self.rest.get_nodes_self()
-        self.rest.init_cluster(username=self.cluster.master.rest_username,
-                               password=self.cluster.master.rest_password)
-        kv_mem_quota = int(info.mcdMemoryReserved*node_ram_ratio)
-        self.rest.set_service_mem_quota(
-            {CbServer.Settings.KV_MEM_QUOTA: kv_mem_quota})
-        self.check_temporary_failure_exception = False
+
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
 
-        services = None
-        if self.services_init:
-            services = list()
-            for service in self.services_init.split("-"):
-                services.append(service.replace(":", ","))
-            services = services[1:] if len(services) > 1 else None
+        if not self.cluster.cloud_cluster:
+            node_ram_ratio = self.bucket_util.base_bucket_ratio(
+                self.cluster.servers)
+            info = self.rest.get_nodes_self()
+            self.rest.init_cluster(username=self.cluster.master.rest_username,
+                                   password=self.cluster.master.rest_password)
+            kv_mem_quota = int(info.mcdMemoryReserved*node_ram_ratio)
+            self.rest.set_service_mem_quota(
+                {CbServer.Settings.KV_MEM_QUOTA: kv_mem_quota})
+            self.bucket_util.add_rbac_user(self.cluster.master)
 
-        if nodes_init:
-            result = self.task.rebalance([self.cluster.master], nodes_init, [],
-                                         services=services, retry_get_process_num=self.retry_get_process_num)
-            self.assertTrue(result, "Initial rebalance failed")
+            services = None
+            if self.services_init:
+                services = list()
+                for service in self.services_init.split("-"):
+                    services.append(service.replace(":", ","))
+                services = services[1:] if len(services) > 1 else None
+
+            if nodes_init:
+                result = self.task.rebalance(
+                    [self.cluster.master], nodes_init, [], services=services,
+                    retry_get_process_num=self.retry_get_process_num)
+                self.assertTrue(result, "Initial rebalance failed")
+
+        self.check_temporary_failure_exception = False
         self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         self.check_replica = self.input.param("check_replica", False)
         self.spec_name = self.input.param("bucket_spec", None)
@@ -77,7 +83,6 @@ class RebalanceBaseTest(BaseTestCase):
         if self.disk_optimized_thread_settings:
             self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                    num_reader_threads="disk_io_optimized")
-        self.bucket_util.add_rbac_user(self.cluster.master)
         # Buckets creation and initial data load done by bucket_spec
         if self.spec_name is not None:
             try:
@@ -171,13 +176,14 @@ class RebalanceBaseTest(BaseTestCase):
         self.log_setup_status("RebalanceBase", "complete")
 
     def _create_default_bucket(self, bucket_size):
-        node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
-        info = RestConnection(self.cluster.master).get_nodes_self()
-        available_ram = int(info.memoryQuota * node_ram_ratio)
-        if bucket_size is not None:
+        if bucket_size:
             available_ram = bucket_size
-        elif available_ram < 100 or self.active_resident_threshold < 100:
-            available_ram = 100
+        else:
+            node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
+            info = RestConnection(self.cluster.master).get_nodes_self()
+            available_ram = int(info.memoryQuota * node_ram_ratio)
+            if available_ram < 100 or self.active_resident_threshold < 100:
+                available_ram = 100
         self.bucket_util.create_default_bucket(
             self.cluster,
             ram_quota=available_ram,

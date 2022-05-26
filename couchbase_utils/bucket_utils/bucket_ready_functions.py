@@ -37,11 +37,13 @@ from Jython_tasks.task import \
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope
+from capella.capella_utils import CapellaUtils
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
 from common_lib import sleep, humanbytes
+from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
     DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
@@ -1727,9 +1729,26 @@ class BucketUtils(ScopeUtils):
              Bucket.purge_interval: purge_interval,
              Bucket.autoCompactionDefined: autoCompactionDefined,
              Bucket.fragmentationPercentage: fragmentation_percentage})
-        self.create_bucket(cluster, bucket_obj, wait_for_warmup)
-        if self.enable_time_sync:
-            self._set_time_sync_on_buckets(cluster, [bucket_obj.name])
+        if cluster.cloud_cluster:
+            bucket_params = {
+                CloudCluster.Bucket.name: bucket_obj.name,
+                CloudCluster.Bucket.conflictResolutionType:
+                    conflict_resolution,
+                CloudCluster.Bucket.ramQuotaMB: bucket_obj.ramQuotaMB,
+                CloudCluster.Bucket.flushEnabled:
+                    True if bucket_obj.flushEnabled else False,
+                CloudCluster.Bucket.replicaNumber: bucket_obj.replicaNumber,
+                CloudCluster.Bucket.durabilityMinLevel:
+                    bucket_obj.durability_level,
+                CloudCluster.Bucket.maxTTL:
+                    {"unit": "seconds", "value": bucket_obj.maxTTL}
+            }
+            CapellaUtils.create_bucket(cluster, bucket_params)
+            cluster.buckets.append(bucket_obj)
+        else:
+            self.create_bucket(cluster, bucket_obj, wait_for_warmup)
+            if self.enable_time_sync:
+                self._set_time_sync_on_buckets(cluster, [bucket_obj.name])
 
     @staticmethod
     def expand_collection_spec(buckets_spec, bucket_name, scope_name):

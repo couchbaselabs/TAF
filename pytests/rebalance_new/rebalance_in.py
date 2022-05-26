@@ -23,7 +23,7 @@ class RebalanceInTests(RebalanceBaseTest):
 
     def test_rebalance_in_with_ops_durable(self):
         self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items+ self.items)
+                                                 self.num_items+self.items)
         self.gen_delete = self.get_doc_generator(self.items / 2,
                                                  self.items)
         servs_in = [self.cluster.servers[i + self.nodes_init]
@@ -78,7 +78,8 @@ class RebalanceInTests(RebalanceBaseTest):
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, [])
+            self.cluster.servers[:self.nodes_init], servs_in, [],
+            cluster=self.cluster)
 
         self.sleep(10, "wait for rebalance to start")
 
