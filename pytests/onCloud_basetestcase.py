@@ -171,8 +171,7 @@ class BaseTestCase(unittest.TestCase):
 
         # initialise pod object
         url = self.input.capella.get("pod")
-        API_BASE_URL = "https://{}".format(url)
-        self.pod = Pod(API_BASE_URL)
+        self.pod = Pod("https://%s" % url)
 
         self.tenant = Tenant(self.input.capella.get("tenant_id"),
                              self.input.capella.get("capella_user"),
@@ -240,24 +239,6 @@ class BaseTestCase(unittest.TestCase):
         self.log_setup_status(self.__class__.__name__, "started")
         self.cluster_name_format = "C%s"
         default_cluster_index = cluster_index = 1
-        temp = {"environment": "hosted",
-                "clusterName": "",
-                "projectId": "",
-                "description": "Amazing Cloud",
-                "place": {"singleAZ": False,
-                          "hosted": {
-                              "provider": self.input.param("provider",
-                                                           "aws").lower(),
-                              "region": self.input.param("region",
-                                                         "us-west-2"),
-                              "CIDR": None
-                              }
-                          },
-                "servers": list(),
-                "supportPackage": {"timezone": "PT",
-                                   "type": "DeveloperPro"
-                                   }
-                }
         self.capella_cluster_config = CapellaAPI.get_cluster_config(
             environment="hosted",
             description="Amazing Cloud",
@@ -300,12 +281,13 @@ class BaseTestCase(unittest.TestCase):
             tasks = list()
             for _ in range(self.num_clusters):
                 cluster_name = self.cluster_name_format % cluster_index
-                self.capella_cluster_config["clusterName"] = "a_%s_%s_%sGB_%s" % (
-                    self.input.param("provider", "aws"),
-                    self.input.param("compute", "m5.xlarge")
-                    .replace(".", ""),
-                    self.input.param("size", 50),
-                    cluster_name)
+                self.capella_cluster_config["clusterName"] = \
+                    "a_%s_%s_%sGB_%s" % (
+                        self.input.param("provider", "aws"),
+                        self.input.param("compute", "m5.xlarge")
+                            .replace(".", ""),
+                        self.input.param("size", 50),
+                        cluster_name)
                 self.log.info(self.capella_cluster_config)
                 deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
                                           self.capella_cluster_config)
