@@ -58,6 +58,7 @@ class CollectionsRebalance(CollectionBase):
         self.failover_same_zone = self.input.param("failover_same_zone", False)
         self.add_zone = self.input.param("add_zone", 0)
         self.remove_zone = self.input.param("remove_zone", 0)
+        self.add_new_nodes_to_zone = self.input.param("add_new_nodes_to_zone", False)
         self.continous_update_replica = self.input.param("continous_update_replica", False)
         if self.scrape_interval:
             self.log.info("Changing scrape interval to {0}".format(self.scrape_interval))
@@ -968,6 +969,18 @@ class CollectionsRebalance(CollectionBase):
             self.sync_data_load()
             self.data_validation_collection()
 
+    def add_nodes_to_new_zone(self):
+        zone_name = "Group " + str(self.num_zone)
+        self.rest.add_zone(zone_name)
+        nodes_in_cluster = len(self.cluster_util.get_nodes_in_cluster(self.cluster))
+        nodes_in = self.cluster.servers[nodes_in_cluster:nodes_in_cluster + self.nodes_in]
+        for node in nodes_in:
+            self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+                          node.ip, node.port, zone_name=zone_name, services=["kv"])
+        self.task.rebalance(self.cluster.servers[:self.nodes_init], [], [],
+                            retry_get_process_num=self.retry_get_process_num)
+        self.data_validation_collection()
+
     def update_replica_and_validate_vbuckets(self):
         """ update replica, rebalance and validate vbucket distribution"""
         for replica in range(4):
@@ -980,8 +993,7 @@ class CollectionsRebalance(CollectionBase):
             self.data_validation_collection()
 
     def check_balanced_attribute(self, balanced=True):
-        rest = RestConnection(self.servers[0])
-        content = rest.cluster_status()
+        content = self.rest.cluster_status()
         try:
             if content['balanced'] != balanced:
                 raise Exception("actual balanced attribute {0} but expected {1}".
@@ -1119,7 +1131,10 @@ class CollectionsRebalance(CollectionBase):
             if self.add_zone > 0:
                 for i in range(self.add_zone):
                     self.num_zone += 1
-                    self.shuffle_nodes_between_zones_and_rebalance(load_data=True)
+                    if self.add_new_nodes_to_zone:
+                        self.add_nodes_to_new_zone()
+                    else:
+                        self.shuffle_nodes_between_zones_and_rebalance(load_data=True)
             if self.remove_zone > 0:
                 for i in range(self.remove_zone):
                     self.num_zone -= 1
