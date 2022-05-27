@@ -3293,10 +3293,10 @@ class RunQueriesTask(Task):
             while True:
                 for query in self.queries[start:end]:
                     if hasattr(self, "n1ql_helper"):
-                        query_task = N1QLQueryTask(self.server, "", query,
-                                                   n1ql_helper=self.n1ql_helper,
-                                                   verify_results=False,
-                                                   is_explain_query=True)
+                        query_task = N1QLQueryTask(
+                            self.cluster.master, "", query,
+                            n1ql_helper=self.n1ql_helper,
+                            verify_results=False, is_explain_query=True)
                         self.task_manager.add_new_task(query_task)
                         self.query_tasks.append(query_task)
                     if hasattr(self, "cbas_util"):

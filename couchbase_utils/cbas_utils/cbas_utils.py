@@ -245,7 +245,7 @@ class BaseUtil(object):
             if len(set(generated_name.lower().split(".")) & set([
                 "at", "in", "for", "by", "which", "select", "from", "like",
                 "or", "and", "to", "if", "else", "as", "with", "on", "where",
-                "is", "all", "end", "div", "into", "let"])) > 0:
+                "is", "all", "end", "div", "into", "let", "asc", "desc"])) > 0:
                 return BaseUtil.generate_name(
                     name_cardinality, max_length, fixed_length, name_key, seed)
             else:
@@ -4965,6 +4965,8 @@ class CBASRebalanceUtil(object):
         retry_exceptions.append(SDKException.AmbiguousTimeoutException)
         retry_exceptions.append(SDKException.TimeoutException)
         retry_exceptions.append(SDKException.RequestCanceledException)
+        retry_exceptions.append(SDKException.DocumentNotFoundException)
+        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
         if durability_level:
             retry_exceptions.append(SDKException.DurabilityAmbiguousException)
             retry_exceptions.append(SDKException.DurabilityImpossibleException)

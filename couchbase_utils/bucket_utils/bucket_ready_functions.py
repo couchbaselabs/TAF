@@ -3611,14 +3611,17 @@ class BucketUtils(ScopeUtils):
                                 val)
             shell_conn.disconnect()
 
-    def _run_compaction(self, cluster, number_of_times=1):
+    def _run_compaction(self, cluster, number_of_times=1,
+                        async_run=False):
+        compaction_tasks = list()
         for _ in range(number_of_times):
-            compaction_tasks = list()
             for bucket in cluster.buckets:
                 compaction_tasks.append(self.task.async_compact_bucket(
                     cluster.master, bucket))
-            for task in compaction_tasks:
-                self.task_manager.get_task_result(task)
+            if not async_run:
+                for task in compaction_tasks:
+                    self.task_manager.get_task_result(task)
+        return compaction_tasks
 
     @staticmethod
     def get_item_count_mc(server, bucket):
