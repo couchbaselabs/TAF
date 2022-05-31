@@ -634,6 +634,10 @@ class BaseTestCase(unittest.TestCase):
             # Make sure that data_and index_path are writable by couchbase user
             if not server.index_path:
                 server.index_path = server.data_path
+            if not server.cbas_path:
+                server.cbas_path = server.data_path
+            if not server.eventing_path:
+                server.eventing_path = server.data_path
             for path in set([_f for _f in [server.data_path, server.index_path]
                              if _f]):
                 for cmd in ("rm -rf {0}/*".format(path),
