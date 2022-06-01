@@ -124,10 +124,6 @@ class DocumentKeysTests(ClusterSetup):
                 if node_to_failover.ip == node.ip \
                         and int(node_to_failover.port) == int(node.port):
                     rest.fail_over(node.id, graceful=False)
-
-        self.cluster.nodes_in_cluster = \
-            list(set(self.cluster.nodes_in_cluster)
-                 - set(self.servers[(num_nodes - 1):num_nodes]))
         self._persist_and_verify()
 
     def test_dockey_whitespace_data_ops(self):

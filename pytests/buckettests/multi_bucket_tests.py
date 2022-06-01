@@ -1,19 +1,14 @@
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 
 
-class MultiBucketTests(BaseTestCase):
+class MultiBucketTests(ClusterSetup):
     def setUp(self):
         super(MultiBucketTests, self).setUp()
         self.key = "test_multi_bucket_docs".rjust(self.key_size, '0')
-        self.nodes_init = self.input.param("nodes_init", 1)
         self.nodes_in = self.input.param("nodes_in", 1)
         self.nodes_out = self.input.param("nodes_out", 1)
         self.doc_ops = self.input.param("doc_ops", "create")
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.append(self.cluster.master)
 
         # Create  multiple buckets here
         buckets_created = self.bucket_util.create_multiple_buckets(

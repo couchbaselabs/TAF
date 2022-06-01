@@ -71,12 +71,12 @@ class RebalanceBaseTest(BaseTestCase):
 
             if nodes_init:
                 result = self.task.rebalance(
-                    [self.cluster.master], nodes_init, [], services=services,
+                    self.cluster, nodes_init, [], services=services,
                     retry_get_process_num=self.retry_get_process_num)
                 self.assertTrue(result, "Initial rebalance failed")
 
         self.check_temporary_failure_exception = False
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
+        self.cluster.nodes_in_cluster.extend([self.cluster.master])
         self.check_replica = self.input.param("check_replica", False)
         self.spec_name = self.input.param("bucket_spec", None)
         self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)

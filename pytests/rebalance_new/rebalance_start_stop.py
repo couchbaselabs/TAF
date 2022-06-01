@@ -98,12 +98,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         for i in range(1, 6):
             if i == 1:
                 rebalance = self.task.async_rebalance(
-                    self.servs_init[:self.nodes_init],
-                    self.servs_in, self.servs_out)
+                    self.cluster, self.servs_in, self.servs_out)
             else:
                 rebalance = self.task.async_rebalance(
-                    self.servs_init[:self.nodes_init] + self.servs_in,
-                    add_in_once, self.servs_out + self.extra_servs_out)
+                    self.cluster, add_in_once,
+                    self.servs_out + self.extra_servs_out)
                 add_in_once = []
             self.sleep(20)
             expected_progress = 20 * i
@@ -162,12 +161,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                                              50)
             if i == 1:
                 rebalance = self.task.async_rebalance(
-                    self.servs_init[:self.nodes_init],
-                    self.servs_in, self.servs_out,
+                    self.cluster, self.servs_in, self.servs_out,
                     sleep_before_rebalance=self.sleep_before_rebalance)
             else:
                 rebalance = self.task.async_rebalance(
-                    self.servs_init[:self.nodes_init] + self.servs_in,
+                    self.cluster,
                     add_in_once, self.servs_out + self.extra_servs_out,
                     sleep_before_rebalance=self.sleep_before_rebalance)
                 add_in_once = []
@@ -232,12 +230,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         for i in range(1, 6):
             if i == 1:
                 rebalance = self.task.async_rebalance(
-                    self.servs_init[:self.nodes_init],
-                    self.servs_in, self.servs_out,
+                    self.cluster, self.servs_in, self.servs_out,
                     sleep_before_rebalance=self.sleep_before_rebalance)
             else:
                 rebalance = self.task.async_rebalance(
-                    self.servs_init[:self.nodes_init] + self.servs_in,
+                    self.cluster,
                     add_in_once, self.servs_out + self.extra_servs_out,
                     sleep_before_rebalance=self.sleep_before_rebalance)
                 add_in_once = []
@@ -315,8 +312,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         task = self.load_all_buckets(DocLoading.Bucket.DocOps.CREATE,
                                      create_percent)
         self.tasks_result(task)
-        self.task.async_rebalance(
-            self.servers[:self.nodes_init], self.servs_in, self.servs_out)
+        self.task.async_rebalance(self.cluster, self.servs_in, self.servs_out)
         expected_progress = 50
         rest = RestConnection(self.cluster.master)
         reached = self.cluster_util.rebalance_reached(rest, expected_progress)

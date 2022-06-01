@@ -97,15 +97,14 @@ class Murphy(BaseTestCase, OPD):
         self.capella_run = self.input.param("capella_run", False)
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
         if self.nodes_init > 1:
+            services = list()
             nodes_init = self.cluster.servers[1:self.nodes_init]
+            if self.services_init:
+                for service in self.services_init.split("-"):
+                    services.append(service.replace(":", ","))
             if not self.capella_run:
-                self.task.rebalance([self.cluster.master], nodes_init, [])
-            self.cluster.nodes_in_cluster.extend(
-                [self.cluster.master] + nodes_init)
-        else:
-            self.cluster.nodes_in_cluster.extend([self.cluster.master])
+                self.task.rebalance(self.cluster, nodes_init, [], services=services*len(nodes_init))
         self.available_servers = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
-        self.cluster.kv_nodes = self.cluster.nodes_in_cluster[:]
         self.cluster_util.set_metadata_purge_interval(self.cluster.master,
                                                       interval=self.bucket_purge_interval)
         if self.xdcr_remote_nodes > 0:
@@ -117,6 +116,8 @@ class Murphy(BaseTestCase, OPD):
             self.PrintStep("Step 1*: Create a %s node XDCR remote cluster" % self.xdcr_remote_nodes)
             self.xdcr_remote_cluster = CBCluster(name="remote", servers=remote_nodes,
                                                  vbuckets=self.vbuckets)
+            self.xdcr_remote_cluster.nodes_in_cluster.append(
+                self.xdcr_remote_cluster.master)
             self._initialize_nodes(self.task,
                                    self.xdcr_remote_cluster,
                                    self.disabled_consistent_view,
@@ -127,8 +128,7 @@ class Murphy(BaseTestCase, OPD):
                                    self.port,
                                    self.quota_percent)
 
-            self.task.rebalance([self.xdcr_remote_cluster.master], remote_nodes[1:], [])
-            self.xdcr_remote_cluster.nodes_in_cluster.extend(remote_nodes)
+            self.task.rebalance(self.xdcr_remote_cluster, remote_nodes[1:], [])
         #######################################################################
         self.PrintStep("Step 2: Create required buckets and collections.")
         if self.num_buckets > 10:
@@ -166,38 +166,27 @@ class Murphy(BaseTestCase, OPD):
                                              int(server.mcdMemoryReserved - 100
                                                  )})
             nodes = len(self.cluster.nodes_in_cluster)
-            self.task.rebalance(self.cluster.nodes_in_cluster,
+            self.task.rebalance(self.cluster,
                                 self.servers[nodes:nodes+self.cbas_nodes], [],
                                 services=["cbas"]*self.cbas_nodes)
-            self.cluster.cbas_nodes = self.servers[nodes:nodes+self.cbas_nodes]
-            self.cluster.nodes_in_cluster.extend(self.cluster.cbas_nodes)
-            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util,
-                                     self.num_indexes)
+
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.cbas_nodes]
 
         if self.backup_nodes:
             nodes = len(self.cluster.nodes_in_cluster)
-            self.task.rebalance(self.cluster.nodes_in_cluster,
+            self.task.rebalance(self.cluster,
                                 self.servers[nodes:nodes+self.backup_nodes], [],
                                 services=["backup"]*self.backup_nodes)
-            self.cluster.backup_nodes = self.servers[nodes:nodes+self.backup_nodes]
-            self.cluster.nodes_in_cluster.extend(self.cluster.backup_nodes)
-            self.drBackup = DoctorBKRS(self.cluster)
 
-        if self.index_nodes>0:
+        if self.index_nodes > 0:
             self.rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA:
                                              int(server.mcdMemoryReserved - 100
                                                  )})
             nodes = len(self.cluster.nodes_in_cluster)
-            self.task.rebalance(self.cluster.nodes_in_cluster,
+            self.task.rebalance(self.cluster,
                                 self.servers[nodes:nodes+self.index_nodes], [],
                                 services=["index,n1ql"]*self.index_nodes)
-            self.cluster.index_nodes = self.servers[nodes:nodes+self.index_nodes]
-            self.cluster.query_nodes = self.servers[nodes:nodes+self.index_nodes]
-            self.cluster.nodes_in_cluster.extend(self.cluster.index_nodes)
-            self.drIndex = DoctorN1QL(self.cluster, self.bucket_util,
-                                      self.num_indexes)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.index_nodes]
 
@@ -206,15 +195,24 @@ class Murphy(BaseTestCase, OPD):
                                              int(server.mcdMemoryReserved - 100
                                                  )})
             nodes = len(self.cluster.nodes_in_cluster)
-            self.task.rebalance(self.cluster.nodes_in_cluster,
+            self.task.rebalance(self.cluster,
                                 self.servers[nodes:nodes+self.fts_nodes], [],
                                 services=["fts"]*self.fts_nodes)
-            self.cluster.fts_nodes = self.servers[nodes:nodes+self.fts_nodes]
-            self.cluster.nodes_in_cluster.extend(self.cluster.fts_nodes)
-            self.drFTS = DoctorFTS(self.cluster, self.bucket_util,
-                                   self.num_indexes)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.fts_nodes]
+
+        if self.cluster.backup_nodes:
+            self.drBackup = DoctorBKRS(self.cluster)
+
+        if self.cluster.index_nodes:
+            self.drIndex = DoctorN1QL(self.cluster, self.bucket_util,
+                                      self.num_indexes)
+        if self.cluster.cbas_nodes:
+            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util,
+                                     self.num_indexes)
+        if self.cluster.fts_nodes:
+            self.drFTS = DoctorFTS(self.cluster, self.bucket_util,
+                                   self.num_indexes)
 
         print self.available_servers
         self.writer_threads = self.input.param("writer_threads", "disk_io_optimized")
@@ -246,11 +244,11 @@ class Murphy(BaseTestCase, OPD):
                            create_end=self.num_items*2)
         self.perform_load(validate_data=False)
 
-        if self.cbas_nodes:
+        if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets()
             self.drCBAS.start_query_load()
 
-        if self.index_nodes:
+        if self.cluster.index_nodes:
             self.drIndex.create_indexes()
             self.drIndex.build_indexes()
             self.drIndex.wait_for_indexes_online(self.log, self.drIndex.indexes)
@@ -657,10 +655,7 @@ class Murphy(BaseTestCase, OPD):
             for failed_over in self.chosen:
                 servs_out += [node for node in self.cluster.servers
                               if node.ip == failed_over.ip]
-            self.cluster.nodes_in_cluster = list(
-                set(self.cluster.nodes_in_cluster) - set(servs_out))
             self.available_servers += servs_out
-            self.cluster.kv_nodes = list(set(self.cluster.kv_nodes) - set(servs_out))
             self.print_stats()
 
             th = threading.Thread(target=self.crash_memcached,
@@ -699,7 +694,7 @@ class Murphy(BaseTestCase, OPD):
                                                 recoveryType="full")
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -744,7 +739,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -792,7 +787,7 @@ class Murphy(BaseTestCase, OPD):
                     self.cluster.buckets[i], replicaNumber=1)
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
@@ -1058,10 +1053,7 @@ class Murphy(BaseTestCase, OPD):
             for failed_over in self.chosen:
                 servs_out += [node for node in self.cluster.servers
                               if node.ip == failed_over.ip]
-            self.cluster.nodes_in_cluster = list(
-                set(self.cluster.nodes_in_cluster) - set(servs_out))
             self.available_servers += servs_out
-            self.cluster.kv_nodes = list(set(self.cluster.kv_nodes) - set(servs_out))
             print "KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes]
             print "CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes]
             print "INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes]
@@ -1156,7 +1148,7 @@ class Murphy(BaseTestCase, OPD):
                                                 recoveryType="full")
             self.sleep(60, "Waiting for full recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1237,7 +1229,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")

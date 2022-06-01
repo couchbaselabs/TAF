@@ -375,8 +375,7 @@ class FailoverTests(FailoverBaseTest):
         self.sleep(5, "After failover before invoking rebalance...")
         if not self.atomicity:
             tasks_info = self.subsequent_load_gen()
-        rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], [])
+        rebalance = self.task.async_rebalance(self.cluster, [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.sleep(30, "After rebalance completes")
         for task in tasks_info:
@@ -424,27 +423,20 @@ class FailoverTests(FailoverBaseTest):
             # CRUDs while rebalance is running in parallel
             tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
 
-        result_nodes = self.servers[:self.nodes_init]
         if rebalance_type == "in":
-            rebalance = self.task.rebalance(
-                self.servers[:self.nodes_init],
-                [self.servers[self.nodes_init]],
-                [])
+            _ = self.task.rebalance(
+                self.cluster, [self.servers[self.nodes_init]], [])
         if rebalance_type == "out":
-            rebalance = self.task.rebalance(
-                self.servers[:self.nodes_init],
-                [],
-                [self.servers[self.nodes_init - 1]])
+            _ = self.task.rebalance(
+                self.cluster, [], [self.servers[self.nodes_init - 1]])
         if rebalance_type == "swap":
             self.rest.add_node(self.master.rest_username,
                                self.master.rest_password,
                                self.servers[self.nodes_init].ip,
                                self.servers[self.nodes_init].port,
                                services=["kv"])
-            rebalance = self.task.rebalance(
-                self.servers[:self.nodes_init],
-                [],
-                [self.servers[self.nodes_init - 1]])
+            _ = self.task.rebalance(
+                self.cluster, [], [self.servers[self.nodes_init - 1]])
 
         if not self.atomicity:
             for task in tasks_info:

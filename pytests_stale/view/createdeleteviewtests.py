@@ -1,11 +1,11 @@
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from couchbase_helper.document import View, DesignDocument
 from custom_exceptions.exception import ReadDocumentException
 from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import DocumentGenerator
 
 
-class CreateDeleteViewTests(BaseTestCase):
+class CreateDeleteViewTests(ClusterSetup):
     def setUp(self):
         try:
             super(CreateDeleteViewTests, self).setUp()
@@ -23,15 +23,10 @@ class CreateDeleteViewTests(BaseTestCase):
             self.updated_map_func = 'function (doc) { emit(null, doc);}'
             self.default_view = View("View", self.default_map_func, None, False)
             self.fragmentation_value = self.input.param("fragmentation_value", 80)
-            self.nodes_init = self.input.param("nodes_init", 1)
             self.nodes_in = self.input.param("nodes_in", 1)
             self.nodes_out = self.input.param("nodes_out", 1)
             self.wait_timeout = self.input.param("wait_timeout", 60)
-            nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
-            self.task.rebalance([self.cluster.master], nodes_init, [])
-            self.cluster.nodes_in_cluster.append(self.cluster.master)
-            self.bucket_util.create_default_bucket(self.cluster)
-            self.bucket_util.add_rbac_user(self.cluster.master)
+            self.create_bucket(self.cluster)
         except Exception as ex:
             self.input.test_params["stop-on-failure"] = True
             self.log.error("SETUP WAS FAILED. ALL TESTS WILL BE SKIPPED")
@@ -39,7 +34,6 @@ class CreateDeleteViewTests(BaseTestCase):
 
     def tearDown(self):
         super(CreateDeleteViewTests, self).tearDown()
-
 
     def _execute_ddoc_ops(self, ddoc_op_type, test_with_view, num_ddocs,
                           num_views_per_ddoc, prefix_ddoc="dev_ddoc",

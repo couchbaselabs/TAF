@@ -1,22 +1,15 @@
-from basetestcase import BaseTestCase
-from membase.api.rest_client import RestConnection
-from BucketLib.bucket import Bucket
+from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import DocumentGenerator
 
 
-class RecreateBucketTests(BaseTestCase):
-
+class RecreateBucketTests(ClusterSetup):
     def setUp(self):
         super(RecreateBucketTests, self).setUp()
         self.nodes_init = self.input.param("nodes_init", 1)
         self.nodes_in = self.input.param("nodes_in", 1)
         self.nodes_out = self.input.param("nodes_out", 1)
         self.doc_ops = self.input.param("doc_ops", "create")
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.append(self.cluster.master)
         # self.bucket_util.create_default_bucket()
-        self.bucket_util.add_rbac_user(self.cluster.master)
 
     def tearDown(self):
         super(RecreateBucketTests, self).tearDown()
@@ -49,4 +42,3 @@ class RecreateBucketTests(BaseTestCase):
         task = self.task.async_validate_docs(self.cluster, bucket, gen_create, "create", 0,
                                              batch_size=10, process_concurrency=8)
         self.task.jython_task_manager.get_task_result(task)
-

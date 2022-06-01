@@ -1010,7 +1010,7 @@ class MagmaExpiryTests(MagmaBaseTest):
                                  graceful=True)
 
         self.nodes = self.rest.node_statuses()
-        self.task.rebalance(self.cluster.nodes_in_cluster,
+        self.task.rebalance(self.cluster,
                             to_add=[],
                             to_remove=[self.cluster.nodes_in_cluster[-1]])
 

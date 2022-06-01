@@ -1421,8 +1421,8 @@ class CBASHighAvailability(CBASBaseTest):
                 "|", self.cluster.nodes_in_cluster, cluster_cbas_nodes)
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster + rebalanced_out_nodes, [],
-                rebalanced_out_nodes, check_vbucket_shuffling=True,
+                self.cluster, [], rebalanced_out_nodes,
+                check_vbucket_shuffling=True,
                 retry_get_process_num=200, services=None)
 
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
@@ -1637,8 +1637,8 @@ class CBASHighAvailability(CBASBaseTest):
                 "|", self.cluster.nodes_in_cluster, cluster_cbas_nodes)
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster + out_node, [],
-                out_node, check_vbucket_shuffling=True,
+                self.cluster, [], out_node,
+                check_vbucket_shuffling=True,
                 retry_get_process_num=200, services=None)
 
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(

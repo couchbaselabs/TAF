@@ -286,7 +286,7 @@ class RebalanceTaskCapella(Task):
 
 
 class RebalanceTask(Task):
-    def __init__(self, servers, to_add=[], to_remove=[], do_stop=False,
+    def __init__(self, cluster, to_add=[], to_remove=[], do_stop=False,
                  progress=30, use_hostnames=False, services=None,
                  check_vbucket_shuffling=True, sleep_before_rebalance=0,
                  retry_get_process_num=25):
@@ -295,7 +295,8 @@ class RebalanceTask(Task):
                 .format(",".join([node.ip for node in to_add]),
                         ",".join([node.ip for node in to_remove]),
                         str(time.time())))
-        self.servers = servers
+        self.cluster = cluster
+        self.servers = list()
         self.to_add = to_add
         self.to_remove = to_remove
         self.start_time = None
@@ -305,21 +306,35 @@ class RebalanceTask(Task):
         self.result = False
         self.retry_get_process_num = retry_get_process_num
         try:
-            self.rest = RestConnection(self.servers[0])
+            self.rest = RestConnection(self.cluster.master)
         except ServerUnavailableException, e:
             self.test_log.error(e)
             raise e
+
+        valid_membership = ["active", "inactiveAdded"]
+        node_ips_to_remove = [node.ip for node in to_remove]
+        # Get current 'active' nodes in the cluster
+        # and update the nodes_in_cluster accordingly
+        for r_node in self.rest.get_nodes(inactive=True):
+            for server in self.cluster.servers:
+                if r_node.ip == server.ip:
+                    if r_node.ip not in node_ips_to_remove \
+                            and r_node.clusterMembership in valid_membership:
+                        self.servers.append(server)
+                    break
+        # Update the nodes_in_cluster value
+        self.cluster.nodes_in_cluster = self.servers
+
         self.retry_get_progress = 0
         self.use_hostnames = use_hostnames
         self.previous_progress = 0
-        self.old_vbuckets = {}
+        self.old_vbuckets = dict()
         self.thread_used = "Rebalance_task"
 
         cluster_stats = self.rest.get_cluster_stats()
         self.table = TableView(self.test_log.info)
         self.table.set_headers(["Nodes", "Services", "Version",
                                 "CPU", "Status", "Membership / Recovery"])
-        node_ips_to_remove = [node.ip for node in to_remove]
         for node, stat in cluster_stats.items():
             node_ip = node.split(':')[0]
             node_status = "Cluster node"
@@ -328,6 +343,28 @@ class RebalanceTask(Task):
             self.table.add_row([node_ip, ", ".join(stat["services"]),
                                 stat["version"], stat["cpu_utilization"],
                                 node_status, stat["clusterMembership"] + " / " + stat["recoveryType"]])
+            # Remove the 'out' node from services list
+            self.cluster.kv_nodes = \
+                [node for node in self.cluster.kv_nodes
+                 if node.ip not in node_ips_to_remove]
+            self.cluster.index_nodes = \
+                [node for node in self.cluster.index_nodes
+                 if node.ip not in node_ips_to_remove]
+            self.cluster.query_nodes = \
+                [node for node in self.cluster.query_nodes
+                 if node.ip not in node_ips_to_remove]
+            self.cluster.cbas_nodes = \
+                [node for node in self.cluster.cbas_nodes
+                 if node.ip not in node_ips_to_remove]
+            self.cluster.eventing_nodes = \
+                [node for node in self.cluster.eventing_nodes
+                 if node.ip not in node_ips_to_remove]
+            self.cluster.fts_nodes = \
+                [node for node in self.cluster.fts_nodes
+                 if node.ip not in node_ips_to_remove]
+            self.cluster.backup_nodes = \
+                [node for node in self.cluster.backup_nodes
+                 if node.ip not in node_ips_to_remove]
 
         # Fetch last rebalance task to track starting of current rebalance
         self.prev_rebalance_status_id = None
@@ -415,17 +452,25 @@ class RebalanceTask(Task):
             return self.result
         self.complete_task()
         self.result = True
+        self.log.critical("Nodes in cluster: %s" % [node.ip for node in self.cluster.nodes_in_cluster])
+        self.log.critical("KV nodes      : %s" % [node.ip for node in self.cluster.kv_nodes])
+        self.log.critical("Index nodes   : %s" % [node.ip for node in self.cluster.index_nodes])
+        self.log.critical("Query nodes   : %s" % [node.ip for node in self.cluster.query_nodes])
+        self.log.critical("CBAS nodes    : %s" % [node.ip for node in self.cluster.cbas_nodes])
+        self.log.critical("FTS nodes     : %s" % [node.ip for node in self.cluster.fts_nodes])
+        self.log.critical("Eventing nodes: %s" % [node.ip for node in self.cluster.eventing_nodes])
+        self.log.critical("Backup nodes  : %s" % [node.ip for node in self.cluster.backup_nodes])
         return self.result
 
     def add_nodes(self):
         master = self.servers[0]
-        services_for_node = None
         node_index = 0
+        services_for_node = [CbServer.Services.KV]
         for node in self.to_add:
             if self.services is not None:
                 services_for_node = [self.services[node_index]]
                 node_index += 1
-            self.table.add_row([node.ip, services_for_node, "", "",
+            self.table.add_row([node.ip, ",".join(services_for_node), "", "",
                                 "<--- IN ---", ""])
             if self.use_hostnames:
                 self.rest.add_node(master.rest_username, master.rest_password,
@@ -435,6 +480,31 @@ class RebalanceTask(Task):
                 self.rest.add_node(master.rest_username, master.rest_password,
                                    node.ip, node.port,
                                    services=services_for_node)
+            for services in services_for_node:
+                for service in services.split(","):
+                    if service == CbServer.Services.KV:
+                        self.cluster.kv_nodes.append(node)
+                        continue
+                    if service == CbServer.Services.INDEX:
+                        self.cluster.index_nodes.append(node)
+                        continue
+                    if service == CbServer.Services.N1QL:
+                        self.cluster.query_nodes.append(node)
+                        continue
+                    if service == CbServer.Services.CBAS:
+                        self.cluster.cbas_nodes.append(node)
+                        continue
+                    if service == CbServer.Services.EVENTING:
+                        self.cluster.eventing_nodes.append(node)
+                        continue
+                    if service == CbServer.Services.FTS:
+                        self.cluster.fts_nodes.append(node)
+                        continue
+                    if service == CbServer.Services.BACKUP:
+                        self.cluster.backup_nodes.append(node)
+                        continue
+
+            self.cluster.nodes_in_cluster.append(node)
 
     def start_rebalance(self):
         nodes = self.rest.node_statuses()
@@ -556,12 +626,12 @@ class RebalanceTask(Task):
                 for node in set(self.to_remove) - set(success_cleaned):
                     self.test_log.error(
                         "Node {0}:{1} was not cleaned after removing from cluster"
-                            .format(node.ip, node.port))
+                        .format(node.ip, node.port))
                     self.result = False
 
                 self.test_log.info(
                     "Rebalance completed with progress: {0}% in {1} sec"
-                        .format(progress, time.time() - self.start_time))
+                    .format(progress, time.time() - self.start_time))
                 self.result = True
                 return
 

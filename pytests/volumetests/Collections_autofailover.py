@@ -142,18 +142,18 @@ class volume(AutoFailoverBaseTest):
 
         if self.auto_reprovision:
             # Rebalance the cluster
-            rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
                                                        retry_get_process_num=100)
             self.wait_for_rebalance_to_complete(rebalance_task)
         else:
             # Either RebalanceOut or Recovery
             if self.subsequent_action == "RebalanceOut":
                 # RebalanceOut
-                rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], self.server_to_fail,
+                rebalance_task = self.task.async_rebalance(self.cluster, [], self.server_to_fail,
                                                            retry_get_process_num=100)
                 self.wait_for_rebalance_to_complete(rebalance_task)
                 # Add the node back to cluster
-                rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
+                rebalance_task = self.task.async_rebalance(self.cluster, self.server_to_fail, [],
                                                            retry_get_process_num=100)
                 self.wait_for_rebalance_to_complete(rebalance_task)
             else:
@@ -161,7 +161,7 @@ class volume(AutoFailoverBaseTest):
                     self.rest.set_recovery_type(otpNode='ns_1@' + self.server_to_fail[0].ip, recoveryType="delta")
                 else:
                     self.rest.set_recovery_type(otpNode='ns_1@' + self.server_to_fail[0].ip, recoveryType="full")
-                rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [], retry_get_process_num=100)
+                rebalance_task = self.task.async_rebalance(self.cluster, [], [], retry_get_process_num=100)
                 self.wait_for_rebalance_to_complete(rebalance_task)
 
         if self.auto_reprovision:

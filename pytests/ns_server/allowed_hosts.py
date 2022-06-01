@@ -50,7 +50,7 @@ class AllowedHosts(ClusterSetup):
 
     def add_node_and_rebalance(self, expect_failure=False):
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [self.cluster.servers[self.nodes_init]], [])
+            self.cluster, [self.cluster.servers[self.nodes_init]], [])
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result and not expect_failure:
             self.fail("rebalance did not progress")
@@ -147,4 +147,3 @@ class AllowedHosts(ClusterSetup):
         if "errors" in output[0]:
             raise Exception("Not able to set allowedhosts during clusterInit")
         self.add_node_and_rebalance()
-

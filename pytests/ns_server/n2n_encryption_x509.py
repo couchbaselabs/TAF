@@ -195,7 +195,7 @@ class N2nEncryptionX509(CollectionBase):
             self.log.info("Performing rebalance operation with x509: {0}, n2nencryption: {1}".
                           format(self.x509enable, level))
 
-            operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [])
+            operation = self.task.async_rebalance(self.cluster, add_nodes, [])
             tasks = self.async_data_load()
             self.wait_for_rebalance_to_complete(operation)
             self.wait_for_async_data_load_to_complete(tasks)
@@ -204,7 +204,7 @@ class N2nEncryptionX509(CollectionBase):
 
             remove_nodes = random.sample(self.nodes_in_cluster_excluding_master,
                                          self.nodes_out)
-            operation = self.task.async_rebalance(self.nodes_in_cluster, [], remove_nodes)
+            operation = self.task.async_rebalance(self.cluster, [], remove_nodes)
             tasks = self.async_data_load()
             self.wait_for_rebalance_to_complete(operation)
             self.wait_for_async_data_load_to_complete(tasks)

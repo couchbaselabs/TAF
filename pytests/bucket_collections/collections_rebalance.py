@@ -360,7 +360,7 @@ class CollectionsRebalance(CollectionBase):
             self.assertTrue(result, "Failover of node {0} failed".
                             format(failover_node.ip))
         operation = self.task.async_rebalance(
-            known_nodes, [], failover_nodes,
+            self.cluster, [], failover_nodes,
             retry_get_process_num=self.retry_get_process_num)
         self.execute_N1qltxn()
         self.data_load_after_failover()
@@ -375,7 +375,7 @@ class CollectionsRebalance(CollectionBase):
                 if self.warmup:
                     node = known_nodes[-1]
                     self.warmup_node(node)
-                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
                     self.execute_allowedhosts()
@@ -387,7 +387,7 @@ class CollectionsRebalance(CollectionBase):
                                 [node], bucket, wait_time=1200))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
+                        operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                               retry_get_process_num=self.retry_get_process_num)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
@@ -398,7 +398,7 @@ class CollectionsRebalance(CollectionBase):
                             self.cluster, self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats(self.cluster)
                     # all at once
-                    operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
                     self.execute_allowedhosts()
@@ -418,7 +418,7 @@ class CollectionsRebalance(CollectionBase):
                 # start each intermediate rebalance and wait for it to finish before
                 # starting new one
                 for new_remove_nodes in remove_list:
-                    operation = self.task.async_rebalance(known_nodes, [], new_remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], new_remove_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     known_nodes = [node for node in known_nodes if node not in new_remove_nodes]
                     iter_count = iter_count + 1
@@ -431,7 +431,7 @@ class CollectionsRebalance(CollectionBase):
                 if self.warmup:
                     node = known_nodes[-1]
                     self.warmup_node(node)
-                    operation = self.task.async_rebalance(known_nodes, add_nodes, [],
+                    operation = self.task.async_rebalance(self.cluster, add_nodes, [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn()
                     self.execute_allowedhosts()
@@ -443,7 +443,7 @@ class CollectionsRebalance(CollectionBase):
                                 [node], bucket, wait_time=1200))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(known_nodes + add_nodes, [], [],
+                        operation = self.task.async_rebalance(self.cluster + add_nodes, [], [],
                                                               retry_get_process_num=self.retry_get_process_num)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
@@ -454,7 +454,7 @@ class CollectionsRebalance(CollectionBase):
                             self.cluster, self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats(self.cluster)
                     # all at once
-                    operation = self.task.async_rebalance(known_nodes, add_nodes, [],
+                    operation = self.task.async_rebalance(self.cluster, add_nodes, [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn()
                     self.execute_allowedhosts()
@@ -474,7 +474,7 @@ class CollectionsRebalance(CollectionBase):
                 # start each intermediate rebalance and wait for it to finish before
                 # starting new one
                 for new_add_nodes in add_list:
-                    operation = self.task.async_rebalance(known_nodes, new_add_nodes, [],
+                    operation = self.task.async_rebalance(self.cluster, new_add_nodes, [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     known_nodes.append(new_add_nodes)
                     iter_count = iter_count + 1
@@ -483,14 +483,14 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "swap_rebalance":
-            if (step_count == -1):
+            if step_count == -1:
                 if self.warmup:
                     for node in add_nodes:
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                            node.ip, self.cluster.servers[self.nodes_init].port)
                     node = known_nodes[-1]
                     self.warmup_node(node)
-                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                           check_vbucket_shuffling=False,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
@@ -503,7 +503,7 @@ class CollectionsRebalance(CollectionBase):
                                 [node], bucket, wait_time=1200))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                        operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                               retry_get_process_num=self.retry_get_process_num)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
@@ -516,7 +516,7 @@ class CollectionsRebalance(CollectionBase):
                     for node in add_nodes:
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                            node.ip, self.cluster.servers[self.nodes_init].port)
-                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                           check_vbucket_shuffling=False,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
@@ -540,7 +540,7 @@ class CollectionsRebalance(CollectionBase):
                 # start each intermediate rebalance and wait for it to finish before
                 # starting new one
                 for new_add_nodes, new_remove_nodes in zip(add_list, remove_list):
-                    operation = self.task.async_rebalance(known_nodes, new_add_nodes, new_remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, new_add_nodes, new_remove_nodes,
                                                           check_vbucket_shuffling=False,
                                                           retry_get_process_num=self.retry_get_process_num)
                     known_nodes = [node for node in known_nodes if node not in new_remove_nodes]
@@ -557,7 +557,7 @@ class CollectionsRebalance(CollectionBase):
                                        node.ip, self.cluster.servers[self.nodes_init].port)
                 node = known_nodes[-1]
                 self.warmup_node(node)
-                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(remove_nodes[0])
                 self.task.jython_task_manager.get_task_result(operation)
@@ -568,7 +568,7 @@ class CollectionsRebalance(CollectionBase):
                             [node], bucket, wait_time=1200))
                     self.log.info("second attempt to rebalance")
                     self.sleep(60, "wait before starting rebalance after warmup")
-                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.wait_for_rebalance_to_complete(operation)
                 self.sleep(60)
@@ -581,7 +581,7 @@ class CollectionsRebalance(CollectionBase):
                 for node in add_nodes:
                     self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                        node.ip, self.cluster.servers[self.nodes_init].port)
-                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(remove_nodes[0])
                 if self.compaction:
@@ -601,7 +601,7 @@ class CollectionsRebalance(CollectionBase):
                 if self.compaction:
                     self.compact_all_buckets()
                 self.data_load_after_failover()
-                operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
+                operation = self.task.async_rebalance(self.cluster, [], failover_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(failover_nodes[0])
                 self.execute_allowedhosts()
@@ -630,7 +630,7 @@ class CollectionsRebalance(CollectionBase):
                         self.wait_for_async_data_load_to_complete(tasks)
                         tasks = None
                     self.data_load_after_failover()
-                    operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], new_failover_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     iter_count = iter_count + 1
                     known_nodes = [node for node in known_nodes if node not in new_failover_nodes]
@@ -650,7 +650,7 @@ class CollectionsRebalance(CollectionBase):
                 if self.compaction:
                     self.compact_all_buckets()
                 self.data_load_after_failover()
-                operation = self.task.async_rebalance(known_nodes, [], failover_nodes,
+                operation = self.task.async_rebalance(self.cluster, [], failover_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(failover_nodes[0])
                 self.execute_allowedhosts()
@@ -677,7 +677,7 @@ class CollectionsRebalance(CollectionBase):
                         self.wait_for_async_data_load_to_complete(tasks)
                         tasks = None
                     self.data_load_after_failover()
-                    operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], new_failover_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(new_failover_nodes[0])
                     iter_count = iter_count + 1
@@ -703,7 +703,7 @@ class CollectionsRebalance(CollectionBase):
                 if self.compaction:
                     self.compact_all_buckets()
                 # Rebalance all the nodes
-                operation = self.task.async_rebalance(known_nodes, [], [],
+                operation = self.task.async_rebalance(self.cluster, [], [],
                                                       retry_get_process_num=self.retry_get_process_num)
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
@@ -733,7 +733,7 @@ class CollectionsRebalance(CollectionBase):
                     for failover_node in new_failover_nodes:
                         self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
                                                     recoveryType=self.recovery_type)
-                    operation = self.task.async_rebalance(known_nodes, [], [],
+                    operation = self.task.async_rebalance(self.cluster, [], [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     iter_count = iter_count + 1
                     if iter_count == len(failover_list):
@@ -757,7 +757,7 @@ class CollectionsRebalance(CollectionBase):
                 if self.compaction:
                     self.compact_all_buckets()
                 # Rebalance all the nodes
-                operation = self.task.async_rebalance(known_nodes, [], [],
+                operation = self.task.async_rebalance(self.cluster, [], [],
                                                       retry_get_process_num=self.retry_get_process_num)
                 if self.change_ram_quota_cluster:
                     self.set_ram_quota_cluster()
@@ -787,7 +787,7 @@ class CollectionsRebalance(CollectionBase):
                     for failover_node in new_failover_nodes:
                         self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
                                                     recoveryType=self.recovery_type)
-                    operation = self.task.async_rebalance(known_nodes, [], [],
+                    operation = self.task.async_rebalance(self.cluster, [], [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     iter_count = iter_count + 1
                     if iter_count == len(failover_list):
@@ -960,7 +960,7 @@ class CollectionsRebalance(CollectionBase):
                                     set([node for node in rest.get_nodes_in_zone(zones[i])]))
                 rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[i])
         # Start rebalance and monitor it.
-        self.task.rebalance(self.cluster.servers[:self.nodes_init], [], [],
+        self.task.rebalance(self.cluster, [], [],
                             retry_get_process_num=self.retry_get_process_num)
         # Verify replicas of one node should not be in the same zone
         # as active vbuckets of the node.
@@ -978,7 +978,7 @@ class CollectionsRebalance(CollectionBase):
             if node not in nodes_in_cluster:
                 self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                               node.ip, node.port, zone_name=zone_name, services=["kv"])
-        self.task.rebalance(self.cluster.servers[:self.nodes_init], [], [],
+        self.task.rebalance(self.cluster, [], [],
                             retry_get_process_num=self.retry_get_process_num)
         self.data_validation_collection()
 
@@ -989,7 +989,7 @@ class CollectionsRebalance(CollectionBase):
             self.bucket_util.update_all_bucket_replicas(
                 self.cluster, replica)
             self.bucket_util.print_bucket_stats(self.cluster)
-            self.task.rebalance(self.cluster.servers[:self.nodes_init], [], [],
+            self.task.rebalance(self.cluster, [], [],
                                 retry_get_process_num=self.retry_get_process_num)
             self.data_validation_collection()
 
@@ -1109,9 +1109,8 @@ class CollectionsRebalance(CollectionBase):
                                                  tasks=tasks)
         elif rebalance_operation == "forced_hard_failover_rebalance_out":
             failover_nodes = self.get_failover_nodes()
-            rebalance = self.forced_failover_operation(known_nodes=self.cluster.servers[:self.nodes_init],
-                                                       failover_nodes=failover_nodes
-                                                       )
+            rebalance = self.forced_failover_operation(self.cluster,
+                                                       failover_nodes=failover_nodes)
         if self.data_load_stage == "during":
             if self.data_load_type == "async":
                 tasks = self.async_data_load()
@@ -1186,11 +1185,11 @@ class CollectionsRebalance(CollectionBase):
         for cycle in range(self.cycles):
             self.log.info("Cycle {0}".format(cycle))
 
-            known_nodes = self.cluster.servers[:self.nodes_init]
             add_nodes = self.cluster.servers[
                         self.nodes_init:self.nodes_init + self.nodes_in]
-            operation = self.task.async_rebalance(known_nodes, add_nodes, [],
-                                                  retry_get_process_num=self.retry_get_process_num)
+            operation = self.task.async_rebalance(
+                self.cluster, add_nodes, [],
+                retry_get_process_num=self.retry_get_process_num)
             tasks = self.async_data_load()
             if self.bulk_api_crud:
                 self.bulk_api_load(self.bucket.name)
@@ -1200,8 +1199,9 @@ class CollectionsRebalance(CollectionBase):
 
             known_nodes = self.cluster.servers[:self.nodes_init + self.nodes_in]
             remove_nodes = known_nodes[-self.nodes_in:]
-            operation = self.task.async_rebalance(known_nodes, [], remove_nodes,
-                                                  retry_get_process_num=self.retry_get_process_num)
+            operation = self.task.async_rebalance(
+                self.cluster, [], remove_nodes,
+                retry_get_process_num=self.retry_get_process_num)
             tasks = self.async_data_load()
             if self.bulk_api_crud:
                 self.bulk_api_load(self.bucket.name)
@@ -1222,8 +1222,10 @@ class CollectionsRebalance(CollectionBase):
 
             add_nodes = unknown_nodes[:self.nodes_swap]
             remove_nodes = known_nodes[-self.nodes_swap:]
-            operation = self.task.async_rebalance(known_nodes, add_nodes, remove_nodes, check_vbucket_shuffling=False,
-                                                  retry_get_process_num=self.retry_get_process_num)
+            operation = self.task.async_rebalance(
+                self.cluster, add_nodes, remove_nodes,
+                check_vbucket_shuffling=False,
+                retry_get_process_num=self.retry_get_process_num)
             tasks = self.async_data_load()
             for node in add_nodes:
                 known_nodes.append(node)
@@ -1263,7 +1265,7 @@ class CollectionsRebalance(CollectionBase):
             self.assertTrue(result, "Failover failed")
 
             rebalance_task = self.task.async_rebalance(
-                self.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(rebalance_task)
 
@@ -1277,7 +1279,7 @@ class CollectionsRebalance(CollectionBase):
 
             # Rebalance-in back the node
             rebalance_task = self.task.async_rebalance(
-                self.nodes_in_cluster, failover_nodes, [],
+                self.cluster, failover_nodes, [],
                 retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(rebalance_task)
             for node in failover_nodes:
@@ -1296,9 +1298,8 @@ class CollectionsRebalance(CollectionBase):
         status, content = self.rest.fail_bucket_rebalance_at_bucket(bucket_name)
         self.assertEquals("ok", content, msg="Error occurred while adding the test condition")
 
-        known_nodes = self.cluster.servers[:self.nodes_init]
         add_nodes = self.cluster.servers[self.nodes_init:self.nodes_init + 1]
-        operation = self.task.rebalance(known_nodes, add_nodes, [],
+        operation = self.task.rebalance(self.cluster, add_nodes, [],
                                         retry_get_process_num=self.retry_get_process_num)
         if operation:
             self.fail("Rebalance should have failed because of the test condition")
@@ -1308,8 +1309,7 @@ class CollectionsRebalance(CollectionBase):
         status, content = self.rest.remove_fail_bucket_rebalance_at_bucket()
         self.assertEquals("ok", content, msg="Error occurred while removing the test condition")
 
-        known_nodes = self.cluster.servers[:self.nodes_init + 1]
-        operation = self.task.rebalance(known_nodes, [], [],
+        operation = self.task.rebalance(self.cluster, [], [],
                                         retry_get_process_num=self.retry_get_process_num)
         if operation:
             self.log.info("Rebalance completed as expected")

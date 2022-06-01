@@ -194,7 +194,7 @@ class BasicUpsertTests(BasicCrudTests):
         self.validate_data("update", self.gen_update)
         if not self.windows_platform:
             self.change_swap_space(self.cluster.nodes_in_cluster,
-                               disable=False)
+                                   disable=False)
         self.log.info("====test_update_n_times ends====")
 
     def test_update_n_times_bloomfilter(self):
@@ -385,7 +385,7 @@ class BasicUpsertTests(BasicCrudTests):
             time_end = time.time() + 60 * 10
             while time.time() < time_end:
                 disk_usage = self.get_disk_usage(self.buckets[0],
-                                                     self.cluster.nodes_in_cluster)
+                                                 self.cluster.nodes_in_cluster)
                 _res = disk_usage[0]
                 self.log.info("Delete Iteration-{}, Disk Usage at time {} is {}MB \
                 ".format(i+1, time_end - time.time(), _res))

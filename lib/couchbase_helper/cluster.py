@@ -515,11 +515,10 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def async_rebalance(self, servers, to_add=[], to_remove=[],
+    def async_rebalance(self, cluster, to_add=[], to_remove=[],
                         use_hostnames=False, services=None,
                         check_vbucket_shuffling=True,
-                        sleep_before_rebalance=0, retry_get_process_num=25,
-                        cluster=None):
+                        sleep_before_rebalance=0, retry_get_process_num=25):
         """
         Asynchronously rebalances a cluster
 
@@ -571,7 +570,7 @@ class ServerTasks(object):
                 cluster, cluster_config_to_update)
         else:
             _task = jython_tasks.RebalanceTask(
-                servers, to_add, to_remove, use_hostnames=use_hostnames,
+                cluster, to_add, to_remove, use_hostnames=use_hostnames,
                 services=services,
                 check_vbucket_shuffling=check_vbucket_shuffling,
                 sleep_before_rebalance=sleep_before_rebalance,
@@ -675,7 +674,7 @@ class ServerTasks(object):
         _task = self.async_create_standard_bucket(name, port, bucket_params)
         return _task.get_result(timeout)
 
-    def rebalance(self, servers, to_add, to_remove,
+    def rebalance(self, cluster, to_add, to_remove,
                   use_hostnames=False, services=None,
                   check_vbucket_shuffling=True, retry_get_process_num=25):
         """
@@ -692,7 +691,7 @@ class ServerTasks(object):
           boolean - Whether or not the rebalance was successful
         """
         _task = self.async_rebalance(
-            servers, to_add, to_remove,
+            cluster, to_add, to_remove,
             use_hostnames=use_hostnames,
             services=services,
             check_vbucket_shuffling=check_vbucket_shuffling,

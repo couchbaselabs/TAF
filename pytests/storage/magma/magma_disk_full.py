@@ -603,8 +603,7 @@ class MagmaDiskFull(MagmaBaseTest):
         self.task.jython_task_manager.get_task_result(data_validation)
 
         self.bucket_util.update_all_bucket_replicas(self.cluster, replicas=1)
-        rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
-                                               [], [])
+        rebalance_result = self.task.rebalance(self.cluster, [], [])
         self.assertTrue(rebalance_result)
 
         # check further doc ops go in well
@@ -637,8 +636,7 @@ class MagmaDiskFull(MagmaBaseTest):
             t.join()
 
         self.bucket_util.update_all_bucket_replicas(self.cluster, replicas=2)
-        rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
-                                               [], [])
+        rebalance_result = self.task.rebalance(self.cluster, [], [])
         self.assertFalse(rebalance_result)
         self.rest.stop_rebalance(wait_timeout=300)
 
@@ -651,8 +649,7 @@ class MagmaDiskFull(MagmaBaseTest):
         self.task.jython_task_manager.get_task_result(data_validation)
 
         self.bucket_util.update_all_bucket_replicas(self.cluster, replicas=1)
-        rebalance_result = self.task.rebalance(self.cluster.nodes_in_cluster,
-                                               [], [])
+        rebalance_result = self.task.rebalance(self.cluster, [], [])
         self.assertTrue(rebalance_result)
         for node in self.cluster.nodes_in_cluster:
             self.free_disk(node)
@@ -810,8 +807,7 @@ class MagmaDiskFull(MagmaBaseTest):
 
         # Add a node to add disk to the cluster
         rebalance_result = self.task.rebalance(
-            self.cluster.nodes_in_cluster,
-            self.servers[self.nodes_init:self.nodes_init+1], [])
+            self.cluster, self.servers[self.nodes_init:self.nodes_init+1], [])
         self.assertTrue(rebalance_result)
 
         # Retry previous create failed after adding a node

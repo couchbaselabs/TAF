@@ -263,12 +263,12 @@ class volume(BaseTestCase):
             self.vbucket_check = False
 
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, servs_out, check_vbucket_shuffling=self.vbucket_check)
+            self.cluster, servs_in, servs_out,
+            check_vbucket_shuffling=self.vbucket_check)
 
         self.available_servers = [servs for servs in self.available_servers if servs not in servs_in]
         self.available_servers += servs_out
 
-        self.cluster.nodes_in_cluster.extend(servs_in)
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
         return rebalance_task
 
@@ -390,15 +390,14 @@ class volume(BaseTestCase):
         ########################################################################################################################
         self.log.info("Step1: Create a n node cluster")
         nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master] + nodes_init)
+        self.task.rebalance(self.cluster, nodes_init, [])
         self.query_node = self.cluster.master
         ########################################################################################################################
         self.log.info("Step 2 & 3: Create required buckets.")
         bucket = self.create_required_buckets()
         self.loop = 0
         #######################################################################################################################
-        while self.loop<self.iterations:
+        while self.loop < self.iterations:
             self.log.info("Step 4: Pre-Requisites for Loading of docs")
             self.start = 0
             self.bucket_util.add_rbac_user(self.cluster.master)
@@ -411,12 +410,12 @@ class volume(BaseTestCase):
             ########################################################################################################################
             self.log.info("Step 5: Rebalance in with Loading of docs")
             self.generate_docs()
-            self.gen_delete_users=None
+            self.gen_delete_users = None
             self._iter_count = 0
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
-            rebalance_task = self.rebalance(nodes_in = 1, nodes_out = 0)
+            rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             tasks_info = self.data_load()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
@@ -528,7 +527,7 @@ class volume(BaseTestCase):
                 if not self.atomicity:
                     self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                            num_reader_threads=self.new_num_reader_threads)
-                rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
+                rebalance_task = self.task.async_rebalance(self.cluster, [], [])
                 tasks_info = self.data_load()
                 if not self.atomicity:
                     self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
@@ -639,8 +638,7 @@ class volume(BaseTestCase):
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
 
-            rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [])
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
@@ -702,8 +700,7 @@ class volume(BaseTestCase):
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
 
-            rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [])
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
                                                        num_reader_threads="disk_io_optimized")
@@ -744,7 +741,7 @@ class volume(BaseTestCase):
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
                                                        num_reader_threads=self.new_num_reader_threads)
-            rebalance_task = self.task.async_rebalance(self.cluster.servers, [], [])
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [])
             tasks_info = self.data_load()
             if not self.atomicity:
                 self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
@@ -771,7 +768,7 @@ class volume(BaseTestCase):
                     self.nodes_cluster.remove(self.cluster.master)
                     servs_out = random.sample(self.nodes_cluster, int(len(self.cluster.nodes_in_cluster) - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.servers[:self.nodes_init], [], servs_out)
+                        self.cluster, [], servs_out)
                     # self.sleep(600)
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.available_servers += servs_out

@@ -81,13 +81,9 @@ class StorageBase(BaseTestCase):
             self.dcp_servers = self.cluster.servers[self.nodes_init:
                                                     self.nodes_init+len(self.dcp_services)]
         nodes_in = nodes_init + self.dcp_servers
-        result = self.task.rebalance([self.cluster.master],
-                                     nodes_in,
-                                     [],
+        result = self.task.rebalance(self.cluster, nodes_in, [],
                                      services=self.services[1:])
         self.assertTrue(result, "Initial rebalance failed")
-        self.cluster.nodes_in_cluster.extend(
-            [self.cluster.master] + nodes_in)
         for idx, node in enumerate(self.cluster.nodes_in_cluster):
             node.services = self.services[idx]
 

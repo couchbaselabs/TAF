@@ -69,7 +69,7 @@ class CollectionDurabilityTests(CollectionBase):
         cbstat_obj = dict()
         vb_info["create_stat"] = dict()
         vb_info["failure_stat"] = dict()
-        nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
+        nodes_in_cluster = self.cluster.kv_nodes
         sub_doc_test = self.input.param("sub_doc_test", False)
 
         if sub_doc_test:

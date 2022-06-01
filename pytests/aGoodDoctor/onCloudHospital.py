@@ -547,10 +547,7 @@ class Murphy(BaseTestCase, OPD):
             for failed_over in self.chosen:
                 servs_out += [node for node in self.cluster.servers
                               if node.ip == failed_over.ip]
-            self.cluster.nodes_in_cluster = list(
-                set(self.cluster.nodes_in_cluster) - set(servs_out))
             self.available_servers += servs_out
-            self.cluster.kv_nodes = list(set(self.cluster.kv_nodes) - set(servs_out))
             self.print_stats()
 
             th = threading.Thread(target=self.crash_memcached,
@@ -589,7 +586,7 @@ class Murphy(BaseTestCase, OPD):
                                                 recoveryType="full")
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -634,7 +631,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -682,7 +679,7 @@ class Murphy(BaseTestCase, OPD):
                     self.cluster.buckets[i], replicaNumber=1)
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()
@@ -712,17 +709,12 @@ class Murphy(BaseTestCase, OPD):
                         int(len(self.cluster.kv_nodes)
                             - self.nodes_init))
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.servers[:self.nodes_init], [], servs_out,
+                        self.cluster, [], servs_out,
                         retry_get_process_num=3000)
 
-                    self.task_manager.get_task_result(
-                        rebalance_task)
+                    self.task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     self.available_servers += servs_out
-                    self.cluster.nodes_in_cluster = list(
-                        set(self.cluster.nodes_in_cluster) - set(servs_out))
-                    self.cluster.kv_nodes = list(
-                        set(self.cluster.kv_nodes) - set(servs_out))
             self.print_stats()
 
         self.log.info("Volume Test Run Complete")
@@ -954,10 +946,7 @@ class Murphy(BaseTestCase, OPD):
             for failed_over in self.chosen:
                 servs_out += [node for node in self.cluster.servers
                               if node.ip == failed_over.ip]
-            self.cluster.nodes_in_cluster = list(
-                set(self.cluster.nodes_in_cluster) - set(servs_out))
             self.available_servers += servs_out
-            self.cluster.kv_nodes = list(set(self.cluster.kv_nodes) - set(servs_out))
             print "KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes]
             print "CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes]
             print "INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes]
@@ -1052,7 +1041,7 @@ class Murphy(BaseTestCase, OPD):
                                                 recoveryType="full")
             self.sleep(60, "Waiting for full recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1133,7 +1122,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")

@@ -14,36 +14,32 @@ class CreateBucketTests(BaseTestCase):
         self.nodes_in = self.input.param("nodes_in", 1)
         self.nodes_out = self.input.param("nodes_out", 1)
         self.doc_ops = self.input.param("doc_ops", "create")
-        nodes_init = self.cluster.servers[1:self.nodes_init] if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.append(self.cluster.master)
-        # self.bucket_util.create_default_bucket()
+        nodes_init = self.cluster.servers[1:self.nodes_init] \
+            if self.nodes_init != 1 else []
+        self.task.rebalance(self.cluster, nodes_init, [])
         self.bucket_util.add_rbac_user(self.cluster.master)
 
     def tearDown(self):
         super(CreateBucketTests, self).tearDown()
 
     def test_two_replica(self):
-        bucket_name = 'default'
-        rest = RestConnection(self.cluster.master)
-        replicaNumber = 2
-        bucket = Bucket({"name": bucket_name, "replicaNumber": replicaNumber})
+        name = 'default'
+        replica_number = 2
+        bucket = Bucket({"name": name, "replicaNumber": replica_number})
         self.bucket_util.create_bucket(self.cluster, bucket)
-        msg = 'create_bucket succeeded but bucket {0} does not exist'.format(bucket_name)
+        msg = 'create_bucket succeeded but bucket %s does not exist' % name
         self.assertTrue(
             self.bucket_util.wait_for_bucket_creation(self.cluster, bucket),
             msg)
 
     def test_valid_length(self):
-        max_len = 100
         name_len = self.input.param('name_length', 100)
         name = 'a' * name_len
-        rest = RestConnection(self.cluster.master)
-        replicaNumber = 1
-        bucket = Bucket({"name": name, "replicaNumber": replicaNumber})
+        replica_number = 1
+        bucket = Bucket({"name": name, "replicaNumber": replica_number})
+        msg = 'create_bucket succeeded but bucket %s does not exist' % name
         try:
             self.bucket_util.create_bucket(self.cluster, bucket)
-            msg = 'create_bucket succeeded but bucket {0} does not exist'.format(name)
             self.assertTrue(
                 self.bucket_util.wait_for_bucket_creation(self.cluster,
                                                           bucket),
@@ -57,7 +53,7 @@ class CreateBucketTests(BaseTestCase):
         logfilePath = Linux.COUCHBASE_LOGS_PATH + "/audit.log"
         rest.setAuditSettings()
         self.remote_shell = RemoteMachineShellConnection(self.cluster.master)
-        bucketNameValue = self.bucket_util.get_random_name()
+        bucket_name_value = self.bucket_util.get_random_name()
         self.bucket_util.create_default_bucket(
             self.cluster,
             bucket_type=self.bucket_type,
@@ -65,11 +61,12 @@ class CreateBucketTests(BaseTestCase):
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
             bucket_durability=self.bucket_durability_level,
-            bucket_name=bucketNameValue)
+            bucket_name=bucket_name_value)
 
-        contentValue = self.remote_shell.execute_command(
-            "cat " + logfilePath + " | grep 'Bucket was created'")
+        content_value = self.remote_shell.execute_command(
+            "cat " + logfile_path + " | grep 'Bucket was created'")
 
-        jsonValue = json.loads(contentValue[0][0])
-        self.assertEqual(jsonValue["bucket_name"], bucketNameValue, "Value are not equal")
+        json_value = json.loads(content_value[0][0])
+        self.assertEqual(json_value["bucket_name"], bucket_name_value,
+                         "Value are not equal")
         self.remote_shell.disconnect()

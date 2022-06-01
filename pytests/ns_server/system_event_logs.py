@@ -37,10 +37,10 @@ class SystemEventLogs(ClusterSetup):
         # Ref: MB-50641
         if self.case_number == self.nodes_init == 1:
             node_in_out = [self.cluster.servers[self.nodes_init]]
-            result = self.task.rebalance(self.cluster.nodes_in_cluster,
+            result = self.task.rebalance(self.cluster,
                                          to_add=node_in_out, to_remove=[])
             self.assertTrue(result, msg="Rebalance in failed")
-            result = self.task.rebalance(self.cluster.nodes_in_cluster,
+            result = self.task.rebalance(self.cluster,
                                          to_add=[], to_remove=node_in_out)
             self.assertTrue(result, msg="Rebalance out failed")
 
@@ -922,12 +922,9 @@ class SystemEventLogs(ClusterSetup):
             nodes_in = self.cluster.servers[
                        self.nodes_init:self.nodes_init+self.nodes_in]
 
-            # Update nodes_in_cluster
-            self.cluster.nodes_in_cluster.extend(nodes_in)
-
             # Start rebalance
             rebalance_task = self.task.async_rebalance(
-                nodes_in_cluster, nodes_in, [])
+                self.cluster, nodes_in, [])
         elif rebalance_type == "out":
             nodes_out = list()
             if involve_master:
@@ -942,7 +939,7 @@ class SystemEventLogs(ClusterSetup):
 
             # Start rebalance
             rebalance_task = self.task.async_rebalance(
-                nodes_in_cluster, [], nodes_out)
+                self.cluster, [], nodes_out)
         elif rebalance_type == "swap":
             nodes_in = self.cluster.servers[
                        self.nodes_init:self.nodes_init+self.nodes_in]
@@ -957,12 +954,9 @@ class SystemEventLogs(ClusterSetup):
                 nodes_out.append(self.cluster.nodes_in_cluster.pop(-1))
                 self.nodes_out -= 1
 
-            # Update nodes_in_cluster
-            self.cluster.nodes_in_cluster.extend(nodes_in)
-
             # Start rebalance
             rebalance_task = self.task.async_rebalance(
-                nodes_in_cluster, nodes_in, nodes_out,
+                self.cluster, nodes_in, nodes_out,
                 check_vbucket_shuffling=False)
         else:
             self.fail("Invalid rebalance type")
@@ -1024,7 +1018,7 @@ class SystemEventLogs(ClusterSetup):
         nodes = self.cluster.servers[-self.nodes_out:]
         self.log.info("Rebalancing out %s nodes" % self.nodes_out)
         rebalance_task = self.task.async_rebalance(
-            self.cluster.nodes_in_cluster, to_remove=nodes)
+            self.cluster, to_remove=nodes)
 
         # Update nodes_in_cluster
         self.cluster.nodes_in_cluster = self.cluster.servers[:-self.nodes_out]
@@ -1040,10 +1034,7 @@ class SystemEventLogs(ClusterSetup):
 
         self.log.info("Rebalance in the nodes back to cluster")
         rebalance_task = self.task.async_rebalance(
-            self.cluster.nodes_in_cluster, to_add=nodes)
-
-        # Update nodes_in_cluster
-        self.cluster.nodes_in_cluster += nodes
+            self.cluster, to_add=nodes)
 
         # Wait for rebalance to complete
         self.task_manager.get_task_result(rebalance_task)
@@ -1068,7 +1059,7 @@ class SystemEventLogs(ClusterSetup):
                 if not status:
                     self.fail("Unable to set recovery type")
 
-            result = self.task.rebalance(self.cluster.nodes_in_cluster,
+            result = self.task.rebalance(self.cluster,
                                          to_add=empty_list,
                                          to_remove=empty_list)
             if not result:
@@ -1690,8 +1681,7 @@ class SystemEventLogs(ClusterSetup):
 
         if rebalance_failure:
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster,
-                to_add=[], to_remove=eject_nodes)
+                self.cluster, to_add=[], to_remove=eject_nodes)
             self.system_events.add_event(
                 NsServerEvents.rebalance_started(
                     self.cluster.master.ip, active_nodes=active_nodes,
@@ -1736,8 +1726,7 @@ class SystemEventLogs(ClusterSetup):
                                             bucket.uuid))
 
         self.sleep(30, "Wait for bucket online before rebalancing")
-        rebalance_task = self.task.async_rebalance(
-            self.cluster.nodes_in_cluster, [], [])
+        rebalance_task = self.task.async_rebalance(self.cluster, [], [])
         self.sleep(2, "Wait for rebalance to start")
         if not rebalance_failure:
             cluster_event["reb_start"] = self.get_last_event_from_cluster()

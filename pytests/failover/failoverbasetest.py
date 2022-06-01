@@ -97,8 +97,7 @@ class FailoverBaseTest(BaseTestCase):
         self.nodes_out = self.input.param("nodes_out", 1)
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.append(self.cluster.master)
+        self.task.rebalance(self.cluster, nodes_init, [])
         self.bucket_util.create_default_bucket(
             self.cluster,
             bucket_type=self.bucket_type,

@@ -2,7 +2,7 @@ from random import randint, choice
 
 from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
@@ -15,7 +15,7 @@ from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 
 
-class CrashTest(BaseTestCase):
+class CrashTest(ClusterSetup):
     def setUp(self):
         super(CrashTest, self).setUp()
 
@@ -32,10 +32,6 @@ class CrashTest(BaseTestCase):
         if self.doc_ops is not None:
             self.doc_ops = self.doc_ops.split(";")
 
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
         if not self.atomicity:
             self.durability_helper = DurabilityHelper(
                 self.log, self.nodes_init,
@@ -338,8 +334,7 @@ class CrashTest(BaseTestCase):
         if self.bucket_type == Bucket.Type.EPHEMERAL \
                 and self.process_name == "memcached":
             self.sleep(10, "Wait for memcached to recover from the crash")
-            result = self.task.rebalance(self.servers[:self.nodes_init],
-                                         [], [])
+            result = self.task.rebalance(self.cluster, [], [])
             self.assertTrue(result, "Rebalance failed")
 
         # Validate doc count

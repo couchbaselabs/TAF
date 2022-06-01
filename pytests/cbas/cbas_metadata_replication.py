@@ -132,8 +132,8 @@ class MetadataReplication(CBASBaseTest):
                         available_servers=[], exclude_nodes=[])
                 else:
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.nodes_in_cluster + rebalanced_out_nodes,
-                        [], rebalanced_out_nodes, check_vbucket_shuffling=True,
+                        self.cluster, [], rebalanced_out_nodes,
+                        check_vbucket_shuffling=True,
                         retry_get_process_num=200, services=None)
             else:
                 self.fail("Rebalance completed before the test could have stopped rebalance.")
@@ -336,8 +336,8 @@ class MetadataReplication(CBASBaseTest):
                 rebalanced_out_nodes = c.values()
 
                 rebalance_task = self.task.async_rebalance(
-                    self.cluster.nodes_in_cluster + rebalanced_out_nodes,
-                    [], rebalanced_out_nodes, check_vbucket_shuffling=True,
+                    self.cluster, [], rebalanced_out_nodes,
+                    check_vbucket_shuffling=True,
                     retry_get_process_num=200, services=None)
             else:
                 self.fail("Rebalance completed before the test could have stopped rebalance.")

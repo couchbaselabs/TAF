@@ -5223,8 +5223,7 @@ class CBASRebalanceUtil(object):
         # Perform the action
         if action == "RebalanceOut":
             rebalance_task = self.task.async_rebalance(
-                cluster.nodes_in_cluster, [],
-                kv_failover_nodes + cbas_failover_nodes,
+                cluster, [], kv_failover_nodes + cbas_failover_nodes,
                 check_vbucket_shuffling=self.vbucket_check,
                 retry_get_process_num=200)
 
@@ -5237,9 +5236,7 @@ class CBASRebalanceUtil(object):
                 servs_out = [node for node in cluster.nodes_in_cluster for
                              fail_node in (kv_failover_nodes + cbas_failover_nodes)
                              if node.ip == fail_node.ip]
-                actual_nodes_in_cluster = list(set(cluster.nodes_in_cluster) - set(servs_out))
-                cluster.nodes_in_cluster = actual_nodes_in_cluster
-                cluster.server = actual_nodes_in_cluster
+                cluster.server = cluster.nodes_in_cluster
                 available_servers += servs_out
                 time.sleep(10)
             else:
@@ -5258,8 +5255,7 @@ class CBASRebalanceUtil(object):
                     cluster.rest.set_recovery_type(
                         otpNode=node_ids[node.ip], recoveryType="delta")
             rebalance_task = self.task.async_rebalance(
-                cluster.nodes_in_cluster, [], [],
-                retry_get_process_num=200)
+                cluster, [], [], retry_get_process_num=200)
             if wait_for_complete:
                 if not self.wait_for_rebalance_task_to_complete(
                         rebalance_task, cluster):

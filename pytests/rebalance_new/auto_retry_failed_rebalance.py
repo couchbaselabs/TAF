@@ -432,14 +432,14 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                       % rebalance_operation)
         if rebalance_operation == "rebalance_out":
             operation = self.task.async_rebalance(
-                self.cluster_util.get_nodes_in_cluster(self.cluster),
-                [], self.cluster.servers[1:], retry_get_process_num=self.retry_get_process_num)
+                self.cluster, [], self.cluster.servers[1:],
+                retry_get_process_num=self.retry_get_process_num)
             self.__update_cbcollect_expected_node_failures(
                 self.cluster.servers[1:], "out_node")
         elif rebalance_operation == "rebalance_in":
             operation = self.task.async_rebalance(
-                self.cluster_util.get_nodes_in_cluster(self.cluster),
-                [self.cluster.servers[self.nodes_init]], [], retry_get_process_num=self.retry_get_process_num)
+                self.cluster, [self.cluster.servers[self.nodes_init]], [],
+                retry_get_process_num=self.retry_get_process_num)
             self.__update_cbcollect_expected_node_failures(
                 [self.cluster.servers[self.nodes_init]], "in_node")
         elif rebalance_operation == "swap_rebalance":
@@ -448,8 +448,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                                self.cluster.servers[self.nodes_init].ip,
                                self.cluster.servers[self.nodes_init].port)
             operation = self.task.async_rebalance(
-                self.cluster_util.get_nodes_in_cluster(self.cluster),
-                [], [self.cluster.servers[self.nodes_init - 1]], retry_get_process_num=self.retry_get_process_num)
+                self.cluster, [], [self.cluster.servers[self.nodes_init - 1]],
+                retry_get_process_num=self.retry_get_process_num)
             self.__update_cbcollect_expected_node_failures(
                 [self.cluster.servers[self.nodes_init]], "in_node")
             self.__update_cbcollect_expected_node_failures(

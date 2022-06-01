@@ -108,7 +108,7 @@ class AppBase(BaseTestCase):
         # Rebalance_in required nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [],
+        self.task.rebalance(self.cluster, nodes_init, [],
                             services=self.services_init[1:])
         self.cluster.nodes_in_cluster.extend(
             [self.cluster.master] + nodes_init)

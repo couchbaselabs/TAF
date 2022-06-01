@@ -1659,7 +1659,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                 num_crashes = 5
             else:
                 tasks_in = dict()
-                nodes = self.cluster.nodes_in_cluster[target_active_nodes:]
                 '''
                    Disabling Crash thread for load during rollback
                 '''
@@ -1936,7 +1935,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 [self.cluster.master], self.cluster.buckets[0],
                 wait_time=self.wait_timeout * 20))
-            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
+            rebalance_task = self.task.async_rebalance(self.cluster,
                                                        servs_in, servs_out,
                                                        check_vbucket_shuffling=self.vbucket_check,
                                                        retry_get_process_num=150)
@@ -1958,7 +1957,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
             for task in tasks_in:
-                    self.task_manager.get_task_result(task)
+                self.task_manager.get_task_result(task)
 
             if self.gen_create is not None:
                 start_items = self.gen_create.key_counter
@@ -1971,7 +1970,6 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in servs_in]
             self.available_servers += servs_out
-            self.cluster.nodes_in_cluster.extend(servs_in)
             self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster)
                                              - set(servs_out))
             if rebalance_out_master:
@@ -2002,12 +2000,12 @@ class MagmaRollbackTests(MagmaBaseTest):
             time_start = time.time()
             for collection in collections:
                 tem_tasks_info = self.loadgen_docs(
-                self.retry_exceptions,
-                self.ignore_exceptions,
-                scope=scope_name,
-                collection=collection,
-                _sync=False,
-                doc_ops="create")
+                    self.retry_exceptions,
+                    self.ignore_exceptions,
+                    scope=scope_name,
+                    collection=collection,
+                    _sync=False,
+                    doc_ops="create")
                 tasks_info.update(tem_tasks_info.items())
 
             for task in tasks_info:
@@ -2023,8 +2021,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             if time.time() < time_start + 60:
                 self.sleep(time_start + 60 - time.time(),
-                               "After new creates, sleeping , itr={}".
-                               format(i))
+                           "After new creates, sleeping , itr=%s" % i)
 
             start_items = start_items + start_items // 5
             self.log.debug("Iteration == {}, start_items={}".format(i, start_items))
@@ -2054,8 +2051,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             if rebalance_required:
                 self.log.debug("Iteration=={}, Rebalance before moving to next iteration")
                 rebalance_task = self.task.async_rebalance(
-                    self.cluster.nodes_in_cluster,
-                    servs_in, servs_out,
+                    self.cluster, servs_in, servs_out,
                     check_vbucket_shuffling=self.vbucket_check,
                     retry_get_process_num=150)
 
@@ -2065,7 +2061,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.available_servers = [servs for servs in self.available_servers
                                   if servs not in servs_in]
                 self.available_servers += servs_out
-                self.cluster.nodes_in_cluster.extend(servs_in)
                 self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster)
                                              - set(servs_out))
 

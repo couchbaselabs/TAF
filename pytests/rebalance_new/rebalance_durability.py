@@ -158,12 +158,8 @@ class RebalanceDurability(RebalanceBaseTest):
                 self.fail("Bucket replica update worked")
 
             rebalance_result = self.task.rebalance(
-                self.cluster.nodes_in_cluster,
-                [self.cluster.servers[replicas]],
-                [])
+                self.cluster, [self.cluster.servers[replicas]], [])
             self.assertTrue(rebalance_result)
-            self.cluster.nodes_in_cluster.extend(
-                [self.cluster.servers[replicas]])
 
             if bucket_durability_set and replicas == 1:
                 self.log.info("Updating replica=%s and performing rebalance"
@@ -233,8 +229,7 @@ class RebalanceDurability(RebalanceBaseTest):
         # Rebalance all nodes expect master one-by-one
         for _ in range(self.nodes_init-1):
             rebalance_result = self.task.rebalance(
-                self.cluster.servers[:nodes_in_cluster], [],
-                [self.cluster.servers[nodes_in_cluster-1]])
+                self.cluster, [], [self.cluster.servers[nodes_in_cluster-1]])
             self.assertTrue(rebalance_result)
             nodes_in_cluster -= 1
 
@@ -327,7 +322,7 @@ class RebalanceDurability(RebalanceBaseTest):
 
         # Rebalance-in single node back into the cluster
         rebalance_result = self.task.rebalance(
-            self.cluster.servers[:nodes_in_cluster],
+            self.cluster,
             self.cluster.servers[nodes_in_cluster:nodes_in_cluster+1], [])
         # Wait for rebalance-in task to complete
         self.assertTrue(rebalance_result)
@@ -442,8 +437,7 @@ class RebalanceDurability(RebalanceBaseTest):
 
         # Rebalance_out the orchestrator node
         rebalance_result = self.task.rebalance(
-            self.cluster.servers[:self.nodes_init],
-            [], [self.cluster.servers[0]])
+            self.cluster, [], [self.cluster.servers[0]])
         self.assertTrue(rebalance_result,
                         "Rebalance out orchestrator node failed")
         # Wait for all CRUD tasks to complete and verify no failures are seen
@@ -464,8 +458,7 @@ class RebalanceDurability(RebalanceBaseTest):
         bucket_helper.change_bucket_props(def_bucket,
                                           replicaNumber=self.replica_to_update)
         # Start and wait till rebalance is complete
-        rebalance = self.task.async_rebalance(self.cluster.nodes_in_cluster,
-                                              [], [])
+        rebalance = self.task.async_rebalance(self.cluster, [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         wait_for_crud_task_and_verify_for_no_errors(crud_tasks)
 

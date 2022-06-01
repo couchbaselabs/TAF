@@ -517,7 +517,7 @@ class volume(CollectionBase):
         while len(self.available_servers) != 0:
             add_node = self.available_servers[0]
             self.log.info("Step: {0} Adding node {1}".format(step_count, add_node.ip))
-            operation = self.task.async_rebalance(self.nodes_in_cluster, [add_node], [],
+            operation = self.task.async_rebalance(self.cluster, [add_node], [],
                                                   services=["index"],
                                                   retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(operation)
@@ -548,7 +548,7 @@ class volume(CollectionBase):
         while cycles < 6:
             add_node = self.available_servers[0]
             self.log.info("Cycle: {0}".format(cycles))
-            operation = self.task.async_rebalance(self.nodes_in_cluster, [add_node], [],
+            operation = self.task.async_rebalance(self.cluster, [add_node], [],
                                                   services=["index"],
                                                   retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(operation)
@@ -566,7 +566,7 @@ class volume(CollectionBase):
             self.recreate_dropped_indexes(indexes_dropped)
 
             remove_node = self.nodes_in_cluster[-1]
-            operation = self.task.async_rebalance(self.nodes_in_cluster, [], [remove_node],
+            operation = self.task.async_rebalance(self.cluster, [], [remove_node],
                                                   retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(operation)
             self.available_servers.append(remove_node)
@@ -594,7 +594,7 @@ class volume(CollectionBase):
             # Rebalance-in all available free nodes
             services = ["index"]
             services = services * (len(self.available_index_nodes))
-            operation = self.task.async_rebalance(self.nodes_in_cluster, self.available_index_nodes, [],
+            operation = self.task.async_rebalance(self.cluster, self.available_index_nodes, [],
                                                   services=services,
                                                   retry_get_process_num=self.retry_get_process_num)
             self.wait_for_rebalance_to_complete(operation)
@@ -606,7 +606,7 @@ class volume(CollectionBase):
             if increment_count != 4:
                 remove_nodes = random.sample(self.total_available_index_nodes,
                                              self.number_of_nodes_to_rebalance_out[increment_count])
-                operation = self.task.async_rebalance(self.nodes_in_cluster, [], remove_nodes,
+                operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.wait_for_rebalance_to_complete(operation)
                 self.available_index_nodes = remove_nodes
@@ -628,7 +628,7 @@ class volume(CollectionBase):
             self.log.info("Cycle: {0}".format(cycles))
             # KV rebalance
             add_nodes = random.sample(self.available_servers, 2)
-            operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [],
+            operation = self.task.async_rebalance(self.cluster, add_nodes, [],
                                                   services=["kv", "kv"],
                                                   retry_get_process_num=self.retry_get_process_num)
             # self.log.info("Creating and deleting FTS index for {0} times".
@@ -645,7 +645,7 @@ class volume(CollectionBase):
             ############################################################################################
             # Index rebalance + drop and recreate indexes
             add_nodes = random.sample(self.available_servers, 2)
-            operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [],
+            operation = self.task.async_rebalance(self.cluster, add_nodes, [],
                                                   services=["index", "index"],
                                                   retry_get_process_num=self.retry_get_process_num)
             # self.log.info("Creating and deleting FTS index for {0} times".
@@ -664,7 +664,7 @@ class volume(CollectionBase):
             ############################################################################################
             # fts rebalance + create and drop fts indexes
             add_nodes = random.sample(self.available_servers, 2)
-            operation = self.task.async_rebalance(self.nodes_in_cluster, add_nodes, [],
+            operation = self.task.async_rebalance(self.cluster, add_nodes, [],
                                                   services=["fts", "fts"],
                                                   retry_get_process_num=self.retry_get_process_num)
             # self.log.info("Creating and deleting FTS index for {0} times".
@@ -699,7 +699,7 @@ class volume(CollectionBase):
                 get_all_nodes=True,
                 servers=self.nodes_in_cluster)
             remove_nodes.extend(random.sample(fts_nodes, 2))
-            operation = self.task.async_rebalance(self.nodes_in_cluster, [], remove_nodes,
+            operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                   retry_get_process_num=self.retry_get_process_num)
             # for i in range(self.fts_indexes_to_recreate / 10):
             #     fts_dict = self.create_fts_indexes(count=10, base_name="recreate-reb-" + str(i))

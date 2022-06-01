@@ -97,7 +97,7 @@ class UpgradeBase(BaseTestCase):
                 user=server.rest_username, password=server.rest_password,
                 remoteIp=server.ip, port=server.port, services=node_service)
 
-        self.task.rebalance(self.cluster.servers[0:self.nodes_init], [], [])
+        self.task.rebalance(self.cluster, [], [])
         self.cluster.nodes_in_cluster.extend(
             self.cluster.servers[0:self.nodes_init])
         self.cluster_util.print_cluster_stats(self.cluster)

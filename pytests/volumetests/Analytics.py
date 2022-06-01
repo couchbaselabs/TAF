@@ -169,7 +169,7 @@ class volume(BaseTestCase):
                 do_rebalance = True
 
             if do_rebalance:
-                operation = self.task.async_rebalance(cluster.nodes_in_cluster, [], [])
+                operation = self.task.async_rebalance(cluster, [], [])
                 self.task.jython_task_manager.get_task_result(operation)
                 if not operation.result:
                     self.log.error("Failed while adding nodes to cluster during setup")
@@ -478,7 +478,7 @@ class volume(BaseTestCase):
                     params["cbas_nodes_in"] = 0
                     params["cbas_nodes_out"] = 0
                 if any(params.values()):
-                    tasks[cluster]= cluster.rebalance_util.rebalance(**params)
+                    tasks[cluster] = cluster.rebalance_util.rebalance(**params)
             elif operation == "data_validation_collection":
                 cluster.rebalance_util.data_validation_collection(
                     self.skip_validations, self.doc_and_collection_ttl)

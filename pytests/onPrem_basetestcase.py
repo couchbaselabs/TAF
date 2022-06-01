@@ -162,6 +162,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                                 self.standard_buckets)
 
         for cluster_name, cluster in self.cb_clusters.items():
+            # Append initial master node to the nodes_in_cluster list
+            cluster.nodes_in_cluster.append(cluster.master)
+
             shell = RemoteMachineShellConnection(cluster.master)
             self.os_info = shell.extract_remote_info().type.lower()
             if self.os_info != 'windows':
@@ -196,13 +199,16 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 mem_quota_percent = None
 
             if self.skip_setup_cleanup:
-                self.cluster.buckets = \
-                    self.bucket_util.get_all_buckets(self.cluster)
+                # Update current server/service map and buckets for the cluster
+                for _, cluster in self.cb_clusters.items():
+                    self.cluster_util.update_cluster_nodes_service_list(
+                        cluster)
+                    cluster.buckets = self.bucket_util.get_all_buckets(cluster)
                 return
             else:
                 for cluster_name, cluster in self.cb_clusters.items():
-                    self.log.info("Rebalance out other nodes from '%s'"
-                                  % cluster_name)
+                    self.log.info("Delete all buckets and rebalance out "
+                                  "other nodes from '%s'" % cluster_name)
                     self.cluster_util.cluster_cleanup(cluster,
                                                       self.bucket_util)
 
@@ -220,8 +226,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.initialize_cluster(
                         cluster_name, cluster, services=None,
                         services_mem_quota_percent=mem_quota_percent)
-                else:
-                    self.quota = ""
+
+                # Update initial service map for the master node
+                self.cluster_util.update_cluster_nodes_service_list(cluster)
+
                 # Set this unconditionally
                 RestConnection(cluster.master).set_internalSetting(
                     "magmaMinMemoryQuota", 256)
@@ -307,7 +315,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         if master_services is not None:
             master_services = master_services[0].split(",")
 
-        self.quota = self._initialize_nodes(
+        self._initialize_nodes(
             self.task,
             cluster,
             self.disabled_consistent_view,
@@ -856,14 +864,11 @@ class ClusterSetup(OnPremBaseTest):
         services = services[1:] \
             if services is not None and len(services) > 1 else None
 
-        # Add master node to the nodes_in_cluster list
-        self.cluster.nodes_in_cluster.extend([self.cluster.master])
-
         # Rebalance-in nodes_init servers
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         if nodes_init:
-            result = self.task.rebalance([self.cluster.master], nodes_init, [],
+            result = self.task.rebalance(self.cluster, nodes_init, [],
                                          services=services)
             if result is False:
                 # Need this block since cb-collect won't be collected
@@ -871,8 +876,6 @@ class ClusterSetup(OnPremBaseTest):
                 if self.get_cbcollect_info:
                     self.fetch_cb_collect_logs()
                 self.fail("Initial rebalance failed")
-
-            self.cluster.nodes_in_cluster.extend(nodes_init)
 
         # Add basic RBAC users
         self.bucket_util.add_rbac_user(self.cluster.master)

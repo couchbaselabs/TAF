@@ -254,7 +254,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
             disk_active_dataset, disk_replica_dataset, result_nodes,
             self.cluster.buckets, path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
-        nodes = self.cluster.nodes_in_cluster
+        # nodes = self.cluster.nodes_in_cluster
         # self.bucket_util.vb_distribution_analysis(servers=nodes,
         # std=1.0, total_vbuckets=self.cluster.vbuckets)
 
@@ -796,8 +796,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                 task_info["ops_failed"],
                 "Doc ops failed for task: {}".format(task.thread_name))
         # Add back first ejected node back into the cluster
-        self.task.rebalance(self.cluster.nodes_in_cluster,
-                            toBeEjectedNodes, [])
+        self.task.rebalance(self.cluster, toBeEjectedNodes, [])
         self.sleep(10, "wait for rebalance to start")
         self.assertTrue(rest.monitorRebalance(),
                         msg="rebalance operation failed after adding node {0}"

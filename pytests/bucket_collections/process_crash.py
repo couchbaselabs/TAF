@@ -603,8 +603,7 @@ class CrashTest(CollectionBase):
 
         if self.bucket_type == Bucket.Type.EPHEMERAL \
                 and self.process_name == "memcached":
-            result = self.task.rebalance(self.servers[:self.nodes_init],
-                                         [], [])
+            result = self.task.rebalance(self.cluster, [], [])
             self.assertTrue(result, "Rebalance failed")
 
         # Validate doc count
@@ -641,7 +640,7 @@ class CrashTest(CollectionBase):
         remote.disconnect()
         t1.join()
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [self.cluster.servers[self.nodes_init]], [])
+            self.cluster, [self.cluster.servers[self.nodes_init]], [])
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             self.fail("rebalance failed")

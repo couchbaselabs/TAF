@@ -31,7 +31,6 @@ class OutOfOrderReturns(ClusterSetup):
             .update_autofailover_settings(False, 120)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        self.cluster.nodes_in_cluster.extend([self.cluster.master])
         self.bucket = self.cluster.buckets[0]
 
         # Create sdk_clients for pool

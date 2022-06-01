@@ -21,8 +21,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.gen_delete = doc_generator(self.key, self.items / 2,
                                         self.items)
         servs_out = [self.cluster.servers[len(self.cluster.nodes_in_cluster) - i - 1] for i in range(self.nodes_out)]
-        rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], servs_out)
+        rebalance_task = self.task.async_rebalance(self.cluster, [], servs_out)
         self.sleep(10)
 
         tasks_info = self.bucket_util._async_load_all_buckets(
@@ -58,7 +57,6 @@ class RebalanceOutTests(RebalanceBaseTest):
                     "delete failed for docs: %s" % task.delete_failed.keys())
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
-        self.cluster.nodes_in_cluster.extend(servs_out)
         self.sleep(60, "Wait for cluster to be ready after rebalance")
         tasks = list()
         for bucket in self.cluster.buckets:

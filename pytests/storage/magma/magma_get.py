@@ -43,9 +43,9 @@ class BasicReadTests(BasicCrudTests):
             g_read = self.genrate_docs_basic(start, end)
 
         for node in self.cluster.nodes_in_cluster:
-                shell = RemoteMachineShellConnection(node)
-                shell.restart_couchbase()
-                shell.disconnect()
+            shell = RemoteMachineShellConnection(node)
+            shell.restart_couchbase()
+            shell.disconnect()
 
         while count < self.read_thread_count:
             read_task_info = self.loadgen_docs(

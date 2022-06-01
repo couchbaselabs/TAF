@@ -180,8 +180,8 @@ class MagmaCompactionTests(MagmaBaseTest):
                                              0}
 
             for node in self.cluster.nodes_in_cluster[1:]:
-                    ep_queue_size_map.update({node: 0})
-                    vb_replica_queue_size_map.update({node: 0})
+                ep_queue_size_map.update({node: 0})
+                vb_replica_queue_size_map.update({node: 0})
 
                 #for bucket in self.cluster.buckets:
                 #    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,

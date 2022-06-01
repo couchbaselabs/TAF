@@ -849,8 +849,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         # Start rebalance operation
         self.log.info("Starting rebalance operation")
         rebalance_task = self.task.async_rebalance(
-            self.cluster.nodes_in_cluster,
-            to_add=add_nodes, to_remove=remove_nodes)
+            self.cluster, to_add=add_nodes, to_remove=remove_nodes)
 
         self.sleep(max(10, 4*self.nodes_in),
                    "Wait for rebalance to start before failover")

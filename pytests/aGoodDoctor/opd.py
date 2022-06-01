@@ -267,15 +267,11 @@ class OPD:
             self.vbucket_check = False
 
         rebalance_task = self.task.async_rebalance(
-            self.cluster.nodes_in_cluster,
-            self.servs_in, self.servs_out,
+            self.cluster, self.servs_in, self.servs_out,
             services=services,
             check_vbucket_shuffling=self.vbucket_check,
             retry_get_process_num=retry_get_process_num)
 
-        self.cluster.nodes_in_cluster.extend(self.servs_in)
-        self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster)
-                                             - set(self.servs_out))
         return rebalance_task
 
     def generate_docs(self, doc_ops=None,
@@ -765,8 +761,7 @@ class OPD:
                 self.log.info("Stop the rebalance")
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
-                rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
-                                                           [], [],
+                rebalance_task = self.task.async_rebalance(self.cluster,[], [],
                                                            retry_get_process_num=3000)
                 self.sleep(10, "Rebalance % ={}. Let the rebalance begin!".
                            format(expected_progress))
@@ -818,7 +813,7 @@ class OPD:
                     self.log.info("Restarting Rebalance after killing at {}".
                                   format(expected_progress))
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.nodes_in_cluster, [], self.servs_out,
+                        self.cluster, [], self.servs_out,
                         retry_get_process_num=3000)
                     self.sleep(120, "Let the rebalance begin after abort")
                     self.log.info("Rebalance % = {}".

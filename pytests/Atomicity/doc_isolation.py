@@ -573,8 +573,7 @@ class IsolationDocTest(ClusterSetup):
         self.sleep(3, "Wait for transactions to start")
         # Start rebalance task
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init],
-            nodes_to_add, nodes_to_remove)
+            self.cluster, nodes_to_add, nodes_to_remove)
 
         # Wait for transactions and rebalance task to complete
         try:

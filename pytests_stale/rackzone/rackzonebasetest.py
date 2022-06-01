@@ -1,11 +1,11 @@
-from basetestcase import BaseTestCase
+from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux, Mac, Windows
 from remote.remote_util import RemoteMachineShellConnection
 
 
-class RackzoneBaseTest(BaseTestCase):
+class RackzoneBaseTest(ClusterSetup):
 
     def setUp(self):
         super(RackzoneBaseTest, self).setUp()
@@ -17,16 +17,9 @@ class RackzoneBaseTest(BaseTestCase):
             self.doc_ops = self.doc_ops.split(";")
         self.default_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
 
-        self.nodes_init = self.input.param("nodes_init", 1)
         self.nodes_in = self.input.param("nodes_in", 1)
         self.nodes_out = self.input.param("nodes_out", 1)
         self.doc_ops = self.input.param("doc_ops", "create")
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
-            if self.nodes_init != 1 else []
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.append(self.cluster.master)
-        self.bucket_util.create_default_bucket(self.cluster)
-        self.bucket_util.add_rbac_user(self.cluster.master)
         # define the data that will be used to test
         self.blob_generator = self.input.param("blob_generator", False)
         server_info = self.servers[0]

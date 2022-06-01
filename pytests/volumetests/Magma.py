@@ -120,11 +120,7 @@ class volume(BaseTestCase):
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
         if self.nodes_init > 1:
             nodes_init = self.cluster.servers[1:self.nodes_init]
-            self.task.rebalance([self.cluster.master], nodes_init, [])
-            self.cluster.nodes_in_cluster.extend(
-                [self.cluster.master] + nodes_init)
-        else:
-            self.cluster.nodes_in_cluster.extend([self.cluster.master])
+            self.task.rebalance(self.cluster, nodes_init, [])
         self.cluster_util.set_metadata_purge_interval(self.cluster.master)
         #######################################################################
         self.PrintStep("Step 2: Create required buckets and collections.")
@@ -980,8 +976,7 @@ class volume(BaseTestCase):
                 self.log.info("Stop the rebalance")
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
-                rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
-                                                           [], [],
+                rebalance_task = self.task.async_rebalance(self.cluster,[], [],
                                                            retry_get_process_num=3000)
                 self.sleep(10, "Rebalance % ={}. Let the rebalance begin!".
                            format(expected_progress))
@@ -1031,7 +1026,7 @@ class volume(BaseTestCase):
                     self.log.info("Restarting Rebalance after killing at {}".
                                   format(expected_progress))
                     rebalance_task = self.task.async_rebalance(
-                        self.cluster.nodes_in_cluster, [], self.servs_out,
+                        self.cluster, [], self.servs_out,
                         retry_get_process_num=3000)
                     self.sleep(120, "Let the rebalance begin after abort")
                     self.log.info("Rebalance % = {}".
@@ -1342,7 +1337,7 @@ class volume(BaseTestCase):
                                             recoveryType="full")
             self.sleep(60, "Waiting for full recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
 
             self.task.jython_task_manager.get_task_result(rebalance_task)
@@ -1417,7 +1412,7 @@ class volume(BaseTestCase):
 
             self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             self.set_num_writer_and_reader_threads(
                 num_writer_threads="disk_io_optimized",
@@ -1497,8 +1492,7 @@ class volume(BaseTestCase):
             self.set_num_writer_and_reader_threads(
                 num_writer_threads=self.new_num_writer_threads,
                 num_reader_threads=self.new_num_reader_threads)
-            rebalance_task = self.task.async_rebalance(self.cluster.nodes_in_cluster,
-                                                       [], [],
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
                                                        retry_get_process_num=3000)
             tasks_info = self.data_load()
 
@@ -2332,7 +2326,7 @@ class volume(BaseTestCase):
                     self.cluster.buckets[i], replicaNumber=1)
 
             rebalance_task = self.task.async_rebalance(
-                self.cluster.nodes_in_cluster, [], [],
+                self.cluster, [], [],
                 retry_get_process_num=3000)
             if self.stop_rebalance:
                 rebalance_task = self.pause_rebalance()

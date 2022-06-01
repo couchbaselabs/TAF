@@ -979,9 +979,9 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 server, self.data_location, master_services)
         self.services = self.cluster_util.get_services(
             self.cluster.servers[:self.nodes_init], None)
-        self.task.rebalance(self.cluster.servers[:1],
-                            self.cluster.servers[1:self.nodes_init],
-                            [], services=self.services,
+        self.task.rebalance(self.cluster,
+                            self.cluster.servers[1:self.nodes_init], [],
+                            services=self.services,
                             retry_get_process_num=self.retry_get_process_num)
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.bucket_util.add_rbac_user(self.cluster.master)

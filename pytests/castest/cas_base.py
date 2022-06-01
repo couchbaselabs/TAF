@@ -1,7 +1,6 @@
 import re
 import traceback
 
-from Cb_constants import CbServer
 from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -77,7 +76,7 @@ class CasBaseTest(BaseTestCase):
         self.cluster.failover(self.servers, self.servers[1:num_nodes])
         try:
             self.log.info("Failing over 1 of the servers ..")
-            self.cluster.rebalance(self.servers, [], self.servers[1:num_nodes])
+            self.cluster.rebalance(self.cluster, [], self.servers[1:num_nodes])
             self.log.info("Verifying bucket settings after failover ..")
             self._check_config()
         except Exception, e:

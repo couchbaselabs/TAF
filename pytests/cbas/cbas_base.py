@@ -90,8 +90,6 @@ class CBASBaseTest(BaseTestCase):
         end = self.nodes_init[0]
         cluster = self.cb_clusters[self.cb_clusters.keys()[0]]
         cluster.servers = self.servers[start:end]
-        cluster.nodes_in_cluster.append(cluster.master)
-        cluster.kv_nodes.append(cluster.master)
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
 
@@ -240,9 +238,8 @@ class CBASBaseTest(BaseTestCase):
 
             if cluster.servers[1:]:
                 self.task.rebalance(
-                    [cluster.master], cluster.servers[1:], [],
+                    cluster, cluster.servers[1:], [],
                     services=[server.services for server in cluster.servers[1:]])
-                cluster.nodes_in_cluster.extend(cluster.servers[1:])
 
             if cluster.cbas_nodes:
                 cbas_cc_node_ip = None
