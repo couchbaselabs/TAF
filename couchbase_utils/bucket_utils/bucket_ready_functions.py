@@ -2336,6 +2336,23 @@ class BucketUtils(ScopeUtils):
                     self.log.error(msg)
                     raise Exception(msg)
 
+    def get_min_nodes_in_zone(self, cluster):
+        rest = RestConnection(cluster.master)
+        min_count = list()
+        zones = rest.get_zone_names()
+        for zone in zones:
+            nodes = rest.get_nodes_in_zone(zone).keys()
+            if nodes:
+                min_count.append(len(nodes))
+        # [2,2,1] supports replica 3
+        # But [1,7,1] (even though zone 2 has more nodes) supports only replica 2
+        # In general, addition of nodes in two zones >=3 to support 3 replicas
+        if len(zones) == 3:
+            if min_count.count(1) >= 2:
+                return 2
+            return 3
+        return min(min_count)
+
     def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60, num_zone=1):
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
@@ -2353,8 +2370,33 @@ class BucketUtils(ScopeUtils):
         #       replica number based on the available number_of_servers
         available_replicas = bucket.replicaNumber
         if num_zone > 1:
+            """
+            replica number will be either replica number or one less than the zone number
+            or min number of nodes in the zone
+            zone =2: 
+                1 node each, replica set =1, actual =1
+                1 node each, replica set >1, actual = 1
+                2 nodes each, replica set =2, actual =2
+                2 nodes each, replica set =3, actual =2
+                3 nodes each, replica set =3, actual =3
+                group1: 2 nodes, group 1: 1 node, replica_set >1, actual = 1
+                group1: 3 nodes, group 1: 2 node, replica_set >=2, actual = 2
+                group1: 4 nodes, group 1: 5 node, replica_set =3, actual = 3
+                
+            zone =3:
+                1 node each, replica_set=2, actual =2
+                2 nodes each, relica_set =3, actual =2
+                3 nodes each,repica_set = 3, actaul = 3
+                num_node_in_each_group: [1, 2, 1], replica_set=3, actual = 2
+                num_node_in_each_group: [2, 2, 1], replica_set=3, actual = 3
+                num_node_in_each_group: [3, 2, 1], replica_set=3, actual = 3
+                num_node_in_each_group: [3, 3, 1], replica_set=3, actual = 3
+            """
             if bucket.replicaNumber >= num_zone:
-                available_replicas = num_zone - 1
+                available_replicas = self.get_min_nodes_in_zone(cluster)
+                if available_replicas > bucket.replicaNumber:
+                    available_replicas = bucket.replicaNumber
+            self.log.info("available_replicas considered {0}".format(available_replicas))
         else:
             if len(servers) == bucket.replicaNumber:
                 available_replicas = len(servers) - 1
