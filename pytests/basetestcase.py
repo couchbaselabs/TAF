@@ -56,6 +56,7 @@ class BaseTestCase(unittest.TestCase):
         self.num_servers = self.input.param("servers", len(self.servers))
         self.vbuckets = self.input.param("vbuckets", CbServer.total_vbuckets)
         self.gsi_type = self.input.param("gsi_type", 'plasma')
+        self.skip_cluster_reset = self.input.param("skip_cluster_reset", False)
         # Memory quota settings
         # Max memory quota to utilize per node
         self.quota_percent = self.input.param("quota_percent", 100)
@@ -373,9 +374,12 @@ class BaseTestCase(unittest.TestCase):
                     self.case_number -= 1000
                 self.tearDownEverything(reset_cluster_env_vars=False)
             for cluster_name, cluster in self.cb_clusters.items():
-                self.initialize_cluster(
-                    cluster_name, cluster, services=None,
-                    services_mem_quota_percent=mem_quota_percent)
+                if not self.skip_cluster_reset:
+                    self.initialize_cluster(
+                        cluster_name, cluster, services=None,
+                        services_mem_quota_percent=mem_quota_percent)
+                else:
+                    self.quota = ""
                 # Set this unconditionally
                 RestConnection(cluster.master).set_internalSetting(
                     "magmaMinMemoryQuota", 256)
