@@ -18,6 +18,7 @@ import threading
 import random
 from aGoodDoctor.bkrs import DoctorBKRS
 import os
+from aGoodDoctor.fts import DoctorFTS
 
 
 class Murphy(BaseTestCase, OPD):
@@ -196,7 +197,7 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.query_nodes = self.servers[nodes:nodes+self.index_nodes]
             self.cluster.nodes_in_cluster.extend(self.cluster.index_nodes)
             self.drIndex = DoctorN1QL(self.cluster, self.bucket_util,
-                                             self.num_indexes)
+                                      self.num_indexes)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.index_nodes]
 
@@ -210,7 +211,8 @@ class Murphy(BaseTestCase, OPD):
                                 services=["fts"]*self.fts_nodes)
             self.cluster.fts_nodes = self.servers[nodes:nodes+self.fts_nodes]
             self.cluster.nodes_in_cluster.extend(self.cluster.fts_nodes)
-            self.fts_util = FTSUtils(self.cluster, self.cluster_util, self.task)
+            self.drFTS = DoctorFTS(self.cluster, self.bucket_util,
+                                   self.num_indexes)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.fts_nodes]
 
@@ -871,10 +873,13 @@ class Murphy(BaseTestCase, OPD):
             self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             ###################################################################
             if self.loop == 0:
+                if self.fts_nodes:
+                    self.drFTS.create_fts_indexes()
+
                 if self.cbas_nodes:
                     self.drCBAS.create_datasets()
                     self.drCBAS.start_query_load()
-                
+
                 if self.index_nodes:
                     self.drIndex.create_indexes()
                     self.drIndex.build_indexes()
@@ -1015,11 +1020,12 @@ class Murphy(BaseTestCase, OPD):
             '''
             self.PrintStep("Step 9: Failover %s node and RebalanceOut that node \
             with loading in parallel" % self.num_replicas)
+            nodes = [node for node in self.cluster.kv_nodes if node.ip != self.cluster.master.ip]
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.cluster.kv_nodes, self.cluster.buckets)
+                nodes, self.cluster.buckets)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.\
                 get_and_compare_active_replica_data_set_all(
@@ -1028,7 +1034,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
+            self.chosen = random.sample(nodes, self.num_replicas)
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
 
@@ -1068,7 +1074,7 @@ class Murphy(BaseTestCase, OPD):
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
                 prev_failover_stats,
-                self.cluster.kv_nodes,
+                nodes,
                 self.cluster.buckets)
 
             self.bucket_util.data_analysis_active_replica_all(
@@ -1078,7 +1084,7 @@ class Murphy(BaseTestCase, OPD):
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=nodes, buckets=self.cluster.buckets,
+                servers=self.cluster.kv_nodes, buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster.vbuckets)
 
@@ -1111,12 +1117,12 @@ class Murphy(BaseTestCase, OPD):
             '''
             self.PrintStep("Step 11: Failover a node and FullRecovery\
              that node")
-
+            nodes = [node for node in self.cluster.kv_nodes if node.ip != self.cluster.master.ip]
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.cluster.kv_nodes, self.cluster.buckets)
+                nodes, self.cluster.buckets)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.\
                 get_and_compare_active_replica_data_set_all(
@@ -1126,7 +1132,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
+            self.chosen = random.sample(nodes, self.num_replicas)
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
 
@@ -1160,16 +1166,16 @@ class Murphy(BaseTestCase, OPD):
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
                 prev_failover_stats,
-                self.cluster.kv_nodes + [self.cluster.master],
+                nodes,
                 self.cluster.buckets)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
-                self.cluster.kv_nodes + [self.cluster.master],
+                self.cluster.kv_nodes,
                 self.cluster.buckets, path=None)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=self.cluster.kv_nodes + [self.cluster.master],
+                servers=self.cluster.kv_nodes,
                 buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster.vbuckets)
@@ -1191,22 +1197,22 @@ class Murphy(BaseTestCase, OPD):
             '''
             self.PrintStep("Step 12: Failover a node and DeltaRecovery that \
             node with loading in parallel")
-
+            nodes = [node for node in self.cluster.kv_nodes if node.ip != self.cluster.master.ip]
             self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
             std = self.std_vbucket_dist or 1.0
 
             prev_failover_stats = self.bucket_util.get_failovers_logs(
-                self.cluster.kv_nodes + [self.cluster.master], self.cluster.buckets)
+                nodes, self.cluster.buckets)
 
             disk_replica_dataset, disk_active_dataset = self.bucket_util.\
                 get_and_compare_active_replica_data_set_all(
-                    self.cluster.kv_nodes + [self.cluster.master],
+                    self.cluster.kv_nodes,
                     self.cluster.buckets,
                     path=None)
 
             self.rest = RestConnection(self.cluster.master)
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
+            self.chosen = random.sample(nodes, self.num_replicas)
 
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
@@ -1240,16 +1246,16 @@ class Murphy(BaseTestCase, OPD):
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
                 prev_failover_stats,
-                self.cluster.kv_nodes + [self.cluster.master],
+                nodes,
                 self.cluster.buckets)
 
             self.bucket_util.data_analysis_active_replica_all(
                 disk_active_dataset, disk_replica_dataset,
-                self.cluster.kv_nodes + [self.cluster.master],
+                self.cluster.kv_nodes,
                 self.cluster.buckets, path=None)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=self.cluster.kv_nodes + [self.cluster.master],
+                servers=self.cluster.kv_nodes,
                 buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
                 std=std, total_vbuckets=self.cluster.vbuckets)

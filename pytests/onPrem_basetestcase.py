@@ -464,7 +464,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if not server.index_path:
                 server.index_path = server.data_path
             if not server.cbas_path:
-                server.cbas_path = server.data_path
+                server.cbas_path = str([server.data_path])
             if not server.eventing_path:
                 server.eventing_path = server.data_path
             for path in set([_f for _f in [server.data_path, server.index_path]
