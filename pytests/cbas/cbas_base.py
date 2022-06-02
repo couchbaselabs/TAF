@@ -7,7 +7,6 @@ from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
 from cluster_utils.cluster_ready_functions import CBCluster
 from membase.api.rest_client import RestConnection
-from testconstants import FTS_QUOTA, CBAS_QUOTA, INDEX_QUOTA, MIN_KV_QUOTA
 from Cb_constants import CbServer
 from cbas_utils.cbas_utils import CbasUtil
 from java.lang import Exception as Java_base_exception
@@ -179,10 +178,14 @@ class CBASBaseTest(BaseTestCase):
         self.cbas_util = CbasUtil(self.task)
 
         self.service_mem_dict = {
-            "kv": [CbServer.Settings.KV_MEM_QUOTA, MIN_KV_QUOTA, 0],
-            "fts": [CbServer.Settings.FTS_MEM_QUOTA, FTS_QUOTA, 0],
-            "index": [CbServer.Settings.INDEX_MEM_QUOTA, INDEX_QUOTA, 0],
-            "cbas": [CbServer.Settings.CBAS_MEM_QUOTA, CBAS_QUOTA, 0],
+            "kv": [CbServer.Settings.KV_MEM_QUOTA,
+                   CbServer.Settings.MinRAMQuota.KV, 0],
+            "fts": [CbServer.Settings.FTS_MEM_QUOTA,
+                    CbServer.Settings.MinRAMQuota.FTS, 0],
+            "index": [CbServer.Settings.INDEX_MEM_QUOTA,
+                      CbServer.Settings.MinRAMQuota.INDEX, 0],
+            "cbas": [CbServer.Settings.CBAS_MEM_QUOTA,
+                     CbServer.Settings.MinRAMQuota.CBAS, 0],
         }
         # Add nodes to the cluster as per node_init param.
         for i, (cluster_name, cluster) in enumerate(self.cb_clusters.items()):
@@ -217,16 +220,19 @@ class CBASBaseTest(BaseTestCase):
                             "more nodes to the cluster wouldn't be a problem.")
                         cluster.rest.set_service_mem_quota(
                             {
-                                CbServer.Settings.KV_MEM_QUOTA: MIN_KV_QUOTA,
-                                CbServer.Settings.FTS_MEM_QUOTA: FTS_QUOTA,
-                                CbServer.Settings.INDEX_MEM_QUOTA: INDEX_QUOTA
+                                CbServer.Settings.KV_MEM_QUOTA:
+                                    CbServer.Settings.MinRAMQuota.KV,
+                                CbServer.Settings.FTS_MEM_QUOTA:
+                                    CbServer.Settings.MinRAMQuota.FTS,
+                                CbServer.Settings.INDEX_MEM_QUOTA:
+                                    CbServer.Settings.MinRAMQuota.INDEX
                             })
 
-                        self.log.info("Setting %d memory quota for CBAS" % CBAS_QUOTA)
-                        cluster.cbas_memory_quota = CBAS_QUOTA
+                        self.log.info("Setting %d memory quota for CBAS" % CbServer.Settings.MinRAMQuota.CBAS)
+                        cluster.cbas_memory_quota = CbServer.Settings.MinRAMQuota.CBAS
                         cluster.rest.set_service_mem_quota(
                             {
-                                CbServer.Settings.CBAS_MEM_QUOTA: CBAS_QUOTA
+                                CbServer.Settings.CBAS_MEM_QUOTA: CbServer.Settings.MinRAMQuota.CBAS
                             })
                     else:
                         self.set_memory_for_services(

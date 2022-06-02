@@ -14,34 +14,13 @@ from builds.build_query import BuildQuery
 from Cb_constants import constants
 from common_lib import sleep
 from global_vars import logger
-from testconstants import VERSION_FILE, LINUX_DIST_CONFIG, \
-    LINUX_NONROOT_CB_BIN_PATH
-from testconstants import MEMBASE_VERSIONS
-from testconstants import MISSING_UBUNTU_LIB
-from testconstants import MV_LATESTBUILD_REPO, SHERLOCK_BUILD_REPO
+from platform_constants.os_constants import Linux, Mac, Windows
+from testconstants import VERSION_FILE
+from testconstants import MV_LATESTBUILD_REPO
 
 from testconstants import CB_VERSION_NAME, CB_REPO, CB_RELEASE_APT_GET_REPO, \
     CB_RELEASE_YUM_REPO
-from testconstants import COUCHBASE_RELEASE_VERSIONS_3, CB_RELEASE_BUILDS
-from testconstants import COUCHBASE_FROM_VERSION_3, COUCHBASE_FROM_VERSION_4, \
-    COUCHBASE_FROM_WATSON, COUCHBASE_FROM_SPOCK, \
-    COUCHBASE_VERSIONS, \
-    COUCHBASE_VERSION_2, COUCHBASE_VERSION_3
-
-from testconstants import MAC_CB_PATH, MAC_COUCHBASE_BIN_PATH
-
-from testconstants import LINUX_CAPI_INI, LINUX_DISTRIBUTION_NAME, \
-    LINUX_CB_PATH, LINUX_COUCHBASE_BIN_PATH, \
-    LINUX_STATIC_CONFIG, LINUX_LOG_PATH, \
-    LINUX_COUCHBASE_LOGS_PATH, LINUX_CONFIG_FILE, \
-    WIN_COUCHBASE_OLD_CONFIG_PATH, \
-    LINUX_COUCHBASE_OLD_CONFIG_PATH
-
-from testconstants import WIN_COUCHBASE_BIN_PATH, WIN_COUCHBASE_BIN_PATH_RAW, \
-    WIN_CB_PATH, WIN_PSSUSPEND, WIN_PROCESSES_KILLED, \
-    WIN_REGISTER_ID, WIN_TMP_PATH, WIN_TMP_PATH_RAW, \
-    WIN_UNZIP, WIN_COUCHBASE_LOGS_PATH, WIN_MB_PATH, \
-    WIN_PROCESSES_SPAWNED
+from testconstants import CB_RELEASE_BUILDS
 
 from testconstants import RPM_DIS_NAME, SYSTEMD_SERVER
 from testconstants import NR_INSTALL_LOCATION_FILE
@@ -52,12 +31,6 @@ from com.jcraft.jsch import JSchException, JSchAuthCancelException, \
 
 from com.jcraft.jsch import JSch
 from org.python.core.util import FileUtil
-
-
-class OS:
-    WINDOWS = "windows"
-    LINUX = "linux"
-    OSX = "osx"
 
 
 class COMMAND:
@@ -132,7 +105,7 @@ class RemoteMachineHelper(object):
         if getattr(self.remote_shell, "info", None) is None:
             self.remote_shell.info = self.remote_shell.extract_remote_info()
 
-        if self.remote_shell.info.type.lower() == 'windows':
+        if self.remote_shell.info.type.lower() == Windows.NAME:
             output, error = self.remote_shell.execute_command(
                 "tasklist| grep {0}".format(process_name), debug=False)
             if error or output == [""] or output == []:
@@ -175,7 +148,7 @@ class RemoteMachineShellConnection:
         self.memcached_port = serverInfo.memcached_port
         self.is_cloud = serverInfo.hosted_on_cloud
 
-        self.bin_path = LINUX_COUCHBASE_BIN_PATH
+        self.bin_path = Linux.COUCHBASE_BIN_PATH
         self.cmd_ext = ""
         self.msi = False
         self.nonroot = False
@@ -201,9 +174,9 @@ class RemoteMachineShellConnection:
             self.info = self.extract_remote_info()
             serverInfo.remote_info = self.info
             serverInfo.use_sudo = self.use_sudo
-        if self.info.type.lower() == "windows":
+        if self.info.type.lower() == Windows.NAME:
             self.cmd_ext = ".exe"
-            self.bin_path = WIN_COUCHBASE_BIN_PATH
+            self.bin_path = Windows.COUCHBASE_BIN_PATH
 
     def connect(self):
         if self.is_cloud:
@@ -235,7 +208,7 @@ class RemoteMachineShellConnection:
     """
 
     def connect_with_user(self, user="root"):
-        if self.info.distribution_type.lower() == "mac":
+        if self.info.distribution_type.lower() == Mac.NAME:
             self.log.debug("%s is Mac Server. Skip reconnect to it as %s"
                            % (self.ip, user))
             return
@@ -319,7 +292,7 @@ class RemoteMachineShellConnection:
                        % (self.ip, stop_time))
         self.extract_remote_info()
         os_type = self.info.type.lower()
-        if os_type == "unix" or os_type == "linux":
+        if os_type == "unix" or os_type == Linux.NAME:
             if self.info.distribution_type.lower() == "ubuntu":
                 command = "ifdown -a && sleep {} && ifup -a"
             else:
@@ -327,7 +300,7 @@ class RemoteMachineShellConnection:
                           "service network start"
             output, error = self.execute_command(command.format(stop_time))
             self.log_command_output(output, error)
-        elif os_type == "windows":
+        elif os_type == Windows.NAME:
             command = "net stop Netman && timeout {} && net start Netman"
             output, error = self.execute_command(command.format(stop_time))
             self.log_command_output(output, error)
@@ -335,24 +308,24 @@ class RemoteMachineShellConnection:
     def stop_membase(self):
         self.log.debug("%s - Stopping membase" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             self.log.debug("%s - STOP SERVER for windows" % self.ip)
             o, r = self.execute_command("net stop membaseserver")
             self.log_command_output(o, r)
             o, r = self.execute_command("net stop couchbaseserver")
             self.log_command_output(o, r)
             sleep(10, "Wait to stop service completely", log_type="infra")
-        if self.info.type.lower() == "linux":
+        if self.info.type.lower() == Linux.NAME:
             o, r = self.execute_command("/etc/init.d/membase-server stop")
             self.log_command_output(o, r)
 
     def start_membase(self):
         self.log.debug("%s - Starting membase" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("net start membaseserver")
             self.log_command_output(o, r)
-        if self.info.type.lower() == "linux":
+        if self.info.type.lower() == Linux.NAME:
             o, r = self.execute_command("/etc/init.d/membase-server start")
             self.log_command_output(o, r)
 
@@ -362,13 +335,13 @@ class RemoteMachineShellConnection:
         """
         self.log.debug("%s - Getting number of cores" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("cmd '/c echo %NUMBER_OF_PROCESSORS%' | sed 's/[^0-9]*//g'")
             self.log_command_output(o, r)
             return [o[0].rstrip()]
-        elif self.info.distribution_type.lower() == 'mac':
+        elif self.info.distribution_type.lower() == Mac.NAME:
             self.log.error('%s - Not implemented for Mac server' % self.ip)
-        elif self.info.type.lower() == "linux":
+        elif self.info.type.lower() == Linux.NAME:
             o, r = self.execute_command("getconf _NPROCESSORS_ONLN")
             self.log_command_output(o, r)
             return o
@@ -379,21 +352,20 @@ class RemoteMachineShellConnection:
         os = self.info.type.lower()
         if not os or os == "centos" or os == "ubuntu":
             os = "unix"
-        if os == "windows":
+        if os == Windows.NAME:
             o, r = self.execute_command("net start couchbaseserver")
             self.log_command_output(o, r)
-        elif os == "unix" or os == "linux":
+        elif os == "unix" or os == Linux.NAME:
             if self.is_couchbase_installed():
                 if self.nonroot:
                     self.log.debug("%s - Start couchbase-server as non root"
                                    % self.ip)
                     o, r = self.execute_command('%scouchbase-server \-- -noinput -detached ' \
-                                                % LINUX_NONROOT_CB_BIN_PATH)
+                                                % Linux.NONROOT_CB_BIN_PATH)
                     self.log_command_output(o, r)
                 else:
-                    fv, sv, bn = self.get_cbversion("linux")
-                    if self.info.distribution_version.lower() in SYSTEMD_SERVER \
-                            and sv in COUCHBASE_FROM_WATSON:
+                    fv, sv, bn = self.get_cbversion(Linux.NAME)
+                    if self.info.distribution_version.lower() in SYSTEMD_SERVER:
                         # from watson, systemd is used in centos 7, suse 12
                         self.log.info("%s - Running systemd command" % self.ip)
                         o, r = self.execute_command("systemctl start couchbase-server.service")
@@ -401,7 +373,7 @@ class RemoteMachineShellConnection:
                     else:
                         o, r = self.execute_command("/etc/init.d/couchbase-server start")
                         self.log_command_output(o, r)
-        elif os == "mac":
+        elif os == Mac.NAME:
             o, r = self.execute_command("open /Applications/Couchbase\ Server.app")
             self.log_command_output(o, r)
         else:
@@ -414,19 +386,18 @@ class RemoteMachineShellConnection:
         os = self.info.distribution_type.lower()
         if not os or os == "centos" or os == "ubuntu":
             os = "unix"
-        if os == "windows":
+        if os == Windows.NAME:
             o, r = self.execute_command("net stop couchbaseserver")
             self.log_command_output(o, r)
-        elif os == "unix" or os == "linux":
+        elif os == "unix" or os == Linux.NAME:
             if self.is_couchbase_installed():
                 if self.nonroot:
                     o, r = self.execute_command("%scouchbase-server -k"
-                                                % LINUX_NONROOT_CB_BIN_PATH)
+                                                % Linux.NONROOT_CB_BIN_PATH)
                     self.log_command_output(o, r)
                 else:
-                    fv, sv, bn = self.get_cbversion("linux")
-                    if self.info.distribution_version.lower() in SYSTEMD_SERVER \
-                            and sv in COUCHBASE_FROM_WATSON:
+                    fv, sv, bn = self.get_cbversion(Linux.NAME)
+                    if self.info.distribution_version.lower() in SYSTEMD_SERVER:
                         # from watson, systemd is used in centos 7, suse 12
                         self.log.info("%s - Running systemd command" % self.ip)
                         o, r = self.execute_command("systemctl stop couchbase-server.service")
@@ -437,7 +408,7 @@ class RemoteMachineShellConnection:
             else:
                 self.log.warning("%s - Couchbase Server not installed"
                                  % self.ip)
-        elif os == "mac":
+        elif os == Mac.NAME:
             cb_process = '/Applications/Couchbase\ Server.app/Contents/MacOS/Couchbase\ Server'
             cmd = "ps aux | grep {0} | awk '{{print $2}}' | xargs kill -9 " \
                 .format(cb_process)
@@ -456,15 +427,14 @@ class RemoteMachineShellConnection:
         """
         self.log.debug("%s - Restarting couchbase server" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("net stop couchbaseserver")
             self.log_command_output(o, r)
             o, r = self.execute_command("net start couchbaseserver")
             self.log_command_output(o, r)
-        if self.info.type.lower() == "linux":
-            fv, sv, bn = self.get_cbversion("linux")
-            if self.info.distribution_version.lower() in SYSTEMD_SERVER \
-                    and sv in COUCHBASE_FROM_WATSON:
+        if self.info.type.lower() == Linux.NAME:
+            fv, sv, bn = self.get_cbversion(Linux.NAME)
+            if self.info.distribution_version.lower() in SYSTEMD_SERVER:
                 # from watson, systemd is used in centos 7
                 self.log.debug("%s - this node is centos 7.x" % self.ip)
                 o, r = self.execute_command("service couchbase-server restart")
@@ -473,7 +443,7 @@ class RemoteMachineShellConnection:
                 o, r = self.execute_command(
                     "/etc/init.d/couchbase-server restart")
                 self.log_command_output(o, r)
-        if self.info.distribution_type.lower() == "mac":
+        if self.info.distribution_type.lower() == Mac.NAME:
             o, r = self.execute_command(
                 "open /Applications/Couchbase Server.app")
             self.log_command_output(o, r)
@@ -490,7 +460,7 @@ class RemoteMachineShellConnection:
 
     def kill_erlang(self, os="unix"):
         self.log.debug("%s - Killing erlang process" % self.ip)
-        if os == "windows":
+        if os == Windows.NAME:
             o, r = self.execute_command("taskkill /F /T /IM epmd.exe*")
             self.log_command_output(o, r)
             o, r = self.execute_command("taskkill /F /T /IM erl*")
@@ -511,7 +481,7 @@ class RemoteMachineShellConnection:
     def kill_cbft_process(self):
         self.log.debug("%s - Killing cbft process" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("taskkill /F /T /IM cbft.exe*")
             self.log_command_output(o, r)
         else:
@@ -522,7 +492,7 @@ class RemoteMachineShellConnection:
     def kill_java(self):
         self.log.debug("%s - Killing java process" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("taskkill /F /T /IM java*")
             self.log_command_output(o, r)
         else:
@@ -541,7 +511,7 @@ class RemoteMachineShellConnection:
         self.log.debug("%s - Sending %s signal to process: %s, service: %s"
                        % (self.ip, signum, process_name, service_name))
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("taskkill /F /T /IM %s*" % process_name)
             self.log_command_output(o, r)
         else:
@@ -559,7 +529,7 @@ class RemoteMachineShellConnection:
         self.log.debug("%s - Sending %s signal to processes: %s"
                        % (self.ip, signum, processes))
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             self.log.critical("%s - Not implemented for windows" % self.ip)
         else:
             process_list = ""
@@ -596,7 +566,7 @@ class RemoteMachineShellConnection:
     def kill_goxdcr(self):
         self.log.debug("%s - Killing goxdcr process" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("taskkill /F /T /IM goxdcr*")
             self.log_command_output(o, r)
         else:
@@ -606,7 +576,7 @@ class RemoteMachineShellConnection:
 
     def kill_eventing_process(self, name):
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command(command="taskkill /F /T /IM {0}*".format(name))
             self.log_command_output(o, r)
         else:
@@ -620,51 +590,51 @@ class RemoteMachineShellConnection:
         # ADD NON_ROOT user config_details
         output, error = self.execute_command(
             "sed -i '/loglevel_default, /c \\{loglevel_default, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_ns_server, /c \\{loglevel_ns_server, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_stats, /c \\{loglevel_stats, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_rebalance, /c \\{loglevel_rebalance, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_cluster, /c \\{loglevel_cluster, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_views, /c \\{loglevel_views, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_error_logger, /c \\{loglevel_error_logger, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_mapreduce_errors, /c \\{loglevel_mapreduce_errors, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_user, /c \\{loglevel_user, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_xdcr, /c \\{loglevel_xdcr, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command(
             "sed -i '/loglevel_menelaus, /c \\{loglevel_menelaus, %s\}'. %s"
-            % (new_log_level, LINUX_STATIC_CONFIG))
+            % (new_log_level, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
 
     def configure_log_location(self, new_log_location):
-        mv_logs = LINUX_LOG_PATH + '/' + new_log_location
+        mv_logs = Linux.LOG_PATH + '/' + new_log_location
         error_log_tag = "error_logger_mf_dir"
         # ADD NON_ROOT user config_details
         self.log.debug("%s - CHANGE LOG LOCATION TO %s" % (self.ip, mv_logs))
@@ -676,7 +646,7 @@ class RemoteMachineShellConnection:
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/%s, /c \\{%s, \"%s\"\}.' %s"
                                              % (error_log_tag, error_log_tag, mv_logs,
-                                                LINUX_STATIC_CONFIG))
+                                                Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
 
     def change_stat_periodicity(self, ticks):
@@ -684,54 +654,54 @@ class RemoteMachineShellConnection:
         self.log.debug("%s - CHANGE STAT PERIODICITY TO every %s seconds"
                        % (self.ip, ticks))
         output, error = self.execute_command("sed -i '$ a\{grab_stats_every_n_ticks, %s}.'  %s"
-                                             % (ticks, LINUX_STATIC_CONFIG))
+                                             % (ticks, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
 
     def change_port_static(self, new_port):
         # ADD NON_ROOT user config_details
-        output, error = self.execute_command("sed -i '/{rest_port/d' %s" % LINUX_STATIC_CONFIG)
+        output, error = self.execute_command("sed -i '/{rest_port/d' %s" % Linux.STATIC_CONFIG)
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '$ a\{rest_port, %s}.' %s"
-                                             % (new_port, LINUX_STATIC_CONFIG))
+                                             % (new_port, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
-        output, error = self.execute_command("sed -i '/{mccouch_port/d' %s" % LINUX_STATIC_CONFIG)
+        output, error = self.execute_command("sed -i '/{mccouch_port/d' %s" % Linux.STATIC_CONFIG)
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '$ a\{mccouch_port, %s}.' %s"
-                                             % (new_port + 1, LINUX_STATIC_CONFIG))
+                                             % (new_port + 1, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
-        output, error = self.execute_command("sed -i '/{memcached_port/d' %s" % LINUX_STATIC_CONFIG)
+        output, error = self.execute_command("sed -i '/{memcached_port/d' %s" % Linux.STATIC_CONFIG)
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '$ a\{memcached_port, %s}.' %s"
-                                             % (new_port + 2, LINUX_STATIC_CONFIG))
+                                             % (new_port + 2, Linux.STATIC_CONFIG))
         self.log_command_output(output, error)
         output, error = self.execute_command("sed -i '/port = /c\port = %s' %s"
-                                             % (new_port + 4, LINUX_CAPI_INI))
+                                             % (new_port + 4, Linux.CAPI_INI))
         self.log_command_output(output, error)
-        output, error = self.execute_command("rm %s" % LINUX_CONFIG_FILE)
+        output, error = self.execute_command("rm %s" % Linux.CONFIG_FILE)
         self.log_command_output(output, error)
-        output, error = self.execute_command("cat %s" % LINUX_STATIC_CONFIG)
+        output, error = self.execute_command("cat %s" % Linux.STATIC_CONFIG)
         self.log_command_output(output, error)
 
     def is_couchbase_installed(self):
         self.log.debug("%s - Checking if couchbase-server is installed"
                        % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
-            if self.file_exists(WIN_CB_PATH, VERSION_FILE):
+        if self.info.type.lower() == Windows.NAME:
+            if self.file_exists(Windows.CB_PATH, VERSION_FILE):
                 self.log.debug("{0} - The version file {1} {2} exists"
-                               .format(self.ip, WIN_CB_PATH, VERSION_FILE))
+                               .format(self.ip, Windows.CB_PATH, VERSION_FILE))
                 # print running process on windows
                 RemoteMachineHelper(self).is_process_running('memcached')
                 RemoteMachineHelper(self).is_process_running('erl')
                 return True
-        elif self.info.distribution_type.lower() == 'mac':
+        elif self.info.distribution_type.lower() == Mac.NAME:
             output, error = self.execute_command('ls %s%s'
-                                                 % (MAC_CB_PATH, VERSION_FILE))
+                                                 % (Mac.CB_PATH, VERSION_FILE))
             self.log_command_output(output, error)
             for line in output:
                 if line.find('No such file or directory') == -1:
                     return True
-        elif self.info.type.lower() == "linux":
+        elif self.info.type.lower() == Linux.NAME:
             if self.nonroot:
                 if self.file_exists("/home/%s/" % self.username, NR_INSTALL_LOCATION_FILE):
                     output, error = self.execute_command("cat %s" % NR_INSTALL_LOCATION_FILE)
@@ -739,15 +709,15 @@ class RemoteMachineShellConnection:
                         self.log.debug("%s - Couchbase Server installed in non default path %s"
                                        % (self.ip, output[0]))
                         self.nr_home_path = output[0]
-                file_path = self.nr_home_path + LINUX_CB_PATH
+                file_path = self.nr_home_path + Linux.CB_PATH
                 if self.file_exists(file_path, VERSION_FILE):
                     self.log.debug("%s - Couchbase installed as non root"
                                    % self.ip)
                     return True
             else:
-                if self.file_exists(LINUX_CB_PATH, VERSION_FILE):
+                if self.file_exists(Linux.CB_PATH, VERSION_FILE):
                     self.log.debug("{0} - The version file {1} {2} exists"
-                                   .format(self.ip, LINUX_CB_PATH, VERSION_FILE))
+                                   .format(self.ip, Linux.CB_PATH, VERSION_FILE))
                     return True
         return False
 
@@ -788,7 +758,7 @@ class RemoteMachineShellConnection:
         os_version = ""
         self.log.info("%s - Check if ntp is installed" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == 'linux':
+        if self.info.type.lower() == Linux.NAME:
             self.log.info("%s - OS version %s"
                           % (self.ip, self.info.distribution_version.lower()))
             if "centos 7" in self.info.distribution_version.lower():
@@ -881,7 +851,7 @@ class RemoteMachineShellConnection:
 
     def disable_firewall(self):
         self.extract_remote_info()
-        if self.info.type.lower() == "windows":
+        if self.info.type.lower() == Windows.NAME:
             output, error = self.execute_command('netsh advfirewall set publicprofile state off')
             self.log_command_output(output, error)
             output, error = self.execute_command('netsh advfirewall set privateprofile state off')
@@ -909,9 +879,9 @@ class RemoteMachineShellConnection:
         self.extract_remote_info()
         self.disable_firewall()
         file_status = False
-        if self.info.type.lower() == 'windows':
-            self.terminate_processes(self.info, [s for s in WIN_PROCESSES_KILLED])
-            self.terminate_processes(self.info, [s + "-*" for s in COUCHBASE_FROM_VERSION_3])
+        if self.info.type.lower() == Windows.NAME:
+            self.terminate_processes(self.info, [s for s in Windows.PROCESSES_KILLED])
+            self.terminate_processes(self.info, [s + "-*" for s in CB_RELEASE_BUILDS.keys()])
             self.disable_firewall()
             remove_words = ["-rel", ".exe"]
             for word in remove_words:
@@ -925,14 +895,9 @@ class RemoteMachineShellConnection:
                     filename_version = filename[28:33]
                 elif "community" in filename:
                     filename_version = filename[27:32]
-            if filename_version in COUCHBASE_FROM_VERSION_4:
-                self.log.info("%s - Version is {0}" % (self.ip, filename_version))
-                tmp = filename.split("_")
-                version = tmp[1].replace("-windows", "")
-            else:
-                tmp = filename.split("-")
-                tmp.reverse()
-                version = tmp[1] + "-" + tmp[0]
+            self.log.info("%s - Version is {0}" % (self.ip, filename_version))
+            tmp = filename.split("_")
+            version = tmp[1].replace("-windows", "")
 
             exist = self.file_exists('/cygdrive/c/tmp/', '{0}.exe'
                                      .format(version))
@@ -954,7 +919,7 @@ class RemoteMachineShellConnection:
                               % (self.ip, version))
                 return True
 
-        elif self.info.distribution_type.lower() == 'mac':
+        elif self.info.distribution_type.lower() == Mac.NAME:
             command = "cd ~/Downloads ; rm -rf couchbase-server* ;" \
                       " rm -rf Couchbase\ Server.app ; curl -O {0}".format(url)
             output, error = self.execute_command(command)
@@ -1297,9 +1262,9 @@ class RemoteMachineShellConnection:
         return delete_file
 
     def download_binary_in_win(self, url, version, msi_install=False):
-        self.terminate_processes(self.info, [s for s in WIN_PROCESSES_KILLED])
+        self.terminate_processes(self.info, [s for s in Windows.PROCESSES_KILLED])
         self.terminate_processes(self.info,
-                                 [s + "-*" for s in COUCHBASE_FROM_VERSION_3])
+                                 [s + "-*" for s in CB_RELEASE_BUILDS.keys()])
         self.disable_firewall()
         version = version.replace("-rel", "")
         deliverable_type = "exe"
@@ -1410,10 +1375,10 @@ class RemoteMachineShellConnection:
     def find_build_version(self, path_to_version, version_file, product):
         sftp = self._ssh_client.open_sftp()
         ex_type = "exe"
-        if self.file_exists(WIN_CB_PATH, VERSION_FILE):
-            path_to_version = WIN_CB_PATH
+        if self.file_exists(Windows.CB_PATH, VERSION_FILE):
+            path_to_version = Windows.CB_PATH
         else:
-            path_to_version = WIN_MB_PATH
+            path_to_version = Windows.MB_PATH
         try:
             self.log.info(path_to_version)
             f = sftp.open(os.path.join(path_to_version, VERSION_FILE), 'r+')
@@ -1465,7 +1430,7 @@ class RemoteMachineShellConnection:
         info = {}
         info["os_name"] = "2k8"
         if "OS Name" in systeminfo:
-            info["os"] = systeminfo["OS Name"].find("indows") and "windows" or "NONE"
+            info["os"] = systeminfo["OS Name"].find("indows") and Windows.NAME or "NONE"
         if systeminfo["OS Name"].find("2008 R2") != -1:
             info["os_name"] = 2008
         elif systeminfo["OS Name"].find("2016") != -1:
@@ -1498,7 +1463,7 @@ class RemoteMachineShellConnection:
 
         # remove dot in version (like 2.0.0 ==> 200)
         reg_version = version[0:5:2]
-        reg_id = WIN_REGISTER_ID[reg_version]
+        reg_id = Windows.REGISTER_ID[reg_version]
         uuid_name = uuid.uuid4()
 
         if task == "install":
@@ -1571,11 +1536,7 @@ class RemoteMachineShellConnection:
         sftp = self._ssh_client.open_sftp()
         capture_iss_file = ""
 
-        product_version = ""
-        if version[:5] in MEMBASE_VERSIONS:
-            product_version = version[:5]
-            name = "mb"
-        elif version[:5] in COUCHBASE_VERSIONS:
+        if version[:5] in CB_RELEASE_BUILDS.keys():
             product_version = version[:5]
             name = "cb"
         else:
@@ -1626,7 +1587,7 @@ class RemoteMachineShellConnection:
                                      debug=False)
 
     def set_vbuckets_win(self, vbuckets):
-        bin_path = WIN_COUCHBASE_BIN_PATH
+        bin_path = Windows.COUCHBASE_BIN_PATH
         bin_path = bin_path.replace("\\", "")
         src_file = bin_path + "service_register.bat"
         des_file = "/tmp/service_register.bat_{0}".format(self.ip)
@@ -1661,10 +1622,10 @@ class RemoteMachineShellConnection:
         self.copy_file_local_to_remote(local_file, src_file)
 
         """ re-register new setup to cb server """
-        self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_stop.bat")
-        self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_unregister.bat")
-        self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_register.bat")
-        self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_start.bat")
+        self.execute_command(Windows.COUCHBASE_BIN_PATH + "service_stop.bat")
+        self.execute_command(Windows.COUCHBASE_BIN_PATH + "service_unregister.bat")
+        self.execute_command(Windows.COUCHBASE_BIN_PATH + "service_register.bat")
+        self.execute_command(Windows.COUCHBASE_BIN_PATH + "service_start.bat")
         sleep(10, "Wait for cb server start completely after reset vbuckets!",
               log_type="infra")
 
@@ -1673,7 +1634,7 @@ class RemoteMachineShellConnection:
         os.remove(des_file)
 
     def set_fts_query_limit_win(self, name, value):
-        bin_path = WIN_COUCHBASE_BIN_PATH
+        bin_path = Windows.COUCHBASE_BIN_PATH
         bin_path = bin_path.replace("\\", "")
         src_file = bin_path + "service_register.bat"
         des_file = "/tmp/service_register.bat_{0}".format(self.ip)
@@ -1708,10 +1669,10 @@ class RemoteMachineShellConnection:
         self.copy_file_local_to_remote(local_file, src_file)
 
         """ re-register new setup to cb server """
-        self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_stop.bat")
-        self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_unregister.bat")
-        self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_register.bat")
-        self.execute_command(WIN_COUCHBASE_BIN_PATH + "service_start.bat")
+        self.execute_command(Windows.COUCHBASE_BIN_PATH + "service_stop.bat")
+        self.execute_command(Windows.COUCHBASE_BIN_PATH + "service_unregister.bat")
+        self.execute_command(Windows.COUCHBASE_BIN_PATH + "service_register.bat")
+        self.execute_command(Windows.COUCHBASE_BIN_PATH + "service_start.bat")
         sleep(10, "Wait for cb server start completely after setting CBFT_ENV_OPTIONS",
               log_type="infra")
 
@@ -1795,7 +1756,7 @@ class RemoteMachineShellConnection:
         self.test_log.info('Deliverable_type: %s' % self.info.deliverable_type)
         self.test_log.info('/tmp/%s or /tmp/%s' % (build.name, build.product))
         command = ''
-        if self.info.type.lower() == OS.WINDOWS:
+        if self.info.type.lower() == Windows.NAME:
             self.couchbase_upgrade_win(self.info.architecture_type,
                                        self.info.windows_name,
                                        build.product_version)
@@ -1878,12 +1839,12 @@ class RemoteMachineShellConnection:
         # run task schedule to upgrade Membase server
         output, error = self.execute_command("cmd /c schtasks /run /tn upgrademe")
         self.log_command_output(output, error)
-        deleted = self.wait_till_file_deleted(WIN_CB_PATH, VERSION_FILE,
+        deleted = self.wait_till_file_deleted(Windows.CB_PATH, VERSION_FILE,
                                               timeout_in_seconds=600)
         if not deleted:
             self.log.error("Uninstall was failed at node {0}".format(self.ip))
             sys.exit()
-        self.wait_till_file_added(WIN_CB_PATH, VERSION_FILE,
+        self.wait_till_file_added(Windows.CB_PATH, VERSION_FILE,
                                   timeout_in_seconds=600)
         self.log.info("installed version: {0}".format(version))
         output, error = self.execute_command("cat '/cygdrive/c/Program Files/Couchbase/Server/VERSION.txt'")
@@ -1909,7 +1870,7 @@ class RemoteMachineShellConnection:
         self.log_command_output(output, error)
         """ need to remove binary after done upgrade.  Since watson, current binary
             could not reused to uninstall or install cb server """
-        self.delete_file(WIN_TMP_PATH, version[:10] + ".exe")
+        self.delete_file(Windows.TMP_PATH, version[:10] + ".exe")
 
     """
         This method install Couchbase Server
@@ -1936,12 +1897,12 @@ class RemoteMachineShellConnection:
         self.extract_remote_info()
 
         self.log.info('deliverable_type : {0}'.format(self.info.deliverable_type))
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             self.log.info('***** Doing the windows install')
             self.terminate_processes(self.info,
-                                     [s for s in WIN_PROCESSES_KILLED])
+                                     [s for s in Windows.PROCESSES_KILLED])
             self.terminate_processes(self.info,
-                                     [s + "-*" for s in COUCHBASE_FROM_VERSION_3])
+                                     [s + "-*" for s in CB_RELEASE_BUILDS.keys()])
             # to prevent getting full disk let's delete some large files
             self.remove_win_backup_dir()
             self.remove_win_collect_tmp()
@@ -1967,7 +1928,7 @@ class RemoteMachineShellConnection:
             output, error = self.execute_command("rm -f /cygdrive/c/automation/*_{0}_install.iss"
                                                  .format(self.ip))
             self.log_command_output(output, error)
-            self.delete_file(WIN_TMP_PATH, build.product_version[:10] + ".exe")
+            self.delete_file(Windows.TMP_PATH, build.product_version[:10] + ".exe")
             # output, error = self.execute_command("cmd rm /cygdrive/c/tmp/{0}*.exe".format(build_name))
             # self.log_command_output(output, error)
         elif self.info.deliverable_type in ["rpm", "deb"]:
@@ -1996,7 +1957,7 @@ class RemoteMachineShellConnection:
                                                   debug=False)
                     self.log_command_output(op, er)
                     output, error = self.execute_command('cd {0}{1}; ./bin/install/reloc.sh `pwd` '
-                                                         .format(self.nr_home_path, LINUX_CB_PATH),
+                                                         .format(self.nr_home_path, Linux.CB_PATH),
                                                          debug=False)
                     self.log_command_output(output, error)
                     op, er = self.execute_command('cd {0};pwd'.format(self.nr_home_path))
@@ -2009,7 +1970,7 @@ class RemoteMachineShellConnection:
                     if start_server_after_install:
                         output, error = self.execute_command('%scouchbase-server '
                                                              '\-- -noinput -detached '
-                                                             % LINUX_NONROOT_CB_BIN_PATH)
+                                                             % Linux.NONROOT_CB_BIN_PATH)
                 else:
                     self.check_pkgconfig(self.info.deliverable_type, openssl)
                     if rpm_upgrade:
@@ -2031,7 +1992,7 @@ class RemoteMachineShellConnection:
                                                      self.nr_home_path))
                     self.log_command_output(op, er)
                     output, error = self.execute_command('cd {0}{1}; ./bin/install/reloc.sh `pwd`' \
-                                                         .format(self.nr_home_path, LINUX_CB_PATH))
+                                                         .format(self.nr_home_path, Linux.CB_PATH))
                     self.log_command_output(output, error)
                     op, er = self.execute_command('pwd')
                     self.log_command_output(op, er)
@@ -2041,7 +2002,7 @@ class RemoteMachineShellConnection:
                     if start_server_after_install:
                         output, error = self.execute_command('%scouchbase-server '
                                                              '\-- -noinput -detached '
-                                                             % LINUX_NONROOT_CB_BIN_PATH)
+                                                             % Linux.NONROOT_CB_BIN_PATH)
                 else:
                     self.install_missing_lib()
                     if force:
@@ -2123,7 +2084,7 @@ class RemoteMachineShellConnection:
             if enable_ipv6:
                 output, error = \
                     self.execute_command("sed -i '/ipv6, /c \\{ipv6, true\}'. %s"
-                                         % LINUX_STATIC_CONFIG)
+                                         % Linux.STATIC_CONFIG)
                 success &= self.log_command_output(output, error, track_words)
                 startserver = True
 
@@ -2190,17 +2151,17 @@ class RemoteMachineShellConnection:
         success = True
         track_words = ("warning", "error", "fail")
         if build.name.lower().find("membase") != -1:
-            remote_path = WIN_MB_PATH
+            remote_path = Windows.MB_PATH
             abbr_product = "mb"
         elif build.name.lower().find("couchbase") != -1:
-            remote_path = WIN_CB_PATH
+            remote_path = Windows.CB_PATH
             abbr_product = "cb"
 
         if remote_path is None:
             raise Exception("its not a membase or couchbase?")
         self.extract_remote_info()
         self.log.info('deliverable_type : {0}'.format(self.info.deliverable_type))
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             task = "install"
             bat_file = "install.bat"
             dir_paths = ['/cygdrive/c/automation', '/cygdrive/c/tmp']
@@ -2221,8 +2182,7 @@ class RemoteMachineShellConnection:
 
             """ the code below need to remove when bug MB-11985
                 is fixed in 3.0.1 """
-            if task == "install" and (version[:5] in COUCHBASE_VERSION_2 or
-                                      version[:5] in COUCHBASE_FROM_VERSION_3):
+            if task == "install":
                 self.log.info("due to MB-11985, we need to delete below registry "
                               "before install version 2.x.x and 3.x.x")
                 output, error = self.execute_command("reg delete \
@@ -2272,7 +2232,7 @@ class RemoteMachineShellConnection:
                               .format(capture_iss_file))
                 os.system("rm -f resources/windows/automation/{0}"
                           .format(capture_iss_file))
-            self.delete_file(WIN_TMP_PATH, build.product_version[:10] + ".exe")
+            self.delete_file(Windows.TMP_PATH, build.product_version[:10] + ".exe")
             self.log.info('***** done install_server_win *****')
             return success
 
@@ -2466,11 +2426,11 @@ class RemoteMachineShellConnection:
     def terminate_processes(self, info, list):
         for process in list:
             type = info.distribution_type.lower()
-            if type == "windows":
+            if type == Windows.NAME:
                 # set debug=False if does not want to show log
                 self.execute_command("taskkill /F /T /IM {0}".format(process),
                                      debug=False)
-            elif type in LINUX_DISTRIBUTION_NAME:
+            elif type in Linux.DISTRIBUTION_NAME:
                 self.terminate_process(info, process, force=True)
 
     def remove_folders(self, list):
@@ -2493,7 +2453,7 @@ class RemoteMachineShellConnection:
         self.log.info(self.info.distribution_type)
         type = self.info.distribution_type.lower()
         fv, sv, bn = self.get_cbversion(type)
-        if type == 'windows':
+        if type == Windows.NAME:
             product = "cb"
             query = BuildQuery()
             os_type = "exe"
@@ -2504,12 +2464,11 @@ class RemoteMachineShellConnection:
             bat_file = "uninstall.bat"
             product_name = "couchbase-server-enterprise"
             version_path = "/cygdrive/c/Program Files/Couchbase/Server/"
-            deleted = False
             capture_iss_file = ""
             self.log.info("kill any in/uninstall process from version 3 in node %s"
                           % self.ip)
             self.terminate_processes(self.info,
-                                     [s + "-*" for s in COUCHBASE_FROM_VERSION_3])
+                                     [s + "-*" for s in CB_RELEASE_BUILDS.keys()])
             exist = self.file_exists(version_path, VERSION_FILE)
             self.log.info("Is VERSION file existed on {0}? {1}"
                           .format(self.ip, exist))
@@ -2524,14 +2483,9 @@ class RemoteMachineShellConnection:
 
                 if "-" in full_version:
                     msi_build = full_version.split("-")
-                    """
-                       In spock from build 2924 and later release, we only support
-                       msi installation method on windows
-                    """
-                    if msi_build[0] in COUCHBASE_FROM_SPOCK:
-                        os_type = "msi"
-                        windows_msi = True
-                        self.info.deliverable_type = "msi"
+                    os_type = "msi"
+                    windows_msi = True
+                    self.info.deliverable_type = "msi"
                 else:
                     mesg = " ***** ERROR: ***** \n" \
                            " Couchbase Server version format is not correct. \n" \
@@ -2540,17 +2494,13 @@ class RemoteMachineShellConnection:
                     self.stop_current_python_running(mesg)
 
                 build_repo = MV_LATESTBUILD_REPO
-                if full_version[:5] not in COUCHBASE_VERSION_2 and \
-                        full_version[:5] not in COUCHBASE_VERSION_3:
-                    if full_version[:3] in CB_VERSION_NAME:
-                        build_repo = CB_REPO + CB_VERSION_NAME[full_version[:3]] + "/"
-                    else:
-                        sys.exit("version is not support yet")
+                if full_version[:3] in CB_VERSION_NAME:
+                    build_repo = CB_REPO + CB_VERSION_NAME[full_version[:3]] + "/"
+                else:
+                    sys.exit("version is not support yet")
                 self.log.info("*****VERSION file exists."
                               "Start to uninstall {0} on {1} server"
                               .format(product, self.ip))
-                if full_version[:3] == "4.0":
-                    build_repo = SHERLOCK_BUILD_REPO
                 self.log.info('Build name: {0}'.format(build_name))
                 build_name = build_name.rstrip() + ".%s" % os_type
                 self.log.info('Check if {0} is in tmp directory on {1} server'
@@ -2559,12 +2509,6 @@ class RemoteMachineShellConnection:
                 if not exist:  # if not exist in tmp dir, start to download that version
                     if short_version[:5] in cb_releases_version:
                         build = query.find_couchbase_release_build(
-                            product_name, self.info.deliverable_type,
-                            self.info.architecture_type, short_version,
-                            is_amazon=False,
-                            os_version=self.info.distribution_version.lower())
-                    elif short_version in COUCHBASE_RELEASE_VERSIONS_3:
-                        build = query.find_membase_release_build(
                             product_name, self.info.deliverable_type,
                             self.info.architecture_type, short_version,
                             is_amazon=False,
@@ -2662,21 +2606,19 @@ class RemoteMachineShellConnection:
                 else:
                     sleep(10, "next step is to install", log_type="infra")
                 """ delete binary after uninstall """
-                self.delete_file(WIN_TMP_PATH, build_name)
+                self.delete_file(Windows.TMP_PATH, build_name)
                 """ the code below need to remove when bug MB-11328
                                                            is fixed in 3.0.1 """
-                output, error = self.kill_erlang(os="windows")
+                output, error = self.kill_erlang(os=Windows.NAME)
                 self.log_command_output(output, error)
                 """ end remove code """
 
                 """ the code below need to remove when bug MB-11985
                                                            is fixed in 3.0.1 """
-                if full_version[:5] in COUCHBASE_VERSION_2 or \
-                        full_version[:5] in COUCHBASE_FROM_VERSION_3:
-                    self.log.info("due to bug MB-11985, we need to delete below registry")
-                    output, error = self.execute_command("reg delete \
-                            'HKLM\Software\Wow6432Node\Ericsson\Erlang\ErlSrv' /f ")
-                    self.log_command_output(output, error)
+                self.log.info("due to bug MB-11985, we need to delete below registry")
+                output, error = self.execute_command("reg delete \
+                        'HKLM\Software\Wow6432Node\Ericsson\Erlang\ErlSrv' /f ")
+                self.log_command_output(output, error)
                 """ end remove code """
                 if capture_iss_file and not windows_msi:
                     self.log.info("Delete {0} in windows automation directory" \
@@ -2691,11 +2633,11 @@ class RemoteMachineShellConnection:
             else:
                 self.log.info("*****No couchbase server on {0} server. Free to install" \
                               .format(self.ip))
-        elif type in LINUX_DISTRIBUTION_NAME:
+        elif type in Linux.DISTRIBUTION_NAME:
             """ check if couchbase server installed by root """
             if self.nonroot:
-                test = self.file_exists(LINUX_CB_PATH, VERSION_FILE)
-                if self.file_exists(LINUX_CB_PATH, VERSION_FILE):
+                test = self.file_exists(Linux.CB_PATH, VERSION_FILE)
+                if self.file_exists(Linux.CB_PATH, VERSION_FILE):
                     mesg = " ***** ERROR: ***** \n" \
                            " Couchbase Server was installed by root user. \n" \
                            " Use root user to uninstall it at %s \n" \
@@ -2713,32 +2655,27 @@ class RemoteMachineShellConnection:
             if type == "ubuntu":
                 if self.nonroot:
                     """ check if old files from root install left in server """
-                    if self.file_exists(LINUX_CB_PATH + "etc/couchdb/",
+                    if self.file_exists(Linux.CB_PATH + "etc/couchdb/",
                                         "local.ini.debsave"):
                         print(" ***** ERROR: ***** \n" \
                               "Couchbase Server files was left by root install at %s .\n"
                               "Use root user to delete them all at server %s "
                               " (rm -rf /opt/couchbase) to remove all couchbase folder."
-                              % (LINUX_CB_PATH, self.ip))
+                              % (Linux.CB_PATH, self.ip))
                         sys.exit(1)
                     self.stop_server()
                 else:
-                    if sv in COUCHBASE_FROM_VERSION_4:
-                        if self.is_enterprise(type):
-                            if product is not None and product == "cbas":
-                                uninstall_cmd = "dpkg -r {0};dpkg --purge {1};" \
-                                    .format("couchbase-server-analytics", "couchbase-server-analytics")
-                            else:
-                                uninstall_cmd = "dpkg -r {0};dpkg --purge {1};" \
-                                    .format("couchbase-server", "couchbase-server")
+                    if self.is_enterprise(type):
+                        if product is not None and product == "cbas":
+                            uninstall_cmd = "dpkg -r {0};dpkg --purge {1};" \
+                                .format("couchbase-server-analytics", "couchbase-server-analytics")
                         else:
                             uninstall_cmd = "dpkg -r {0};dpkg --purge {1};" \
-                                .format("couchbase-server-community",
-                                        "couchbase-server-community")
+                                .format("couchbase-server", "couchbase-server")
                     else:
                         uninstall_cmd = "dpkg -r {0};dpkg --purge {1};" \
-                            .format("couchbase-server",
-                                    "couchbase-server")
+                            .format("couchbase-server-community",
+                                    "couchbase-server-community")
                     output, error = self.execute_command(uninstall_cmd)
                     self.log_command_output(output, error)
             elif type in RPM_DIS_NAME:
@@ -2746,12 +2683,12 @@ class RemoteMachineShellConnection:
                     We need to kill them before doing uninstall """
                 if self.nonroot:
                     """ check if old files from root install left in server """
-                    if self.file_exists(LINUX_CB_PATH + "etc/couchdb/",
+                    if self.file_exists(Linux.CB_PATH + "etc/couchdb/",
                                         "local.ini.rpmsave"):
                         print("Couchbase Server files was left by root install at %s.\n"
                               "Use root user to delete them all at server %s "
                               "(rm -rf /opt/couchbase) to remove all couchbase folder."
-                              % (LINUX_CB_PATH, self.ip))
+                              % (Linux.CB_PATH, self.ip))
                         sys.exit(1)
                     self.stop_server()
                 else:
@@ -2759,17 +2696,14 @@ class RemoteMachineShellConnection:
                     self.log_command_output(output, error)
                     output, error = self.execute_command("rm -f /var/lib/rpm/.rpm.lock")
                     self.log_command_output(output, error)
-                    if sv in COUCHBASE_FROM_VERSION_4:
-                        if self.is_enterprise(type):
-                            if product is not None and product == "cbas":
-                                uninstall_cmd = 'rpm -e {0}'.format("couchbase-server-analytics")
-                            else:
-                                uninstall_cmd = 'rpm -e {0}'.format("couchbase-server")
+                    if self.is_enterprise(type):
+                        if product is not None and product == "cbas":
+                            uninstall_cmd = 'rpm -e {0}'.format("couchbase-server-analytics")
                         else:
-                            uninstall_cmd = 'rpm -e {0}' \
-                                .format("couchbase-server-community")
+                            uninstall_cmd = 'rpm -e {0}'.format("couchbase-server")
                     else:
-                        uninstall_cmd = 'rpm -e {0}'.format("couchbase-server")
+                        uninstall_cmd = 'rpm -e {0}' \
+                            .format("couchbase-server-community")
                     self.log.info('running rpm -e to remove couchbase-server')
                     output, error = self.execute_command(uninstall_cmd)
                     if output:
@@ -2785,7 +2719,7 @@ class RemoteMachineShellConnection:
                 self.kill_memcached()
                 output, error = self.execute_command("ipcrm")
                 self.log_command_output(output, error)
-        elif self.info.distribution_type.lower() == 'mac':
+        elif self.info.distribution_type.lower() == Mac.NAME:
             self.stop_server()
             """ close Safari browser before uninstall """
             self.terminate_process(self.info, "/Applications/Safari.app/Contents/MacOS/Safari")
@@ -2869,7 +2803,7 @@ class RemoteMachineShellConnection:
             self.stop_couchbase()
 
             # the code below need to remove when bug MB-11328 is fixed in 3.0.1
-            output, error = self.kill_erlang(os="windows")
+            output, error = self.kill_erlang(os=Windows.NAME)
             self.log_command_output(output, error)
             """ end remove code """
 
@@ -2899,7 +2833,7 @@ class RemoteMachineShellConnection:
             self.log_command_output(output, error)
 
             # the code below need to remove when bug MB-11328 is fixed in 3.0.1
-            output, error = self.kill_erlang(os="windows")
+            output, error = self.kill_erlang(os=Windows.NAME)
             self.log_command_output(output, error)
             """ end remove code """
         else:
@@ -2916,7 +2850,7 @@ class RemoteMachineShellConnection:
         self.extract_remote_info()
         self.log.info(self.info.distribution_type)
         type = self.info.distribution_type.lower()
-        if type == 'windows':
+        if type == Windows.NAME:
             product = "mb"
             query = BuildQuery()
             builds, changes = query.get_all_builds()
@@ -2982,7 +2916,7 @@ class RemoteMachineShellConnection:
                 self.log_command_output(output, error)
             else:
                 self.log.info("No membase server on this server.  Free to install")
-        elif type in LINUX_DISTRIBUTION_NAME:
+        elif type in Linux.DISTRIBUTION_NAME:
             # uninstallation command is different
             if type == "ubuntu":
                 uninstall_cmd = 'dpkg -r {0};dpkg --purge {1};' \
@@ -3070,7 +3004,7 @@ class RemoteMachineShellConnection:
         filename = "/tmp/test2"
         iswin = False
 
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             iswin = True
             filename = "/cygdrive/c/tmp/test.txt"
 
@@ -3205,7 +3139,7 @@ class RemoteMachineShellConnection:
         else:
             self.extract_remote_info()
 
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             self.use_sudo = False
 
         if self.use_sudo:
@@ -3308,7 +3242,7 @@ class RemoteMachineShellConnection:
 
     def terminate_process(self, info=None, process_name='', force=False):
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("taskkill /F /T /IM {0}*"
                                         .format(process_name), debug=False)
             self.log_command_output(o, r)
@@ -3530,12 +3464,12 @@ class RemoteMachineShellConnection:
         listening on that port (only ipv4)
         """
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             command = "netstat -a -b -p tcp | grep :%s | grep 'LISTEN' | awk -F ' ' '{print $2}'" % port
             o, r = self.execute_command(command)
             self.log_command_output(o, r)
             return o
-        elif self.info.type.lower() == "linux":
+        elif self.info.type.lower() == Linux.NAME:
             command = "ss -4anpe | grep :%s | grep 'LISTEN' | awk -F ' ' '{print $5}'" % port
             o, r = self.execute_command(command)
             self.log_command_output(o, r)
@@ -3572,7 +3506,7 @@ class RemoteMachineShellConnection:
             return None
         self.log.info("hostname of this {0} is {1}"
                       .format(self.ip, info.hostname[0].strip()))
-        if info.type.lower() == 'windows':
+        if info.type.lower() == Windows.NAME:
             self.log.info("domain name of this {0} is {1}"
                           .format(self.ip, info.domain))
             return '%s.%s' % (info.hostname[0].strip(), info.domain.strip())
@@ -3608,7 +3542,7 @@ class RemoteMachineShellConnection:
         if "ip6" in self.ip or self.ip.startswith("["):
             ipv6_server = True
             ip_type = "inet6 \K[0-9a-zA-Z:]"
-        if info.type.lower() != 'windows':
+        if info.type.lower() != Windows.NAME:
             cmd = "ifconfig | grep -Po '{0}+'".format(ip_type)
             o, r = self.execute_command_raw_jsch(cmd)
         if ipv6_server:
@@ -3653,7 +3587,7 @@ class RemoteMachineShellConnection:
         if self.info.type == 'Linux':
             o, _ = self.execute_command("ps -eo comm,pid | awk '$1 == \"memcached\" { print $2 }'")
             return o[0]
-        elif self.info.type == 'windows':
+        elif self.info.type == Windows.NAME:
             output, error = self.execute_command('tasklist| grep memcache',
                                                  debug=False)
             if error or output == [""] or output == []:
@@ -3667,7 +3601,7 @@ class RemoteMachineShellConnection:
         if self.info.type == 'Linux':
             o, _ = self.execute_command("ps -eo comm,pid | awk '$1 == \"prometheus\" { print $2 }'")
             return o[0]
-        elif self.info.type == 'windows':
+        elif self.info.type == Windows.NAME:
             output, error = self.execute_command('tasklist| grep prometheus',
                                                  debug=False)
             if error or output == [""] or output == []:
@@ -3678,43 +3612,42 @@ class RemoteMachineShellConnection:
 
     def cleanup_data_config(self, data_path, config_path=None):
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             if "c:/Program Files" in data_path:
                 data_path = data_path.replace("c:/Program Files",
                                               "/cygdrive/c/Program\ Files")
             o, r = self.execute_command("rm -rf ""{0}""/*".format(data_path))
             self.log_command_output(o, r)
             if config_path is None:
-                config_path = WIN_COUCHBASE_OLD_CONFIG_PATH
-            o, r = self.execute_command("rm -rf {0}/*" \
+                config_path = Windows.COUCHBASE_OLD_CONFIG_PATH
+            o, r = self.execute_command("rm -rf {0}/*"
                                         .format(config_path))
         else:
             o, r = self.execute_command("rm -rf {0}/*".format(data_path))
             self.log_command_output(o, r)
             if config_path is None:
-                config_path = LINUX_COUCHBASE_OLD_CONFIG_PATH
+                config_path = Linux.COUCHBASE_OLD_CONFIG_PATH
             o, r = self.execute_command("rm -rf {0}/*" \
                                         .format(config_path))
             self.log_command_output(o, r)
 
     def stop_couchbase(self):
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("net stop couchbaseserver")
             self.log_command_output(o, r)
             sleep(10, "%s - Wait to stop service completely" % self.ip,
                   log_type="infra")
-        if self.info.type.lower() == "linux":
+        if self.info.type.lower() == Linux.NAME:
             if self.nonroot:
                 self.log.debug("{0} - stopping couchbase-server as non-root"
                                .format(self.ip))
                 o, r = self.execute_command('%scouchbase-server -k '
-                                            % LINUX_NONROOT_CB_BIN_PATH)
+                                            % Linux.NONROOT_CB_BIN_PATH)
                 self.log_command_output(o, r)
             else:
-                fv, sv, bn = self.get_cbversion("linux")
-                if self.info.distribution_version.lower() in SYSTEMD_SERVER \
-                        and sv in COUCHBASE_FROM_WATSON:
+                fv, sv, bn = self.get_cbversion(Linux.NAME)
+                if self.info.distribution_version.lower() in SYSTEMD_SERVER:
                     """from watson, systemd is used in centos 7, suse 12 """
                     self.log.debug("{0} - Running systemd command"
                                    .format(self.ip))
@@ -3724,7 +3657,7 @@ class RemoteMachineShellConnection:
                     o, r = self.execute_command("/etc/init.d/couchbase-server stop",
                                                 self.info, use_channel=True)
                     self.log_command_output(o, r)
-        if self.info.distribution_type.lower() == "mac":
+        if self.info.distribution_type.lower() == Mac.NAME:
             cb_process = '/Applications/Couchbase\ Server.app/Contents/MacOS/Couchbase\ Server'
             cmd = "ps aux | grep {0} | awk '{{print $2}}' | xargs kill -9 " \
                 .format(cb_process)
@@ -3735,10 +3668,10 @@ class RemoteMachineShellConnection:
 
     def reboot_node(self):
         self.extract_remote_info()
-        if self.extract_remote_info().type.lower() == 'windows':
+        if self.extract_remote_info().type.lower() == Windows.NAME:
             o, r = self.execute_command("shutdown -r -f -t 0")
             self.log_command_output(o, r)
-        elif self.extract_remote_info().type.lower() == 'linux':
+        elif self.extract_remote_info().type.lower() == Linux.NAME:
             o, r = self.execute_command("reboot")
             self.log_command_output(o, r)
         return o, r
@@ -3754,13 +3687,13 @@ class RemoteMachineShellConnection:
         self.extract_remote_info()
         os_type = self.info.type.lower()
 
-        if os_type == OS.WINDOWS:
+        if os_type == Windows.NAME:
             o, r = self.execute_command(
                 "{0} -r -f -t 0".format(COMMAND.SHUTDOWN))
-        elif os_type == OS.LINUX:
+        elif os_type == Linux.NAME:
             o, r = self.execute_command(COMMAND.REBOOT)
         self.log_command_output(o, r)
-        if os_type == OS.WINDOWS:
+        if os_type == Windows.NAME:
             sleep_time = wait_timeout * 5
         else:
             sleep_time = wait_timeout / 6
@@ -3770,7 +3703,7 @@ class RemoteMachineShellConnection:
         while time.time() < end_time:
             try:
                 self.connect()
-                if os_type == "windows":
+                if os_type == Windows.NAME:
                     o, r = self.execute_command(
                         'netsh advfirewall set publicprofile state off')
                     self.log_command_output(o, r)
@@ -3802,19 +3735,18 @@ class RemoteMachineShellConnection:
 
     def start_couchbase(self):
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("net start couchbaseserver")
             self.log_command_output(o, r)
-        if self.info.type.lower() == "linux":
+        if self.info.type.lower() == Linux.NAME:
             if self.nonroot:
                 self.log.info("Start Couchbase Server with non root method")
                 o, r = self.execute_command('%scouchbase-server \-- -noinput -detached ' \
-                                            % (LINUX_NONROOT_CB_BIN_PATH))
+                                            % Linux.NONROOT_CB_BIN_PATH)
                 self.log_command_output(o, r)
             else:
-                fv, sv, bn = self.get_cbversion("linux")
-                if self.info.distribution_version.lower() in SYSTEMD_SERVER \
-                        and sv in COUCHBASE_FROM_WATSON:
+                fv, sv, bn = self.get_cbversion(Linux.NAME)
+                if self.info.distribution_version.lower() in SYSTEMD_SERVER:
                     """from watson, systemd is used in centos 7, suse 12 """
                     self.log.debug("%s - Running systemd command" % self.ip)
                     o, r = self.execute_command("systemctl start couchbase-server.service")
@@ -3822,13 +3754,13 @@ class RemoteMachineShellConnection:
                 else:
                     o, r = self.execute_command("/etc/init.d/couchbase-server start")
                     self.log_command_output(o, r)
-        if self.info.distribution_type.lower() == "mac":
+        if self.info.distribution_type.lower() == Mac.NAME:
             o, r = self.execute_command("open /Applications/Couchbase\ Server.app")
             self.log_command_output(o, r)
 
-    def pause_memcached(self, os="linux", timesleep=30):
+    def pause_memcached(self, os=Linux.NAME, timesleep=30):
         self.log.info("*** pause memcached process ***")
-        if os == "windows":
+        if os == Windows.NAME:
             self.check_cmd("pssuspend")
             cmd = "pssuspend $(tasklist | grep  memcached | gawk '{printf $2}')"
             o, r = self.execute_command(cmd)
@@ -3841,9 +3773,9 @@ class RemoteMachineShellConnection:
             self.log_command_output(o, r)
         sleep(timesleep, "Waiting for node to become down", log_type="infra")
 
-    def unpause_memcached(self, os="linux"):
+    def unpause_memcached(self, os=Linux.NAME):
         self.log.info("*** unpause memcached process ***")
-        if os == "windows":
+        if os == Windows.NAME:
             cmd = "pssuspend -r $(tasklist | grep  memcached | gawk '{printf $2}')"
             o, r = self.execute_command(cmd)
             self.log_command_output(o, [])
@@ -3865,7 +3797,7 @@ class RemoteMachineShellConnection:
     # TODO: Windows
     def flush_os_caches(self):
         self.extract_remote_info()
-        if self.info.type.lower() == "linux":
+        if self.info.type.lower() == Linux.NAME:
             o, r = self.execute_command("sync")
             self.log_command_output(o, r)
             o, r = self.execute_command("/sbin/sysctl vm.drop_caches=3")
@@ -3897,7 +3829,7 @@ class RemoteMachineShellConnection:
         elif process_pid:
             remote_command.append(" " + process_pid)
 
-        if self.info.type.lower() == "windows":
+        if self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command(remote_command, self.info)
             if r:
                 self.log.error("Command didn't run successfully. Error: {0}".format(r))
@@ -3934,11 +3866,11 @@ class RemoteMachineShellConnection:
 
         shell = self._ssh_client.invoke_shell()
         self.extract_remote_info()
-        if self.info.type.lower() == "windows":
+        if self.info.type.lower() == Windows.NAME:
             shell.send('net stop CouchbaseServer\n')
             shell.send('set {0}={1}\n'.format(name, value))
             shell.send('net start CouchbaseServer\n')
-        elif self.info.type.lower() == "linux":
+        elif self.info.type.lower() == Linux.NAME:
             shell.send('export {0}={1}\n'.format(name, value))
             if "centos 7" in self.info.distribution_version.lower():
                 """from watson, systemd is used in centos 7 """
@@ -3950,16 +3882,12 @@ class RemoteMachineShellConnection:
 
     def change_env_variables(self, dict):
         prefix = "\\n    "
-        _, sv, _ = self.get_cbversion("linux")
-        if sv in COUCHBASE_FROM_SPOCK:
-            init_file = "couchbase-server"
-            file_path = "/opt/couchbase/bin/"
-        else:
-            init_file = "couchbase_init.d"
-            file_path = "/opt/couchbase/etc/"
+        _, sv, _ = self.get_cbversion(Linux.NAME)
+        init_file = "couchbase-server"
+        file_path = "/opt/couchbase/bin/"
         environmentVariables = ""
         self.extract_remote_info()
-        if self.info.type.lower() == "windows":
+        if self.info.type.lower() == Windows.NAME:
             init_file = "service_start.bat"
             file_path = "\"/cygdrive/c/Program Files/Couchbase/Server/bin/\""
             prefix = "\\n"
@@ -3975,17 +3903,16 @@ class RemoteMachineShellConnection:
             o, r = self.execute_command("sed -i 's/{1}.*//' {0}"
                                         .format(sourceFile, key))
             self.log_command_output(o, r)
-            if sv in COUCHBASE_FROM_SPOCK:
-                o, r = self.execute_command("sed -i 's/export ERL_FULLSWEEP_AFTER/export ERL_FULLSWEEP_AFTER\\n{1}="
-                                            "{2}\\nexport {1}/' {0}"
-                                            .format(sourceFile, key, dict[key]))
-                self.log_command_output(o, r)
-        if self.info.type.lower() == "windows":
+            o, r = self.execute_command("sed -i 's/export ERL_FULLSWEEP_AFTER/export ERL_FULLSWEEP_AFTER\\n{1}="
+                                        "{2}\\nexport {1}/' {0}"
+                                        .format(sourceFile, key, dict[key]))
+            self.log_command_output(o, r)
+        if self.info.type.lower() == Windows.NAME:
             command = "sed -i 's/{0}/{0}" \
                 .format("set NS_ERTS=%NS_ROOT%\erts-5.8.5.cb1\bin")
 
         for key in dict.keys():
-            if self.info.type.lower() == "windows":
+            if self.info.type.lower() == Windows.NAME:
                 environmentVariables += prefix + 'set {0}={1}' \
                     .format(key, dict[key])
             else:
@@ -3996,7 +3923,7 @@ class RemoteMachineShellConnection:
         o, r = self.execute_command(command)
         self.log_command_output(o, r)
 
-        if self.info.type.lower() == "linux":
+        if self.info.type.lower() == Linux.NAME:
             if "centos 7" in self.info.distribution_version.lower():
                 """from watson, systemd is used in centos 7 """
                 self.log.info("this node is centos 7.x")
@@ -4017,21 +3944,17 @@ class RemoteMachineShellConnection:
         """
         From spock, the file to edit is in /opt/couchbase/bin/couchbase-server
         """
-        _, sv, _ = self.get_cbversion("linux")
-        if sv in COUCHBASE_FROM_SPOCK:
-            init_file = "couchbase-server"
-            file_path = "/opt/couchbase/bin/"
-        else:
-            init_file = "couchbase_init.d"
-            file_path = "/opt/couchbase/etc/"
-        if self.info.type.lower() == "windows":
+        _, sv, _ = self.get_cbversion(Linux.NAME)
+        init_file = "couchbase-server"
+        file_path = "/opt/couchbase/bin/"
+        if self.info.type.lower() == Windows.NAME:
             init_file = "service_start.bat"
             file_path = "/cygdrive/c/Program\ Files/Couchbase/Server/bin/"
         backupfile = file_path + init_file + ".bak"
         sourceFile = file_path + init_file
         o, r = self.execute_command("mv " + backupfile + " " + sourceFile)
         self.log_command_output(o, r)
-        if self.info.type.lower() == "linux":
+        if self.info.type.lower() == Linux.NAME:
             if self.info.distribution_version.lower() in SYSTEMD_SERVER:
                 """from watson, systemd is used in centos 7 """
                 self.log.info("this node is centos 7.x")
@@ -4080,19 +4003,19 @@ class RemoteMachineShellConnection:
         if self.nonroot:
             backup_command = "/home/%s%scbbackup" \
                              % (self.master.ssh_username,
-                                LINUX_COUCHBASE_BIN_PATH)
+                                Linux.COUCHBASE_BIN_PATH)
         else:
-            backup_command = "%scbbackup" % (LINUX_COUCHBASE_BIN_PATH)
+            backup_command = "%scbbackup" % Linux.COUCHBASE_BIN_PATH
         backup_file_location = backup_location
-        # TODO: define WIN_COUCHBASE_BIN_PATH and implement a new function under RestConnectionHelper to use nodes/self info to get os info
+        # TODO: define Windows.COUCHBASE_BIN_PATH and implement a new function under RestConnectionHelper to use nodes/self info to get os info
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
-            backup_command = "\"%scbbackup.exe\"" % (WIN_COUCHBASE_BIN_PATH_RAW)
+        if self.info.type.lower() == Windows.NAME:
+            backup_command = "\"%scbbackup.exe\"" % (Windows.COUCHBASE_BIN_PATH_RAW)
             backup_file_location = "C:%s" % (backup_location)
             output, error = self.execute_command("taskkill /F /T /IM cbbackup.exe")
             self.log_command_output(output, error)
-        if self.info.distribution_type.lower() == 'mac':
-            backup_command = "%scbbackup" % (MAC_COUCHBASE_BIN_PATH)
+        if self.info.distribution_type.lower() == Mac.NAME:
+            backup_command = "%scbbackup" % Mac.COUCHBASE_BIN_PATH
 
         command_options_string = ""
         if command_options is not '':
@@ -4112,7 +4035,7 @@ class RemoteMachineShellConnection:
                   % (backup_command, "http://", login_info, cluster_ip,
                      cluster_port, backup_file_location,
                      command_options_string)
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             command = "cmd /c START \"\" \"%s\" \"%s%s@%s:%s\" \"%s\" %s" \
                       % (backup_command, "http://", login_info, cluster_ip,
                          cluster_port, backup_file_location,
@@ -4122,21 +4045,21 @@ class RemoteMachineShellConnection:
         self.log_command_output(output, error)
 
     def restore_backupFile(self, login_info, backup_location, buckets):
-        restore_command = "%scbrestore" % (LINUX_COUCHBASE_BIN_PATH)
+        restore_command = "%scbrestore" % Linux.COUCHBASE_BIN_PATH
         backup_file_location = backup_location
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             restore_command = "\"%scbrestore.exe\"" \
-                              % (WIN_COUCHBASE_BIN_PATH_RAW)
-            backup_file_location = "C:%s" % (backup_location)
-        if self.info.distribution_type.lower() == 'mac':
-            restore_command = "%scbrestore" % (MAC_COUCHBASE_BIN_PATH)
+                              % Windows.COUCHBASE_BIN_PATH_RAW
+            backup_file_location = "C:%s" % backup_location
+        if self.info.distribution_type.lower() == Mac.NAME:
+            restore_command = "%scbrestore" % Mac.COUCHBASE_BIN_PATH
         outputs = errors = []
         for bucket in buckets:
             command = "%s %s %s%s@%s:%s %s %s" \
                       % (restore_command, backup_file_location, "http://",
                          login_info, self.ip, self.port, "-b", bucket)
-            if self.info.type.lower() == 'windows':
+            if self.info.type.lower() == Windows.NAME:
                 command = "cmd /c \"%s\" \"%s\" \"%s%s@%s:%s\" %s %s" \
                           % (restore_command, backup_file_location, "http://",
                              login_info, self.ip, self.port, "-b", bucket)
@@ -4152,15 +4075,13 @@ class RemoteMachineShellConnection:
 
     @staticmethod
     def return_bin_path_based_on_os(os):
-        if os == "linux":
-            path = LINUX_COUCHBASE_BIN_PATH
-        elif os == 'windows':
-            path = WIN_COUCHBASE_BIN_PATH
-        elif os == 'mac':
-            path = MAC_COUCHBASE_BIN_PATH
-        else:
-            raise ValueError('Unknown bin path for os type {0}'.format(os))
-        return path
+        if os == Linux.NAME:
+            return Linux.COUCHBASE_BIN_PATH
+        if os == Windows.NAME:
+            return Windows.COUCHBASE_BIN_PATH
+        if os == Mac.NAME:
+            return Mac.COUCHBASE_BIN_PATH
+        raise ValueError('Unknown bin path for os type {0}'.format(os))
 
     def delete_files(self, file_location):
         command = "%s%s" % ("rm -rf ", file_location)
@@ -4173,8 +4094,8 @@ class RemoteMachineShellConnection:
                                       mode="memory"):
         self.extract_remote_info()
         temp_path = "/tmp/"
-        if self.info.type.lower() == 'windows':
-            temp_path = WIN_TMP_PATH
+        if self.info.type.lower() == Windows.NAME:
+            temp_path = Windows.TMP_PATH
         replicaOption = ""
         prefix = str(uuid.uuid1())
         fileName = prefix + ".csv"
@@ -4202,8 +4123,8 @@ class RemoteMachineShellConnection:
 
             genFileName = prefix + suffix
             csv_path = temp_path + fileName
-            if self.info.type.lower() == 'windows':
-                csv_path = WIN_TMP_PATH_RAW + fileName
+            if self.info.type.lower() == Windows.NAME:
+                csv_path = Windows.TMP_PATH_RAW + fileName
             path = temp_path + genFileName
             dest_path = "/tmp/" + fileName
             destination = "csv:" + csv_path
@@ -4223,20 +4144,20 @@ class RemoteMachineShellConnection:
         return headerInfo, bucketMap
 
     def execute_cbtransfer(self, source, destination, command_options=''):
-        transfer_command = "%scbtransfer" % (LINUX_COUCHBASE_BIN_PATH)
+        transfer_command = "%scbtransfer" % Linux.COUCHBASE_BIN_PATH
         if self.nonroot:
             transfer_command = '/home/%s%scbtransfer' \
-                               % (self.username, LINUX_COUCHBASE_BIN_PATH)
+                               % (self.username, Linux.COUCHBASE_BIN_PATH)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             transfer_command = "\"%scbtransfer.exe\"" \
-                               % (WIN_COUCHBASE_BIN_PATH_RAW)
-        if self.info.distribution_type.lower() == 'mac':
-            transfer_command = "%scbtransfer" % (MAC_COUCHBASE_BIN_PATH)
+                               % (Windows.COUCHBASE_BIN_PATH_RAW)
+        if self.info.distribution_type.lower() == Mac.NAME:
+            transfer_command = "%scbtransfer" % Mac.COUCHBASE_BIN_PATH
 
         command = "%s %s %s %s" % (transfer_command, source, destination,
                                    command_options)
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             command = "cmd /c \"%s\" \"%s\" \"%s\" %s" \
                       % (transfer_command, source, destination,
                          command_options)
@@ -4249,36 +4170,32 @@ class RemoteMachineShellConnection:
     def execute_cbdocloader(self, username, password, bucket, memory_quota,
                             file):
         f, s, b = self.get_cbversion(self.info.type.lower())
-        cbdocloader_command = "%scbdocloader" % (LINUX_COUCHBASE_BIN_PATH)
-        cluster_flag = "-n"
-        bucket_quota_flag = "-s"
-        data_set_location_flag = " "
-        if f[:5] in COUCHBASE_FROM_SPOCK:
-            cluster_flag = "-c"
-            bucket_quota_flag = "-m"
-            data_set_location_flag = "-d"
-        linux_couchbase_path = LINUX_CB_PATH
+        cbdocloader_command = "%scbdocloader" % Linux.COUCHBASE_BIN_PATH
+        cluster_flag = "-c"
+        bucket_quota_flag = "-m"
+        data_set_location_flag = "-d"
+        linux_couchbase_path = Linux.CB_PATH
         if self.nonroot:
             cbdocloader_command = "/home/%s%scbdocloader" \
-                                  % (self.username, LINUX_COUCHBASE_BIN_PATH)
+                                  % (self.username, Linux.COUCHBASE_BIN_PATH)
             linux_couchbase_path = "/home/%s%s" % (self.username,
-                                                   LINUX_CB_PATH)
+                                                   Linux.CB_PATH)
         self.extract_remote_info()
         command = "%s -u %s -p %s %s %s:%s -b %s %s %s %s %ssamples/%s.zip" \
                   % (cbdocloader_command, username, password, cluster_flag,
                      self.ip, self.port, bucket, bucket_quota_flag,
                      memory_quota, data_set_location_flag,
                      linux_couchbase_path, file)
-        if self.info.distribution_type.lower() == 'mac':
-            cbdocloader_command = "%scbdocloader" % (MAC_COUCHBASE_BIN_PATH)
+        if self.info.distribution_type.lower() == Mac.NAME:
+            cbdocloader_command = "%scbdocloader" % Mac.COUCHBASE_BIN_PATH
             command = "%s -u %s -p %s %s %s:%s -b %s %s %s %s %ssamples/%s.zip" \
                       % (cbdocloader_command, username, password, cluster_flag,
                          self.ip, self.port, bucket, bucket_quota_flag,
-                         memory_quota, data_set_location_flag, MAC_CB_PATH,
+                         memory_quota, data_set_location_flag, Mac.CB_PATH,
                          file)
 
-        if self.info.type.lower() == 'windows':
-            cbdocloader_command = "%scbdocloader.exe" % WIN_COUCHBASE_BIN_PATH
+        if self.info.type.lower() == Windows.NAME:
+            cbdocloader_command = "%scbdocloader.exe" % Windows.COUCHBASE_BIN_PATH
             WIN_COUCHBASE_SAMPLES_PATH = "C:/Program\ Files/Couchbase/Server/samples/"
             command = "%s -u %s -p %s %s %s:%s -b %s %s %s %s %s%s.zip" \
                       % (cbdocloader_command, username, password, cluster_flag,
@@ -4290,15 +4207,15 @@ class RemoteMachineShellConnection:
         return output, error
 
     def execute_cbcollect_info(self, file, options=""):
-        cbcollect_command = "%scbcollect_info" % (LINUX_COUCHBASE_BIN_PATH)
+        cbcollect_command = "%scbcollect_info" % Linux.COUCHBASE_BIN_PATH
         if self.nonroot:
             cbcollect_command = "/home/%s%scbcollect_info" \
-                                % (self.username, LINUX_COUCHBASE_BIN_PATH)
+                                % (self.username, Linux.COUCHBASE_BIN_PATH)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
-            cbcollect_command = "%scbcollect_info.exe" % WIN_COUCHBASE_BIN_PATH
-        if self.info.distribution_type.lower() == 'mac':
-            cbcollect_command = "%scbcollect_info" % (MAC_COUCHBASE_BIN_PATH)
+        if self.info.type.lower() == Windows.NAME:
+            cbcollect_command = "%scbcollect_info.exe" % Windows.COUCHBASE_BIN_PATH
+        if self.info.distribution_type.lower() == Mac.NAME:
+            cbcollect_command = "%scbcollect_info" % Mac.COUCHBASE_BIN_PATH
 
         command = "%s %s %s" % (cbcollect_command, file, options)
         output, error = self.execute_command(command, use_channel=True)
@@ -4306,18 +4223,18 @@ class RemoteMachineShellConnection:
 
     # works for linux only
     def execute_couch_dbinfo(self, file):
-        couch_dbinfo_command = "%scouch_dbinfo" % (LINUX_COUCHBASE_BIN_PATH)
+        couch_dbinfo_command = "%scouch_dbinfo" % Linux.COUCHBASE_BIN_PATH
         cb_data_path = "/"
         if self.nonroot:
             couch_dbinfo_command = "/home/%s%scouch_dbinfo" \
-                                   % (self.username, LINUX_COUCHBASE_BIN_PATH)
+                                   % (self.username, Linux.COUCHBASE_BIN_PATH)
             cb_data_path = "/home/%s/" % self.username
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             couch_dbinfo_command = "%scouch_dbinfo.exe" \
-                                   % (WIN_COUCHBASE_BIN_PATH)
-        if self.info.distribution_type.lower() == 'mac':
-            couch_dbinfo_command = "%scouch_dbinfo" % (MAC_COUCHBASE_BIN_PATH)
+                                   % Windows.COUCHBASE_BIN_PATH
+        if self.info.distribution_type.lower() == Mac.NAME:
+            couch_dbinfo_command = "%scouch_dbinfo" % Mac.COUCHBASE_BIN_PATH
 
         command = couch_dbinfo_command + ' -i %sopt/couchbase/var/lib/couchbase/data/*/*[0-9] >' \
                   % cb_data_path + file
@@ -4328,15 +4245,15 @@ class RemoteMachineShellConnection:
     def execute_cbepctl(self, bucket, persistence, param_type, param, value,
                         cbadmin_user="cbadminbucket",
                         cbadmin_password="password"):
-        cbepctl_command = "%scbepctl" % (LINUX_COUCHBASE_BIN_PATH)
+        cbepctl_command = "%scbepctl" % Linux.COUCHBASE_BIN_PATH
         if self.nonroot:
             cbepctl_command = "/home/%s%scbepctl" % (self.username,
-                                                     LINUX_COUCHBASE_BIN_PATH)
+                                                     Linux.COUCHBASE_BIN_PATH)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
-            cbepctl_command = "%scbepctl.exe" % (WIN_COUCHBASE_BIN_PATH)
-        if self.info.distribution_type.lower() == 'mac':
-            cbepctl_command = "%scbepctl" % (MAC_COUCHBASE_BIN_PATH)
+        if self.info.type.lower() == Windows.NAME:
+            cbepctl_command = "%scbepctl.exe" % Windows.COUCHBASE_BIN_PATH
+        if self.info.distribution_type.lower() == Mac.NAME:
+            cbepctl_command = "%scbepctl" % Mac.COUCHBASE_BIN_PATH
 
         if persistence != "":
             command = "%s %s:%s  -u %s -p %s -b %s %s" \
@@ -4355,15 +4272,15 @@ class RemoteMachineShellConnection:
         return output, error
 
     def execute_cbvdiff(self, bucket, node_str, password=None):
-        cbvdiff_command = "%scbvdiff" % (LINUX_COUCHBASE_BIN_PATH)
+        cbvdiff_command = "%scbvdiff" % Linux.COUCHBASE_BIN_PATH
         if self.nonroot:
             cbvdiff_command = "/home/%s%scbvdiff" % (self.username,
-                                                     LINUX_COUCHBASE_BIN_PATH)
+                                                     Linux.COUCHBASE_BIN_PATH)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
-            cbvdiff_command = "%scbvdiff.exe" % (WIN_COUCHBASE_BIN_PATH)
-        if self.info.distribution_type.lower() == 'mac':
-            cbvdiff_command = "%scbvdiff" % (MAC_COUCHBASE_BIN_PATH)
+        if self.info.type.lower() == Windows.NAME:
+            cbvdiff_command = "%scbvdiff.exe" % Windows.COUCHBASE_BIN_PATH
+        if self.info.distribution_type.lower() == Mac.NAME:
+            cbvdiff_command = "%scbvdiff" % Mac.COUCHBASE_BIN_PATH
 
         if not password:
             command = "%s -b %s %s " % (cbvdiff_command, bucket.name, node_str)
@@ -4375,15 +4292,15 @@ class RemoteMachineShellConnection:
         return output, error
 
     def couchbase_cli(self, subcommand, cluster_host, options):
-        cb_client = "%scouchbase-cli" % (LINUX_COUCHBASE_BIN_PATH)
+        cb_client = "%scouchbase-cli" % Linux.COUCHBASE_BIN_PATH
         if self.nonroot:
             cb_client = "/home/%s%scouchbase-cli" \
-                        % (self.username, LINUX_COUCHBASE_BIN_PATH)
+                        % (self.username, Linux.COUCHBASE_BIN_PATH)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
-            cb_client = "%scouchbase-cli.exe" % (WIN_COUCHBASE_BIN_PATH)
-        if self.info.distribution_type.lower() == 'mac':
-            cb_client = "%scouchbase-cli" % (MAC_COUCHBASE_BIN_PATH)
+        if self.info.type.lower() == Windows.NAME:
+            cb_client = "%scouchbase-cli.exe" % (Windows.COUCHBASE_BIN_PATH)
+        if self.info.distribution_type.lower() == Mac.NAME:
+            cb_client = "%scouchbase-cli" % Mac.COUCHBASE_BIN_PATH
 
         # now we can run command in format where all parameters are optional
         # {PATH}/couchbase-cli [SUBCOMMAND] [OPTIONS]
@@ -4397,17 +4314,17 @@ class RemoteMachineShellConnection:
     def execute_couchbase_cli(self, cli_command, cluster_host='localhost',
                               options='', cluster_port=None,
                               user='Administrator', password='password'):
-        cb_client = "%scouchbase-cli" % (LINUX_COUCHBASE_BIN_PATH)
+        cb_client = "%scouchbase-cli" % Linux.COUCHBASE_BIN_PATH
         if self.nonroot:
             cb_client = "/home/%s%scouchbase-cli" \
-                        % (self.username, LINUX_COUCHBASE_BIN_PATH)
+                        % (self.username, Linux.COUCHBASE_BIN_PATH)
         self.extract_remote_info()
         f, s, b = self.get_cbversion("unix")
-        if self.info.type.lower() == 'windows':
-            f, s, b = self.get_cbversion("windows")
-            cb_client = "%scouchbase-cli.exe" % (WIN_COUCHBASE_BIN_PATH)
-        if self.info.distribution_type.lower() == 'mac':
-            cb_client = "%scouchbase-cli" % (MAC_COUCHBASE_BIN_PATH)
+        if self.info.type.lower() == Windows.NAME:
+            f, s, b = self.get_cbversion(Windows.NAME)
+            cb_client = "%scouchbase-cli.exe" % Windows.COUCHBASE_BIN_PATH
+        if self.info.distribution_type.lower() == Mac.NAME:
+            cb_client = "%scouchbase-cli" % Mac.COUCHBASE_BIN_PATH
 
         cluster_param = (" -c http://{0}".format(cluster_host),
                          "")[cluster_host is None]
@@ -4416,7 +4333,7 @@ class RemoteMachineShellConnection:
 
         user_param = (" -u {0}".format(user), "")[user is None]
         passwd_param = (" -p {0}".format(password), "")[password is None]
-        if f[:5] in COUCHBASE_FROM_SPOCK and cli_command == "cluster-init":
+        if cli_command == "cluster-init":
             user_param = (" --cluster-username {0}".format(user), "")[user is None]
             passwd_param = (" --cluster-password {0}".format(password), "")[password is None]
         # now we can run command in format where all parameters are optional
@@ -4443,19 +4360,19 @@ class RemoteMachineShellConnection:
 
     def execute_cbworkloadgen(self, username, password, num_items, ratio,
                               bucket, item_size, command_options):
-        cbworkloadgen_command = "%scbworkloadgen" % (LINUX_COUCHBASE_BIN_PATH)
+        cbworkloadgen_command = "%scbworkloadgen" % Linux.COUCHBASE_BIN_PATH
         if self.nonroot:
             cbworkloadgen_command = "/home/%s%scbworkloadgen" \
-                                    % (self.username, LINUX_COUCHBASE_BIN_PATH)
+                                    % (self.username, Linux.COUCHBASE_BIN_PATH)
         self.extract_remote_info()
 
-        if self.info.distribution_type.lower() == 'mac':
+        if self.info.distribution_type.lower() == Mac.NAME:
             cbworkloadgen_command = "%scbworkloadgen" \
-                                    % (MAC_COUCHBASE_BIN_PATH)
+                                    % Mac.COUCHBASE_BIN_PATH
 
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             cbworkloadgen_command = "%scbworkloadgen.exe" \
-                                    % (WIN_COUCHBASE_BIN_PATH)
+                                    % Windows.COUCHBASE_BIN_PATH
 
         command = "%s -n %s:%s -r %s -i %s -b %s -s %s %s -u %s -p %s" \
                   % (cbworkloadgen_command, self.ip, self.port, ratio,
@@ -4473,14 +4390,14 @@ class RemoteMachineShellConnection:
             command_options_string = ' '.join(command_options)
 
         cbhealthchecker_command = "%scbhealthchecker" \
-                                  % (LINUX_COUCHBASE_BIN_PATH)
-        if self.info.distribution_type.lower() == 'mac':
+                                  % Linux.COUCHBASE_BIN_PATH
+        if self.info.distribution_type.lower() == Mac.NAME:
             cbhealthchecker_command = "%scbhealthchecker" \
-                                      % (MAC_COUCHBASE_BIN_PATH)
+                                      % (Mac.COUCHBASE_BIN_PATH)
 
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             cbhealthchecker_command = "%scbhealthchecker" \
-                                      % (WIN_COUCHBASE_BIN_PATH)
+                                      % (Windows.COUCHBASE_BIN_PATH)
 
         if path_to_store:
             self.execute_command('rm -rf %s; mkdir %s;cd %s'
@@ -4501,13 +4418,13 @@ class RemoteMachineShellConnection:
         return output, error
 
     def execute_vbuckettool(self, keys, prefix=None):
-        command = "%stools/vbuckettool" % (LINUX_COUCHBASE_BIN_PATH)
+        command = "%stools/vbuckettool" % Linux.COUCHBASE_BIN_PATH
         if self.nonroot:
             command = "/home/%s%stools/vbuckettool" \
-                      % (self.username, LINUX_COUCHBASE_BIN_PATH)
+                      % (self.username, Linux.COUCHBASE_BIN_PATH)
         self.extract_remote_info()
-        if self.info.type.lower() == 'windows':
-            command = "%stools/vbuckettool.exe" % (WIN_COUCHBASE_BIN_PATH)
+        if self.info.type.lower() == Windows.NAME:
+            command = "%stools/vbuckettool.exe" % (Windows.COUCHBASE_BIN_PATH)
         if prefix:
             command = prefix + command
         command = "%s - %s" % (command, ' '.join(keys))
@@ -4525,7 +4442,7 @@ class RemoteMachineShellConnection:
         return o, r
 
     def remove_win_backup_dir(self):
-        win_paths = [WIN_CB_PATH, WIN_MB_PATH]
+        win_paths = [Windows.CB_PATH, Windows.MB_PATH]
         for each_path in win_paths:
             backup_files = []
             files = self.list_files(each_path)
@@ -4539,7 +4456,7 @@ class RemoteMachineShellConnection:
                     self.execute_command("rm -rf '{0}{1}'".format(each_path, f))
 
     def remove_win_collect_tmp(self):
-        win_tmp_path = WIN_TMP_PATH
+        win_tmp_path = Windows.TMP_PATH
         self.log.info("start remove tmp files from directory %s" % win_tmp_path)
         self.execute_command("rm -rf '%stmp*'" % win_tmp_path)
 
@@ -4585,16 +4502,16 @@ class RemoteMachineShellConnection:
         found_command = False
         download_command = ""
         command_output = ""
-        if self.info.type.lower() == 'windows':
+        if self.info.type.lower() == Windows.NAME:
             wget = "/cygdrive/c/automation/wget.exe"
             if cmd == "unzip":
-                download_command = WIN_UNZIP
+                download_command = Windows.UNZIP
                 command_output = "UnZip 5.52 of 28 February 2005, by Info-ZIP"
                 if out and command_output in out[0]:
                     self.log.info("unzip command is ready")
                     found_command = True
             if cmd == "pssuspend":
-                download_command = WIN_PSSUSPEND
+                download_command = Windows.PSSUSPEND
                 command_output = "PsSuspend suspends or resumes processes"
                 if out and command_output in out[0]:
                     self.log.info("PsSuspend command is ready to run")
@@ -4723,7 +4640,7 @@ class RemoteMachineShellConnection:
         self.log.info("check if man installed on vm?")
         info_cm = self.extract_remote_info()
         man_installed = False
-        if info_cm.type.lower() == "linux" and not self.nonroot:
+        if info_cm.type.lower() == Linux.NAME and not self.nonroot:
             if "centos 7" in info_cm.distribution_version.lower():
                 out_cm, err_cm = self.execute_command("rpm -qa | grep 'man-db'")
                 if out_cm:
@@ -4739,7 +4656,7 @@ class RemoteMachineShellConnection:
 
     def install_missing_lib(self):
         if self.info.deliverable_type == "deb":
-            for lib_name in MISSING_UBUNTU_LIB:
+            for lib_name in ["libcurl3", "python-httplib2"]:
                 if lib_name != "":
                     self.log.info("prepare install library {0}".format(lib_name))
                     o, r = self.execute_command("apt-get install -y {0}"
@@ -4753,7 +4670,7 @@ class RemoteMachineShellConnection:
 
     def is_enterprise(self, os_name):
         enterprise = False
-        if os_name != 'windows':
+        if os_name != Windows.NAME:
             if self.file_exists("/opt/couchbase/etc/", "runtime.ini"):
                 output = self.read_remote_file("/opt/couchbase/etc/", "runtime.ini")
                 for x in output:
@@ -4774,34 +4691,34 @@ class RemoteMachineShellConnection:
         output = ""
         if not self.nonroot:
             nonroot_path_start = "/"
-        if os_name != 'windows':
+        if os_name != Windows.NAME:
             if self.nonroot:
-                if self.file_exists('/home/%s%s' % (self.username, LINUX_CB_PATH), VERSION_FILE):
+                if self.file_exists('/home/%s%s' % (self.username, Linux.CB_PATH), VERSION_FILE):
                     output = self.read_remote_file(
-                        '/home/%s%s' % (self.username, LINUX_CB_PATH),
+                        '/home/%s%s' % (self.username, Linux.CB_PATH),
                         VERSION_FILE)
                 else:
                     self.log.info("couchbase server at {0} may not installed yet"
                                   .format(self.ip))
-            elif os_name == "mac":
-                if self.file_exists(MAC_CB_PATH, VERSION_FILE):
-                    output = self.read_remote_file(MAC_CB_PATH, VERSION_FILE)
+            elif os_name == Mac.NAME:
+                if self.file_exists(Mac.CB_PATH, VERSION_FILE):
+                    output = self.read_remote_file(Mac.CB_PATH, VERSION_FILE)
             else:
-                if self.file_exists(LINUX_CB_PATH, VERSION_FILE):
-                    output = self.read_remote_file(LINUX_CB_PATH, VERSION_FILE)
+                if self.file_exists(Linux.CB_PATH, VERSION_FILE):
+                    output = self.read_remote_file(Linux.CB_PATH, VERSION_FILE)
                 else:
                     self.log.info("couchbase server at {0} may not installed yet"
                                   .format(self.ip))
-        elif os_name == "windows":
-            if self.file_exists(WIN_CB_PATH, VERSION_FILE):
-                output = self.read_remote_file(WIN_CB_PATH, VERSION_FILE)
+        elif os_name == Windows.NAME:
+            if self.file_exists(Windows.CB_PATH, VERSION_FILE):
+                output = self.read_remote_file(Windows.CB_PATH, VERSION_FILE)
             else:
                 self.log.info("couchbase server at {0} may not installed yet"
                               .format(self.ip))
         if output:
             for x in output:
                 x = x.strip()
-                if x and "-" in x and x.split("-")[0] in COUCHBASE_VERSIONS:
+                if x and "-" in x and x.split("-")[0] in CB_RELEASE_BUILDS.keys():
                     fv = x
                     tmp = x.split("-")
                     sv = tmp[0]
@@ -4819,41 +4736,40 @@ class RemoteMachineShellConnection:
         else:
             sys.exit("*****  Node %s failed to up in 5 mins **** " % server.ip)
 
-        if version[:5] in COUCHBASE_FROM_WATSON:
-            try:
-                if self.input.membase_settings.rest_username:
-                    rest_username = self.input.membase_settings.rest_username
-                else:
-                    self.log.info("** You need to set rest username at ini file **")
-                    rest_username = "Administrator"
-                if self.input.membase_settings.rest_password:
-                    rest_password = self.input.membase_settings.rest_password
-                else:
-                    self.log.info("** You need to set rest password at ini file **")
-                    rest_password = "password"
-            except Exception as ex:
-                if ex:
-                    print(ex)
-                pass
-            self.extract_remote_info()
-            if self.info.type.lower() != 'windows':
-                self.log.info("***** set NS_SERVER_CBAUTH env in linux *****")
-                # self.execute_command("/etc/init.d/couchbase-server stop")
-                # self.sleep(15)
-                self.execute_command('export NS_SERVER_CBAUTH_URL='
-                                     '"http://{0}:8091/_cbauth"'
-                                     .format(server.ip), debug=False)
-                self.execute_command('export NS_SERVER_CBAUTH_USER="{0}"'
-                                     .format(rest_username), debug=False)
-                self.execute_command('export NS_SERVER_CBAUTH_PWD="{0}"'
-                                     .format(rest_password), debug=False)
-                self.execute_command('export NS_SERVER_CBAUTH_RPC_URL='
-                                     '"http://{0}:8091/cbauth-demo"'.format(server.ip),
-                                     debug=False)
-                self.execute_command('export CBAUTH_REVRPC_URL='
-                                     '"http://{0}:{1}@{2}:8091/query"' \
-                                     .format(rest_username, rest_password, server.ip),
-                                     debug=False)
+        try:
+            if self.input.membase_settings.rest_username:
+                rest_username = self.input.membase_settings.rest_username
+            else:
+                self.log.info("** You need to set rest username at ini file **")
+                rest_username = "Administrator"
+            if self.input.membase_settings.rest_password:
+                rest_password = self.input.membase_settings.rest_password
+            else:
+                self.log.info("** You need to set rest password at ini file **")
+                rest_password = "password"
+        except Exception as ex:
+            if ex:
+                print(ex)
+            pass
+        self.extract_remote_info()
+        if self.info.type.lower() != Windows.NAME:
+            self.log.info("***** set NS_SERVER_CBAUTH env in linux *****")
+            # self.execute_command("/etc/init.d/couchbase-server stop")
+            # self.sleep(15)
+            self.execute_command('export NS_SERVER_CBAUTH_URL='
+                                 '"http://{0}:8091/_cbauth"'
+                                 .format(server.ip), debug=False)
+            self.execute_command('export NS_SERVER_CBAUTH_USER="{0}"'
+                                 .format(rest_username), debug=False)
+            self.execute_command('export NS_SERVER_CBAUTH_PWD="{0}"'
+                                 .format(rest_password), debug=False)
+            self.execute_command('export NS_SERVER_CBAUTH_RPC_URL='
+                                 '"http://{0}:8091/cbauth-demo"'.format(server.ip),
+                                 debug=False)
+            self.execute_command('export CBAUTH_REVRPC_URL='
+                                 '"http://{0}:{1}@{2}:8091/query"' \
+                                 .format(rest_username, rest_password, server.ip),
+                                 debug=False)
 
     def change_system_time(self, time_change_in_seconds):
         # note that time change may be positive or negative
@@ -5008,13 +4924,13 @@ class RemoteMachineShellConnection:
         # TODO : [{external_listeners,[inet6_tcp_dist]},{local_listeners,[inet6_tcp_dist]},
         #  {preferred_external_proto,inet6_tcp_dist},{preferred_local_proto,inet6_tcp_dist}].
         # change this
-        output, error = self.execute_command("echo '{{dist_type,inet6_tcp}}.' > {0}".format(LINUX_DIST_CONFIG))
+        output, error = self.execute_command("echo '{{dist_type,inet6_tcp}}.' > {0}".format(Linux.DIST_CONFIG))
         self.log_command_output(output, error)
 
     def get_processes_binding_to_ip_family(self, ip_family="ipv4"):
         """ Get all the processes binding to a particular ip family"""
         self.extract_remote_info()
-        if self.info.type.lower() == "windows":
+        if self.info.type.lower() == Windows.NAME:
             if ip_family == "ipv4":
                 ip_family = "tcp"
             else:
@@ -5026,7 +4942,7 @@ class RemoteMachineShellConnection:
             output = list()
             for op in output_win:
                 op = op.strip()
-                if op in WIN_PROCESSES_SPAWNED:
+                if op in Windows.PROCESSES_SPAWNED:
                     output.append(op)
         else:
             output, error = self.execute_command("lsof -i -P -n | grep LISTEN | grep couchbase| grep -i {0}".
@@ -5056,7 +4972,7 @@ class RemoteUtilHelper(object):
         """ Check if user is root or non root in unix """
         shell = RemoteMachineShellConnection(server)
         shell.info = shell.extract_remote_info()
-        if shell.info.type.lower() == "windows":
+        if shell.info.type.lower() == Windows.NAME:
             o, r = shell.execute_command('netsh advfirewall set publicprofile state on')
             shell.log_command_output(o, r)
             o, r = shell.execute_command('netsh advfirewall set privateprofile state on')
@@ -5080,7 +4996,7 @@ class RemoteUtilHelper(object):
             command_1 += "--dport 1000:65535 -j {0}".format(action_on_packet)
             command_2 = "/sbin/iptables -A OUTPUT -p tcp -o eth0 --sport 1000:65535 -j REJECT"
             command_3 = "/sbin/iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT"
-            if shell.info.distribution_type.lower() in LINUX_DISTRIBUTION_NAME \
+            if shell.info.distribution_type.lower() in Linux.DISTRIBUTION_NAME \
                     and server.ssh_username != "root":
                 copy_server.ssh_username = "root"
                 shell.disconnect()
@@ -5123,7 +5039,7 @@ class RemoteUtilHelper(object):
         hostname = shell.get_full_hostname()
         if version.startswith("1.8.") or version.startswith("2.0"):
             shell.stop_couchbase()
-            if info.type.lower() == "windows":
+            if info.type.lower() == Windows.NAME:
                 cmd = "'C:/Program Files/Couchbase/Server/bin/service_unregister.bat'"
                 shell.execute_command_raw_jsch(cmd)
                 cmd = 'cat "C:\\Program Files\\Couchbase\\Server\\bin\\service_register.bat"'
@@ -5162,10 +5078,10 @@ class RemoteUtilHelper(object):
                                 logs_to_check='debug'):
         shell = RemoteMachineShellConnection(server)
         info = shell.extract_remote_info()
-        if info.type.lower() != "windows":
-            path_to_log = LINUX_COUCHBASE_LOGS_PATH
+        if info.type.lower() != Windows.NAME:
+            path_to_log = Linux.COUCHBASE_LOGS_PATH
         else:
-            path_to_log = WIN_COUCHBASE_LOGS_PATH
+            path_to_log = Windows.COUCHBASE_LOGS_PATH
         log_files = []
         files = shell.list_files(path_to_log)
         for f in files:
@@ -5186,7 +5102,7 @@ class RemoteUtilHelper(object):
     def get_interface_info(server):
         shell = RemoteMachineShellConnection(server)
         shell.info = shell.extract_remote_info()
-        if not shell.info.type.lower() == "windows":
+        if not shell.info.type.lower() == Windows.NAME:
             command_1 = "ifconfig -a"
             o, r = shell.execute_command(command_1)
             interface_info = dict()
@@ -5208,7 +5124,7 @@ class RemoteUtilHelper(object):
     def set_upload_download_speed(server, upload=0, download=0):
         shell = RemoteMachineShellConnection(server)
         shell.info = shell.extract_remote_info()
-        if not shell.info.type.lower() == "windows":
+        if not shell.info.type.lower() == Windows.NAME:
             interface_info = RemoteUtilHelper.get_interface_info(server)
             interface_to_use = list()
             for interface in interface_info:
@@ -5227,7 +5143,7 @@ class RemoteUtilHelper(object):
     def clear_all_speed_restrictions(server):
         shell = RemoteMachineShellConnection(server)
         shell.info = shell.extract_remote_info()
-        if not shell.info.type.lower() == "windows":
+        if not shell.info.type.lower() == Windows.NAME:
             interface_info = RemoteUtilHelper.get_interface_info(server)
             for interface in interface_info:
                 o, r = shell.execute_command("wondershaper -ca {0}".format(interface))

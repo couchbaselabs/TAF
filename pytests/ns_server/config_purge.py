@@ -8,7 +8,8 @@ from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.tuq_helper import N1QLHelper
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection, OS
+from platform_constants.os_constants import Windows
+from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
 
 from java.lang import Exception as Java_base_exception
@@ -21,7 +22,7 @@ class ConfigPurging(CollectionBase):
 
         for node in self.cluster.servers:
             shell = RemoteMachineShellConnection(node)
-            if shell.info.type.lower() == OS.WINDOWS:
+            if shell.info.type.lower() == Windows.NAME:
                 is_windows = True
             shell.enable_diag_eval_on_non_local_hosts()
             shell.disconnect()

@@ -49,7 +49,6 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
-from testconstants import INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA, MIN_KV_QUOTA
 from gsiLib.GsiHelper_Rest import GsiHelper
 from capella.capella_utils import CapellaUtils as CapellaAPI
 from TestInput import TestInputServer

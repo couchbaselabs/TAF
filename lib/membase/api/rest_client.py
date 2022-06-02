@@ -5,7 +5,6 @@ import urllib
 
 import Cb_constants
 import httplib2
-import traceback
 import socket
 import time
 import uuid
@@ -13,13 +12,11 @@ import uuid
 from copy import deepcopy
 from threading import Thread
 
-from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
 from Cb_constants import constants, CbServer
 from common_lib import sleep
 from global_vars import logger
-from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
-from testconstants import COUCHBASE_FROM_VERSION_4, IS_CONTAINER
+from testconstants import IS_CONTAINER
 from custom_exceptions.exception import \
     InvalidArgumentException, \
     ServerAlreadyJoinedException, \
@@ -50,6 +47,7 @@ import urllib3
 urllib3.disable_warnings()
 
 from Rest_Connection import RestConnection as newRC
+
 
 class RestConnection(newRC):
     def __init__(self, serverInfo):
@@ -445,37 +443,35 @@ class RestConnection(newRC):
         info = self.get_nodes_self()
 
         service_quota = dict()
-        cb_version = info.version[:5]
-        if cb_version in COUCHBASE_FROM_VERSION_4:
-            if "index" in self.node_services:
-                self.test_log.debug("%s - Index service quota will be %s MB"
-                                    % (self.ip, INDEX_QUOTA))
-                kv_quota -= INDEX_QUOTA
-                service_quota[CbServer.Settings.INDEX_MEM_QUOTA] = INDEX_QUOTA
-            if "fts" in self.node_services:
-                self.test_log.debug("%s - Fts service will be %s MB"
-                                    % (self.ip, FTS_QUOTA))
-                kv_quota -= FTS_QUOTA
-                self.test_log.debug("%s - Setting both index and fts quota"
-                                    % self.ip)
-                service_quota[CbServer.Settings.FTS_MEM_QUOTA] = FTS_QUOTA
-            if "cbas" in self.node_services:
-                self.test_log.debug("%s - CBAS service quota will be %s MB"
-                                    % (self.ip, CBAS_QUOTA))
-                kv_quota -= CBAS_QUOTA
-                service_quota[CbServer.Settings.CBAS_MEM_QUOTA] = CBAS_QUOTA
-            kv_quota -= 1
-            if kv_quota < MIN_KV_QUOTA:
-                raise Exception("KV RAM needs to be more than %s MB"
-                                " at node  %s" % (MIN_KV_QUOTA, self.ip))
+        if "index" in self.node_services:
+            self.test_log.debug("%s - Index service quota will be %s MB"
+                                % (self.ip,
+                                   CbServer.Settings.MinRAMQuota.INDEX))
+            kv_quota -= CbServer.Settings.MinRAMQuota.INDEX
+            service_quota[CbServer.Settings.INDEX_MEM_QUOTA] = CbServer.Settings.MinRAMQuota.INDEX
+        if "fts" in self.node_services:
+            self.test_log.debug("%s - Fts service will be %s MB"
+                                % (self.ip, CbServer.Settings.MinRAMQuota.FTS))
+            kv_quota -= CbServer.Settings.MinRAMQuota.FTS
+            self.test_log.debug("%s - Setting both index and fts quota"
+                                % self.ip)
+            service_quota[CbServer.Settings.FTS_MEM_QUOTA] = CbServer.Settings.MinRAMQuota.FTS
+        if "cbas" in self.node_services:
+            self.test_log.debug("%s - CBAS service quota will be %s MB"
+                                % (self.ip, CbServer.Settings.MinRAMQuota.CBAS))
+            kv_quota -= CbServer.Settings.MinRAMQuota.CBAS
+            service_quota[CbServer.Settings.CBAS_MEM_QUOTA] = CbServer.Settings.MinRAMQuota.CBAS
+        kv_quota -= 1
+        if kv_quota < CbServer.Settings.MinRAMQuota.KV:
+            raise Exception("KV RAM needs to be more than %s MB at node %s"
+                            % (CbServer.Settings.MinRAMQuota.KV, self.ip))
 
         self.test_log.debug("%s - KV quota: %s MB" % (self.ip, kv_quota))
         service_quota[CbServer.Settings.KV_MEM_QUOTA] = kv_quota
         self.set_service_mem_quota(service_quota)
-        if cb_version in COUCHBASE_FROM_VERSION_4:
-            self.init_node_services(username=self.username,
-                                    password=self.password,
-                                    services=self.node_services)
+        self.init_node_services(username=self.username,
+                                password=self.password,
+                                services=self.node_services)
         self.init_cluster(username=self.username, password=self.password)
 
     def init_node_services(self, username='Administrator', password='password',

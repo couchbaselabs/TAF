@@ -8,6 +8,7 @@ import os
 
 import testconstants
 from Cb_constants import CbServer
+from platform_constants.os_constants import Windows
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from membase.api.rest_client import RestConnection
 import install_constants
@@ -32,7 +33,7 @@ params = {
     "disable_consistency": False,
     "enable_ipv6": False,
     "use_domain_names": False,
-    "fts_quota": testconstants.FTS_QUOTA,
+    "fts_quota": CbServer.Settings.MinRAMQuota.FTS,
     "fts_query_limit": 0
 }
 
@@ -104,9 +105,9 @@ class NodeHelper:
             cmd = self.actions_dict[self.info.deliverable_type]["uninstall"]
             if "msi" in cmd:
                 '''WINDOWS UNINSTALL'''
-                self.shell.terminate_processes(self.info, [s for s in testconstants.WIN_PROCESSES_KILLED])
+                self.shell.terminate_processes(self.info, [s for s in Windows.PROCESSES_KILLED])
                 self.shell.terminate_processes(self.info,
-                                               [s + "-*" for s in testconstants.COUCHBASE_FROM_VERSION_3])
+                                               [s + "-*" for s in testconstants.CB_RELEASE_BUILDS.keys()])
                 installed_version, _ = self.shell.execute_command(
                     "cat " + install_constants.DEFAULT_INSTALL_DIR["WINDOWS_SERVER"] + "VERSION.txt")
                 if len(installed_version) == 1:
@@ -315,17 +316,18 @@ class NodeHelper:
         info = self.rest.get_nodes_self()
 
         start_time = time.time()
+        cluster_quota_ratio = 0.67
         while time.time() < start_time + 30 and kv_quota == 0:
-            kv_quota = int(info.mcdMemoryReserved * testconstants.CLUSTER_QUOTA_RATIO)
+            kv_quota = int(info.mcdMemoryReserved * cluster_quota_ratio)
             time.sleep(1)
 
         self.services = self.get_services()
         if "index" in self.services:
             log.info("Setting INDEX memory quota as {0} MB on {1}"
-                     .format(testconstants.INDEX_QUOTA, self.ip))
+                     .format(CbServer.Settings.MinRAMQuota.INDEX, self.ip))
             self.rest.set_service_mem_quota(
-                {CbServer.Settings.INDEX_MEM_QUOTA: testconstants.INDEX_QUOTA})
-            kv_quota -= testconstants.INDEX_QUOTA
+                {CbServer.Settings.INDEX_MEM_QUOTA: CbServer.Settings.MinRAMQuota.INDEX})
+            kv_quota -= CbServer.Settings.MinRAMQuota.INDEX
         if "fts" in self.services:
             log.info("Setting FTS memory quota as {0} MB on {1}"
                      .format(params["fts_quota"], self.ip))
@@ -334,17 +336,17 @@ class NodeHelper:
             kv_quota -= params["fts_quota"]
         if "cbas" in self.services:
             log.info("Setting CBAS memory quota as {0} MB on {1}"
-                     .format(testconstants.CBAS_QUOTA, self.ip))
+                     .format(CbServer.Settings.MinRAMQuota.CBAS, self.ip))
             self.rest.set_service_mem_quota(
-                {CbServer.Settings.CBAS_MEM_QUOTA: testconstants.CBAS_QUOTA})
-            kv_quota -= testconstants.CBAS_QUOTA
+                {CbServer.Settings.CBAS_MEM_QUOTA: CbServer.Settings.MinRAMQuota.CBAS})
+            kv_quota -= CbServer.Settings.MinRAMQuota.CBAS
         if "kv" in self.services:
-            if kv_quota < testconstants.MIN_KV_QUOTA:
+            if kv_quota < CbServer.Settings.MinRAMQuota.KV:
                 log.warning("KV memory quota is {0}MB but needs to be at least {1}MB on {2}"
                             .format(kv_quota,
-                                    testconstants.MIN_KV_QUOTA,
+                                    CbServer.Settings.MinRAMQuota.KV,
                                     self.ip))
-                kv_quota = testconstants.MIN_KV_QUOTA
+                kv_quota = CbServer.Settings.MinRAMQuota.KV
             log.info("Setting KV memory quota as {0} MB on {1}"
                      .format(kv_quota, self.ip))
         self.rest.set_service_mem_quota(

@@ -11,7 +11,6 @@ from membase.api.rest_client import RestConnection
 from EventingLib.EventingOperations_Rest import EventingHelper
 from remote.remote_util import RemoteMachineShellConnection
 from basetestcase import BaseTestCase
-from testconstants import INDEX_QUOTA, EVENTING_QUOTA
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator
 
@@ -49,8 +48,8 @@ class EventingBaseTest(BaseTestCase):
             "Setting the min possible memory quota so that adding mode nodes to the cluster wouldn't be a problem.")
         self.rest.set_service_mem_quota(
             {CbServer.Settings.KV_MEM_QUOTA: 330,
-             CbServer.Settings.INDEX_MEM_QUOTA: INDEX_QUOTA,
-             CbServer.Settings.EVENTING_MEM_QUOTA: EVENTING_QUOTA})
+             CbServer.Settings.INDEX_MEM_QUOTA: CbServer.Settings.MinRAMQuota.INDEX,
+             CbServer.Settings.EVENTING_MEM_QUOTA: CbServer.Settings.MinRAMQuota.EVENTING})
         self.src_bucket_name = self.input.param('src_bucket_name', 'src_bucket')
         self.eventing_log_level = self.input.param('eventing_log_level', 'INFO')
         self.dst_bucket_name = self.input.param('dst_bucket_name', 'dst_bucket')

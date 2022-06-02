@@ -1,11 +1,8 @@
 from basetestcase import BaseTestCase
 from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator
 from membase.api.rest_client import RestConnection
+from platform_constants.os_constants import Linux, Mac, Windows
 from remote.remote_util import RemoteMachineShellConnection
-from testconstants import \
-    LINUX_COUCHBASE_BIN_PATH, \
-    WIN_COUCHBASE_BIN_PATH, \
-    MAC_COUCHBASE_BIN_PATH
 
 
 class RackzoneBaseTest(BaseTestCase):
@@ -76,19 +73,19 @@ class RackzoneBaseTest(BaseTestCase):
         shell = RemoteMachineShellConnection(self.cluster.master)
         s_type = shell.extract_remote_info().distribution_type
         shell.disconnect()
-        self.os_name = "linux"
+        self.os_name = Linux.NAME
         self.is_linux = True
-        self.cbstat_command = "%scbstats" % LINUX_COUCHBASE_BIN_PATH
-        if s_type.lower() == 'windows':
+        self.cbstat_command = "%scbstats" % Linux.COUCHBASE_BIN_PATH
+        if s_type.lower() == Windows.NAME:
             self.is_linux = False
-            self.os_name = "windows"
-            self.cbstat_command = "%scbstats.exe" % WIN_COUCHBASE_BIN_PATH
-        if s_type.lower() == 'mac':
-            self.cbstat_command = "%scbstats" % MAC_COUCHBASE_BIN_PATH
+            self.os_name = Windows.NAME
+            self.cbstat_command = "%scbstats.exe" % Windows.COUCHBASE_BIN_PATH
+        elif s_type.lower() == Mac.NAME:
+            self.cbstat_command = "%scbstats" % Mac.COUCHBASE_BIN_PATH
         if self.nonroot:
             self.cbstat_command = "/home/%s%scbstats" \
                                   % (self.cluster.master.ssh_username,
-                                     LINUX_COUCHBASE_BIN_PATH)
+                                     Linux.COUCHBASE_BIN_PATH)
 
     def tearDown(self):
         """ Some test involve kill couchbase server.  If the test steps failed

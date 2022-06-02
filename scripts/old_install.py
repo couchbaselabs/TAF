@@ -9,37 +9,28 @@ import os
 import re
 import socket
 import sys
+import time
 from datetime import datetime
 from threading import Thread
 
-from Cb_constants import CbServer
-
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "connections"] + sys.path
-import testconstants
-import time
-from builds.build_query import BuildQuery
+
+import TestInput
 import logging.config
+from Cb_constants import CbServer
+
+from builds.build_query import BuildQuery
 from custom_exceptions.exception import ServerUnavailableException
 from membase.api.rest_client import RestConnection
+from membase.helper.cluster_helper import ClusterOperationHelper
+from platform_constants.os_constants import Linux, Windows
 from platform_utils.remote.remote_util import \
     RemoteMachineShellConnection, \
     RemoteUtilHelper
-from membase.helper.cluster_helper import ClusterOperationHelper
 from testconstants import MV_LATESTBUILD_REPO
-from testconstants import CB_REPO, CB_DOWNLOAD_SERVER, \
-    CB_DOWNLOAD_SERVER_FQDN
-from testconstants import COUCHBASE_VERSION_2
-from testconstants import COUCHBASE_VERSION_3, COUCHBASE_FROM_SPOCK
-from testconstants import CB_VERSION_NAME, COUCHBASE_FROM_VERSION_4, \
-    CB_RELEASE_BUILDS, COUCHBASE_VERSIONS
-from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, \
-    CBAS_QUOTA
-from testconstants import LINUX_COUCHBASE_PORT_CONFIG_PATH, \
-    LINUX_COUCHBASE_OLD_CONFIG_PATH
-from testconstants import WIN_COUCHBASE_PORT_CONFIG_PATH, \
-    WIN_COUCHBASE_OLD_CONFIG_PATH
-import TestInput
+from testconstants import CB_REPO, CB_DOWNLOAD_SERVER, CB_DOWNLOAD_SERVER_FQDN
+from testconstants import CB_VERSION_NAME, CB_RELEASE_BUILDS
 
 
 def usage(err=None):
@@ -249,35 +240,12 @@ class Installer(object):
         print "*** OS version of this server %s is %s ***" % (
             remote_client.ip,
             info.distribution_version)
-        if info.distribution_version.lower() == "suse 12":
-            if version[:5] not in COUCHBASE_FROM_SPOCK:
-                mesg = "%s does not support cb version %s" % \
-                       (info.distribution_version, version[:5])
-                remote_client.stop_current_python_running(mesg)
         remote_client.disconnect()
         if info.type.lower() == "windows":
             if "-" in version:
-                msi_build = version.split("-")
-                """
-                    In spock from build 2924 and later release, 
-                    we only support
-                    msi installation method on windows
-                """
                 if "2k8" in info.windows_name:
                     info.windows_name = 2008
-
-                if msi_build[0] in COUCHBASE_FROM_SPOCK:
-                    info.deliverable_type = "msi"
-                elif "5" > msi_build[0] and info.windows_name == 2016:
-                    log.info("\n========\n"
-                             "         Build version %s does not "
-                             "support on\n"
-                             "         Windows Server 2016\n"
-                             "========" % msi_build[0])
-                    os.system(
-                        "ps aux | grep python | grep %d " % os.getpid())
-                    time.sleep(5)
-                    os.system('kill %d' % os.getpid())
+                info.deliverable_type = "msi"
             else:
                 print "Incorrect version format"
                 sys.exit()
@@ -303,13 +271,11 @@ class Installer(object):
                 build_repo = CB_REPO.replace("couchbase-server",
                                              "server-analytics") + \
                              CB_VERSION_NAME[version[:3]] + "/"
-            elif version[:5] not in COUCHBASE_VERSION_2 and \
-                    version[:5] not in COUCHBASE_VERSION_3:
-                if version[:3] in CB_VERSION_NAME:
-                    build_repo = CB_REPO + CB_VERSION_NAME[
-                        version[:3]] + "/"
-                else:
-                    sys.exit("version is not support yet")
+            elif version[:3] in CB_VERSION_NAME:
+                build_repo = CB_REPO + CB_VERSION_NAME[
+                    version[:3]] + "/"
+            else:
+                sys.exit("version is not support yet")
             if 'enable_ipv6' in params and params['enable_ipv6']:
                 build_repo = build_repo.replace(CB_DOWNLOAD_SERVER,
                                                 CB_DOWNLOAD_SERVER_FQDN)
@@ -531,6 +497,7 @@ class CouchbaseServerInstaller(Installer):
         remote_client = RemoteMachineShellConnection(params["server"])
         success = True
         success &= remote_client.is_couchbase_installed()
+        num_erlang_threads = 16
         if not success:
             mesg = "\nServer {0} failed to install".format(
                 params["server"].ip)
@@ -608,39 +575,36 @@ class CouchbaseServerInstaller(Installer):
                                 vm is
                                 smaller than 2 GB """
 
-                    if cb_version in COUCHBASE_FROM_VERSION_4:
-                        if "index" in set_services:
-                            log.info("quota for index service will be %s MB"
-                                     % INDEX_QUOTA)
-                            kv_quota -= INDEX_QUOTA
-                            log.info(
-                                "set index quota to node %s " %
-                                server.ip)
-                            rest.set_service_mem_quota(
-                                {CbServer.Settings.INDEX_MEM_QUOTA: INDEX_QUOTA})
-                        if "fts" in set_services:
-                            log.info(
-                                "quota for fts service will be %s MB"
-                                % FTS_QUOTA)
-                            kv_quota -= FTS_QUOTA
-                            log.info(
-                                "set both index and fts quota at node "
-                                "%s " % server.ip)
-                            rest.set_service_mem_quota(
-                                {CbServer.Settings.FTS_MEM_QUOTA: FTS_QUOTA})
-                        if "cbas" in set_services:
-                            log.info(
-                                "quota for cbas service will be %s "
-                                "MB" % (
-                                    CBAS_QUOTA))
-                            kv_quota -= CBAS_QUOTA
-                            rest.set_service_mem_quota(
-                                {CbServer.Settings.CBAS_MEM_QUOTA: CBAS_QUOTA})
-                        if kv_quota < MIN_KV_QUOTA:
-                            raise Exception(
-                                "KV RAM needs to be more than %s MB"
-                                " at node  %s" % (
-                                    MIN_KV_QUOTA, server.ip))
+                    if "index" in set_services:
+                        log.info("quota for index service will be %s MB"
+                                 % CbServer.Settings.MinRAMQuota.INDEX)
+                        kv_quota -= CbServer.Settings.MinRAMQuota.INDEX
+                        log.info(
+                            "set index quota to node %s " %
+                            server.ip)
+                        rest.set_service_mem_quota(
+                            {CbServer.Settings.INDEX_MEM_QUOTA: CbServer.Settings.MinRAMQuota.INDEX})
+                    if "fts" in set_services:
+                        log.info("quota for fts service will be %s MB"
+                                 % CbServer.Settings.MinRAMQuota.FTS)
+                        kv_quota -= CbServer.Settings.MinRAMQuota.FTS
+                        log.info(
+                            "set both index and fts quota at node "
+                            "%s " % server.ip)
+                        rest.set_service_mem_quota(
+                            {CbServer.Settings.FTS_MEM_QUOTA: CbServer.Settings.MinRAMQuota.FTS})
+                    if "cbas" in set_services:
+                        log.info(
+                            "quota for cbas service will be %s MB"
+                            % CbServer.Settings.MinRAMQuota.CBAS)
+                        kv_quota -= CbServer.Settings.MinRAMQuota.CBAS
+                        rest.set_service_mem_quota(
+                            {CbServer.Settings.CBAS_MEM_QUOTA: CbServer.Settings.MinRAMQuota.CBAS})
+                    if kv_quota < CbServer.Settings.MinRAMQuota.KV:
+                        raise Exception(
+                            "KV RAM needs to be more than %s MB at node %s"
+                            % (CbServer.Settings.MinRAMQuota.KV, server.ip))
+
                     """ set kv quota smaller than 1 MB so that it 
                     will satify
                         the condition smaller than allow quota """
@@ -648,12 +612,10 @@ class CouchbaseServerInstaller(Installer):
                     log.info("quota for kv: %s MB" % kv_quota)
                     rest.set_service_mem_quota(
                         {CbServer.Settings.KV_MEM_QUOTA: kv_quota})
-                    if params["version"][
-                       :5] in COUCHBASE_FROM_VERSION_4:
-                        rest.init_node_services(
-                            username=server.rest_username,
-                            password=server.rest_password,
-                            services=set_services)
+                    rest.init_node_services(
+                        username=server.rest_username,
+                        password=server.rest_password,
+                        services=set_services)
                     if "index" in set_services:
                         if "storage_mode" in params:
                             storageMode = params["storage_mode"]
@@ -688,7 +650,7 @@ class CouchbaseServerInstaller(Installer):
                 # TODO: Make it work with windows
                 if "erlang_threads" in params:
                     num_threads = params.get('erlang_threads',
-                                             testconstants.NUM_ERLANG_THREADS)
+                                             num_erlang_threads)
                     # Stop couchbase-server
                     ClusterOperationHelper.stop_cluster([server])
                     if "sync_threads" in params or ':' in num_threads:
@@ -803,11 +765,8 @@ class CouchbaseServerInstaller(Installer):
                     we only support
                     msi installation method on windows
                 """
-                if "-" in params["version"] and \
-                        params["version"].split("-")[
-                            0] in COUCHBASE_FROM_SPOCK:
+                if "-" in params["version"]:
                     self.msi = True
-                    os_type = "msi"
                 remote_client.download_binary_in_win(build.url,
                                                      params["version"],
                                                      msi_install=self.msi)
@@ -1337,12 +1296,12 @@ def change_couchbase_indexer_ports(input):
     info = remote_client.extract_remote_info()
     remote_client.disconnect()
     type = info.type.lower()
-    if type == "windows":
-        port_config_path = WIN_COUCHBASE_PORT_CONFIG_PATH
-        old_config_path = WIN_COUCHBASE_OLD_CONFIG_PATH
+    if type == Windows.NAME:
+        port_config_path = Windows.COUCHBASE_PORT_CONFIG_PATH
+        old_config_path = Windows.COUCHBASE_OLD_CONFIG_PATH
     else:
-        port_config_path = LINUX_COUCHBASE_PORT_CONFIG_PATH
-        old_config_path = LINUX_COUCHBASE_OLD_CONFIG_PATH
+        port_config_path = Linux.COUCHBASE_PORT_CONFIG_PATH
+        old_config_path = Linux.COUCHBASE_OLD_CONFIG_PATH
     filename = "static_config"
     for node in input.servers:
         output_lines = ''
@@ -1395,9 +1354,8 @@ def main():
         if "version" in input.test_params:
             build_version = input.test_params["version"]
             build_pattern = re.compile("\d\d?\.\d\.\d-\d{3,4}$")
-            if input.test_params["version"][
-               :5] in COUCHBASE_VERSIONS and \
-                    bool(build_pattern.match(build_version)):
+            if input.test_params["version"][:5] in CB_RELEASE_BUILDS.keys() \
+                    and bool(build_pattern.match(build_version)):
                 correct_build_format = True
         use_direct_url = False
         if "url" in input.test_params and input.test_params[

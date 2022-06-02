@@ -1,8 +1,6 @@
 from Cb_constants import ClusterRun
 from TestInput import TestInputSingleton
-from testconstants import \
-    LINUX_COUCHBASE_BIN_PATH, LINUX_NONROOT_CB_BIN_PATH, \
-    WIN_COUCHBASE_BIN_PATH, MAC_COUCHBASE_BIN_PATH
+from platform_constants.os_constants import Linux, Mac, Windows
 import os
 
 
@@ -17,7 +15,7 @@ class CbCmdBase:
         self.password = password
         self.binaryName = binary_name
 
-        self.cbstatCmd = "%s%s" % (LINUX_COUCHBASE_BIN_PATH, self.binaryName)
+        self.cbstatCmd = "%s%s" % (Linux.COUCHBASE_BIN_PATH, self.binaryName)
 
         if int(shell_conn.port) in range(ClusterRun.port,
                                          ClusterRun.port+10):
@@ -26,15 +24,15 @@ class CbCmdBase:
                                           "build", "kv_engine", self.binaryName)
         elif self.shellConn.extract_remote_info().type.lower() == 'windows':
             # Windows case
-            self.cbstatCmd = "%s%s.exe" % (WIN_COUCHBASE_BIN_PATH,
+            self.cbstatCmd = "%s%s.exe" % (Windows.COUCHBASE_BIN_PATH,
                                            self.binaryName)
         elif self.shellConn.extract_remote_info().type.lower() == 'mac':
             # MacOS case
-            self.cbstatCmd = "%s%s" % (MAC_COUCHBASE_BIN_PATH,
+            self.cbstatCmd = "%s%s" % (Mac.COUCHBASE_BIN_PATH,
                                        self.binaryName)
         elif self.shellConn.username != "root":
             # Linux non-root case
-            self.cbstatCmd = "%s%s" % (LINUX_NONROOT_CB_BIN_PATH,
+            self.cbstatCmd = "%s%s" % (Linux.NONROOT_CB_BIN_PATH,
                                        self.binaryName)
 
     def _execute_cmd(self, cmd):

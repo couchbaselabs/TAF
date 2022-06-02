@@ -2,9 +2,8 @@ import json
 import time
 from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
-from BucketLib.bucket import Bucket
+from platform_constants.os_constants import Linux
 from remote.remote_util import RemoteMachineShellConnection
-from testconstants import LINUX_COUCHBASE_LOGS_PATH
 
 
 class DeleteBucketTests(BaseTestCase):
@@ -53,7 +52,7 @@ class DeleteBucketTests(BaseTestCase):
 
     def test_audit_logging_for_delete_bucket(self):
         rest = RestConnection(self.cluster.master)
-        logfilePath = LINUX_COUCHBASE_LOGS_PATH + "/audit.log"
+        logfilePath = Linux.COUCHBASE_LOGS_PATH + "/audit.log"
         rest.setAuditSettings()
         self.remote_shell = RemoteMachineShellConnection(self.cluster.master)
         bucketNameValue = self.bucket_util.get_random_name()

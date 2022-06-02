@@ -10,8 +10,6 @@ import re
 import time
 import os
 
-import testconstants
-
 from Cb_constants import constants, CbServer
 from Jython_tasks.task import MonitorActiveTask, FunctionCallTask
 from TestInput import TestInputSingleton, TestInputServer
@@ -20,6 +18,7 @@ from common_lib import sleep, humanbytes
 from couchbase_cli import CouchbaseCLI
 from global_vars import logger
 from membase.api.rest_client import RestConnection
+from platform_constants.os_constants import Linux, Mac, Windows
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from table_view import TableView
 
@@ -249,8 +248,7 @@ class ClusterUtils:
         rest.remove_all_replications()
         rest.remove_all_remote_clusters()
         rest.remove_all_recoveries()
-        rest.is_ns_server_running(
-            timeout_in_seconds=testconstants.NS_SERVER_TIMEOUT)
+        rest.is_ns_server_running(timeout_in_seconds=120)
         nodes = rest.node_statuses()
         master_id = rest.get_nodes_self().id
         for node in nodes:
@@ -1024,61 +1022,39 @@ class ClusterUtils:
         shell = RemoteMachineShellConnection(cluster.master)
         rest = RestConnection(cluster.master)
         info = shell.extract_remote_info().type.lower()
-        if info == 'linux':
-            cbstat_command = "{0:s}cbstats" \
-                             .format(testconstants.LINUX_COUCHBASE_BIN_PATH)
-        elif info == 'windows':
-            cbstat_command = "{0:s}cbstats" \
-                             .format(testconstants.WIN_COUCHBASE_BIN_PATH)
-        elif info == 'mac':
-            cbstat_command = "{0:s}cbstats" \
-                             .format(testconstants.MAC_COUCHBASE_BIN_PATH)
+        if info == Linux.NAME:
+            cbstat_command = "{0:s}cbstats".format(Linux.COUCHBASE_BIN_PATH)
+        elif info == Windows.NAME:
+            cbstat_command = "{0:s}cbstats".format(Windows.COUCHBASE_BIN_PATH)
+        elif info == Mac.NAME:
+            cbstat_command = "{0:s}cbstats".format(Mac.COUCHBASE_BIN_PATH)
         else:
             raise Exception("OS not supported.")
         versions = rest.get_nodes_versions()
         for group in nodes:
             for node in nodes[group]:
-                if versions[0][:5] in testconstants.COUCHBASE_VERSION_2:
-                    command = "tap"
-                    if not info == 'windows':
-                        commands = "%s %s:%s -u %s -p \"%s\" %s -b %s | grep :vb_filter: |  awk '{print $1}' \
-                            | xargs | sed 's/eq_tapq:replication_ns_1@//g'  | sed 's/:vb_filter://g' \
-                            " % (cbstat_command, node,
-                                 constants.memcached_port,
-                                 rest.username, rest.password,
-                                 command, bucket)
-                    else:
-                        commands = "%s %s:%s -u %s -p \"%s\" %s -b %s | grep.exe :vb_filter: | gawk.exe '{print $1}' \
-                               | sed.exe 's/eq_tapq:replication_ns_1@//g'  | sed.exe 's/:vb_filter://g' \
+                command = "dcp"
+                if not info == Windows.NAME:
+                    commands = "%s %s:%s -u %s -p \"%s\" %s -b %s  | grep :replication:ns_1@%s |  grep vb_uuid | \
+                                awk '{print $1}' | sed 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
+                                sed 's/:.*//g' | sort -u | xargs \
                                " % (cbstat_command, node,
                                     constants.memcached_port,
                                     rest.username, rest.password,
-                                    command, bucket)
+                                    command, bucket,
+                                    node, node)
                     output, error = shell.execute_command(commands)
-                elif versions[0][:5] in testconstants.COUCHBASE_VERSION_3 or \
-                        versions[0][:5] in testconstants.COUCHBASE_FROM_VERSION_4:
-                    command = "dcp"
-                    if not info == 'windows':
-                        commands = "%s %s:%s -u %s -p \"%s\" %s -b %s  | grep :replication:ns_1@%s |  grep vb_uuid | \
-                                    awk '{print $1}' | sed 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
-                                    sed 's/:.*//g' | sort -u | xargs \
-                                   " % (cbstat_command, node,
-                                        constants.memcached_port,
-                                        rest.username, rest.password,
-                                        command, bucket,
-                                        node, node)
-                        output, error = shell.execute_command(commands)
-                    else:
-                        commands = "%s %s:%s -u %s -p \"%s\" %s -b %s  | grep.exe :replication:ns_1@%s |  grep vb_uuid | \
-                                    gawk.exe '{print $1}' | sed.exe 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
-                                    sed.exe 's/:.*//g' \
-                                   " % (cbstat_command, node,
-                                        constants.memcached_port,
-                                        rest.username, rest.password,
-                                        command, bucket,
-                                        node, node)
-                        output, error = shell.execute_command(commands)
-                        output = sorted(set(output))
+                else:
+                    commands = "%s %s:%s -u %s -p \"%s\" %s -b %s  | grep.exe :replication:ns_1@%s |  grep vb_uuid | \
+                                gawk.exe '{print $1}' | sed.exe 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
+                                sed.exe 's/:.*//g' \
+                               " % (cbstat_command, node,
+                                    constants.memcached_port,
+                                    rest.username, rest.password,
+                                    command, bucket,
+                                    node, node)
+                    output, error = shell.execute_command(commands)
+                    output = sorted(set(output))
                 shell.log_command_output(output, error)
                 output = output[0].split(" ")
                 if set(nodes[group]).isdisjoint(set(output)):
@@ -1218,7 +1194,7 @@ class ClusterUtils:
                 self.log.error("\n {0}".format(panic_trace))
                 panic_count = count
             os_info = shell.extract_remote_info()
-            if os_info.type.lower() == "windows":
+            if os_info.type.lower() == Windows.NAME:
                 # This is a fixed path in all windows systems inside couchbase
                 dir_name_crash = 'c://CrashDumps'
             else:

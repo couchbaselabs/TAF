@@ -1,14 +1,12 @@
 import json
 import time
 import random
-import string
 
-import testconstants
 from common_lib import sleep
 from couchbase_helper.tuq_generators import TuqGenerators
 from couchbase_helper.tuq_generators import JsonGenerator
-from custom_exceptions.exception import CBQError
 from membase.api.rest_client import RestConnection
+from platform_constants.os_constants import Linux, Windows
 from remote.remote_util import RemoteMachineShellConnection
 from n1ql_exceptions import N1qlException
 from bucket_utils.bucket_ready_functions import BucketUtils
@@ -646,7 +644,7 @@ class N1QLHelper:
         if type in ["ubuntu", "centos", "red hat"]:
             url = "https://s3.amazonaws.com/packages.couchbase.com/releases/couchbase-query/dp1/"
             url += "couchbase-query_%s_%s_linux.tar.gz" % (version, info.architecture_type)
-        #TODO for windows
+        # TODO for windows
         return url
 
     def _restart_indexer(self):
@@ -659,10 +657,10 @@ class N1QLHelper:
         self._set_env_variable(server)
         if self.version == "git_repo":
             os = self.shell.extract_remote_info().type.lower()
-            if os != 'windows':
-                gopath = testconstants.LINUX_GOPATH
+            if os != Windows.NAME:
+                gopath = Linux.GOPATH
             else:
-                gopath = testconstants.WINDOWS_GOPATH
+                gopath = Windows.GOPATH
             if self.input.tuq_client and "gopath" in self.input.tuq_client:
                 gopath = self.input.tuq_client["gopath"]
             if os == 'windows':
@@ -674,14 +672,14 @@ class N1QLHelper:
             self.shell.execute_command(cmd)
         elif self.version == "sherlock":
             os = self.shell.extract_remote_info().type.lower()
-            if os != 'windows':
-                couchbase_path = testconstants.LINUX_COUCHBASE_BIN_PATH
+            if os != Windows.NAME:
+                couchbase_path = Linux.COUCHBASE_BIN_PATH
             else:
-                couchbase_path = testconstants.WIN_COUCHBASE_BIN_PATH
+                couchbase_path = Windows.COUCHBASE_BIN_PATH
             if self.input.tuq_client and "sherlock_path" in self.input.tuq_client:
                 couchbase_path = "%s/bin" % self.input.tuq_client["sherlock_path"]
                 print("PATH TO SHERLOCK: %s" % couchbase_path)
-            if os == 'windows':
+            if os == Windows.NAME:
                 cmd = "cd %s; " % (couchbase_path) +\
                 "./cbq-engine.exe -datastore http://%s:%s/ >/dev/null 2>&1 &" % (server.ip, server.port)
             else:
@@ -696,7 +694,7 @@ class N1QLHelper:
             self.shell.execute_command(cmd)
         else:
             os = self.shell.extract_remote_info().type.lower()
-            if os != 'windows':
+            if os != Windows.NAME:
                 cmd = "cd /tmp/tuq;./cbq-engine -couchbase http://%s:%s/ >/dev/null 2>&1 &" % (server.ip, server.port)
             else:
                 cmd = "cd /cygdrive/c/tuq;./cbq-engine.exe -couchbase http://%s:%s/ >/dev/null 2>&1 &" % (server.ip, server.port)
@@ -1223,9 +1221,3 @@ class N1QLHelper:
                        index_map[key][index_name]['progress']
             else:
                 raise Exception("Index does not exist - {0}".format(index_name))
-
-
-
-
-
-

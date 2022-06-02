@@ -3,18 +3,19 @@ import copy
 import json
 import random
 import string
-import testconstants
 from threading import Thread
 
+from Cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
-from n1ql_exceptions import N1qlException
 from couchbase_helper.random_query_template import WhereClause
-from sdk_exceptions import SDKException
-from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
-from Cb_constants import CbServer
+from n1ql_exceptions import N1qlException
+from platform_constants.os_constants import Linux
+from sdk_exceptions import SDKException
+
+from com.couchbase.client.java.json import JsonObject
 
 
 class N1qlBase(CollectionBase):
@@ -22,7 +23,7 @@ class N1qlBase(CollectionBase):
         super(N1qlBase, self).setUp()
         self.scan_consistency = self.input.param("scan_consistency",
                                                  'REQUEST_PLUS')
-        self.path = testconstants.LINUX_COUCHBASE_BIN_PATH
+        self.path = Linux.COUCHBASE_BIN_PATH
         self.use_rest = self.input.param("use_rest", True)
         self.hint_index = self.input.param("hint", None)
         self.n1ql_port = self.input.param("n1ql_port", 8093)

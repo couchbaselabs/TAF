@@ -21,7 +21,8 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import BucketDurability
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection, OS
+from platform_constants.os_constants import Windows
+from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
 
 
@@ -650,7 +651,7 @@ class SystemEventLogs(ClusterSetup):
         for node in self.cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(node)
             # Update file path in case of windows
-            if shell.info.type.lower() == OS.WINDOWS:
+            if shell.info.type.lower() == Windows.NAME:
                 file_generic_name = "C:\\\\tmp\\\\cbcollect_info_test-"
                 cbcollect_timeout = cbcollect_timeout * 5
             node_data[node.ip] = dict()

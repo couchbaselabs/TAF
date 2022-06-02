@@ -6,7 +6,8 @@ from threading import Thread
 from datetime import datetime
 import uuid
 
-sys.path = [".", "lib"] + sys.path
+sys.path = [".", "lib", "couchbase_utils", "platform_utils",
+            "connections", "constants"] + sys.path
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 import TestInput
 import logging.config

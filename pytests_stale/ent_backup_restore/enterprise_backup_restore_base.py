@@ -4,18 +4,17 @@ import json
 import urllib
 
 from BucketLib.bucket import Bucket
+from Cb_constants import CbServer
 from basetestcase import BaseTestCase
 from couchbase_helper.data_analysis_helper import DataCollector
 from membase.helper.rebalance_helper import RebalanceHelper
 from couchbase_helper.documentgenerator import BlobGenerator,DocumentGenerator
 from ent_backup_restore.validation_helpers.backup_restore_validations \
                                                  import BackupRestoreValidations
+
+from platform_constants.os_constants import Linux, Windows
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.document import View
-from testconstants import COUCHBASE_DATA_PATH, WIN_COUCHBASE_DATA_PATH_RAW,\
-                          WIN_TMP_PATH_RAW, LINUX_ROOT_PATH, WIN_ROOT_PATH,\
-                          WIN_TMP_PATH, STANDARD_BUCKET_PORT, WIN_CYGWIN_BIN_PATH
-from testconstants import INDEX_QUOTA, FTS_QUOTA
 from membase.api.rest_client import RestConnection
 
 SOURCE_CB_PARAMS = {
@@ -53,7 +52,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
         self.backupset = Backupset()
         self.cmd_ext = ""
         self.should_fail = self.input.param("should-fail", False)
-        self.database_path = COUCHBASE_DATA_PATH
+        self.database_path = Linux.COUCHBASE_DATA_PATH
 
         cmd = 'curl -g {0}:8091/diag/eval -u {1}:{2} '\
             .format(self.cluster.master.ip, self.cluster.master.rest_username,
@@ -77,12 +76,12 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
         self.replace_ttl_with = self.input.param("replace-ttl-with", None)
         self.bk_with_ttl = self.input.param("bk-with-ttl", None)
         self.backupset.user_env_with_prompt = \
-                        self.input.param("user-env-with-prompt", False)
+            self.input.param("user-env-with-prompt", False)
         self.backupset.passwd_env_with_prompt = \
-                        self.input.param("passwd-env-with-prompt", False)
+            self.input.param("passwd-env-with-prompt", False)
         shell = RemoteMachineShellConnection(self.servers[0])
         info = shell.extract_remote_info().type.lower()
-        self.root_path = LINUX_ROOT_PATH
+        self.root_path = Linux.ROOT_PATH
         self.wget = "wget"
         self.os_name = "linux"
         self.tmp_path = "/tmp/"
@@ -94,21 +93,21 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
                                 "xargs -I {} date --date='@{}' --rfc-3339=seconds | "\
                                 "sed 's/ /T/'"
         self.seconds_with_ttl = "date +%s --date='{0} seconds'".format(self.replace_ttl_with)
-        if info == 'linux':
+        if info == Linux.NAME:
             if self.nonroot:
                 base_path = "/home/%s" % self.cluster.master.ssh_username
-                self.database_path = "%s%s" % (base_path, COUCHBASE_DATA_PATH)
+                self.database_path = "%s%s" % (base_path, Linux.COUCHBASE_DATA_PATH)
                 self.root_path = "/home/%s/" % self.cluster.master.ssh_username
-        elif info == 'windows':
-            self.os_name = "windows"
+        elif info == Windows.NAME:
+            self.os_name = Windows.NAME
             self.cmd_ext = ".exe"
             self.wget = "/cygdrive/c/automation/wget.exe"
-            self.database_path = WIN_COUCHBASE_DATA_PATH_RAW
-            self.root_path = WIN_ROOT_PATH
-            self.tmp_path = WIN_TMP_PATH
+            self.database_path = Windows.COUCHBASE_DATA_PATH_RAW
+            self.root_path = Windows.ROOT_PATH
+            self.tmp_path = Windows.TMP_PATH
             self.long_help_flag = "help"
             self.short_help_flag = "h"
-            self.cygwin_bin_path = WIN_CYGWIN_BIN_PATH
+            self.cygwin_bin_path = Windows.CYGWIN_BIN_PATH
             self.rfc3339_date = "date +%s --date='{0} seconds' | ".format(self.replace_ttl_with) + \
                             "{0}xargs -I {{}} date --date=\"@'{{}}'\" --rfc-3339=seconds | "\
                                                             .format(self.cygwin_bin_path) + \
@@ -118,7 +117,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
             if win_format in self.cli_command_location:
                 self.cli_command_location = self.cli_command_location.replace(win_format,
                                                                               cygwin_format)
-            self.backupset.directory = self.input.param("dir", WIN_TMP_PATH_RAW + "entbackup")
+            self.backupset.directory = self.input.param("dir", Windows.TMP_PATH_RAW + "entbackup")
         elif info == 'mac':
             self.backupset.directory = self.input.param("dir", "/tmp/entbackup")
         else:
@@ -245,8 +244,8 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
             if info == 'linux' or info == 'mac':
                 backup_directory = "/tmp/entbackup"
             elif info == 'windows':
-                self.tmp_path = WIN_TMP_PATH
-                backup_directory = WIN_TMP_PATH_RAW + "entbackup"
+                self.tmp_path = Windows.TMP_PATH
+                backup_directory = Windows.TMP_PATH_RAW + "entbackup"
             else:
                 raise Exception("OS not supported.")
             backup_directory += self.cluster.master.ip
@@ -539,9 +538,9 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
             has_index_node = False
             if "index" in self.cluster.master_services[0]:
                 has_index_node = True
-                ram_size = int(ram_size) - INDEX_QUOTA
+                ram_size = int(ram_size) - CbServer.Settings.MinRAMQuota.INDEX
             if "fts" in self.cluster.master_services[0]:
-                ram_size = int(ram_size) - FTS_QUOTA
+                ram_size = int(ram_size) - CbServer.Settings.MinRAMQuota.FTS
             all_buckets = self.total_buckets
             if len(self.buckets) > 0:
                 all_buckets = len(self.buckets)
@@ -1086,7 +1085,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
         """
         cert_file_location = self.root_path + "cert.pem"
         if self.os_name == "windows":
-            cert_file_location = WIN_TMP_PATH_RAW + "cert.pem"
+            cert_file_location = Windows.TMP_PATH_RAW + "cert.pem"
         shell = RemoteMachineShellConnection(server_host)
         cmd = "%s/couchbase-cli ssl-manage -c %s:8091 -u Administrator -p password "\
               " --cluster-cert-info > %s" % (self.cli_command_location,
@@ -1652,6 +1651,7 @@ class Backupset:
 class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
     def setUp(self):
         super(EnterpriseBackupMergeBase, self).setUp()
+        self.standard_bucket_port = 11217
         self.actions = self.input.param("actions", None)
         self.document_type = self.input.param("document_type", "json")
         if self.document_type == "binary":
@@ -2264,7 +2264,7 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
                 name = self.backupset.deleted_buckets[i]
             else:
                 name = 'bucket' + str(i)
-            port = STANDARD_BUCKET_PORT + i + 1
+            port = self.standard_bucket_port + i + 1
             bucket_priority = None
             if self.standard_bucket_priority is not None:
                 bucket_priority = self.get_bucket_priority(
@@ -2316,7 +2316,7 @@ class EnterpriseBackupMergeBase(EnterpriseBackupRestoreBase):
                 name = self.backupset.deleted_buckets[i]
             else:
                 name = 'bucket' + str(i)
-            port = STANDARD_BUCKET_PORT + i + 1
+            port = self.standard_bucket_port + i + 1
             bucket_priority = None
             if self.standard_bucket_priority is not None:
                 bucket_priority = self.get_bucket_priority(

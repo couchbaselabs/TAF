@@ -8,8 +8,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from scripts.old_install import InstallerJob
-from testconstants import CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \
-    COUCHBASE_MP_VERSION, MV_LATESTBUILD_REPO
+from testconstants import CB_REPO, CB_VERSION_NAME, CB_RELEASE_BUILDS
 
 
 class UpgradeBase(BaseTestCase):
@@ -269,11 +268,9 @@ class UpgradeBase(BaseTestCase):
         if info is None:
             info = remote.extract_remote_info()
         build_repo = CB_REPO
-        if version[:5] in COUCHBASE_VERSIONS:
+        if version[:5] in CB_RELEASE_BUILDS.keys():
             if version[:3] in CB_VERSION_NAME:
                 build_repo = CB_REPO + CB_VERSION_NAME[version[:3]] + "/"
-            elif version[:5] in COUCHBASE_MP_VERSION:
-                build_repo = MV_LATESTBUILD_REPO
         builds, changes = BuildQuery().get_all_builds(
             version=version,
             timeout=self.wait_timeout * 5,

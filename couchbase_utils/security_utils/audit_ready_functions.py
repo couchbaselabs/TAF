@@ -1,8 +1,8 @@
 import json
 
 from membase.api.rest_client import RestConnection
+from platform_constants.os_constants import Linux
 from remote.remote_util import RemoteMachineShellConnection
-from testconstants import LINUX_DISTRIBUTION_NAME
 from global_vars import logger
 
 
@@ -34,8 +34,8 @@ class audit:
         self.nonroot = False
         shell = RemoteMachineShellConnection(self.host)
         self.info = shell.extract_remote_info()
-        if self.info.distribution_type.lower() in LINUX_DISTRIBUTION_NAME and \
-                                                    host.ssh_username != "root":
+        if self.info.distribution_type.lower() in Linux.DISTRIBUTION_NAME \
+                and host.ssh_username != "root":
             self.nonroot = True
         shell.disconnect()
         self.pathDescriptor = self.getAuditConfigElement("descriptors_path") + "/"
@@ -99,7 +99,7 @@ class audit:
     def getRemoteFile(self, host, remotepath, filename):
         shell = RemoteMachineShellConnection(host)
         shell.get_file(remotepath, filename, audit.DOWNLOADPATH)
-    
+
     def readFile(self, pathAuditFile, fileName):
         self.getRemoteFile(self.host, pathAuditFile, fileName)
 
@@ -170,7 +170,7 @@ class audit:
                     audit_event_generated = True
                     break
         return audit_event_generated
-        
+
     '''
     getAuditConfigElement - get element of a configuration file
     Parameters
@@ -254,7 +254,7 @@ class audit:
         rest = RestConnection(self.host)
         status = rest.setAuditSettings(enabled=auditEnable, logPath=self.currentLogFile)
         return status
-    
+
     '''
     setAuditFeatureDisabled - Disabled a feature from being Audited
     Parameter:

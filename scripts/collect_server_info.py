@@ -9,8 +9,9 @@ import subprocess
 import platform
 
 sys.path = [".", "platform_utils"] + sys.path
-from testconstants import WIN_COUCHBASE_BIN_PATH_RAW
+
 import TestInput
+from platform_constants.os_constants import Windows
 from remote.remote_util import RemoteMachineShellConnection
 
 
@@ -176,7 +177,7 @@ def main():
                 raise Exception("cbcollect_info hung on remote node")
     else:
         file_name = "%s-%s-diag.zip" % ("local", time_stamp())
-        cbcollect_command = WIN_COUCHBASE_BIN_PATH_RAW + "cbcollect_info.exe"
+        cbcollect_command = Windows.COUCHBASE_BIN_PATH_RAW + "cbcollect_info.exe"
         result = subprocess.check_call([cbcollect_command, file_name])
         if result == 0:
             print("Log file name is \n %s" % file_name)

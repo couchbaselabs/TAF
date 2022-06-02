@@ -1,11 +1,8 @@
 import subprocess
 from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
+from platform_constants.os_constants import Linux, Windows
 from remote.remote_util import RemoteMachineShellConnection
-from testconstants import COUCHBASE_DATA_PATH, WIN_COUCHBASE_DATA_PATH_RAW,\
-                          WIN_TMP_PATH_RAW,\
-                          LINUX_ROOT_PATH, WIN_ROOT_PATH,\
-                          WIN_TMP_PATH, WIN_CYGWIN_BIN_PATH
 
 
 class EnterpriseBKRSNewBaseTest(BaseTestCase):
@@ -22,7 +19,7 @@ class EnterpriseBKRSNewBaseTest(BaseTestCase):
         self.should_fail = self.input.param("should-fail", False)
         self.restore_should_fail = self.input.param("restore_should_fail", False)
         self.merge_should_fail = self.input.param("merge_should_fail", False)
-        self.database_path = COUCHBASE_DATA_PATH
+        self.database_path = Linux.COUCHBASE_DATA_PATH
 
         cmd =  'curl -g {0}:8091/diag/eval -u {1}:{2} '.format(self.master.ip,
                                                               self.master.rest_username,
@@ -73,7 +70,7 @@ class EnterpriseBKRSNewBaseTest(BaseTestCase):
 
         shell = RemoteMachineShellConnection(self.servers[0])
         info = shell.extract_remote_info().type.lower()
-        self.root_path = LINUX_ROOT_PATH
+        self.root_path = Linux.ROOT_PATH
         self.wget = "wget"
         self.os_name = "linux"
         self.tmp_path = "/tmp/"
@@ -85,21 +82,21 @@ class EnterpriseBKRSNewBaseTest(BaseTestCase):
                                 "xargs -I {} date --date='@{}' --rfc-3339=seconds | "\
                                 "sed 's/ /T/'"
         self.seconds_with_ttl = "date +%s --date='{0} seconds'".format(self.replace_ttl_with)
-        if info == 'linux':
+        if info == Linux.NAME:
             if self.nonroot:
                 base_path = "/home/{0}".format(self.master.ssh_username)
-                self.database_path = "{0}{1}".format(base_path, COUCHBASE_DATA_PATH)
+                self.database_path = "{0}{1}".format(base_path, Linux.COUCHBASE_DATA_PATH)
                 self.root_path = "/home/{0}/".format(self.master.ssh_username)
-        elif info == 'windows':
-            self.os_name = "windows"
+        elif info == Windows.NAME:
+            self.os_name = Windows.NAME
             self.cmd_ext = ".exe"
             self.wget = "/cygdrive/c/automation/wget.exe"
-            self.database_path = WIN_COUCHBASE_DATA_PATH_RAW
-            self.root_path = WIN_ROOT_PATH
-            self.tmp_path = WIN_TMP_PATH
+            self.database_path = Windows.COUCHBASE_DATA_PATH_RAW
+            self.root_path = Windows.ROOT_PATH
+            self.tmp_path = Windows.TMP_PATH
             self.long_help_flag = "help"
             self.short_help_flag = "h"
-            self.cygwin_bin_path = WIN_CYGWIN_BIN_PATH
+            self.cygwin_bin_path = Windows.CYGWIN_BIN_PATH
             self.rfc3339_date = "date +%s --date='{0} seconds' | ".format(self.replace_ttl_with) + \
                             "{0}xargs -I {{}} date --date=\"@'{{}}'\" --rfc-3339=seconds | "\
                                                             .format(self.cygwin_bin_path) + \
@@ -109,7 +106,7 @@ class EnterpriseBKRSNewBaseTest(BaseTestCase):
             if win_format in self.cli_command_location:
                 self.cli_command_location = self.cli_command_location.replace(win_format,
                                                                               cygwin_format)
-            self.backupset.directory = self.input.param("dir", WIN_TMP_PATH_RAW + "entbackup")
+            self.backupset.directory = self.input.param("dir", Windows.TMP_PATH_RAW + "entbackup")
         elif info == 'mac':
             self.backupset.directory = self.input.param("dir", "/tmp/entbackup")
         else:
@@ -509,7 +506,7 @@ class EnterpriseBKRSNewBaseTest(BaseTestCase):
         """
         cert_file_location = self.root_path + "cert.pem"
         if self.os_name == "windows":
-            cert_file_location = WIN_TMP_PATH_RAW + "cert.pem"
+            cert_file_location = Windows.TMP_PATH_RAW + "cert.pem"
         shell = RemoteMachineShellConnection(server_host)
         cmd = "%s/couchbase-cli ssl-manage -c %s:8091 -u Administrator -p password "\
               " --cluster-cert-info > %s" % (self.cli_command_location,
