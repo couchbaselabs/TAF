@@ -369,12 +369,10 @@ class UpgradeBase(BaseTestCase):
 
         # Record vbuckets in swap_node
         if CbServer.Services.KV in services_on_target_node:
-            shell = RemoteMachineShellConnection(node_to_upgrade)
-            cbstats = Cbstats(shell)
+            cbstats = Cbstats(node_to_upgrade)
             for vb_type in vb_types:
                 vb_details[vb_type] = \
                     cbstats.vbucket_list(self.bucket.name, vb_type)
-            shell.disconnect()
 
         if install_on_spare_node:
             # Install target version on spare node
@@ -394,12 +392,10 @@ class UpgradeBase(BaseTestCase):
         # VBuckets shuffling verification
         if CbServer.Services.KV in services_on_target_node:
             # Fetch vbucket stats after swap rebalance for verification
-            shell = RemoteMachineShellConnection(self.spare_node)
-            cbstats = Cbstats(shell)
+            cbstats = Cbstats(self.spare_node)
             for vb_type in vb_types:
                 vb_verification[vb_type] = \
                     cbstats.vbucket_list(self.bucket.name, vb_type)
-            shell.disconnect()
 
             # Check vbuckets are shuffled or not
             for vb_type in vb_types:

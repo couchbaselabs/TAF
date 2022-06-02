@@ -250,7 +250,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.log.info("Will simulate error condition on %s" % target_nodes)
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             active_vbs_in_target_nodes += cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name,
                 "active")
@@ -595,15 +595,13 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                                                      self.cluster.buckets)
         self.sleep(5, "Wait for dcp")
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            shell = RemoteMachineShellConnection(node)
-            cb_stat = Cbstats(shell)
+            cb_stat = Cbstats(node)
             dcp_stats = cb_stat.dcp_stats(self.bucket.name)
             for stat_name, val in dcp_stats.items():
                 if stat_name.split(":")[-1] == "unacked_bytes":
                     self.log.debug("%s: %s" % (stat_name, val))
                     if int(val) != 0:
                         self.log_failure("%s: %s != 0" % (stat_name, val))
-            shell.disconnect()
 
         self.validate_test_failure()
 

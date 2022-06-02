@@ -987,8 +987,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.doc_ops = "expiry"
         self.expiry_perc = self.input.param("expiry_perc", 100)
 
-        shell_conn = RemoteMachineShellConnection(self.cluster.nodes_in_cluster[-1])
-        cbstats = Cbstats(shell_conn)
+        cbstats = Cbstats(self.cluster.nodes_in_cluster[-1])
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
 
         self.generate_docs(target_vbucket=self.target_vbucket)

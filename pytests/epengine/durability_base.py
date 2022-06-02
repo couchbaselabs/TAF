@@ -197,7 +197,7 @@ class BucketDurabilityBase(ClusterSetup):
 
     def get_vbucket_type_mapping(self, bucket_name):
         for node in self.vbs_in_node.keys():
-            cb_stat = Cbstats(self.vbs_in_node[node]["shell"])
+            cb_stat = Cbstats(node)
             self.vbs_in_node[node]["active"] = \
                 cb_stat.vbucket_list(bucket_name, "active")
             self.vbs_in_node[node]["replica"] = \

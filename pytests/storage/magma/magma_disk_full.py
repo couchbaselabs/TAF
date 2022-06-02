@@ -210,7 +210,7 @@ class MagmaDiskFull(MagmaBaseTest):
 
         # Stopping persistence on NodeA
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstats = Cbstats(shell)
+        cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
         mem_client = MemcachedClientHelper.direct_client(

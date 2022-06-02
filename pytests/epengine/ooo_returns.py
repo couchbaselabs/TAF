@@ -48,7 +48,7 @@ class OutOfOrderReturns(ClusterSetup):
         self.node_data = dict()
         for node in self.kv_nodes:
             shell = RemoteMachineShellConnection(node)
-            cb_stat = Cbstats(shell)
+            cb_stat = Cbstats(node)
             self.node_data[node] = dict()
             self.node_data[node]["shell"] = shell
             self.node_data[node]["cb_stat"] = cb_stat

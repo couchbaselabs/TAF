@@ -1486,8 +1486,7 @@ class Durability(Task):
             shells = {}
 
             for server in self.cluster.servers:
-                shell = RemoteMachineShellConnection(server)
-                shells.update({server.ip: Cbstats(shell)})
+                shells.update({server.ip: Cbstats(server)})
 
             while True:
                 if self.persistence_offset < self.write_offset or self.persistence_offset == self.end:
@@ -1609,9 +1608,6 @@ class Durability(Task):
                         self.log.warning("Breaking thread persistence!!")
                         break
                     self.persistence_offset = self.write_offset
-
-            for key, cbstat in shells.items():
-                cbstat.shellConn.disconnect()
 
         def Reader(self):
             partition_gen = copy.deepcopy(self.generator._doc_gen)

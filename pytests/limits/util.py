@@ -39,9 +39,7 @@ def copy_node_for_user(user, node):
 
 def vbuckets_on_node(node, bucket_name, vbucket_type='active'):
     """ Returns vbuckets for a specific node """
-    shell = RemoteMachineShellConnection(node)
-    vbuckets = set(Cbstats(shell).vbucket_list(bucket_name, vbucket_type))
-    shell.disconnect()
+    vbuckets = set(Cbstats(node).vbucket_list(bucket_name, vbucket_type))
     return vbuckets
 
 

@@ -169,8 +169,7 @@ class BasicOps(CollectionBase):
         self.bucket_util.print_bucket_stats(self.cluster)
         # Validate drop collection using cbstats
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            shell_conn = RemoteMachineShellConnection(node)
-            cbstats = Cbstats(shell_conn)
+            cbstats = Cbstats(node)
             c_data = cbstats.get_collections(self.bucket)
             expected_collection_count = \
                 len(self.bucket_util.get_active_collections(
@@ -282,8 +281,7 @@ class BasicOps(CollectionBase):
 
         # Validate drop collection using cbstats
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            shell_conn = RemoteMachineShellConnection(node)
-            cbstats = Cbstats(shell_conn)
+            cbstats = Cbstats(node)
             c_data = cbstats.get_collections(self.bucket)
             if c_data["count"] != 1:
                 self.log_failure("%s - Expected scope count is '1'."
@@ -401,8 +399,7 @@ class BasicOps(CollectionBase):
                                            scope_name,
                                            "my_collection_2")
 
-        shell_conn = RemoteMachineShellConnection(self.cluster.master)
-        cbstats = Cbstats(shell_conn)
+        cbstats = Cbstats(self.cluster.master)
         cbstats.get_collections(self.cluster.buckets[0])
 
         self.log.info("Validating the documents in default collection")
@@ -777,8 +774,7 @@ class BasicOps(CollectionBase):
 
     def test_create_delete_collection_same_order(self):
         # Create collection in increasing order
-        shell_conn = RemoteMachineShellConnection(self.cluster.master)
-        cb_stat = Cbstats(shell_conn)
+        cb_stat = Cbstats(self.cluster.master)
         collection_count = 1
         while collection_count < 1000:
             doc_loading_spec = \

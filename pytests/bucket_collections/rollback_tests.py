@@ -36,7 +36,7 @@ class RollbackTests(CollectionBase):
             shell_conn = RemoteMachineShellConnection(node)
             self.node_shells[node] = dict()
             self.node_shells[node]["shell"] = shell_conn
-            self.node_shells[node]["cbstat"] = Cbstats(shell_conn)
+            self.node_shells[node]["cbstat"] = Cbstats(node)
 
     def tearDown(self):
         # Close all shell_connections before cluster tearDown

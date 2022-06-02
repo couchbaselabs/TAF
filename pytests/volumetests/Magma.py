@@ -723,7 +723,7 @@ class volume(BaseTestCase):
                                                               output))
             for i in range(min(int(output), 64)):
                 grep_field = "rw_{}:magma".format(i)
-                _res = self.get_magma_stats(bucket, shell,
+                _res = self.get_magma_stats(bucket, server,
                                             field_to_grep=grep_field)
                 fragmentation_values.append(float(_res[server.ip][grep_field]
                                                   ["Fragmentation"]))
@@ -742,12 +742,12 @@ class volume(BaseTestCase):
         self.log.info(stats)
         return False
 
-    def get_magma_stats(self, bucket, shell=None, field_to_grep=None):
+    def get_magma_stats(self, bucket, server, field_to_grep=None):
         magma_stats_for_all_servers = dict()
-        cbstat_obj = Cbstats(shell)
+        cbstat_obj = Cbstats(server)
         result = cbstat_obj.magma_stats(bucket.name,
                                         field_to_grep=field_to_grep)
-        magma_stats_for_all_servers[shell.ip] = result
+        magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
 
     def get_magma_disk_usage(self, bucket=None):
@@ -906,7 +906,7 @@ class volume(BaseTestCase):
             mem_client.stop_persistence()
 
             shell = RemoteMachineShellConnection(node)
-            cbstats = Cbstats(shell)
+            cbstats = Cbstats(node)
             target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                   name)
             shell.disconnect()

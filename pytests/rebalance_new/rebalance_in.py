@@ -259,7 +259,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.log.info("Creating abort scenarios for all vbs")
             for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
-                cbstats = Cbstats(ssh_shell)
+                cbstats = Cbstats(server)
                 replica_vbs = cbstats.vbucket_list(
                     self.cluster.buckets[0].name, "replica")
                 load_gen = doc_generator(self.key, 0, 5000,
@@ -846,7 +846,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.log.info("Creating sync_write abort scenarios for all vbs")
             for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
-                cbstats = Cbstats(ssh_shell)
+                cbstats = Cbstats(server)
                 replica_vbs = cbstats.vbucket_list(
                     self.cluster.buckets[0].name,
                     "replica")
@@ -1053,7 +1053,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.log.info("Creating sync_write abort scenario for replica vbs")
             for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
-                cbstats = Cbstats(ssh_shell)
+                cbstats = Cbstats(server)
                 replica_vbs = cbstats.vbucket_list(
                     self.cluster.buckets[0].name, "replica")
                 load_gen = doc_generator(self.key, 0, 5000,

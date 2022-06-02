@@ -66,7 +66,6 @@ class CollectionDurabilityTests(CollectionBase):
         """
 
         vb_info = dict()
-        shell_conn = dict()
         cbstat_obj = dict()
         vb_info["create_stat"] = dict()
         vb_info["failure_stat"] = dict()
@@ -118,9 +117,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.bucket_util.get_expected_total_num_items(self.bucket)
 
         for node in nodes_in_cluster:
-            shell_conn[node.ip] = \
-                RemoteMachineShellConnection(self.cluster.master)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
 
             # Fetch vbucket seq_no stats from vb_seqno command for verification
             vb_info["create_stat"].update(cbstat_obj[node.ip]
@@ -217,9 +214,6 @@ class CollectionDurabilityTests(CollectionBase):
             self.log_failure("Failover stats failed to update. %s == %s"
                              % (vb_info["failure_stat"],
                                 vb_info["create_stat"]))
-        # Close all ssh sessions
-        for node in nodes_in_cluster:
-            shell_conn[node.ip].disconnect()
 
         # Update cbstat vb-details verification counters
         self.update_verification_dict_from_collection_task(
@@ -250,7 +244,7 @@ class CollectionDurabilityTests(CollectionBase):
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for server in kv_nodes:
             ssh_shell = RemoteMachineShellConnection(server)
-            cbstats = Cbstats(ssh_shell)
+            cbstats = Cbstats(server)
             cb_err = CouchbaseError(self.log, ssh_shell)
             target_vb_type = "replica"
             if self.durability_level \
@@ -356,7 +350,7 @@ class CollectionDurabilityTests(CollectionBase):
                                                        self.num_nodes_affected)
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
@@ -512,7 +506,7 @@ class CollectionDurabilityTests(CollectionBase):
                                                        self.num_nodes_affected)
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
@@ -689,7 +683,7 @@ class CollectionDurabilityTests(CollectionBase):
                                                        self.num_nodes_affected)
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)

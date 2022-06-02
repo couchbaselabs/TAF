@@ -243,7 +243,7 @@ class DCPSeqItr(MagmaBaseTest):
         self.num_rollbacks = self.input.param("num_rollbacks", 3)
 
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstats = Cbstats(shell)
+        cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
 
         #######################################################################
@@ -368,5 +368,3 @@ class DCPSeqItr(MagmaBaseTest):
                 self.log.debug("Iteration == {}, Total num_items {}".format(i, items))
 
         shell.disconnect()
-
-

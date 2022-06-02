@@ -76,8 +76,7 @@ class CollectionBase(ClusterSetup):
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstat_obj = Cbstats(shell)
+        cbstat_obj = Cbstats(self.cluster.master)
         for bucket in self.cluster.buckets:
             if bucket.bucketType != Bucket.Type.MEMCACHED:
                 result = cbstat_obj.all_stats(bucket.name)
@@ -91,7 +90,6 @@ class CollectionBase(ClusterSetup):
                     and bucket.bucketType != Bucket.Type.MEMCACHED:
                 self.bucket_util.remove_scope_collections_for_bucket(
                     self.cluster, bucket)
-        shell.disconnect()
         if self.validate_docs_count_during_teardown:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)

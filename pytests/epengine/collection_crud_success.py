@@ -166,8 +166,7 @@ class CollectionsSuccessTests(CollectionBase):
 
         self.log.info("Simulate error condition on %s" % target_nodes)
         for node in target_nodes:
-            shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             active_vbs_in_target_nodes += cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name,
                 "active")
@@ -309,8 +308,7 @@ class CollectionsSuccessTests(CollectionBase):
 
         self.log.info("Will simulate error condition on %s" % target_nodes)
         for node in target_nodes:
-            shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             active_vbs_in_target_nodes += cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name,
                 "active")
@@ -847,7 +845,7 @@ class CollectionsSuccessTests(CollectionBase):
         for node in target_nodes:
             # Create shell_connections
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             active_vbs = cbstat_obj[node.ip] .vbucket_list(def_bucket.name,
                                                            "active")
             active_vbs_in_target_nodes += active_vbs
@@ -958,7 +956,7 @@ class CollectionsSuccessTests(CollectionBase):
         for node in target_nodes:
             # Create shell_connections
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             active_vbs = cbstat_obj[node.ip] .vbucket_list(def_bucket.name,
                                                            "active")
             active_vbs_in_target_nodes += active_vbs

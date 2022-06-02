@@ -74,7 +74,7 @@ class SubDocTimeouts(DurabilityTestsBase):
         target_nodes = self.getTargetNodes()
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
@@ -272,7 +272,7 @@ class SubDocTimeouts(DurabilityTestsBase):
         target_nodes = self.getTargetNodes()
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             target_nodes_vbuckets[Bucket.vBucket.ACTIVE] += \
                 cbstat_obj[node.ip].vbucket_list(
                     self.bucket.name, vbucket_type=Bucket.vBucket.ACTIVE)
@@ -534,7 +534,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         for node in nodes_in_cluster:
             shell_conn[node.ip] = \
                 RemoteMachineShellConnection(self.cluster.master)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
 
             # Fetch vbucket seq_no stats from vb_seqno command for verification
             vb_info["init"].update(cbstat_obj[node.ip]
@@ -681,7 +681,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         target_nodes = self.getTargetNodes()
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])

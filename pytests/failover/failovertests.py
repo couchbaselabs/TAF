@@ -104,7 +104,7 @@ class FailoverTests(FailoverBaseTest):
             self.log.info("Creating abort scenarios for vbs")
             for server in self.cluster_util.get_kv_nodes(self.cluster):
                 ssh_shell = RemoteMachineShellConnection(server)
-                cbstats = Cbstats(ssh_shell)
+                cbstats = Cbstats(server)
                 replica_vbs = cbstats.vbucket_list(
                     self.cluster.buckets[0].name, "replica")
                 load_gen = doc_generator(self.key, 0, 5000,
@@ -155,12 +155,10 @@ class FailoverTests(FailoverBaseTest):
                 if server.ip == target_node.ip:
                     # Comment out the break once vbucket_list method is fixed
                     break
-                    shell_conn = RemoteMachineShellConnection(server)
-                    cb_stats = Cbstats(shell_conn)
+                    cb_stats = Cbstats(server)
                     vbuckets = cb_stats.vbucket_list(
                         self.cluster.buckets[0].name,
                         self.target_vbucket_type)
-                    shell_conn.disconnect()
                     vbucket_list += vbuckets
 
         # Code to generate doc_loaders that will work on vbucket_type

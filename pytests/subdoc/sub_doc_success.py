@@ -569,7 +569,7 @@ class BasicOps(DurabilityTestsBase):
         for node in target_nodes:
             # Create shell_connections
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             active_vbs = cbstat_obj[node.ip] .vbucket_list(def_bucket.name,
                                                            "active")
             active_vbs_in_target_nodes += active_vbs
@@ -735,7 +735,7 @@ class BasicOps(DurabilityTestsBase):
         for node in target_nodes:
             # Create shell_connections
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(shell_conn[node.ip])
+            cbstat_obj[node.ip] = Cbstats(node)
             active_vbs = cbstat_obj[node.ip] .vbucket_list(def_bucket.name,
                                                            "active")
             active_vbs_in_target_nodes += active_vbs

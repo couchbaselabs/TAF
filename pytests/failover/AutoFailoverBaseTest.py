@@ -322,13 +322,11 @@ class AutoFailoverBaseTest(ClusterSetup):
 
         # Fetch new vbucket list
         for node in self.server_to_fail:
-            shell_conn = RemoteMachineShellConnection(node)
-            cbstat = Cbstats(shell_conn)
+            cbstat = Cbstats(node)
             self.active_vb_in_failover_nodes += cbstat.vbucket_list(
                 bucket.name, "active")
             self.replica_vb_in_failover_nodes += cbstat.vbucket_list(
                 bucket.name, "replica")
-            shell_conn.disconnect()
 
     def async_load_all_buckets_atomicity(self, kv_gen, op_type, exp=0,
                                          batch_size=20):

@@ -723,7 +723,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         # Cb stat object for verification purpose
         master_shell_conn = RemoteMachineShellConnection(master)
-        master_node_cb_stat = Cbstats(master_shell_conn)
+        master_node_cb_stat = Cbstats(master)
 
         # Fetch vb_seq_no after the CRUDs
         vb_info["afterCrud"] = \

@@ -705,8 +705,7 @@ class basic_ops(ClusterSetup):
         cbstat = dict()
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for node in kv_nodes:
-            shell = RemoteMachineShellConnection(node)
-            cbstat[node] = Cbstats(shell)
+            cbstat[node] = Cbstats(node)
 
         self.log.info("Start doc_reads until total_gets cross: %s" % max_gets)
         read_task = self.task.async_continuous_doc_ops(
@@ -744,10 +743,6 @@ class basic_ops(ClusterSetup):
         read_task.end_task()
         self.task_manager.get_task_result(read_task)
 
-        # Close all shell connections
-        for node in kv_nodes:
-            cbstat[node].shellConn.disconnect()
-
         self.validate_test_failure()
 
     def test_MB_41510(self):
@@ -774,14 +769,10 @@ class basic_ops(ClusterSetup):
                 if self.test_failure:
                     break
 
-            for t_node in mc_stat.keys():
-                mc_stat[t_node].shellConn.disconnect()
-
         def get_timings(bucket_name):
             cb_stat = dict()
             for t_node in kv_nodes:
-                shell_conn = RemoteMachineShellConnection(t_node)
-                cb_stat[t_node] = Cbstats(shell_conn)
+                cb_stat[t_node] = Cbstats(t_node)
 
             while not stop_thread:
                 for t_node in cb_stat.keys():
@@ -792,9 +783,6 @@ class basic_ops(ClusterSetup):
                 if self.test_failure:
                     break
 
-            for t_node in cb_stat.keys():
-                cb_stat[t_node].shellConn.disconnect()
-
         total_gets = 0
         max_gets = 50000000
         stop_thread = False
@@ -802,8 +790,7 @@ class basic_ops(ClusterSetup):
         cb_stat_obj = dict()
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for node in kv_nodes:
-            shell = RemoteMachineShellConnection(node)
-            cb_stat_obj[node] = Cbstats(shell)
+            cb_stat_obj[node] = Cbstats(node)
 
         doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=1)
         create_task = self.task.async_load_gen_docs(
@@ -851,10 +838,6 @@ class basic_ops(ClusterSetup):
         mc_stat_reset_thread.join()
         get_timings_thread.join()
 
-        # Close all shell connections
-        for node in cb_stat_obj.keys():
-            cb_stat_obj[node].shellConn.disconnect()
-
         self.validate_test_failure()
 
     def test_MB_41255(self):
@@ -884,8 +867,7 @@ class basic_ops(ClusterSetup):
 
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             nodes_data[node] = dict()
-            nodes_data[node]["shell"] = RemoteMachineShellConnection(node)
-            nodes_data[node]["cbstats"] = Cbstats(nodes_data[node]["shell"])
+            nodes_data[node]["cbstats"] = Cbstats(node)
             nodes_data[node]["active_vbs"] = nodes_data[node][
                 "cbstats"].vbucket_list(bucket.name, "active")
             nodes_data[node]["replica_vbs"] = nodes_data[node][
@@ -966,8 +948,6 @@ class basic_ops(ClusterSetup):
 
         # Close SDK and shell connections
         client.close()
-        for node in nodes_data.keys():
-            nodes_data[node]["shell"].disconnect()
 
         self.assertTrue(rebalance_out.result, "Rebalance_out failed")
 
@@ -1001,8 +981,7 @@ class basic_ops(ClusterSetup):
         nodes_data = dict()
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             nodes_data[node] = dict()
-            nodes_data[node]["shell"] = RemoteMachineShellConnection(node)
-            nodes_data[node]["cbstats"] = Cbstats(nodes_data[node]["shell"])
+            nodes_data[node]["cbstats"] = Cbstats(node)
             nodes_data[node]["active_vbs"] = nodes_data[node][
                 "cbstats"].vbucket_list(bucket.name, "active")
             if target_vb in nodes_data[node]["active_vbs"]:
@@ -1078,8 +1057,6 @@ class basic_ops(ClusterSetup):
 
         # Close SDK and shell connections
         client.close()
-        for node in nodes_data.keys():
-            nodes_data[node]["shell"].disconnect()
 
         self.validate_test_failure()
 
@@ -1154,7 +1131,7 @@ class basic_ops(ClusterSetup):
             shell = RemoteMachineShellConnection(node)
             nodes_data[node] = dict()
             nodes_data[node]["shell"] = shell
-            nodes_data[node]["cbstat"] = Cbstats(shell)
+            nodes_data[node]["cbstat"] = Cbstats(node)
             nodes_data[node]["eviction_start"] = False
             nodes_data[node]["active_vbs"] = nodes_data[node][
                 "cbstat"].vbucket_list(bucket.name, "active")
@@ -1334,7 +1311,7 @@ class basic_ops(ClusterSetup):
         target_node = choice(self.cluster_util.get_kv_nodes(self.cluster))
         self.log.info("Target node %s" % target_node.ip)
         shell = RemoteMachineShellConnection(target_node)
-        cb_stat = Cbstats(shell)
+        cb_stat = Cbstats(target_node)
         cb_error = CouchbaseError(self.log, shell)
 
         # Load initial data set into bucket

@@ -11,7 +11,6 @@ import time
 from Cb_constants.CBServer import CbServer
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
-from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
@@ -158,7 +157,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             to test rollback")
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstats = Cbstats(shell)
+        cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
         start = self.num_items
@@ -1855,7 +1854,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell_conn = list()
             for node in self.cluster.nodes_in_cluster:
                 shell_conn.append(RemoteMachineShellConnection(node))
-            cbstats = Cbstats(shell_conn[0])
+            cbstats = Cbstats(self.cluster.nodes_in_cluster[0])
             self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
             target_vbs_replicas = list()
             for shell in shell_conn[1:]:

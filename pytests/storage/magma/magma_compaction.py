@@ -1,6 +1,5 @@
 import copy
 import threading
-import time
 
 from Cb_constants.CBServer import CbServer
 from cb_tools.cbepctl import Cbepctl
@@ -8,7 +7,6 @@ from cb_tools.cbstats import Cbstats
 from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_constants.java_client import SDKConstants
-
 
 
 class MagmaCompactionTests(MagmaBaseTest):
@@ -137,7 +135,7 @@ class MagmaCompactionTests(MagmaBaseTest):
             self.log.info("Roll back Iteration == {}".format(i))
             start = items
             shell = RemoteMachineShellConnection(self.cluster.master)
-            cbstats = Cbstats(shell)
+            cbstats = Cbstats(self.cluster.master)
             self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
             mem_item_count = 0

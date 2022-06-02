@@ -155,8 +155,7 @@ class AutoCompactionTests(CollectionBase):
                     self.cluster.buckets,
                     doc_loading_spec,
                     mutation_num=0)
-            shell_conn = RemoteMachineShellConnection(self.cluster.master)
-            cb_stat = Cbstats(shell_conn)
+            cb_stat = Cbstats(self.cluster.master)
             collection_count = cb_stat.get_collections(self.bucket)["count"]
             items = items/collection_count
             self.log.info("Start to load %s keys with %s bytes/key"

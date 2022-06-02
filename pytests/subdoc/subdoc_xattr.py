@@ -3,7 +3,6 @@ import functools
 import time
 import json
 import sys
-import zlib
 from random import choice, shuffle
 
 from BucketLib.bucket import Bucket
@@ -1621,15 +1620,12 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         doc_gen["doc_crud"].reset()
 
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            shell = RemoteMachineShellConnection(node)
-            cbstat_obj = Cbstats(shell)
-            replica_vbs = cbstat_obj.vbucket_list(
-                self.cluster.buckets[0],
-                "replica")
+            cbstat_obj = Cbstats(node)
+            replica_vbs = cbstat_obj.vbucket_list(self.cluster.buckets[0],
+                                                  "replica")
             if target_vb in replica_vbs:
+                shell = RemoteMachineShellConnection(node)
                 break
-
-            shell.disconnect()
 
         error_sim = CouchbaseError(self.log, shell)
 
@@ -1728,15 +1724,12 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         target_vb = self.bucket_util.get_vbucket_num_for_key(doc_key)
 
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            shell = RemoteMachineShellConnection(node)
-            cbstat_obj = Cbstats(shell)
-            replica_vbs = cbstat_obj.vbucket_list(
-                self.cluster.buckets[0],
-                "replica")
+            cbstat_obj = Cbstats(node)
+            replica_vbs = cbstat_obj.vbucket_list(self.cluster.buckets[0],
+                                                  "replica")
             if target_vb in replica_vbs:
+                shell = RemoteMachineShellConnection(node)
                 break
-
-            shell.disconnect()
 
         error_sim = CouchbaseError(self.log, shell)
 
@@ -2431,10 +2424,8 @@ class XattrTests(SubdocBaseTest):
 
     def vbuckets_on_node(self, server, vbucket_type='active'):
         """ Returns vbuckets for a specific node """
-        shell = RemoteMachineShellConnection(server)
-        vbuckets = set(Cbstats(shell).vbucket_list(
+        vbuckets = set(Cbstats(server).vbucket_list(
             self.bucket.name, vbucket_type))
-        shell.disconnect()
         return vbuckets
 
     def verify_rollback(self, key_min, key_max, vbuckets=None):

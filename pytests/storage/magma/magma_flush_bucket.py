@@ -381,7 +381,7 @@ class MagmaFlushBucketTests(MagmaBaseTest):
             start = items
             for x, node in enumerate(self.cluster.nodes_in_cluster):
                 shell = RemoteMachineShellConnection(node)
-                cbstats = Cbstats(shell)
+                cbstats = Cbstats(node)
                 self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
                 mem_item_count = 0

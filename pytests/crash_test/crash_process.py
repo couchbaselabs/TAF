@@ -132,10 +132,6 @@ class CrashTest(BaseTestCase):
             return self.cluster.nodes_in_cluster[randint(0, self.nodes_init-1)]
         return self.cluster.master
 
-    def getVbucketNumbers(self, shell_conn, bucket_name, replica_type):
-        cb_stats = Cbstats(shell_conn)
-        return cb_stats.vbucket_list(bucket_name, replica_type)
-
     def test_stop_process(self):
         """
         1. Starting loading docs into the default bucket
@@ -149,8 +145,8 @@ class CrashTest(BaseTestCase):
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
         error_sim = CouchbaseError(self.log, remote)
-        target_vbuckets = self.getVbucketNumbers(remote, def_bucket.name,
-                                                 self.target_node)
+        target_vbuckets = Cbstats(target_node).vbucket_list(
+                def_bucket.name, self.target_node)
         if len(target_vbuckets) == 0:
             self.log.error("No target vbucket list generated to load data")
             remote.disconnect()
@@ -254,20 +250,18 @@ class CrashTest(BaseTestCase):
         """
         def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
-        remote = RemoteMachineShellConnection(target_node)
         target_vbuckets = range(0, self.cluster.vbuckets)
         retry_exceptions = list()
 
         # If Memcached is killed, we should not perform KV ops on
         # particular node. If not we can target all nodes for KV operation.
         if self.process_name == "memcached":
-            target_vbuckets = self.getVbucketNumbers(remote, def_bucket.name,
-                                                     self.target_node)
+            target_vbuckets = Cbstats(target_node).vbucket_list(
+                def_bucket.name, self.target_node)
             if self.target_node == "active":
                 retry_exceptions = [SDKException.TimeoutException]
         if len(target_vbuckets) == 0:
             self.log.error("No target vbucket list generated to load data")
-            remote.disconnect()
             return
 
         # Create doc_generator targeting only the active/replica vbuckets

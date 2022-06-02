@@ -19,11 +19,9 @@ class OpsChangeCasTests(CasBaseTest):
                                       doc_size=self.doc_size)
         self.node_data = dict()
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            shell = RemoteMachineShellConnection(node)
-            cb_stat = Cbstats(shell)
+            cb_stat = Cbstats(node)
             self.node_data[node.ip] = dict()
-            self.node_data[node.ip]["shell"] = shell
-            self.node_data[node.ip]["cb_stat"] = Cbstats(shell)
+            self.node_data[node.ip]["cb_stat"] = cb_stat
             self.node_data[node.ip]["active"] = cb_stat.vbucket_list(
                 self.bucket,
                 "active")
@@ -37,10 +35,6 @@ class OpsChangeCasTests(CasBaseTest):
             self.client = SDKClient([self.cluster.master], self.bucket)
 
     def tearDown(self):
-        # Close opened shell connections
-        for node_ip in self.node_data.keys():
-            self.node_data[node_ip]["shell"].disconnect()
-
         # Close SDK client connection
         self.client.close()
 

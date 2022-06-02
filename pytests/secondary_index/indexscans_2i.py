@@ -234,7 +234,7 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
         self.log.info("Loading docs such that all sync_writes will be aborted")
         for server in kv_nodes:
             ssh_shell = RemoteMachineShellConnection(server)
-            cbstats = Cbstats(ssh_shell)
+            cbstats = Cbstats(server)
             replica_vbs[server] = cbstats.vbucket_list(def_bucket.name,
                                                        "replica")
             load_gen["ADD"][server] = list()

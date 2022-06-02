@@ -4,7 +4,6 @@ from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
-from remote.remote_util import RemoteMachineShellConnection
 
 
 class FlushTests(CollectionBase):
@@ -180,8 +179,7 @@ class FlushTests(CollectionBase):
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for node in kv_nodes:
             node_dict[node] = dict()
-            node_dict[node]["shell"] = RemoteMachineShellConnection(node)
-            node_dict[node]["cbstat"] = Cbstats(node_dict[node]["shell"])
+            node_dict[node]["cbstat"] = Cbstats(node)
             node_dict[node]["scope_stats"] = dict()
             node_dict[node]["collection_stats"] = dict()
 
@@ -271,9 +269,6 @@ class FlushTests(CollectionBase):
                 if node_dict[node]["collection_stats"]["pre_flush"]["manifest_uid"] \
                         != node_dict[node]["collection_stats"]["post_flush"]["manifest_uid"]:
                     self.log_failure("%s - Collection stats mismatch after flush")
-
-                # Close node's shell connections
-                node_dict[node]["shell"].disconnect()
 
         # Fails test case in case of any detected failure
         self.validate_test_failure()

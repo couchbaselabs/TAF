@@ -207,7 +207,7 @@ class OpsChangeCasTests(CollectionBase):
             self.vb_details[node.ip]["replica"] = list()
 
             self.shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            self.cb_stat[node.ip] = Cbstats(self.shell_conn[node.ip])
+            self.cb_stat[node.ip] = Cbstats(node)
             self.vb_details[node.ip]["active"] = \
                 self.cb_stat[node.ip].vbucket_list(self.bucket.name, "active")
             self.vb_details[node.ip]["replica"] = \

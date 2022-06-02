@@ -208,11 +208,6 @@ class CrashTest(CollectionBase):
             skip_read_on_error=True)
         collection_obj.num_items += self.new_docs_to_add
 
-    @staticmethod
-    def getVbucketNumbers(shell_conn, bucket_name, replica_type):
-        cb_stats = Cbstats(shell_conn)
-        return cb_stats.vbucket_list(bucket_name, replica_type)
-
     def test_create_remove_scope_with_node_crash(self):
         """
         1. Select a error scenario to simulate in random
@@ -271,7 +266,7 @@ class CrashTest(CollectionBase):
         # Create a error scenario
         shell = RemoteMachineShellConnection(node_to_crash)
         cb_error = CouchbaseError(self.log, shell)
-        cbstat_obj = Cbstats(shell)
+        cbstat_obj = Cbstats(node_to_crash)
         active_vbs = cbstat_obj.vbucket_list(self.bucket.name,
                                              vbucket_type="active")
         target_vbuckets = list(
@@ -384,7 +379,7 @@ class CrashTest(CollectionBase):
         self.log.info("Selected scenario for test '%s'" % crash_type)
         shell = RemoteMachineShellConnection(node_to_crash)
         cb_error = CouchbaseError(self.log, shell)
-        cbstat_obj = Cbstats(shell)
+        cbstat_obj = Cbstats(node_to_crash)
         active_vbs = cbstat_obj.vbucket_list(self.bucket.name,
                                              vbucket_type="active")
         target_vbuckets = list(
@@ -440,8 +435,8 @@ class CrashTest(CollectionBase):
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
         error_sim = CouchbaseError(self.log, remote)
-        target_vbuckets = CrashTest.getVbucketNumbers(
-            remote, self.bucket.name, self.target_node)
+        target_vbuckets = Cbstats(target_node).vbucket_list(
+                self.bucket.name, target_node)
 
         bucket_dict = BucketUtils.get_random_collections(
             self.cluster.buckets,
@@ -542,8 +537,8 @@ class CrashTest(CollectionBase):
         # If Memcached is killed, we should not perform KV ops on
         # particular node. If not we can target all nodes for KV operation.
         if self.process_name == "memcached":
-            target_vbuckets = CrashTest.getVbucketNumbers(
-                remote, def_bucket.name, self.target_node)
+            target_vbuckets = Cbstats(target_node).vbucket_list(
+                def_bucket.name, self.target_node)
             if self.target_node == "active":
                 retry_exceptions = [SDKException.TimeoutException]
         if len(target_vbuckets) == 0:

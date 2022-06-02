@@ -519,7 +519,7 @@ class ExpiryMaxTTL(ClusterSetup):
         self.log.info("1. Stopping Memcached on target_nodes")
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstats = Cbstats(shell_conn[node.ip])
+            cbstats = Cbstats(node)
             target_vbuckets += cbstats.vbucket_list(def_bucket.name, "replica")
             cb_error = CouchbaseError(self.log, shell_conn[node.ip])
             cb_error.create(CouchbaseError.STOP_MEMCACHED, def_bucket.name)
@@ -615,7 +615,6 @@ class ExpiryMaxTTL(ClusterSetup):
                         timeout=60)
 
         doc_ttl = 5
-        shell = None
         target_node = None
         key = "test_ttl_doc"
         vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
@@ -623,14 +622,13 @@ class ExpiryMaxTTL(ClusterSetup):
 
         # Find target node for replica VB
         for target_node in self.cluster.nodes_in_cluster:
-            shell = RemoteMachineShellConnection(target_node)
-            cb_stats = Cbstats(shell)
+            cb_stats = Cbstats(target_node)
             if vb_for_key in cb_stats.vbucket_list(bucket.name, "replica"):
                 break
-            shell.disconnect()
 
         self.log.info("Target node: %s, Key: %s" % (target_node.ip, key))
         self.log.info("Disabling expiry_pager")
+        shell = RemoteMachineShellConnection(target_node)
         cb_ep_ctl = Cbepctl(shell)
         cb_ep_ctl.set(bucket.name, "flush_param", "exp_pager_stime", 0)
 
@@ -672,10 +670,8 @@ class ExpiryMaxTTL(ClusterSetup):
             self.fail(failure)
 
         for node in self.cluster.nodes_in_cluster:
-            shell = RemoteMachineShellConnection(node)
-            cb_stats = Cbstats(shell).all_stats(bucket.name)
+            cb_stats = Cbstats(node).all_stats(bucket.name)
             self.log.info("Node: %s, ep_expired_access: %s"
                           % (node.ip, cb_stats["ep_expired_access"]))
-            shell.disconnect()
             self.assertEqual(int(cb_stats["ep_expired_access"]), 0,
                              "%s: ep_expired_access != 0" % node.ip)

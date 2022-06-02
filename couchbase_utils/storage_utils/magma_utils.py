@@ -66,16 +66,12 @@ class MagmaUtils:
 
     def get_magma_data_size(self, server, bucket_name):
         """ The size of the data the user stored in bytes. """
-        remote = RemoteMachineShellConnection(server)
-        result = Cbstats(remote).all_stats(bucket_name)["ep_magma_logical_data_size"]
-        remote.disconnect()
+        result = Cbstats(server).all_stats(bucket_name)["ep_magma_logical_data_size"]
         return int(result)
 
     def get_magma_disk_size(self, server, bucket_name):
         """ The space occupied by the data in bytes. """
-        remote = RemoteMachineShellConnection(server)
-        result = Cbstats(remote).all_stats(bucket_name)["ep_magma_logical_disk_size"]
-        remote.disconnect()
+        result = Cbstats(server).all_stats(bucket_name)["ep_magma_logical_disk_size"]
         return int(result)
 
     def check_disk_usage(self, servers, buckets, fragmentation):
