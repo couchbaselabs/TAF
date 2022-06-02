@@ -2358,7 +2358,7 @@ class BucketUtils(ScopeUtils):
     def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60, num_zone=1):
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
-        servers = cluster.kv_nodes
+        servers = self.cluster_util.get_kv_nodes(cluster)
         if bucket.bucketType == Bucket.Type.MEMCACHED:
             items_actual = 0
             for server in servers:
@@ -2405,7 +2405,7 @@ class BucketUtils(ScopeUtils):
 
     def verify_stats_all_buckets(self, cluster, items, timeout=1200, num_zone=1):
         vbucket_stats = self.get_vbucket_seqnos(
-            cluster.kv_nodes,
+            self.cluster_util.get_kv_nodes(cluster),
             cluster.buckets,
             skip_consistency=True)
         for bucket in cluster.buckets:
@@ -2467,7 +2467,7 @@ class BucketUtils(ScopeUtils):
           timeout - Waiting the end of the thread. (str)
         """
         tasks = list()
-        for server in cluster.kv_nodes:
+        for server in self.cluster_util.get_kv_nodes(cluster):
             for bucket in buckets:
                 if bucket.bucketType == 'memcached':
                     continue
