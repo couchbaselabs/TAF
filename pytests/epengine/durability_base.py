@@ -19,7 +19,7 @@ class DurabilityTestsBase(ClusterSetup):
         super(DurabilityTestsBase, self).setUp()
 
         # Create default bucket
-        # self.create_bucket(self.cluster)
+        self.create_bucket(self.cluster)
 
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
