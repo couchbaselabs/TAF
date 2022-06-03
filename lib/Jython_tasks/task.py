@@ -263,7 +263,8 @@ class RebalanceTaskCapella(Task):
                     break
             except Exception as e:
                 self.log.critical(e)
-                break
+                self.result = False
+                return self.result
         self.servers = CapellaAPI.get_nodes(
             self.cluster.pod, self.cluster.tenant, self.cluster.id)
         nodes = list()
