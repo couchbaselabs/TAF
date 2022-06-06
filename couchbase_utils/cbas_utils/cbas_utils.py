@@ -4206,10 +4206,9 @@ class CbasUtil(UDFUtil):
             username=username, password=password)
         return status, content, response
 
-    def get_analytics_diagnostics(self, cluster, cbas_node, timeout=120):
+    def get_analytics_diagnostics(self, cluster, timeout=120):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
-        response = cbas_helper.get_analytics_diagnostics(
-            cbas_node, timeout=timeout)
+        response = cbas_helper.get_analytics_diagnostics(timeout=timeout)
         return response
 
     def set_global_compression_type(self, cluster, compression_type="snappy",

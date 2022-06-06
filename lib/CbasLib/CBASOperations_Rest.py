@@ -399,14 +399,14 @@ class CBASHelper(RestConnection):
         return status, content, response
 
     # return analytics diagnostics info
-    def get_analytics_diagnostics(self, cbas_node, timeout=120):
-        api = self.cbas_base_url + 'analytics/cluster/diagnostics'
+    def get_analytics_diagnostics(self, timeout=120):
+        api = self.cbas_base_url + '/analytics/cluster/diagnostics'
         status, content, response = self._http_request(api, timeout=timeout)
         if status:
             json_parsed = json.loads(content)
             return json_parsed
         else:
-            raise Exception("Unable to get jre path from analytics")
+            raise Exception("Unable to get analytics diagnostics")
 
     # Backup Analytics metadata
     def backup_cbas_metadata(self, bucket_name, username=None, password=None):
