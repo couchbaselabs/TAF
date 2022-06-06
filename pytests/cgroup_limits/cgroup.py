@@ -25,13 +25,6 @@ class CGroup(CGroupBase):
     def tearDown(self):
         pass
 
-    def restart_server(self):
-        self.log.info("Stopping and starting server...")
-        self.shell.execute_command("docker exec db service couchbase-server stop")
-        time.sleep(10)
-        self.shell.execute_command("docker exec db service couchbase-server start")
-        time.sleep(20)
-
     def update_container_mem_limit(self, mem):
         """
         Updates mem limit of a running docker container
@@ -43,18 +36,6 @@ class CGroup(CGroupBase):
         o, e = self.shell.execute_command(cmd)
         print(o, e)
         self.mem = mem
-
-    def update_container_cpu_limit(self, cpus):
-        """
-        Updates cpu cores limit of a running docker container
-        :cpus: cpu cores limit
-        """
-        self.log.info("Updating the running container's cpu cores limit from {0} to {1}".
-                      format(self.cpus, cpus))
-        cmd = "docker update --cpus " + str(cpus) + "  db"
-        o, e = self.shell.execute_command(cmd)
-        print(o, e)
-        self.cpus = cpus
 
     def get_host_mem_in_bytes(self):
         """
