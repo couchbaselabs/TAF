@@ -2758,8 +2758,6 @@ class StatsWaitTask(Task):
         finally:
             pass
         if time.time() > timeout:
-            for shell in self.shellConnList:
-                shell.disconnect()
             self.set_exception("Could not verify stat {} within timeout {}"
                                .format(self.stat, self.timeout))
 
