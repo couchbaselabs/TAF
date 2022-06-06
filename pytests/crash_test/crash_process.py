@@ -250,6 +250,7 @@ class CrashTest(BaseTestCase):
         """
         def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
+        remote = RemoteMachineShellConnection(target_node)
         target_vbuckets = range(0, self.cluster.vbuckets)
         retry_exceptions = list()
 
