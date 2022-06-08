@@ -2385,7 +2385,7 @@ class BucketUtils(ScopeUtils):
                 
             zone =3:
                 1 node each, replica_set=2, actual =2
-                2 nodes each, relica_set =3, actual =2
+                2 nodes each, relica_set =3, actual =3
                 3 nodes each,repica_set = 3, actaul = 3
                 num_node_in_each_group: [1, 2, 1], replica_set=3, actual = 2
                 num_node_in_each_group: [2, 2, 1], replica_set=3, actual = 3
