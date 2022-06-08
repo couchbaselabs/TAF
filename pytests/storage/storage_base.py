@@ -116,6 +116,7 @@ class StorageBase(BaseTestCase):
                          "magma": self.magma_buckets},
                 eviction_policy=self.bucket_eviction_policy,
                 bucket_name=self.bucket_name,
+                ram_quota=self.bucket_ram_quota,
                 fragmentation_percentage=self.fragmentation,
                 flush_enabled=self.flush_enabled)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
