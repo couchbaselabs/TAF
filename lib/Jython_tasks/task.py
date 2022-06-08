@@ -199,18 +199,19 @@ class TimerTask(Task):
 
 
 class DeployCloud(Task):
-    def __init__(self, pod, tenant, name, config):
+    def __init__(self, pod, tenant, name, config, timeout=1800):
         Task.__init__(self, "Deploy_Cluster_{}".format(name))
         self.name = name
         self.config = config
         self.pod = pod
         self.tenant = tenant
+        self.timeout = timeout
 
     def call(self):
         try:
             cluster_id, srv, servers = \
                     CapellaAPI.create_cluster(self.pod, self.tenant,
-                                              self.config)
+                                              self.config, self.timeout)
             self.cluster_id = cluster_id
             self.srv = srv
             self.servers = servers

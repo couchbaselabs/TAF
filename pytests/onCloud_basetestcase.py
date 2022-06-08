@@ -137,7 +137,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                         cluster_name)
                 self.log.info(self.capella_cluster_config)
                 deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
-                                          self.capella_cluster_config)
+                                          self.capella_cluster_config,
+                                          timeout=self.wait_timeout)
                 self.task_manager.add_new_task(deploy_task)
                 tasks.append(deploy_task)
                 cluster_index += 1
