@@ -1416,7 +1416,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                 self.input.param("vbucket_check", True), self.cbas_util)
             rebalance_util.data_validation_collection(
                 self.cluster, skip_validations=False,
-                doc_and_collection_ttl=True, task_manager=self.task_manager)
+                doc_and_collection_ttl=True, async_compaction=False)
 
         self.log.info("Validating item count")
         datasets = self.cbas_util.list_all_dataset_objs()

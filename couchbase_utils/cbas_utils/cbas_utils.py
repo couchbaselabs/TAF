@@ -1515,7 +1515,8 @@ class Dataset_Util(Link_Util):
         :param object_construction_def (str): It defines how the data read will be parsed.
         Required only for csv and tsv formats.
         :param path_on_aws_bucket (str): Relative path in S3 bucket, from where the files will be read.
-        :param file_format (str): Type of files to read. Valid values - json, csv and tsv
+        :param file_format (str): Type of files to read. Valid values -
+        json, csv, tsv and parquet
         :param redact_warning (bool): internal information like e.g. filenames are redacted from warning messages.
         :param header (bool): True means every csv, tsv file has a header record at the top and
         the expected behaviour is that the first record (the header) is skipped.
@@ -5024,9 +5025,9 @@ class CBASRebalanceUtil(object):
             return task.result
         return task
 
-    def data_validation_collection(self, cluster, skip_validations=True,
-                                   doc_and_collection_ttl=False,
-                                   task_manager=None):
+    def data_validation_collection(
+            self, cluster, skip_validations=True, doc_and_collection_ttl=False,
+            async_compaction=False):
         retry_count = 0
         while retry_count < 10:
             try:
@@ -5049,13 +5050,16 @@ class CBASRebalanceUtil(object):
             self.log.info("wait for doc/collection maxttl to finish")
             time.sleep(400)
             compaction_tasks = self.bucket_util._run_compaction(
-                cluster, number_of_times=1, async_run=True)
-            for bucket, task in compaction_tasks.iteritems():
-                if not task.result:
-                    raise Exception("Compaction failed on bucket - %s" % bucket)
-            time.sleep(60)
-            self.bucket_util._wait_for_stats_all_buckets(
-                cluster, cluster.buckets)
+                cluster, number_of_times=1, async_run=async_compaction)
+            if not async_compaction:
+                for bucket, task in compaction_tasks.iteritems():
+                    if not task.result:
+                        raise Exception("Compaction failed on bucket - %s" % bucket)
+                time.sleep(60)
+                self.bucket_util._wait_for_stats_all_buckets(
+                    cluster, cluster.buckets)
+            else:
+                return compaction_tasks
         else:
             if not skip_validations:
                 self.bucket_util.validate_docs_per_collections_all_buckets(cluster)
