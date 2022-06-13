@@ -2347,7 +2347,7 @@ class BucketUtils(ScopeUtils):
         # [2,2,1] supports replica 3
         # But [1,7,1] (even though zone 2 has more nodes) supports only replica 2
         # In general, addition of nodes in two zones >=3 to support 3 replicas
-        if len(zones) == 3:
+        if len(min_count) == 3:
             if min_count.count(1) >= 2:
                 return 2
             return 3
