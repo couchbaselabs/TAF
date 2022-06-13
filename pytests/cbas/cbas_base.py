@@ -660,8 +660,8 @@ class CBASBaseTest(BaseTestCase):
                 if self.bucket_size == "auto":
                     cluster_info = cluster.rest.get_nodes_self()
                     kv_quota = cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
-                    self.bucket_size = kv_quota // bucket_spec[
-                        MetaConstants.NUM_BUCKETS]
+                    self.bucket_size = kv_quota // int(
+                        self.input.param("num_buckets", 1))
                 bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
 
     def over_ride_doc_loading_template_params(self, target_spec):
