@@ -187,7 +187,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             cluster_info = CapellaAPI.get_cluster_info(self.pod, self.tenant,
                                                        cluster_id)
             cluster_srv = cluster_info.get("endpointsSrv")
-            CapellaAPI.add_allowed_ip(self.pod, self.tenant, cluster_id)
+            CapellaAPI.allow_my_ip(self.pod, self.tenant, cluster_id)
             CapellaAPI.create_db_user(
                     self.pod, self.tenant, cluster_id,
                     self.rest_username, self.rest_password)

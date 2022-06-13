@@ -135,7 +135,7 @@ class CapellaUtils(object):
                                          cluster_details.get("clusterName")),
                                      timeout=timeout)
         cluster_srv = CapellaUtils.get_cluster_srv(pod, tenant, cluster_id)
-        CapellaUtils.add_allowed_ip(pod, tenant, cluster_id)
+        CapellaUtils.allow_my_ip(pod, tenant, cluster_id)
         servers = CapellaUtils.get_nodes(pod, tenant, cluster_id)
         return cluster_id, cluster_srv, servers
 
@@ -433,13 +433,13 @@ class CapellaUtils(object):
         return json.loads(resp.content)
 
     @staticmethod
-    def add_allowed_ip(pod, tenant, cluster_id):
+    def allow_my_ip(pod, tenant, cluster_id):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.add_allowed_ip(tenant.id, tenant.project_id,
+        resp = capella_api.allow_my_ip(tenant.id, tenant.project_id,
                                           cluster_id)
         if resp.status_code != 202:
             result = json.loads(resp.content)
