@@ -1660,6 +1660,9 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             if not self.cbas_util.verify_index_used(
                 self.cluster, statement.format(dataset.full_name), True, index.name):
                 self.fail("Index was not used while querying the dataset")
+        if not self.cbas_util.wait_for_ingestion_all_datasets(
+            self.cluster, self.bucket_util, timeout=1200):
+            self.fail("Failed to ingest data into datasets")
         selected_dataset = random.choice(dataset_objs)
         collections = self.bucket_util.get_active_collections(
             selected_dataset.kv_bucket, selected_dataset.kv_scope.name, True)
