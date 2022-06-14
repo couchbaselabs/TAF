@@ -2104,11 +2104,11 @@ class CBASExternalLinks(CBASBaseTest):
                 CBASHelper.unformat_name(
                     dataset_obj.get_fully_qualified_kv_entity_name(2),
                     "_default"))
-        elif self.input.param("connect_invalid_link", False):
+        elif self.input.param("use_invalid_link", False):
             original_link_name = dataset_obj.link_name
             dataset_obj.link_name = "invalid"
-            error_msg = "Link {0}.{1} does not exist".format(
-                dataset_obj.dataverse_name, dataset_obj.link_name)
+            error_msg = "Link Default.{0} does not exist".format(
+                dataset_obj.link_name)
         # Negative scenario ends
 
         self.log.info("Creating dataset on link to remote cluster")
@@ -2128,17 +2128,6 @@ class CBASExternalLinks(CBASBaseTest):
         else:
             dataset_created = True
 
-        if not self.input.param("connect_invalid_link", False):
-            self.log.info("Connecting remote link")
-            if not self.cbas_util.connect_link(
-                    self.analytics_cluster, dataset_obj.link_name,
-                    validate_error_msg=self.input.param(
-                        "validate_link_error", False),
-                    with_force=False, username=None, password=None,
-                    expected_error=error_msg, expected_error_code=None,
-                    timeout=120, analytics_timeout=120):
-                self.fail("Error while connecting the link")
-
         if dataset_created:
             if not self.cbas_util.wait_for_ingestion_all_datasets(
                     self.analytics_cluster, self.bucket_util):
@@ -2148,14 +2137,13 @@ class CBASExternalLinks(CBASBaseTest):
                     self.analytics_cluster, dataset_obj.full_name):
                 self.fail("Error while creating dataset")
 
-        if not self.input.param("connect_invalid_link", False):
-            self.log.info("Disconnecting remote link")
-            if not self.cbas_util.disconnect_link(
-                self.analytics_cluster, dataset_obj.link_name):
-                self.fail("Error while disconnecting the link")
-
         if original_link_name:
             dataset_obj.link_name = original_link_name
+
+        self.log.info("Disconnecting remote link")
+        if not self.cbas_util.disconnect_link(
+            self.analytics_cluster, dataset_obj.link_name):
+            self.fail("Error while disconnecting the link")
 
         self.log.info(
             "Dropping remote link with {0} encryption".format(self.encryption))
