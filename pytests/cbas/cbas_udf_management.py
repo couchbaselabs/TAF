@@ -582,6 +582,9 @@ class CBASUDF(CBASBaseTest):
                 CBASHelper.unformat_name(test_udf_obj.name),
                 test_udf_obj.arity))
 
+        self.sleep(2, "Waiting for user_defined_function_replaced events to "
+                      "be generated")
+
         self.log.info("Adding event for user_defined_function_dropped events")
         udf_deleted_successfully = list()
         i = 0
