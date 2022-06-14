@@ -95,16 +95,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                              progress)
         RestConnection(self.servers[0]).log_client_error(msg)
 
-    # Used for items verification active vs. replica
-    def items_verification(self, test, cluster):
-        # Verify items count across all node
-        timeout = 600
-        for bucket in self.cluster.buckets:
-            verified = self.bucket_util.wait_till_total_numbers_match(
-                cluster, bucket, timeout_in_seconds=timeout)
-            test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
-                                      .format(timeout))
-
     def validate_docs(self):
         self.log.info("Validating docs")
         self.gen_create = self.get_doc_generator(0, self.num_items)
