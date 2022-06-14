@@ -2327,7 +2327,7 @@ class BucketUtils(ScopeUtils):
                 verified = True
                 for bucket in cluster.buckets:
                     verified &= self.wait_till_total_numbers_match(
-                        master, bucket, timeout_in_seconds=(timeout or 500),
+                        cluster, bucket, timeout_in_seconds=(timeout or 500),
                         num_zone=num_zone)
                 if not verified:
                     msg = "Lost items!!! Replication was completed " \
@@ -2353,21 +2353,8 @@ class BucketUtils(ScopeUtils):
             return 3
         return min(min_count)
 
-    def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60, num_zone=1):
-        self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
-        stats_tasks = []
+    def get_actual_replica(self, cluster, bucket, num_zone):
         servers = self.cluster_util.get_kv_nodes(cluster)
-        if bucket.bucketType == Bucket.Type.MEMCACHED:
-            items_actual = 0
-            for server in servers:
-                client = MemcachedClientHelper.direct_client(server, bucket)
-                items_actual += int(client.stats()["curr_items"])
-            if items != items_actual:
-                raise Exception("Items are not correct")
-            return
-
-        # TODO: Need to fix the config files to always satisfy the
-        #       replica number based on the available number_of_servers
         available_replicas = bucket.replicaNumber
         if num_zone > 1:
             """
@@ -2397,11 +2384,26 @@ class BucketUtils(ScopeUtils):
                 if available_replicas > bucket.replicaNumber:
                     available_replicas = bucket.replicaNumber
             self.log.info("available_replicas considered {0}".format(available_replicas))
-        else:
-            if len(servers) == bucket.replicaNumber:
-                available_replicas = len(servers) - 1
-            elif len(servers) <= bucket.replicaNumber:
-                available_replicas = len(servers) - 1
+        elif len(servers) <= bucket.replicaNumber:
+            available_replicas = len(servers) - 1
+        return available_replicas
+
+    def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60, num_zone=1):
+        self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
+        stats_tasks = []
+        servers = self.cluster_util.get_kv_nodes(cluster)
+        if bucket.bucketType == Bucket.Type.MEMCACHED:
+            items_actual = 0
+            for server in servers:
+                client = MemcachedClientHelper.direct_client(server, bucket)
+                items_actual += int(client.stats()["curr_items"])
+            if items != items_actual:
+                raise Exception("Items are not correct")
+            return
+
+        # TODO: Need to fix the config files to always satisfy the
+        #       replica number based on the available number_of_servers
+        available_replicas = self.get_actual_replica(cluster, bucket, num_zone)
 
         # Create connection to master node for verifying cbstats
         stat_cmd = "all"
@@ -4072,7 +4074,7 @@ class BucketUtils(ScopeUtils):
             bucket.nodes.append(node)
         return bucket
 
-    def wait_till_total_numbers_match(self, master, bucket,
+    def wait_till_total_numbers_match(self, cluster, bucket,
                                       timeout_in_seconds=120,
                                       num_zone=1):
         self.log.debug('Waiting for sum_of_curr_items == total_items')
@@ -4080,7 +4082,7 @@ class BucketUtils(ScopeUtils):
         verified = False
         while (time.time() - start) <= timeout_in_seconds:
             try:
-                if self.verify_items_count(master, bucket, num_zone=num_zone):
+                if self.verify_items_count(cluster, bucket, num_zone=num_zone):
                     verified = True
                     break
                 else:
@@ -4089,7 +4091,7 @@ class BucketUtils(ScopeUtils):
                 self.log.error("Unable to retrieve stats for any node!")
                 break
         if not verified:
-            rest = RestConnection(master)
+            rest = RestConnection(cluster.master)
             RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
         return verified
 
@@ -4124,21 +4126,21 @@ class BucketUtils(ScopeUtils):
                     raise Exception("Active and replica vbucket list"
                                     "are overlapped")
 
-    def verify_items_count(self, master, bucket, num_attempt=3, timeout=2,
+    def verify_items_count(self, cluster, bucket, num_attempt=3, timeout=2,
                            num_zone=1):
         # get the #of buckets from rest
-        rest = RestConnection(master)
-        replica_factor = bucket.replicaNumber
+        rest = RestConnection(cluster.master)
         vbucket_active_sum = 0
         vbucket_replica_sum = 0
         vbucket_pending_sum = 0
         all_server_stats = []
         stats_received = True
         nodes = rest.get_nodes()
-        shell = RemoteMachineShellConnection(master)
+        shell = RemoteMachineShellConnection(cluster.master)
         cbstat = Cbstats(shell)
-        bucket_helper = BucketHelper(master)
+        bucket_helper = BucketHelper(cluster.master)
         active_vbucket_differ_count = len(rest.get_nodes())
+        replica_factor = self.get_actual_replica(cluster, bucket, num_zone)
         for server in nodes:
             # get the stats
             server_stats = bucket_helper.get_bucket_stats_for_node(
@@ -4206,19 +4208,10 @@ class BucketUtils(ScopeUtils):
         else:
             raise Exception("Bucket {0} stats doesnt contain 'curr_items_tot':"
                             .format(bucket))
-        if num_zone > 1:
-            num_nodes = num_zone
-        else:
-            num_nodes = len(nodes)
-        if replica_factor >= num_nodes:
-            self.log.warn("Number of zones/nodes is less than replica requires")
-            expected_replica_vbucket = (int(max_vbuckets[0].split(':')[1]) *
-                                        (num_nodes - 1))
-            delta = (sum * num_nodes) - master_stats["curr_items_tot"]
-        else:
-            expected_replica_vbucket = (int(max_vbuckets[0].split(':')[1]) *
-                                        replica_factor)
-            delta = sum * (replica_factor + 1) - master_stats["curr_items_tot"]
+
+        expected_replica_vbucket = (int(max_vbuckets[0].split(':')[1]) *
+                                    replica_factor)
+        delta = sum * (replica_factor + 1) - master_stats["curr_items_tot"]
         if vbucket_active_sum != int(max_vbuckets[0].split(':')[1]):
             raise Exception("vbucket_active_sum actual {0} and expected {1}"
                             .format(vbucket_active_sum,
