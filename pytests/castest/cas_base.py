@@ -18,24 +18,23 @@ class CasBaseTest(BaseTestCase):
         if self.doc_ops is not None:
             self.doc_ops = self.doc_ops.split(";")
 
-        # # self.testcase = '2'
-        # self.rest = RestConnection(self.cluster.master)
-        # node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
-        # mem_quota = int(self.rest.get_nodes_self().mcdMemoryReserved *
-        #                 node_ram_ratio)
-        #
-        # self.rest.set_service_mem_quota(
-        #     {CbServer.Settings.KV_MEM_QUOTA: mem_quota})
-        # nodes_init = self.cluster.servers[1:self.nodes_init]
-        # self.task.rebalance([self.cluster.master], nodes_init, [])
-        # self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        # self.bucket_util.add_rbac_user(self.cluster.master)
-        # self.bucket_util.create_default_bucket(
-        #     self.cluster,
-        #     ram_quota=self.bucket_size,
-        #     replica=self.num_replicas,
-        #     storage=self.bucket_storage,
-        #     conflict_resolution=self.bucket_conflict_resolution_type)
+        self.rest = RestConnection(self.cluster.master)
+        node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
+        mem_quota = int(self.rest.get_nodes_self().mcdMemoryReserved *
+                        node_ram_ratio)
+
+        self.rest.set_service_mem_quota(
+            {CbServer.Settings.KV_MEM_QUOTA: mem_quota})
+        nodes_init = self.cluster.servers[1:self.nodes_init]
+        self.task.rebalance([self.cluster.master], nodes_init, [])
+        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
+        self.bucket_util.add_rbac_user(self.cluster.master)
+        self.bucket_util.create_default_bucket(
+            self.cluster,
+            ram_quota=self.bucket_size,
+            replica=self.num_replicas,
+            storage=self.bucket_storage,
+            conflict_resolution=self.bucket_conflict_resolution_type)
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket = self.cluster.buckets[0]
