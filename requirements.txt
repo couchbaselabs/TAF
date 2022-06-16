@@ -1,5 +1,8 @@
-futures == 3.3.0
-requests == 2.24.0
-urllib3 == 1.25.10
+futures==3.3.0
+# certifi module is a supporting module for requests
+# and only this version supports jython installation
+certifi==2018.8.24
+requests==2.24.0
+urllib3==1.25.10
 ruamel.yaml==0.16.12
 six==1.15.0
