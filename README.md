@@ -12,7 +12,7 @@ mkdir <jython_path>
 java -jar jython-installer-2.7.2.jar -d <jython_path> -s
 
 # Installing dependency packages
-<jython_path>/bin/easy_install futures==3.3.0 requests==2.24.0 urllib3==1.25.10 ruamel.yaml==0.16.12 six==1.15.0 httplib2
+cat requirements.txt | xargs | xargs <jython_path>/bin/easy_install
 ```
 
 ## Test Environment Requirement
