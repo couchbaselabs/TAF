@@ -4,7 +4,7 @@
 
 1. Install Java. sdkman is a very useful tool for this.  JDK 11 is preferred as Jython doesn't seem to like JDK8 on Ubuntu 18+.
 
-2. Install Jython. Download Jython Installer from [here](https://repo1.maven.org/maven2/org/python/jython-installer/2.7.2/jython-installer-2.7.2.jar)
+2. Install Jython and add submodule dependency. Download Jython Installer from [here](https://repo1.maven.org/maven2/org/python/jython-installer/2.7.2/jython-installer-2.7.2.jar)
 
 ```bash
 # jython_path=/opt/jython 
@@ -13,6 +13,10 @@ java -jar jython-installer-2.7.2.jar -d <jython_path> -s
 
 # Installing dependency packages
 cat requirements.txt | xargs | xargs <jython_path>/bin/easy_install
+
+# Adding a submodule to the Git repository
+git submodule init
+git submodule update --init --force --remote
 ```
 
 ## Test Environment Requirement
@@ -130,23 +134,35 @@ Note: Make sure your rest_password is 'password'
 
 ```
 [global]
-cli:<cluster_run_repo>
+username:Administrator
+password:password
+# Base directory of the CB Server repo checkout, used to locate cli tools
+cli:/path/to/couchbase/server/source/dir
 
 [membase]
 rest_username:Administrator
 rest_password:password
 
+[servers]
+1:_1
+2:_2
+3:_3
+
 [_1]
+ip:127.0.0.1
 port:9000
-memcached_port: 12000
+memcached_port:12000
 
 [_2]
+ip:127.0.0.1
 port:9001
-memcached_port: 12002
+memcached_port:12002
 
 [_3]
+ip:127.0.0.1
 port:9002
-memcached_port: 12004
+memcached_port:12004
+
 ```
 
 ## Jython Issues
