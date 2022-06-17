@@ -467,7 +467,7 @@ class RebalanceTask(Task):
         node_index = 0
         services_for_node = [CbServer.Services.KV]
         for node in self.to_add:
-            if self.services is not None:
+            if self.services and self.services is not None:
                 services_for_node = [self.services[node_index]]
                 node_index += 1
             self.table.add_row([node.ip, ",".join(services_for_node), "", "",

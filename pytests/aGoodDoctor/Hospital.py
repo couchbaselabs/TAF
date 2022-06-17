@@ -868,14 +868,14 @@ class Murphy(BaseTestCase, OPD):
             self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             ###################################################################
             if self.loop == 0:
-                if self.fts_nodes:
+                if self.cluster.fts_nodes:
                     self.drFTS.create_fts_indexes()
 
-                if self.cbas_nodes:
+                if self.cluster.cbas_nodes:
                     self.drCBAS.create_datasets()
                     self.drCBAS.start_query_load()
 
-                if self.index_nodes:
+                if self.cluster.index_nodes:
                     self.drIndex.create_indexes()
                     self.drIndex.build_indexes()
                     self.drIndex.wait_for_indexes_online(self.log, self.drIndex.indexes)
