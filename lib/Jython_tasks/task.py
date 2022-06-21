@@ -1753,7 +1753,7 @@ class Durability(Task):
                                         else:
                                             temp_count += 1
                                     '''
-                                    This make sure that value has been updated 
+                                    This make sure that value has been updated
                                     on at least 1 node
                                     '''
                                     if temp_count == 0:
@@ -2975,6 +2975,8 @@ class ViewCreateTask(Task):
             return 0
         try:
             self.rest.create_design_document(self.bucket, ddoc)
+            self.log.debug("Waiting for potential concurrent ddoc updates to complete")
+            sleep(2)
             return_value = self.check()
             self.complete_task()
             return return_value
@@ -3159,6 +3161,8 @@ class ViewDeleteTask(Task):
                     return False
                 # update design doc
                 rest.create_design_document(self.bucket, ddoc)
+                self.log.debug("Waiting for potential concurrent ddoc updates to complete")
+                sleep(2)
                 return_value = self.check()
                 self.complete_task()
                 return return_value
