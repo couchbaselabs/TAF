@@ -77,6 +77,7 @@ class CreateBucketTests(BucketDurabilityBase):
                                                    verification_dict)
                 self.summary.add_step("Validate_CRUD_operation")
 
+                self.sleep(2, "Wait to avoid cbstat returning null")
                 # Cbstats vbucket-details validation
                 self.cb_stat_verify(verification_dict)
 
