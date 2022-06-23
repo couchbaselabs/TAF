@@ -173,8 +173,12 @@ class RemoteMachineShellConnection:
         self.ssh_key = serverInfo.ssh_key
         self.port = serverInfo.port
         self.memcached_port = serverInfo.memcached_port
-
         self.bin_path = LINUX_COUCHBASE_BIN_PATH
+        if hasattr(serverInfo, "hosted_on_cloud"):
+            self.is_cloud = serverInfo.hosted_on_cloud
+        else:
+            self.is_cloud = False
+        self.bin_path = Linux.COUCHBASE_BIN_PATH
         self.cmd_ext = ""
         self.msi = False
         self.nonroot = False
