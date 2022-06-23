@@ -5,7 +5,8 @@ from TestInput import TestInputSingleton
 from global_vars import logger
 from Cb_constants import constants, CbServer
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
-
+from StatsLib.StatsOperations import StatsHelper
+from gsiLib.gsiHelper import GsiHelper
 
 class ServerInfo:
     def __init__(self,
@@ -59,13 +60,21 @@ class CGroupBase(unittest.TestCase):
             for service in temp:
                 temp2 = service.split(":")
                 self.service_and_memory_allocation[temp2[0]] = temp2[1]
-
         if self.skip_setup_teardown is None:
             self.start_docker()
             self.remove_all_containers()
-            self.start_couchbase_container(mem=self.mem, cpus=self.cpus)
+            self.container_id = self.start_couchbase_container(mem=self.mem, cpus=self.cpus)
+            self.log.info("Container ID:{}".format(self.container_id))
             self.set_disk_paths()
             self.initialize_node()
+        self.host_mem_bytes = self.get_host_mem_in_bytes()
+        self.host_cpus = self.get_host_cpu_cores()
+        self.cgroup_aware_stats = ["sys_cpu_utilization_rate", "sys_cpu_sys_rate",
+                                   "sys_cpu_user_rate", "sys_cpu_cores_available",
+                                   "sys_mem_limit"]
+        self.host_aware_stats = ["sys_cpu_host_utilization_rate", "sys_cpu_host_sys_rate",
+                                 "sys_cpu_host_user_rate", "sys_cpu_host_cores_available",
+                                 "sys_mem_total"]
         self.log.info("Finished CGroupBase")
 
     def set_disk_paths(self):
@@ -153,12 +162,13 @@ class CGroupBase(unittest.TestCase):
         if self.cb_cpu_count_env not in [None, "None"]:
             flags = flags + " -e COUCHBASE_CPU_COUNT=" + str(self.cb_cpu_count_env)
         cmd = "docker run -d -t --name db " + flags + \
-              " -p 8091-8096:8091-8096 -p 11210-11211:11210-11211 couchbase-neo"
+              " -p 8091-8096:8091-8096 -p 11210-11211:11210-11211 -p 9102:9102 couchbase-neo"
         o, e = self.shell.execute_command(cmd)
         self.log.info("Docker command run: {0}".format(cmd))
         self.log.info("Output:{0}, Error{1}".format(o, e))
         self.log.info("Sleeping for {0} secs post starting couchbase container".format(sleep))
         time.sleep(sleep)
+        return o[0].rstrip("\n")
 
     def remove_all_containers(self):
         self.log.info("Stopping all containers")
@@ -187,9 +197,110 @@ class CGroupBase(unittest.TestCase):
         print(o, e)
         self.cpus = cpus
 
+    def update_container_mem_limit(self, mem):
+        """
+        Updates mem limit of a running docker container
+        :mem: memory limit in bytes
+        """
+        self.log.info("Updating the running container's mem limit from {0} to {1}".
+                      format(self.mem, mem))
+        cmd = "docker update -m " + str(mem) + " --memory-swap -1 db"
+        o, e = self.shell.execute_command(cmd)
+        print(o, e)
+        self.mem = mem
+
     def restart_server(self):
         self.log.info("Stopping and starting server...")
         self.shell.execute_command("docker exec db service couchbase-server stop")
         time.sleep(10)
         self.shell.execute_command("docker exec db service couchbase-server start")
         time.sleep(20)
+
+    def get_host_mem_in_bytes(self):
+        """
+        returns mem(int) available by directly issuing a command on the VM
+        """
+        cmd = "awk '/MemTotal/ {print $2}' /proc/meminfo"
+        o, e = self.shell.execute_command(cmd)
+        kib = o[0]
+        return int(kib) * 1024
+
+    def get_host_cpu_cores(self):
+        """
+        returns cpu cores(int) available by directly issuing a command on the VM
+        """
+        cmd = "grep -c processor /proc/cpuinfo"
+        o, e = self.shell.execute_command(cmd)
+        return int(o[0])
+
+    def verify_values_of_host_stats(self, stats_map):
+        """
+        Verifies if host's cpus and mem stats are correct
+        """
+        self.log.info("Verifying the cpus and mem stats of the host")
+        if stats_map["sys_cpu_host_cores_available"] != str(self.host_cpus):
+            self.fail("Mismatch, actual host cpus {0}, but sys_cpu_host_cores_available {1}".
+                      format(self.host_cpus, stats_map["sys_cpu_host_cores_available"]))
+
+        if stats_map["sys_mem_total"] != str(self.host_mem_bytes):
+            self.fail("Mismatch, actual host mem {0}, but sys_mem_total {1}".
+                      format(self.host_mem_bytes, stats_map["sys_mem_total"]))
+
+    def verify_values_of_cgroup_stats(self, stats_map):
+        """
+        Verifies if cgroup aware cpu and mem stats are correct
+        """
+        expected_cpus = self.cpus
+        expected_mem = self.mem
+        if self.cpus in ["None", None]:
+            expected_cpus = self.host_cpus
+        if self.mem in ["None", None]:
+            expected_mem = self.host_mem_bytes
+        self.log.info("Verifying the cpus and mem stats of the cgroup")
+        if stats_map["sys_cpu_cores_available"] != str(expected_cpus):
+            self.fail("Mismatch, actual cgroup cpus {0}, but sys_cpu_cores_available {1}".
+                      format(expected_cpus, stats_map["sys_cpu_cores_available"]))
+
+        if stats_map["sys_mem_limit"] != str(expected_mem):
+            self.fail("Mismatch, actual cgroup mem {0}, but sys_mem_limit {1}".
+                      format(expected_mem, stats_map["sys_mem_limit"]))
+
+    def read_latest_cgroup_aware_stats(self, node=None):
+        """
+        Reads cgroup aware stats reported by prometheus
+        """
+        if node is None:
+            node = self.node
+        latest_cgroup_aware_stats_map = dict()
+        for stat in self.cgroup_aware_stats:
+            content = StatsHelper(node).get_range_api_metrics(stat)
+            val = content['data'][0]['values'][-1][1]
+            latest_cgroup_aware_stats_map[stat] = val
+        self.log.info("latest_cgroup_aware_stats_map {0}".format(latest_cgroup_aware_stats_map))
+        return latest_cgroup_aware_stats_map
+
+    def read_latest_host_aware_stats(self, node=None):
+        """
+        Reads host aware stats reported by prometheus
+        """
+        if node is None:
+            node = self.node
+        latest_host_aware_stats_map = dict()
+        for stat in self.host_aware_stats:
+            content = StatsHelper(node).get_range_api_metrics(stat)
+            val = content['data'][0]['values'][-1][1]
+            latest_host_aware_stats_map[stat] = val
+        self.log.info("latest_host_aware_stats_map {0}".format(latest_host_aware_stats_map))
+        return latest_host_aware_stats_map
+
+    def read_logs(self, log_file, regex):
+        """
+        reads container logs that match a regex
+        """
+        cmd = "docker exec {} cat /opt/couchbase/var/lib/couchbase/logs/{} | grep {}".format(self.container_id,
+                                                                                                 log_file,
+                                                                                                 regex)
+        cmd_out, cmd_error = self.shell.execute_command(cmd)
+        self.log.info("Read logs command {} , Output:{}, Error{}".format(cmd, cmd_out, cmd_error))
+        return cmd_out
+
