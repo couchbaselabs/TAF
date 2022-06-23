@@ -157,6 +157,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
         else:
             self.cluster.edition = "community"
 
+        # Fetch the profile_type from the master node
+        # Value will be default / serverless
+        CbServer.cluster_profile = self.cluster_util.get_server_profile_type(
+            self.cluster.master)
+
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.cluster.master,
                                                 self.standard_buckets)

@@ -87,6 +87,12 @@ class CbServer(object):
     default_scope = "_default"
     default_collection = "_default"
 
+    # This block is valid only for Serverless profile builds
+    system_scope = "_system"
+    eventing_collection = "_eventing"
+    mobile_collection = "_mobile"
+    query_collection = "_query"
+
     total_vbuckets = 1024
 
     # Name length limits
@@ -106,3 +112,5 @@ class CbServer(object):
     sys_event_log_max_size = 3072
     # Time within which the UUID cannot be duplicated in server (in seconds)
     sys_event_log_uuid_uniqueness_time = 60
+
+    cluster_profile = "default"
