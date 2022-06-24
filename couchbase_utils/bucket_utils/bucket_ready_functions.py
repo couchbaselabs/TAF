@@ -1423,7 +1423,6 @@ class BucketUtils(ScopeUtils):
         selected_buckets = BucketUtils.get_random_buckets(buckets,
                                                           consider_buckets)
         available_scopes = list()
-        selected_scopes = list()
         known_buckets = dict()
         exclude_scopes = list()
 
@@ -1440,10 +1439,10 @@ class BucketUtils(ScopeUtils):
                 active_scopes = list(set(bucket.scopes.keys())
                                      .difference(set(active_scopes)))
             for scope in active_scopes:
-                if scope == CbServer.default_scope and avoid_default:
+                if scope == CbServer.system_scope \
+                        or (scope == CbServer.default_scope and avoid_default):
                     continue
-                available_scopes.append("%s:%s" % (bucket_name,
-                                                   scope))
+                available_scopes.append("%s:%s" % (bucket_name, scope))
 
         if req_num == "all" or req_num >= len(available_scopes):
             selected_scopes = list(set(available_scopes)
@@ -5071,6 +5070,24 @@ class BucketUtils(ScopeUtils):
                 exclude_from[bucket.name]["scopes"][CbServer.default_scope]["collections"][
                     CbServer.default_collection] = \
                     dict()
+
+        # Code to avoid removing collections under the scope '_system'
+        for b in buckets:
+            dict_to_update = {
+                b.name: {
+                    "scopes": {
+                        CbServer.system_scope: {
+                            "collections": {
+                                CbServer.eventing_collection: {},
+                                CbServer.query_collection: {},
+                                CbServer.mobile_collection: {}
+                            }
+                        }
+                    }
+                }
+            }
+            exclude_from.update(dict_to_update)
+
         cols_to_drop = BucketUtils.get_random_collections(
             buckets,
             input_spec.get(MetaCrudParams.COLLECTIONS_TO_DROP, 0),
