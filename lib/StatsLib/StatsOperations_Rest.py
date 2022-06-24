@@ -98,6 +98,27 @@ class StatsHelper(RestConnection):
         # ToDo - Think of a way to a parse this "high cardinality metrics", instead of returning the entire content
         return content
 
+    def metering(self, component="kv"):
+        """
+        API to get high cardinality metrics from the cluster
+        :component: component specific metrics to retrieve
+        :returns response content as a list
+        """
+        if component == "kv":
+            # For KV the endpoint is not accessible from non-localhost. So we do the following
+            cmd = "{3} -i -o - --silent -u {0}:{1} http://{2}:11280/_metering". \
+                format(self.username, self.password, "localhost", self.curl_path)
+            content = self._run_curl_command_from_localhost(cmd)
+        else:
+            url = self._get_url_from_service(component)
+            api = '%s%s' % (url, '/_metering')
+            status, content, _ = self._http_request(api)
+            if not status:
+                raise Exception(content)
+            content = content.splitlines()
+        # ToDo - Think of a way to a parse this "high cardinality metrics", instead of returning the entire content
+        return content
+
     def get_all_metrics(self):
         """
         API that returns all the metrics for all the services on that node in Prometheus format

@@ -3351,6 +3351,26 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api, 'POST', params=version)
         return status, content
 
+    def get_throttle_limit(self, bucket=""):
+        if bucket:
+            url = 'settings/throttle/' + bucket
+        else:
+            url = 'settings/throttle/'
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'GET')
+        return status, content
+
+    def set_throttle_limit(self, bucket="", limit=5000, service="kv"):
+        key = service + "ThrottleLimit"
+        if bucket:
+            url = 'settings/throttle/' + bucket
+        else:
+            url = 'settings/throttle/'
+        api = self.baseUrl + url
+        params = urllib.urlencode({key: limit})
+        status, content, header = self._http_request(api, 'POST', params=params)
+        return status, content
+
     def load_trusted_CAs(self):
         """
         Instructs the cluster to load trusted CAs(.pem files) from the node's inbox/CA folder
