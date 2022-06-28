@@ -670,6 +670,11 @@ class ConfigPurging(CollectionBase):
         2. Stop any random node and trigger a meta_kv key delete operation
         3. Recover back the node and make sure the purging goes through fine
         """
+        def heal_the_node(shell):
+            self.log.info("Healing the cluster node")
+            shell.restart_couchbase()
+            shell.disconnect()
+            self.sleep(60, "Wait for node to come online")
 
         custom_meta_kv_key = "key_01_%s" % self.time_stamp
         fts_key = "fts_index_%s" % int(self.time_stamp)
@@ -717,15 +722,12 @@ class ConfigPurging(CollectionBase):
         purged_keys_dict = self.__get_purged_tombstone_from_last_run()
         for node_ip, purged_data in purged_keys_dict.items():
             if purged_data['count'] or purged_data['count'] != 0:
-                shell.disconnect()
+                heal_the_node(shell)
                 self.fail("%s - Some keys got purged when node is failed: %s"
                           % (node_ip, purged_data))
 
         # Recover from the error condition
-        self.log.info("Healing the cluster node")
-        shell.restart_couchbase()
-        shell.disconnect()
-        self.sleep(60, "Wait for node to come online")
+        heal_the_node(shell)
 
         deleted_keys = self.cluster_util.get_ns_config_deleted_keys_count(self.cluster)
         self.log.info(deleted_keys)
