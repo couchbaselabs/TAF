@@ -186,14 +186,14 @@ class TimerTask(Task):
             interval (int): The time to wait in between function calls.
         """
         super(TimerTask, self).__init__("TimerTask: function:{} Args:{} Kwds:{} Interval:{}".format(f, args, kwds, interval))
-        self.f, self.args, self.kwds = f, args, kwds
+        self.f, self.args, self.kwds, self.interval = f, args, kwds, interval
 
     def call(self):
         """ Calls the function f """
         self.start_task()
         while True:
             result = self.f(*self.args, **self.kwds)
-            self.sleep(interval)
+            self.sleep(self.interval)
         self.complete_task()
         return result
 
