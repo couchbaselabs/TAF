@@ -653,13 +653,13 @@ class CBASBaseTest(BaseTestCase):
                 bucket_spec[Bucket.storageBackend] = self.bucket_storage
             elif key == "compression_mode":
                 bucket_spec[Bucket.compressionMode] = self.compression_mode
-            elif key == "bucket_size":
-                if self.bucket_size == "auto":
-                    cluster_info = cluster.rest.get_nodes_self()
-                    kv_quota = cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
-                    self.bucket_size = (kv_quota // int(
-                        self.input.param("num_buckets", 1))) * 0.9
-                bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
+        if "bucket_size" in self.input.test_params:
+            if self.bucket_size == "auto":
+                cluster_info = cluster.rest.get_nodes_self()
+                kv_quota = cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
+                self.bucket_size = int((kv_quota // bucket_spec[
+                    MetaConstants.NUM_BUCKETS]) * 0.9)
+            bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
 
     def over_ride_doc_loading_template_params(self, target_spec):
         for key, value in self.input.test_params.items():
