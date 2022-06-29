@@ -24,9 +24,10 @@ class CollectionsQuorumLoss(CollectionBase):
     def tearDown(self):
         if self.failover_action:
             self.custom_remove_failure()
+            self.sleep(25, "wait after removing failure")
         super(CollectionsQuorumLoss, self).tearDown()
-        if self.failover_action:
-            self.wipe_config_on_removed_nodes()
+        # if self.failover_action:
+        #     self.wipe_config_on_removed_nodes()
 
     def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
