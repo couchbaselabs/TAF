@@ -36,7 +36,7 @@ from Jython_tasks.task import \
     ViewQueryTask
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
-from BucketLib.bucket import Bucket, Collection, Scope
+from BucketLib.bucket import Bucket, Collection, Scope, Serverless
 from capella.capella_utils import CapellaUtils
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
@@ -1699,7 +1699,8 @@ class BucketUtils(ScopeUtils):
             purge_interval=1,
             autoCompactionDefined="false",
             fragmentation_percentage=50,
-            bucket_name="default"):
+            bucket_name="default",
+            weight=None, width=None):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -1727,7 +1728,9 @@ class BucketUtils(ScopeUtils):
              Bucket.durabilityMinLevel: bucket_durability,
              Bucket.purge_interval: purge_interval,
              Bucket.autoCompactionDefined: autoCompactionDefined,
-             Bucket.fragmentationPercentage: fragmentation_percentage})
+             Bucket.fragmentationPercentage: fragmentation_percentage,
+             Bucket.width: width,
+             Bucket.weight: weight})
         if cluster.cloud_cluster:
             bucket_params = {
                 CloudCluster.Bucket.name: bucket_obj.name,
@@ -3995,6 +3998,13 @@ class BucketUtils(ScopeUtils):
             bucket.bucketType = Bucket.Type.MEMBASE
         if "maxTTL" in parsed:
             bucket.maxTTL = parsed["maxTTL"]
+
+        if Bucket.width in parsed:
+            if bucket.serverless is None:
+                bucket.serverless = Serverless()
+            bucket.serverless.width = parsed[Bucket.width]
+            bucket.serverless.weight = parsed[Bucket.weight]
+
         bucket.durability_level = "none"
         bucket.bucketCapabilities = parsed["bucketCapabilities"]
         if Bucket.durabilityMinLevel in parsed:

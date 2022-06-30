@@ -44,6 +44,8 @@ class CouchbaseBaseTest(unittest.TestCase):
                                             Bucket.Type.MEMBASE)
         self.bucket_ttl = self.input.param("bucket_ttl", 0)
         self.bucket_size = self.input.param("bucket_size", None)
+        self.bucket_width = self.input.param("bucket_width", None)
+        self.bucket_weight = self.input.param("bucket_weight", None)
         self.bucket_conflict_resolution_type = \
             self.input.param("bucket_conflict_resolution",
                              Bucket.ConflictResolution.SEQ_NO)

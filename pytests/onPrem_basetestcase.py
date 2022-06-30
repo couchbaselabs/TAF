@@ -910,7 +910,9 @@ class ClusterSetup(OnPremBaseTest):
             purge_interval=self.bucket_purge_interval,
             autoCompactionDefined="false",
             fragmentation_percentage=50,
-            bucket_name=bucket_name)
+            bucket_name=bucket_name,
+            width=self.bucket_width,
+            weight=self.bucket_weight)
 
         # Add bucket create event in system event log
         if self.system_events.test_start_time is not None:

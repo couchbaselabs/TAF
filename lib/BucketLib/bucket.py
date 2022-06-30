@@ -119,6 +119,13 @@ class Collection(object):
         collection_obj.doc_index = (0, 0)
 
 
+class Serverless(object):
+    def __init__(self):
+        self.width = None
+        self.weight = None
+        self.nebula_endpoint = None
+
+
 class Bucket(object):
     name = "name"
     ramQuotaMB = "ramQuotaMB"
@@ -139,6 +146,8 @@ class Bucket(object):
     purge_interval = "purge_interval"
     autoCompactionDefined = "autoCompactionDefined"
     fragmentationPercentage = "fragmentationPercentage"
+    width = "width"
+    weight = "weight"
 
     # Tracks the last bucket/scope/collection counter created in the cluster
     bucket_counter = Counter()
@@ -251,6 +260,15 @@ class Bucket(object):
         self.vbuckets = list()
         self.forward_map = list()
         self.scopes = dict()
+
+        # Serverless
+        self.serverless = None
+        b_width = new_params.get(Bucket.width, None)
+        b_weight = new_params.get(Bucket.weight, None)
+        if b_weight or b_width:
+            self.serverless = Serverless()
+            self.serverless.width = b_width or 1
+            self.serverless.weight = b_weight or 1
 
         # Create default scope-collection association
         scope = Scope({"name": CbServer.default_scope})

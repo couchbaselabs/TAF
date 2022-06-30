@@ -51,6 +51,7 @@ class BucketHelper(RestConnection):
                 vBucketServerMap = parsed['vBucketServerMap']
                 serverList = vBucketServerMap['serverList']
                 bucket.servers.extend(serverList)
+                bucket.servers = list(set(bucket.servers))
                 if "numReplicas" in vBucketServerMap:
                     bucket.replicaNumber = vBucketServerMap["numReplicas"]
                 # vBucketMapForward
@@ -305,7 +306,13 @@ class BucketHelper(RestConnection):
             Bucket.storageBackend: bucket_params.get('storageBackend'),
             Bucket.conflictResolutionType:
                 bucket_params.get('conflictResolutionType'),
-            Bucket.durabilityMinLevel:  bucket_params.get('durability_level')}
+            Bucket.durabilityMinLevel: bucket_params.get('durability_level')}
+
+        # Set Bucket's width/weight param only if provided in params
+        if bucket_params.get(Bucket.weight):
+            init_params[Bucket.weight] = bucket_params.get(Bucket.weight)
+        if bucket_params.get(Bucket.width):
+            init_params[Bucket.width] = bucket_params.get(Bucket.width)
 
         server_info = dict({"ip": self.ip, "port": self.port,
                             "username": self.username,
