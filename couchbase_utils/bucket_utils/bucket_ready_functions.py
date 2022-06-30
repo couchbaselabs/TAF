@@ -3993,7 +3993,6 @@ class BucketUtils(ScopeUtils):
         bucket.bucketType = parsed['bucketType']
         if str(parsed['bucketType']) == 'membase':
             bucket.bucketType = Bucket.Type.MEMBASE
-        bucket.nodes = list()
         if "maxTTL" in parsed:
             bucket.maxTTL = parsed["maxTTL"]
         bucket.durability_level = "none"
@@ -4047,33 +4046,6 @@ class BucketUtils(ScopeUtils):
         bucket.stats.memUsed = stats['memUsed']
         quota = parsed['quota']
         bucket.stats.ram = quota['ram']
-        nodes = parsed['nodes']
-        for nodeDictionary in nodes:
-            node = Node()
-            node.uptime = nodeDictionary['uptime']
-            node.memoryFree = nodeDictionary['memoryFree']
-            node.memoryTotal = nodeDictionary['memoryTotal']
-            node.mcdMemoryAllocated = nodeDictionary['mcdMemoryAllocated']
-            node.mcdMemoryReserved = nodeDictionary['mcdMemoryReserved']
-            node.status = nodeDictionary['status']
-            node.hostname = nodeDictionary['hostname']
-            if 'clusterCompatibility' in nodeDictionary:
-                node.clusterCompatibility = nodeDictionary['clusterCompatibility']
-            if 'clusterMembership' in nodeDictionary:
-                node.clusterCompatibility = nodeDictionary['clusterMembership']
-            node.version = nodeDictionary['version']
-            node.os = nodeDictionary['os']
-            if "ports" in nodeDictionary:
-                ports = nodeDictionary["ports"]
-                if "direct" in ports:
-                    node.memcached = ports["direct"]
-            if "hostname" in nodeDictionary:
-                value = str(nodeDictionary["hostname"])
-                node.ip = value[:value.rfind(":")]
-                node.port = int(value[value.rfind(":") + 1:])
-            if "otpNode" in nodeDictionary:
-                node.id = nodeDictionary["otpNode"]
-            bucket.nodes.append(node)
         return bucket
 
     def wait_till_total_numbers_match(self, master, bucket,
