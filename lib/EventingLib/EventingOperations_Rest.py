@@ -1,6 +1,6 @@
 import base64
 import json
-from membase.api.rest_client import RestConnection
+from connections.Rest_Connection import RestConnection
 
 class EventingHelper(RestConnection):
     def __init__(self, server):
@@ -462,6 +462,19 @@ class EventingHelper(RestConnection):
         headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
         status, content, header = self._http_request(api, 'POST', headers=headers,
                                                      params=json.dumps(body).encode("ascii", "ignore"))
+        if not status:
+            raise Exception(content)
+        return content
+
+    def get_cpu_count(self):
+        authorization = base64.encodestring(
+            '%s:%s' % (self.username, self.password))
+        url = "getCpuCount"
+        api = self.eventing_baseUrl + url
+        headers = {'Content-type': 'application/json',
+                   'Authorization': 'Basic %s' % authorization}
+        status, content, header = self._http_request(api, 'GET',
+                                                     headers=headers)
         if not status:
             raise Exception(content)
         return content
