@@ -69,7 +69,7 @@ class Cluster(object):
     def scenario_rebalance(self, kwargs):
         self.rebalance_task = self.task.async_rebalance(
             self.cluster, to_add=[], to_remove=[], services=None,
-            sleep_before_rebalance=0, retry_get_process_num=25)
+            retry_get_process_num=25)
 
     def scenario_rebalance_in(self, kwargs):
         services = kwargs.get("services")
@@ -77,7 +77,7 @@ class Cluster(object):
             self.cluster,
             to_add=self.spare_nodes[:len(services)], to_remove=[],
             services=services,
-            sleep_before_rebalance=0, retry_get_process_num=25)
+            retry_get_process_num=25)
 
     def scenario_rebalance_out(self, kwargs):
         services = kwargs.get("services")
@@ -101,7 +101,7 @@ class Cluster(object):
         self.rebalance_task = self.task.async_rebalance(
             self.cluster, to_add=[], to_remove=nodes_to_remove,
             check_vbucket_shuffling=True,
-            sleep_before_rebalance=0, retry_get_process_num=25)
+            retry_get_process_num=25)
 
         # Update existing node as master
         for _, node_list in self.node_service_mapping.items():
@@ -131,7 +131,7 @@ class Cluster(object):
             self.cluster,
             to_add=self.spare_nodes[:len(services)], to_remove=nodes_to_remove,
             check_vbucket_shuffling=False, services=services,
-            sleep_before_rebalance=0, retry_get_process_num=25)
+            retry_get_process_num=25)
 
         # Update existing node as master
         self.cluster.master = self.spare_nodes[0]

@@ -19,7 +19,6 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.extra_servs_in = [self.servers[i + self.nodes_init + self.nodes_in] for i in range(extra_nodes_in)]
         self.extra_servs_out = [self.servers[self.nodes_init - i - 1 - self.nodes_out] for i in range(extra_nodes_out)]
         self.withMutationOps = self.input.param("withMutationOps", True)
-        self.sleep_before_rebalance = self.input.param("sleep_before_rebalance", 0)
         if self.spec_name is not None:
             self.num_items = 20000
             self.items = 20000
@@ -161,13 +160,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                                              50)
             if i == 1:
                 rebalance = self.task.async_rebalance(
-                    self.cluster, self.servs_in, self.servs_out,
-                    sleep_before_rebalance=self.sleep_before_rebalance)
+                    self.cluster, self.servs_in, self.servs_out)
             else:
                 rebalance = self.task.async_rebalance(
                     self.cluster,
-                    add_in_once, self.servs_out + self.extra_servs_out,
-                    sleep_before_rebalance=self.sleep_before_rebalance)
+                    add_in_once, self.servs_out + self.extra_servs_out)
                 add_in_once = []
             self.sleep(20)
             expected_progress = 20 * i
@@ -230,13 +227,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         for i in range(1, 6):
             if i == 1:
                 rebalance = self.task.async_rebalance(
-                    self.cluster, self.servs_in, self.servs_out,
-                    sleep_before_rebalance=self.sleep_before_rebalance)
+                    self.cluster, self.servs_in, self.servs_out)
             else:
                 rebalance = self.task.async_rebalance(
                     self.cluster,
-                    add_in_once, self.servs_out + self.extra_servs_out,
-                    sleep_before_rebalance=self.sleep_before_rebalance)
+                    add_in_once, self.servs_out + self.extra_servs_out)
                 add_in_once = []
             self.sleep(20)
             expected_progress = 20 * i

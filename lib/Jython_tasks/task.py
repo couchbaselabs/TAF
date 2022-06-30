@@ -286,15 +286,15 @@ class RebalanceTaskCapella(Task):
 
 
 class RebalanceTask(Task):
-    def __init__(self, cluster, to_add=[], to_remove=[], do_stop=False,
-                 progress=30, use_hostnames=False, services=None,
-                 check_vbucket_shuffling=True, sleep_before_rebalance=0,
+    def __init__(self, cluster, to_add=[], to_remove=[],
+                 use_hostnames=False, services=None,
+                 check_vbucket_shuffling=True,
                  retry_get_process_num=25):
         super(RebalanceTask, self).__init__(
             "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
-                .format(",".join([node.ip for node in to_add]),
-                        ",".join([node.ip for node in to_remove]),
-                        str(time.time())))
+            .format(",".join([node.ip for node in to_add]),
+                    ",".join([node.ip for node in to_remove]),
+                    str(time.time())))
         self.cluster = cluster
         self.servers = list()
         self.to_add = to_add
