@@ -140,7 +140,7 @@ class RestConnection(object):
             self.on_cloud = serverInfo.hosted_on_cloud
         except:
             self.on_cloud = False
-        if self.on_cloud:
+        if self.on_cloud or CbServer.cluster_profile == "serverless":
             nodes_self_url = self.baseUrl + "pools/default"
         else:
             nodes_self_url = self.baseUrl + 'nodes/self'

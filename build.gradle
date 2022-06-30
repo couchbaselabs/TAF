@@ -57,6 +57,9 @@ dependencies {
 	
 	// https://mvnrepository.com/artifact/com.azure/azure-storage-blob - Azure blob
 	compile group: 'com.azure', name: 'azure-storage-blob', version: '12.14.0'
+	
+	// https://mvnrepository.com/artifact/com.spotify/docker-client
+	compile group: 'com.spotify', name: 'docker-client', version: '8.16.0'
 }
 
 task copyDeps(type: Copy) {

@@ -21,6 +21,28 @@ from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux, Mac, Windows
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from table_view import TableView
+from copy import deepcopy
+
+
+class Nebula:
+    def __init__(self, endpoint, dummyserver):
+        self.servers = dict()
+        temp = deepcopy(dummyserver)
+        temp.ip = endpoint
+        self.endpoint = temp
+        self.update_server_list()
+
+    def update_server_list(self):
+        self.rest = RestConnection(self.endpoint)
+        _, content, _ = self.rest._http_request(self.rest.baseUrl + "pools/default")
+        content = json.loads(content)
+        for server in content["nodes"]:
+            if server["hostname"] not in self.servers:
+                temp = deepcopy(self.endpoint)
+                temp.ip = server["hostname"].split(":")[0]
+                temp.port = server["hostname"].split(":")[1]
+                temp.memcached_port = server["ports"]["direct"]
+                self.servers[server["hostname"]] = temp
 
 
 class CBCluster:
@@ -52,6 +74,10 @@ class CBCluster:
         self.pod = None
         self.tenant = None
         self.cluster_config = None
+
+        # Bucket Serverless Topology
+        self.bucketDNNodes = dict()
+        self.bucketNodes = dict()
 
     def __str__(self):
         return "Couchbase Cluster: %s, Nodes: %s" % (
@@ -812,6 +838,12 @@ class ClusterUtils:
                         and server not in new_servers:
                     new_servers.append(server)
         return new_servers
+
+    def get_bucket_kv_nodes(self, cluster, bucket):
+        return cluster.bucketNodes[bucket]
+
+    def get_bucket_DN_nodes(self, cluster, bucket):
+        return cluster.bucketDNNodes[bucket]
 
     @staticmethod
     def generate_services_map(nodes, services=None):

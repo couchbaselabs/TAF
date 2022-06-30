@@ -1783,6 +1783,18 @@ class BucketUtils(ScopeUtils):
                 sleep(2, "No servers_list found, Will retry...")
         self.log.debug("Bucket %s occupies servers: %s" % (bucket_obj.name,
                                                            bucket_obj.servers))
+        cluster.bucketNodes[bucket_obj] = bucket_obj.servers
+
+    @staticmethod
+    def update_bucket_nebula_servers(cluster, nebula, bucket_obj):
+        nebula_servers = list()
+        b_stats = BucketHelper(nebula.endpoint).get_bucket_json(bucket_obj.name)
+        for server in b_stats["nodes"]:
+            nebula_servers.append(nebula.servers[server["hostname"]])
+        cluster.bucketDNNodes[bucket_obj] = nebula_servers
+        if not bucket_obj.servers:
+            bucket_obj.servers = nebula_servers
+            cluster.bucketNodes[bucket_obj] = nebula_servers
 
     @staticmethod
     def expand_collection_spec(buckets_spec, bucket_name, scope_name):
@@ -2609,8 +2621,9 @@ class BucketUtils(ScopeUtils):
           timeout - Waiting the end of the thread. (str)
         """
         tasks = list()
-        for server in self.cluster_util.get_kv_nodes(cluster):
-            for bucket in buckets:
+        # for server in self.cluster_util.get_kv_nodes(cluster):
+        for bucket in buckets:
+            for server in self.cluster_util.get_bucket_kv_nodes(cluster, bucket):
                 if bucket.bucketType == 'memcached':
                     continue
                 if check_ep_items_remaining:

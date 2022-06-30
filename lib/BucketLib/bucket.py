@@ -124,6 +124,7 @@ class Serverless(object):
         self.width = None
         self.weight = None
         self.nebula_endpoint = None
+        self.nebula_port = CbServer.memcached_port
 
 
 class Bucket(object):

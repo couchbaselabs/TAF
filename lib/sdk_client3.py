@@ -226,6 +226,11 @@ class SDKClient(object):
         self.compression = compression_settings
         self.cert_path = cert_path
         self.log = logger.get("test")
+        self.log.info("The bucket is serverless: %s" % bucket.serverless)
+        if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
+            self.hosts = [bucket.serverless.nebula_endpoint.ip]
+            self.log.info("For SDK, Nebula endpoint used for bucket is: %s"
+                          % bucket.serverless.nebula_endpoint)
         for server in servers:
             self.servers.append((server.ip, int(server.port)))
             if server.ip == "127.0.0.1":

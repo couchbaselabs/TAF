@@ -73,8 +73,15 @@ class OPD:
                  Bucket.bucketType: bucket_type[i],
                  Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
                  Bucket.compressionMode: compression_mode[i],
-                 Bucket.fragmentationPercentage: self.fragmentation})
+                 Bucket.fragmentationPercentage: self.fragmentation,
+                 Bucket.width: self.bucket_width,
+                 Bucket.weight: self.bucket_weight})
             self.bucket_util.create_bucket(cluster, bucket)
+            if bucket.serverless and self.nebula_details.get(cluster):
+                self.bucket_util.update_bucket_nebula_servers(cluster,
+                                                              self.nebula_details[cluster],
+                                                              bucket)
+                bucket.serverless.nebula_endpoint = self.nebula_details[cluster].endpoint
 
         # rebalance the new buckets across all nodes.
         self.log.info("Rebalance Starts")
@@ -455,6 +462,8 @@ class OPD:
             self.loader_map = dict()
             for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
+                    if scope == CbServer.system_scope:
+                            continue
                     for collection in bucket.scopes[scope].collections.keys():
                         if collection == "_default" and scope == "_default":
                             continue
@@ -500,6 +509,8 @@ class OPD:
             while i > 0:
                 for bucket in self.cluster.buckets:
                     for scope in bucket.scopes.keys():
+                        if scope == CbServer.system_scope:
+                            continue
                         for collection in bucket.scopes[scope].collections.keys():
                             if collection == "_default" and scope == "_default":
                                 continue
@@ -555,7 +566,16 @@ class OPD:
         i = self.process_concurrency
         while i > 0:
             for bucket in self.cluster.buckets:
+                if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
+                    nebula = bucket.serverless.nebula_endpoint
+                    print "Serverless Mode, Nebula will be used for SDK operations: %s" % nebula
+                    master = Server(nebula.ip, nebula.port,
+                                    nebula.rest_username,
+                                    nebula.rest_password,
+                                    str(nebula.memcached_port))
                 for scope in bucket.scopes.keys():
+                    if scope == CbServer.system_scope:
+                        continue
                     for collection in bucket.scopes[scope].collections.keys():
                         if scope == CbServer.system_scope:
                             continue
@@ -676,7 +696,7 @@ class OPD:
         data_path = RestConnection(server).get_data_path()
         while not self.stop_stats:
             for bucket in self.cluster.buckets:
-                self.log.info(self.get_magma_stats(bucket, server, "rw_0:magma"))
+                self.log.info(self.get_magma_stats(bucket, server)[server.ip]["rw_0:magma"])
                 self.dump_seq_index(shell, data_path, bucket.name, shard, kvstore)
             self.sleep(600)
         shell.disconnect()
@@ -711,7 +731,6 @@ class OPD:
                 fragmentation_values.append(json.loads(_res[server.ip][grep_field])["Fragmentation"])
                 stats.append(_res)
             result.update({server.ip: fragmentation_values})
-        self.log.info(stats[0])
         res = list()
         for value in result.values():
             res.append(max(value))

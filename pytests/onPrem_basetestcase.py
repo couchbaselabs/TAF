@@ -1,26 +1,28 @@
+from datetime import datetime
 import os
 import re
+import socket
 import traceback
 
-import Cb_constants
-from SystemEventLogLib.Events import Event
-from SystemEventLogLib.data_service_events import DataServiceEvents
-from cb_basetest import CouchbaseBaseTest
-from security_config import trust_all_certs
-
-from datetime import datetime
 from ruamel.yaml import YAML
 
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
+import Cb_constants
+from SystemEventLogLib.Events import Event
+from SystemEventLogLib.data_service_events import DataServiceEvents
 from TestInput import TestInputSingleton
-from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils
-from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
-from remote.remote_util import RemoteMachineShellConnection
-
 from constants.platform_constants import os_constants
+from cb_basetest import CouchbaseBaseTest
+from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
+    Nebula
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
+from membase.api.rest_client import RestConnection
+from remote.remote_util import RemoteMachineShellConnection
+from security_config import trust_all_certs
+from docker_utils.DockerSDK import DockerClient
+import random
 
 
 class OnPremBaseTest(CouchbaseBaseTest):
@@ -260,6 +262,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.case_number -= 1000
                 self.tearDownEverything(reset_cluster_env_vars=False)
 
+            self.nebula = self.input.param("nebula", False)
+            self.nebula_details = dict()
             for cluster_name, cluster in self.cb_clusters.items():
                 if not self.skip_cluster_reset:
                     self.initialize_cluster(
@@ -272,6 +276,49 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 # Set this unconditionally
                 RestConnection(cluster.master).set_internalSetting(
                     "magmaMinMemoryQuota", 256)
+                self.docker_containers = []
+                self.docker = None
+                self.image_id = None
+                if self.nebula and CbServer.cluster_profile == "serverless":
+                    try:
+                        # Check out nebula git repo
+                        # Config nebula
+                        self.log.info("launch docker container running nebula")
+                        nebula_ip = self.get_executor_ip()
+                        nebula_path = self.input.param("nebula_path",
+                                                       "/root/direct-nebula")
+                        self.create_nebula_config(nebula_path=nebula_path,
+                                                  nebula_ip=nebula_ip,
+                                                  cluster=cluster)
+                        self.log.info("Create docker SDK client")
+                        self.docker = DockerClient()
+                        self.log.info("Build docker image")
+                        _rand = random.randint(1, 1000)
+                        self.image_id = self.docker.buildImage(nebula_path,
+                                                               "directnebula-{}".format(_rand))
+                        self.log.info("Construct docker port mapping")
+                        portMap = dict()
+                        for i in range(9000, 9011):
+                            i = str(i)
+                            portMap.update({i: i})
+                        for i in range(11000, 11011):
+                            i = str(i)
+                            portMap.update({i: i})
+                        hostConfig = self.docker.portMapping(portMap)
+                        self.log.info("Start Docker Container")
+                        dn_container_id = self.docker.startDockerContainer(
+                            hostConfig, self.image_id, exposedPorts=portMap.keys(),
+                            tag="DirectNebula-{}".format(_rand))
+                        self.docker_containers.append(dn_container_id)
+                        self.use_https = False
+                        self.enforce_tls = False
+                        CbServer.use_https = False
+                        nebula = Nebula(nebula_ip, cluster.master)
+                        self.log.info("Populate Nebula object done!!")
+                        self.nebula_details[cluster] = nebula
+                    except:
+                        traceback.print_exc()
+                        self.nebula = False
 
             # Enable dp_version
             if self.enable_dp:
@@ -402,6 +449,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.node_utils.start_fetch_pcaps(self.servers, log_path, is_test_failed)
 
     def tearDown(self):
+        for container in self.docker_containers:
+            self.docker.killContainer(container)
+            self.log.info("Container {} killed/removed".format(container))
+        if self.docker is not None:
+            if self.image_id is not None:
+                self.docker.deleteImage(self.image_id)
+            self.docker.close()
         # Perform system event log validation and get failures (if any)
         sys_event_validation_failure = None
         if self.validate_system_event_logs:
@@ -890,6 +944,30 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         if upload_client_certs:
             x509.upload_client_cert_settings(server=servers[0])
+
+    def get_executor_ip(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+
+    def create_nebula_config(self, nebula_path="",
+                             nebula_ip=None, cluster=None):
+        import json
+        with open(os.path.join(nebula_path, "config.json.example"), "r") as jsonFile:
+            data = json.load(jsonFile)
+            jsonFile.close()
+            data["localHostname"] = nebula_ip
+            data["certificates"]["certificate"] = ""
+            data["certificates"]["privateKey"] = ""
+            data["couchbase"]["certificate"] = ""
+            data["couchbase"]["hosts"] = [node.ip for node in cluster.nodes_in_cluster]
+
+        with open(os.path.join(nebula_path, "config.json"), "w") as jsonFile:
+            json.dump(data, jsonFile, indent=4)
+            jsonFile.close()
+
+        import shutil
+        shutil.copy("couchbase_utils/nebula_utils/Dockerfile", nebula_path)
 
 
 class ClusterSetup(OnPremBaseTest):

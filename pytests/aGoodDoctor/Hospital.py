@@ -105,6 +105,8 @@ class Murphy(BaseTestCase, OPD):
                     services.append(service.replace(":", ","))
             if not self.capella_run:
                 self.task.rebalance(self.cluster, nodes_init, [], services=services*len(nodes_init))
+                if self.nebula:
+                    self.nebula_details[self.cluster].update_server_list()
         self.available_servers = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
         self.cluster_util.set_metadata_purge_interval(self.cluster.master,
                                                       interval=self.bucket_purge_interval)
