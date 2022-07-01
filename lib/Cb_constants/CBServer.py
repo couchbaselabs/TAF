@@ -48,6 +48,9 @@ class CbServer(object):
         MIN_TIMEOUT = 5
         MAX_TIMEOUT = 3600
 
+    class Serverless(object):
+        KV_SubCluster_Size = 3
+
     enterprise_edition = True
 
     port = 8091
@@ -84,6 +87,7 @@ class CbServer(object):
     use_https = False
     n2n_encryption = False
 
+    default_server_group = "Group 1"
     default_scope = "_default"
     default_collection = "_default"
 

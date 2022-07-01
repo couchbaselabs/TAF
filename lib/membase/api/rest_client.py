@@ -779,8 +779,7 @@ class RestConnection(newRC):
     # server already added
     # returns otpNode
     def add_node(self, user='', password='', remoteIp='',
-                 port=constants.port, zone_name='', services=None):
-        otpNode = None
+                 port=constants.port, zone_name=None, services=None):
         # if ip format is ipv6 and enclosing brackets are not found,
         # enclose self.ip and remoteIp
         if self.ip.count(':') and self.ip[0] != '[':
@@ -790,9 +789,7 @@ class RestConnection(newRC):
 
         self.test_log.debug("Adding remote node {0}:{1} to cluster {2}:{3}"
                             .format(remoteIp, port, self.ip, self.port))
-        if zone_name == '':
-            api = self.baseUrl + 'controller/addNode'
-        else:
+        if zone_name:
             api = self.baseUrl + 'pools/default/serverGroups'
             if self.is_zone_exist(zone_name):
                 zones = self.get_zone_names()
@@ -801,6 +798,8 @@ class RestConnection(newRC):
                                     .format(remoteIp, zone_name))
             else:
                 raise Exception("There is not zone with name: %s in cluster" % zone_name)
+        else:
+            api = self.baseUrl + 'controller/addNode'
 
         params = {'hostname': remoteIp,
                   'user': user,
@@ -1539,6 +1538,7 @@ class RestConnection(newRC):
                 stat_dict[node_stat['hostname']] = dict()
                 stat_dict[node_stat['hostname']]['version'] = node_stat['version']
                 stat_dict[node_stat['hostname']]['services'] = node_stat['services']
+                stat_dict[node_stat['hostname']]['serverGroup'] = node_stat['serverGroup']
                 stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats'].get(
                     'cpu_utilization_rate')
                 stat_dict[node_stat['hostname']]['clusterMembership'] = node_stat['clusterMembership']
@@ -2618,7 +2618,6 @@ class RestConnection(newRC):
 
     # return all rack/zone info
     def get_all_zones_info(self, timeout=120):
-        zones = dict()
         api = self.baseUrl + 'pools/default/serverGroups'
         status, content, header = self._http_request(api, timeout=timeout)
         if status:
@@ -3522,6 +3521,7 @@ class Node(object):
         self.port = constants.port
         self.services = []
         self.storageTotalRam = 0
+        self.server_group = None
 
 
 class AutoFailoverSettings(object):
@@ -3540,12 +3540,6 @@ class AutoReprovisionSettings(object):
         self.enabled = True
         self.max_nodes = 0
         self.count = 0
-
-
-class NodePort(object):
-    def __init__(self):
-        self.proxy = 0
-        self.direct = 0
 
 
 class RestParser(object):
@@ -3596,6 +3590,7 @@ class RestParser(object):
             node.curr_items = parsed['interestingStats']['curr_items']
         node.port = parsed["hostname"][parsed["hostname"].rfind(":") + 1:]
         node.os = parsed['os']
+        node.server_group = parsed["serverGroup"]
 
         if "services" in parsed:
             node.services = parsed["services"]

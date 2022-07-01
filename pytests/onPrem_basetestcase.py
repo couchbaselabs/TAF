@@ -37,7 +37,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.port = self.input.param("port", None)
         self.port_info = self.input.param("port_info", None)
         self.servers = self.input.servers
+        self.spare_nodes = list()
         self.num_servers = self.input.param("servers", len(self.servers))
+        self.server_groups = self.input.param("server_groups",
+                                              CbServer.default_server_group)
         self.vbuckets = self.input.param("vbuckets", CbServer.total_vbuckets)
         self.gsi_type = self.input.param("gsi_type", 'plasma')
         # Memory quota settings
@@ -860,7 +863,18 @@ class ClusterSetup(OnPremBaseTest):
             return
 
         self.log_setup_status("ClusterSetup", "started", "setup")
+        self.__initial_rebalance()
+        # Add basic RBAC users
+        self.bucket_util.add_rbac_user(self.cluster.master)
 
+        # Print cluster stats
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.log_setup_status("ClusterSetup", "complete", "setup")
+
+    def tearDown(self):
+        super(ClusterSetup, self).tearDown()
+
+    def __initial_rebalance(self):
         services = None
         if self.services_init:
             services = list()
@@ -874,7 +888,8 @@ class ClusterSetup(OnPremBaseTest):
             if self.nodes_init != 1 else []
         if nodes_init:
             result = self.task.rebalance(self.cluster, nodes_init, [],
-                                         services=services)
+                                         services=services,
+                                         add_nodes_server_groups=None)
             if result is False:
                 # Need this block since cb-collect won't be collected
                 # in BaseTest if failure happens during setup() stage
@@ -882,15 +897,9 @@ class ClusterSetup(OnPremBaseTest):
                     self.fetch_cb_collect_logs()
                 self.fail("Initial rebalance failed")
 
-        # Add basic RBAC users
-        self.bucket_util.add_rbac_user(self.cluster.master)
-
-        # Print cluster stats
-        self.cluster_util.print_cluster_stats(self.cluster)
-        self.log_setup_status("ClusterSetup", "complete", "setup")
-
-    def tearDown(self):
-        super(ClusterSetup, self).tearDown()
+        # Used to track spare nodes.
+        # Test case can use this for further rebalance
+        self.spare_nodes = self.servers[self.nodes_init:]
 
     def create_bucket(self, cluster, bucket_name="default"):
         self.bucket_util.create_default_bucket(

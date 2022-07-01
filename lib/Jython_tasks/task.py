@@ -289,7 +289,7 @@ class RebalanceTask(Task):
     def __init__(self, cluster, to_add=[], to_remove=[],
                  use_hostnames=False, services=None,
                  check_vbucket_shuffling=True,
-                 retry_get_process_num=25):
+                 retry_get_process_num=25, add_nodes_server_groups=None):
         super(RebalanceTask, self).__init__(
             "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
             .format(",".join([node.ip for node in to_add]),
@@ -305,6 +305,17 @@ class RebalanceTask(Task):
         self.check_vbucket_shuffling = check_vbucket_shuffling
         self.result = False
         self.retry_get_process_num = retry_get_process_num
+        self.server_groups_to_add = dict()
+
+        if isinstance(add_nodes_server_groups, dict):
+            """
+            This will add one node to each of the AZ_1/2/3.
+            {"AZ_1": 1, "AZ_2": 1, "AZ_3": 1}
+            """
+            if len(to_add) != sum(add_nodes_server_groups.values()):
+                raise Exception("Server group map != len(to_add) servers")
+            self.server_groups_to_add = add_nodes_server_groups
+
         try:
             self.rest = RestConnection(self.cluster.master)
         except ServerUnavailableException, e:
@@ -333,16 +344,17 @@ class RebalanceTask(Task):
 
         cluster_stats = self.rest.get_cluster_stats()
         self.table = TableView(self.test_log.info)
-        self.table.set_headers(["Nodes", "Services", "Version",
+        self.table.set_headers(["Nodes", "Zone", "Services", "Version",
                                 "CPU", "Status", "Membership / Recovery"])
         for node, stat in cluster_stats.items():
             node_ip = node.split(':')[0]
             node_status = "Cluster node"
             if node_ip in node_ips_to_remove:
                 node_status = "--- OUT --->"
-            self.table.add_row([node_ip, ", ".join(stat["services"]),
-                                stat["version"], stat["cpu_utilization"],
-                                node_status, stat["clusterMembership"] + " / " + stat["recoveryType"]])
+            self.table.add_row([node_ip, stat["serverGroup"],
+                                ", ".join(stat["services"]), stat["version"],
+                                stat["cpu_utilization"], node_status,
+                                stat["clusterMembership"] + " / " + stat["recoveryType"]])
             # Remove the 'out' node from services list
             self.cluster.kv_nodes = \
                 [node for node in self.cluster.kv_nodes
@@ -465,20 +477,35 @@ class RebalanceTask(Task):
     def add_nodes(self):
         master = self.servers[0]
         node_index = 0
+        server_groups = self.server_groups_to_add.keys() \
+            if self.server_groups_to_add else []
+        server_group_index = 0
         services_for_node = [CbServer.Services.KV]
         for node in self.to_add:
+            zone_name = None
+
+            # Logic to get the next server_group for the adding node
+            if server_groups:
+                zone_name = server_groups[server_group_index]
+                self.server_groups_to_add[zone_name] -= 1
+                if self.server_groups_to_add[zone_name] == 0:
+                    server_group_index += 1
+
             if self.services and self.services is not None:
                 services_for_node = [self.services[node_index]]
                 node_index += 1
-            self.table.add_row([node.ip, ",".join(services_for_node), "", "",
+            self.table.add_row([node.ip, str(zone_name),
+                                ",".join(services_for_node), "", "",
                                 "<--- IN ---", ""])
             if self.use_hostnames:
                 self.rest.add_node(master.rest_username, master.rest_password,
                                    node.hostname, node.port,
+                                   zone_name=zone_name,
                                    services=services_for_node)
             else:
                 self.rest.add_node(master.rest_username, master.rest_password,
                                    node.ip, node.port,
+                                   zone_name=zone_name,
                                    services=services_for_node)
             for services in services_for_node:
                 for service in services.split(","):

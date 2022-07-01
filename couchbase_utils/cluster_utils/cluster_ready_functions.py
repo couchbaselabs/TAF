@@ -1006,7 +1006,7 @@ class ClusterUtils:
 
     def print_cluster_stats(self, cluster):
         table = TableView(self.log.info)
-        table.set_headers(["Node", "Services", "CPU_utilization",
+        table.set_headers(["Node", "zone", "Services", "CPU_utilization",
                            "Mem_total", "Mem_free",
                            "Swap_mem_used",
                            "Active / Replica ", "Version"])
@@ -1015,6 +1015,7 @@ class ClusterUtils:
         for cluster_node, node_stats in cluster_stat.items():
             row = list()
             row.append(cluster_node.split(':')[0])
+            row.append(node_stats["serverGroup"])
             row.append(", ".join(node_stats["services"]))
             row.append(str(node_stats["cpu_utilization"]))
             row.append(humanbytes(str(node_stats["mem_total"])))
