@@ -1007,13 +1007,14 @@ class ServerTasks(object):
         status = self.jython_task_manager.get_task_result(_task)
         return status
 
-    def async_monitor_compaction(self, cluster, bucket):
+    def async_monitor_compaction(self, cluster, bucket, timeout=300):
         """
         :param cluster: Couchbase cluster object
         :param bucket: Bucket object to monitor compaction
+        :param timeout: Wait timeout for compaction start
         :return task: MonitorBucketCompaction object
         """
-        task = jython_tasks.MonitorBucketCompaction(cluster, bucket)
+        task = jython_tasks.MonitorBucketCompaction(cluster=cluster, bucket=bucket, timeout=timeout)
         self.jython_task_manager.add_new_task(task)
         return task
 
