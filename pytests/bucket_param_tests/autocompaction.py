@@ -51,7 +51,7 @@ class AutoCompactionTests(CollectionBase):
         self.log.info('In load, wait time is {0}'.format(self.wait_timeout))
         monitor_fragm = self.task.async_monitor_db_fragmentation(
             server, bucket_name, compaction_value)
-        end_time = time.time() + self.wait_timeout * 5
+        end_time = time.time() + self.wait_timeout * 11
         # generate load until fragmentation reached
         while not monitor_fragm.completed and not self.stop_loading_thread:
             if self.is_crashed.is_set():
@@ -60,7 +60,7 @@ class AutoCompactionTests(CollectionBase):
 
             if end_time < time.time():
                 self.err = "Fragmentation level is not reached in %s sec" \
-                           % self.wait_timeout * 5
+                           % self.wait_timeout * 11
                 return
             # update docs to create fragmentation
             try:
@@ -77,10 +77,18 @@ class AutoCompactionTests(CollectionBase):
                                 collection=collection.name,
                                 sdk_client_pool=self.sdk_client_pool)
                             self.task.jython_task_manager.get_task_result(task)
+                            if end_time < time.time() or self.stop_loading_thread:
+                                break
+                        else:
+                            continue
+                        break
+                    else:
+                        continue
+                    break
             except Exception, ex:
                 self.is_crashed.set()
                 self.log.error("Load cannot be performed: %s" % str(ex))
-        if monitor_fragm.result is False:
+        if monitor_fragm.result is False and self.autocompaction_value==0: #fragmentation level will never reach the expected value as auto-compaction kicks in before that threshold is achieved if opted
             self.err = "Monitor fragmentation task failed"
 
     def _load_all_buckets(self, generator, op_type, batch_size=10,
@@ -215,9 +223,10 @@ class AutoCompactionTests(CollectionBase):
                     raise ex
             else:
                 compaction_task = self.task.async_monitor_compaction(
-                    self.cluster, self.bucket)
-                insert_thread.join()
+                    self.cluster, self.bucket, self.wait_timeout * 10)
                 self.task_manager.get_task_result(compaction_task)
+                self.stop_loading_thread = True
+                insert_thread.join()
                 if self.err is not None:
                     self.fail(self.err)
         else:
