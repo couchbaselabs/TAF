@@ -178,7 +178,6 @@ class RemoteMachineShellConnection:
             self.is_cloud = serverInfo.hosted_on_cloud
         else:
             self.is_cloud = False
-        self.bin_path = Linux.COUCHBASE_BIN_PATH
         self.cmd_ext = ""
         self.msi = False
         self.nonroot = False
