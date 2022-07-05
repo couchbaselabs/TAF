@@ -128,6 +128,10 @@ class RestConnection(newRC):
             return False
         return True
 
+    def is_cluster_balanced(self):
+        _, content, _ = self._http_request(self.baseUrl+"/pools/default")
+        return json.loads(content)["balanced"]
+
     def rename_node(self, hostname, username='Administrator',
                     password='password'):
         params = urllib.urlencode({'username': username,
