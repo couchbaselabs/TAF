@@ -4801,6 +4801,54 @@ class BucketUtils(ScopeUtils):
 
             self.validate_doc_count_as_per_collections(cluster, bucket)
 
+    def validate_serverless_buckets(self, cluster, buckets):
+        def get_server_bucket(target_bucket):
+            for s_bucket in server_buckets:
+                if s_bucket["name"] == target_bucket.name:
+                    return s_bucket
+
+        result = True
+        helper = BucketHelper(cluster.master)
+        server_buckets = helper.get_buckets_json()
+
+        for t_bucket in buckets:
+            self.log.info("Validating bucket %s" % t_bucket.name)
+            # Validate bucket.width is matching as expected
+            width = t_bucket.serverless.width
+            server_bucket = get_server_bucket(t_bucket)
+            req_len = width * CbServer.Serverless.KV_SubCluster_Size
+            if req_len != len(server_bucket["nodes"]):
+                result = False
+                self.log.critical("Bucket %s, width=%s expected to be "
+                                  "placed on %s nodes, but occupies %s nodes"
+                                  % (t_bucket.name, width, req_len,
+                                     len(server_bucket["nodes"])))
+
+            # Validate bucket.num_vbs against expected value
+            num_vb = t_bucket.num_vbuckets or CbServer.Serverless.VB_COUNT
+            if num_vb != server_bucket[Bucket.num_vbuckets]:
+                result = False
+                self.log.critical("Expected num_vbuckets=%s, actual %s"
+                                  % (num_vb,
+                                     server_bucket[Bucket.num_vbuckets]))
+
+            # Construct AZ map to validate the bucket distribution
+            # across the server groups
+            az_map = dict()
+            for node in server_bucket["nodes"]:
+                if node["serverGroup"] not in az_map:
+                    az_map[node["serverGroup"]] = 0
+                az_map[node["serverGroup"]] += 1
+            tem_weight = list(set(az_map.values()))
+            if len(tem_weight) != 1:
+                result = False
+                self.log.critical("Uneven bucket distribution: %s" % az_map)
+            elif tem_weight[0] != width:
+                result = False
+                self.log.critical("Expected bucket width %s, actual %s"
+                                  % (width, tem_weight[0]))
+        return result
+
     def remove_scope_collections_for_bucket(self, cluster, bucket):
         """
         Delete all created scope-collection for the given bucket

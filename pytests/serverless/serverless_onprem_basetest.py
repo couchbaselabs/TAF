@@ -1,3 +1,4 @@
+from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
 from basetestcase import ClusterSetup
 from membase.api.rest_client import RestConnection
@@ -10,6 +11,9 @@ class ServerlessOnPremBaseTest(ClusterSetup):
         self.log_setup_status(self.__class__.__name__, "started")
         self.distribute_servers_across_available_zones()
         self.remove_empty_server_groups(self.cluster)
+        self.assertTrue(
+            RestConnection(self.cluster.master).is_cluster_balanced(),
+            "Cluster is unbalanced")
         self.log_setup_status(self.__class__.__name__, "completed")
 
     def tearDown(self):
