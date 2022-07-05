@@ -1583,6 +1583,10 @@ class BucketUtils(ScopeUtils):
         self.task_manager.get_task_result(task)
         if task.result is False:
             raise_exception = "BucketCreateTask failed"
+
+        # Update server_objects with the bucket object for future reference
+        self.update_bucket_server_list(cluster, bucket)
+
         if task.result and wait_for_warmup:
             self.log.debug("Wait for memcached to accept cbstats "
                            "or any other bucket request connections")
@@ -1751,6 +1755,18 @@ class BucketUtils(ScopeUtils):
             self.create_bucket(cluster, bucket_obj, wait_for_warmup)
             if self.enable_time_sync:
                 self._set_time_sync_on_buckets(cluster, [bucket_obj.name])
+
+    def update_bucket_server_list(self, cluster, bucket_obj):
+        b_stat = BucketHelper(cluster.master).get_bucket_json(bucket_obj.name)
+        for server in b_stat["vBucketServerMap"]["serverList"]:
+            ip, mc_port = server.split(":")
+            for server_node in cluster.nodes_in_cluster:
+                if server_node.ip == ip \
+                        and str(server_node.memcached_port) == str(mc_port):
+                    bucket_obj.servers.append(server_node)
+                    break
+        self.log.debug("Bucket %s occupies servers: %s" % (bucket_obj.name,
+                                                           bucket_obj.servers))
 
     @staticmethod
     def expand_collection_spec(buckets_spec, bucket_name, scope_name):

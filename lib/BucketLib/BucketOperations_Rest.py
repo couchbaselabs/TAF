@@ -308,11 +308,11 @@ class BucketHelper(RestConnection):
                 bucket_params.get('conflictResolutionType'),
             Bucket.durabilityMinLevel: bucket_params.get('durability_level')}
 
-        # Set Bucket's width/weight param only if provided in params
-        if bucket_params.get(Bucket.weight):
-            init_params[Bucket.weight] = bucket_params.get(Bucket.weight)
-        if bucket_params.get(Bucket.width):
-            init_params[Bucket.width] = bucket_params.get(Bucket.width)
+        # Set Bucket's width/weight param only if serverless is enabled
+        if bucket_params.get('serverless'):
+            serverless = bucket_params['serverless']
+            init_params[Bucket.weight] = serverless.weight
+            init_params[Bucket.width] = serverless.width
 
         server_info = dict({"ip": self.ip, "port": self.port,
                             "username": self.username,
@@ -347,7 +347,6 @@ class BucketHelper(RestConnection):
             init_params['purgeInterval'] = bucket_params.get('purge_interval')
 
         params = urllib.urlencode(init_params)
-
         self.log.info("Creating '%s' bucket %s"
                       % (init_params['bucketType'], init_params['name']))
         self.log.debug("{0} with param: {1}".format(api, params))

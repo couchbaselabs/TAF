@@ -265,10 +265,10 @@ class Bucket(object):
         self.serverless = None
         b_width = new_params.get(Bucket.width, None)
         b_weight = new_params.get(Bucket.weight, None)
-        if b_weight or b_width:
+        if b_weight is not None and b_width is not None:
             self.serverless = Serverless()
-            self.serverless.width = b_width or 1
-            self.serverless.weight = b_weight or 1
+            self.serverless.width = b_width
+            self.serverless.weight = b_weight
 
         # Create default scope-collection association
         scope = Scope({"name": CbServer.default_scope})
