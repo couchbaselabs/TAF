@@ -874,9 +874,9 @@ class OPD:
         for bucket in self.cluster.buckets:
             start_time = time.time()
             result = self.bucket_util._wait_warmup_completed(
-                                [server],
-                                self.cluster.buckets[0],
-                                wait_time=self.wait_timeout * 20)
+                self.cluster.buckets[0],
+                servers=[server],
+                wait_time=self.wait_timeout * 20)
             if not result:
                 self.stop_crash = True
                 self.task_manager.abort_all_tasks()

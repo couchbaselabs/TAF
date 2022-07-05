@@ -1030,9 +1030,9 @@ class StorageBase(BaseTestCase):
             shell.disconnect()
         for node in self.cluster.nodes_in_cluster:
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-            [node],
-            self.cluster.buckets[0],
-            wait_time=self.wait_timeout * 20))
+                self.cluster.buckets[0],
+                servers=[node],
+                wait_time=self.wait_timeout * 20))
 
     def get_memory_footprint(self):
         out = subprocess.Popen(['ps', 'v', '-p', str(os.getpid())], stdout=subprocess.PIPE).communicate()[0].split(b'\n')
@@ -1089,9 +1089,9 @@ class StorageBase(BaseTestCase):
                 for node in nodes:
                     if "kv" in node.services:
                         result = self.bucket_util._wait_warmup_completed(
-                                    [node],
-                                    self.cluster.buckets[0],
-                                    wait_time=self.wait_timeout * 5)
+                            self.cluster.buckets[0],
+                            servers=[node],
+                            wait_time=self.wait_timeout * 5)
                         if not result:
                             msg = "warm-up couldn't complete in %s seconds" %\
                                 (self.wait_timeout * 5)
@@ -1145,7 +1145,6 @@ class StorageBase(BaseTestCase):
         if type(nodes) is not list:
             nodes = [nodes]
         for node in nodes:
-            paths = None
             shell = RemoteMachineShellConnection(node)
             paths, _ = shell.execute_command("find {} -name {}".format(self.data_path,
                                                                        dest))
@@ -1184,8 +1183,8 @@ class StorageBase(BaseTestCase):
 
         # Check bucket-warm_up after Couchbase restart
         retry_count = 10
-        buckets_warmed_up = self.bucket_util.is_warmup_complete(
-            self.cluster, buckets, retry_count)
+        buckets_warmed_up = self.bucket_util.is_warmup_complete(buckets,
+                                                                retry_count)
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up "
                               "within expected time")

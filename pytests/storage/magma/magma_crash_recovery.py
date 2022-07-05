@@ -52,7 +52,6 @@ class MagmaCrashTests(MagmaBaseTest):
             shell = RemoteMachineShellConnection(
                 self.cluster.master)
             shell.kill_memcached()
-#             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
     def drop_recreate_collections(self):
@@ -118,7 +117,7 @@ class MagmaCrashTests(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             if "kv" in node.services:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [node], self.cluster.buckets[0],
+                    self.cluster.buckets[0], servers=[node],
                     wait_time=self.wait_timeout * 5))
 
     def test_crash_during_recovery_new(self):
@@ -150,7 +149,7 @@ class MagmaCrashTests(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             if "kv" in node.services:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [node], self.cluster.buckets[0],
+                    self.cluster.buckets[0], servers=[node],
                     wait_time=self.wait_timeout * 5))
 
     def test_crash_during_ops(self):
@@ -190,7 +189,7 @@ class MagmaCrashTests(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             if "kv" in node.services:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [node], self.cluster.buckets[0],
+                    self.cluster.buckets[0], servers=[node],
                     wait_time=self.wait_timeout * 5))
         self.validate_seq_itr()
 
@@ -225,7 +224,7 @@ class MagmaCrashTests(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             if "kv" in node.services:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [node], self.cluster.buckets[0],
+                    self.cluster.buckets[0], servers=[node],
                     wait_time=self.wait_timeout * 5))
         self.validate_seq_itr()
 

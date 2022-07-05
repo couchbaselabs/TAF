@@ -1066,7 +1066,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.log.info("rebalance was failed as expected")
             for bucket in self.cluster.buckets:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [warmup_node], bucket,
+                    bucket, servers=[warmup_node],
                     wait_time=self.wait_timeout * 10))
 
             self.log.info("second attempt to rebalance")

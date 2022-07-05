@@ -1548,8 +1548,8 @@ class BucketUtils(ScopeUtils):
                 cluster.buckets.append(bucket)
                 break
         if status is True:
-            warmed_up = self._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=60)
+            self.update_bucket_server_list(cluster, bucket)
+            warmed_up = self._wait_warmup_completed(bucket, wait_time=60)
             if not warmed_up:
                 status = False
         if status is True:
@@ -1591,8 +1591,7 @@ class BucketUtils(ScopeUtils):
             self.log.debug("Wait for memcached to accept cbstats "
                            "or any other bucket request connections")
             sleep(2)
-            warmed_up = self._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=60)
+            warmed_up = self._wait_warmup_completed(bucket, wait_time=60)
             if not warmed_up:
                 task.result = False
                 raise_exception = "Bucket not warmed up"
@@ -1758,6 +1757,9 @@ class BucketUtils(ScopeUtils):
                 self._set_time_sync_on_buckets(cluster, [bucket_obj.name])
 
     def update_bucket_server_list(self, cluster, bucket_obj):
+        # Reset the known servers list
+        bucket_obj.servers = list()
+
         b_stat = BucketHelper(cluster.master).get_bucket_json(bucket_obj.name)
         for server in b_stat["vBucketServerMap"]["serverList"]:
             ip, mc_port = server.split(":")
@@ -2088,9 +2090,10 @@ class BucketUtils(ScopeUtils):
         for kv_node in kv_nodes:
             node_info[kv_node.ip]["shell"].start_server()
             node_info[kv_node.ip]["shell"].disconnect()
+            bucket_obj.servers.append(kv_node)
 
         # Wait for warmup to complete for the given bucket
-        if not self._wait_warmup_completed(kv_nodes, bucket_obj):
+        if not self._wait_warmup_completed(bucket_obj):
             self.log.critical("Bucket %s warmup failed after loading from tar"
                               % bucket_obj.name)
 
@@ -2257,9 +2260,8 @@ class BucketUtils(ScopeUtils):
 
             # Check for warm_up
             for bucket in cluster.buckets:
-                warmed_up = self._wait_warmup_completed(
-                    self.cluster_util.get_kv_nodes(cluster), bucket,
-                    wait_time=60)
+                self.update_bucket_server_list(cluster, bucket)
+                warmed_up = self._wait_warmup_completed(bucket, wait_time=60)
                 if not warmed_up:
                     success = False
                     raise_exception = "Bucket %s not warmed up" % bucket.name
@@ -2325,14 +2327,13 @@ class BucketUtils(ScopeUtils):
             self.update_bucket_property(cluster.master, bucket,
                                         replica_number=replicas)
 
-    def is_warmup_complete(self, cluster, buckets, retry_count=5):
+    def is_warmup_complete(self, buckets, retry_count=5):
         while retry_count != 0:
             buckets_warmed_up = True
             for bucket in buckets:
                 try:
-                    warmed_up = self._wait_warmup_completed(
-                        self.cluster_util.get_kv_nodes(cluster), bucket,
-                        wait_time=60)
+                    warmed_up = self._wait_warmup_completed(bucket,
+                                                            wait_time=60)
                     if not warmed_up:
                         buckets_warmed_up = False
                         break
@@ -4243,13 +4244,15 @@ class BucketUtils(ScopeUtils):
             return True
         return False
 
-    def _wait_warmup_completed(self, servers, bucket, wait_time=300):
+    def _wait_warmup_completed(self, bucket, servers=None, wait_time=300):
         # Return True, if bucket_type is not equal to MEMBASE
         if bucket.bucketType != Bucket.Type.MEMBASE:
             return True
 
-        self.log.debug("Waiting for bucket %s to complete warm-up"
-                       % bucket.name)
+        servers = servers or bucket.servers
+        self.log.debug("Waiting for bucket %s to complete warm-up on nodes %s"
+                       % (bucket.name, servers))
+
         warmed_up = False
         start = time.time()
         for server in servers:
@@ -4552,7 +4555,7 @@ class BucketUtils(ScopeUtils):
 
         # Check bucket-warm_up after Memcached restart
         retry_count = 10
-        buckets_warmed_up = self.is_warmup_complete(cluster, buckets,
+        buckets_warmed_up = self.is_warmup_complete(buckets,
                                                     retry_count)
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up "
@@ -4594,7 +4597,7 @@ class BucketUtils(ScopeUtils):
 
         # Check bucket-warm_up after Couchbase restart
         retry_count = 10
-        buckets_warmed_up = self.is_warmup_complete(cluster, buckets,
+        buckets_warmed_up = self.is_warmup_complete(buckets,
                                                     retry_count)
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up "
@@ -4634,7 +4637,7 @@ class BucketUtils(ScopeUtils):
 
         # Check bucket-warm_up after Couchbase restart
         retry_count = 10
-        buckets_warmed_up = self.is_warmup_complete(cluster, buckets,
+        buckets_warmed_up = self.is_warmup_complete(buckets,
                                                     retry_count)
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up "

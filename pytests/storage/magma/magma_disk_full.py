@@ -147,7 +147,7 @@ class MagmaDiskFull(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             if "kv" in node.services:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [node], self.cluster.buckets[0],
+                    self.cluster.buckets[0], servers=[node],
                     wait_time=self.wait_timeout * 5))
 
         self.doc_ops = "update"
@@ -244,8 +244,8 @@ class MagmaDiskFull(MagmaBaseTest):
 
         self.free_disk(self.cluster.nodes_in_cluster[-1])
         self.assertTrue(self.bucket_util._wait_warmup_completed(
-            self.cluster.nodes_in_cluster,
             self.cluster.buckets[0],
+            servers=self.cluster.nodes_in_cluster,
             wait_time=self.wait_timeout * 10))
         self.sleep(10, "Not Required, but waiting for 10s after warm up")
         self.bucket_util.verify_stats_all_buckets(self.cluster, items,

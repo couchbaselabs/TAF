@@ -746,8 +746,8 @@ class RebalanceOutTests(RebalanceBaseTest):
         if rebalance.result is False:
             self.log.info("Rebalance was failed as expected")
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(self.cluster),
                 self.cluster.buckets[0],
+                servers=self.cluster_util.get_kv_nodes(self.cluster),
                 wait_time=self.wait_timeout * 10))
 
             self.log.info("Second attempt to rebalance")

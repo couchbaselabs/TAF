@@ -716,8 +716,8 @@ class BasicUpsertTests(BasicCrudTests):
             shell.disconnect()
             self.assertTrue(
                 self.bucket_util._wait_warmup_completed(
-                    [self.cluster.master],
                     self.cluster.buckets[0],
+                    servers=[self.cluster.master],
                     wait_time=self.wait_timeout * 10))
 
         def upsert_doc(start_num, end_num, key_obj, val_obj):
@@ -826,9 +826,9 @@ class BasicUpsertTests(BasicCrudTests):
                 shell.kill_memcached()
                 shell.disconnect()
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                                [self.cluster.master],
-                                self.cluster.buckets[0],
-                                wait_time=self.wait_timeout * 10))
+                    self.cluster.buckets[0],
+                    servers=[self.cluster.master],
+                    wait_time=self.wait_timeout * 10))
             #######################################################################
             '''
             STEP - 1, Update items with changed/new size

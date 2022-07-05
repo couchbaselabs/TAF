@@ -176,7 +176,7 @@ class CbCollectInfoTests(CollectionBase):
         for node in nodes_to_stop:
             self.node_data[node]["cb_error"].revert(CouchbaseError.STOP_SERVER)
 
-        self.bucket_util.is_warmup_complete(self.cluster, self.cluster.buckets)
+        self.bucket_util.is_warmup_complete(self.cluster.buckets)
         self.validate_test_failure()
 
     def test_with_process_crash(self):

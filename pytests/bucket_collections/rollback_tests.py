@@ -197,8 +197,8 @@ class RollbackTests(CollectionBase):
 
             error_sim.create(CouchbaseError.KILL_MEMCACHED)
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [target_node],
                 self.bucket,
+                servers=[target_node],
                 wait_time=300))
             self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                       expected_num_items,
@@ -266,8 +266,8 @@ class RollbackTests(CollectionBase):
             self.log.info("Killing memcached to trigger rollback")
             shell.kill_memcached()
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [target_node],
                 self.bucket,
+                servers=[target_node],
                 wait_time=300))
 
             self.sleep(10, "Wait after bucket warmup for cbstats to work")

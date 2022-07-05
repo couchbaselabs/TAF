@@ -1959,7 +1959,8 @@ class XattrTests(SubdocBaseTest):
         node = choice(self.cluster.servers)
         shell = RemoteMachineShellConnection(node)
         shell.kill_memcached()
-        self.assertTrue(self.bucket_util._wait_warmup_completed([node], self.bucket, wait_time=600))
+        self.assertTrue(self.bucket_util._wait_warmup_completed(
+            self.bucket, servers=[node], wait_time=600))
         shell.disconnect()
 
     def apply_start_compaction(self, delay=0):
@@ -2481,7 +2482,7 @@ class XattrTests(SubdocBaseTest):
         shell.kill_memcached()
 
         self.assertTrue(self.bucket_util._wait_warmup_completed(
-            [node1], self.bucket, wait_time=300))
+            self.bucket, servers=[node1], wait_time=300))
 
         self.parallel(self.verify_rollback, (key_max + key_min) // 2,
                       key_max, vbuckets=active_vbuckets)

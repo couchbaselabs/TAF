@@ -214,8 +214,8 @@ class MagmaCompactionTests(MagmaBaseTest):
                     self.task_manager.get_task_result(task)
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster.master],
                 self.cluster.buckets[0],
+                servers=[self.cluster.master],
                 wait_time=self.wait_timeout * 10))
 
             ###############################################################

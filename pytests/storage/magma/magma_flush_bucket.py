@@ -46,9 +46,9 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                 for node in self.cluster.nodes_in_cluster:
                     if "kv" in node.services:
                         result = self.bucket_util._wait_warmup_completed(
-                                    [node],
-                                    self.cluster.buckets[0],
-                                    wait_time=self.wait_timeout * 5)
+                            self.cluster.buckets[0],
+                            servers=[node],
+                            wait_time=self.wait_timeout * 5)
                         if not result:
                             msg = "warm-up couldn't complete in %s seconds" %\
                                 (self.wait_timeout * 5)
@@ -466,8 +466,8 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                  -- Restarting persistence on Node -- x
                 '''
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [self.cluster.master],
                     self.cluster.buckets[0],
+                    servers=[self.cluster.master],
                     wait_time=self.wait_timeout * 10))
 
                 self.log.debug("Iteration=={}, Re-Starting persistence on Node -- {}".format(i, node))

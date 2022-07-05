@@ -206,7 +206,7 @@ class RebalanceBaseTest(BaseTestCase):
 
         for bucket in self.cluster.buckets:
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(self.cluster), bucket))
+                bucket, servers=self.cluster_util.get_kv_nodes(self.cluster)))
 
     def create_buckets(self, bucket_size):
         if self.standard_buckets == 1:

@@ -104,8 +104,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.sleep(1)
             for server in nodes:
                 result = self.bucket_util._wait_warmup_completed(
-                    [server],
                     self.cluster.buckets[0],
+                    servers=[server],
                     wait_time=self.wait_timeout * 5)
                 if not result:
                     self.stop_crash = True
@@ -198,8 +198,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell.kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster.master],
                 self.cluster.buckets[0],
+                servers=[self.cluster.master],
                 wait_time=self.wait_timeout * 10))
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
 
@@ -348,8 +348,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell.kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster.master],
                 self.cluster.buckets[0],
+                servers=[self.cluster.master],
                 wait_time=self.wait_timeout * 10))
 
             self.log.info("Iteration= {}, State files after killing memcached on master node== {}".
@@ -516,8 +516,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell.kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster.master],
                 self.cluster.buckets[0],
+                servers=[self.cluster.master],
                 wait_time=self.wait_timeout * 10))
 
             self.log.info("Iteration == {},State files after killing memcached {}".
@@ -701,8 +701,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             shell_conn[0].kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster.master],
                 self.cluster.buckets[0],
+                servers=[self.cluster.master],
                 wait_time=self.wait_timeout * 10))
 
             self.log.debug("Iteration == {}, State files after killing memcached on master node == {}".
@@ -790,7 +790,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             for node in self.cluster.nodes_in_cluster[1:]:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [node], self.cluster.buckets[0],
+                    self.cluster.buckets[0], servers=[node],
                     wait_time=self.wait_timeout * 10))
 
             for shell in shell_conn[1:]:
@@ -951,8 +951,8 @@ class MagmaRollbackTests(MagmaBaseTest):
 
                 shell.kill_memcached()
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [node],
                     self.cluster.buckets[0],
+                    servers=[node],
                     wait_time=self.wait_timeout * 10))
 
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
@@ -1146,8 +1146,8 @@ class MagmaRollbackTests(MagmaBaseTest):
 
                 shell.kill_memcached()
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [node],
                     self.cluster.buckets[0],
+                    servers=[node],
                     wait_time=self.wait_timeout * 10))
 
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
@@ -1407,8 +1407,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 shell.kill_memcached()
                 self.sleep(10, "sleep after MemCached kill on node {}".format(node))
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [self.cluster.master],
                     self.cluster.buckets[0],
+                    server=[self.cluster.master],
                     wait_time=self.wait_timeout * 10))
 
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
@@ -1640,7 +1640,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             for server in self.cluster.nodes_in_cluster:
                 if "kv" in node.services.lower():
                     self.assertTrue(self.bucket_util._wait_warmup_completed(
-                        [server], self.cluster.buckets[0],
+                        self.cluster.buckets[0], servers=[server],
                         wait_time=self.wait_timeout * 30))
             if not load_during_rollback:
                 crash_count = 1
@@ -1651,7 +1651,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     for server in self.cluster.nodes_in_cluster[target_active_nodes:]:
                         if "kv" in node.services.lower():
                             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                                [server], self.cluster.buckets[0],
+                                self.cluster.buckets[0], servers=[server],
                                 wait_time=self.wait_timeout * 5))
                     self.sleep(30, "30s sleep after crash")
                     num_crashes -= 1
@@ -1933,7 +1933,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             tasks_in = dict()
             shell_conn[0].kill_memcached()
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster.master], self.cluster.buckets[0],
+                self.cluster.buckets[0], servers=[self.cluster.master],
                 wait_time=self.wait_timeout * 20))
             rebalance_task = self.task.async_rebalance(self.cluster,
                                                        servs_in, servs_out,

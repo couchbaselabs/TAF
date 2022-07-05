@@ -336,8 +336,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.sleep(10)
         # we can't get stats for new node when rebalance falls
         if not self.swap_orchestrator:
-            self.bucket_util._wait_warmup_completed([self.cluster.master],
-                                                    bucket, wait_time=600)
+            self.bucket_util._wait_warmup_completed(
+                bucket, servers=[self.cluster.master], wait_time=600)
         # we expect that rebalance will be failed
         try:
             self.rest.monitorRebalance()

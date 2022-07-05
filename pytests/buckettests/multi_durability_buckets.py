@@ -70,8 +70,7 @@ class MultiDurabilityTests(BaseTestCase):
             if task.result:
                 self.sleep(2)
                 warmed_up = self.bucket_util._wait_warmup_completed(
-                    self.cluster_util.get_kv_nodes(self.cluster), bucket,
-                    wait_time=60)
+                    bucket, wait_time=60)
                 if not warmed_up:
                     task.result = False
                     raise_exception = "Bucket %s not warmed up" % bucket.name

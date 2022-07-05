@@ -328,8 +328,8 @@ class DCPSeqItr(MagmaBaseTest):
             shell.kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster.master],
                 self.cluster.buckets[0],
+                servers=[self.cluster.master],
                 wait_time=self.wait_timeout * 10))
             output_string = self.dcp_util.get_dcp_event()
             actual_item_count = len(list(filter(lambda x: 'CMD_MUTATION' in x, output_string)))
