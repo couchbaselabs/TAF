@@ -21,6 +21,9 @@ clean:
 test:
 	scripts/start_cluster_and_run_tests.sh b/resources/dev-4-nodes.ini $(TESTNAME)
 
+simple-test-serverless:
+	scripts/start_cluster_and_run_tests.sh b/resources/dev-3-nodes.ini conf/serverless_sanity.conf "" 1
+
 # specify number of nodes and testcase
 any-test:
 	scripts/start_cluster_and_run_tests.sh $(NODES) $(TEST)

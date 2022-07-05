@@ -43,15 +43,18 @@ if [[ -f $2 ]] ; then
 else
     conf=" -t $2"
 fi
-if [[ -n $3 ]] && [[ $3 == 0 ]] ; then
+
+if [[ -n $3 ]] ; then
     quiet=true
-    test_params=" -p log_level=CRITICAL"
+    test_params=" -p infra_log_level=critical,log_level=error,$3"
 else
     test_params=""
 fi
-# this is specifically added to handle the gsi_type param for 2i integration test
-if [ ! -z "$5" -a "$5" != " " ]; then
-    extra_test_params=" -p $5"
+
+if [[ -n $4 ]] && [[ $4 == 1 ]] ; then
+    serverless=" --serverless"
+else
+    serverless=""
 fi
 
 servers_count=0
@@ -76,10 +79,10 @@ else
    make dataclean
    make
 fi
-COUCHBASE_NUM_VBUCKETS=64 python ./cluster_run --nodes=$servers_count &> $wd/cluster_run.log &
+COUCHBASE_NUM_VBUCKETS=64 python ./cluster_run --nodes=$servers_count $serverless &> $wd/cluster_run.log &
 pid=$!
 popd
-guides/gradlew --refresh-dependencies testrunner -P jython="/opt/jython/bin/jython" -P "args=-i $ini $conf -m rest" 2>&1  | tee make_test.log
+guides/gradlew --refresh-dependencies testrunner -P jython="/opt/jython/bin/jython" -P "args=-i $ini $test_params $conf -m rest" 2>&1  | tee make_test.log
 
 kill $pid
 wait
