@@ -212,6 +212,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.cluster_util.update_cluster_nodes_service_list(
                         cluster)
                     cluster.buckets = self.bucket_util.get_all_buckets(cluster)
+                    cluster.nodes_in_cluster = list(set(
+                        cluster.kv_nodes + cluster.fts_nodes +
+                        cluster.cbas_nodes + cluster.index_nodes +
+                        cluster.query_nodes + cluster.eventing_nodes +
+                        cluster.backup_nodes))
                 return
             else:
                 for cluster_name, cluster in self.cb_clusters.items():
