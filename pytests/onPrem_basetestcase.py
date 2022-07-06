@@ -92,9 +92,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
-        if self.use_https:
-            CbServer.use_https = True
-            trust_all_certs()
 
         self.node_utils.cleanup_pcaps(self.servers)
         self.collect_pcaps = self.input.param("collect_pcaps", False)
@@ -155,15 +152,23 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         CbServer.enterprise_edition = \
             self.cluster_util.is_enterprise_edition(self.cluster)
-        if CbServer.enterprise_edition:
-            self.cluster.edition = "enterprise"
-        else:
-            self.cluster.edition = "community"
+        self.cluster.edition = "enterprise" \
+            if CbServer.enterprise_edition else "community"
 
         # Fetch the profile_type from the master node
         # Value will be default / serverless
         CbServer.cluster_profile = self.cluster_util.get_server_profile_type(
             self.cluster.master)
+
+        # Enable use_https and enforce_tls for 'serverless' cluster testing
+        # And set default bucket/cluster setting values to tests
+        if CbServer.cluster_profile == "serverless":
+            self.use_https = True
+            self.enforce_tls = True
+
+            self.bucket_storage = Bucket.StorageBackend.magma
+            self.num_replicas = Bucket.ReplicaNum.TWO
+            self.server_groups = "test_zone_1:test_zone_2:test_zone_3"
 
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.cluster.master,
@@ -225,8 +230,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.cluster_util.cluster_cleanup(cluster,
                                                       self.bucket_util)
 
-            reload(Cb_constants)
-
             # avoid clean up if the previous test has been tear down
             if self.case_number == 1 or self.case_number > 1000:
                 if self.case_number > 1000:
@@ -249,20 +252,20 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
             # Enable dp_version since we need collections enabled
             if self.enable_dp:
-                tasks = []
-                for server in self.cluster.servers:
-                    task = self.node_utils.async_enable_dp(server)
-                    tasks.append(task)
+                tasks = [self.node_utils.async_enable_dp(server)
+                         for server in self.cluster.server]
                 for task in tasks:
                     self.task_manager.get_task_result(task)
+
+            if self.use_https:
+                CbServer.use_https = True
+                trust_all_certs()
 
             # Enforce tls on nodes of all clusters
             if self.use_https and self.enforce_tls:
                 for _, cluster in self.cb_clusters.items():
-                    tasks = []
-                    for node in cluster.servers:
-                        task = self.node_utils.async_enable_tls(node)
-                        tasks.append(task)
+                    tasks = [self.node_utils.async_enable_tls(node)
+                             for node in cluster.servers]
                     for task in tasks:
                         self.task_manager.get_task_result(task)
                     self.log.info("Validating if services obey tls only on servers {0}".
@@ -271,6 +274,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         cluster.servers)
                     if not status:
                         self.fail("Services did not honor enforce tls")
+
+            reload(Cb_constants)
 
             # Enforce IPv4 or IPv6 or both
             if self.ipv4_only or self.ipv6_only:
@@ -381,10 +386,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Disable n2n encryption on nodes of all clusters
         if self.use_https and self.enforce_tls:
             for _, cluster in self.cb_clusters.items():
-                tasks = []
-                for node in cluster.servers:
-                    task = self.node_utils.async_disable_tls(node)
-                    tasks.append(task)
+                tasks = [self.node_utils.async_disable_tls(node)
+                         for node in cluster.servers]
                 for task in tasks:
                     self.task_manager.get_task_result(task)
         if self.multiple_ca:
@@ -429,11 +432,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     get_trace = \
                         TestInputSingleton.input.param("get_trace", None)
                     if get_trace:
-                        tasks = []
-                        for server in cluster.servers:
-                            task = self.node_utils.async_get_trace(
-                                server, get_trace)
-                            tasks.append(task)
+                        tasks = [
+                            self.node_utils.async_get_trace(server, get_trace)
+                            for server in cluster.servers]
                         for task in tasks:
                             self.task_manager.get_task_result(task)
                     else:
@@ -473,7 +474,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                           port=None, quota_percent=None, services=None,
                           services_mem_quota_percent=None):
         quota = 0
-        init_tasks = []
+        init_tasks = list()
         ssh_sessions = dict()
 
         # Open ssh_connections for command execution
@@ -865,6 +866,7 @@ class ClusterSetup(OnPremBaseTest):
         super(ClusterSetup, self).setUp()
 
         if self.skip_setup_cleanup:
+            self.cluster_util.print_cluster_stats(self.cluster)
             return
 
         self.log_setup_status("ClusterSetup", "started", "setup")
