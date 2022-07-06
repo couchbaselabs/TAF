@@ -1,4 +1,3 @@
-from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
 from basetestcase import ClusterSetup
 from membase.api.rest_client import RestConnection

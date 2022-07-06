@@ -192,6 +192,8 @@ class Bucket(object):
     class vBucket:
         ACTIVE = "active"
         REPLICA = "replica"
+        MIN_VALUE = 16
+        MAX_VALUE = 1024
 
         def __init__(self):
             self.master = ''
