@@ -907,26 +907,34 @@ class ClusterSetup(OnPremBaseTest):
         self.spare_nodes = self.servers[self.nodes_init:]
 
     def create_bucket(self, cluster, bucket_name="default"):
-        self.bucket_util.create_default_bucket(
-            cluster,
-            bucket_type=self.bucket_type,
-            ram_quota=self.bucket_size,
-            replica=self.num_replicas,
-            maxTTL=self.bucket_ttl,
-            compression_mode=self.compression_mode,
-            wait_for_warmup=True,
-            conflict_resolution=Bucket.ConflictResolution.SEQ_NO,
-            replica_index=self.bucket_replica_index,
-            storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy,
-            flush_enabled=self.flush_enabled,
-            bucket_durability=self.bucket_durability_level,
-            purge_interval=self.bucket_purge_interval,
-            autoCompactionDefined="false",
-            fragmentation_percentage=50,
-            bucket_name=bucket_name,
-            width=self.bucket_width,
-            weight=self.bucket_weight)
+        create_bucket_params = {
+            "cluster": cluster,
+            "bucket_type": self.bucket_type,
+            "ram_quota": self.bucket_size,
+            "replica": self.num_replicas,
+            "maxTTL": self.bucket_ttl,
+            "compression_mode": self.compression_mode,
+            "wait_for_warmup": True,
+            "conflict_resolution": Bucket.ConflictResolution.SEQ_NO,
+            "replica_index": self.bucket_replica_index,
+            "storage": self.bucket_storage,
+            "eviction_policy": self.bucket_eviction_policy,
+            "flush_enabled": self.flush_enabled,
+            "bucket_durability": self.bucket_durability_level,
+            "purge_interval": self.bucket_purge_interval,
+            "autoCompactionDefined": "false",
+            "fragmentation_percentage": 50,
+            "bucket_name": bucket_name,
+            "width": self.bucket_width,
+            "weight": self.bucket_weight
+        }
+
+        # This is needed because server will throw the error saying,
+        # "Support for variable number of vbuckets is not enabled"
+        if CbServer.cluster_profile == "serverless":
+            create_bucket_params["vbuckets"] = self.vbuckets
+
+        self.bucket_util.create_default_bucket(**create_bucket_params)
 
         # Add bucket create event in system event log
         if self.system_events.test_start_time is not None:

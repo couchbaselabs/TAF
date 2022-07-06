@@ -146,6 +146,7 @@ class Bucket(object):
     purge_interval = "purge_interval"
     autoCompactionDefined = "autoCompactionDefined"
     fragmentationPercentage = "fragmentationPercentage"
+    num_vbuckets = "numVBuckets"
     width = "width"
     weight = "weight"
 
@@ -253,10 +254,13 @@ class Bucket(object):
                 Bucket.evictionPolicy,
                 Bucket.EvictionPolicy.VALUE_ONLY)
 
+        num_vbs = new_params.get(Bucket.num_vbuckets, None)
+
         self.bucketCapabilities = list()
         self.nodes = None
         self.stats = BucketStats()
         self.servers = list()
+        self.num_vbuckets = int(num_vbs) if num_vbs else None
         self.vbuckets = list()
         self.forward_map = list()
         self.scopes = dict()

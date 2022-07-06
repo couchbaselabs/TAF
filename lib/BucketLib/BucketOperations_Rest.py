@@ -313,6 +313,9 @@ class BucketHelper(RestConnection):
             serverless = bucket_params['serverless']
             init_params[Bucket.weight] = serverless.weight
             init_params[Bucket.width] = serverless.width
+        num_vbs = bucket_params.get("num_vbuckets")
+        if num_vbs:
+            init_params[Bucket.num_vbuckets] = num_vbs
 
         server_info = dict({"ip": self.ip, "port": self.port,
                             "username": self.username,

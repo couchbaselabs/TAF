@@ -1704,7 +1704,7 @@ class BucketUtils(ScopeUtils):
             autoCompactionDefined="false",
             fragmentation_percentage=50,
             bucket_name="default",
-            weight=None, width=None):
+            vbuckets=None, weight=None, width=None):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -1733,6 +1733,7 @@ class BucketUtils(ScopeUtils):
              Bucket.purge_interval: purge_interval,
              Bucket.autoCompactionDefined: autoCompactionDefined,
              Bucket.fragmentationPercentage: fragmentation_percentage,
+             Bucket.num_vbuckets: vbuckets,
              Bucket.width: width,
              Bucket.weight: weight})
         if cluster.cloud_cluster:
@@ -4009,6 +4010,7 @@ class BucketUtils(ScopeUtils):
             bucket.name = parsed["name"]
 
         bucket.uuid = parsed['uuid']
+        bucket.num_vbuckets = parsed["numVBuckets"]
         bucket.bucketType = parsed['bucketType']
         if str(parsed['bucketType']) == 'membase':
             bucket.bucketType = Bucket.Type.MEMBASE
