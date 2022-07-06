@@ -4003,19 +4003,19 @@ class BucketUtils(ScopeUtils):
 
     def parse_get_bucket_json(self, buckets, parsed):
         for bucket in buckets:
-            if bucket.name == parsed['name']:
+            if bucket.name == parsed[Bucket.name]:
                 break
         else:
             bucket = Bucket()
-            bucket.name = parsed["name"]
+            bucket.name = parsed[Bucket.name]
 
-        bucket.uuid = parsed['uuid']
-        bucket.num_vbuckets = parsed["numVBuckets"]
-        bucket.bucketType = parsed['bucketType']
-        if str(parsed['bucketType']) == 'membase':
+        bucket.uuid = parsed[Bucket.uuid]
+        bucket.num_vbuckets = parsed[Bucket.num_vbuckets]
+        bucket.bucketType = parsed[Bucket.bucketType]
+        if bucket.bucketType == 'membase':
             bucket.bucketType = Bucket.Type.MEMBASE
-        if "maxTTL" in parsed:
-            bucket.maxTTL = parsed["maxTTL"]
+        if Bucket.maxTTL in parsed:
+            bucket.maxTTL = parsed[Bucket.maxTTL]
 
         if Bucket.width in parsed:
             if bucket.serverless is None:
@@ -4023,7 +4023,6 @@ class BucketUtils(ScopeUtils):
             bucket.serverless.width = parsed[Bucket.width]
             bucket.serverless.weight = parsed[Bucket.weight]
 
-        bucket.durability_level = "none"
         bucket.bucketCapabilities = parsed["bucketCapabilities"]
         if Bucket.durabilityMinLevel in parsed:
             bucket.durability_level = parsed[Bucket.durabilityMinLevel]
