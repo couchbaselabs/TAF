@@ -70,11 +70,11 @@ class CBASExternalLinks(CBASBaseTest):
 
         for aws_bucket in self.aws_buckets.keys():
             if aws_bucket != "cbas-regression-1" and not perform_S3_operation(
-                aws_access_key=self.aws_access_key,
-                aws_secret_key=self.aws_secret_key,
-                aws_session_token=self.aws_session_token,
-                create_bucket=False, bucket_name=aws_bucket,
-                delete_bucket=True):
+                    aws_access_key=self.aws_access_key,
+                    aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token,
+                    create_bucket=False, bucket_name=aws_bucket,
+                    delete_bucket=True):
                 self.log.error("Error while deleting AWS S3 bucket.")
 
         self.create_or_delete_users(self.rbac_util, rbac_users_created, delete=True)
@@ -123,11 +123,11 @@ class CBASExternalLinks(CBASBaseTest):
                             aws_bucket_name))
                         region = random.choice(link_regions)
                         if not perform_S3_operation(
-                            aws_access_key=self.aws_access_key,
-                            aws_secret_key=self.aws_secret_key,
-                            aws_session_token=self.aws_session_token,
-                            create_bucket=True, bucket_name=aws_bucket_name,
-                            region=region):
+                                aws_access_key=self.aws_access_key,
+                                aws_secret_key=self.aws_secret_key,
+                                aws_session_token=self.aws_session_token,
+                                create_bucket=True, bucket_name=aws_bucket_name,
+                                region=region):
                             self.fail("Creating S3 bucket - {0}. Failed.".format(
                                 aws_bucket_name))
                         bucket_created = True
@@ -164,10 +164,10 @@ class CBASExternalLinks(CBASBaseTest):
         if create_datasets:
             for dataset_obj in self.cbas_util.list_all_dataset_objs():
                 if not self.cbas_util.create_dataset_on_external_resource(
-                    self.cluster, dataset_obj.name,
-                    link_name=dataset_obj.link_name,
-                    dataverse_name=dataset_obj.dataverse_name,
-                    **dataset_obj.dataset_properties):
+                        self.cluster, dataset_obj.name,
+                        link_name=dataset_obj.link_name,
+                        dataverse_name=dataset_obj.dataverse_name,
+                        **dataset_obj.dataset_properties):
                     self.fail("Dataset creation failed")
 
         if initialize_helper_objs:
@@ -200,16 +200,16 @@ class CBASExternalLinks(CBASBaseTest):
     def perform_delete_recreate_file_on_AWS_S3(self, bucket_name, filename,
                                                dest_path, delete_only=False):
         if not perform_S3_operation(
-            aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-            aws_session_token=self.aws_session_token, bucket_name=bucket_name,
-            delete_file=True, file_path=filename):
+                aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                aws_session_token=self.aws_session_token, bucket_name=bucket_name,
+                delete_file=True, file_path=filename):
             self.fail("Error while deleting file from S3")
         if not delete_only:
             if not perform_S3_operation(
-                aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
-                aws_session_token=self.aws_session_token,
-                bucket_name=bucket_name, upload_file=True, src_path=dest_path,
-                dest_path=filename):
+                    aws_access_key=self.aws_access_key, aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token,
+                    bucket_name=bucket_name, upload_file=True, src_path=dest_path,
+                    dest_path=filename):
                 self.fail("Error while uploading file from S3")
 
     def get_n1ql_query(self, query_name):
@@ -218,6 +218,7 @@ class CBASExternalLinks(CBASBaseTest):
             "count_from_csv": "select count(*) from {0} where filename like '%.csv';",
             "count_from_tsv": "select count(*) from {0} where filename like '%.tsv';",
             "count_from_json": "select count(*) from {0} where filename like '%.json';",
+            "count_from_parquet": "select count(*) from {0} where filename like '%.parquet';",
             "invalid_folder": "select count(*) from {0} where folder like 'invalid/invalid';",
             "valid_folder": "select count(*) from {0} where folder like '{1}%';"
         }
@@ -230,15 +231,17 @@ class CBASExternalLinks(CBASBaseTest):
             3: ["file_[1234567890].tsv", "*.tsv"],
             4: 'file_?.[!ct]s[!v]*',
             5: 'file_?.[!t]sv',
-            6: 'file_?.[!c]sv'
+            6: 'file_?.[!c]sv',
+            7: ["file_[1234567890].parquet", "*.parquet"],
         }
         exclude_dict = {
-            1: ["*.csv", "*.tsv"],
-            2: ["*.json", "*.tsv"],
-            3: ["*.json", "*.csv"],
+            1: ["*.csv", "*.tsv", "*.parquet"],
+            2: ["*.json", "*.tsv", "*.parquet"],
+            3: ["*.json", "*.csv", "*.parquet"],
             4: 'file_?*.[ct]s[!o]',
             5: 'file_?*.[t]s[!v]',
-            6: 'file_?*.[c]s[!v]'
+            6: 'file_?*.[c]s[!v]',
+            7: ["*.json", "*.csv", "*.tsv"],
         }
         if include:
             return include_dict.get(key_name, None)
@@ -359,11 +362,11 @@ class CBASExternalLinks(CBASBaseTest):
 
         for link_obj in self.cbas_util.list_all_link_objs():
             if self.cbas_util.create_link(
-                self.cluster, link_obj.properties,
-                username=self.analytics_username):
-                if not self.cbas_util.validate_get_link_info_response(
                     self.cluster, link_obj.properties,
                     username=self.analytics_username):
+                if not self.cbas_util.validate_get_link_info_response(
+                        self.cluster, link_obj.properties,
+                        username=self.analytics_username):
                     self.fail("Link info for {0} does not match the Metadata entry".format(
                         link_obj.full_name))
             else:
@@ -697,10 +700,10 @@ class CBASExternalLinks(CBASBaseTest):
 
         def create_bucket_in_other_region(aws_bucket, region):
             if perform_S3_operation(
-                aws_access_key=self.aws_access_key,
-                aws_secret_key=self.aws_secret_key,
-                aws_session_token=self.aws_session_token, create_bucket=True,
-                bucket_name=aws_bucket, region=region):
+                    aws_access_key=self.aws_access_key,
+                    aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token, create_bucket=True,
+                    bucket_name=aws_bucket, region=region):
                 self.aws_buckets[aws_bucket]=region
                 return True
             else:
@@ -714,7 +717,7 @@ class CBASExternalLinks(CBASBaseTest):
                 "validate_error_msg": True,
                 "expected_error": "An analytics collection with name {0} already exists in analytics scope {1}".format(
                     CBASHelper.unformat_name(dataset.name),
-                    CBASHelper.metadata_format(dataset.dataverse_name))
+                    CBASHelper.unformat_name(dataset.dataverse_name))
             },
             {
                 "description": "Create dataset without type definition for CSV format",
@@ -735,6 +738,13 @@ class CBASExternalLinks(CBASBaseTest):
                 "object_construction_def": "id INT",
                 "validate_error_msg": True,
                 "expected_error": "Inline type definition is not allowed for external analytics collections with 'json' format"
+            },
+            {
+                "description": "Create dataset with type definition for parquet format",
+                "file_format": "parquet",
+                "object_construction_def": "id INT",
+                "validate_error_msg": True,
+                "expected_error": "Inline type definition is not allowed for external analytics collections with 'parquet' format"
             },
             {
                 "description": "Create dataset with upsupported data type in type definition",
@@ -854,6 +864,13 @@ class CBASExternalLinks(CBASBaseTest):
                 "expected_error": "Invalid parameter 'header'"
             },
             {
+                "description": "Create dataset with header flag for parquet file format",
+                "file_format": "parquet",
+                "header": False,
+                "validate_error_msg": True,
+                "expected_error": "Invalid parameter 'header'"
+            },
+            {
                 "description": "Create dataset with invalid header flag for tsv file format",
                 "file_format": "tsv",
                 "object_construction_def": "name STRING",
@@ -884,11 +901,23 @@ class CBASExternalLinks(CBASBaseTest):
                 "expected_error": "Invalid parameter 'null'"
             },
             {
+                "description": "Create dataset with null flag for parquet file format",
+                "file_format": "parquet",
+                "null_string": "\N",
+                "validate_error_msg": True,
+                "expected_error": "Invalid parameter 'null'"
+            },
+            {
                 "description": "Create dataset with invalid redact warning flag",
                 "file_format": "json",
                 "redact_warning": "False1",
                 "validate_error_msg": True,
                 "expected_error": "Invalid value for parameter 'redact-warnings'"
+            },
+            {
+                "description": "Create dataset with valid redact warning flag",
+                "file_format": "parquet",
+                "redact_warning": "True"
             },
             {
                 "description": "Create dataset with both include and exclude flag set",
@@ -917,11 +946,25 @@ class CBASExternalLinks(CBASBaseTest):
                 "validate_error_msg": False
             },
             {
+                "description": "Create dataset with include flag set with "
+                               "valid pattern for parquet file format",
+                "file_format": "parquet",
+                "include": "*.parquet",
+                "validate_error_msg": False
+            },
+            {
                 "description": "Create dataset with exclude flag set with valid pattern",
                 "file_format": "json",
                 "exclude": "*.csv",
                 "validate_error_msg": False
             },
+            {
+                "description": "Create dataset with exclude flag set with "
+                               "valid pattern for parquet file format",
+                "file_format": "parquet",
+                "exclude": "*.json",
+                "validate_error_msg": False
+            }
         ]
 
         rbac_testcases = self.create_testcase_for_rbac_user(
@@ -951,50 +994,52 @@ class CBASExternalLinks(CBASBaseTest):
 
                 if testcase.get("new_dataverse", False):
                     if not self.cbas_util.create_dataverse(
-                        self.cluster, temp_dataset.dataverse_name):
+                            self.cluster, temp_dataset.dataverse_name):
                         raise Exception("Error while creating new dataverse")
 
                 if testcase.get("recreate_dataset", False):
                     testcase["validate_error_msg"] = False
 
                 if not self.cbas_util.create_dataset_on_external_resource(
-                    self.cluster, temp_dataset.name,
-                    link_name=testcase.get("link_name", temp_dataset.link_name),
-                    dataverse_name=temp_dataset.dataverse_name,
-                    validate_error_msg=testcase.get("validate_error_msg",False),
-                    username=testcase.get("username", self.analytics_username),
-                    expected_error=testcase.get("expected_error",""),
-                    create_dv=testcase.get("create_dv",True),
-                    **temp_dataset.dataset_properties):
+                        self.cluster, temp_dataset.name,
+                        link_name=testcase.get("link_name", temp_dataset.link_name),
+                        dataverse_name=temp_dataset.dataverse_name,
+                        validate_error_msg=testcase.get(
+                            "validate_error_msg", False),
+                        username=testcase.get("username", self.analytics_username),
+                        expected_error=testcase.get("expected_error", ""),
+                        create_dv=testcase.get("create_dv", True),
+                        **temp_dataset.dataset_properties):
                     raise Exception("Dataset creation failed")
 
                 if testcase.get("recreate_dataset", False):
                     testcase["validate_error_msg"] = True
                     if not self.cbas_util.create_dataset_on_external_resource(
-                        self.cluster, temp_dataset.name,
-                        link_name=temp_dataset.link_name,
-                        dataverse_name=temp_dataset.dataverse_name,
-                        validate_error_msg=testcase.get("validate_error_msg",False),
-                        username=testcase.get("username", self.analytics_username),
-                        expected_error=testcase.get("expected_error",""),
-                        **temp_dataset.dataset_properties):
+                            self.cluster, temp_dataset.name,
+                            link_name=temp_dataset.link_name,
+                            dataverse_name=temp_dataset.dataverse_name,
+                            validate_error_msg=testcase.get(
+                                "validate_error_msg", False),
+                            username=testcase.get("username", self.analytics_username),
+                            expected_error=testcase.get("expected_error", ""),
+                            **temp_dataset.dataset_properties):
                         raise Exception("Dataset creation failed")
                     testcase["validate_error_msg"] = False
 
                 if testcase.get("new_dataverse", False):
                     if not self.cbas_util.drop_dataverse(
-                        self.cluster, temp_dataset.dataverse_name):
+                            self.cluster, temp_dataset.dataverse_name):
                         raise Exception("Error while deleting new dataverse")
                     temp_dataset.dataverse_name = dataset.dataverse_name
 
                 if testcase.get("new_bucket", False):
                     if not perform_S3_operation(
-                        aws_access_key=self.aws_access_key,
-                        aws_secret_key=self.aws_secret_key,
-                        aws_session_token=self.aws_session_token,
-                        create_bucket=False,
-                        bucket_name=temp_dataset.dataset_properties["aws_bucket_name"],
-                        delete_bucket=True):
+                            aws_access_key=self.aws_access_key,
+                            aws_secret_key=self.aws_secret_key,
+                            aws_session_token=self.aws_session_token,
+                            create_bucket=False,
+                            bucket_name=temp_dataset.dataset_properties["aws_bucket_name"],
+                            delete_bucket=True):
                         raise Exception("Error while deleting bucket")
                     self.sleep(60, "Sleeping for 60 seconds to ensure that AWS bucket is deleted")
 
@@ -1036,18 +1081,19 @@ class CBASExternalLinks(CBASBaseTest):
 
                 if recreate_dataset:
                     if not self.cbas_util.create_dataset_on_external_resource(
-                        self.cluster, dataset_obj.name,
-                        link_name=dataset_obj.link_name,
-                        dataverse_name=dataset_obj.dataverse_name,
-                        **dataset_obj.dataset_properties):
+                            self.cluster, dataset_obj.name,
+                            link_name=dataset_obj.link_name,
+                            dataverse_name=dataset_obj.dataverse_name,
+                            **dataset_obj.dataset_properties):
                         self.fail("Dataset creation failed")
                     recreate_dataset = False
 
                 if not self.cbas_util.drop_dataset(
-                    self.cluster, dataset_obj.full_name,
-                    validate_error_msg=testcase.get("validate_error_msg",False),
-                    username=testcase.get("username", self.analytics_username),
-                    expected_error=testcase.get("expected_error","")):
+                        self.cluster, dataset_obj.full_name,
+                        validate_error_msg=testcase.get(
+                            "validate_error_msg", False),
+                        username=testcase.get("username", self.analytics_username),
+                        expected_error=testcase.get("expected_error", "")):
                     raise Exception("Error while dropping dataset")
 
                 if not testcase.get("validate_error_msg",False):
@@ -1098,15 +1144,17 @@ class CBASExternalLinks(CBASBaseTest):
         # generate and upload data to AWS S3
         if self.input.param("mix_data_file", False):
             if not self.s3_data_helper.generate_mix_data_file(
-                dataset_obj.dataset_properties["aws_bucket_name"],
-                file_format=dataset_obj.dataset_properties["file_format"],
-                upload_to_s3=True):
+                    dataset_obj.dataset_properties["aws_bucket_name"],
+                    file_format=dataset_obj.dataset_properties["file_format"],
+                    upload_to_s3=True):
                 self.fail("Error while uploading files to S3")
         elif self.input.param("file_extension", None):
             if not self.s3_data_helper.generate_file_with_record_of_size_and_upload(
-                dataset_obj.dataset_properties["aws_bucket_name"], "sample",
-                record_size=1024, file_format=dataset_obj.dataset_properties["file_format"],
-                upload_to_s3=True, file_extension=self.input.param("file_extension")):
+                    dataset_obj.dataset_properties["aws_bucket_name"],
+                    "sample", record_size=1024,
+                    file_format=dataset_obj.dataset_properties["file_format"],
+                    upload_to_s3=True,
+                    file_extension=self.input.param("file_extension")):
                 self.fail("Error while uploading files to S3")
         else:
             missing_field = [self.input.param("missing_field", False)]
@@ -1167,8 +1215,13 @@ class CBASExternalLinks(CBASBaseTest):
                 self.fail("No warnings were raised for data mismatch while querying on csv or tsv file.")
 
         if self.input.param("validate_error_conditions", False):
-            if not errors[0]["msg"] == "Malformed input stream":
-                self.fail("Expected error message does not match actual data")
+            if dataset_obj.dataset_properties["file_format"] == "parquet":
+                if not "not a Parquet file" in errors[0]["msg"]:
+                    self.fail(
+                        "Expected error message does not match actual data")
+            else:
+                if not errors[0]["msg"] == "Malformed input stream":
+                    self.fail("Expected error message does not match actual data")
         else:
             if self.input.param("expected_count", None) is not None:
                 n1ql_result = int(self.input.param("expected_count"))
@@ -1521,6 +1574,10 @@ class CBASExternalLinks(CBASBaseTest):
         dataset = self.cbas_util.list_all_dataset_objs()[0]
 
         file_format = self.input.param("file_format", "json")
+        if file_format == "parquet":
+            file_extension = "json"
+        else:
+            file_extension = None
         record_size = int(self.input.param("record_size", 32))
         filename = "big_record_file"
 
@@ -1540,7 +1597,7 @@ class CBASExternalLinks(CBASBaseTest):
         if not self.s3_data_helper.generate_file_with_record_of_size_and_upload(
             dataset.dataset_properties["aws_bucket_name"], filename,
             record_size=record_size * 1024 * 1024, file_format=file_format,
-            upload_to_s3=True):
+            upload_to_s3=True, file_extension=file_extension):
             self.fail("Error while uploading files to S3")
 
         self.log.info("File upload successfull")
@@ -1599,3 +1656,305 @@ class CBASExternalLinks(CBASBaseTest):
             self.cluster, dataset_obj.full_name, doc_counts[file_format],
             timeout=7200, analytics_timeout=7200):
             self.fail("Expected data does not match actual data")
+
+    def test_dataset_creation_flags_for_parquet_files(self):
+        """
+        Prerequisite -
+        parquetTypes.parquet will be uploaded to AWS S3 bucket, and this
+        file's data will be used for verifying query results.
+        """
+        self.setup_for_test(
+            create_links=True, create_aws_buckets=True,
+            create_dataset_objs=True, same_dv_for_link_and_dataset=True,
+            initialize_helper_objs=True)
+
+        dataset = self.cbas_util.list_all_dataset_objs()[0]
+        dataset.dataset_properties["file_format"] = "parquet"
+
+        folder_path = os.path.join(os.path.dirname(__file__),
+                                   "test_requirements")
+        filename = "parquetTypes.parquet"
+
+        if not \
+                self.s3_data_helper.upload_parquet_file_with_specialized_data_types(
+                    dataset.dataset_properties["aws_bucket_name"],
+                    os.path.join(folder_path, filename), filename
+                ):
+            self.fail("Error while uploading parquetTypes.parquet to AWS S3 "
+                      "bucket")
+
+        with open(os.path.join(folder_path, "parquet_query_results.json")) \
+                as fp:
+            query_results = json.load(fp)
+
+        testcases = [
+            {
+                # This test will create dataset with default values for all
+                # the flags.
+                "description": "Create dataset without explicitly passing any flags",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled",
+                "parse_json_string": 0,
+                "convert_decimal_to_double": 0,
+                "timezone": ""
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to True",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled",
+                "parse_json_string": 1,
+                "convert_decimal_to_double": 0,
+                "timezone": ""
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to False",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled",
+                "parse_json_string": 2,
+                "convert_decimal_to_double": 0,
+                "timezone": ""
+            },
+            {
+                "description": "Create dataset by setting convert_decimal_to_double "
+                               "to True",
+                "result": 1,
+                "parse_json_string": 0,
+                "convert_decimal_to_double": 1,
+                "timezone": ""
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to True and convert_decimal_to_double to True",
+                "result": 1,
+                "parse_json_string": 1,
+                "convert_decimal_to_double": 1,
+                "timezone": ""
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to False and convert_decimal_to_double to "
+                               "True",
+                "result": 2,
+                "parse_json_string": 2,
+                "convert_decimal_to_double": 1,
+                "timezone": ""
+            },
+            {
+                "description": "Create dataset by setting convert_decimal_to_double "
+                               "to False",
+                "parse_json_string": 0,
+                "convert_decimal_to_double": 2,
+                "timezone": "",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled"
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to True and convert_decimal_to_double to "
+                               "False",
+                "parse_json_string": 1,
+                "convert_decimal_to_double": 2,
+                "timezone": "",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled",
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to False and convert_decimal_to_double to "
+                               "False",
+                "parse_json_string": 2,
+                "convert_decimal_to_double": 2,
+                "timezone": "",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled",
+            },
+            {
+                "description": "Create dataset by setting timezone to IST",
+                "parse_json_string": 0,
+                "convert_decimal_to_double": 0,
+                "timezone": "IST",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled",
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to True and timezone to IST",
+                "parse_json_string": 1,
+                "convert_decimal_to_double": 0,
+                "timezone": "IST",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled",
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to False and timezone to IST",
+                "parse_json_string": 2,
+                "convert_decimal_to_double": 0,
+                "timezone": "IST",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled"
+            },
+            {
+                "description": "Create dataset by setting convert_decimal_to_double "
+                               "to True and timezone to IST",
+                "parse_json_string": 0,
+                "convert_decimal_to_double": 1,
+                "timezone": "IST",
+                "result": 3
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "and convert_decimal_to_double to True and timezone to IST",
+                "parse_json_string": 1,
+                "convert_decimal_to_double": 1,
+                "timezone": "IST",
+                "result": 3
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to False, convert_decimal_to_double to True "
+                               "and timezone to IST",
+                "parse_json_string": 2,
+                "convert_decimal_to_double": 1,
+                "timezone": "IST",
+                "result": 4
+            },
+            {
+                "description": "Create dataset by setting "
+                               "convert_decimal_to_double to False and timezone to IST",
+                "parse_json_string": 0,
+                "convert_decimal_to_double": 2,
+                "timezone": "IST",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled"
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to True and convert_decimal_to_double to "
+                               "False and timezone to IST",
+                "parse_json_string": 1,
+                "convert_decimal_to_double": 2,
+                "timezone": "IST",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled"
+            },
+            {
+                "description": "Create dataset by setting parse_json_string "
+                               "to False and convert_decimal_to_double to "
+                               "False and timezone to IST",
+                "parse_json_string": 2,
+                "convert_decimal_to_double": 2,
+                "timezone": "IST",
+                "validate_query_error_msg": True,
+                "expected_error": "Parquet type 'required int32 decimal32_field"
+                                  " (DECIMAL(5,4))' is not supported by "
+                                  "default. To enable type conversion, recreate"
+                                  " the external collection with the option "
+                                  "'decimal-to-double' enabled"
+            }
+        ]
+
+        failed_testcases = list()
+
+        def compare_json(a, b):
+            """ checks if dictionary a is fully contained in b """
+            if not isinstance(a, dict):
+                return a == b
+            else:
+                return all(compare_json(v, b.get(k)) for k, v in a.items())
+
+        for testcase in testcases:
+            try:
+                self.log.info(testcase["description"])
+
+                temp_dataset = copy.deepcopy(dataset)
+
+                for param in testcase:
+                    if hasattr(temp_dataset, param):
+                        setattr(temp_dataset, param, testcase[param])
+                    elif param in temp_dataset.dataset_properties:
+                        temp_dataset.dataset_properties[param] = testcase[
+                            param]
+
+                if not self.cbas_util.create_dataset_on_external_resource(
+                        self.cluster, temp_dataset.name,
+                        link_name= temp_dataset.link_name,
+                        dataverse_name=temp_dataset.dataverse_name,
+                        create_dv=testcase.get("create_dv", True),
+                        **temp_dataset.dataset_properties):
+                    raise Exception("Dataset creation failed")
+
+                status, metrics, errors, cbas_result, handle = self.cbas_util.execute_statement_on_cbas_util(
+                    self.cluster,
+                    "select * from {0}".format(temp_dataset.full_name),
+                    timeout=120, analytics_timeout=120)
+                if status == "success":
+                    if not compare_json(
+                            cbas_result[0][CBASHelper.unformat_name(
+                                temp_dataset.name)],
+                            query_results[str(testcase["result"])]):
+                        raise Exception("Actual query result did not match "
+                                        "the expected output")
+                elif status == "fatal":
+                    if testcase.get("validate_query_error_msg", False):
+                        if testcase["expected_error"] != str(errors[0]["msg"]):
+                            raise Exception("Expected Error msg : {0} Actual Error msg: {1}".format(
+                                testcase["expected_error"], str(errors[0]["msg"])))
+                    else:
+                        raise Exception("Test failed due to {0}".format(str(errors[0]["msg"])))
+            except Exception as err:
+                self.log.error(str(err))
+                failed_testcases.append(testcase["description"])
+            finally:
+                self.cbas_util.drop_dataset(
+                    self.cluster, temp_dataset.full_name)
+
+        if failed_testcases:
+            self.fail("Following testcases failed - {0}".format(
+                str(failed_testcases)))

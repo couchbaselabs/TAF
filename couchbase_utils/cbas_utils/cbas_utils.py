@@ -1501,7 +1501,9 @@ class Dataset_Util(Link_Util):
             header=None, null_string=None, include=None, exclude=None,
             validate_error_msg=False, username=None, password=None,
             expected_error=None, expected_error_code=None,
-            timeout=120, analytics_timeout=120, create_dv=True):
+            timeout=120, analytics_timeout=120, create_dv=True,
+            parse_json_string=0, convert_decimal_to_double=0,
+            timezone=""):
         """
         Creates a dataset for an external resource like AWS S3 bucket.
         Note - No shadow dataset is created for this type of external datasets.
@@ -1531,6 +1533,20 @@ class Dataset_Util(Link_Util):
         :param expected_error_code (str):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
+        :param parse_json_string int, used in case of datasets created
+        on parquet files, if the flag is set then, fields marked as JSON
+        will be converted to JSON object, otherwise it will be kept as plain text.
+        0 - Use default value , default is True
+        1 - Explicitly Set to True.
+        2 - Set to False
+        :param convert_decimal_to_double int, Will tell the compiler to
+        convert any encountered decimal value to double value. If this is
+        not enabled, and we encounter a decimal, Analytics will fail.
+        0 - Use default value , default is False
+        1 - Set to True.
+        2 - Explicitly Set to False
+        :param timezone str, Timezone values likes GMT, PST, IST etc (in
+        upper case only)
         :return True/False
 
         """
@@ -1574,6 +1590,20 @@ class Dataset_Util(Link_Util):
 
         if exclude is not None:
             with_parameters["exclude"] = exclude
+
+        if with_parameters["format"] == "parquet":
+            if timezone:
+                with_parameters["timezone"] = timezone.upper()
+            if parse_json_string > 0:
+                if parse_json_string == 1:
+                    with_parameters["parse-json-string"] = True
+                else:
+                    with_parameters["parse-json-string"] = False
+            if convert_decimal_to_double > 0:
+                if convert_decimal_to_double == 1:
+                    with_parameters["decimal-to-double"] = True
+                else:
+                    with_parameters["decimal-to-double"] = False
 
         cmd += " WITH {0};".format(json.dumps(with_parameters))
 
@@ -2557,7 +2587,8 @@ class Dataset_Util(Link_Util):
             dataset_cardinality=1, object_construction_def=None,
             path_on_aws_bucket=None, file_format="json", redact_warning=None,
             header=None, null_string=None, include=None, exclude=None,
-            name_length=30, fixed_length=False, no_of_objs=1):
+            name_length=30, fixed_length=False, no_of_objs=1,
+            parse_json_string=0, convert_decimal_to_double=0, timezone=""):
         """
         Creates a Dataset object for external datasets.
         :param aws_bucket_names: dict, format {"aws_bucket_name":"region"}
@@ -2601,6 +2632,9 @@ class Dataset_Util(Link_Util):
             dataset.dataset_properties["null_string"] = null_string
             dataset.dataset_properties["include"] = include
             dataset.dataset_properties["exclude"] = exclude
+            dataset.dataset_properties["parse_json_string"] = parse_json_string
+            dataset.dataset_properties["convert_decimal_to_double"] = convert_decimal_to_double
+            dataset.dataset_properties["timezone"] = timezone
 
             dataverse.datasets[dataset.name] = dataset
 

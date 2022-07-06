@@ -6,6 +6,7 @@ import copy
 from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.documentgenerator import DocumentGenerator
 from threading import Thread
+import shutil
 
 
 def perform_S3_operation(**kwargs):
@@ -65,6 +66,21 @@ def perform_S3_operation(**kwargs):
         result = json.loads(output)
         return result["result"]
 
+def convert_json_to_parquet(**kwargs):
+    json_parquet_converter_file_path = os.path.abspath("scripts/json_to_parquet.py")
+    arguements = ["python", json_parquet_converter_file_path, kwargs.get("path")]
+
+    response = subprocess.Popen(
+        arguements, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
+    output, error = response.communicate()
+    if error and "error" in str(error).lower():
+        raise Exception(str(error))
+    elif "All files converted to parquet files" in output:
+        return True
+    else:
+        return False
+
 
 class S3DataHelper():
     """
@@ -109,7 +125,8 @@ class S3DataHelper():
             return folder_paths
 
     @staticmethod
-    def generate_filenames(no_of_files, formats=["json", "csv", "tsv", "txt"]):
+    def generate_filenames(no_of_files, formats=["json", "csv", "tsv",
+                                                 "txt", "parquet"]):
         """
         Generates a list of files of specified formats.
         :param no_of_files: no of file names to be generated.
@@ -209,8 +226,8 @@ class S3DataHelper():
             bucket=self.bucket, end_key=no_of_docs, batch_size=batch_size,
             exp=exp, durability=durability, mutation_num=mutation_num, key=key)
         result = self.task.jython_task_manager.get_task_result(tasks)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets)
 
         item_list = [(folder, filename)
                      for folder in self.folders for filename in self.filenames]
@@ -276,7 +293,13 @@ class S3DataHelper():
                 retry += 1
         list_of_json_obj = list()
         cur_dir = os.path.dirname(__file__)
-        filepath = os.path.join(cur_dir, "-".join(folder.split("/")) + filename)
+        if "parquet" in filename:
+            temp_json_file_name = "parquet_" + filename[0:(len(filename) - len(
+                ".parquet"))]
+            filepath = os.path.join(
+                cur_dir, "-".join(folder.split("/")) + temp_json_file_name + ".json")
+        else:
+            filepath = os.path.join(cur_dir, "-".join(folder.split("/")) + filename)
         with open(filepath, "a+") as fh:
             if randomize_header:
                 header = random.choice(["True", "False"])
@@ -315,8 +338,20 @@ class S3DataHelper():
                 elif "txt" in filename:
                     fh.write("".join(str(x) for x in record))
                     fh.write("\n")
+                elif "parquet" in filename:
+                    fh.write(json.dumps(result))
+                    fh.write("\n")
+
             if len(list_of_json_obj) > 0:
                 fh.write(json.dumps(list_of_json_obj))
+
+        if "parquet" in filename:
+            if not convert_json_to_parquet(path=filepath):
+                return False
+            shutil.move(
+                filepath[0:(len(filepath) - len(".json"))] + ".parquet",
+                os.path.join(cur_dir, "-".join(folder.split("/")) + filename))
+            filepath = os.path.join(cur_dir, "-".join(folder.split("/")) + filename)
         try:
             if large_file:
                 response = perform_S3_operation(
@@ -377,11 +412,11 @@ class S3DataHelper():
         if upload_to_s3:
             try:
                 if perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    bucket_name=bucket_name, upload_file=True,
-                    src_path=filepath, dest_path=filename):
+                        aws_access_key=self.aws_access_key,
+                        aws_secret_key=self.aws_secret_key,
+                        aws_session_token=self.aws_session_token,
+                        bucket_name=bucket_name, upload_file=True,
+                        src_path=filepath, dest_path=filename):
                     upload_success = True
                 else:
                     upload_success = False
@@ -412,11 +447,10 @@ class S3DataHelper():
         """
         if file_extension is None:
             file_extension = file_format
-        if file_extension != "":
-            filename = "{0}.{1}".format(filename, file_extension)
-        self.log.info("Creating file {0} and uploading to S3".format(filename))
+        filename_with_ext = "{0}.{1}".format(filename, file_extension)
+        self.log.info("Creating file {0} and uploading to S3".format(filename_with_ext))
         cur_dir = os.path.dirname(__file__)
-        filepath = os.path.join(cur_dir, filename)
+        filepath = os.path.join(cur_dir, filename_with_ext)
         sample_data = {
             "key1": "sample1",
             "key2": "sample2",
@@ -426,20 +460,29 @@ class S3DataHelper():
         sample_data["key5"] = [''.rjust(record_size, 'a')][0]
 
         with open(filepath, "a+") as fh:
-            if file_format == "json":
+            if file_format in ["json", "parquet"]:
                 fh.write(json.dumps(sample_data))
             elif file_format == "csv":
                 fh.write(",".join(str(x) for x in sample_data.values()))
             elif file_format == "tsv":
                 fh.write("\t".join(str(x) for x in sample_data.values()))
+
+        if file_format == "parquet":
+            if not convert_json_to_parquet(path=filepath):
+                return False
+            if file_format != file_extension:
+                if not os.path.exists(filepath):
+                    shutil.move(os.path.join(cur_dir, filename +
+                                             ".parquet"), filepath)
+
         if upload_to_s3:
             try:
                 if perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    bucket_name=bucket_name, upload_file=True,
-                    src_path=filepath, dest_path=filename):
+                        aws_access_key=self.aws_access_key,
+                        aws_secret_key=self.aws_secret_key,
+                        aws_session_token=self.aws_session_token,
+                        bucket_name=bucket_name, upload_file=True,
+                        src_path=filepath, dest_path=filename_with_ext):
                     upload_success = True
                 else:
                     upload_success = False
@@ -455,7 +498,7 @@ class S3DataHelper():
                         filepath))
                 return upload_success
         else:
-            return filename
+            return filename_with_ext
 
     def generate_file_of_specified_size_and_upload(
             self, bucket_name, no_of_files, file_size_in_KB=100,
@@ -530,3 +573,32 @@ class S3DataHelper():
                     if not upload_success:
                         file_record_count[filename] = 0
         return file_record_count
+
+    def upload_parquet_file_with_specialized_data_types(
+            self, bucket_name, filepath, filename):
+        """
+        Upload parquetTypes.parquet file to specified AWS S3 bucket.
+        The parquetTypes.parquet file contains specialized parquet types.
+        :param bucket_name - name of the S3 bucket where files have to be uploaded.
+        :param filepath - path of the file to be uploaded.
+        :param filename - a file with this name will be created on AWS S3
+        bucket.
+        :returns bool
+        """
+        try:
+            if perform_S3_operation(
+                    aws_access_key=self.aws_access_key,
+                    aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token,
+                    bucket_name=bucket_name, upload_file=True,
+                    src_path=filepath, dest_path=filename):
+                upload_success = True
+            else:
+                upload_success = False
+        except Exception as err:
+            self.log.error("Error while uploading file - {0} to S3".format(
+                filepath))
+            self.log.error("Error -- {0}".format(str(err)))
+            upload_success = False
+        finally:
+            return upload_success
