@@ -41,7 +41,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.num_servers = self.input.param("servers", len(self.servers))
         self.server_groups = self.input.param("server_groups",
                                               CbServer.default_server_group)
-        self.vbuckets = self.input.param("vbuckets", CbServer.total_vbuckets)
+        self.vbuckets = self.input.param("vbuckets", None)
         self.gsi_type = self.input.param("gsi_type", 'plasma')
         # Memory quota settings
         # Max memory quota to utilize per node
@@ -129,12 +129,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.log_setup_status(self.__class__.__name__, "started")
         cluster_name_format = "C%s"
         default_cluster_index = counter_index = 1
+        num_vb = self.vbuckets or CbServer.total_vbuckets
         if len(self.input.clusters) > 1:
             # Multi cluster setup
             for _, nodes in self.input.clusters.iteritems():
                 cluster_name = cluster_name_format % counter_index
                 tem_cluster = CBCluster(name=cluster_name, servers=nodes,
-                                        vbuckets=self.vbuckets)
+                                        vbuckets=num_vb)
                 self.cb_clusters[cluster_name] = tem_cluster
                 counter_index += 1
         else:
@@ -142,7 +143,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             cluster_name = cluster_name_format % counter_index
             self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
                                                        servers=self.servers,
-                                                       vbuckets=self.vbuckets)
+                                                       vbuckets=num_vb)
 
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[cluster_name_format
@@ -801,8 +802,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     get_tar(remote_path, file_path, file_name,
                             server, todir=copy_to_path)
                 else:
+                    num_vb = self.vbuckets or CbServer.total_vbuckets
                     for kvstore in kvstores:
-                        if int(kvstore.split("-")[1]) >= self.vbuckets:
+                        if int(kvstore.split("-")[1]) >= num_vb:
                             continue
                         kvstore_path = shell.execute_command(
                             "find %s -type d -name '%s'" % (remote_path,

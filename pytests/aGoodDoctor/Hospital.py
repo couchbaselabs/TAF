@@ -114,8 +114,9 @@ class Murphy(BaseTestCase, OPD):
             remote_nodes = self.available_servers[0:self.xdcr_remote_nodes]
             self.available_servers = self.available_servers[self.xdcr_remote_nodes:]
             self.PrintStep("Step 1*: Create a %s node XDCR remote cluster" % self.xdcr_remote_nodes)
-            self.xdcr_remote_cluster = CBCluster(name="remote", servers=remote_nodes,
-                                                 vbuckets=self.vbuckets)
+            self.xdcr_remote_cluster = CBCluster(
+                name="remote", servers=remote_nodes,
+                vbuckets=self.vbuckets or CbServer.total_vbuckets)
             self.xdcr_remote_cluster.nodes_in_cluster.append(
                 self.xdcr_remote_cluster.master)
             self._initialize_nodes(self.task,
