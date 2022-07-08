@@ -4011,7 +4011,8 @@ class BucketUtils(ScopeUtils):
             bucket.name = parsed[Bucket.name]
 
         bucket.uuid = parsed[Bucket.uuid]
-        bucket.num_vbuckets = parsed[Bucket.num_vbuckets]
+        if Bucket.num_vbuckets in parsed:
+            bucket.num_vbuckets = parsed[Bucket.num_vbuckets]
         bucket.bucketType = parsed[Bucket.bucketType]
         if bucket.bucketType == 'membase':
             bucket.bucketType = Bucket.Type.MEMBASE
