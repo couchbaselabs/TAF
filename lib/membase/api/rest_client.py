@@ -1544,6 +1544,8 @@ class RestConnection(newRC):
                 stat_dict[node_stat['hostname']]['services'] = node_stat['services']
                 if 'serverGroup' in stat_dict:
                     stat_dict[node_stat['hostname']]['serverGroup'] = node_stat['serverGroup']
+                else:
+                    stat_dict[node_stat['hostname']]['serverGroup'] = ""
                 stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats'].get(
                     'cpu_utilization_rate')
                 stat_dict[node_stat['hostname']]['clusterMembership'] = node_stat['clusterMembership']
@@ -3526,7 +3528,7 @@ class Node(object):
         self.port = constants.port
         self.services = []
         self.storageTotalRam = 0
-        self.server_group = None
+        self.server_group = ""
 
 
 class AutoFailoverSettings(object):
@@ -3595,8 +3597,9 @@ class RestParser(object):
             node.curr_items = parsed['interestingStats']['curr_items']
         node.port = parsed["hostname"][parsed["hostname"].rfind(":") + 1:]
         node.os = parsed['os']
-        node.server_group = parsed["serverGroup"]
 
+        if "serverGroup" in parsed:
+            node.server_group = parsed["serverGroup"]
         if "services" in parsed:
             node.services = parsed["services"]
         if "otpNode" in parsed:
