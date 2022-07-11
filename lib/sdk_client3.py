@@ -761,7 +761,7 @@ class SDKClient(object):
         return result
 
     def read(self, key, timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
-             sdk_retry_strategy=None):
+             sdk_retry_strategy=None, access_deleted=False):
         result = {
             "key": key,
             "value": None,
@@ -771,7 +771,8 @@ class SDKClient(object):
         }
         read_options = SDKOptions.get_read_options(
             timeout, time_unit,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            access_deleted=access_deleted)
         try:
             get_result = self.collection.get(key, read_options)
             self.log.debug("Found document: cas=%s, content=%s"
@@ -908,6 +909,7 @@ class SDKClient(object):
         elif op_type == DocLoading.Bucket.DocOps.READ:
             result = self.read(
                 key, timeout=timeout, time_unit=time_unit,
+                access_deleted=access_deleted,
                 sdk_retry_strategy=sdk_retry_strategy)
         elif op_type in [DocLoading.Bucket.SubDocOps.INSERT, "subdoc_insert"]:
             sub_key, value = value[0], value[1]
@@ -976,6 +978,7 @@ class SDKClient(object):
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
                 sdk_retry_strategy=sdk_retry_strategy,
+                access_deleted=access_deleted,
                 create_as_deleted=create_as_deleted)
             if cas > 0:
                 options = options.cas(cas)

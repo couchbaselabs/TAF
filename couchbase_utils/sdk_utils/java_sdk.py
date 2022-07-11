@@ -145,10 +145,11 @@ class SDKOptions(object):
 
     @staticmethod
     def get_read_options(timeout, time_unit=SDKConstants.TimeUnit.SECONDS,
-                         sdk_retry_strategy=None):
+                         sdk_retry_strategy=None, access_deleted=False):
         return SDKOptions.set_options(GetOptions.getOptions(),
                                       timeout=timeout, timeunit=time_unit,
-                                      retry_strategy=sdk_retry_strategy)
+                                      retry_strategy=sdk_retry_strategy,
+                                      access_deleted=access_deleted)
 
     @staticmethod
     def get_upsert_options(exp=0, exp_unit=SDKConstants.TimeUnit.SECONDS,
