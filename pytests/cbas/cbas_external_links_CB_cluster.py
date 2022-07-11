@@ -2129,6 +2129,12 @@ class CBASExternalLinks(CBASBaseTest):
             dataset_created = True
 
         if dataset_created:
+            self.log.info("Connecting remote link")
+            if not self.cbas_util.connect_link(
+                    self.analytics_cluster, dataset_obj.link_name,
+                    with_force=False, username=None, password=None,
+                    timeout=120, analytics_timeout=120):
+                self.fail("Error while connecting the link")
             if not self.cbas_util.wait_for_ingestion_all_datasets(
                     self.analytics_cluster, self.bucket_util):
                 self.fail("Expected data does not match actual data")
@@ -2142,7 +2148,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         self.log.info("Disconnecting remote link")
         if not self.cbas_util.disconnect_link(
-            self.analytics_cluster, dataset_obj.link_name):
+                self.analytics_cluster, dataset_obj.link_name):
             self.fail("Error while disconnecting the link")
 
         self.log.info(
