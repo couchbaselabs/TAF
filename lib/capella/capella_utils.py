@@ -4,6 +4,7 @@ import json
 from constants.cloud_constants.capella_constants import AWS, Cluster
 from global_vars import logger
 from capellaAPI.CapellaAPI import CapellaAPI
+import uuid
 
 
 class Pod:
@@ -109,14 +110,21 @@ class CapellaUtils(object):
         while time.time() < end_time:
             subnet = CapellaUtils.get_next_cidr() + "/20"
             CapellaUtils.log.info("Trying with cidr: {}".format(subnet))
-            cluster_details["place"]["hosted"].update({"CIDR": subnet})
-            cluster_details.update({"projectId": tenant.project_id})
             capella_api = CapellaAPI(pod.url_public,
                                      tenant.api_secret_key,
                                      tenant.api_access_key,
                                      tenant.user,
                                      tenant.pwd)
-            capella_api_resp = capella_api.create_cluster(cluster_details)
+            if cluster_details.get("overRide"):
+                cluster_details.update({"cidr": subnet})
+                cluster_details.update({"projectId": tenant.project_id})
+                capella_api_resp = capella_api.create_cluster_customAMI(tenant.id, cluster_details)
+                cluster_id = json.loads(capella_api_resp.content).get("id")
+            else:
+                cluster_details["place"]["hosted"].update({"CIDR": subnet})
+                cluster_details.update({"projectId": tenant.project_id})
+                capella_api_resp = capella_api.create_cluster(cluster_details)
+                cluster_id = capella_api_resp.headers['Location'].split("/")[-1]
 
             # Check resp code , 202 is success
             if capella_api_resp.status_code == 202:
@@ -127,7 +135,6 @@ class CapellaUtils(object):
                     capella_api_resp.status_code))
                 CapellaUtils.log.critical(capella_api_resp.json()["message"])
 
-        cluster_id = capella_api_resp.headers['Location'].split("/")[-1]
         CapellaUtils.log.info("Cluster created with cluster ID: {}"\
                               .format(cluster_id))
         CapellaUtils.wait_until_done(pod, tenant, cluster_id,

@@ -16,6 +16,7 @@ from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from constants.cloud_constants.capella_constants import AWS, Cluster
 from security_config import trust_all_certs
 from Jython_tasks.task import DeployCloud
+import uuid
 
 
 class OnCloudBaseTest(CouchbaseBaseTest):
@@ -86,32 +87,11 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.log_setup_status(self.__class__.__name__, "started")
         self.cluster_name_format = "C%s"
         default_cluster_index = cluster_index = 1
-        self.capella_cluster_config = CapellaAPI.get_cluster_config(
-            environment="hosted",
-            description="Amazing Cloud",
-            single_az=False,
-            provider=self.input.param("provider", AWS.__str__).lower(),
-            region=self.input.param("region", AWS.Region.US_WEST_2),
-            timezone=Cluster.Timezone.PT,
-            plan=Cluster.Plan.DEV_PRO,
-            cluster_name="taf_cluster")
 
-        services = self.input.param("services", "data")
-        for service_group in services.split("-"):
-            service_group = service_group.split(":")
-            min_nodes = 3 if "data" in service_group else 2
-            service_config = CapellaAPI.get_cluster_config_spec(
-                services=service_group,
-                count=max(min_nodes, self.nodes_init),
-                compute=self.input.param("compute",
-                                         AWS.ComputeNode.VCPU4_RAM16),
-                storage_type=self.input.param("type", AWS.StorageType.GP3),
-                storage_size_gb=self.input.param("size", AWS.StorageSize.MIN),
-                storage_iops=self.input.param("iops", AWS.StorageIOPS.MIN))
-            if self.capella_cluster_config["place"]["hosted"]["provider"] \
-                    != AWS.__str__:
-                service_config["storage"].pop("iops")
-            self.capella_cluster_config["servers"].append(service_config)
+        if self.input.capella.get("image"):
+            self.generate_cluster_config_internal()
+        else:
+            self.generate_cluster_config()
 
         self.tenant.project_id = \
             TestInputSingleton.input.capella.get("project", None)
@@ -128,7 +108,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             tasks = list()
             for _ in range(self.num_clusters):
                 cluster_name = self.cluster_name_format % cluster_index
-                self.capella_cluster_config["clusterName"] = \
+                name = "clusterName" if self.capella_cluster_config.get("clusterName") else "name"
+                self.capella_cluster_config[name] = \
                     "a_%s_%s_%sGB_%s" % (
                         self.input.param("provider", "aws"),
                         self.input.param("compute", "m5.xlarge")
@@ -142,6 +123,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 self.task_manager.add_new_task(deploy_task)
                 tasks.append(deploy_task)
                 cluster_index += 1
+            self.generate_cluster_config()
             for task in tasks:
                 self.task_manager.get_task_result(task)
                 self.assertTrue(task.result, "Cluster deployment failed!")
@@ -260,6 +242,116 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             bucket_obj.stats.itemCount = bucket["stats"]["itemCount"]
             bucket_obj.stats.memUsed = bucket["stats"]["memoryUsedInMib"]
             cluster.buckets.append(bucket_obj)
+
+    def generate_cluster_config(self):
+        self.capella_cluster_config = CapellaAPI.get_cluster_config(
+            environment="hosted",
+            description="Amazing Cloud",
+            single_az=False,
+            provider=self.input.param("provider", AWS.__str__).lower(),
+            region=self.input.param("region", AWS.Region.US_WEST_2),
+            timezone=Cluster.Timezone.PT,
+            plan=Cluster.Plan.DEV_PRO,
+            cluster_name="taf_cluster")
+
+        services = self.input.param("services", "data")
+        for service_group in services.split("-"):
+            service_group = service_group.split(":")
+            min_nodes = 3 if "data" in service_group else 2
+            service_config = CapellaAPI.get_cluster_config_spec(
+                services=service_group,
+                count=max(min_nodes, self.nodes_init),
+                compute=self.input.param("compute",
+                                         AWS.ComputeNode.VCPU4_RAM16),
+                storage_type=self.input.param("type", AWS.StorageType.GP3),
+                storage_size_gb=self.input.param("size", AWS.StorageSize.MIN),
+                storage_iops=self.input.param("iops", AWS.StorageIOPS.MIN))
+            if self.capella_cluster_config["place"]["hosted"]["provider"] \
+                    != AWS.__str__:
+                service_config["storage"].pop("iops")
+            self.capella_cluster_config["servers"].append(service_config)
+
+    def create_specs(self):
+        services_map = {"data": "kv",
+                        "kv": "kv",
+                        "index": "index",
+                        "2i": "index",
+                        "query": "n1ql",
+                        "n1ql": "n1ql",
+                        "analytics": "cbas",
+                        "cbas": "cbas",
+                        "search": "fts",
+                        "fts": "fts",
+                        "eventing": "eventing"}
+
+        provider = self.input.param("provider", "aws").lower()
+
+        compute = AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"
+        compute = self.input.param("compute", compute)
+
+        type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
+        storage_type = self.input.param("type", type).lower()
+
+        storage_iops = AWS.StorageIOPS.MIN if provider == "aws" else None
+        disk_iops = self.input.param("iops", storage_iops)
+        if disk_iops:
+            disk_iops = int(disk_iops)
+
+        storage_size_gb = self.input.param("size", AWS.StorageSize.MIN)
+
+        specs = []
+        services = self.input.param("services", "data")
+        for service_group in services.split("-"):
+            services = service_group.split(":")
+            min_nodes = 3 if "data" in services else 2
+            spec = {
+                "count": max(min_nodes, self.nodes_init),
+                "compute": {
+                    "type": compute,
+                    "cpu": 0,
+                    "memoryInGb": 0
+                },
+                "services": [{"type": services_map[service.lower()]} for service in services],
+                "disk": {
+                    "type": storage_type,
+                    "sizeInGb": storage_size_gb
+                }
+            }
+            if provider == "aws":
+                spec["disk"]["iops"] = disk_iops
+            specs.append(spec)
+        return specs
+
+    def generate_cluster_config_internal(self):
+        specs = self.create_specs()
+        provider = self.input.param("provider", AWS.__str__).lower()
+        region = self.input.param("region", AWS.Region.US_WEST_2)
+
+        if provider == "aws":
+            provider = "hostedAWS"
+        elif provider == "gcp":
+            provider = "hostedGCP"
+
+        self.capella_cluster_config = {
+            "region": self.input.param("region", region),
+            "provider": provider,
+            "name": str(uuid.uuid4()),
+            "cidr": None,
+            "singleAZ": True,
+            "specs": specs,
+            "package": "developerPro",
+            "projectId": None,
+            "description": "",
+            "server": None
+        }
+
+        if self.input.capella.get("image"):
+            image = self.input.capella["image"]
+            token = self.input.capella["override_token"]
+            server_version = self.input.capella["server_version"]
+            self.capella_cluster_config["overRide"] = {"token": token,
+                                                       "image": image,
+                                                       "server": server_version}
 
 
 class ClusterSetup(OnCloudBaseTest):
