@@ -18,6 +18,8 @@ from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from remote.remote_util import RemoteMachineShellConnection
+
+from constants.platform_constants import os_constants
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 
 
@@ -555,10 +557,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.log.error("API perform_cb_collect returned False")
 
     def check_coredump_exist(self, servers, force_collect=False):
-        bin_cb = "/opt/couchbase/bin/"
-        lib_cb = "/opt/couchbase/var/lib/couchbase/"
-        # crash_dir = "/opt/couchbase/var/lib/couchbase/"
-        crash_dir_win = "c://CrashDumps"
+        bin_cb = os_constants.Linux.COUCHBASE_BIN_PATH
+        lib_cb = os_constants.Linux.COUCHBASE_LIB_PATH
+        crash_dir_win = os_constants.Windows.COUCHBASE_CRASH_PATH_RAW
         result = False
         self.data_sets = dict()
 

@@ -17,6 +17,7 @@ class Linux(object):
     CONFIG_FILE = "/opt/couchbase/var/lib/couchbase/config/config.dat"
     DIST_CONFIG = "/opt/couchbase/var/lib/couchbase/config/dist_cfg"
     COUCHBASE_DATA_PATH = "/opt/couchbase/var/lib/couchbase/data/"
+    COUCHBASE_LIB_PATH = "/opt/couchbase/var/lib/couchbase/"
 
 
 class Mac(object):
@@ -38,6 +39,8 @@ class Windows(object):
         "/cygdrive/c/Program Files/Couchbase/Server/var/lib/couchbase/data/"
     COUCHBASE_DATA_PATH_RAW = \
         "c:/Program Files/Couchbase/Server/var/lib/couchbase/data/"
+    COUCHBASE_CRASH_PATH_RAW = \
+        "c:/Program Files/Couchbase/Server/var/lib/couchbase/crash/"
     CB_PATH = "/cygdrive/c/Program Files/Couchbase/Server/"
     CB_PATH_PARA = "/cygdrive/c/Program Files/Couchbase/Server/"
     MB_PATH = "/cygdrive/c/Program Files/Membase/Server/"
