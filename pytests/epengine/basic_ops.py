@@ -1623,7 +1623,6 @@ class basic_ops(ClusterSetup):
         xdcr_cluster = CBCluster("C2", servers=[in_node])
         xdcr_cluster.nodes_in_cluster = [in_node]
         RestConnection(in_node).init_node()
-        self.log.setLevel(10)
         self.create_bucket(xdcr_cluster)
         rest = RestConnection(self.cluster.master)
         rest.add_remote_cluster(xdcr_cluster.master.ip,
