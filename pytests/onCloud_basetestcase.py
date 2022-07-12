@@ -110,7 +110,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 cluster_name = self.cluster_name_format % cluster_index
                 name = "clusterName" if self.capella_cluster_config.get("clusterName") else "name"
                 self.capella_cluster_config[name] = \
-                    "a_%s_%s_%sGB_%s" % (
+                    "%s_%s_%s_%sGB_%s" % (
+                        self.tenant.user.split("@")[0].replace(".", ""),
                         self.input.param("provider", "aws"),
                         self.input.param("compute", "m5.xlarge")
                             .replace(".", ""),
