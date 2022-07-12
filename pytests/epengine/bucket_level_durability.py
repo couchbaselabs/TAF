@@ -60,8 +60,8 @@ class CreateBucketTests(BucketDurabilityBase):
                                      "with min_durability_level %s"
                                      % (self.bucket_type, d_level))
             else:
-                self.bucket_util.update_bucket_server_list(self.cluster,
-                                                           bucket_obj)
+                self.bucket_util.get_updated_bucket_server_list(
+                    self.cluster, bucket_obj)
                 # Wait for bucket warm_up to complete
                 while not self.bucket_util.is_warmup_complete([bucket_obj]):
                     pass

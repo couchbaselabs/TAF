@@ -53,7 +53,8 @@ from couchbase_helper.durability_helper import BucketDurability
 from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 
-from custom_exceptions.exception import StatsUnavailableException
+from custom_exceptions.exception import StatsUnavailableException, \
+    GetBucketInfoFailed
 from membase.api.rest_client import Node, RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
 from membase.helper.rebalance_helper import RebalanceHelper
@@ -1548,7 +1549,7 @@ class BucketUtils(ScopeUtils):
                 cluster.buckets.append(bucket)
                 break
         if status is True:
-            self.update_bucket_server_list(cluster, bucket)
+            self.get_updated_bucket_server_list(cluster, bucket)
             warmed_up = self._wait_warmup_completed(bucket, wait_time=60)
             if not warmed_up:
                 status = False
@@ -1585,7 +1586,7 @@ class BucketUtils(ScopeUtils):
             raise_exception = "BucketCreateTask failed"
 
         # Update server_objects with the bucket object for future reference
-        self.update_bucket_server_list(cluster, bucket)
+        self.get_updated_bucket_server_list(cluster, bucket)
 
         if task.result and wait_for_warmup:
             self.log.debug("Wait for memcached to accept cbstats "
@@ -1756,18 +1757,28 @@ class BucketUtils(ScopeUtils):
             if self.enable_time_sync:
                 self._set_time_sync_on_buckets(cluster, [bucket_obj.name])
 
-    def update_bucket_server_list(self, cluster, bucket_obj):
-        # Reset the known servers list
-        bucket_obj.servers = list()
-
-        b_stat = BucketHelper(cluster.master).get_bucket_json(bucket_obj.name)
-        for server in b_stat["vBucketServerMap"]["serverList"]:
-            ip, mc_port = server.split(":")
-            for server_node in cluster.nodes_in_cluster:
-                if server_node.ip == ip \
-                        and str(server_node.memcached_port) == str(mc_port):
-                    bucket_obj.servers.append(server_node)
-                    break
+    def get_updated_bucket_server_list(self, cluster, bucket_obj):
+        retry = 15
+        helper = BucketHelper(cluster.master)
+        while retry > 0:
+            # Reset the known servers list
+            bucket_obj.servers = list()
+            try:
+                b_stat = helper.get_bucket_json(bucket_obj.name)
+                self.log.debug("%s" % b_stat)
+                for server in b_stat["vBucketServerMap"]["serverList"]:
+                    ip, mc_port = server.split(":")
+                    for node in cluster.nodes_in_cluster:
+                        if node.ip == ip \
+                                and str(node.memcached_port) == str(mc_port):
+                            bucket_obj.servers.append(node)
+                            break
+            except GetBucketInfoFailed:
+                pass
+            finally:
+                retry -= 1
+            if not bucket_obj.servers:
+                sleep(2, "No servers_list found, Will retry...")
         self.log.debug("Bucket %s occupies servers: %s" % (bucket_obj.name,
                                                            bucket_obj.servers))
 
@@ -2260,7 +2271,7 @@ class BucketUtils(ScopeUtils):
 
             # Check for warm_up
             for bucket in cluster.buckets:
-                self.update_bucket_server_list(cluster, bucket)
+                self.get_updated_bucket_server_list(cluster, bucket)
                 warmed_up = self._wait_warmup_completed(bucket, wait_time=60)
                 if not warmed_up:
                     success = False
