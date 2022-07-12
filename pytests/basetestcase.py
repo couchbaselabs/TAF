@@ -738,8 +738,7 @@ class BaseTestCase(unittest.TestCase):
     def check_coredump_exist(self, servers, force_collect=False):
         bin_cb = "/opt/couchbase/bin/"
         lib_cb = "/opt/couchbase/var/lib/couchbase/"
-        # crash_dir = "/opt/couchbase/var/lib/couchbase/"
-        crash_dir_win = "c://CrashDumps"
+        crash_dir_win = "c:/Program Files/Couchbase/Server/var/lib/couchbase/crash/"
         result = False
         self.data_sets = dict()
 
