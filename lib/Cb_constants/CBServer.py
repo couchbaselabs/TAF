@@ -50,7 +50,7 @@ class CbServer(object):
 
     class Serverless(object):
         KV_SubCluster_Size = 3
-        VB_COUNT = 48
+        VB_COUNT = 64
 
     enterprise_edition = True
 
