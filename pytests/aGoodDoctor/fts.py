@@ -7,6 +7,9 @@ Created on May 31, 2022
 from FtsLib.FtsOperations import FtsHelper
 from global_vars import logger
 from TestInput import TestInputSingleton
+from membase.api.rest_client import RestConnection
+import time
+import json
 
 
 class DoctorFTS:
@@ -89,10 +92,30 @@ class DoctorFTS:
         return fts_idx_template
 
     def create_fts_indexes(self):
+        status = False
         for name, index in self.indexes.items():
             self.log.debug("Creating fts index: {}".format(name))
             status, _ = self.fts_helper.create_fts_index_from_json(
                 name, str(index))
+        return status
+
+    def wait_for_fts_index_online(self, item_count, timeout=86400):
+        status = False
+        for index_name, _ in self.indexes.items():
+            status = False
+            stop_time = time.time() + timeout
+            while time.time() < stop_time:
+                status, content = self.fts_helper.fts_index_item_count(index_name)
+                self.log.debug("index: {}, status: {}, count: {}"
+                               .format(index_name, status,
+                                       json.loads(content)["count"]))
+                if json.loads(content)["count"] == item_count:
+                    self.log.info("FTS index is ready: {}".format(index_name))
+                    status = True
+                    break
+                time.sleep(5)
+            if status is False:
+                return status
         return status
 
     def drop_fts_indexes(self, idx_name):

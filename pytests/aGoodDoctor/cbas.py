@@ -16,16 +16,13 @@ from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutExcep
 from com.couchbase.client.core.error import RequestCanceledException,\
     CouchbaseException, AmbiguousTimeoutException
 import traceback
+from global_vars import logger
 
 queries = ['select name from {} where age between 30 and 50 limit 10;',
            'select age, count(*) from {} where marital = "M" group by age order by age limit 10;',
            'select v.name, animal from {} as v unnest v.animals as animal where v.attributes.hair = "Burgundy" limit 10;',
            'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 10;']
-datasets = ['create dataset ds{} on {}.{}.{} where age between 30 and 50;',
-            'create dataset ds{} on {}.{}.{};',
-            'create dataset ds{} on {}.{}.{} where attributes.hair = "Burgundy";',
-            'CREATE dataset ds{} on {}.{}.{} where gender="F" and attributes.hair = "Burgundy";',
-            'create dataset ds{} on {}.{}.{};']
+datasets = ['create dataset ds{} on {}.{}.{};']
 
 
 class DoctorCBAS():
@@ -46,6 +43,7 @@ class DoctorCBAS():
         self.num_datasets = num_idx
         self.bucket_util = bucket_util
         self.cluster = cluster
+        self.log = logger.get("test")
 
         self.sdkClient = SDKClient(cluster.cbas_nodes, None)
         self.cluster_conn = self.sdkClient.cluster
@@ -57,7 +55,7 @@ class DoctorCBAS():
             for b in self.cluster.buckets:
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
                     for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
-                        self.idx_q = datasets[i % len(datasets)].format(i, b.name, s, c)
+                        self.idx_q = datasets[0].format(i, b.name, s, c)
                         self.datasets.update({"ds"+str(i): (self.idx_q, b.name, s, c)})
                         self.queries.append(queries[i % len(queries)].format("ds"+str(i)))
                         i += 1
@@ -75,6 +73,26 @@ class DoctorCBAS():
         for index in self.datasets.values():
             time.sleep(1)
             self.execute_statement_on_cbas(index[0])
+
+    def wait_for_ingestion(self, item_count, timeout=86400):
+        status = False
+        for dataset in self.datasets.keys():
+            status = False
+            stop_time = time.time() + timeout
+            while time.time() < stop_time:
+                statement = "select count(*) count from {};".format(dataset)
+                status, _, _, results, _ = self.execute_statement_on_cbas(statement)
+                self.log.debug("dataset: {}, status: {}, count: {}"
+                               .format(dataset, status,
+                                       json.loads(str(results))[0]["count"]))
+                if json.loads(str(results))[0]["count"] == item_count:
+                    self.log.info("CBAS dataset is ready: {}".format(dataset))
+                    status = True
+                    break
+                time.sleep(5)
+            if status is False:
+                return status
+        return status
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries,
@@ -196,7 +214,7 @@ class DoctorCBAS():
             raise Exception(str(e))
 
     def execute_via_sdk(self, statement, readonly=False,
-                                  client_context_id=None):
+                        client_context_id=None):
         options = AnalyticsOptions.analyticsOptions()
         options.scanConsistency(AnalyticsScanConsistency.NOT_BOUNDED)
         options.readonly(readonly)

@@ -26,6 +26,7 @@ from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time
 from custom_exceptions.exception import RebalanceFailedException
+from Cb_constants.CBServer import CbServer
 
 
 class OPD:
@@ -103,6 +104,8 @@ class OPD:
             self.num_scopes += 1
         for bucket in cluster.buckets:
             for scope in bucket.scopes.keys():
+                if scope == CbServer.system_scope:
+                    continue
                 if num_collections > 0:
                     self.collection_prefix = self.input.param("collection_prefix",
                                                               "VolumeCollection")
@@ -374,6 +377,8 @@ class OPD:
         for bucket in self.cluster.buckets:
             for scope in bucket.scopes.keys():
                 for collection in bucket.scopes[scope].collections.keys():
+                    if scope == CbServer.system_scope:
+                        continue
                     if collection == "_default" and scope == "_default":
                         continue
                     ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
@@ -574,6 +579,8 @@ class OPD:
             for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
                     for collection in bucket.scopes[scope].collections.keys():
+                        if scope == CbServer.system_scope:
+                            continue
                         if collection == "_default" and scope == "_default":
                             continue
                         client = NewSDKClient(master, bucket.name, scope, collection)

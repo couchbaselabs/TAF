@@ -96,6 +96,7 @@ class DoctorN1QL():
                 status = self.rest.polling_create_index_status(bucket[0], index_name)
                 print("index: {}, status: {}".format(index_name, status))
                 if status is True:
+                    self.log.info("2i index is ready: {}".format(index_name))
                     break
                 time.sleep(5)
             if status is False:

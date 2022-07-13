@@ -1,6 +1,3 @@
-import json
-import requests
-
 from connections.Rest_Connection import RestConnection
 
 
@@ -20,5 +17,11 @@ class FtsHelper(RestConnection):
     def delete_fts_index(self, index_name):
         api = self.ftsUrl + "api/index/%s" % index_name
         status, content, _ = self._http_request(api, "DELETE",
+                                                timeout=60)
+        return status, content
+
+    def fts_index_item_count(self, index_name):
+        api = self.ftsUrl + "api/index/%s/count" % index_name
+        status, content, _ = self._http_request(api, "GET",
                                                 timeout=60)
         return status, content
