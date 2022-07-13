@@ -1166,7 +1166,8 @@ class ClusterUtils:
         cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
         self.log.debug(cb_collect_response)
         node_ids = [node.id for node in nodes]
-        if 'perNode' in cb_collect_response:
+        if 'perNode' in cb_collect_response and len(node_ids) > 0 and 'path' \
+                in cb_collect_response['perNode'][node_ids[0]]:
             for idx, node in enumerate(nodes):
                 self.log.info("%s: Copying cbcollect ZIP file to Client"
                               % node_ids[idx])
