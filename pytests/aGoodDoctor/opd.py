@@ -283,7 +283,6 @@ class OPD:
                       delete_end=None, delete_start=None,
                       expire_end=None, expire_start=None,
                       read_end=None, read_start=None):
-        self.get_memory_footprint()
         self.create_end = 0
         self.create_start = 0
         self.read_end = 0
@@ -417,7 +416,6 @@ class OPD:
 
     def wait_for_doc_load_completion(self, tasks, wait_for_stats=True):
         self.doc_loading_tm.getAllTaskResult()
-        self.get_memory_footprint()
         for task in tasks:
             task.result = True
             unique_str = "{}:{}:{}:".format(task.sdk.bucket, task.sdk.scope, task.sdk.collection)
@@ -463,7 +461,6 @@ class OPD:
             gdb_shell.disconnect()
 
     def data_validation(self):
-        self.get_memory_footprint()
         doc_ops = self.mutations_to_validate
         pc = min(self.process_concurrency, 20)
         if self._data_validation:
@@ -546,7 +543,6 @@ class OPD:
                 print(e)
         for task in tasks:
             self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
-        self.get_memory_footprint()
 
     def print_crud_stats(self):
         self.table = TableView(self.log.info)
@@ -586,7 +582,6 @@ class OPD:
                         client = NewSDKClient(master, bucket.name, scope, collection)
                         client.initialiseSDK()
                         self.sleep(1)
-                        self.get_memory_footprint()
                         taskName = "Loader_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, str(i), time.time())
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
                                                 client, self.durability_level,
@@ -835,7 +830,6 @@ class OPD:
             nodes = self.cluster.kv_nodes + [self.cluster.master]
 
         while not self.stop_crash:
-            self.get_memory_footprint()
             sleep = random.randint(60, 120)
             self.sleep(sleep,
                        "Iteration:{} waiting to kill memc on all nodes".

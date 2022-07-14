@@ -23,6 +23,7 @@ from encodings.punycode import digits
 from remote.remote_util import RemoteMachineShellConnection
 from gsiLib.gsiHelper import GsiHelper
 import traceback
+from global_vars import logger
 
 letters = ascii_uppercase + ascii_lowercase + digits
 
@@ -56,6 +57,7 @@ class DoctorN1QL():
         self.num_indexes = num_idx
         self.bucket_util = bucket_util
         self.cluster = cluster
+        self.log = logger.get("test")
 
         self.sdkClient = SDKClient(cluster.query_nodes, None)
         self.cluster_conn = self.sdkClient.cluster
