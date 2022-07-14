@@ -50,8 +50,9 @@ from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from gsiLib.GsiHelper_Rest import GsiHelper
-from capella.capella_utils import CapellaUtils as CapellaAPI
+from capella.capella_utils import CapellaUtils
 from TestInput import TestInputServer
+from capellaAPI.CapellaAPI import CapellaAPI
 # from cluster_utils.cluster_ready_functions import CBCluster
 
 
@@ -210,8 +211,8 @@ class DeployCloud(Task):
     def call(self):
         try:
             cluster_id, srv, servers = \
-                    CapellaAPI.create_cluster(self.pod, self.tenant,
-                                              self.config, self.timeout)
+                    CapellaUtils.create_cluster(self.pod, self.tenant,
+                                                self.config, self.timeout)
             self.cluster_id = cluster_id
             self.srv = srv
             self.servers = servers
@@ -232,14 +233,21 @@ class RebalanceTaskCapella(Task):
         self.test_log.critical("Scale_params: %s" % scale_params)
 
     def call(self):
-        CapellaAPI.scale(self.cluster, self.scale_params)
+        CapellaUtils.scale(self.cluster, self.scale_params)
         self.cluster.cluster_config["servers"] = self.scale_params["servers"]
+        capella_api = CapellaAPI(self.cluster.pod.url_public,
+                                 self.cluster.tenant.api_secret_key,
+                                 self.cluster.tenant.api_access_key,
+                                 self.cluster.tenant.user,
+                                 self.cluster.tenant.pwd)
         end = time.time() + self.timeout
         while end > time.time():
             try:
-                content = CapellaAPI.jobs(
-                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
-                state = CapellaAPI.get_cluster_state(
+                content = CapellaUtils.jobs(capella_api,
+                                            self.cluster.pod,
+                                            self.cluster.tenant,
+                                            self.cluster.id)
+                state = CapellaUtils.get_cluster_state(
                     self.cluster.pod, self.cluster.tenant, self.cluster.id)
                 if state in ["deployment_failed",
                              "deploymentFailed",

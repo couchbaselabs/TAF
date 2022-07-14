@@ -150,8 +150,13 @@ class CapellaUtils(object):
     def wait_until_done(pod, tenant, cluster_id, msg="", prnt=False,
                         timeout=1800):
         end_time = time.time() + timeout
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
         while time.time() < end_time:
-            content = CapellaUtils.jobs(pod, tenant, cluster_id)
+            content = CapellaUtils.jobs(capella_api, pod, tenant, cluster_id)
             state = CapellaUtils.get_cluster_state(pod, tenant, cluster_id)
             if state in ["deployment_failed",
                          "deploymentFailed",
@@ -331,19 +336,14 @@ class CapellaUtils(object):
                 break
 
     @staticmethod
-    def jobs(pod, tenant, cluster_id):
-        capella_api = CapellaAPI(pod.url_public,
-                                 tenant.api_secret_key,
-                                 tenant.api_access_key,
-                                 tenant.user,
-                                 tenant.pwd)
+    def jobs(capella_api, pod, tenant, cluster_id):
         resp = capella_api.jobs(tenant.project_id, tenant.id, cluster_id)
         if resp.status_code != 200:
             CapellaUtils.log.critical("LOG A BUG: Internal API returns :\
             {}".format(resp.status_code))
             print(resp.content)
             time.sleep(5)
-            return CapellaUtils.jobs(pod, tenant, cluster_id)
+            return CapellaUtils.jobs(capella_api, pod, tenant, cluster_id)
         try:
             content = json.loads(resp.content)
         except Exception as e:
@@ -351,7 +351,7 @@ class CapellaUtils(object):
             {}".format(resp.status_code))
             print(resp.content)
             time.sleep(5)
-            return CapellaUtils.jobs(pod, tenant, cluster_id)
+            return CapellaUtils.jobs(capella_api, pod, tenant, cluster_id)
         return content
 
     @staticmethod
