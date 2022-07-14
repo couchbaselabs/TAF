@@ -22,6 +22,7 @@ class DoctorFTS:
         self.log = logger.get("test")
         self.fts_helper = FtsHelper(self.cluster.fts_nodes[0])
         self.indexes = dict()
+        self.stop_run = False
         i = 0
         while i < num_indexes:
             for b in self.cluster.buckets:
@@ -48,6 +49,9 @@ class DoctorFTS:
                         break
                 if i >= num_indexes:
                     break
+
+    def discharge_FTS(self):
+        self.stop_run = True
 
     def get_fts_idx_template(self):
         fts_idx_template = {

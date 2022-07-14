@@ -213,7 +213,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 cluster.eventing_nodes.append(temp_server)
             if "Analytics" in temp_server.services:
                 cluster.cbas_nodes.append(temp_server)
-            if "FTS" in temp_server.services:
+            if "Search" in temp_server.services:
                 cluster.fts_nodes.append(temp_server)
         cluster.master = cluster.kv_nodes[0]
         self.tenant.clusters.update({cluster.id: cluster})

@@ -273,7 +273,7 @@ class RebalanceTaskCapella(Task):
                 self.log.critical(e)
                 self.result = False
                 return self.result
-        self.servers = CapellaAPI.get_nodes(
+        self.servers = CapellaUtils.get_nodes(
             self.cluster.pod, self.cluster.tenant, self.cluster.id)
         nodes = list()
         for server in self.servers:

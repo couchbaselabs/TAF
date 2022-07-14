@@ -18,6 +18,7 @@ from aGoodDoctor.bkrs import DoctorBKRS
 import os
 from BucketLib.bucket import Bucket
 from capella.capella_utils import CapellaUtils as CapellaAPI
+from aGoodDoctor.fts import DoctorFTS
 
 
 class Murphy(BaseTestCase, OPD):
@@ -147,7 +148,8 @@ class Murphy(BaseTestCase, OPD):
             self.drIndex = DoctorN1QL(self.cluster, self.bucket_util,
                                       self.num_indexes)
         if self.cluster.fts_nodes:
-            self.fts_util = FTSUtils(self.cluster, self.cluster_util, self.task)
+            self.drFTS = DoctorFTS(self.cluster, self.bucket_util,
+                                   self.num_indexes)
 
     def tearDown(self):
         self.check_dump_thread = False
@@ -170,8 +172,13 @@ class Murphy(BaseTestCase, OPD):
                            create_end=self.num_items*2)
         self.perform_load(validate_data=False)
 
+        if self.cluster.fts_nodes:
+            self.drFTS.create_fts_indexes()
+            self.drFTS.wait_for_fts_index_online(self.num_items*2)
+
         if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets()
+            self.drCBAS.wait_for_ingestion(self.num_items*2)
             self.drCBAS.start_query_load()
 
         if self.cluster.index_nodes:
@@ -213,6 +220,13 @@ class Murphy(BaseTestCase, OPD):
             self.loop += 1
         self.stop_stats = True
         stat_th.join()
+
+        if self.cluster.fts_nodes:
+            self.drFTS.discharge_FTS()
+        if self.cluster.cbas_nodes:
+            self.drCBAS.discharge_CBAS()
+        if self.cluster.index_nodes:
+            self.drIndex.discharge_N1QL()
 
         # Starting the backup here.
         if self.backup_nodes > 0:
@@ -270,8 +284,13 @@ class Murphy(BaseTestCase, OPD):
                            create_end=self.num_items*2)
         self.perform_load(validate_data=False)
 
+        if self.cluster.fts_nodes:
+            self.drFTS.create_fts_indexes()
+            self.drFTS.wait_for_fts_index_online(self.num_items*2)
+
         if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets()
+            self.drCBAS.wait_for_ingestion(self.num_items*2)
             self.drCBAS.start_query_load()
 
         if self.cluster.index_nodes:
@@ -336,6 +355,12 @@ class Murphy(BaseTestCase, OPD):
             self.wait_for_doc_load_completion(tasks)
             if self.track_failures:
                 self.data_validation()
+        if self.cluster.fts_nodes:
+            self.drFTS.discharge_FTS()
+        if self.cluster.cbas_nodes:
+            self.drCBAS.discharge_CBAS()
+        if self.cluster.index_nodes:
+            self.drIndex.discharge_N1QL()
 
     def SystemTestMagma(self):
         #######################################################################
