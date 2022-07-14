@@ -41,6 +41,7 @@ class LMT(ServerlessOnPremBaseTest):
 
     def setUp(self):
         super(LMT, self).setUp()
+        self.num_buckets = self.input.param("num_buckets", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
         self.num_collections = self.input.param("num_collections", 1)
         self.process_concurrency = self.input.param("pc", self.process_concurrency)

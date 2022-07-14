@@ -190,7 +190,7 @@ class ServerlessMetering(LMT):
     def test_cu_in_subdoc_operations(self):
         self.bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         self.xattr = self.input.param("xattr", False)
-        self.system_xattr = self.input.param("xattr", False)
+        self.system_xattr = self.input.param("system_xattr", False)
         sub_doc_key = "my-attr"
         if self.system_xattr:
             sub_doc_key = "my._attr"
@@ -224,25 +224,8 @@ class ServerlessMetering(LMT):
             self.expected_ru += (self.calculate_units(self.total_size, 0,
                                                       read=True) * self.num_items)
 
-        # subdoc_insert fails for an already written value
-        self.expected_ru = self.ru + self.calculate_units(self.total_size, 0,
-                                                      read=True)
-        _, failed_items = self.client.crud(sub_doc_op, key_value.keys()[0],
-                                           [sub_doc_key, value],
-                                           durability=self.durability_level,
-                                           timeout=self.sdk_timeout,
-                                           time_unit="seconds",
-                                           create_path=self.xattr,
-                                           xattr=self.xattr)
-        _, self.ru, self.wu = self.get_stat(self.bucket.name)
-        self.compare_ru_wu_stat(self.ru, self.wu, self.expected_ru, self.expected_wu)
-
-
         # delete a file with system xattrs, both ru and wu will increase
-        if self.system_xattr:
-            self.expected_ru += (self.calculate_units(self.total_size, 0,
-                                                      read=True) * self.num_items)
-        else:
+        if not self.xattr:
             self.expected_ru = self.ru
         self.log.info("performing delete")
         self.expected_wu += self.num_items
