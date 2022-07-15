@@ -75,6 +75,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         for num_vb in [None, Bucket.vBucket.MIN_VALUE,
                        Bucket.vBucket.MAX_VALUE]:
             self.vbuckets = num_vb
+            self.log.info("Creating bucket with vbucket_num=%s"
+                          % self.vbuckets)
             run_test()
 
         self.vbuckets = choice(range(Bucket.vBucket.MIN_VALUE+1,
@@ -172,11 +174,9 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             self.assertTrue(self.cluster_util.rebalance(self.cluster),
                             "Node add_back rebalance failed")
 
-        self.assertTrue(self.cluster_util.is_cluster_rebalanced(self.cluster),
-                        "Cluster unbalanced")
+        self.assertTrue(rest.is_cluster_balanced(), "Cluster unbalanced")
 
         status, cont, _ = helper._http_request(api, helper.POST, params)
         self.assertTrue(status, "Failed to create bucket")
 
-        self.assertTrue(self.cluster_util.is_cluster_rebalanced(self.cluster),
-                        "Cluster unbalanced")
+        self.assertTrue(rest.is_cluster_balanced(), "Cluster unbalanced")

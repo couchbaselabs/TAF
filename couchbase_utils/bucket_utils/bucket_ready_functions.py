@@ -4832,7 +4832,10 @@ class BucketUtils(ScopeUtils):
             width = t_bucket.serverless.width
             server_bucket = get_server_bucket(t_bucket)
             req_len = width * CbServer.Serverless.KV_SubCluster_Size
-            if req_len != len(server_bucket["nodes"]):
+            server_len = len(server_bucket["nodes"])
+            self.log.debug("%s - required server_list_len=%s, actual=%s"
+                           % (t_bucket.name, req_len, server_len))
+            if req_len != server_len:
                 result = False
                 self.log.critical("Bucket %s, width=%s expected to be "
                                   "placed on %s nodes, but occupies %s nodes"
@@ -4841,6 +4844,9 @@ class BucketUtils(ScopeUtils):
 
             # Validate bucket.num_vbs against expected value
             num_vb = t_bucket.num_vbuckets or CbServer.Serverless.VB_COUNT
+            self.log.debug("%s - required vb_num=%s, actual=%s"
+                           % (t_bucket.name,
+                              server_bucket[Bucket.num_vbuckets], num_vb))
             if num_vb != server_bucket[Bucket.num_vbuckets]:
                 result = False
                 self.log.critical("Expected num_vbuckets=%s, actual %s"
