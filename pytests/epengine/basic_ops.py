@@ -1,6 +1,7 @@
 import json
 from random import choice, randint
 from threading import Thread
+from time import time
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
@@ -22,7 +23,6 @@ from sdk_exceptions import SDKException
 from table_view import TableView
 
 from java.lang import RuntimeException
-
 
 """
 Capture basic get, set operations, also the meta operations.
@@ -194,6 +194,7 @@ class basic_ops(ClusterSetup):
             self.assertTrue(
                 len(task.sdk_exception_crud_succeed) == 0,
                 "Durability failed for docs: %s" % task.sdk_acked_curd_failed.keys())
+
         """
         Basic tests for document CRUD operations using JSON docs
         """
@@ -331,13 +332,13 @@ class basic_ops(ClusterSetup):
 
             # Read all the values to validate update operation
             task = self.task.async_validate_docs(
-                    self.cluster, def_bucket,
-                    doc_update, DocLoading.Bucket.DocOps.UPDATE, 0,
-                    batch_size=self.batch_size,
-                    process_concurrency=self.process_concurrency,
-                    scope=self.scope_name,
-                    collection=self.collection_name,
-                    sdk_client_pool=self.sdk_client_pool)
+                self.cluster, def_bucket,
+                doc_update, DocLoading.Bucket.DocOps.UPDATE, 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                scope=self.scope_name,
+                collection=self.collection_name,
+                sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
 
         elif doc_op == DocLoading.Bucket.DocOps.DELETE:
@@ -407,7 +408,7 @@ class basic_ops(ClusterSetup):
         # test starts failing document size=2MB, No of docs = 221,
         # load 250 docs generate docs with size >= 1MB , See MB-29333
 
-        self.doc_size *= 1024*1024
+        self.doc_size *= 1024 * 1024
         gens_load = self.generate_docs_bigdata(
             docs_per_day=self.num_items, document_size=self.doc_size)
         for bucket in self.cluster.buckets:
@@ -988,6 +989,7 @@ class basic_ops(ClusterSetup):
         4. Create-delete 10K more items and run compaction again
         5. Make sure current bloom_filter_size is > the value during step#3
         """
+
         def validate_crud_result(op_type, doc_key, crud_result):
             if crud_result["status"] is False:
                 self.log_failure("Key %s %s failed: %s"
@@ -1059,7 +1061,8 @@ class basic_ops(ClusterSetup):
                               % bloom_filter_size_after_compaction)
 
         # Create and delete 10K more items to validate bloom_filter_size
-        doc_gen = doc_generator(self.key, self.num_items, self.num_items+10000,
+        doc_gen = doc_generator(self.key, self.num_items,
+                                self.num_items + 10000,
                                 target_vbucket=[target_vb])
         self.log.info("Loading 10K items for bloom_filter_size validation")
         while doc_gen.has_next():
@@ -1101,6 +1104,7 @@ class basic_ops(ClusterSetup):
         7. Confirm that the item pager never runs successfully,
            even though the memory usage is back above the high watermark
         """
+
         def perform_doc_op(op_type):
             start = self.num_items
             if op_type == DocLoading.Bucket.DocOps.DELETE:
@@ -1238,7 +1242,7 @@ class basic_ops(ClusterSetup):
                     if int(stats["ep_num_pager_runs"]) > 1:
                         break
                     self.sleep(1, "ep_num_pager_runs=%s, expected > 1"
-                                  % stats["ep_num_pager_runs"])
+                               % stats["ep_num_pager_runs"])
                 else:
                     self.log_failure("ItemPager not triggered with high_wm")
 
@@ -1327,33 +1331,45 @@ class basic_ops(ClusterSetup):
 
     def test_mb_47267(self):
         """
-               1. Create a single KV node
-               2. Create two buckets A and B
-               3. Add a large number of documents to all vbucket in bucket A
-               4. Add few documents to each vbucket in bucket B (orders of
-               magnitude less)
-               5. Shutdown and warmup the node (with node A warming up first)
-               6. Verify that we're able to access vbucket state of each
-               vbucket for bucket B before bucket A is fully warmed up.
-                   With the idea that the warmup of bucket B isn't blocked by
-                   the warmup for bucket A despite bucket A having a large
-                   number of documents.
+        1. Create a single KV node
+        2. Create two buckets 'default' and 'default_1'
+        3. Add a large number of documents to all vbucket in 'default'
+        4. Add few documents to each vbucket in 'default_1' (orders of
+           magnitude less)
+        5. Shutdown and warmup the node (with 'default' warming up first)
+        6. Verify that we're able to access vbucket state of each
+           vbucket for 'default_1' before 'default' is fully warmed up.
+           With the idea that the warmup of 'default_1' isn't blocked by
+           the warmup for bucket A despite 'default' having a large
+           number of documents.
+
+        Note:
+        - 'default' is the bucket under DGM
+        - 'default_1' is smaller bucket with fewer docs
+        - Named the buckets such that the first bucket enters the warmup
+          procedure before the second bucket to test the scenario successfully
+
+        Ref: MB-47267 / MB-47851
         """
-        shell_conn = dict()
-        error_sim = dict()
+
+        def get_vb_stats(bucket_name):
+            stat = Cbstats(shell_conn_1)
+            self.thread_started = True
+            while not self.stop_thread:
+                try:
+                    stats = stat.vbucket_list(bucket_name)
+                    self.log.debug(stats)
+                    break
+                except Exception as e:
+                    self.log.debug(e)
+
+        self.stop_thread = False
+        self.thread_started = False
+        test_method = self.input.param("test_method", "warmup")
         bucket_helper = BucketHelper(self.cluster.master)
-        bucket_helper.update_memcached_settings(
-            num_writer_threads="default",
-            num_storage_threads="default",
-            num_reader_threads="default"
-        )
         self.bucket_util.create_default_bucket(
-            self.cluster,
-            ram_quota=100,
-            replica=0,
-            eviction_policy=self.bucket_eviction_policy,
-            bucket_name="small_bucket"
-        )
+            self.cluster, bucket_name="default_1", ram_quota=100, replica=0,
+            eviction_policy=self.bucket_eviction_policy)
 
         big_bucket = self.cluster.buckets[0]
         small_bucket = self.cluster.buckets[1]
@@ -1394,28 +1410,62 @@ class basic_ops(ClusterSetup):
                                                      self.cluster.buckets)
 
         # thread manage
-        target_nodes = choice(self.cluster_util.get_kv_nodes(self.cluster))
-        bucket_helper.update_memcached_settings(
-            num_reader_threads=1,
-        )
+        target_node = choice(self.cluster_util.get_kv_nodes(self.cluster))
+        # Setting num_reader_threads=1 to delay the warmup procedure for
+        bucket_helper.update_memcached_settings(num_reader_threads=1)
 
         # Create shell_connections
-        shell_conn[target_nodes.ip] = RemoteMachineShellConnection(
-            target_nodes)
+        shell_conn_1 = RemoteMachineShellConnection(target_node)
+        shell_conn_2 = None
         # Perform specified action
-        error_sim[target_nodes.ip] = CouchbaseError(self.log, shell_conn[
-            target_nodes.ip])
-        error_sim[target_nodes.ip].create(CouchbaseError.KILL_MEMCACHED,
-                                          bucket_name=big_bucket.name)
-        self.assertTrue(
-            self.bucket_util._wait_warmup_completed([target_nodes],
-                                                    small_bucket)
-            and (not self.bucket_util._wait_warmup_completed(
-                 [target_nodes], big_bucket, self.warmup_timeout)),
-            "Bucket with less data not accessible "
-            "when other bucket getting warmed up.")
-        # Disconnecting shell_connections
-        shell_conn[target_nodes.ip].disconnect()
+        error_sim = CouchbaseError(self.log, shell_conn_1)
+        error_sim.create(CouchbaseError.KILL_MEMCACHED)
+        try:
+            if test_method == "warmup":
+                self.assertTrue(
+                    self.bucket_util._wait_warmup_completed([target_node],
+                                                            small_bucket)
+                    and (not self.bucket_util._wait_warmup_completed(
+                        [target_node], big_bucket, self.warmup_timeout)),
+                    "Bucket with less data not accessible "
+                    "when other bucket getting warmed up.")
+            elif test_method == "delete_bucket":
+                # Test for MB-47851
+                # Get stats and delete 'default' bucket during warmup
+                stat_thread = Thread(target=get_vb_stats,
+                                     args=(small_bucket.name,))
+                stat_thread.start()
+                # Wait till big bucket reports warmup started
+                shell_conn_2 = RemoteMachineShellConnection(target_node)
+                cbstat = Cbstats(shell_conn_2)
+                timeout = time() + 20
+                while time() < timeout:
+                    try:
+                        stat = cbstat.all_stats(big_bucket.name)
+                    except Exception as e:
+                        if "KEY_ENOENT" in str(e):
+                            continue
+                        raise e
+
+                    if stat["ep_warmup_thread"] in ["running", "complete"]:
+                        # Now delete the bucket when warmup is running
+                        self.bucket_util.delete_bucket(self.cluster,
+                                                       big_bucket)
+                        break
+                else:
+                    self.fail("Failed Big bucket 'default' not entered warmup")
+                self.stop_thread = True
+                stat_thread.join(timeout=10)
+        finally:
+            # Reset memcached settings to default values
+            bucket_helper.update_memcached_settings(
+                num_writer_threads="default",
+                num_reader_threads="default")
+
+            # Disconnecting shell_connection
+            shell_conn_1.disconnect()
+            if shell_conn_2:
+                shell_conn_2.disconnect()
 
     def test_MB_41942(self):
         """
@@ -1752,7 +1802,7 @@ class basic_ops(ClusterSetup):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                  self.num_items*2)
+                                                  self.num_items * 2)
 
     def MB36948(self):
         node_to_stop = self.servers[0]
