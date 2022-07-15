@@ -1073,7 +1073,7 @@ class ClusterUtils:
                     output, error = shell.execute_command(commands)
                     output = sorted(set(output))
                 shell.log_command_output(output, error)
-                output = output[0].split(" ")
+                output = [element.strip() for element in output]
                 if set(nodes[group]).isdisjoint(set(output)):
                     self.log.debug("{0}".format(nodes))
                     self.log.debug("replicas of node {0} are in nodes {1}"
