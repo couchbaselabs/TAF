@@ -642,8 +642,8 @@ class Murphy(BaseTestCase, OPD):
 
             # Chose node to failover
             self.rest = RestConnection(self.cluster.master)
-            self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-            self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
+            nodes = [node for node in self.cluster.kv_nodes if node.ip != self.cluster.master.ip]
+            self.chosen = random.sample(nodes, self.num_replicas)
 
             # Mark Node for failover
             self.success_failed_over = True
@@ -651,7 +651,7 @@ class Murphy(BaseTestCase, OPD):
                 failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
                 node.id = failover_node.id
                 success_failed_over = self.rest.fail_over(failover_node.id,
-                                                               graceful=True)
+                                                          graceful=True)
                 self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                 self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
@@ -666,6 +666,7 @@ class Murphy(BaseTestCase, OPD):
             for failed_over in self.chosen:
                 servs_out += [node for node in self.cluster.servers
                               if node.ip == failed_over.ip]
+                self.cluster.kv_nodes.remove(failed_over)
             self.available_servers += servs_out
             self.print_stats()
 
@@ -1041,7 +1042,6 @@ class Murphy(BaseTestCase, OPD):
                     path=None)
 
             self.rest = RestConnection(self.cluster.master)
-            self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = random.sample(nodes, self.num_replicas)
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
@@ -1066,6 +1066,7 @@ class Murphy(BaseTestCase, OPD):
             for failed_over in self.chosen:
                 servs_out += [node for node in self.cluster.servers
                               if node.ip == failed_over.ip]
+                self.cluster.kv_nodes.remove(failed_over)
             self.available_servers += servs_out
             print "KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes]
             print "CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes]
