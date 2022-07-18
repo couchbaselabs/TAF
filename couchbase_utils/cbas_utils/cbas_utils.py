@@ -242,10 +242,11 @@ class BaseUtil(object):
                                             for _ in range(
                         random.randint(1, max_name_len)))
                                     for _ in range(name_cardinality))
-            if len(set(generated_name.lower().split(".")) & set([
-                "at", "in", "for", "by", "which", "select", "from", "like",
-                "or", "and", "to", "if", "else", "as", "with", "on", "where",
-                "is", "all", "end", "div", "into", "let", "asc", "desc"])) > 0:
+            reserved_words = {"at", "in", "for", "by", "which", "select",
+                              "from", "like", "or", "and", "to", "if", "else",
+                              "as", "with", "on", "where", "is", "all", "end",
+                              "div", "into", "let", "asc", "desc", "key"}
+            if len(set(generated_name.lower().split(".")) & reserved_words) > 0:
                 return BaseUtil.generate_name(
                     name_cardinality, max_length, fixed_length, name_key, seed)
             else:

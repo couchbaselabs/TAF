@@ -2107,7 +2107,8 @@ class CBASExternalLinks(CBASBaseTest):
         elif self.input.param("use_invalid_link", False):
             original_link_name = dataset_obj.link_name
             dataset_obj.link_name = "invalid"
-            error_msg = "Link Default.{0} does not exist".format(
+            error_msg = "Link {0}.{1} does not exist".format(
+                CBASHelper.unformat_name(dataset_obj.dataverse_name),
                 dataset_obj.link_name)
         # Negative scenario ends
 
