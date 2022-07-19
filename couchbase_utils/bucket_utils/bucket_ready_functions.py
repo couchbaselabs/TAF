@@ -4042,11 +4042,8 @@ class BucketUtils(ScopeUtils):
         if 'vBucketServerMap' in parsed:
             vBucketServerMap = parsed['vBucketServerMap']
             serverList = vBucketServerMap['serverList']
-            bucket.servers.extend(serverList)
             if "numReplicas" in vBucketServerMap:
                 bucket.replicaNumber = vBucketServerMap["numReplicas"]
-            if "serverList" in vBucketServerMap:
-                bucket.replicaServers = vBucketServerMap["serverList"]
             # vBucketMapForward
             if 'vBucketMapForward' in vBucketServerMap:
                 # let's gather the forward map

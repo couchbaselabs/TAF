@@ -131,7 +131,6 @@ class Bucket(object):
     ramQuotaMB = "ramQuotaMB"
     bucketType = "bucketType"
     replicaNumber = "replicaNumber"
-    replicaServers = "replicaServers"
     evictionPolicy = "evictionPolicy"
     priority = "priority"
     flushEnabled = "flushEnabled"
@@ -219,7 +218,6 @@ class Bucket(object):
                                          Bucket.Type.MEMBASE)
         self.replicaNumber = new_params.get(Bucket.replicaNumber,
                                             Bucket.ReplicaNum.ONE)
-        self.replicaServers = new_params.get(Bucket.replicaServers, [])
         self.ramQuotaMB = new_params.get(Bucket.ramQuotaMB, 100)
         self.replicaIndex = new_params.get(Bucket.replicaIndex, 1)
         self.storageBackend = new_params.get(Bucket.storageBackend,
