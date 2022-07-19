@@ -10,6 +10,7 @@ import subprocess
 import os
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory \
     as InsecureTrustManagerFactory
+import time
 
 from _threading import Lock
 
@@ -301,9 +302,12 @@ class SDKClient(object):
             wait_until_ready_options = \
                 WaitUntilReadyOptions.waitUntilReadyOptions() \
                 .serviceTypes(ServiceType.KV)
-            self.bucketObj.waitUntilReady(
-                SDKOptions.get_duration(120, SDKConstants.TimeUnit.SECONDS),
-                wait_until_ready_options)
+            # Temp work around until JCBC-1983 is fixed
+            # adding delay here to avoid loading failures for collections
+            time.sleep(10)
+            # self.bucketObj.waitUntilReady(
+            #     SDKOptions.get_duration(300, SDKConstants.TimeUnit.SECONDS),
+            #     wait_until_ready_options)
             self.select_collection(self.scope_name,
                                    self.collection_name)
 

@@ -94,6 +94,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
+        # This is user defined throttling limit used specifically in serverless config
+        self.kv_throttling_limit = self.input.param("kv_throttling_limit", 200000)
 
         self.node_utils.cleanup_pcaps(self.servers)
         self.collect_pcaps = self.input.param("collect_pcaps", False)
@@ -906,6 +908,10 @@ class ClusterSetup(OnPremBaseTest):
                 if self.get_cbcollect_info:
                     self.fetch_cb_collect_logs()
                 self.fail("Initial rebalance failed")
+
+        if CbServer.cluster_profile == "serverless":
+            # Workaround to hitting throttling on serverless config
+            _, status = RestConnection(self.cluster.master).set_throttle_limit(limit=self.kv_throttling_limit)
 
         # Used to track spare nodes.
         # Test case can use this for further rebalance

@@ -114,11 +114,16 @@ class CollectionBase(ClusterSetup):
         bucket_count = len(buckets)
         max_clients = num_threads
         clients_per_bucket = int(ceil(max_clients / bucket_count))
+
         for bucket in buckets:
+            req_clients = min(cols_in_bucket[bucket.name], clients_per_bucket)
+            if CbServer.cluster_profile == "serverless":
+                # Work around to hitting the following error on serverless config
+                # Memcached error #50: RATE_LIMITED_MAX_CONNECTIONS
+                req_clients = min(req_clients, 10)
             sdk_client_pool.create_clients(
                 bucket=bucket, servers=[master],
-                req_clients=min(cols_in_bucket[bucket.name],
-                                clients_per_bucket),
+                req_clients=req_clients,
                 compression_settings=sdk_compression)
 
     def collection_setup(self):
