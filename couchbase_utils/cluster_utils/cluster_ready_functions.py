@@ -624,8 +624,6 @@ class ClusterUtils:
     def get_kv_nodes(self, servers=None, master=None):
         if not master:
             master = self.cluster.master
-        rest = RestConnection(master)
-        versions = rest.get_nodes_versions()
         if servers is None:
             servers = self.cluster.servers
         kv_servers = self.get_nodes_from_services_map(service_type="kv",
