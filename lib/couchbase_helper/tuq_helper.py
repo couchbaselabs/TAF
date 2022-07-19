@@ -216,7 +216,10 @@ class N1QLHelper:
                 str(err) or \
                 N1qlException.DocumentAlreadyExistsException \
                 in str(err):
-                    self.log.info("txn failed with error %s"% json.JSONEncoder().encode(result))
+                    try:
+                        self.log.info("txn failed with error %s" % json.JSONEncoder().encode(result))
+                    except:
+                        self.log.info("txn failed with error %s" % result)
                     return result
             else:
                 raise Exception("txn failed with unexpected errors %s"%json.JSONEncoder().encode(result))
