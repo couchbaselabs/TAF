@@ -2,7 +2,7 @@ from BucketLib.bucket import Bucket
 from collections_helper.collections_spec_constants import MetaConstants
 
 spec = {
-    MetaConstants.NUM_BUCKETS: 3,
+    MetaConstants.NUM_BUCKETS: 1,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
     MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT: True,
     MetaConstants.NUM_SCOPES_PER_BUCKET: 1,
@@ -23,24 +23,11 @@ spec = {
     "buckets": {
         "default": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
-            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 25,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 651500,
+            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 5,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 3257500,
             Bucket.ramQuotaMB: 256,
             Bucket.storageBackend: Bucket.StorageBackend.magma,
             Bucket.priority: Bucket.Priority.HIGH
-        },
-        "bucket1": {
-            MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
-            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 10,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 500,
-            Bucket.ramQuotaMB: 2000
-        },
-        "bucket2": {
-            MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
-            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 10,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 500,
-            Bucket.ramQuotaMB: 1000,
-            Bucket.storageBackend: Bucket.StorageBackend.magma
         }
     }
 }
