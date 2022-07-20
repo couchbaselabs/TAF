@@ -179,4 +179,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         status, cont, _ = helper._http_request(api, helper.POST, params)
         self.assertTrue(status, "Failed to create bucket")
 
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+        self.bucket_util.get_updated_bucket_server_list(self.cluster, bucket)
+        self.bucket_util.is_warmup_complete([bucket])
+
         self.assertTrue(rest.is_cluster_balanced(), "Cluster unbalanced")
