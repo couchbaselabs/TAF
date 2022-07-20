@@ -13,6 +13,9 @@ class ServerlessOnPremBaseTest(ClusterSetup):
         self.assertTrue(
             RestConnection(self.cluster.master).is_cluster_balanced(),
             "Cluster is unbalanced")
+        self.kv_distribution_dict = dict()
+        for az in self.server_groups.split(':'):
+            self.kv_distribution_dict[az] = 1
         self.log_setup_status(self.__class__.__name__, "completed")
 
     def tearDown(self):

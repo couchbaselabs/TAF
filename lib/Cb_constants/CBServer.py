@@ -50,7 +50,10 @@ class CbServer(object):
 
     class Serverless(object):
         KV_SubCluster_Size = 3
+
         VB_COUNT = 64
+        MAX_BUCKETS = 25
+        MAX_WEIGHT = 10000
 
     enterprise_edition = True
 

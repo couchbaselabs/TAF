@@ -88,6 +88,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         1. Create bucket with width=0
         2. Create bucket with unsupported numVBuckets value
         3. Create bucket with width > available sub_clusters
+        4. Create bucket with weight > cluster_supported weight
         """
 
         def create_bucket():
@@ -129,6 +130,14 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             / CbServer.Serverless.KV_SubCluster_Size \
             + 1
 
+        content = create_bucket()
+        self.assertTrue(err_more_width in content["_"],
+                        "Invalid error message for bucket::width")
+
+        # Create with weight > cluster_supported weight
+        self.log.info("Creating bucket with weight > MAX_SUPPORTED")
+        bucket_params[Bucket.width] = 1
+        bucket_params[Bucket.weight] = CbServer.Serverless.MAX_WEIGHT + 1
         content = create_bucket()
         self.assertTrue(err_more_width in content["_"],
                         "Invalid error message for bucket::width")
@@ -184,3 +193,66 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.bucket_util.is_warmup_complete([bucket])
 
         self.assertTrue(rest.is_cluster_balanced(), "Cluster unbalanced")
+
+    def test_multi_buckets(self):
+        """
+        1. Create multiple buckets and validate the bucket distribution
+        2. Create an extra bucket to ensure the creation fails
+        3. Add a KV sub-cluster and create multi-bucket to make sure
+           they get created on the new nodes
+        """
+        vb_nums = [16, 32, 64, 128, 256, 512, 1024]
+        bucket_weights = [i*30 for i in range(13)]
+        random_vb_num = self.input.param("random_vb_num", False)
+
+        # Create max_possible buckets for the given sub_cluster
+        rest = RestConnection(self.cluster.master)
+        cluster_stats = rest.cluster_status()
+        num_buckets = int(cluster_stats["memoryQuota"] / self.bucket_size)
+        self.log.info("Sub_cluster #1 - Creating %d buckets with ram=%d"
+                      % (num_buckets, self.bucket_size))
+        for index in range(num_buckets):
+            if random_vb_num:
+                self.vbuckets = choice(vb_nums)
+            name = "bucket_%d" % index
+            self.bucket_weight = choice(bucket_weights)
+            self.create_bucket(self.cluster, bucket_name=name)
+
+        # Extra bucket to validate failure condition
+        bucket_params = self.__get_bucket_params(
+            "extra_bucket", ram_quota=256,
+            width=1, weight=self.bucket_weight)
+        params = urllib.urlencode(bucket_params)
+        helper = BucketHelper(self.cluster.master)
+        api = helper.baseUrl + self.b_create_endpoint
+
+        self.log.info("Attempting to create an extra bucket")
+        status, content, _ = helper._http_request(api, helper.POST, params)
+        self.assertFalse(status, "Extra bucket created successfully")
+        error = json.loads(content)["errors"]["ramQuota"]
+        self.assertEqual(error, "RAM quota specified is too large to be "
+                                "provisioned into this cluster.",
+                         "Mismatch in the error message")
+
+        self.log.info("Adding KV sub_cluster")
+        nodes_to_add = self.cluster.servers[
+            self.nodes_init+CbServer.Serverless.KV_SubCluster_Size]
+        self.task.rebalance(self.cluster, to_add=nodes_to_add, to_remove=[],
+                            add_nodes_server_groups=self.kv_distribution_dict)
+
+        self.log.info("Sub_cluster #2 - Creating %d buckets with ram=%d"
+                      % (num_buckets, self.bucket_size))
+        for index in range(num_buckets):
+            if random_vb_num:
+                self.vbuckets = choice(vb_nums)
+            name = "bucket_%d" % index
+            self.bucket_weight = choice(bucket_weights)
+            self.create_bucket(self.cluster, bucket_name=name)
+
+        self.log.info("Attempting to create an extra bucket")
+        status, content, _ = helper._http_request(api, helper.POST, params)
+        self.assertFalse(status, "Extra bucket created successfully")
+        error = json.loads(content)["errors"]["ramQuota"]
+        self.assertEqual(error, "RAM quota specified is too large to be "
+                                "provisioned into this cluster.",
+                         "Mismatch in the error message")
