@@ -457,7 +457,10 @@ class N1qlBase(CollectionBase):
                 collection_savepoint['last'] = copy.deepcopy(write_conflict_result)
                 savepoint.append("last")
         except Exception as e:
-            self.log.info(json.JSONEncoder().encode(e))
+            try:
+                self.log.info(json.JSONEncoder().encode(e))
+            except:
+                self.log.info(str(e))
             collection_savepoint = e
         return collection_savepoint, savepoint, queries, rerun_thread
 
