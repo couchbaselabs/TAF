@@ -1006,10 +1006,10 @@ class ClusterUtils:
 
     def print_cluster_stats(self, cluster):
         table = TableView(self.log.info)
-        table.set_headers(["Node", "zone", "Services", "CPU_utilization",
+        table.set_headers(["Nodes", "Zone", "Services", "CPU",
                            "Mem_total", "Mem_free",
                            "Swap_mem_used",
-                           "Active / Replica ", "Version"])
+                           "Active / Replica ", "Version / Config"])
         rest = RestConnection(cluster.master)
         cluster_stat = rest.get_cluster_stats()
         for cluster_node, node_stats in cluster_stat.items():
@@ -1017,14 +1017,14 @@ class ClusterUtils:
             row.append(cluster_node.split(':')[0])
             row.append(node_stats["serverGroup"])
             row.append(", ".join(node_stats["services"]))
-            row.append(str(node_stats["cpu_utilization"]))
+            row.append(str(node_stats["cpu_utilization"])[0:6])
             row.append(humanbytes(str(node_stats["mem_total"])))
             row.append(humanbytes(str(node_stats["mem_free"])))
             row.append(humanbytes(str(node_stats["swap_mem_used"])) + " / "
                        + humanbytes(str(node_stats["swap_mem_total"])))
             row.append(str(node_stats["active_item_count"]) + " / "
                        + str(node_stats["replica_item_count"]))
-            row.append(node_stats["version"])
+            row.append(node_stats["version"] + " / " + CbServer.cluster_profile)
             table.add_row(row)
         table.display("Cluster statistics")
 

@@ -2121,7 +2121,7 @@ class BucketUtils(ScopeUtils):
     def print_bucket_stats(self, cluster):
         table = TableView(self.log.info)
         table.set_headers(["Bucket", "Type", "Storage Backend", "Replicas",
-                           "Durability", "TTL", "Items", "RAM Quota",
+                           "Durability", "TTL", "Items", "Vbuckets", "RAM Quota",
                            "RAM Used", "Disk Used", "ARR"])
         buckets = self.get_all_buckets(cluster)
         if len(buckets) == 0:
@@ -2137,6 +2137,7 @@ class BucketUtils(ScopeUtils):
                             bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
                     except KeyError:
                         ARR = 100
+                    num_vbuckets = str(bucket.num_vbuckets)
                 table.add_row(
                     [bucket.name, bucket.bucketType,
                      storage_backend,
@@ -2144,6 +2145,7 @@ class BucketUtils(ScopeUtils):
                      str(bucket.durability_level),
                      str(bucket.maxTTL),
                      str(bucket.stats.itemCount),
+                     num_vbuckets,
                      humanbytes(str(bucket.stats.ram)),
                      humanbytes(str(bucket.stats.memUsed)),
                      humanbytes(str(bucket.stats.diskUsed)),

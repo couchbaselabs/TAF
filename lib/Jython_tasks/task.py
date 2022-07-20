@@ -352,7 +352,7 @@ class RebalanceTask(Task):
 
         cluster_stats = self.rest.get_cluster_stats()
         self.table = TableView(self.test_log.info)
-        self.table.set_headers(["Nodes", "Zone", "Services", "Version",
+        self.table.set_headers(["Nodes", "Zone", "Services", "Version / Config",
                                 "CPU", "Status", "Membership / Recovery"])
         for node, stat in cluster_stats.items():
             node_ip = node.split(':')[0]
@@ -360,7 +360,8 @@ class RebalanceTask(Task):
             if node_ip in node_ips_to_remove:
                 node_status = "--- OUT --->"
             self.table.add_row([node_ip, stat["serverGroup"],
-                                ", ".join(stat["services"]), stat["version"],
+                                ", ".join(stat["services"]),
+                                stat["version"] + " / " + CbServer.cluster_profile,
                                 stat["cpu_utilization"], node_status,
                                 stat["clusterMembership"] + " / " + stat["recoveryType"]])
             # Remove the 'out' node from services list

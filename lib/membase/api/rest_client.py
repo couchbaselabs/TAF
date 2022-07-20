@@ -1542,10 +1542,7 @@ class RestConnection(newRC):
                 stat_dict[node_stat['hostname']] = dict()
                 stat_dict[node_stat['hostname']]['version'] = node_stat['version']
                 stat_dict[node_stat['hostname']]['services'] = node_stat['services']
-                if 'serverGroup' in stat_dict:
-                    stat_dict[node_stat['hostname']]['serverGroup'] = node_stat['serverGroup']
-                else:
-                    stat_dict[node_stat['hostname']]['serverGroup'] = ""
+                stat_dict[node_stat['hostname']]['serverGroup'] = node_stat['serverGroup']
                 stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats'].get(
                     'cpu_utilization_rate')
                 stat_dict[node_stat['hostname']]['clusterMembership'] = node_stat['clusterMembership']
