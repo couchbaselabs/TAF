@@ -448,37 +448,42 @@ class LMT(ServerlessOnPremBaseTest):
         expected_cu, remainder = divmod(total_size, limit)
         if remainder:
             expected_cu += 1
+        if self.durability_level != "NONE" and not read:
+            expected_cu *= 2
         return expected_cu
 
     def get_stat(self, bucket):
         throttle_limit = list()
         ru = 0
         wu = 0
+        num_throttled = 0
         shell = RemoteMachineShellConnection(self.cluster.master)
         mc_stat = McStat(shell)
         shell.disconnect()
         # check in all the nodes where the bucket is present
-        for node in self.cluster_util.get_kv_nodes(self.cluster):
-            stat = mc_stat.bucket_details(node, bucket)
+        for node in bucket.servers:
+            stat = mc_stat.bucket_details(node, bucket.name)
             ru += stat["ru"]
             wu += stat["wu"]
             throttle_limit.append(stat["throttle_limit"])
-        self.log.info("throttle_limit: %s, RU: %s, WU: %s" % (throttle_limit, ru, wu))
+            num_throttled += stat["num_throttled"]
+        self.log.info("throttle_limit: %s, num_throttled: %s, RU: %s, WU: %s"
+                      % (throttle_limit, num_throttled, ru, wu))
         # ru_from_prometheus, wu_from_prometheus = self.get_stat_from_prometheus(bucket)
-        # ru_from_metering, wu_from_metering = self.get_stat_from_prometheus(bucket)
+        # ru_from_metering, wu_from_metering = self.get_stat_from_metering(bucket)
         # self.assertEqual(ru, ru_from_prometheus)
         # self.assertEqual(wu, wu_from_prometheus)
         # self.assertEqual(ru, ru_from_metering)
         # self.assertEqual(wu, wu_from_metering)
-        return throttle_limit, ru, wu
+        return num_throttled, ru, wu
 
     def get_stat_from_prometheus(self, bucket):
         ru_from_prometheus = 0
         wu_from_prometheus = 0
         for node in bucket.servers:
             content = StatsHelper(node).get_prometheus_metrics_high()
-            wu_pattern = re.compile('meter_wu_total{bucket="%s"} (\d+)' %bucket)
-            ru_pattern = re.compile('meter_ru_total{bucket="%s"} (\d+)' %bucket)
+            wu_pattern = re.compile('meter_wu_total{bucket="%s"} (\d+)' %bucket.name)
+            ru_pattern = re.compile('meter_ru_total{bucket="%s"} (\d+)' %bucket.name)
             for line in content:
                 if wu_pattern.match(line):
                     wu_from_prometheus += int(wu_pattern.findall(line)[0])
@@ -490,9 +495,9 @@ class LMT(ServerlessOnPremBaseTest):
         ru_from_prometheus = 0
         wu_from_prometheus = 0
         for node in bucket.servers:
-            content = StatsHelper(node).get_prometheus_metrics_high()
-            wu_pattern = re.compile('counter_wu_total{bucket="%s"} (\d+)' %bucket)
-            ru_pattern = re.compile('counter_ru_total{bucket="%s"} (\d+)' %bucket)
+            content = StatsHelper(node).metering()
+            wu_pattern = re.compile('counter_wu_total{bucket="%s"} (\d+)' %bucket.name)
+            ru_pattern = re.compile('counter_ru_total{bucket="%s"} (\d+)' %bucket.name)
             for line in content:
                 if wu_pattern.match(line):
                     wu_from_prometheus += int(wu_pattern.findall(line)[0])
@@ -504,3 +509,7 @@ class LMT(ServerlessOnPremBaseTest):
         buckets = self.bucket_util.get_all_buckets(self.cluster)
         for bucket in buckets:
             self.log.info("item_count is {0}".format(bucket.stats.itemCount))
+
+    def compare_ru_wu_stat(self, ru, wu, expected_ru, expected_wu):
+        self.assertEqual(wu, expected_wu)
+        self.assertEqual(ru, expected_ru)

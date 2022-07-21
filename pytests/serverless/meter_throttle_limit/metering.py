@@ -64,7 +64,7 @@ class ServerlessMetering(LMT):
         key_value = self.get_key_value(self.num_items, self.doc_size)
         expected_wu = self.calculate_units(self.doc_size, 0) * self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.CREATE, key_value,
-                               self.bucket.name, expected_wu,
+                               self.bucket, expected_wu,
                                0, durability=self.durability_level)
 
         # read the document
@@ -72,26 +72,29 @@ class ServerlessMetering(LMT):
         expected_ru = ru + self.calculate_units(self.total_size, 0,
                                                 read=True) * self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.READ, key_value,
-                               self.bucket.name, expected_wu,
+                               self.bucket, expected_wu,
                                expected_ru, durability=self.durability_level)
 
         # replace the document
         key_value = self.get_key_value(self.num_items, self.doc_size, char="b")
         expected_wu += self.calculate_units(self.total_size, 0) * self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.REPLACE, key_value,
-                               self.bucket.name, expected_wu,
+                               self.bucket, expected_wu,
                                expected_ru, durability=self.durability_level)
 
         # update the document
         key_value = self.get_key_value(self.num_items, self.doc_size, char="c")
         expected_wu += self.calculate_units(self.total_size, 0) * self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.UPDATE, key_value,
-                               self.bucket.name, expected_wu,
+                               self.bucket, expected_wu,
                                expected_ru, durability=self.durability_level)
 
         # touch the document
         self.total_size, ru = self.get_sizeof_document(self.key + str(0))
-        expected_wu += self.calculate_units(self.total_size, 0) * self.num_items
+        if self.durability_level != "NONE":
+            expected_wu += self.calculate_units(self.total_size, 0)/2 * self.num_items
+        else:
+            expected_wu += self.calculate_units(self.total_size, 0) * self.num_items
         expected_ru = expected_ru + ru + \
                       self.calculate_units(self.total_size,
                                            0, read=True) * self.num_items
@@ -100,13 +103,16 @@ class ServerlessMetering(LMT):
                                       durability=self.durability_level)
             if self.validate_result(result):
                 continue
-        throttle_limit, ru, wu = self.get_stat(self.bucket.name)
+        throttle_limit, ru, wu = self.get_stat(self.bucket)
         self.compare_ru_wu_stat(ru, wu, expected_ru, expected_wu)
 
         # delete the document
-        expected_wu += self.num_items
+        if self.durability_level != "NONE":
+            expected_wu += (self.num_items * 2)
+        else:
+            expected_wu += self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.DELETE, key_value,
-                               self.bucket.name, expected_wu,
+                               self.bucket, expected_wu,
                                expected_ru, durability=self.durability_level)
 
     def test_cu_in_batch_operation(self):
@@ -127,7 +133,7 @@ class ServerlessMetering(LMT):
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
-        _, self.ru, self.wu = self.get_stat(self.bucket.name)
+        _, self.ru, self.wu = self.get_stat(self.bucket)
         self.compare_ru_wu_stat(self.ru, self.wu, 0, self.num_items)
 
         # Load with doc_ttl set
@@ -142,7 +148,7 @@ class ServerlessMetering(LMT):
             skip_read_on_error=True,
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
-        _, self.ru, self.wu = self.get_stat(self.bucket.name)
+        _, self.ru, self.wu = self.get_stat(self.bucket)
         self.compare_ru_wu_stat(self.ru, self.wu, 0, self.num_items*2)
 
         self.sleep(2)
@@ -158,12 +164,8 @@ class ServerlessMetering(LMT):
             print_ops_rate=False)
         self.task_manager.add_new_task(load_task)
         self.task_manager.get_task_result(load_task)
-        _, self.ru, self.wu = self.get_stat(self.bucket.name)
+        _, self.ru, self.wu = self.get_stat(self.bucket)
         self.compare_ru_wu_stat(self.ru, self.wu, 0, self.num_items*2)
-
-    def compare_ru_wu_stat(self, ru, wu, expected_ru, expected_wu):
-        self.assertEqual(wu, expected_wu)
-        self.assertEqual(ru, expected_ru)
 
     def validate_result(self, result):
         if result["status"] is False:
@@ -198,9 +200,9 @@ class ServerlessMetering(LMT):
         # create few documents
         key_value = self.get_key_value(self.num_items, self.doc_size)
         self.expected_wu = self.calculate_units(self.doc_size, 0) * self.num_items
-        self.perform_operation(DocLoading.Bucket.DocOps.CREATE, key_value, self.bucket.name,
+        self.perform_operation(DocLoading.Bucket.DocOps.CREATE, key_value, self.bucket,
                                self.expected_wu, 0, durability=self.durability_level)
-        _, self.expected_ru, self.expected_wu = self.get_stat(self.bucket.name)
+        _, self.expected_ru, self.expected_wu = self.get_stat(self.bucket)
         self.total_size, ru = self.get_sizeof_document("metering-0")
         self.expected_ru += ru + (self.calculate_units(self.total_size, 0,
                                                        read=True) * self.num_items)
@@ -219,7 +221,7 @@ class ServerlessMetering(LMT):
                                                    xattr=self.xattr)
                 self.assertFalse(failed_items, "Subdoc Xattr operation failed")
             self.expected_wu += (self.calculate_units(self.total_size, 0) * self.num_items)
-            _, self.ru, self.wu = self.get_stat(self.bucket.name)
+            _, self.ru, self.wu = self.get_stat(self.bucket)
             self.compare_ru_wu_stat(self.ru, self.wu, self.expected_ru, self.expected_wu)
             self.expected_ru += (self.calculate_units(self.total_size, 0,
                                                       read=True) * self.num_items)
@@ -228,7 +230,10 @@ class ServerlessMetering(LMT):
         if not self.xattr:
             self.expected_ru = self.ru
         self.log.info("performing delete")
-        self.expected_wu += self.num_items
+        if self.durability_level != "NONE":
+            self.expected_wu += (self.num_items * 2)
+        else:
+            self.expected_wu += self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.DELETE, key_value,
-                               self.bucket.name, self.expected_wu,
+                               self.bucket, self.expected_wu,
                                self.expected_ru, durability=self.durability_level)
