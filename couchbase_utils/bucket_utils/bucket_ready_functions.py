@@ -4021,26 +4021,42 @@ class BucketUtils(ScopeUtils):
                 break
         else:
             bucket = Bucket()
+
+            # Following params can be initialized only once,
+            # so avoiding overwriting of already known values to enhance
+            # validation procedures. And these values has to be updated
+            # only by the update_bucket_props() to track the current value
             bucket.name = parsed[Bucket.name]
+            if Bucket.num_vbuckets in parsed:
+                bucket.num_vbuckets = parsed[Bucket.num_vbuckets]
 
-        bucket.uuid = parsed[Bucket.uuid]
-        if Bucket.num_vbuckets in parsed:
-            bucket.num_vbuckets = parsed[Bucket.num_vbuckets]
-        bucket.bucketType = parsed[Bucket.bucketType]
-        if bucket.bucketType == 'membase':
-            bucket.bucketType = Bucket.Type.MEMBASE
-        if Bucket.maxTTL in parsed:
-            bucket.maxTTL = parsed[Bucket.maxTTL]
+            bucket.bucketType = parsed[Bucket.bucketType]
+            if bucket.bucketType == 'membase':
+                bucket.bucketType = Bucket.Type.MEMBASE
 
-        if Bucket.width in parsed:
-            if bucket.serverless is None:
+            if Bucket.maxTTL in parsed:
+                bucket.maxTTL = parsed[Bucket.maxTTL]
+
+            if Bucket.width in parsed:
                 bucket.serverless = Serverless()
-            bucket.serverless.width = parsed[Bucket.width]
-            bucket.serverless.weight = parsed[Bucket.weight]
+                bucket.serverless.width = parsed[Bucket.width]
+                bucket.serverless.weight = parsed[Bucket.weight]
 
+            if Bucket.durabilityMinLevel in parsed:
+                bucket.durability_level = parsed[Bucket.durabilityMinLevel]
+
+            if Bucket.compressionMode in parsed:
+                bucket.compressionMode = parsed[Bucket.compressionMode]
+
+            if Bucket.conflictResolutionType in parsed:
+                bucket.conflictResolutionType = \
+                    parsed[Bucket.conflictResolutionType]
+
+        # Set only if not set previously
+        # (Can happen since we directly adding the bucket_obj to the cluster)
+        bucket.uuid = bucket.uuid or parsed[Bucket.uuid]
         bucket.bucketCapabilities = parsed["bucketCapabilities"]
-        if Bucket.durabilityMinLevel in parsed:
-            bucket.durability_level = parsed[Bucket.durabilityMinLevel]
+
         if 'vBucketServerMap' in parsed:
             vBucketServerMap = parsed['vBucketServerMap']
             serverList = vBucketServerMap['serverList']
@@ -4083,8 +4099,7 @@ class BucketUtils(ScopeUtils):
         if bucket.bucketType != "memcached":
             bucket.stats.diskUsed = stats['diskUsed']
         bucket.stats.memUsed = stats['memUsed']
-        quota = parsed['quota']
-        bucket.stats.ram = quota['ram']
+        bucket.stats.ram = parsed['quota']['ram']
         return bucket
 
     def wait_till_total_numbers_match(self, master, bucket,
