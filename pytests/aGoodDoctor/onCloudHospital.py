@@ -125,6 +125,7 @@ class Murphy(BaseTestCase, OPD):
                 "memoryAllocationInMb": bucket.ramQuotaMB,
                 "flush": bucket.flushEnabled,
                 "replicas": bucket.replicaNumber,
+                "storageBackend": bucket.storageBackend,
                 "durabilityLevel": bucket.durability_level,
                 "timeToLive": {"unit": "seconds", "value": bucket.maxTTL}
                 }

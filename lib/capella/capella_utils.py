@@ -119,21 +119,21 @@ class CapellaUtils(object):
                 cluster_details.update({"cidr": subnet})
                 cluster_details.update({"projectId": tenant.project_id})
                 capella_api_resp = capella_api.create_cluster_customAMI(tenant.id, cluster_details)
-                cluster_id = json.loads(capella_api_resp.content).get("id")
+                if capella_api_resp.status_code == 202:
+                    cluster_id = json.loads(capella_api_resp.content).get("id")
+                    break
             else:
                 cluster_details["place"]["hosted"].update({"CIDR": subnet})
                 cluster_details.update({"projectId": tenant.project_id})
                 capella_api_resp = capella_api.create_cluster(cluster_details)
-                cluster_id = capella_api_resp.headers['Location'].split("/")[-1]
+                if capella_api_resp.status_code == 202:
+                    cluster_id = capella_api_resp.headers['Location'].split("/")[-1]
+                    break
 
-            # Check resp code , 202 is success
-            if capella_api_resp.status_code == 202:
-                break
-            else:
-                CapellaUtils.log.critical("Create capella cluster failed.")
-                CapellaUtils.log.critical("Capella API returned " + str(
-                    capella_api_resp.status_code))
-                CapellaUtils.log.critical(capella_api_resp.json()["message"])
+            CapellaUtils.log.critical("Create capella cluster failed.")
+            CapellaUtils.log.critical("Capella API returned " + str(
+                capella_api_resp.status_code))
+            CapellaUtils.log.critical(capella_api_resp.json()["message"])
 
         CapellaUtils.log.info("Cluster created with cluster ID: {}"\
                               .format(cluster_id))
