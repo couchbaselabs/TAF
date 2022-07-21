@@ -3546,6 +3546,8 @@ class Node(object):
         self.services = []
         self.storageTotalRam = 0
         self.server_group = ""
+        self.limits = None
+        self.utilization = None
 
 
 class AutoFailoverSettings(object):
@@ -3676,4 +3678,20 @@ class RestParser(object):
                         # the storage total values are more accurate than
                         # mcdMemoryReserved - which is container host memory
                         node.mcdMemoryReserved = node.storageTotalRam * 0.70
+
+        # Serverless specific stat
+        if "limits" in parsed:
+            node.limits = dict()
+            node.utilization = dict()
+            for service in node.services:
+                node.limits[service] = dict()
+                node.utilization[service] = dict()
+
+                if service == CbServer.Services.KV:
+                    limits = parsed["limits"][service]
+                    utilised = parsed["utilization"][service]
+                    for field in ["buckets", "memory", "weight"]:
+                        node.limits[service][field] = limits[field]
+                        node.utilization[service][field] = utilised[field]
+
         return node
