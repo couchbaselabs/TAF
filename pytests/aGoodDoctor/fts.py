@@ -10,6 +10,7 @@ from TestInput import TestInputSingleton
 from membase.api.rest_client import RestConnection
 import time
 import json
+from Cb_constants.CBServer import CbServer
 
 
 class DoctorFTS:
@@ -28,6 +29,8 @@ class DoctorFTS:
             for b in self.cluster.buckets:
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
                     for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
+                        if c == CbServer.default_collection:
+                            continue
                         fts_param_template = self.get_fts_idx_template()
                         fts_param_template.update({
                             "name": "fts_idx_{}".format(i), "sourceName": b.name})

@@ -17,6 +17,7 @@ from com.couchbase.client.core.error import RequestCanceledException,\
     CouchbaseException, AmbiguousTimeoutException
 import traceback
 from global_vars import logger
+from Cb_constants.CBServer import CbServer
 
 queries = ['select name from {} where age between 30 and 50 limit 10;',
            'select age, count(*) from {} where marital = "M" group by age order by age limit 10;',
@@ -55,6 +56,8 @@ class DoctorCBAS():
             for b in self.cluster.buckets:
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
                     for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
+                        if c == CbServer.default_collection:
+                            continue
                         self.idx_q = datasets[0].format(i, b.name, s, c)
                         self.datasets.update({"ds"+str(i): (self.idx_q, b.name, s, c)})
                         self.queries.append(queries[i % len(queries)].format("ds"+str(i)))
