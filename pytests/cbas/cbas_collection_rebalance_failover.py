@@ -134,7 +134,8 @@ class CBASRebalance(CBASBaseTest):
                 reset_flag = True
             data_load_task = self.rebalance_util.data_load_collection(
                 self.cluster, self.doc_spec_name, self.skip_validations,
-                async_load=True, durability_level=self.durability_level)
+                async_load=True, durability_level=self.durability_level,
+                create_percentage_per_collection=self.parallel_load_percent)
             if reset_flag:
                 self.durability_level = ""
 

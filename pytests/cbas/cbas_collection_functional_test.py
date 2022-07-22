@@ -1203,6 +1203,10 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             kv_name_cardinality=3, remote_datasets=False):
             self.fail("Error while creating datasets")
         dataset_objs = self.cbas_util.list_all_dataset_objs()
+        # Remove this check once MB-53038 is resolved
+        if not self.cbas_util.wait_for_ingestion_all_datasets(
+                self.cluster, self.bucket_util):
+            self.fail("Ingestion failed")
         bucket = random.choice(self.cluster.buckets)
         self.bucket_flush_and_validate(bucket)
         for dataset_obj in dataset_objs:
