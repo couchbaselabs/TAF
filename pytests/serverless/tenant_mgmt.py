@@ -24,6 +24,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             api = helper.baseUrl + self.b_create_endpoint
             status, _, _ = helper._http_request(api, helper.POST, params)
             self.assertTrue(status, "Bucket creation failed")
+        self.bucket_util.print_bucket_stats(self.cluster)
 
     def tearDown(self):
         super(TenantManagementOnPrem, self).tearDown()
@@ -204,6 +205,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         vb_nums = [16, 32, 64, 128, 256, 512, 1024]
         bucket_weights = [i*30 for i in range(13)]
         random_vb_num = self.input.param("random_vb_num", False)
+        expected_err = "Need more space in availability zones"
 
         # Create max_possible buckets for the given sub_cluster
         rest = RestConnection(self.cluster.master)
@@ -229,20 +231,21 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.log.info("Attempting to create an extra bucket")
         status, content, _ = helper._http_request(api, helper.POST, params)
         self.assertFalse(status, "Extra bucket created successfully")
-        error = json.loads(content)["errors"]["ramQuota"]
-        self.assertEqual(error, "RAM quota specified is too large to be "
-                                "provisioned into this cluster.",
-                         "Mismatch in the error message")
+        self.assertTrue(expected_err in json.loads(content)["_"],
+                        "Mismatch in the error message")
+
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         self.log.info("Adding KV sub_cluster")
         nodes_to_add = self.cluster.servers[
-            self.nodes_init+CbServer.Serverless.KV_SubCluster_Size]
+            self.nodes_init
+            :self.nodes_init + CbServer.Serverless.KV_SubCluster_Size]
         self.task.rebalance(self.cluster, to_add=nodes_to_add, to_remove=[],
                             add_nodes_server_groups=self.kv_distribution_dict)
 
         self.log.info("Sub_cluster #2 - Creating %d buckets with ram=%d"
                       % (num_buckets, self.bucket_size))
-        for index in range(num_buckets):
+        for index in range(num_buckets, num_buckets*2):
             if random_vb_num:
                 self.vbuckets = choice(vb_nums)
             name = "bucket_%d" % index
@@ -252,7 +255,5 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.log.info("Attempting to create an extra bucket")
         status, content, _ = helper._http_request(api, helper.POST, params)
         self.assertFalse(status, "Extra bucket created successfully")
-        error = json.loads(content)["errors"]["ramQuota"]
-        self.assertEqual(error, "RAM quota specified is too large to be "
-                                "provisioned into this cluster.",
-                         "Mismatch in the error message")
+        self.assertTrue(expected_err in json.loads(content)["_"],
+                        "Mismatch in the error message")

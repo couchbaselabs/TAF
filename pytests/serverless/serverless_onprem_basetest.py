@@ -16,6 +16,7 @@ class ServerlessOnPremBaseTest(ClusterSetup):
         self.kv_distribution_dict = dict()
         for az in self.server_groups.split(':'):
             self.kv_distribution_dict[az] = 1
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.log_setup_status(self.__class__.__name__, "completed")
 
     def tearDown(self):
