@@ -3860,30 +3860,20 @@ class BucketCreateTask(Task):
         self.retries = 0
 
     def call(self):
-        try:
-            rest = RestConnection(self.server)
-        except ServerUnavailableException as error:
-            self.log.error("RestConnection failed for {0}: {1}"
-                           .format(self.server.ip, error))
-            self.result = False
-            self.complete_task()
-            return
-
-        info = rest.get_nodes_self()
-        bucket_dict = self.bucket.__dict__
-        if self.bucket.ramQuotaMB <= 0:
-            self.size = info.memoryQuota * 2 / 3
-
-        if int(info.port) in xrange(9091, 9991):
-            self.port = info.port
-        elif self.bucket_priority is not None:
+        if self.bucket_priority is not None:
             self.bucket.threadsNumber = self.bucket_priority
 
         try:
-            self.result = BucketHelper(self.server).create_bucket(bucket_dict)
+            self.result = BucketHelper(self.server)\
+                .create_bucket(self.bucket.__dict__)
             if self.result is False:
                 self.test_log.critical("Bucket %s creation failed"
                                        % self.bucket.name)
+            elif not self.bucket.num_vbuckets:
+                # Set num_vbuckets to default it not provided by the user
+                self.bucket.num_vbuckets = CbServer.total_vbuckets
+                if CbServer.cluster_profile == "serverless":
+                    self.bucket.num_vbuckets = CbServer.Serverless.VB_COUNT
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False
@@ -3892,9 +3882,6 @@ class BucketCreateTask(Task):
 
     def check(self):
         try:
-            # if self.bucket.bucketType == 'memcached' or \
-            #        int(self.server.port) in xrange(9091, 9991):
-            #     return True
             if MemcachedHelper.wait_for_memcached(self.server,
                                                   self.bucket.name):
                 self.test_log.debug(
@@ -4008,6 +3995,11 @@ class BucketCreateFromSpecTask(Task):
                 self.set_exception(
                     BucketCreationException(ip=self.bucket_helper.ip,
                                             bucket_name=self.bucket_obj.name))
+            elif not self.bucket_obj.num_vbuckets:
+                # Set num_vbuckets to default it not provided by the user
+                self.bucket_obj.num_vbuckets = CbServer.total_vbuckets
+                if CbServer.cluster_profile == "serverless":
+                    self.bucket_obj.num_vbuckets = CbServer.Serverless.VB_COUNT
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False

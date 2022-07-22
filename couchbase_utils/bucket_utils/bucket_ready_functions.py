@@ -4033,9 +4033,6 @@ class BucketUtils(ScopeUtils):
                 bucket.num_vbuckets = parsed[Bucket.num_vbuckets]
 
             bucket.bucketType = parsed[Bucket.bucketType]
-            if bucket.bucketType == 'membase':
-                bucket.bucketType = Bucket.Type.MEMBASE
-
             if Bucket.maxTTL in parsed:
                 bucket.maxTTL = parsed[Bucket.maxTTL]
 
@@ -4053,6 +4050,10 @@ class BucketUtils(ScopeUtils):
             if Bucket.conflictResolutionType in parsed:
                 bucket.conflictResolutionType = \
                     parsed[Bucket.conflictResolutionType]
+
+        # Sanitise the value to the expected value for cb buckets
+        if bucket.bucketType == 'membase':
+            bucket.bucketType = Bucket.Type.MEMBASE
 
         # Set only if not set previously
         # (Can happen since we directly adding the bucket_obj to the cluster)
