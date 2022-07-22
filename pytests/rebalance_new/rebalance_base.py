@@ -227,7 +227,8 @@ class RebalanceBaseTest(BaseTestCase):
         self.over_ride_spec_params = self.input.param("override_spec_params", "").split(";")
         self.log.info("Creating buckets from spec")
         # Create bucket(s)
-        if self.bucket_storage == Bucket.StorageBackend.magma:
+        if CbServer.cluster_profile == "default" and self.bucket_storage == \
+                Bucket.StorageBackend.magma:
             # get the TTL value
             buckets_spec_from_conf = \
                 self.bucket_util.get_bucket_template_from_package(
@@ -252,7 +253,6 @@ class RebalanceBaseTest(BaseTestCase):
         self.over_ride_bucket_template_params(buckets_spec)
         self.over_ride_doc_loading_template_params(doc_loading_spec)
         self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
-
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)

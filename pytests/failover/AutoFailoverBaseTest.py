@@ -3,7 +3,7 @@ import time
 
 from BucketLib.bucket import Bucket
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import DocLoading
+from Cb_constants import DocLoading, CbServer
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
@@ -117,7 +117,8 @@ class AutoFailoverBaseTest(ClusterSetup):
             self.input.param("override_spec_params", "").split(";")
 
         # Create bucket(s)
-        if self.bucket_storage == Bucket.StorageBackend.magma:
+        if CbServer.cluster_profile == "default" and self.bucket_storage \
+                == Bucket.StorageBackend.magma:
             # get the TTL value
             buckets_spec_from_conf = \
                 self.bucket_util.get_bucket_template_from_package(
@@ -1018,7 +1019,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         # If True, creates bucket/scope/collections with simpler names
         self.use_simple_names = self.input.param("use_simple_names", True)
         # Create bucket(s)
-        if self.bucket_storage == Bucket.StorageBackend.magma:
+        if CbServer.cluster_profile == "default" and self.bucket_storage ==\
+                Bucket.StorageBackend.magma:
             # get the TTL value
             buckets_spec_from_conf = \
                 self.bucket_util.get_bucket_template_from_package(

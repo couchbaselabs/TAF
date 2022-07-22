@@ -130,7 +130,8 @@ class CollectionBase(ClusterSetup):
         self.bucket_util.add_rbac_user(self.cluster.master)
 
         # Create bucket(s) and add rbac user
-        if self.bucket_storage == Bucket.StorageBackend.magma:
+        if CbServer.cluster_profile == "default" and self.bucket_storage == \
+                Bucket.StorageBackend.magma:
             # get the TTL value
             buckets_spec_from_conf = \
                 self.bucket_util.get_bucket_template_from_package(

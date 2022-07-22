@@ -6,6 +6,7 @@ Created on Sep 26, 2017
 
 import copy
 import importlib
+import math
 import os.path
 import re
 import threading
@@ -1961,11 +1962,68 @@ class BucketUtils(ScopeUtils):
             self.task_manager.get_task_result(task)
         return task
 
+    def specs_for_serverless(self, bucket_spec):
+        self.balance_scopes_collections_items(bucket_spec)
+        if "buckets" in bucket_spec:
+            for bucket in bucket_spec["buckets"]:
+                self.balance_scopes_collections_items(
+                    bucket_spec["buckets"][bucket], bucket_spec)
+
+    def balance_scopes_collections_items(self, bucket_spec, default_spec=None):
+        def get_divisor(max_limits_variable):
+            factor_list = []
+            i = 1
+            while i <= math.sqrt(max_limits_variable):
+                if max_limits_variable % i == 0:
+                    factor_list.append(i)
+                i = i + 1
+            return_index = (len(factor_list) // 2)
+            return factor_list[return_index]
+
+        def bucket_spec_check(spec_name):
+            if spec_name not in bucket_spec:
+                bucket_spec[spec_name] = default_spec[spec_name]
+
+        if default_spec:
+            bucket_spec_check(MetaConstants.NUM_SCOPES_PER_BUCKET)
+            bucket_spec_check(MetaConstants.NUM_ITEMS_PER_COLLECTION)
+            bucket_spec_check(MetaConstants.NUM_COLLECTIONS_PER_SCOPE)
+
+        max_limits = self.input.param("max_limits", 80)
+        if max_limits >= 100 or max_limits <= 0:
+            max_limits = 80
+
+        new_collection_per_scope_number = None
+        new_scope_number = None
+        if (bucket_spec[MetaConstants.NUM_SCOPES_PER_BUCKET] *
+            bucket_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE]) > \
+                max_limits:
+
+            # scope and collections limits according to percentage_max_limits
+            new_collection_per_scope_number = get_divisor(max_limits)
+            new_scope_number = (max_limits
+                                / new_collection_per_scope_number)
+
+            # setting new number_items for bucket
+            bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                int(math.ceil((
+                    bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] *
+                    bucket_spec[MetaConstants.NUM_SCOPES_PER_BUCKET] *
+                    bucket_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE]) /
+                   (new_collection_per_scope_number * new_scope_number)))
+
+            bucket_spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE] = \
+                new_collection_per_scope_number
+            bucket_spec[MetaConstants.NUM_SCOPES_PER_BUCKET] = \
+                new_scope_number
+
     def create_buckets_using_json_data(self, cluster, buckets_spec,
                                        async_create=True):
         self.log.info("Creating required buckets from template")
         load_data_from_existing_tar = False
         rest_conn = RestConnection(cluster.master)
+        if CbServer.cluster_profile == "serverless":
+            self.specs_for_serverless(buckets_spec)
         buckets_spec = BucketUtils.expand_buckets_spec(rest_conn,
                                                        buckets_spec)
         bucket_creation_tasks = list()
