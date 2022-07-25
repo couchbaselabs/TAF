@@ -94,8 +94,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
-         # This is user defined throttling limit used specifically in serverless config
-        self.kv_throttling_limit = self.input.param("kv_throttling_limit", 200000)
+        # User defined throttling limit used in serverless config
+        self.kv_throttling_limit = \
+            self.input.param("kv_throttling_limit", 200000)
 
         self.node_utils.cleanup_pcaps(self.servers)
         self.collect_pcaps = self.input.param("collect_pcaps", False)
@@ -123,22 +124,22 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # Fetch the profile_type from the master node
         # Value will be default / serverless
-        CbServer.cluster_profile = self.cluster_util.get_server_profile_type(
-            self.servers[0])
-
-        if self.use_https or CbServer.cluster_profile == "serverless":
-            CbServer.use_https = True
-            trust_all_certs()
+        CbServer.cluster_profile = \
+            self.cluster_util.get_server_profile_type(self.servers)
 
         # Enable use_https and enforce_tls for 'serverless' cluster testing
         # And set default bucket/cluster setting values to tests
-        if CbServer.cluster_profile == "serverless":
+        if CbServer.cluster_profile is "serverless":
             self.use_https = True
             self.enforce_tls = True
 
             self.bucket_storage = Bucket.StorageBackend.magma
             self.num_replicas = Bucket.ReplicaNum.TWO
             self.server_groups = "test_zone_1:test_zone_2:test_zone_3"
+
+        if self.use_https:
+            CbServer.use_https = True
+            trust_all_certs()
 
         # Populate memcached_port in case of cluster_run
         cluster_run_base_port = ClusterRun.port
@@ -186,7 +187,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # Enable use_https and enforce_tls for 'serverless' cluster testing
         # And set default bucket/cluster setting values to tests
-        if CbServer.cluster_profile == "serverless":
+        if CbServer.cluster_profile is "serverless":
             self.use_https = True
             self.enforce_tls = True
 
@@ -928,7 +929,7 @@ class ClusterSetup(OnPremBaseTest):
                     self.fetch_cb_collect_logs()
                 self.fail("Initial rebalance failed")
 
-        if CbServer.cluster_profile == "serverless":
+        if CbServer.cluster_profile is "serverless":
             # Workaround to hitting throttling on serverless config
             _, status = RestConnection(self.cluster.master).set_throttle_limit(
                 limit=self.kv_throttling_limit)
@@ -962,7 +963,7 @@ class ClusterSetup(OnPremBaseTest):
 
         # This is needed because server will throw the error saying,
         # "Support for variable number of vbuckets is not enabled"
-        if CbServer.cluster_profile == "serverless":
+        if CbServer.cluster_profile is "serverless":
             create_bucket_params["vbuckets"] = self.vbuckets
 
         self.bucket_util.create_default_bucket(**create_bucket_params)

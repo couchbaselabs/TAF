@@ -2122,36 +2122,38 @@ class BucketUtils(ScopeUtils):
 
     def print_bucket_stats(self, cluster):
         table = TableView(self.log.info)
-        table.set_headers(["Bucket", "Type", "Storage Backend", "Replicas",
-                           "Durability", "TTL", "Items", "Vbuckets", "RAM Quota",
-                           "RAM Used", "Disk Used", "ARR"])
+        table.set_headers(["Bucket", "Type", "Storage", "Replicas",
+                           "Durability", "TTL", "Items", "Vbuckets",
+                           "RAM Quota", "RAM Used", "Disk Used", "ARR"])
+        if CbServer.cluster_profile is "serverless":
+            table.headers += ["Width/Weight"]
         buckets = self.get_all_buckets(cluster)
         if len(buckets) == 0:
-            table.add_row(["No buckets", "", "", "", "", "", "", "", ""])
+            table.add_row(["No buckets"] + [""]*(len(table.headers)-1))
         else:
             for bucket in buckets:
-                storage_backend = "-"
-                ARR = "-"
+                num_vbuckets = resident_ratio = storage_backend = "-"
                 if bucket.bucketType == Bucket.Type.MEMBASE:
                     storage_backend = bucket.storageBackend
                     try:
-                        ARR = BucketHelper(cluster.master).fetch_bucket_stats(
+                        resident_ratio = BucketHelper(cluster.master).fetch_bucket_stats(
                             bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
                     except KeyError:
-                        ARR = 100
+                        resident_ratio = 100
                     num_vbuckets = str(bucket.num_vbuckets)
-                table.add_row(
-                    [bucket.name, bucket.bucketType,
-                     storage_backend,
-                     str(bucket.replicaNumber),
-                     str(bucket.durability_level),
-                     str(bucket.maxTTL),
-                     str(bucket.stats.itemCount),
-                     num_vbuckets,
-                     humanbytes(str(bucket.stats.ram)),
-                     humanbytes(str(bucket.stats.memUsed)),
-                     humanbytes(str(bucket.stats.diskUsed)),
-                     ARR])
+                bucket_data = [
+                    bucket.name, bucket.bucketType, storage_backend,
+                    str(bucket.replicaNumber), str(bucket.durability_level),
+                    str(bucket.maxTTL), str(bucket.stats.itemCount),
+                    num_vbuckets,
+                    humanbytes(str(bucket.stats.ram)),
+                    humanbytes(str(bucket.stats.memUsed)),
+                    humanbytes(str(bucket.stats.diskUsed)),
+                    resident_ratio]
+                if bucket.serverless:
+                    bucket_data += ["%s / %s" % (bucket.serverless.width,
+                                                 bucket.serverless.weight)]
+                table.add_row(bucket_data)
         table.display("Bucket statistics")
 
     @staticmethod
@@ -4987,7 +4989,7 @@ class BucketUtils(ScopeUtils):
         """
         for scope in self.get_active_scopes(bucket):
             # In serverless, system scope/collections cannot be dropped
-            if CbServer.cluster_profile == "serverless" \
+            if CbServer.cluster_profile is "serverless" \
                     and scope.name == CbServer.system_scope:
                 continue
 
