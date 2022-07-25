@@ -3,15 +3,13 @@ import random
 import string
 
 from Cb_constants import DocLoading
-from cb_tools.mc_stat import McStat,Mcthrottle
+from cb_tools.mc_stat import Mcthrottle
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from LMT_base import LMT
 from reactor.util.function import Tuples
-from couchbase_helper.documentgenerator import \
-    doc_generator, \
-    sub_doc_generator, \
-    sub_doc_generator_for_edit
+from security_utils.audit_ready_functions import audit
+from couchbase_helper.documentgenerator import doc_generator
 
 
 class ServerlessMetering(LMT):
@@ -24,8 +22,8 @@ class ServerlessMetering(LMT):
                                 compression_settings=compression_settings)
 
     def tearDown(self):
-        super(ServerlessMetering, self).tearDown()
         self.client.close()
+        super(ServerlessMetering, self).tearDown()
 
     def get_key_value(self, num_items, doc_size=1000, char="a"):
         self.key = "metering-"
@@ -46,7 +44,7 @@ class ServerlessMetering(LMT):
                 result = self.client.crud(operation, key,
                                           durability=durability)
             if result["status"] is False:
-                self.log.critical("%s Loading failed: %s" % (key, result))
+                self.log.critical("%s Loading failed: %s" % (key, result["error"]))
                 break
         self.get_item_count()
         throttle_limit, ru, wu = self.get_stat(bucket)
@@ -59,6 +57,11 @@ class ServerlessMetering(LMT):
             mc_throttle = Mcthrottle(shell)
             mc_throttle.set_throttle_limit(self.bucket)
             shell.disconnect()
+
+        # enable audit logs
+        self.log.info("Enable audit on cluster")
+        self.audit_obj = audit(host=self.cluster.master)
+        self.audit_obj.setAuditEnable('true')
 
         # write/update the document
         key_value = self.get_key_value(self.num_items, self.doc_size)

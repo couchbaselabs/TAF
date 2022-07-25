@@ -2,11 +2,8 @@ import time
 import copy
 import re
 
-from Cb_constants import DocLoading
-from cb_tools.mc_stat import McStat,Mcthrottle
+from cb_tools.mc_stat import McStat
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_client3 import SDKClient
-from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 
 from BucketLib.bucket import Bucket
@@ -25,6 +22,7 @@ from couchbase.test.docgen import DRConstants
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
 from com.couchbase.client.core.error import ServerOutOfMemoryException,\
     DocumentExistsException, DocumentNotFoundException, TimeoutException
+from cb_tools.cbstats import Cbstats
 
 # LMT == LIMITING METERING THROTTLING
 
@@ -66,6 +64,7 @@ class LMT(ServerlessOnPremBaseTest):
         kv_memory = self.info.memoryQuota - 100
         ramQuota = self.input.param("ramQuota", kv_memory)
         self.PrintStep("Create required buckets and collections")
+        self.bucket_throttling_limit = self.input.param("bucket_throttling_limit", 5000)
 
         # Bucket Creation
         buckets = ["default"]*self.num_buckets
@@ -117,6 +116,13 @@ class LMT(ServerlessOnPremBaseTest):
                     self.sleep(2)
         self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
         self.log.debug("Collections list == {}".format(self.collections))
+
+        if self.bucket_throttling_limit != 5000:
+            for bucket in self.cluster.buckets:
+                for node in bucket.servers:
+                    _, content = RestConnection(node).\
+                        set_throttle_limit(bucket=bucket.name,
+                                           limit=self.bucket_throttling_limit)
 
         # Initialise doc loader/generator params
         self.init_doc_params()
@@ -422,8 +428,12 @@ class LMT(ServerlessOnPremBaseTest):
                                 client = NewSDKClient(master, bucket.name, scope, collection)
                                 client.initialiseSDK()
                                 self.sleep(1)
-                                taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
-                                task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
+                                taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name,
+                                                                           scope, collection,
+                                                                           op_type,
+                                                                           str(i), time.time())
+                                task = WorkLoadGenerate(taskName,
+                                                        self.loader_map[bucket.name+scope+collection+op_type],
                                                         client, "NONE",
                                                         self.maxttl, self.time_unit,
                                                         self.track_failures, 0)
@@ -513,3 +523,41 @@ class LMT(ServerlessOnPremBaseTest):
     def compare_ru_wu_stat(self, ru, wu, expected_ru, expected_wu):
         self.assertEqual(wu, expected_wu)
         self.assertEqual(ru, expected_ru)
+
+    def get_active_vbuckets(self, node, bucket):
+        cbstat_obj = Cbstats(node, "Administrator", "password")
+        active_vb_numbers = cbstat_obj.vbucket_list(bucket.name,
+                                                    vbucket_type="active")
+        return active_vb_numbers
+
+    def throttling_limit_on_node(self, node, bucket, throttle_limit):
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        mc_stat = McStat(shell)
+        shell.disconnect()
+        stat = mc_stat.bucket_details(node, bucket.name)
+        if stat["throttle_limit"] < 1000:
+            return throttle_limit
+        throttle_limit = stat["throttle_limit"]
+        return throttle_limit
+
+    def generate_data_for_vbuckets(self, target_vbucket):
+        self.key_value = dict()
+        gen_docs = doc_generator("throttling", 0, self.num_items,
+                                 doc_size=self.doc_size,
+                                 mutation_type="create",
+                                 randomize_value=False,
+                                 target_vbucket=target_vbucket)
+        while gen_docs.has_next():
+            key, val = next(gen_docs)
+            self.key_value[key] = val
+
+    def calculate_expected_num_throttled(self, node, bucket, throttle_limit,
+                                         write_units, expected_num_throttled):
+        throttle_limit = self.throttling_limit_on_node(node, bucket,
+                                                       throttle_limit)
+        if write_units > throttle_limit:
+            to_add = (write_units/throttle_limit) - 1
+            if (to_add - self.sdk_timeout) > 0:
+                to_add += (to_add - self.sdk_timeout)
+            expected_num_throttled += to_add
+        return throttle_limit, expected_num_throttled
