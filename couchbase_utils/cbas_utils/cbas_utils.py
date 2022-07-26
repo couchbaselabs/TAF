@@ -245,7 +245,8 @@ class BaseUtil(object):
             reserved_words = {"at", "in", "for", "by", "which", "select",
                               "from", "like", "or", "and", "to", "if", "else",
                               "as", "with", "on", "where", "is", "all", "end",
-                              "div", "into", "let", "asc", "desc", "key"}
+                              "div", "into", "let", "asc", "desc", "key",
+                              "any", "run"}
             if len(set(generated_name.lower().split(".")) & reserved_words) > 0:
                 return BaseUtil.generate_name(
                     name_cardinality, max_length, fixed_length, name_key, seed)
