@@ -129,7 +129,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # Enable use_https and enforce_tls for 'serverless' cluster testing
         # And set default bucket/cluster setting values to tests
-        if CbServer.cluster_profile is "serverless":
+        if CbServer.cluster_profile == "serverless":
             self.use_https = True
             self.enforce_tls = True
 
@@ -182,7 +182,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # Enable use_https and enforce_tls for 'serverless' cluster testing
         # And set default bucket/cluster setting values to tests
-        if CbServer.cluster_profile is "serverless":
+        if CbServer.cluster_profile == "serverless":
             self.use_https = True
             self.enforce_tls = True
 
@@ -924,7 +924,7 @@ class ClusterSetup(OnPremBaseTest):
                     self.fetch_cb_collect_logs()
                 self.fail("Initial rebalance failed")
 
-        if CbServer.cluster_profile is "serverless":
+        if CbServer.cluster_profile == "serverless":
             # Workaround to hitting throttling on serverless config
             _, status = RestConnection(self.cluster.master).set_throttle_limit(
                 limit=self.kv_throttling_limit)
@@ -958,7 +958,7 @@ class ClusterSetup(OnPremBaseTest):
 
         # This is needed because server will throw the error saying,
         # "Support for variable number of vbuckets is not enabled"
-        if CbServer.cluster_profile is "serverless":
+        if CbServer.cluster_profile == "serverless":
             create_bucket_params["vbuckets"] = self.vbuckets
 
         self.bucket_util.create_default_bucket(**create_bucket_params)

@@ -189,7 +189,7 @@ class ClusterUtils:
             output, _ = shell.execute_command(cmd)
             shell.disconnect()
             output = "serverless" \
-                if output and output[0].strip() is "serverless" else "default"
+                if output and output[0].strip() == "serverless" else "default"
             self.log.debug("%s: Profile=%s" % (server.ip, output))
             if index == 0:
                 profile = output

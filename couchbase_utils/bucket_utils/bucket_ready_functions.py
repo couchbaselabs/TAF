@@ -2125,7 +2125,7 @@ class BucketUtils(ScopeUtils):
         table.set_headers(["Bucket", "Type", "Storage", "Replicas",
                            "Durability", "TTL", "Items", "Vbuckets",
                            "RAM Quota", "RAM Used", "Disk Used", "ARR"])
-        if CbServer.cluster_profile is "serverless":
+        if CbServer.cluster_profile == "serverless":
             table.headers += ["Width/Weight"]
         buckets = self.get_all_buckets(cluster)
         if len(buckets) == 0:
@@ -4989,7 +4989,7 @@ class BucketUtils(ScopeUtils):
         """
         for scope in self.get_active_scopes(bucket):
             # In serverless, system scope/collections cannot be dropped
-            if CbServer.cluster_profile is "serverless" \
+            if CbServer.cluster_profile == "serverless" \
                     and scope.name == CbServer.system_scope:
                 continue
 
