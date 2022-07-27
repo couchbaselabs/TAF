@@ -202,23 +202,25 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             self.data_loading_thread.start()
 
         if rebalance_operation == "rebalance_in":
-            operation = self.task.async_rebalance(self.known_nodes, self.add_nodes, [],
+            operation = self.task.async_rebalance(self.cluster, self.add_nodes,
+                                                  [],
                                                   retry_get_process_num=self.retry_get_process_num*3)
         elif rebalance_operation == "rebalance_out":
-            operation = self.task.async_rebalance(self.known_nodes, [], self.remove_nodes,
+            operation = self.task.async_rebalance(self.cluster, [],
+                                                  self.remove_nodes,
                                                   retry_get_process_num=self.retry_get_process_num*3)
         elif rebalance_operation == "swap_rebalance":
             for node in self.add_nodes:
                 self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                    node.ip, self.cluster.servers[self.nodes_init].port)
-            operation = self.task.async_rebalance(self.known_nodes, [], self.remove_nodes,
+            operation = self.task.async_rebalance(self.cluster, [], self.remove_nodes,
                                                   check_vbucket_shuffling=False,
                                                   retry_get_process_num=self.retry_get_process_num*3)
         elif rebalance_operation == "rebalance_in_out":
             for node in self.add_nodes:
                 self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                    node.ip, self.cluster.servers[self.nodes_init].port)
-            operation = self.task.async_rebalance(self.known_nodes, [], self.remove_nodes,
+            operation = self.task.async_rebalance(self.cluster, [], self.remove_nodes,
                                                   check_vbucket_shuffling=False,
                                                   retry_get_process_num=self.retry_get_process_num*3)
 
@@ -256,10 +258,10 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             for failover_node in self.failover_nodes:
                 self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
                                             recoveryType=self.recovery_type)
-            operation = self.task.async_rebalance(self.known_nodes, [], [],
+            operation = self.task.async_rebalance(self.cluster, [], [],
                                                   retry_get_process_num=self.retry_get_process_num*3)
         else:
-            operation = self.task.async_rebalance(self.known_nodes, [], self.failover_nodes,
+            operation = self.task.async_rebalance(self.cluster, [], self.failover_nodes,
                                                   retry_get_process_num=self.retry_get_process_num*3)
 
         self.wait_for_rebalance_to_complete(operation)

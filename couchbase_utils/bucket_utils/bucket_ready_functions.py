@@ -5302,19 +5302,6 @@ class BucketUtils(ScopeUtils):
 
         # Fetch random Collections to drop
         exclude_from = copy.deepcopy(cols_to_flush)
-        # If recreating dropped collections then exclude dropping default collection
-        if input_spec.get(MetaCrudParams.COLLECTIONS_TO_RECREATE, 0):
-            for bucket in buckets:
-                if bucket.name not in exclude_from:
-                    exclude_from[bucket.name] = dict()
-                    exclude_from[bucket.name]["scopes"] = dict()
-                if CbServer.default_scope not in exclude_from[bucket.name]["scopes"]:
-                    exclude_from[bucket.name]["scopes"][CbServer.default_scope] = dict()
-                    exclude_from[bucket.name]["scopes"][CbServer.default_scope]["collections"] = dict()
-                exclude_from[bucket.name]["scopes"][CbServer.default_scope]["collections"][
-                    CbServer.default_collection] = \
-                    dict()
-
         # Code to avoid removing collections under the scope '_system'
         for b in buckets:
             dict_to_update = {
@@ -5331,7 +5318,18 @@ class BucketUtils(ScopeUtils):
                 }
             }
             exclude_from.update(dict_to_update)
-
+        # If recreating dropped collections then exclude dropping default collection
+        if input_spec.get(MetaCrudParams.COLLECTIONS_TO_RECREATE, 0):
+            for bucket in buckets:
+                if bucket.name not in exclude_from:
+                    exclude_from[bucket.name] = dict()
+                    exclude_from[bucket.name]["scopes"] = dict()
+                if CbServer.default_scope not in exclude_from[bucket.name]["scopes"]:
+                    exclude_from[bucket.name]["scopes"][CbServer.default_scope] = dict()
+                    exclude_from[bucket.name]["scopes"][CbServer.default_scope]["collections"] = dict()
+                exclude_from[bucket.name]["scopes"][CbServer.default_scope]["collections"][
+                    CbServer.default_collection] = \
+                    dict()
         cols_to_drop = BucketUtils.get_random_collections(
             buckets,
             input_spec.get(MetaCrudParams.COLLECTIONS_TO_DROP, 0),
