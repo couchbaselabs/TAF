@@ -24,6 +24,7 @@ from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
 from com.couchbase.client.core.error import ServerOutOfMemoryException,\
     DocumentExistsException, DocumentNotFoundException, TimeoutException
 from cb_tools.cbstats import Cbstats
+from com.couchbase.test.transactions import SimpleTransaction as Transaction
 
 
 # LMT == LIMITING METERING THROTTLING
@@ -822,3 +823,51 @@ class LMT(ServerlessOnPremBaseTest):
             self.num_items_per_collection -= (self.delete_end - self.delete_start)
         if "expiry" in doc_ops:
             self.num_items_per_collection -= (self.expiry_end - self.expiry_start)
+
+    def __durability_level(self):
+        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
+            self.durability = 1
+        elif self.durability_level \
+                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+            self.durability = 2
+        elif self.durability_level \
+                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+            self.durability = 3
+        else:
+            self.durability = 5
+
+    def create_Transaction(self, client):
+        self.__durability_level()
+        self.log.info("durability_level is %s and self.durability is %s"
+                      %(self.durability_level, self.durability))
+        transaction_config = Transaction().createTransactionConfig(
+            self.transaction_timeout, self.durability)
+        try:
+            self.transaction = Transaction().createTansaction(
+                client.cluster, transaction_config)
+        except Exception as e:
+            self.fail(e)
+        return self.transaction
+
+    def transaction_operations(self, client, create_docs=[],
+                               update_docs=[], delete_docs=[],
+                               commit=True):
+        if self.defer:
+            ret = Transaction().DeferTransaction(
+                    client.cluster,
+                    self.transaction, [client.collection], create_docs,
+                    update_docs, delete_docs, self.update_count)
+            encoded = ret.getT1()
+            self.sleep(5) # wait before commit/rollback defer transactions
+            exception = Transaction().DefferedTransaction(
+                            client.cluster,
+                            self.transaction, commit, encoded)
+        else:
+            exception = Transaction().RunTransaction(
+                    client.cluster,
+                    self.transaction, [client.collection], create_docs,
+                    update_docs, delete_docs, commit,
+                    self.sync, self.update_count)
+        if exception:
+            self.log.info("txn failed")
+        self.sleep(1)

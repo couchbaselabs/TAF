@@ -142,14 +142,14 @@ class DCPBase(CollectionBase):
         return dcp_client
 
     def check_for_features(self, dcp_client):
-        features = [HELO_XERROR]
+        features = [FEATURE_XERROR]
         if self.xattrs:
-            features.append(HELO_XATTR)
+            features.append(FEATURE_XATTR)
         if self.collections:
-            features.append(HELO_COLLECTIONS)
+            features.append(FEATURE_COLLECTIONS)
         if self.compression:
-            features.append(HELO_SNAPPY)
-        resp = dcp_client.hello(features, "pydcp feature HELO")
+            features.append(FEATURE_SNAPPY)
+        resp = dcp_client.hello(features)
         for feature in features:
             assert feature in resp
 

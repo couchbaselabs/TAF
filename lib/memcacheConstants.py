@@ -416,6 +416,7 @@ FEATURE_DATATYPE = 0x01
 FEATURE_TLS = 0x2
 FEATURE_TCPNODELAY = 0x03
 FEATURE_MUTATION_SEQNO = 0x04
+FEATURE_SNAPPY = 0x000a
 
 
 # LWW related - these are documented here https://github.com/couchbase/ep-engine/blob/master/docs/protocol/set_with_meta.md
@@ -426,3 +427,13 @@ REGENERATE_CAS = 0x4
 # Datatypes
 DATATYPE_XATTR = 0x4
 DURABILITY_LEVEL_MAJORITY = 0x1
+
+# System Events
+EVENT_CREATE_COLLECTION = 0x0
+EVENT_DELETE_COLLECTION = 0x1
+EVENT_FLUSH_COLLECTION = 0x2
+EVENT_CREATE_SCOPE = 0x3
+EVENT_DELETE_SCOPE = 0x4
+
+#Error code
+ERR_ROLLBACK = 0x23
