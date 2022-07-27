@@ -581,7 +581,8 @@ class BasicOps(DurabilityTestsBase):
         for node in target_nodes:
             # Perform specified action
             error_sim[node.ip] = CouchbaseError(self.log,
-                                                shell_conn[node.ip])
+                                                shell_conn[node.ip],
+                                                node)
             error_sim[node.ip].create(self.simulate_error,
                                       bucket_name=def_bucket.name)
 
@@ -763,7 +764,8 @@ class BasicOps(DurabilityTestsBase):
         for node in target_nodes:
             # Perform specified action
             error_sim[node.ip] = CouchbaseError(self.log,
-                                                shell_conn[node.ip])
+                                                shell_conn[node.ip],
+                                                node)
             error_sim[node.ip].create(self.simulate_error,
                                       bucket_name=def_bucket.name)
 

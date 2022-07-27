@@ -1,12 +1,14 @@
 import re
 import traceback
 
-from basetestcase import BaseTestCase
+from Cb_constants import CbServer
+from basetestcase import ClusterSetup
 from membase.api.rest_client import RestConnection
+from membase.helper.cluster_helper import ClusterOperationHelper
 from remote.remote_util import RemoteMachineShellConnection
 
 
-class CasBaseTest(BaseTestCase):
+class CasBaseTest(ClusterSetup):
     def setUp(self):
         super(CasBaseTest, self).setUp()
         self.doc_size = self.input.param("doc_size", 256)
@@ -21,20 +23,15 @@ class CasBaseTest(BaseTestCase):
         node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
         mem_quota = int(self.rest.get_nodes_self().mcdMemoryReserved *
                         node_ram_ratio)
-
         self.rest.set_service_mem_quota(
             {CbServer.Settings.KV_MEM_QUOTA: mem_quota})
-        nodes_init = self.cluster.servers[1:self.nodes_init]
-        self.task.rebalance([self.cluster.master], nodes_init, [])
-        self.cluster.nodes_in_cluster.extend([self.cluster.master]+nodes_init)
-        self.bucket_util.add_rbac_user(self.cluster.master)
+
         self.bucket_util.create_default_bucket(
             self.cluster,
             ram_quota=self.bucket_size,
             replica=self.num_replicas,
             storage=self.bucket_storage,
             conflict_resolution=self.bucket_conflict_resolution_type)
-        self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket = self.cluster.buckets[0]
 
@@ -86,8 +83,7 @@ class CasBaseTest(BaseTestCase):
     def test_rebalance_in(self):
         try:
             self.log.info("Rebalancing 1 of the servers ..")
-            ClusterOperationHelper.add_and_rebalance(
-                self.servers)
+            ClusterOperationHelper.add_and_rebalance(self.servers)
             self.log.info("Verifying bucket settings after rebalance ..")
             self._check_config()
         except Exception, e:
@@ -102,10 +98,14 @@ class CasBaseTest(BaseTestCase):
         self.command_options = self.input.param("command_options", '')
         try:
             shell = RemoteMachineShellConnection(self.master)
-            self.shell.execute_cluster_backup(self.couchbase_login_info, self.backup_location, self.command_options)
+            self.shell.execute_cluster_backup(self.couchbase_login_info,
+                                              self.backup_location,
+                                              self.command_options)
 
             self.sleep(5)
-            shell.restore_backupFile(self.couchbase_login_info, self.backup_location, [bucket.name for bucket in self.buckets])
+            shell.restore_backupFile(self.couchbase_login_info,
+                                     self.backup_location,
+                                     [bucket.name for bucket in self.buckets])
 
         finally:
             self._check_config()
@@ -137,8 +137,9 @@ class CasBaseTest(BaseTestCase):
             self.servers)
         info = self.rest.get_nodes_self()
 
-        status, content = self.rest.change_bucket_props(bucket=self.bucket,
-                                                        ramQuotaMB=512,timeSynchronization='enabledWithOutDrift')
+        status, content = self.rest.change_bucket_props(
+            bucket=self.pytests/castest/cas_base.pybucket, ramQuotaMB=512,
+            timeSynchronization='enabledWithOutDrift')
         if re.search('TimeSyncronization not allowed in update bucket', content):
             self.log.info('[PASS]Expected modify bucket to disallow Time Synchronization.')
         else:

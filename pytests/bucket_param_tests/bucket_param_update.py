@@ -243,7 +243,7 @@ class BucketParamTest(ClusterSetup):
                 ignore_exceptions=ignore_exceptions)
 
             # Start rebalance task with doc_ops in parallel
-            rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
+            rebalance = self.task.async_rebalance(self.cluster, [], [])
             self.sleep(10, "Wait for rebalance to start")
 
             # Wait for all tasks to complete
@@ -381,7 +381,7 @@ class BucketParamTest(ClusterSetup):
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Start rebalance task
-        rebalance = self.task.async_rebalance(self.cluster.servers, [], [])
+        rebalance = self.task.async_rebalance(self.cluster, [], [])
         self.sleep(10, "Wait for rebalance to start")
 
         # Wait for rebalance task to complete

@@ -267,7 +267,8 @@ class BucketDurabilityBase(ClusterSetup):
                 self.key, doc_start_index, num_items_to_load,
                 target_vbucket=self.vbs_in_node[random_node][target_vb_type])
             error_sim = CouchbaseError(self.log,
-                                       self.vbs_in_node[random_node]["shell"])
+                                       self.vbs_in_node[random_node]["shell"],
+                                       random_node)
 
             doc_load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, op_type,
