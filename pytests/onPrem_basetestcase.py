@@ -180,11 +180,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.cluster.edition = "enterprise" \
             if CbServer.enterprise_edition else "community"
 
-        # Fetch the profile_type from the master node
-        # Value will be default / serverless
-        CbServer.cluster_profile = self.cluster_util.get_server_profile_type(
-            self.cluster.master)
-
         # Enable use_https and enforce_tls for 'serverless' cluster testing
         # And set default bucket/cluster setting values to tests
         if CbServer.cluster_profile is "serverless":
