@@ -295,6 +295,15 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     if not status:
                         self.fail("Services did not honor enforce tls")
 
+            if self.use_https:
+                for server in self.input.servers:
+                    server.port = str(CbServer.ssl_port)
+                    server.memcached_port = str(CbServer.ssl_memcached_port)
+                    server.fts_port = str(CbServer.ssl_fts_port)
+                    server.index_port = str(CbServer.ssl_index_port)
+                    server.n1ql_port = str(CbServer.ssl_n1ql_port)
+                    server.cbas_port = str(CbServer.ssl_cbas_port)
+                    server.eventing_port = str(CbServer.ssl_eventing_port)
             reload(Cb_constants)
 
             # Enforce IPv4 or IPv6 or both

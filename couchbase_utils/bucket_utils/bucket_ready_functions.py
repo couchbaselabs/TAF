@@ -1772,8 +1772,7 @@ class BucketUtils(ScopeUtils):
                 for server in b_stat["vBucketServerMap"]["serverList"]:
                     ip, mc_port = server.split(":")
                     for node in cluster.nodes_in_cluster:
-                        if node.ip == ip \
-                                and str(node.memcached_port) == str(mc_port):
+                        if node.ip == ip:
                             bucket_obj.servers.append(node)
                             break
             except GetBucketInfoFailed:
