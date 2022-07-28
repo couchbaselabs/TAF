@@ -740,7 +740,7 @@ class PlasmaMemCompTest(PlasmaBaseTest):
         self.log.debug("count value is {}".format(count))
         nodes_in = self.cluster.servers[count:count + self.nodes_in]
         services = ["index"]
-        rebalance_in_task_result = self.task.rebalance([self.cluster.master],
+        rebalance_in_task_result = self.task.rebalance(self.cluster.nodes_in_cluster,
                                                        nodes_in,
                                                        [],
                                                        services=services)
