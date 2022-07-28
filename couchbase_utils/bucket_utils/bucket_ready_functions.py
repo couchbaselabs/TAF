@@ -2025,6 +2025,9 @@ class BucketUtils(ScopeUtils):
             self.specs_for_serverless(buckets_spec)
         buckets_spec = BucketUtils.expand_buckets_spec(rest_conn,
                                                        buckets_spec)
+        if CbServer.cluster_profile is "serverless":
+            self.balance_scopes_collections_items(buckets_spec)
+
         bucket_creation_tasks = list()
         for bucket_name, bucket_spec in buckets_spec.items():
             if bucket_spec[MetaConstants.BUCKET_TAR_SRC]:
@@ -2179,15 +2182,15 @@ class BucketUtils(ScopeUtils):
 
     def print_bucket_stats(self, cluster):
         table = TableView(self.log.info)
-        table.set_headers(["Bucket", "Type", "Storage", "Replicas",
-                           "Durability", "TTL", "Items", "Vbuckets",
-                           "RAM Quota", "RAM Used", "Disk Used", "ARR"])
-        if CbServer.cluster_profile == "serverless":
-            table.headers += ["Width/Weight"]
         buckets = self.get_all_buckets(cluster)
         if len(buckets) == 0:
-            table.add_row(["No buckets"] + [""]*(len(table.headers)-1))
+            table.add_row(["No buckets"])
         else:
+            table.set_headers(["Bucket", "Type", "Storage", "Replicas",
+                               "Durability", "TTL", "Items", "Vbuckets",
+                               "RAM Quota", "RAM Used", "Disk Used", "ARR"])
+            if CbServer.cluster_profile == "serverless":
+                table.headers += ["Width/Weight"]
             for bucket in buckets:
                 num_vbuckets = resident_ratio = storage_backend = "-"
                 if bucket.bucketType == Bucket.Type.MEMBASE:
@@ -2210,6 +2213,8 @@ class BucketUtils(ScopeUtils):
                 if bucket.serverless:
                     bucket_data += ["%s / %s" % (bucket.serverless.width,
                                                  bucket.serverless.weight)]
+                else:
+                    bucket_data += ["-"]
                 table.add_row(bucket_data)
         table.display("Bucket statistics")
 
