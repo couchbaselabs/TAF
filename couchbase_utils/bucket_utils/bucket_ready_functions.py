@@ -2210,11 +2210,12 @@ class BucketUtils(ScopeUtils):
                     humanbytes(str(bucket.stats.memUsed)),
                     humanbytes(str(bucket.stats.diskUsed)),
                     resident_ratio]
-                if bucket.serverless:
-                    bucket_data += ["%s / %s" % (bucket.serverless.width,
-                                                 bucket.serverless.weight)]
-                else:
-                    bucket_data += ["-"]
+                if CbServer.cluster_profile == "serverless":
+                    if bucket.serverless:
+                        bucket_data += ["%s / %s" % (bucket.serverless.width,
+                                                     bucket.serverless.weight)]
+                    else:
+                        bucket_data += ["-"]
                 table.add_row(bucket_data)
         table.display("Bucket statistics")
 
