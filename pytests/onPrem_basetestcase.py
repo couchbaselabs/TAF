@@ -273,10 +273,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 RestConnection(cluster.master).set_internalSetting(
                     "magmaMinMemoryQuota", 256)
 
-            # Enable dp_version since we need collections enabled
+            # Enable dp_version
             if self.enable_dp:
                 tasks = [self.node_utils.async_enable_dp(server)
-                         for server in self.cluster.server]
+                         for server in self.cluster.servers]
                 for task in tasks:
                     self.task_manager.get_task_result(task)
 
