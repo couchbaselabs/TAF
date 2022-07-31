@@ -1654,6 +1654,8 @@ class RestConnection(object):
                 if node.ip == '127.0.0.1' or node.ip == 'cb.local':
                     node.ip = self.ip
                 node.port = int(key[key.rfind(":") + 1:])
+                if CbServer.use_https:
+                    node.port = CbServer.ssl_port
                 node.replication = value['replication']
                 if 'gracefulFailoverPossible' in value.keys():
                     node.gracefulFailoverPossible = value['gracefulFailoverPossible']
