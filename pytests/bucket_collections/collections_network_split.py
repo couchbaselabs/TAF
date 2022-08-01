@@ -5,6 +5,8 @@ from bucket_collections.collections_base import CollectionBase
 from BucketLib.BucketOperations_Rest import BucketHelper
 from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
+
+from couchbase_utils.cluster_utils.cluster_ready_functions import CBCluster
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
@@ -97,10 +99,12 @@ class CollectionsNetworkSplit(CollectionBase):
             len_first_half = int(math.ceil(self.nodes_init / 2.0))
         else:
             len_first_half = int(math.floor(self.nodes_init / 2.0))
-        first_half_nodes = self.known_nodes[:len_first_half]
-        second_half_nodes = self.known_nodes[len_first_half:]
-        for first_half_node in first_half_nodes:
-            for second_half_node in second_half_nodes:
+        first_half_nodes = CBCluster(name="first_half_node",
+                                     servers=self.known_nodes[:len_first_half])
+        second_half_nodes = CBCluster(name="second_half_nodes",
+                                      servers=self.known_nodes[len_first_half:])
+        for first_half_node in first_half_nodes.servers:
+            for second_half_node in second_half_nodes.servers:
                 self.block_traffic_between_two_nodes(first_half_node, second_half_node)
                 self.block_traffic_between_two_nodes(second_half_node, first_half_node)
         self.nodes_affected = self.known_nodes
@@ -281,9 +285,10 @@ class CollectionsNetworkSplit(CollectionBase):
             task = self.data_load(async_load=True)
             if self.allow_unsafe:
                 # just rebalance the cluster as nodes were already removed during qf
-                result = self.task.rebalance(self.known_nodes, [], [], retry_get_process_num=self.retry_get_process_num)
+                result = self.task.rebalance(self.cluster, [], [],
+                                             retry_get_process_num=self.retry_get_process_num)
             else:
-                result = self.task.rebalance(self.known_nodes, [], self.nodes_failover,
+                result = self.task.rebalance(self.cluster, [], self.nodes_failover,
                                              retry_get_process_num=self.retry_get_process_num)
             self.assertTrue(result, "Rebalance failed")
             self.wait_for_async_data_load_to_complete(task)
@@ -295,7 +300,7 @@ class CollectionsNetworkSplit(CollectionBase):
             for failover_node in self.failover_nodes:
                 self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
             task = self.data_load(async_load=True)
-            result = self.task.rebalance(self.known_nodes, [], [], retry_get_process_num=self.retry_get_process_num)
+            result = self.task.rebalance(self.cluster, [], [], retry_get_process_num=self.retry_get_process_num)
             self.assertTrue(result, "Rebalance-in failed")
             self.wait_for_async_data_load_to_complete(task)
             # self.data_validation_collection()
@@ -313,24 +318,27 @@ class CollectionsNetworkSplit(CollectionBase):
         pre_qf_ids = self.populate_uids(base_name="pre_qf")
         first_half_nodes, second_half_nodes = self.split_the_cluster_into_two_halves(majority=majority)
         if majority == "first_half":
-            self.master = self.cluster.master = second_half_nodes[0]
-            self.nodes_failover = first_half_nodes
+            self.master = self.cluster.master = second_half_nodes.servers[0]
+            self.nodes_failover = first_half_nodes.servers
             otp_nodes = second_half_nodes
         else:
-            self.nodes_failover = second_half_nodes
+            self.nodes_failover = second_half_nodes.servers
             otp_nodes = first_half_nodes
         self.sleep(60, "Wait for network split to finish")
-        self.log.info("First half nodes {0}".format(first_half_nodes))
-        self.log.info("Second half nodes {0}".format(second_half_nodes))
+        self.log.info("First half nodes {0}".format(first_half_nodes.servers))
+        self.log.info("Second half nodes {0}".format(second_half_nodes.servers))
         self.log.info("Failing over nodes: {0}".format(self.nodes_failover))
-        result = self.task.failover(otp_nodes, failover_nodes=self.nodes_failover,
+        result = self.task.failover(otp_nodes.servers,
+                                    failover_nodes=self.nodes_failover,
                                     graceful=False, allow_unsafe=self.allow_unsafe,
                                     all_at_once=True)
         self.assertTrue(result, "Hard Failover failed")
         post_qf_ids = self.populate_uids(base_name="post_qf")
         self.validate_uids(pre_qf_ids, post_qf_ids)
         task = self.data_load(async_load=True)
-        result = self.task.rebalance(otp_nodes, [], [], retry_get_process_num=self.retry_get_process_num)
+        result = self.task.rebalance(otp_nodes, [],
+                                     [], retry_get_process_num=
+                                     self.retry_get_process_num)
         self.assertTrue(result, "Rebalance failed")
         self.wait_for_async_data_load_to_complete(task)
         self.remove_network_split()
