@@ -346,7 +346,8 @@ class Murphy(BaseTestCase, OPD):
 
         if self.fts_nodes:
             self.drFTS.create_fts_indexes()
-            self.drFTS.wait_for_fts_index_online(self.num_items*2)
+            status = self.drFTS.wait_for_fts_index_online(self.num_items*2)
+            self.assertTrue(status, "FTS index build failed.")
 
         if self.cbas_nodes:
             self.drCBAS.create_datasets()
@@ -496,7 +497,8 @@ class Murphy(BaseTestCase, OPD):
 
         if self.fts_nodes:
             self.drFTS.create_fts_indexes()
-            self.drFTS.wait_for_fts_index_online(self.num_items*2)
+            status = self.drFTS.wait_for_fts_index_online(self.num_items*2)
+            self.assertTrue(status, "FTS index build failed.")
 
         if self.cbas_nodes:
             self.drCBAS.create_datasets()
@@ -882,7 +884,8 @@ class Murphy(BaseTestCase, OPD):
             if self.loop == 0:
                 if self.fts_nodes:
                     self.drFTS.create_fts_indexes()
-                    self.drFTS.wait_for_fts_index_online(self.num_items*2)
+                    status = self.drFTS.wait_for_fts_index_online(self.num_items*2)
+                    self.assertTrue(status, "FTS index build failed.")
 
                 if self.cluster.cbas_nodes:
                     self.drCBAS.create_datasets()

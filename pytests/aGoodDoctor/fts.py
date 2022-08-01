@@ -112,9 +112,9 @@ class DoctorFTS:
             status = False
             stop_time = time.time() + timeout
             while time.time() < stop_time:
-                status, content = self.fts_helper.fts_index_item_count(index_name)
+                _status, content = self.fts_helper.fts_index_item_count(index_name)
                 self.log.debug("index: {}, status: {}, count: {}"
-                               .format(index_name, status,
+                               .format(index_name, _status,
                                        json.loads(content)["count"]))
                 if json.loads(content)["count"] == item_count:
                     self.log.info("FTS index is ready: {}".format(index_name))
