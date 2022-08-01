@@ -8,13 +8,24 @@ class ServerlessOnPremBaseTest(ClusterSetup):
         super(ServerlessOnPremBaseTest, self).setUp()
 
         self.log_setup_status(self.__class__.__name__, "started")
+
+        # Start of serverless specific params
+        # bucket_limit -> cluster's tenantLimit
+        self.bucket_limit = self.input.param("bucket_limit", None)
+        # max_weight -> cluster's bucketWeightLimit
+        self.max_weight = self.input.param("max_weight", None)
+        # End of serverless specific params
+
+        # Split server_groups to a list
+        self.server_groups = self.server_groups.split(':')
+
         self.distribute_servers_across_available_zones()
         self.remove_empty_server_groups(self.cluster)
         self.assertTrue(
             RestConnection(self.cluster.master).is_cluster_balanced(),
             "Cluster is unbalanced")
         self.kv_distribution_dict = dict()
-        for az in self.server_groups.split(':'):
+        for az in self.server_groups:
             self.kv_distribution_dict[az] = 1
         self.cluster_util.print_cluster_stats(self.cluster)
         self.log_setup_status(self.__class__.__name__, "completed")
@@ -57,10 +68,9 @@ class ServerlessOnPremBaseTest(ClusterSetup):
 
         rest = RestConnection(self.cluster.master)
         server_groups_in_cluster = rest.get_zone_names()
-        server_groups = self.server_groups.split(':')
-        total_zones = len(server_groups)
+        total_zones = len(self.server_groups)
 
-        for zone in server_groups:
+        for zone in self.server_groups:
             if zone not in server_groups_in_cluster:
                 # Add zone to the cluster
                 rest.add_zone(zone)
@@ -69,8 +79,9 @@ class ServerlessOnPremBaseTest(ClusterSetup):
         index = -1
         for node in rest.get_nodes():
             index += 1
-            rest.shuffle_nodes_in_zones([node.ip], node.server_group,
-                                        server_groups[index % total_zones])
+            rest.shuffle_nodes_in_zones(
+                [node.ip], node.server_group,
+                self.server_groups[index % total_zones])
 
     def remove_empty_server_groups(self, cluster):
         rest = RestConnection(cluster.master)

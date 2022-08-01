@@ -1,6 +1,6 @@
 import json
 import urllib
-from random import choice
+from random import choice, randint, sample
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
@@ -39,6 +39,50 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             Bucket.width: width,
             Bucket.weight: weight
         }
+
+    def test_cluster_scaling(self):
+        """
+        1. Start with 3 node cluster (3 AZs)
+        2. Create default bucket with some data
+        3. Add multiple servers in followed by out operations
+        4. Make sure the cluster remains 'balanced' after each operation
+           and bucket remains on the same set of nodes deployed initially
+        """
+        iterations = self.input.param("iterations", 1)
+        self.create_bucket(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+        for _ in range(iterations):
+            num_nodes_scaled = randint(1, 3)
+            nodes_scaled = self.cluster.servers[
+                self.nodes_init:self.nodes_init+num_nodes_scaled]
+            az = dict([(t_az, 1) for t_az in sample(self.server_groups,
+                                                    num_nodes_scaled)])
+
+            self.log.info("Rebalance_map: %s" % az)
+            reb_task = self.task.async_rebalance(
+                cluster=self.cluster, to_add=nodes_scaled, to_remove=[],
+                add_nodes_server_groups=az)
+            self.task_manager.get_task_result(reb_task)
+            self.assertTrue(reb_task.result, "Cluster scaling-up failed")
+            self.assertTrue(
+                RestConnection(self.cluster.master).is_cluster_balanced(),
+                "Cluster is reported as unbalanced")
+            self.assertTrue(
+                self.bucket_util.validate_serverless_buckets(
+                    self.cluster, self.cluster.buckets),
+                "Bucket validation failed")
+
+            reb_task = self.task.async_rebalance(
+                cluster=self.cluster, to_add=[], to_remove=nodes_scaled)
+            self.task_manager.get_task_result(reb_task)
+            self.assertTrue(reb_task.result, "Cluster scaling-down failed")
+            self.assertTrue(
+                RestConnection(self.cluster.master).is_cluster_balanced(),
+                "Cluster is reported as unbalanced")
+            self.assertTrue(
+                self.bucket_util.validate_serverless_buckets(
+                    self.cluster, self.cluster.buckets),
+                "Bucket validation failed")
 
     def test_create_bucket(self):
         """
@@ -204,13 +248,23 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         """
         vb_nums = [16, 32, 64, 128, 256, 512, 1024]
         bucket_weights = [i*30 for i in range(13)]
+        limit_bucket_by = self.input.param("bucket_limit", "memory")
         random_vb_num = self.input.param("random_vb_num", False)
         expected_err = "Need more space in availability zones"
 
         # Create max_possible buckets for the given sub_cluster
         rest = RestConnection(self.cluster.master)
         cluster_stats = rest.cluster_status()
-        num_buckets = int(cluster_stats["memoryQuota"] / self.bucket_size)
+        if limit_bucket_by == "memory":
+            num_buckets = int(cluster_stats["memoryQuota"] / self.bucket_size)
+        elif limit_bucket_by == "weight":
+            node_stat = rest.get_nodes_self()
+            max_weight = node_stat["limits"][CbServer.Services.KV]["weight"]
+            bucket_weights = [max_weight]
+            num_buckets = int(max_weight / self.bucket_size)
+        else:
+            self.fail("Invalid limit_by field: %s" % limit_bucket_by)
+
         self.log.info("Sub_cluster #1 - Creating %d buckets with ram=%d"
                       % (num_buckets, self.bucket_size))
         for index in range(num_buckets):
