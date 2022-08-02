@@ -5006,6 +5006,7 @@ class AutoFailoverNodesFailureTask(Task):
         return False, None
 
     def get_failover_count(self):
+        self.sleep(10,"Waiting for node status to be updated")
         rest = RestConnection(self.master)
         cluster_status = rest.cluster_status()
         failover_count = 0
