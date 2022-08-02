@@ -17,19 +17,21 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         super(MultiNodeAutoFailoverTests, self).tearDown()
 
     def _is_failover_expected(self, failure_node_number):
+        replica_condition = self.input.param("replica_condition", True)
         failover_not_expected = (
                 self.max_count == 1 and failure_node_number > 1 and
                 self.pause_between_failover_action <
                 self.timeout or self.num_replicas < 1)
         failover_not_expected = failover_not_expected or (
                 1 < self.max_count < failure_node_number and
-                self.pause_between_failover_action < self.timeout or
-                self.num_replicas < failure_node_number)
+                self.pause_between_failover_action <
+                self.timeout or (self.num_replicas < failure_node_number and
+                                 replica_condition))
         return not failover_not_expected
 
     def _multi_node_failover(self):
         servers_to_fail = self.server_to_fail
-        for i in range(self.max_count):
+        for i in range(self.num_node_failures):
             self.server_to_fail = [servers_to_fail[i]]
             self.failover_expected = self._is_failover_expected(i + 1)
             self.failover_actions[self.failover_action](self)
@@ -98,7 +100,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         """
         self.enable_autofailover_and_validate()
         self.sleep(5)
-        rebalance_task = self.task.async_rebalance(self.servers,
+        rebalance_task = self.task.async_rebalance(self.cluster,
                                                    self.servers_to_add,
                                                    self.servers_to_remove,
                                                    retry_get_process_num=self.retry_get_process_num)
@@ -138,7 +140,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         """
         self.enable_autofailover_and_validate()
         self.sleep(5)
-        rebalance_success = self.task.rebalance(self.servers,
+        rebalance_success = self.task.rebalance(self.cluster,
                                                 self.servers_to_add,
                                                 self.servers_to_remove,
                                                 retry_get_process_num=self.retry_get_process_num)
