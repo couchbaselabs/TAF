@@ -17,7 +17,7 @@ import random
 from aGoodDoctor.bkrs import DoctorBKRS
 import os
 from BucketLib.bucket import Bucket
-from capella.capella_utils import CapellaUtils as CapellaAPI
+from capella_utils.capella_utils import CapellaUtils as CapellaAPI
 from aGoodDoctor.fts import DoctorFTS
 
 

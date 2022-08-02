@@ -26,7 +26,7 @@ from com.couchbase.test.docgen import DocRange
 from couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import ServerOutOfMemoryException,\
     DocumentExistsException, DocumentNotFoundException, TimeoutException
-from capella.capella_utils import CapellaUtils as CapellaAPI
+from capella_utils.capella_utils import CapellaUtils as CapellaAPI
 
 
 class CapellaBase(BaseTestCase):

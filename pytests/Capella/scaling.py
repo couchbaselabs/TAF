@@ -6,7 +6,7 @@ Created on Apr 20, 2022
 from Capella.capella_base import CapellaBase
 from Cb_constants.CBServer import CbServer
 # from TestInput import TestInputServer
-# from capella.capella_utils import CapellaUtils as CapellaAPI
+# from capella_utils.capella_utils import CapellaUtils as CapellaAPI
 
 
 class ScalingTests(CapellaBase):

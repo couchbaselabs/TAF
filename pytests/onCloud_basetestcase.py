@@ -9,8 +9,8 @@ from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils
-from capella.capella_utils import CapellaUtils as CapellaAPI
-from capella.capella_utils import Pod, Tenant
+from capella_utils.capella_utils import CapellaUtils
+from capella_utils.capella_utils import Pod, Tenant
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from constants.cloud_constants.capella_constants import AWS, Cluster
@@ -96,7 +96,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.tenant.project_id = \
             TestInputSingleton.input.capella.get("project", None)
         if not self.tenant.project_id:
-            CapellaAPI.create_project(self.pod, self.tenant, "a_taf_run")
+            CapellaUtils.create_project(self.pod, self.tenant, "a_taf_run")
 
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
         cluster_ids = TestInputSingleton.input.capella \
@@ -128,7 +128,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             for task in tasks:
                 self.task_manager.get_task_result(task)
                 self.assertTrue(task.result, "Cluster deployment failed!")
-                CapellaAPI.create_db_user(
+                CapellaUtils.create_db_user(
                     self.pod, self.tenant, task.cluster_id,
                     self.rest_username, self.rest_password)
                 self.__populate_cluster_info(task.cluster_id, task.servers,
@@ -157,24 +157,24 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         for name, cluster in self.cb_clusters.items():
             self.log.info("Destroying cluster: {}".format(name))
-            CapellaAPI.destroy_cluster(cluster)
-        CapellaAPI.delete_project(self.pod, self.tenant)
+            CapellaUtils.destroy_cluster(cluster)
+        CapellaUtils.delete_project(self.pod, self.tenant)
 
     def __get_existing_cluster_details(self, cluster_ids):
         cluster_index = 1
         for cluster_id in cluster_ids:
             cluster_name = self.cluster_name_format % cluster_index
             self.log.info("Fetching cluster details for: %s" % cluster_id)
-            CapellaAPI.wait_until_done(self.pod, self.tenant, cluster_id,
+            CapellaUtils.wait_until_done(self.pod, self.tenant, cluster_id,
                                        "Cluster not healthy")
-            cluster_info = CapellaAPI.get_cluster_info(self.pod, self.tenant,
+            cluster_info = CapellaUtils.get_cluster_info(self.pod, self.tenant,
                                                        cluster_id)
             cluster_srv = cluster_info.get("endpointsSrv")
-            CapellaAPI.allow_my_ip(self.pod, self.tenant, cluster_id)
-            CapellaAPI.create_db_user(
+            CapellaUtils.allow_my_ip(self.pod, self.tenant, cluster_id)
+            CapellaUtils.create_db_user(
                     self.pod, self.tenant, cluster_id,
                     self.rest_username, self.rest_password)
-            servers = CapellaAPI.get_nodes(self.pod, self.tenant, cluster_id)
+            servers = CapellaUtils.get_nodes(self.pod, self.tenant, cluster_id)
             self.__populate_cluster_info(cluster_id, servers, cluster_srv,
                                          cluster_name, cluster_info)
             self.__populate_cluster_buckets(self.cb_clusters[cluster_name])
@@ -225,7 +225,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
     def __populate_cluster_buckets(self, cluster):
         self.log.debug("Fetching bucket details from cluster %s" % cluster.id)
-        buckets = json.loads(CapellaAPI.get_all_buckets(cluster)
+        buckets = json.loads(CapellaUtils.get_all_buckets(cluster)
                              .content)["buckets"]["data"]
         for bucket in buckets:
             bucket = bucket["data"]
@@ -245,7 +245,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             cluster.buckets.append(bucket_obj)
 
     def generate_cluster_config(self):
-        self.capella_cluster_config = CapellaAPI.get_cluster_config(
+        self.capella_cluster_config = CapellaUtils.get_cluster_config(
             environment="hosted",
             description="Amazing Cloud",
             single_az=False,
@@ -259,7 +259,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         for service_group in services.split("-"):
             service_group = service_group.split(":")
             min_nodes = 3 if "data" in service_group else 2
-            service_config = CapellaAPI.get_cluster_config_spec(
+            service_config = CapellaUtils.get_cluster_config_spec(
                 services=service_group,
                 count=max(min_nodes, self.nodes_init),
                 compute=self.input.param("compute",

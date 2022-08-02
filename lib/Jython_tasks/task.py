@@ -50,9 +50,9 @@ from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from gsiLib.GsiHelper_Rest import GsiHelper
-from capella.capella_utils import CapellaUtils
 from TestInput import TestInputServer
 from capellaAPI.CapellaAPI import CapellaAPI
+from capella_utils.capella_utils import CapellaUtils
 # from cluster_utils.cluster_ready_functions import CBCluster
 
 

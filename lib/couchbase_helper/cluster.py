@@ -5,7 +5,7 @@ from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from Jython_tasks.task import MutateDocsFromSpecTask
 from Jython_tasks.task import CompareIndexKVData
-from capella.capella_utils import CapellaUtils
+from capella_utils.capella_utils import CapellaUtils
 from common_lib import sleep
 from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.documentgenerator import doc_generator, \

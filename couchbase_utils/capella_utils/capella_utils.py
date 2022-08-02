@@ -78,7 +78,7 @@ class CapellaUtils(object):
                                  tenant.pwd)
         resp = capella_api.create_project(tenant.id, name)
         if resp.status_code != 201:
-            raise Exception("Creating capella project failed: {}".
+            raise Exception("Creating capella_utils project failed: {}".
                             format(resp.content))
         project_id = json.loads(resp.content).get("id")
         tenant.project_id = project_id
@@ -130,7 +130,7 @@ class CapellaUtils(object):
                     cluster_id = capella_api_resp.headers['Location'].split("/")[-1]
                     break
 
-            CapellaUtils.log.critical("Create capella cluster failed.")
+            CapellaUtils.log.critical("Create capella_utils cluster failed.")
             CapellaUtils.log.critical("Capella API returned " + str(
                 capella_api_resp.status_code))
             CapellaUtils.log.critical(capella_api_resp.json()["message"])
@@ -428,7 +428,7 @@ class CapellaUtils(object):
                                           cluster_id, user, pwd)
         if resp.status_code != 200:
             result = json.loads(resp.content)
-            CapellaUtils.log.critical("Add capella cluster user failed: (}".format(
+            CapellaUtils.log.critical("Add capella_utils cluster user failed: (}".format(
                 resp.status_code))
             CapellaUtils.log.critical(result)
             if result["errorType"] == "ErrDataplaneUserNameExists":

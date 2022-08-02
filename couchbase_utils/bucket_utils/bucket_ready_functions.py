@@ -38,7 +38,7 @@ from Jython_tasks.task import \
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope, Serverless
-from capella.capella_utils import CapellaUtils
+from capella_utils.capella_utils import CapellaUtils
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
