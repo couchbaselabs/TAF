@@ -89,7 +89,6 @@ class Murphy(BaseTestCase, OPD):
         self.ops_rate = self.input.param("ops_rate", 10000)
         self.cursor_dropping_checkpoint = self.input.param(
             "cursor_dropping_checkpoint", None)
-        self.index_timeout = self.input.param("index_timeout", 3600)
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
                                                        True)
 
@@ -177,7 +176,7 @@ class Murphy(BaseTestCase, OPD):
         if self.cluster.fts_nodes:
             self.drFTS.create_fts_indexes()
             status = self.drFTS.wait_for_fts_index_online(self.num_items*2,
-                                                          self.index_timeout)
+                                                          self.wait_timeout*120)
             self.assertTrue(status, "FTS index build failed.")
 
         if self.cluster.cbas_nodes:
@@ -291,7 +290,7 @@ class Murphy(BaseTestCase, OPD):
         if self.cluster.fts_nodes:
             self.drFTS.create_fts_indexes()
             status = self.drFTS.wait_for_fts_index_online(self.num_items*2,
-                                                          self.index_timeout)
+                                                          self.wait_timeout*120)
             self.assertTrue(status, "FTS index build failed.")
 
         if self.cluster.cbas_nodes:
