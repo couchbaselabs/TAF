@@ -1,3 +1,0 @@
-[submodule "lib/capellaAPI"]
-	path = lib/capellaAPI
-	url = https://github.com/couchbaselabs/CapellaRESTAPIs
