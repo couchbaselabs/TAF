@@ -3,18 +3,13 @@ import time
 
 from TestInput import TestInputSingleton
 from global_vars import logger
-from Cb_constants import constants, CbServer
+from Cb_constants import CbServer
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from StatsLib.StatsOperations import StatsHelper
-from gsiLib.gsiHelper import GsiHelper
+
 
 class ServerInfo:
-    def __init__(self,
-                 ip,
-                 port,
-                 ssh_username,
-                 ssh_password,
-                 memcached_port,
+    def __init__(self, ip, port, ssh_username, ssh_password, memcached_port,
                  ssh_key=''):
         self.ip = ip
         self.ssh_username = ssh_username
@@ -43,7 +38,8 @@ class CGroupBase(unittest.TestCase):
         self.ssh_username = self.servers[0].ssh_username
         self.ssh_password = "couchbase"
         self.node = ServerInfo(ip=self.vm_ip, port=self.rest_port,
-                               ssh_username=self.ssh_username, ssh_password=self.ssh_password,
+                               ssh_username=self.ssh_username,
+                               ssh_password=self.ssh_password,
                                memcached_port=CbServer.memcached_port)
         self.shell = RemoteMachineShellConnection(self.node)
         self.skip_setup_teardown = self.input.param("skip_setup_teardown", None)
@@ -63,7 +59,8 @@ class CGroupBase(unittest.TestCase):
         if self.skip_setup_teardown is None:
             self.start_docker()
             self.remove_all_containers()
-            self.container_id = self.start_couchbase_container(mem=self.mem, cpus=self.cpus)
+            self.container_id = self.start_couchbase_container(mem=self.mem,
+                                                               cpus=self.cpus)
             self.log.info("Container ID:{}".format(self.container_id))
             self.set_disk_paths()
             self.initialize_node()
@@ -71,6 +68,7 @@ class CGroupBase(unittest.TestCase):
         self.host_cpus = self.get_host_cpu_cores()
         self.cgroup_aware_stats = ["sys_cpu_utilization_rate", "sys_cpu_sys_rate",
                                    "sys_cpu_user_rate", "sys_cpu_cores_available",
+                                   "sys_mem_cgroup_used", "sys_mem_cgroup_used",
                                    "sys_mem_limit"]
         self.host_aware_stats = ["sys_cpu_host_utilization_rate", "sys_cpu_host_sys_rate",
                                  "sys_cpu_host_user_rate", "sys_cpu_host_cores_available",
@@ -303,4 +301,3 @@ class CGroupBase(unittest.TestCase):
         cmd_out, cmd_error = self.shell.execute_command(cmd)
         self.log.info("Read logs command {} , Output:{}, Error{}".format(cmd, cmd_out, cmd_error))
         return cmd_out
-
