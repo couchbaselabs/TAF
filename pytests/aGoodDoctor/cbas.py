@@ -84,9 +84,9 @@ class DoctorCBAS():
             stop_time = time.time() + timeout
             while time.time() < stop_time:
                 statement = "select count(*) count from {};".format(dataset)
-                status, _, _, results, _ = self.execute_statement_on_cbas(statement)
+                _status, _, _, results, _ = self.execute_statement_on_cbas(statement)
                 self.log.debug("dataset: {}, status: {}, count: {}"
-                               .format(dataset, status,
+                               .format(dataset, _status,
                                        json.loads(str(results))[0]["count"]))
                 if json.loads(str(results))[0]["count"] == item_count:
                     self.log.info("CBAS dataset is ready: {}".format(dataset))

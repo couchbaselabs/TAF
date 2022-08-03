@@ -182,7 +182,9 @@ class Murphy(BaseTestCase, OPD):
 
         if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets()
-            self.drCBAS.wait_for_ingestion(self.num_items*2)
+            result = self.drCBAS.wait_for_ingestion(self.num_items*2,
+                                                    self.index_timeout)
+            self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
             self.drCBAS.start_query_load()
 
         if self.cluster.index_nodes:
@@ -296,7 +298,9 @@ class Murphy(BaseTestCase, OPD):
 
         if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets()
-            self.drCBAS.wait_for_ingestion(self.num_items*2)
+            result = self.drCBAS.wait_for_ingestion(self.num_items*2,
+                                                    self.index_timeout)
+            self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
             self.drCBAS.start_query_load()
 
         if self.cluster.index_nodes:
