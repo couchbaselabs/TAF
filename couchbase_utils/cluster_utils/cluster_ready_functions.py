@@ -1224,17 +1224,20 @@ class ClusterUtils:
         status = False
         while retry < retry_count:
             cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
-            cb_collect_progress = int(cb_collect_response['progress'])
-            cb_collect_status = cb_collect_response['status']
-            self.log.debug("CBCollectInfo Iteration {} - {}"
-                           .format(retry, cb_collect_status))
-            if cb_collect_progress == 100:
-                if cb_collect_status != 'completed':
-                    self.log.warning("Cb collect completed with status '%s'"
-                                     % cb_collect_status)
-                status = True
-                break
+            if cb_collect_response:
+                cb_collect_progress = int(cb_collect_response['progress'])
+                cb_collect_status = cb_collect_response['status']
+                self.log.debug("CBCollectInfo Iteration {} - {}"
+                               .format(retry, cb_collect_status))
+                if cb_collect_progress == 100:
+                    if cb_collect_status != 'completed':
+                        self.log.warning("Cb collect completed with status "
+                                         "'%s'" % cb_collect_status)
+                    status = True
+                    break
             else:
+                if cb_collect_response is None:
+                    self.log.warning("Empty response from cbcollect API")
                 retry += 1
                 sleep(10, "CB collect still running", log_type="infra")
         return status
@@ -1244,9 +1247,12 @@ class ClusterUtils:
         cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
         self.log.debug(cb_collect_response)
         node_ids = [node.id for node in nodes]
-        if 'perNode' in cb_collect_response and len(node_ids) > 0 and 'path' \
-                in cb_collect_response['perNode'][node_ids[0]]:
+        if 'perNode' in cb_collect_response and len(node_ids) > 0:
             for idx, node in enumerate(nodes):
+                if 'path' not in cb_collect_response['perNode'][node_ids[idx]]:
+                    self.log.info("cbcollect ZIP file not found for the "
+                                  "node %s" % node_ids[idx])
+                    continue
                 self.log.info("%s: Copying cbcollect ZIP file to Client"
                               % node_ids[idx])
                 server = [server for server in cluster.servers if
