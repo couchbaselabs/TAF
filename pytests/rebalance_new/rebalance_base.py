@@ -772,7 +772,6 @@ class RebalanceBaseTest(BaseTestCase):
                 else:
                     filtered_nodes.append(t_node)
             nodes = filtered_nodes
-
             status = self.cluster_util.copy_cb_collect_logs(
                 rest, nodes, self.cluster, self.logs_folder)
             if status is False:
