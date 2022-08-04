@@ -10,6 +10,8 @@ from LMT_base import LMT
 from reactor.util.function import Tuples
 from security_utils.audit_ready_functions import audit
 from couchbase_helper.documentgenerator import doc_generator
+from cb_tools.cbstats import Cbstats
+from cb_tools.cbepctl import Cbepctl
 
 
 class ServerlessMetering(LMT):
@@ -240,3 +242,200 @@ class ServerlessMetering(LMT):
         self.perform_operation(DocLoading.Bucket.DocOps.DELETE, key_value,
                                self.bucket, self.expected_wu,
                                self.expected_ru, durability=self.durability_level)
+
+    #############################################################################
+    def test_metering_steady_state(self):
+        """
+        Test Focus: Check WU and RU count after
+                    different doc ops
+        STEPS:
+          -- Create n items
+          -- Validate n items
+          -- Check for WU and RU count
+          -- Different doc ops(passed from test conf)
+             and validate wu and ru count
+        """
+        self.PrintStep(" Step 1: Initial loading with new loader starts")
+        self.create_start = 0
+        self.create_end = self.num_items
+        self.perform_load(validate_data=False)
+        expected_wu = self.calculate_units(self.key_size, self.doc_size, num_items=self.create_end - self.create_start)
+        expected_ru = self.calculate_units(self.key_size, self.doc_size, read=True, num_items=self.read_end - self.read_start)
+        _, self.ru, self.wu = self.get_stat(self.bucket)
+        msg = "expected_wu {} != mcstats wu {}".format(expected_wu, self.wu)
+        self.assertEqual(self.wu, expected_wu, msg)
+        self.log.info("doc_ops {}".format(self.doc_ops))
+
+        count = 0
+        while count < self.test_itr:
+            msg = "Step {}: Starting doc_ops == {}".format(count, self.doc_ops)
+            self.PrintStep(msg)
+            self.log.info("Create_start=={}, create_End=={}, read_start=={}, read_end=={}, update_Start=={}, update_End=={} \
+            del_start=={}, del_end=={}".format(self.create_start, self.create_end, self.read_start, self.read_end, self.update_start, self.update_end,
+                                               self.delete_start, self.delete_end))
+            self.compute_docs_ranges()
+            self.log.info("create_perc {}, update_perc {}, read_perc {}".format(self.create_perc, self.update_perc, self.read_perc))
+            self.log.info("Create_start=={}, create_End=={}, read_start=={}, read_end=={}, update_Start=={}, update_End=={} \
+            del_start=={}, del_end=={}".format(self.create_start, self.create_end, self.read_start, self.read_end, self.update_start, self.update_end,
+                                               self.delete_start, self.delete_end))
+            self.perform_load(validate_data=False)
+            count += 1
+            if "update" in self.doc_ops:
+                expected_wu += self.calculate_units(self.key_size, self.doc_size, num_items=self.update_end - self.update_start)
+
+            if "delete" in self.doc_ops:
+                expected_wu += self.calculate_units(self.key_size, self.doc_size, num_items = self.delete_end - self.delete_start)
+
+            if "create" in self.doc_ops:
+                expected_wu += self.calculate_units(self.key_size, self.doc_size, num_items = self.create_end - self.create_start)
+
+            if "expiry" in self.doc_ops:
+                self.sleep(self.maxttl, "Wait for docs to expire")
+                self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
+                self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
+             to kickoff")
+                self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
+            tombstones.")
+                expected_wu += self.calculate_units(self.key_size, self.doc_size, num_items = self.expiry_end - self.expiry_start)
+            if "read" in self.doc_ops:
+                expected_ru += self.calculate_units(self.key_size, self.doc_size, num_items = self.read_end - self.read_start)
+
+            _, self.ru, self.wu = self.get_stat(self.bucket)
+            msg = "expected_ru {} != mcstats ru {}".format(expected_ru, self.ru)
+            self.assertEqual(self.ru, expected_ru, msg)
+            msg = "expected_wu {} != mcstats wu {}".format(expected_wu, self.wu)
+            self.assertEqual(self.wu, expected_wu, msg)
+
+    def test_ru_after_multi_get_ops(self):
+        self.PrintStep(" Step 1: Initial loading with new loader starts")
+        self.create_start = 0
+        self.create_end = self.num_items
+        self.perform_load(validate_data=False)
+
+        self.num_read_threads = self.input.param("num_read_threads", 4)
+        self.compute_docs_ranges(doc_ops="read")
+        self.PrintStep(" Step 2: Get Ops using multiple threads")
+        temp_tasks= list()
+        for _ in range(self.num_read_threads):
+            task = self.perform_load(wait_for_load=False, validate_data=False)
+            temp_tasks.extend(task)
+        self.wait_for_doc_load_completion(temp_tasks)
+        expected_ru = self.num_read_threads * (self.calculate_units(self.key_size,
+                                                                    self.doc_size,
+                                                                    read=True,
+                                                                    num_items=self.num_items))
+        _, self.ru, _ = self.get_stat(self.bucket)
+        msg = "expected_ru {} != mcstats ru {}".format(expected_ru, self.ru)
+        self.assertEqual(self.ru, expected_ru, msg)
+
+    def test_metering_after_rollback(self):
+        '''
+         -- Load bucket with num_items
+         -- Verify wu count
+         -- Stop persistence on a node
+         -- Start load on master node(say Node A)
+         -- Kill MemCached on master node(Node A)
+         -- Trigger roll back on other/replica nodes
+         -- ReStart persistence on master node
+        '''
+        self.generate_docs(doc_ops="create",
+                           create_start=0,
+                           create_end=self.num_items)
+        _ = self.loadgen_docs(self.retry_exceptions,
+                              self.ignore_exceptions,
+                              _sync=True)
+        self.log.info("Waiting for ep-queues to get drained")
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets, timeout=3600)
+
+        expected_wu = self.calculate_units(self.key_size, self.doc_size, num_items=self.create_end - self.create_start)
+        _, self.ru, self.wu = self.get_stat(self.bucket)
+        msg = "expected_wu {} != mcstats wu {}".format(expected_wu, self.wu)
+        self.log.info(msg)
+        self.assertEqual(self.wu, expected_wu, msg)
+
+        mem_only_items = self.input.param("rollback_items", 10000)
+        ops_len = len(self.doc_ops)
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
+
+        if self.nodes_init < 2 or self.num_replicas < 1:
+            self.fail("Not enough nodes/replicas in the cluster/bucket \
+            to test rollback")
+
+        self.num_rollbacks = self.input.param("num_rollbacks", 2)
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstats = Cbstats(self.cluster.master)
+        self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
+
+        #######################################################################
+        '''
+        STEP - 2,  Stop persistence on master node
+        '''
+        for i in range(1, self.num_rollbacks+1):
+            self.log.info("Roll back Iteration == {}".format(i))
+
+            mem_item_count = 0
+
+            # Stopping persistence on NodeA
+            self.log.debug("Iteration == {}, stopping persistence".format(i))
+            Cbepctl(shell).persistence(self.cluster.buckets[0].name, "stop")
+
+            ###################################################################
+            '''
+            STEP - 3
+              -- Doc ops on master node
+            '''
+            self.log.info("Just before compute docs, iteration {}".format(i))
+            self.create_start = self.num_items
+            self.create_end = mem_only_items
+            self.gen_create = None
+            self.gen_update = None
+            self.gen_delete = None
+            self.gen_expiry = None
+            mem_item_count += mem_only_items * ops_len
+            self.generate_docs(doc_ops="create",
+                               target_vbucket=self.target_vbucket)
+            self.loadgen_docs(_sync=True,
+                              retry_exceptions=self.retry_exceptions)
+
+            ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
+                                 mem_item_count}
+            vb_replica_queue_size_map = {self.cluster.nodes_in_cluster[0]: 0}
+
+            for node in self.cluster.nodes_in_cluster[1:]:
+                ep_queue_size_map.update({node: 0})
+                vb_replica_queue_size_map.update({node: 0})
+
+            ###################################################################
+            '''
+            STEP - 4
+              -- Kill Memcached on master node(Node A) and trigger rollback on replica/other nodes
+            '''
+
+            shell.kill_memcached()
+
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                self.cluster.buckets[0],
+                servers=[self.cluster.master],
+                wait_time=self.wait_timeout * 10))
+
+            ###################################################################
+            '''
+            STEP -5
+              -- Restarting persistence on master node(Node A)
+            '''
+
+            self.log.debug("Iteration=={}, Re-Starting persistence".format(i))
+            Cbepctl(shell).persistence(self.cluster.buckets[0].name, "start")
+            self.sleep(5, "Iteration=={}, sleep after restarting persistence".format(i))
+            ###################################################################
+            '''
+            STEP - 6
+              -- Verify wu count after rollback
+            '''
+            _, self.ru, self.wu = self.get_stat(self.bucket)
+            self.assertEqual(self.wu, expected_wu, msg)
+
+        shell.disconnect()

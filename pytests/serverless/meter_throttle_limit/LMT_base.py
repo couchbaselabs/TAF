@@ -9,6 +9,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.bucket import Bucket
 from membase.api.rest_client import RestConnection
 from StatsLib.StatsOperations import StatsHelper
+from sdk_exceptions import SDKException
 from Cb_constants.CBServer import CbServer
 from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.sdk import Server, SDKClient
@@ -24,6 +25,7 @@ from com.couchbase.client.core.error import ServerOutOfMemoryException,\
     DocumentExistsException, DocumentNotFoundException, TimeoutException
 from cb_tools.cbstats import Cbstats
 
+
 # LMT == LIMITING METERING THROTTLING
 
 class LMT(ServerlessOnPremBaseTest):
@@ -36,17 +38,23 @@ class LMT(ServerlessOnPremBaseTest):
         self.delete_start = 0
         self.expire_end = 0
         self.expire_start = 0
+        self.read_start = 0
+        self.read_end = 0
 
     def setUp(self):
         super(LMT, self).setUp()
+        self.rest = RestConnection(self.cluster.master)
         self.num_buckets = self.input.param("num_buckets", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
         self.num_collections = self.input.param("num_collections", 1)
         self.process_concurrency = self.input.param("pc", self.process_concurrency)
         self.doc_loading_tm = TaskManager(self.process_concurrency)
+        self.exp_pager_stime = self.input.param("exp_pager_stime", 10)
+        self.init_items_per_collection = copy.deepcopy(self.num_items)
+        self.num_items_per_collection = copy.deepcopy(self.init_items_per_collection)
+        self.init_num_items = self.num_items
         self.doc_ops = self.input.param("doc_ops", "create")
-        if self.doc_ops:
-            self.doc_ops = self.doc_ops.split(':')
+        self._data_validation = self.input.param("data_validation", True)
         self.skip_read_on_error = False
         self.suppress_error_table = False
         self.track_failures = self.input.param("track_failures", True)
@@ -65,6 +73,22 @@ class LMT(ServerlessOnPremBaseTest):
         ramQuota = self.input.param("ramQuota", kv_memory)
         self.PrintStep("Create required buckets and collections")
         self.bucket_throttling_limit = self.input.param("bucket_throttling_limit", 5000)
+        self.check_temporary_failure_exception = False
+        self.retry_exceptions = [SDKException.TimeoutException,
+                                 SDKException.AmbiguousTimeoutException,
+                                 SDKException.RequestCanceledException,
+                                 SDKException.UnambiguousTimeoutException,
+                                 SDKException.ServerOutOfMemoryException,
+                                 SDKException.DurabilityAmbiguousException]
+        self.ignore_exceptions = []
+        # Monitor Stats Params
+        self.ep_queue_stats = self.input.param("ep_queue_stats", True)
+        self.monitor_stats = ["doc_ops", "ep_queue_size"]
+        if not self.ep_queue_stats:
+            self.monitor_stats = ["doc_ops"]
+
+        self.test_itr = self.input.param("test_itr", 2)
+        self.deep_copy = self.input.param("deep_copy", False)
 
         # Bucket Creation
         buckets = ["default"]*self.num_buckets
@@ -106,6 +130,8 @@ class LMT(ServerlessOnPremBaseTest):
         collection_prefix = "FunctionCollection"
         for bucket in self.cluster.buckets:
             for scope_name in self.scopes:
+                if scope_name == CbServer.system_scope:
+                    continue
                 for i in range(len(bucket.scopes[scope_name].collections), self.num_collections):
                     collection_name = collection_prefix + str(i)
                     self.log.info("Creating scope::collection {} {}\
@@ -137,6 +163,8 @@ class LMT(ServerlessOnPremBaseTest):
         self.initial_items = self.start
         self.final_items = self.end
         self.mutation_perc = 100
+        self.key_type = self.input.param("key_type", "RandomKey")
+        self.val_type = self.input.param("val_type", "SimpleValue")
 
     def tearDown(self):
         super(LMT, self).tearDown()
@@ -150,77 +178,114 @@ class LMT(ServerlessOnPremBaseTest):
         print "\t", "#"*60
         print "\n"
 
+    def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0):
+        return doc_generator(self.key, start, end,
+                             doc_size=self.doc_size,
+                             doc_type=self.doc_type,
+                             target_vbucket=target_vbucket,
+                             vbuckets=self.cluster.vbuckets,
+                             key_size=self.key_size,
+                             randomize_doc_size=self.randomize_doc_size,
+                             randomize_value=self.randomize_value,
+                             mix_key_size=self.mix_key_size,
+                             mutate=mutate,
+                             deep_copy=self.deep_copy)
+
     def generate_docs(self, doc_ops=None,
+                      target_vbucket=None,
                       create_end=None, create_start=None,
+                      create_mutate=0,
                       update_end=None, update_start=None,
+                      update_mutate=0,
+                      read_end=None, read_start=None,
+                      read_mutate=0,
                       delete_end=None, delete_start=None,
-                      expire_end=None, expire_start=None,
-                      read_end=None, read_start=None):
-        self.init_doc_params()
-        self.initial_items = self.final_items
+                      expiry_end=None, expiry_start=None,
+                      expiry_mutate=0):
 
         doc_ops = doc_ops or self.doc_ops
-        self.mutations_to_validate = doc_ops
-
-        if "read" in doc_ops:
-            if read_start is not None:
-                self.read_start = read_start
-            else:
-                self.read_start = 0
-            if read_end is not None:
-                self.read_end = read_end
-            else:
-                self.read_end = self.num_items * self.mutation_perc/100
 
         if "update" in doc_ops:
             if update_start is not None:
                 self.update_start = update_start
-            else:
-                self.update_start = 0
             if update_end is not None:
                 self.update_end = update_end
-            else:
-                self.update_end = self.num_items * self.mutation_perc/100
-            # self.mutate += 1
 
+            if self.update_start is None:
+                self.update_start = self.start
+            if self.update_end is None:
+                self.update_end = self.end*self.update_perc/100
+
+            self.mutate += 1
+            self.gen_update = self.genrate_docs_basic(self.update_start,
+                                                      self.update_end,
+                                                      target_vbucket=target_vbucket,
+                                                      mutate=self.mutate)
         if "delete" in doc_ops:
             if delete_start is not None:
                 self.delete_start = delete_start
-            else:
-                self.delete_start = self.start
             if delete_end is not None:
                 self.delete_end = delete_end
-            else:
-                self.delete_end = self.start + self.num_items * self.mutation_perc/100
-            self.final_items -= (self.delete_end - self.delete_start) * self.num_collections * self.num_scopes
 
-        if "expiry" in doc_ops:
-            if self.maxttl == 0:
-                self.maxttl = self.input.param("maxttl", 10)
-            if expire_start is not None:
-                self.expire_start = expire_start
-            else:
-                self.expire_start = self.delete_end
-            if expire_end is not None:
-                self.expire_end = expire_end
-            else:
-                self.expire_end = self.expire_start + self.num_items * self.mutation_perc/100
-            self.final_items -= (self.expire_end - self.expire_start) * self.num_collections * self.num_scopes
+            if self.delete_start is None:
+                self.delete_start = self.start
+            if self.delete_end is None:
+                self.delete_end = self.end*self.delete_perc/100
 
+            self.gen_delete = self.genrate_docs_basic(self.delete_start,
+                                                      self.delete_end,
+                                                      target_vbucket=target_vbucket,
+                                                      mutate=read_mutate)
         if "create" in doc_ops:
             if create_start is not None:
                 self.create_start = create_start
-            else:
+            if self.create_start is None:
                 self.create_start = self.end
             self.start = self.create_start
 
             if create_end is not None:
                 self.create_end = create_end
-            else:
-                self.create_end = self.end + (self.expire_end - self.expire_start) + (self.delete_end - self.delete_start)
+            if self.create_end is None:
+                self.create_end = self.start+self.num_items*self.create_perc/100
             self.end = self.create_end
 
-            self.final_items += (abs(self.create_end - self.create_start)) * self.num_collections * self.num_scopes
+            self.gen_create = self.genrate_docs_basic(self.create_start,
+                                                      self.create_end,
+                                                      target_vbucket=target_vbucket,
+                                                      mutate=create_mutate)
+        if "read" in doc_ops:
+            if read_start is not None:
+                self.read_start = read_start
+            if read_end is not None:
+                self.read_end = read_end
+
+            if self.read_start is None:
+                self.read_start = self.create_start
+            if self.read_end is None:
+                self.read_end = self.create_end
+
+            self.gen_read = self.genrate_docs_basic(self.read_start,
+                                                    self.read_end,
+                                                    target_vbucket=target_vbucket,
+                                                    mutate=read_mutate)
+        if "expiry" in doc_ops:
+            if expiry_start is not None:
+                self.expiry_start = expiry_start
+            elif self.expiry_start is None:
+                self.expiry_start = self.start+(self.num_items *
+                                                self.delete_perc)/100
+
+            if expiry_end is not None:
+                self.expiry_end = expiry_end
+            elif self.expiry_end is None:
+                self.expiry_end = self.start+self.num_items *\
+                                  (self.delete_perc + self.expiry_perc)/100
+
+            self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
+                                                      self.expiry_end,
+                                                      target_vbucket=target_vbucket,
+
+                                                      mutate=expiry_mutate)
 
         print "Read Start: %s" % self.read_start
         print "Read End: %s" % self.read_end
@@ -232,14 +297,153 @@ class LMT(ServerlessOnPremBaseTest):
         print "Delete End: %s" % self.delete_end
         print "Create Start: %s" % self.create_start
         print "Create End: %s" % self.create_end
-        print "Final Start: %s" % self.start
-        print "Final End: %s" % self.end
+
+    def loadgen_docs(self,
+                     retry_exceptions=[],
+                     ignore_exceptions=[],
+                     skip_read_on_error=False,
+                     suppress_error_table=False,
+                     scope=CbServer.default_scope,
+                     collection=CbServer.default_collection,
+                     _sync=True,
+                     track_failures=True,
+                     doc_ops=None,
+                     sdk_retry_strategy=None):
+        doc_ops = doc_ops or self.doc_ops
+
+        tasks_info = dict()
+        read_tasks_info = dict()
+        read_task = False
+
+        if self.check_temporary_failure_exception:
+            retry_exceptions.append(SDKException.TemporaryFailureException)
+
+        if "update" in doc_ops and self.gen_update is not None:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_update, "update", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                time_unit=self.time_unit,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions,
+                skip_read_on_error=skip_read_on_error,
+                suppress_error_table=suppress_error_table,
+                scope=scope,
+                collection=collection,
+                monitor_stats=self.monitor_stats,
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
+            tasks_info.update(tem_tasks_info.items())
+        if "create" in doc_ops and self.gen_create is not None:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_create, "create", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                time_unit=self.time_unit,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions,
+                skip_read_on_error=skip_read_on_error,
+                suppress_error_table=suppress_error_table,
+                scope=scope,
+                collection=collection,
+                monitor_stats=self.monitor_stats,
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
+            tasks_info.update(tem_tasks_info.items())
+            self.num_items += (self.gen_create.end - self.gen_create.start)
+        if "expiry" in doc_ops and self.gen_expiry is not None and self.maxttl:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_expiry, "update",
+                self.maxttl, self.random_exp,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                time_unit=self.time_unit,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions,
+                skip_read_on_error=skip_read_on_error,
+                suppress_error_table=suppress_error_table,
+                scope=scope,
+                collection=collection,
+                monitor_stats=self.monitor_stats,
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
+            tasks_info.update(tem_tasks_info.items())
+            self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
+        if "read" in doc_ops and self.gen_read is not None:
+            read_tasks_info = self.bucket_util._async_validate_docs(
+               self.cluster, self.gen_read, "read", 0,
+               batch_size=self.batch_size,
+               process_concurrency=self.process_concurrency,
+               timeout_secs=self.sdk_timeout,
+               time_unit=self.time_unit,
+               retry_exceptions=retry_exceptions,
+               ignore_exceptions=ignore_exceptions,
+               scope=scope,
+               collection=collection,
+               suppress_error_table=suppress_error_table,
+               sdk_client_pool=self.sdk_client_pool,
+               sdk_retry_strategy=sdk_retry_strategy)
+            read_task = True
+        if "delete" in doc_ops and self.gen_delete is not None:
+            tem_tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, self.gen_delete, "delete", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+                time_unit=self.time_unit,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions,
+                skip_read_on_error=skip_read_on_error,
+                suppress_error_table=suppress_error_table,
+                scope=scope,
+                collection=collection,
+                monitor_stats=self.monitor_stats,
+                track_failures=track_failures,
+                sdk_client_pool=self.sdk_client_pool,
+                sdk_retry_strategy=sdk_retry_strategy)
+            tasks_info.update(tem_tasks_info.items())
+            self.num_items -= (self.gen_delete.end - self.gen_delete.start)
+
+        if _sync:
+            for task in tasks_info:
+                self.task_manager.get_task_result(task)
+
+            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
+                                                           self.cluster,
+                                                           sdk_client_pool=self.sdk_client_pool)
+            self.bucket_util.log_doc_ops_task_failures(tasks_info)
+
+        if read_task:
+            # TODO: Need to converge read_tasks_info into tasks_info before
+            #       itself to avoid confusions during _sync=False case
+            tasks_info.update(read_tasks_info.items())
+            if _sync:
+                for task in read_tasks_info:
+                    self.task_manager.get_task_result(task)
+
+        return tasks_info
 
     def _loader_dict(self, cmd={}):
         self.loader_map = dict()
         for bucket in self.cluster.buckets:
             for scope in bucket.scopes.keys():
                 for collection in bucket.scopes[scope].collections.keys():
+                    if scope == CbServer.system_scope:
+                        continue
                     if collection == "_default" and scope == "_default":
                         continue
                     ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
@@ -288,6 +492,8 @@ class LMT(ServerlessOnPremBaseTest):
             for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
                     for collection in bucket.scopes[scope].collections.keys():
+                        if scope == CbServer.system_scope:
+                            continue
                         if collection == "_default" and scope == "_default":
                             continue
                         client = NewSDKClient(master, bucket.name, scope, collection)
@@ -309,19 +515,6 @@ class LMT(ServerlessOnPremBaseTest):
 
         if validate_data:
             self.data_validation()
-
-        self.print_stats()
-
-        if self.cluster.cloud_cluster:
-            return
-
-        result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-        if result:
-            self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
-            if self.assert_crashes_on_load:
-                self.task_manager.abort_all_tasks()
-                self.doc_loading_tm.abortAllTasks()
-                self.assertFalse(result)
 
     def wait_for_doc_load_completion(self, tasks, wait_for_stats=True):
         self.doc_loading_tm.getAllTaskResult()
@@ -354,7 +547,7 @@ class LMT(ServerlessOnPremBaseTest):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=14400)
                 if self.track_failures:
-                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items,
+                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items_per_collection*(self.num_scopes)*(self.num_collections-1),
                                                               timeout=14400)
             except Exception as e:
                 if not self.cluster.cloud_cluster:
@@ -375,6 +568,8 @@ class LMT(ServerlessOnPremBaseTest):
             for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
                     for collection in bucket.scopes[scope].collections.keys():
+                        if scope == CbServer.system_scope:
+                            continue
                         if collection == "_default" and scope == "_default":
                             continue
                         for op_type in doc_ops:
@@ -449,7 +644,7 @@ class LMT(ServerlessOnPremBaseTest):
         for task in tasks:
             self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
-    def calculate_units(self, key, value, sub_doc_size=0, xattr=0, read=False):
+    def calculate_units(self, key, value, sub_doc_size=0, xattr=0, read=False, num_items=1):
         if read:
             limit = 4096
         else:
@@ -460,7 +655,7 @@ class LMT(ServerlessOnPremBaseTest):
             expected_cu += 1
         if self.durability_level != "NONE" and not read:
             expected_cu *= 2
-        return expected_cu
+        return expected_cu * num_items
 
     def get_stat(self, bucket):
         throttle_limit = list()
@@ -561,3 +756,69 @@ class LMT(ServerlessOnPremBaseTest):
                 to_add += (to_add - self.sdk_timeout)
             expected_num_throttled += to_add
         return throttle_limit, expected_num_throttled
+
+    def compute_docs_ranges(self, start=None, doc_ops=None):
+        self.create_perc = 0
+        self.update_perc = 0
+        self.read_perc = 0
+        self.delete_perc = 0
+        self.expiry_perc = 0
+        doc_ops = doc_ops or self.doc_ops
+        ops_len = len(doc_ops.split(":"))
+        self.perc = 100/ops_len
+        self.log.info("self.perc is {}".format(self.perc))
+        if "read" in doc_ops:
+            self.read_start = 0
+            self.read_end = self.init_items_per_collection
+            if ops_len > 1:
+                ops_len -= 1
+            self.read_perc = self.perc
+
+        if "create" in doc_ops:
+            ops_len -= 1
+            self.create_start = start or self.init_items_per_collection
+            if start:
+                self.create_end = start + start
+            else:
+                self.create_end = self.init_items_per_collection + self.init_items_per_collection
+            self.num_items_per_collection += (self.create_end - self.create_start)
+            self.create_perc = self.perc
+        if ops_len == 1:
+            self.update_start = 0
+            self.update_end = self.init_num_items
+            self.expiry_start = 0
+            self.expiry_end = self.init_num_items
+            self.delete_start = 0
+            self.delete_end = self.init_num_items
+        elif ops_len == 2:
+            self.update_start = 0
+            self.update_end = self.init_num_items // 2
+            self.delete_start = self.init_num_items // 2
+            self.delete_end = self.init_num_items
+
+            if "expiry" in doc_ops:
+                self.delete_start = 0
+                self.delete_end = self.init_num_items // 2
+                self.expiry_start = self.init_num_items // 2
+                self.expiry_end = self.init_num_items
+        elif ops_len == 3:
+            self.update_start = 0
+            self.update_end = self.init_num_items // 3
+            self.delete_start = self.init_num_items // 3
+            self.delete_end = (2 * self.init_num_items) // 3
+            self.expiry_start = (2 * self.init_num_items) // 3
+            self.expiry_end = self.init_num_items
+        if "update" in doc_ops:
+            self.read_start = self.update_start
+            self.read_end = self.update_end
+        if "delete" in doc_ops:
+            self.delete_perc = self.perc
+        if "expiry" in doc_ops:
+            self.expiry_perc = self.perc
+        if "update" in doc_ops:
+            self.update_perc = self.perc
+
+        if "delete" in doc_ops:
+            self.num_items_per_collection -= (self.delete_end - self.delete_start)
+        if "expiry" in doc_ops:
+            self.num_items_per_collection -= (self.expiry_end - self.expiry_start)
