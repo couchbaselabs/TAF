@@ -428,7 +428,7 @@ class CapellaUtils(object):
                                           cluster_id, user, pwd)
         if resp.status_code != 200:
             result = json.loads(resp.content)
-            CapellaUtils.log.critical("Add capella_utils cluster user failed: (}".format(
+            CapellaUtils.log.critical("Add capella_utils cluster user failed: {}".format(
                 resp.status_code))
             CapellaUtils.log.critical(result)
             if result["errorType"] == "ErrDataplaneUserNameExists":
