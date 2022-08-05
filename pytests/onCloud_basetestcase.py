@@ -338,7 +338,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "provider": provider,
             "name": str(uuid.uuid4()),
             "cidr": None,
-            "singleAZ": True,
+            "singleAZ": False,
             "specs": specs,
             "package": "developerPro",
             "projectId": None,
