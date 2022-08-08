@@ -1778,6 +1778,8 @@ class BucketUtils(ScopeUtils):
             except GetBucketInfoFailed:
                 pass
             finally:
+                if bucket_obj.servers:
+                    break
                 retry -= 1
             if not bucket_obj.servers:
                 sleep(2, "No servers_list found, Will retry...")

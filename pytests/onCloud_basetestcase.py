@@ -203,6 +203,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         cluster.tenant = self.tenant
 
         for temp_server in nodes:
+            cluster.nodes_in_cluster.append(temp_server)
             if "Data" in temp_server.services:
                 cluster.kv_nodes.append(temp_server)
             if "Query" in temp_server.services:
