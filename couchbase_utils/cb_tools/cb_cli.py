@@ -116,8 +116,11 @@ class CbCli(CbCmdBase):
         return output
 
     def set_n2n_encryption_level(self, level="all"):
+        port = self.port
+        if self.port == CbServer.ssl_memcached_port:
+            port = CbServer.memcached_port
         cmd = "%s setting-security -c %s:%s -u %s -p %s --set --cluster-encryption-level %s" \
-              % (self.cbstatCmd, "localhost", self.port,
+              % (self.cbstatCmd, "localhost", port,
                  self.username, self.password, level)
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
