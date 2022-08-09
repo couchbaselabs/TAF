@@ -663,7 +663,7 @@ class OPD:
             self.get_bucket_dgm(bucket)
             if bucket.storageBackend == Bucket.StorageBackend.magma and not self.cluster.cloud_cluster:
                 self.get_magma_disk_usage(bucket)
-                self.check_fragmentation_using_magma_stats(bucket)
+                # self.check_fragmentation_using_magma_stats(bucket)
                 self.check_fragmentation_using_kv_stats(bucket)
 
     def PrintStep(self, msg=None):
