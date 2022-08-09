@@ -331,6 +331,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if (self.use_https and self.enforce_tls) \
                     and not self.skip_cluster_reset:
                 CbServer.n2n_encryption = True
+                CbServer.use_https = True
                 for _, cluster in self.cb_clusters.items():
                     tasks = [self.node_utils.async_enable_tls(node)
                              for node in cluster.servers]
@@ -469,12 +470,24 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # Disable n2n encryption on nodes of all clusters
         if self.use_https and self.enforce_tls:
-            CbServer.n2n_encryption = False
             for _, cluster in self.cb_clusters.items():
                 tasks = [self.node_utils.async_disable_tls(node)
                          for node in cluster.servers]
                 for task in tasks:
                     self.task_manager.get_task_result(task)
+            # Set CbServer.use_https to False when
+            # n2n encryption level is not strict
+            CbServer.use_https = False
+            CbServer.n2n_encryption = False
+            for server in self.input.servers:
+                server.port = str(CbServer.port)
+                server.memcached_port = str(CbServer.memcached_port)
+                server.fts_port = str(CbServer.fts_port)
+                server.index_port = str(CbServer.index_port)
+                server.n1ql_port = str(CbServer.n1ql_port)
+                server.cbas_port = str(CbServer.cbas_port)
+                server.eventing_port = str(CbServer.eventing_port)
+
         if self.multiple_ca:
             CbServer.use_https = False
             for _, cluster in self.cb_clusters.items():

@@ -1,6 +1,5 @@
 import json
 
-from security_config import trust_all_certs
 from BucketLib.bucket import Bucket
 from cb_tools.cb_tools_base import CbCmdBase
 from Cb_constants import CbServer
@@ -16,6 +15,12 @@ class CbCli(CbCmdBase):
         self.cli_flags = ""
         if no_ssl_verify:
             self.cli_flags += " --no-ssl-verify"
+
+    def __get_http_port(self):
+        port = self.port
+        if self.port == str(CbServer.ssl_port):
+            port = str(CbServer.port)
+        return port
 
     def create_bucket(self, bucket_dict, wait=False):
         """
@@ -97,7 +102,7 @@ class CbCli(CbCmdBase):
 
     def enable_n2n_encryption(self):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --enable" \
-             % (self.cbstatCmd, "localhost", self.port,
+             % (self.cbstatCmd, "localhost", self.__get_http_port(),
                 self.username, self.password)
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
@@ -107,20 +112,18 @@ class CbCli(CbCmdBase):
 
     def disable_n2n_encryption(self):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --disable" \
-              % (self.cbstatCmd, "localhost", self.port,
+              % (self.cbstatCmd, "localhost", self.__get_http_port(),
                  self.username, self.password)
         cmd += self.cli_flags
+
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
         return output
 
     def set_n2n_encryption_level(self, level="all"):
-        port = self.port
-        if self.port == CbServer.ssl_memcached_port:
-            port = CbServer.memcached_port
         cmd = "%s setting-security -c %s:%s -u %s -p %s --set --cluster-encryption-level %s" \
-              % (self.cbstatCmd, "localhost", port,
+              % (self.cbstatCmd, "localhost", self.__get_http_port(),
                  self.username, self.password, level)
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
@@ -130,7 +133,7 @@ class CbCli(CbCmdBase):
 
     def get_n2n_encryption_level(self):
         cmd = "%s setting-security -c %s:%s -u %s -p %s --get" \
-              % (self.cbstatCmd, "localhost", self.port,
+              % (self.cbstatCmd, "localhost", self.__get_http_port(),
                  self.username, self.password)
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
