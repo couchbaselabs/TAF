@@ -44,7 +44,7 @@ class DoctorFTS:
                         fts_param_template = str(fts_param_template).replace("True", "true")
                         fts_param_template = str(fts_param_template).replace("False", "false")
                         fts_param_template = str(fts_param_template).replace("'", "\"")
-                        self.indexes.update({"fts_idx_"+str(i): fts_param_template})
+                        self.indexes.update({"fts_idx_"+str(i): (fts_param_template, b.name, s, c)})
                         i += 1
                         if i >= num_indexes:
                             break
@@ -103,16 +103,18 @@ class DoctorFTS:
         for name, index in self.indexes.items():
             self.log.debug("Creating fts index: {}".format(name))
             status, _ = self.fts_helper.create_fts_index_from_json(
-                name, str(index))
+                name, str(index[0]))
         return status
 
     def wait_for_fts_index_online(self, item_count, timeout=86400):
         status = False
-        for index_name, _ in self.indexes.items():
+        for index_name, details in self.indexes.items():
+            b, s = details[1], details[2]
             status = False
             stop_time = time.time() + timeout
             while time.time() < stop_time:
-                _status, content = self.fts_helper.fts_index_item_count(index_name)
+                _status, content = self.fts_helper.fts_index_item_count(
+                    "%s.%s.%s" % (b, s, index_name))
                 self.log.debug("index: {}, status: {}, count: {}"
                                .format(index_name, _status,
                                        json.loads(content)["count"]))
