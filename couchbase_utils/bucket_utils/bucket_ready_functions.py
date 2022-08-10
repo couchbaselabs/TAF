@@ -2623,9 +2623,8 @@ class BucketUtils(ScopeUtils):
           timeout - Waiting the end of the thread. (str)
         """
         tasks = list()
-        # for server in self.cluster_util.get_kv_nodes(cluster):
-        for bucket in buckets:
-            for server in self.cluster_util.get_bucket_kv_nodes(cluster, bucket):
+        for server in self.cluster_util.get_kv_nodes(cluster):
+            for bucket in buckets:
                 if bucket.bucketType == 'memcached':
                     continue
                 if check_ep_items_remaining:

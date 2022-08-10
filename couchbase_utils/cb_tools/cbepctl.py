@@ -1,11 +1,14 @@
 from cb_tools.cb_tools_base import CbCmdBase
-
+from Cb_constants import CbServer
 
 class Cbepctl(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
                  password="password"):
         CbCmdBase.__init__(self, shell_conn, "cbepctl",
                            username=username, password=password)
+        if CbServer.cluster_profile == "serverless":
+            # https://issues.couchbase.com/browse/MB-47567
+            self.mc_port = 11210
 
     def set(self, bucket_name, set_type, key, value):
         """
