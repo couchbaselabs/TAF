@@ -3,6 +3,7 @@ import functools
 import time
 import json
 import sys
+import re
 from random import choice, shuffle
 
 from BucketLib.bucket import Bucket
@@ -26,6 +27,7 @@ from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from storage_utils.magma_utils import MagmaUtils
 from Jython_tasks.task import FunctionCallTask
+from StatsLib.StatsOperations import StatsHelper
 
 
 class SubdocBaseTest(ClusterSetup):
@@ -2670,7 +2672,8 @@ class XattrTests(SubdocBaseTest):
         self.log.info("Running workload {0} of type {1}"
                       .format(workload, loadtype))
 
-        self.txn.apply_transitions(workloads[workload])
+        self.txn.apply_transitions(workloads[workload],
+                                   self.cluster.buckets[0])
 
     def test_shadow_fragmentation(self):
         """ Test disk usage does not exceed sensible amounts at 50%
@@ -2760,11 +2763,32 @@ class TxnTransition:
         # Increment this after every transition
         self.token = 0
 
-    def apply_transitions(self, transitions):
+        self.expected_ru, self.expected_wu = 0, 0
+
+    def get_stat_from_prometheus(self, bucket):
+        ru_from_prometheus = 0
+        wu_from_prometheus = 0
+        for node in bucket.servers:
+            content = StatsHelper(node).get_prometheus_metrics_high()
+            wu_pattern = re.compile('meter_wu_total{bucket="%s"} (\d+)' %bucket.name)
+            ru_pattern = re.compile('meter_ru_total{bucket="%s"} (\d+)' %bucket.name)
+            for line in content:
+                if wu_pattern.match(line):
+                    wu_from_prometheus += int(wu_pattern.findall(line)[0])
+                elif ru_pattern.match(line):
+                    ru_from_prometheus += int(ru_pattern.findall(line)[0])
+        self.log.info("ru:%s, wu:%s" %(ru_from_prometheus, wu_from_prometheus))
+        return ru_from_prometheus, wu_from_prometheus
+
+    def apply_transitions(self, transitions, bucket=None):
         """ Applies transitions in sequence. """
         for transition in transitions:
-            self.log.info("Applying a transition")
+            self.log.info("Applying a transition %s"%(transition))
             transition()
+            if bucket:
+                ru, wu = self.get_stat_from_prometheus(bucket)
+                self.base.assertEqual(ru, self.expected_ru)
+                self.base.assertEqual(wu, self.expected_wu)
             self.increment_token()
 
         self.reset_token()
@@ -2891,7 +2915,8 @@ class TxnTransition:
                 'store_semantics': StoreSemantics.INSERT,
                 'access_deleted': True, 'create_as_deleted': True}
         _ = self.subdoc_task(self.get_generator(), "insert", kwds)
-
+        self.expected_ru += self.key_max
+        self.expected_wu += (self.key_max * 2)
         self.check(self.get_generator(), xattr=True, access_deleted=True)
 
     def staged_insert_from_staged(self):
@@ -2910,7 +2935,8 @@ class TxnTransition:
                 'store_semantics': StoreSemantics.REPLACE,
                 'access_deleted': True}
         _ = self.subdoc_task(self.get_generator(), "upsert", kwds)
-
+        self.expected_ru += (self.key_max * 2)
+        self.expected_wu += (self.key_max * 2)
         self.check(self.get_generator(), xattr=True, access_deleted=True)
 
     def staged_remove_from_staged(self):
@@ -2920,7 +2946,8 @@ class TxnTransition:
                 'store_semantics': StoreSemantics.REPLACE,
                 'access_deleted': True}
         _ = self.subdoc_task(self.get_generator(), "remove", kwds)
-
+        self.expected_ru += (self.key_max * 2)
+        self.expected_wu += self.key_max
         self.check(self.get_generator(), xattr=True, access_deleted=True,
                    exists=False)
 
@@ -2932,7 +2959,8 @@ class TxnTransition:
         _ = self.subdoc_task(
             self.get_generator(value=self.get_value(op_type='remove')),
             "upsert", kwds)
-
+        self.expected_ru += (self.key_max * 2)
+        self.expected_wu += (self.key_max * 3)
         self.check(
             self.get_generator(value=self.get_value(op_type='remove')),
             xattr=True, access_deleted=False)
@@ -2971,7 +2999,8 @@ class TxnTransition:
             self.get_generator(template=self.get_template(path=''),
                                value=body),
             "replace", kwds)
-
+        self.expected_ru += (self.key_max * 2)
+        self.expected_wu += (self.key_max * 2)
         # Check body contains the expected value
         self.check(
             self.get_generator(template=self.get_template(path=''),
@@ -2981,7 +3010,8 @@ class TxnTransition:
     def unstage_remove(self):
         """ Perform a KV remove on the document """
         self.kv_delete()
-
+        self.expected_ru += (self.key_max * 2)
+        self.expected_wu += self.key_max
         # Check the document does not exist
         self.check(
             self.get_generator(template=self.get_template(path='')),
@@ -2990,10 +3020,14 @@ class TxnTransition:
     def rollback_insert_or_replace(self):
         """ Remove Staged document """
         self.upsert_and_remove(access_deleted=True)
+        self.expected_ru += (self.key_max * 3)
+        self.expected_wu += (self.key_max * 2)
 
     def rollback_remove(self):
         """ Document exists -> Removed Staged document """
         self.upsert_and_remove(access_deleted=False)
+        self.expected_ru += (self.key_max * 3)
+        self.expected_wu += (self.key_max * 4)
 
     def repeat_transition(self, n, transition):
         """ Repeat a transition n times. """

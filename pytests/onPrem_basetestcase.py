@@ -3,6 +3,7 @@ import os
 import re
 import socket
 import traceback
+import random
 
 from ruamel.yaml import YAML
 
@@ -22,7 +23,6 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from security_config import trust_all_certs
 from docker_utils.DockerSDK import DockerClient
-import random
 
 
 class OnPremBaseTest(CouchbaseBaseTest):
