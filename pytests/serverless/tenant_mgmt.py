@@ -259,9 +259,10 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             num_buckets = int(cluster_stats["memoryQuota"] / self.bucket_size)
         elif limit_bucket_by == "weight":
             node_stat = rest.get_nodes_self()
-            max_weight = node_stat["limits"][CbServer.Services.KV]["weight"]
-            bucket_weights = [max_weight]
-            num_buckets = int(max_weight / self.bucket_size)
+            max_weight = node_stat.limits[CbServer.Services.KV]["weight"]
+            num_buckets = int(cluster_stats["memoryQuota"] /
+                              self.bucket_size) - 2
+            bucket_weights = [max_weight/num_buckets]
         else:
             self.fail("Invalid limit_by field: %s" % limit_bucket_by)
 
@@ -287,7 +288,6 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.assertFalse(status, "Extra bucket created successfully")
         self.assertTrue(expected_err in json.loads(content)["_"],
                         "Mismatch in the error message")
-
         self.bucket_util.print_bucket_stats(self.cluster)
 
         self.log.info("Adding KV sub_cluster")

@@ -330,19 +330,28 @@ class OnPremBaseTest(CouchbaseBaseTest):
             # Enforce tls on nodes of all clusters
             if (self.use_https and self.enforce_tls) \
                     and not self.skip_cluster_reset:
+                retry_count = self.input.param("tls_retry_count", 3)
                 CbServer.n2n_encryption = True
                 CbServer.use_https = True
-                for _, cluster in self.cb_clusters.items():
-                    tasks = [self.node_utils.async_enable_tls(node)
-                             for node in cluster.servers]
-                    for task in tasks:
-                        self.task_manager.get_task_result(task)
-                    self.log.info("Validating if services obey tls only on servers {0}".
-                                  format(cluster.servers))
-                    status = self.cluster_util.check_if_services_obey_tls(
-                        cluster.servers)
-                    if not status:
-                        self.fail("Services did not honor enforce tls")
+                retry = 0
+                status = False
+                while retry < retry_count:
+                    for _, cluster in self.cb_clusters.items():
+                        tasks = [self.node_utils.async_enable_tls(node)
+                                 for node in cluster.servers]
+                        for task in tasks:
+                            self.task_manager.get_task_result(task)
+                        self.log.info("Validating if services obey tls only "
+                                      "on servers {0}".format(cluster.servers))
+                        status = self.cluster_util.check_if_services_obey_tls(
+                            cluster.servers)
+                    if status:
+                        break
+                    else:
+                        retry += 1
+                        self.sleep(10, "Retrying enforcing LTS on servers")
+                else:
+                    self.fail("Services did not honor enforce tls")
 
             if self.use_https:
                 for server in self.input.servers:
