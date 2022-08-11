@@ -272,6 +272,8 @@ class StorageBase(BaseTestCase):
             loader_dict.update({bucket: dict()})
             loader_dict[bucket].update({"scopes": dict()})
             for scope in bucket.scopes.keys():
+                if scope == CbServer.system_scope:
+                    continue
                 loader_dict[bucket]["scopes"].update({scope: dict()})
                 loader_dict[bucket]["scopes"][scope].update({"collections":dict()})
                 for collection in bucket.scopes[scope].collections.keys():
