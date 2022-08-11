@@ -407,7 +407,8 @@ class BucketHelper(RestConnection):
                             replicaNumber=None ,proxyPort=None,
                             replicaIndex=None, flushEnabled=None,
                             timeSynchronization=None, maxTTL=None,
-                            compressionMode=None, bucket_durability=None):
+                            compressionMode=None, bucket_durability=None,
+                            bucketWidth=None, bucketWeight=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
@@ -430,6 +431,10 @@ class BucketHelper(RestConnection):
             params_dict["compressionMode"] = compressionMode
         if bucket_durability:
             params_dict[Bucket.durabilityMinLevel] = bucket_durability
+        if bucketWidth:
+            params_dict["width"] = bucketWidth
+        if bucketWeight:
+            params_dict["weight"] = bucketWeight
         params = urllib.urlencode(params_dict)
 
         self.log.info("Updating bucket properties for %s" % bucket)

@@ -7,6 +7,7 @@ from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from membase.api.rest_client import RestConnection
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
+from pytests.bucket_collections.collections_base import CollectionBase
 
 
 class TenantManagementOnPrem(ServerlessOnPremBaseTest):
@@ -311,3 +312,93 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.assertFalse(status, "Extra bucket created successfully")
         self.assertTrue(expected_err in json.loads(content)["_"],
                         "Mismatch in the error message")
+
+    def test_change_bucket_width(self):
+        """
+       - Increase single / multiple / all bucket's width
+        at the same time then trigger rebalance
+       - Decrease single / multiple / all buckets' width
+        and rebalance
+        Cases will be executed both with/without data load
+        """
+        # bucket creation way to be updated after spec function available
+        # at the base class
+        def create_serverless_bucket():
+            helper = BucketHelper(self.cluster.master)
+            api = helper.baseUrl + self.b_create_endpoint
+            for i in range(self.num_buckets):
+                name = "bucket_"+str(i)
+                bucket_params = self.__get_bucket_params(
+                    b_name=name,
+                    width=self.bucket_width)
+                param = urllib.urlencode(bucket_params)
+                status, _, _ = helper._http_request(api, helper.POST, param)
+        create_serverless_bucket()
+        ###
+
+        def data_load():
+            doc_loading_spec_name = \
+                "volume_test_load_with_CRUD_on_collections"
+            doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+                doc_loading_spec_name)
+            tasks = self.bucket_util.run_scenario_from_spec(self.task,
+                                                            self.cluster,
+                                                            buckets,
+                                                            doc_loading_spec,
+                                                            mutation_num=0,
+                                                            async_load=
+                                                            True)
+            return tasks
+
+        def verify_data_load(load_task):
+            self.task.jython_task_manager.get_task_result(load_task)
+            self.bucket_util.validate_doc_loading_results(load_task)
+            if load_task.result is False:
+                raise Exception("doc load/verification failed")
+
+        task = None
+        desired_width = self.input.param("desired_width", 1)
+        scale = self.input.param("bucket_scale", "all")
+        data_load_after_rebalance = self.input.param(
+            "data_load_after_rebalance", True)
+        async_load = self.input.param("async_load", False)
+
+        buckets_to_consider = buckets = \
+            self.bucket_util.get_all_buckets(self.cluster)
+        CollectionBase.create_sdk_clients(
+            self.task_manager.number_of_threads,
+            self.cluster.master,
+            buckets,
+            self.sdk_client_pool,
+            self.sdk_compression)
+        validation = self.bucket_util.validate_serverless_buckets(
+            self.cluster, buckets)
+        self.assertTrue(validation, "Bucket validation failed")
+
+        if len(buckets) < 1:
+            self.fail("no bucket found")
+        if scale == 'single':
+            buckets_to_consider = buckets[:1]
+        elif scale == 'multiple':
+            if len(buckets) <= 2:
+                self.fail("number of buckets should be greater than 2 for"
+                          " width change in multiple buckets")
+            buckets_to_consider = max(2, buckets[:(len(buckets)/2)])
+
+        if async_load:
+            task = data_load()
+        for bucket in buckets_to_consider:
+            self.bucket_util.update_bucket_property(self.cluster.master, bucket,
+                                                    bucket_width=desired_width)
+        rebalance_task = self.task.async_rebalance(
+            self.cluster, [], [],
+            retry_get_process_num=3000)
+        self.task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result, "Rebalance Failed")
+        if async_load:
+            verify_data_load(task)
+        if data_load_after_rebalance:
+            task = data_load()
+            verify_data_load(task)
+        self.bucket_util.print_bucket_stats(self.cluster)
+

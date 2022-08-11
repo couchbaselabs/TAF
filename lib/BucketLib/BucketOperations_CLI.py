@@ -46,7 +46,8 @@ class BucketHelper(BucketHelperRest):
                             replicaNumber=None, proxyPort=None,
                             replicaIndex=None, flushEnabled=None,
                             timeSynchronization=None, maxTTL=None,
-                            compressionMode=None, bucket_durability=None):
+                            compressionMode=None, bucket_durability=None,
+                            bucketWidth=None, bucketWeight=None):
         bucket_params = dict()
         bucket_params["name"] = "%s" % bucket
         if ramQuotaMB:
@@ -65,6 +66,11 @@ class BucketHelper(BucketHelperRest):
             bucket_params["compressionMode"] = compressionMode
         if bucket_durability:
             bucket_params["durabilityMinLevel"] = bucket_durability
+        if bucketWidth:
+            bucket_params["width"] = bucketWidth
+        if bucketWeight:
+            bucket_params["weight"] = bucketWeight
+
 
         return self.cb_cli.edit_bucket(bucket_params)
 

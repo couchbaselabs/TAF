@@ -2399,13 +2399,15 @@ class BucketUtils(ScopeUtils):
                                replica_number=None, replica_index=None,
                                flush_enabled=None, time_synchronization=None,
                                max_ttl=None, compression_mode=None,
-                               bucket_durability=None):
+                               bucket_durability=None, bucket_width=None,
+                               bucket_weight=None):
         BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
             timeSynchronization=time_synchronization, maxTTL=max_ttl,
             compressionMode=compression_mode,
-            bucket_durability=bucket_durability)
+            bucket_durability=bucket_durability, bucketWidth=bucket_width,
+            bucketWeight=bucket_weight)
 
     def update_all_bucket_maxTTL(self, cluster, maxttl=0):
         for bucket in cluster.buckets:
