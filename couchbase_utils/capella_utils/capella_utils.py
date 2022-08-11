@@ -3,8 +3,7 @@ import json
 
 from constants.cloud_constants.capella_constants import AWS, Cluster
 from global_vars import logger
-from capellaAPI.CapellaAPI import CapellaAPI
-import uuid
+from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 
 
 class Pod:
