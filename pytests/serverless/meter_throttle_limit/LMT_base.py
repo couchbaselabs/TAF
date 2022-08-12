@@ -650,7 +650,7 @@ class LMT(ServerlessOnPremBaseTest):
             limit = 4096
         else:
             limit = 1024
-        total_size = key + value + sub_doc_size + xattr
+        total_size = int(key) + int(value) + int(sub_doc_size) + int(xattr)
         expected_cu, remainder = divmod(total_size, limit)
         if remainder:
             expected_cu += 1

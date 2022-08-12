@@ -38,7 +38,6 @@ class ServerlessMetering(LMT):
                     self.log.info("Load failed as expected for throttle limit")
                 elif result["status"] is False:
                     self.log.critical("%s Loading failed: %s" % (key, result["error"]))
-                self.sleep(1)
                 throttle_limit, expected_num_throttled = self.calculate_expected_num_throttled(
                                                         node, self.bucket, throttle_limit,
                                                         write_units, expected_num_throttled)
@@ -59,7 +58,11 @@ class ServerlessMetering(LMT):
         self.bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         node = random.choice(self.bucket.servers)
         target_vbucket = self.get_active_vbuckets(node, self.bucket)
-        throttle_limit = self.bucket_throttling_limit/len(self.bucket.servers)
+        if self.bucket_throttling_limit > 10 or self.kv_throttling_limit > 10:
+            throttle_limit = self.bucket_throttling_limit/len(self.bucket.servers)
+        else:
+            throttle_limit = 1
+
         sub_doc_key = "my-attr"
         if self.system_xattr:
             sub_doc_key = "my._attr"
@@ -88,7 +91,6 @@ class ServerlessMetering(LMT):
                                                    time_unit="seconds",
                                                    create_path=self.xattr,
                                                    xattr=self.xattr)
-                self.assertFalse(failed_items, "Subdoc Xattr operation failed")
                 self.sleep(1)
                 throttle_limit, expected_num_throttled = self.calculate_expected_num_throttled(
                                                         node, self.bucket, throttle_limit,
