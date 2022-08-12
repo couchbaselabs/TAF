@@ -227,7 +227,7 @@ class SDKClient(object):
         self.cert_path = cert_path
         self.log = logger.get("test")
         if self.bucket is not None:
-            self.log.info("The bucket is serverless: %s" % bucket.name)
+            self.log.debug("The bucket is serverless: %s" % bucket.name)
             if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
                 self.hosts = [bucket.serverless.nebula_endpoint.ip]
                 self.log.info("For SDK, Nebula endpoint used for bucket is: %s"
