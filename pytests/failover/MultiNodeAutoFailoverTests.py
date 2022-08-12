@@ -100,7 +100,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         """
         self.enable_autofailover_and_validate()
         self.sleep(5)
-        rebalance_task = self.task.async_rebalance(self.cluster,
+        rebalance_task = self.task.async_rebalance(self.cluster.servers,
                                                    self.servers_to_add,
                                                    self.servers_to_remove,
                                                    retry_get_process_num=self.retry_get_process_num)
@@ -140,7 +140,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         """
         self.enable_autofailover_and_validate()
         self.sleep(5)
-        rebalance_success = self.task.rebalance(self.cluster,
+        rebalance_success = self.task.rebalance(self.cluster.servers,
                                                 self.servers_to_add,
                                                 self.servers_to_remove,
                                                 retry_get_process_num=self.retry_get_process_num)
