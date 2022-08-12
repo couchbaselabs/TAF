@@ -1619,7 +1619,6 @@ class basic_ops(ClusterSetup):
         bucket = self.cluster.buckets[0]
         in_node = self.cluster.servers[1]
         num_items = 0
-        err = None
 
         client = SDKClient([self.cluster.master], bucket)
 
@@ -1642,7 +1641,9 @@ class basic_ops(ClusterSetup):
         is_resident = True
         start_index = 0
         batch_size = 1000
-        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell_1 = RemoteMachineShellConnection(self.cluster.master)
+        shell_2 = RemoteMachineShellConnection(self.cluster.servers[1])
+        shell = shell_1
         cbstat = Cbstats(shell)
 
         hash_dump_cmd = \
@@ -1660,7 +1661,7 @@ class basic_ops(ClusterSetup):
                 client.crud(DocLoading.Bucket.DocOps.CREATE, d_key, val)
 
             output, _ = shell.execute_command(hash_dump_cmd)
-            if " X.. .D..Cm " in output[0]:
+            if not output:
                 is_resident = False
             start_index = doc_gen.key_counter
             num_items += batch_size
@@ -1669,20 +1670,25 @@ class basic_ops(ClusterSetup):
         self.assertTrue(result, "Rebalance_in failed")
 
         replica_vbs = cbstat.vbucket_list(bucket.name, Bucket.vBucket.REPLICA)
+        if key_vb not in replica_vbs:
+            # Swap the nodes in-order to maintain the vbucket consistency
+            in_node = self.cluster.servers[0]
+            self.cluster.master = self.cluster.servers[1]
+
+            shell = shell_2
+            cbstat = Cbstats(shell)
+            replica_vbs = cbstat.vbucket_list(bucket.name,
+                                              Bucket.vBucket.REPLICA)
+
         self.assertTrue(key_vb in replica_vbs, "vBucket is still active vb")
 
         client.crud(DocLoading.Bucket.SubDocOps.REMOVE, key, sub_doc[0],
                     xattr=True, access_deleted=True)
         client.close()
 
-        db_dump = "/".join(cbstat.cbstatCmd.split("/")[:-1]) + "/couch_dbdump"
-        output, _ = shell.execute_command(
-            "%s --json "
-            "/opt/couchbase/var/lib/couchbase/data/default/%d.couch.* "
-            "| grep %s" % (db_dump, key_vb, key))
-        output = json.loads(output[0])
-        if output["datatype_as_text"] != ["raw"]:
-            err = "Datatype mismatch: %s" % output
+        # Close the shell connections
+        shell_1.disconnect()
+        shell_2.disconnect()
 
         # Rebalance out the new node
         result = self.task.rebalance(self.cluster.servers[:2],
@@ -1712,8 +1718,6 @@ class basic_ops(ClusterSetup):
             self.bucket_util.delete_all_buckets(xdcr_cluster)
             rest.remove_all_replications()
             rest.remove_all_remote_clusters()
-        if err:
-            self.fail(err)
 
     def verify_stat(self, items, value="active"):
         mc = MemcachedClient(self.cluster.master.ip,
