@@ -58,10 +58,8 @@ class ServerlessMetering(LMT):
         self.bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         node = random.choice(self.bucket.servers)
         target_vbucket = self.get_active_vbuckets(node, self.bucket)
-        if self.bucket_throttling_limit > 10 or self.kv_throttling_limit > 10:
-            throttle_limit = self.bucket_throttling_limit/len(self.bucket.servers)
-        else:
-            throttle_limit = 1
+        throttle_limit = self.bucket_throttling_limit/len(self.bucket.servers)
+
 
         sub_doc_key = "my-attr"
         if self.system_xattr:
@@ -91,12 +89,11 @@ class ServerlessMetering(LMT):
                                                    time_unit="seconds",
                                                    create_path=self.xattr,
                                                    xattr=self.xattr)
-                self.sleep(1)
                 throttle_limit, expected_num_throttled = self.calculate_expected_num_throttled(
-                                                        node, self.bucket, throttle_limit,
-                                                        write_units, expected_num_throttled)
+                                                            node, self.bucket, throttle_limit,
+                                                            write_units, expected_num_throttled)
 
-            self.sleep(5)
+            self.sleep(15)
             num_throttled, ru, wu = self.get_stat(self.bucket)
             expected_wu += write_units * self.num_items
             self.compare_ru_wu_stat(ru, wu, expected_ru, expected_wu)
@@ -143,7 +140,7 @@ class ServerlessMetering(LMT):
                 self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                              self.cluster.buckets)
 
-                self.sleep(30)
+                self.sleep(60)
                 num_throttled, ru, wu = self.get_stat(bucket)
                 self.expected_wu += self.calculate_units(self.doc_size, 0) * self.num_items
                 self.assertEqual(wu, self.expected_wu)

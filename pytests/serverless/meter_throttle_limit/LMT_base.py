@@ -650,7 +650,7 @@ class LMT(ServerlessOnPremBaseTest):
             limit = 4096
         else:
             limit = 1024
-        total_size = int(key) + int(value) + int(sub_doc_size) + int(xattr)
+        total_size = key + value + sub_doc_size + xattr
         expected_cu, remainder = divmod(total_size, limit)
         if remainder:
             expected_cu += 1
@@ -759,7 +759,9 @@ class LMT(ServerlessOnPremBaseTest):
                                          write_units, expected_num_throttled):
         throttle_limit = self.throttling_limit_on_node(node, bucket,
                                                        throttle_limit)
-        if write_units > throttle_limit:
+        if throttle_limit < 10:
+            expected_num_throttled += 1
+        elif write_units > throttle_limit:
             to_add = (write_units/throttle_limit) - 1
             if (to_add - self.sdk_timeout) > 0:
                 to_add += (to_add - self.sdk_timeout)
