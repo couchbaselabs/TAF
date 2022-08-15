@@ -52,8 +52,9 @@ from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from gsiLib.GsiHelper_Rest import GsiHelper
 from TestInput import TestInputServer
-from capella_utils.capella_utils import CapellaUtils
-from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
+from capella_utils.dedicated import CapellaUtils as DedicatedUtils
+from capella_utils.serverless import CapellaUtils as ServerlessUtils
+from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 # from cluster_utils.cluster_ready_functions import CBCluster
 
 
@@ -200,6 +201,31 @@ class TimerTask(Task):
         return result
 
 
+class DeployDataplane(Task):
+    def __init__(self, pod, config, timeout=1800):
+        Task.__init__(self, "Deploy_dataplne_{}".format(time.time()))
+        self.config = config
+        self.pod = pod
+        self.timeout = timeout
+
+    def call(self):
+        try:
+            self.dataplane_id = ServerlessUtils.create_serverless_dataplane(
+                self.config, self.timeout)
+            while True:
+                status = ServerlessUtils.get_dataplane_deployment_status(
+                    self.pod, self.dataplane_id)
+                if status == "ready":
+                    self.result = True
+                    break
+                self.log.debug("dataplane deployment is in progress: {}".
+                               format(status))
+        except Exception as e:
+            self.log.error(e)
+            self.result = False
+        return self.result
+
+
 class DeployCloud(Task):
     def __init__(self, pod, tenant, name, config, timeout=1800):
         Task.__init__(self, "Deploy_Cluster_{}".format(name))
@@ -212,8 +238,8 @@ class DeployCloud(Task):
     def call(self):
         try:
             cluster_id, srv, servers = \
-                    CapellaUtils.create_cluster(self.pod, self.tenant,
-                                                self.config, self.timeout)
+                    DedicatedUtils.create_cluster(self.pod, self.tenant,
+                                                  self.config, self.timeout)
             self.cluster_id = cluster_id
             self.srv = srv
             self.servers = servers
@@ -234,21 +260,21 @@ class RebalanceTaskCapella(Task):
         self.test_log.critical("Scale_params: %s" % scale_params)
 
     def call(self):
-        CapellaUtils.scale(self.cluster, self.scale_params)
+        DedicatedUtils.scale(self.cluster, self.scale_params)
         self.cluster.cluster_config["servers"] = self.scale_params["servers"]
-        capella_api = CapellaAPI(self.cluster.pod.url_public,
-                                 self.cluster.tenant.api_secret_key,
-                                 self.cluster.tenant.api_access_key,
-                                 self.cluster.tenant.user,
-                                 self.cluster.tenant.pwd)
+        capella_api = decicatedCapellaAPI(self.cluster.pod.url_public,
+                                          self.cluster.tenant.api_secret_key,
+                                          self.cluster.tenant.api_access_key,
+                                          self.cluster.tenant.user,
+                                          self.cluster.tenant.pwd)
         end = time.time() + self.timeout
         while end > time.time():
             try:
-                content = CapellaUtils.jobs(capella_api,
-                                            self.cluster.pod,
-                                            self.cluster.tenant,
-                                            self.cluster.id)
-                state = CapellaUtils.get_cluster_state(
+                content = DedicatedUtils.jobs(capella_api,
+                                              self.cluster.pod,
+                                              self.cluster.tenant,
+                                              self.cluster.id)
+                state = DedicatedUtils.get_cluster_state(
                     self.cluster.pod, self.cluster.tenant, self.cluster.id)
                 if state in ["deployment_failed",
                              "deploymentFailed",
@@ -274,7 +300,7 @@ class RebalanceTaskCapella(Task):
                 self.log.critical(e)
                 self.result = False
                 return self.result
-        self.servers = CapellaUtils.get_nodes(
+        self.servers = DedicatedUtils.get_nodes(
             self.cluster.pod, self.cluster.tenant, self.cluster.id)
         nodes = list()
         for server in self.servers:
@@ -2891,7 +2917,7 @@ class StatsWaitTask(Task):
                 for cb_stat_obj in self.cbstatObjList:
                     tem_stat = cb_stat_obj.all_stats(self.bucket.name,
                                                      stat_name=self.statCmd)
-                    val_dict[cb_stat_obj.server.ip] = tem_stat[self.stat]
+                    val_dict[cb_stat_obj.server.ip + str(cb_stat_obj.server.memcached_port)] = tem_stat[self.stat]
                     if self.stat in tem_stat:
                         stat_result += int(tem_stat[self.stat])
                 break

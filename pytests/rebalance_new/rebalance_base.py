@@ -49,7 +49,7 @@ class RebalanceBaseTest(BaseTestCase):
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
 
-        if not self.cluster.cloud_cluster:
+        if self.cluster.type == "default":
             node_ram_ratio = self.bucket_util.base_bucket_ratio(
                 self.cluster.servers)
             info = self.rest.get_nodes_self()

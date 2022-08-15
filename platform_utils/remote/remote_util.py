@@ -146,10 +146,7 @@ class RemoteMachineShellConnection:
         self.ssh_key = serverInfo.ssh_key
         self.port = serverInfo.port
         self.memcached_port = serverInfo.memcached_port
-        if hasattr(serverInfo, "hosted_on_cloud"):
-            self.is_cloud = serverInfo.hosted_on_cloud
-        else:
-            self.is_cloud = False
+        self.is_cloud = True if serverInfo.type in ["dedicated", "serverless"] else False
         self.bin_path = Linux.COUCHBASE_BIN_PATH
         self.cmd_ext = ""
         self.msi = False

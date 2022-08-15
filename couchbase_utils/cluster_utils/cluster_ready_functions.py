@@ -22,27 +22,30 @@ from platform_constants.os_constants import Linux, Mac, Windows
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from table_view import TableView
 from copy import deepcopy
+# import srvlookup
 
 
 class Nebula:
-    def __init__(self, endpoint, dummyserver):
+    def __init__(self, srv, server):
         self.servers = dict()
-        temp = deepcopy(dummyserver)
-        temp.ip = endpoint
-        self.endpoint = temp
+        self.endpoint = server
+        self.endpoint.type = "nebula"
+        self.endpoint.srv = srv
         self.update_server_list()
 
     def update_server_list(self):
+        self.servers = dict()
         self.rest = RestConnection(self.endpoint)
-        _, content, _ = self.rest._http_request(self.rest.baseUrl + "pools/default")
+        _, content, _ = self.rest._http_request(self.rest.baseUrl + "pools/default/nodeServices")
         content = json.loads(content)
-        for server in content["nodes"]:
-            if server["hostname"] not in self.servers:
-                temp = deepcopy(self.endpoint)
-                temp.ip = server["hostname"].split(":")[0]
-                temp.port = server["hostname"].split(":")[1]
-                temp.memcached_port = server["ports"]["direct"]
-                self.servers[server["hostname"]] = temp
+        for server in content["nodesExt"]:
+            temp = deepcopy(self.endpoint)
+            temp.ip = server["hostname"]
+            portdata = server["services"]
+            temp.port = portdata.get("mgmt") or portdata.get("mgmtSSL")
+            temp.memcached_port = portdata.get("kvSSL") or portdata.get("kv")
+            temp.memcached = temp.memcached_port
+            self.servers[str(temp.ip) + ":" + str(temp.port)] = temp
 
 
 class CBCluster:
@@ -68,7 +71,7 @@ class CBCluster:
         self.vbuckets = vbuckets
         # edition = community/enterprise
         self.edition = None
-        self.cloud_cluster = False
+        self.type = "default"
 
         # Capella specific params
         self.pod = None
@@ -310,7 +313,7 @@ class ClusterUtils:
             for removed in [node for node in nodes if (node.id != master_id)]:
                 removed.rest_password = cluster.master.rest_password
                 removed.rest_username = cluster.master.rest_username
-                removed.hosted_on_cloud = False
+                removed.type = "default"
                 try:
                     rest = RestConnection(removed)
                 except Exception as ex:
@@ -814,7 +817,7 @@ class ClusterUtils:
             RestConnection(server).set_index_settings(json)
 
     def get_kv_nodes(self, cluster, servers=None):
-        if cluster.cloud_cluster:
+        if cluster.type != "default":
             return cluster.kv_nodes
 
         if servers is None:
@@ -1035,6 +1038,8 @@ class ClusterUtils:
         return victim_nodes
 
     def print_cluster_stats(self, cluster):
+        if cluster.type in ["serverless"]:
+            return
         table = TableView(self.log.info)
         table.set_headers(["Nodes", "Zone", "Services", "CPU",
                            "Mem_total", "Mem_free",

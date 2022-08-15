@@ -38,7 +38,7 @@ from Jython_tasks.task import \
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope, Serverless
-from capella_utils.capella_utils import CapellaUtils
+from capella_utils.dedicated import CapellaUtils
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
@@ -959,7 +959,7 @@ class CollectionUtils(DocLoaderUtils):
             CollectionUtils.log.error(
                 "Collection '%s:%s:%s' creation failed: %s"
                 % (bucket, scope_name, collection_name, content))
-            raise Exception("create_collection failed")
+            # raise Exception("create_collection failed")
         # Until MB-44741 is fixed/resolved
         # content = json.loads(content)
         # BucketHelper(node).wait_for_collections_warmup(bucket,content["uid"])
@@ -1737,7 +1737,7 @@ class BucketUtils(ScopeUtils):
              Bucket.num_vbuckets: vbuckets,
              Bucket.width: width,
              Bucket.weight: weight})
-        if cluster.cloud_cluster:
+        if cluster.type == "dedicated":
             bucket_params = {
                 CloudCluster.Bucket.name: bucket_obj.name,
                 CloudCluster.Bucket.conflictResolutionType:
@@ -2195,6 +2195,8 @@ class BucketUtils(ScopeUtils):
         return bucket_obj
 
     def print_bucket_stats(self, cluster):
+        if cluster.type in ["serverless"]:
+            return
         table = TableView(self.log.info)
         buckets = self.get_all_buckets(cluster)
         if len(buckets) == 0:
@@ -2506,7 +2508,7 @@ class BucketUtils(ScopeUtils):
     def verify_stats_for_bucket(self, cluster, bucket, items, timeout=60, num_zone=1):
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
-        servers = self.cluster_util.get_kv_nodes(cluster)
+        servers = self.cluster_util.get_bucket_kv_nodes(cluster, bucket)
         if bucket.bucketType == Bucket.Type.MEMCACHED:
             items_actual = 0
             for server in servers:
@@ -2577,11 +2579,11 @@ class BucketUtils(ScopeUtils):
                            "selected node")
 
     def verify_stats_all_buckets(self, cluster, items, timeout=1200, num_zone=1):
-        vbucket_stats = self.get_vbucket_seqnos(
-            self.cluster_util.get_kv_nodes(cluster),
-            cluster.buckets,
-            skip_consistency=True)
         for bucket in cluster.buckets:
+            vbucket_stats = self.get_vbucket_seqnos(
+                self.cluster_util.get_bucket_kv_nodes(cluster, bucket),
+                [bucket],
+                skip_consistency=True)
             self.verify_stats_for_bucket(cluster, bucket, items,
                                          timeout=timeout, num_zone=num_zone)
             #Validate seq_no snap_start/stop values with initial load
@@ -2640,8 +2642,8 @@ class BucketUtils(ScopeUtils):
           timeout - Waiting the end of the thread. (str)
         """
         tasks = list()
-        for server in self.cluster_util.get_kv_nodes(cluster):
-            for bucket in buckets:
+        for bucket in buckets:
+            for server in self.cluster_util.get_bucket_kv_nodes(cluster, bucket):
                 if bucket.bucketType == 'memcached':
                     continue
                 if check_ep_items_remaining:

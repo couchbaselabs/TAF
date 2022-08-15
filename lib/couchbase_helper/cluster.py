@@ -5,7 +5,7 @@ from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from Jython_tasks.task import MutateDocsFromSpecTask
 from Jython_tasks.task import CompareIndexKVData
-from capella_utils.capella_utils import CapellaUtils
+from capella_utils.dedicated import CapellaUtils
 from common_lib import sleep
 from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.documentgenerator import doc_generator, \
@@ -532,7 +532,7 @@ class ServerTasks(object):
         Returns:
           RebalanceTask - A task future that is a handle to the scheduled task
         """
-        if cluster and cluster.cloud_cluster:
+        if cluster and cluster.type == "dedicated":
             if not services:
                 services = [CloudCluster.Services.KV]
 

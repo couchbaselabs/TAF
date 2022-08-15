@@ -1301,7 +1301,7 @@ class RestConnection(newRC):
     # returns node data for this host
     def get_nodes_self(self, timeout=120):
         node = None
-        if self.on_cloud:
+        if self.type == "dedicated":
             return self.get_limited_nodes_self(timeout)
         else:
             api = self.baseUrl + 'nodes/self'
@@ -1327,7 +1327,7 @@ class RestConnection(newRC):
 
     def extract_nodes_self_from_pools_default(self, pools_default):
         return next(iter(filter(lambda node: "thisNode" in node and node["thisNode"],
-                     pools_default["nodes"])), None)
+                    pools_default["nodes"])), None)
 
     # returns node data for this host
     def get_jre_path(self, timeout=120):

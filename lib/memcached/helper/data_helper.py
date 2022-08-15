@@ -14,32 +14,19 @@ class MemcachedClientHelper(object):
     def direct_client(server, bucket, timeout=30,
                       admin_user=None, admin_pass=None):
         log = logger.get("test")
-        rest = RestConnection(server)
-        node = None
-        try:
-            node = rest.get_nodes_self()
-        except ValueError:
-            log.info("Cannot connect to %s, try scanning all nodes" % server)
-        if not node:
-            nodes = rest.get_nodes()
-            for n in nodes:
-                if n.ip == server.ip and n.port == server.port:
-                    node = n
-        if CbServer.use_https:
-            node.memcached = CbServer.ssl_memcached_port
         if isinstance(server, dict):
-            log.debug("creating memcached client: {0}:{1} {2}"
-                     .format(server["ip"], node.memcached, bucket.name))
+            log.info("creating memcached client: {0}:{1} {2}"
+                     .format(server["ip"], server.memcached_port, bucket.name))
         else:
-            log.debug("creating memcached client: {0}:{1} {2}"
-                     .format(server.ip, node.memcached, bucket.name))
+            log.info("creating memcached client: {0}:{1} {2}"
+                     .format(server.ip, server.memcached_port, bucket.name))
         BucketHelper(server).vbucket_map_ready(bucket, 60)
         vbuckets = BucketHelper(server).get_vbuckets(bucket)
         if isinstance(server, dict):
-            client = MemcachedClient(server["ip"], node.memcached,
+            client = MemcachedClient(server["ip"], server.memcached_port,
                                      timeout=timeout)
         else:
-            client = MemcachedClient(server.ip, node.memcached,
+            client = MemcachedClient(server.ip, server.memcached_port,
                                      timeout=timeout)
         if vbuckets is not None:
             client.vbucket_count = len(vbuckets)

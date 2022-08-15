@@ -9,8 +9,8 @@ from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils
-from capella_utils.capella_utils import CapellaUtils
-from capella_utils.capella_utils import Pod, Tenant
+from capella_utils.dedicated import CapellaUtils
+from capella_utils.common_utils import Pod, Tenant
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from constants.cloud_constants.capella_constants import AWS, Cluster
@@ -22,11 +22,6 @@ import uuid
 class OnCloudBaseTest(CouchbaseBaseTest):
     def setUp(self):
         super(OnCloudBaseTest, self).setUp()
-
-        # Framework specific parameters
-        for server in self.input.servers:
-            server.hosted_on_cloud = True
-        # End of framework parameters
 
         # Cluster level info settings
         self.servers = list()
@@ -190,7 +185,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             temp_server.port = "18091"
             temp_server.rest_username = self.rest_username
             temp_server.rest_password = self.rest_password
-            temp_server.hosted_on_cloud = True
+            temp_server.type = "dedicated"
             temp_server.memcached_port = "11207"
             nodes.append(temp_server)
         cluster = CBCluster(username=self.rest_username,
@@ -201,6 +196,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         cluster.cluster_config = service_config
         cluster.pod = self.pod
         cluster.tenant = self.tenant
+        cluster.type = "dedicated"
 
         for temp_server in nodes:
             cluster.nodes_in_cluster.append(temp_server)
@@ -222,7 +218,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         cluster.master = cluster.kv_nodes[0]
         self.tenant.clusters.update({cluster.id: cluster})
         self.cb_clusters[cluster_name] = cluster
-        self.cb_clusters[cluster_name].cloud_cluster = True
 
     def __populate_cluster_buckets(self, cluster):
         self.log.debug("Fetching bucket details from cluster %s" % cluster.id)

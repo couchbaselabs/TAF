@@ -137,10 +137,10 @@ class RestConnection(object):
         self.eventing_baseUrl = generic_url % (url_host, eventing_port)
         self.backup_url = generic_url % (url_host, backup_port)
         try:
-            self.on_cloud = serverInfo.hosted_on_cloud
+            self.type = serverInfo.type
         except:
-            self.on_cloud = False
-        if self.on_cloud or CbServer.cluster_profile == "serverless":
+            self.type = "default"
+        if self.type == "serverless" or self.type == "nebula":
             nodes_self_url = self.baseUrl + "pools/default"
         else:
             nodes_self_url = self.baseUrl + 'nodes/self'
@@ -187,7 +187,8 @@ class RestConnection(object):
             username = self.username
         if password is None:
             password = self.password
-        authorization = base64.encodestring('%s:%s' % (username, password)).strip("\n")
+        # authorization = base64.encodestring('%s:%s' % (username, password)).strip("\n")
+        authorization = base64.b64encode('{}:{}'.format(username, password).encode()).decode()
         return {'Content-Type': contentType,
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': connection,
@@ -339,8 +340,9 @@ class RestConnection(object):
             username = self.username
         if password is None:
             password = self.password
-        authorization = base64.encodestring('%s:%s'
-                                            % (username, password)).strip("\n")
+        # authorization = base64.encodestring('%s:%s'
+        #                                     % (username, password)).strip("\n")
+        authorization = base64.b64encode('{}:{}'.format(username, password).encode()).decode()
         return {'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': 'Basic %s' % authorization,
                 'Connection': 'close',

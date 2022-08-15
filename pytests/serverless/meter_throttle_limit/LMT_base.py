@@ -551,7 +551,7 @@ class LMT(ServerlessOnPremBaseTest):
                     self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items_per_collection*(self.num_scopes)*(self.num_collections-1),
                                                               timeout=14400)
             except Exception as e:
-                if not self.cluster.cloud_cluster:
+                if self.cluster.type == "default":
                     self.get_gdb()
                 raise e
 

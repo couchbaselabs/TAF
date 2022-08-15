@@ -868,7 +868,7 @@ class Murphy(BaseTestCase, OPD):
             self.generate_docs(doc_ops=["create"],
                                create_start=0,
                                create_end=self.num_items)
-            self.perform_load(validate_data=False)
+            self.perform_load(validate_data=True)
 
             self.PrintStep("Step 2: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
             self.update_perc = 100

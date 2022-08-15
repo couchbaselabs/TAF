@@ -5,20 +5,19 @@ Created on May 2, 2022
 '''
 
 from basetestcase import BaseTestCase
-from remote.remote_util import RemoteMachineShellConnection
-from membase.api.rest_client import RestConnection
 from aGoodDoctor.cbas import DoctorCBAS
 from aGoodDoctor.n1ql import DoctorN1QL
-from fts_utils.fts_ready_functions import FTSUtils
 from aGoodDoctor.opd import OPD
-from BucketLib.BucketOperations import BucketHelper
 import threading
-import random
 from aGoodDoctor.bkrs import DoctorBKRS
 import os
 from BucketLib.bucket import Bucket
-from capella_utils.dedicated import CapellaUtils as CapellaAPI
+from capella_utils.serverless import CapellaUtils as ServerlessUtils
+from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from aGoodDoctor.fts import DoctorFTS
+from TestInput import TestInputServer
+from cluster_utils.cluster_ready_functions import Nebula
+from org.xbill.DNS import Lookup, Type
 
 
 class Murphy(BaseTestCase, OPD):
@@ -99,39 +98,49 @@ class Murphy(BaseTestCase, OPD):
         self.PrintStep("Step 2: Create required buckets and collections.")
         self.log.info("Create CB buckets")
         # Create Buckets
-        self.log.info("Get the available memory quota")
-        rest = RestConnection(self.cluster.master)
-        self.info = rest.get_nodes_self()
-
-        # threshold_memory_vagrant = 100
-        kv_memory = self.info.memoryQuota - 100
-        ramQuota = self.input.param("ramQuota", kv_memory)
-        buckets = ["default"]*self.num_buckets
-        bucket_type = self.bucket_type.split(';')*self.num_buckets
-        for i in range(self.num_buckets):
+        for _ in range(self.num_buckets):
+            self.database_name = "VolumeTestBucket"
             bucket = Bucket(
-                {Bucket.name: buckets[i] + str(i),
-                 Bucket.ramQuotaMB: ramQuota/self.num_buckets,
-                 Bucket.maxTTL: self.bucket_ttl,
-                 Bucket.replicaNumber: self.num_replicas,
-                 Bucket.storageBackend: self.bucket_storage,
-                 Bucket.evictionPolicy: self.bucket_eviction_policy,
-                 Bucket.bucketType: bucket_type[i],
-                 Bucket.durabilityMinLevel: self.bucket_durability_level,
-                 Bucket.flushEnabled: True,
-                 Bucket.fragmentationPercentage: self.fragmentation})
-            self.bucket_params = {
-                "name": bucket.name,
-                "bucketConflictResolution": "seqno",
-                "memoryAllocationInMb": bucket.ramQuotaMB,
-                "flush": bucket.flushEnabled,
-                "replicas": bucket.replicaNumber,
-                "storageBackend": bucket.storageBackend,
-                "durabilityLevel": bucket.durability_level,
-                "timeToLive": {"unit": "seconds", "value": bucket.maxTTL}
-                }
-            CapellaAPI.create_bucket(self.cluster, self.bucket_params)
-            self.bucket_util.get_updated_bucket_server_list(self.cluster, bucket)
+                    {Bucket.name: self.database_name,
+                     Bucket.bucketType: Bucket.Type.MEMBASE,
+                     Bucket.replicaNumber: 2,
+                     Bucket.storageBackend: Bucket.StorageBackend.magma,
+                     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
+                     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
+                     Bucket.num_vbuckets: 64,
+                     Bucket.width: 1, #self.bucket_width,
+                     Bucket.weight: 30, #self.bucket_weight
+                     })
+            bucket.name = ServerlessUtils.create_serverless_database(
+                self.pod, self.tenant, bucket.name, "aws", "us-east-1",
+                bucket.serverless.width, bucket.serverless.weight,
+                dataplane_id=self.dataplane_id)
+            state = ServerlessUtils.is_database_ready(self.pod, self.tenant,
+                                                      bucket.name)
+            self.assertTrue(state == "healthy", "Database not healthy")
+            server = TestInputServer()
+            srv = ServerlessUtils.get_database_nebula_endpoint(
+                self.pod, self.tenant, bucket.name)
+            records = Lookup("_couchbases._tcp.{}".format(srv), Type.SRV).run()
+            for record in records:
+                server.ip = str(record.getTarget()).rstrip(".")
+                server.memcached_port = int(record.getPort())
+                self.log.info("SRV {} is resolved to {}.".format(srv,
+                                                                 server.ip))
+            access, secret = ServerlessUtils.generate_keys(self.pod, self.tenant,
+                                                           bucket.name)
+            ServerlessUtils.allow_my_ip(self.pod, self.tenant, bucket.name)
+            server.rest_username = access
+            server.rest_password = secret
+            server.type = "serverless"
+            server.port = "18091"
+            nebula = Nebula(srv, server)
+            self.log.info("Populate Nebula object done!!")
+            bucket.serverless.nebula_endpoint = nebula.endpoint
+            bucket.serverless.dapi = \
+                ServerlessUtils.get_database_DAPI(self.pod, self.tenant,
+                                                  bucket.name)
+            self.bucket_util.update_bucket_nebula_servers(self.cluster, nebula, bucket)
             self.cluster.buckets.append(bucket)
 
         self.buckets = self.cluster.buckets

@@ -317,6 +317,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         self.enforce_tls = False
                         CbServer.use_https = False
                         nebula = Nebula(nebula_ip, cluster.master)
+                        nebula.endpoint.srv = nebula_ip
                         self.log.info("Populate Nebula object done!!")
                         self.nebula_details[cluster] = nebula
                     except:

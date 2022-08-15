@@ -229,7 +229,7 @@ class SDKClient(object):
         if self.bucket is not None:
             self.log.debug("The bucket is serverless: %s" % bucket.name)
             if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
-                self.hosts = [bucket.serverless.nebula_endpoint.ip]
+                self.hosts = [bucket.serverless.nebula_endpoint.srv]
                 self.log.info("For SDK, Nebula endpoint used for bucket is: %s"
                               % bucket.serverless.nebula_endpoint)
         for server in servers:

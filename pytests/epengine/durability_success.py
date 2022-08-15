@@ -57,7 +57,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.log.info("Will simulate error condition on %s" % target_nodes)
         for node in target_nodes:
             shell_conn[node.ip] = None
-            if not node.hosted_on_cloud:
+            if node.type == "default":
                 shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(node)
             active_vbs_in_target_nodes += cbstat_obj[node.ip].vbucket_list(

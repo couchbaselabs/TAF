@@ -93,7 +93,7 @@ class TestInputServer(object):
         self.upgraded = False
         self.remote_info = None
         self.use_sudo = False
-        self.hosted_on_cloud = False
+        self.type = "default"
 
     def __str__(self):
         ip_str = "ip:{0} port:{1}".format(self.ip, self.port)

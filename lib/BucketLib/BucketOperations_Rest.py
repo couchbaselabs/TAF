@@ -86,10 +86,10 @@ class BucketHelper(RestConnection):
                     counter += 1
                     bucket.vbuckets.append(vbucketInfo)
             bucket.vbActiveNumNonResident = 100
-            if "vbActiveNumNonResident" in parsed["basicStats"]:
+            if "basicStats" in parsed and "vbActiveNumNonResident" in parsed["basicStats"]:
                 bucket.vbActiveNumNonResident = \
                     parsed["basicStats"]["vbActiveNumNonResident"]
-            bucket.maxTTL = parsed["maxTTL"]
+            bucket.maxTTL = parsed.get("maxTTL")
         return bucket
 
     def get_buckets_json(self):
@@ -646,7 +646,7 @@ class BucketHelper(RestConnection):
     # Collection/Scope specific APIs
     def create_collection(self, bucket, scope, collection_spec, session=None):
         api = self.baseUrl \
-              + 'pools/default/buckets/%s/scopes/%s/collections/' \
+              + 'pools/default/buckets/%s/scopes/%s/collections' \
               % (urllib.quote_plus("%s" % bucket), urllib.quote_plus(scope))
         params = dict()
         for key, value in collection_spec.items():

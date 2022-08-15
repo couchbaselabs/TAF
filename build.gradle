@@ -60,6 +60,8 @@ dependencies {
 	
 	// https://mvnrepository.com/artifact/com.spotify/docker-client
 	compile group: 'com.spotify', name: 'docker-client', version: '8.16.0'
+	
+	implementation 'dnsjava:dnsjava:3.5.1'
 }
 
 task copyDeps(type: Copy) {

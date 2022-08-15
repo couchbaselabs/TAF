@@ -6,23 +6,6 @@ from global_vars import logger
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 
 
-class Pod:
-    def __init__(self, url_public):
-        self.url_public = url_public
-
-
-class Tenant:
-    def __init__(self, id, user, pwd,
-                 secret=None, access=None):
-        self.id = id
-        self.user = user
-        self.pwd = pwd
-        self.api_secret_key = secret
-        self.api_access_key = access
-        self.project_id = None
-        self.clusters = dict()
-
-
 class CapellaUtils(object):
     cidr = "10.0.0.0"
     memcached_port = "11207"
@@ -446,7 +429,7 @@ class CapellaUtils(object):
                                  tenant.user,
                                  tenant.pwd)
         resp = capella_api.allow_my_ip(tenant.id, tenant.project_id,
-                                          cluster_id)
+                                        cluster_id)
         if resp.status_code != 202:
             result = json.loads(resp.content)
             if result["errorType"] == "ErrAllowListsCreateDuplicateCIDR":

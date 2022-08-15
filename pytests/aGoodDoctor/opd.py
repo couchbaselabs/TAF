@@ -45,8 +45,6 @@ class OPD:
         return mem
 
     def create_required_buckets(self, cluster):
-        if self.cluster.cloud_cluster:
-            return
         self.log.info("Get the available memory quota")
         rest = RestConnection(cluster.master)
         self.info = rest.get_nodes_self()
@@ -100,16 +98,18 @@ class OPD:
             self.scope_prefix = self.input.param("scope_prefix",
                                                  "VolumeScope")
             for bucket in cluster.buckets:
+                node = cluster.master or bucket.nebula_endpoint
                 for i in range(num_scopes):
                     scope_name = self.scope_prefix + str(i)
                     self.log.info("Creating scope: %s"
                                   % (scope_name))
-                    self.bucket_util.create_scope(cluster.master,
+                    self.bucket_util.create_scope(node,
                                                   bucket,
                                                   {"name": scope_name})
                     self.sleep(0.5)
             self.num_scopes += 1
         for bucket in cluster.buckets:
+            node = cluster.master or bucket.serverless.nebula_endpoint
             for scope in bucket.scopes.keys():
                 if scope == CbServer.system_scope:
                     continue
@@ -119,7 +119,7 @@ class OPD:
 
                     for i in range(num_collections):
                         collection_name = self.collection_prefix + str(i)
-                        self.bucket_util.create_collection(cluster.master,
+                        self.bucket_util.create_collection(node,
                                                            bucket,
                                                            scope,
                                                            {"name": collection_name})
@@ -433,11 +433,11 @@ class OPD:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=14400)
-                if self.track_failures and not self.cluster.cloud_cluster:
+                if self.track_failures and self.cluster.type == "default":
                     self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items,
                                                               timeout=14400)
             except Exception as e:
-                if not self.cluster.cloud_cluster:
+                if not self.cluster.type == "default":
                     self.get_gdb()
                 raise e
 
@@ -456,9 +456,10 @@ class OPD:
             self.log.info("Validating Active/Replica Docs")
             cmd = dict()
             self.ops_rate = self.input.param("ops_rate", 2000)
-            master = Server(self.cluster.master.ip, self.cluster.master.port,
-                            self.cluster.master.rest_username, self.cluster.master.rest_password,
-                            str(self.cluster.master.memcached_port))
+            if self.cluster.master:
+                master = Server(self.cluster.master.ip, self.cluster.master.port,
+                                self.cluster.master.rest_username, self.cluster.master.rest_password,
+                                str(self.cluster.master.memcached_port))
             self.loader_map = dict()
             for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
@@ -508,6 +509,13 @@ class OPD:
             i = pc
             while i > 0:
                 for bucket in self.cluster.buckets:
+                    if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
+                        nebula = bucket.serverless.nebula_endpoint
+                        print "Serverless Mode, Nebula will be used for SDK operations: %s" % nebula.srv
+                        master = Server(nebula.srv, nebula.port,
+                                        nebula.rest_username,
+                                        nebula.rest_password,
+                                        str(nebula.memcached_port))
                     for scope in bucket.scopes.keys():
                         if scope == CbServer.system_scope:
                             continue
@@ -559,17 +567,18 @@ class OPD:
                      validate_data=True):
         self.get_memory_footprint()
         self._loader_dict()
-        master = Server(self.cluster.master.ip, self.cluster.master.port,
-                        self.cluster.master.rest_username, self.cluster.master.rest_password,
-                        str(self.cluster.master.memcached_port))
+        if self.cluster.master:
+            master = Server(self.cluster.master.ip, self.cluster.master.port,
+                            self.cluster.master.rest_username, self.cluster.master.rest_password,
+                            str(self.cluster.master.memcached_port))
         tasks = list()
         i = self.process_concurrency
         while i > 0:
             for bucket in self.cluster.buckets:
                 if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
                     nebula = bucket.serverless.nebula_endpoint
-                    print "Serverless Mode, Nebula will be used for SDK operations: %s" % nebula
-                    master = Server(nebula.ip, nebula.port,
+                    print "Serverless Mode, Nebula will be used for SDK operations: %s" % nebula.srv
+                    master = Server(nebula.srv, nebula.port,
                                     nebula.rest_username,
                                     nebula.rest_password,
                                     str(nebula.memcached_port))
@@ -607,7 +616,7 @@ class OPD:
 
         self.print_stats()
 
-        if self.cluster.cloud_cluster:
+        if self.cluster.type != "default":
             return
 
         result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
@@ -656,15 +665,18 @@ class OPD:
         return kvstore, wal, keyTree, seqTree
 
     def print_stats(self):
-        self.bucket_util.print_bucket_stats(self.cluster)
-        self.cluster_util.print_cluster_stats(self.cluster)
+        if self.cluster.type != "serverless":
+            self.bucket_util.print_bucket_stats(self.cluster)
+            self.cluster_util.print_cluster_stats(self.cluster)
         self.print_crud_stats()
         for bucket in self.cluster.buckets:
-            self.get_bucket_dgm(bucket)
-            if bucket.storageBackend == Bucket.StorageBackend.magma and not self.cluster.cloud_cluster:
-                self.get_magma_disk_usage(bucket)
-                # self.check_fragmentation_using_magma_stats(bucket)
-                self.check_fragmentation_using_kv_stats(bucket)
+            if self.cluster.type != "serverless":
+                self.get_bucket_dgm(bucket)
+            if bucket.storageBackend == Bucket.StorageBackend.magma and \
+                self.cluster.type == "default":
+                    self.get_magma_disk_usage(bucket)
+                    # self.check_fragmentation_using_magma_stats(bucket)
+                    self.check_fragmentation_using_kv_stats(bucket)
 
     def PrintStep(self, msg=None):
         print "\n"
@@ -690,7 +702,8 @@ class OPD:
         self.log.info("KV stats fragmentation values {}".format(result))
 
     def dump_magma_stats(self, server, bucket, shard, kvstore):
-        if bucket.storageBackend != Bucket.StorageBackend.magma or self.cluster.cloud_cluster:
+        if bucket.storageBackend != Bucket.StorageBackend.magma \
+            or self.cluster.type != "default":
             return
         shell = RemoteMachineShellConnection(server)
         data_path = RestConnection(server).get_data_path()

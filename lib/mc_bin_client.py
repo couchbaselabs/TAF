@@ -77,8 +77,6 @@ class MemcachedClient(KeepRefs):
         super(MemcachedClient, self).__init__()
         self.host = host
         self.port = port
-        if CbServer.use_https:
-            self.port = CbServer.ssl_memcached_port
         self.timeout = timeout
         self._createConn()
         self.r = random.Random()
