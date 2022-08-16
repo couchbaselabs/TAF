@@ -4757,7 +4757,7 @@ class BucketUtils(ScopeUtils):
         manifest_uid = BucketHelper(cluster_node) \
             .get_bucket_manifest_uid(bucket)
         if bucket.stats.manifest_uid != int(manifest_uid, 16):
-            BucketUtils.log.error("Bucket UID mismatch. "
+            BucketUtils.log.debug("Bucket UID mismatch. "
                                   "Expected: %s, Actual: %s"
                                   % (bucket.stats.manifest_uid,
                                      manifest_uid))
@@ -4904,7 +4904,7 @@ class BucketUtils(ScopeUtils):
 
             status = self.validate_manifest_uid(cluster.master, bucket)
             if not status:
-                self.log.warn("Bucket manifest UID mismatch!")
+                self.log.debug("Bucket manifest UID mismatch!")
 
             result = self.validate_seq_no_stats(vbucket_stats[bucket.name])
             self.assertTrue(result,

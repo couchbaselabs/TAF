@@ -173,8 +173,7 @@ class RestConnection(object):
             if status:
                 return json_parsed, True
             else:
-                print("{0} with status {1}: {2}"
-                      .format(api, status, json_parsed))
+                self.log.debug("{0} with status {1}: {2}".format(api, status, json_parsed))
                 return json_parsed, False
         except ValueError as e:
             if content is not None:
@@ -256,7 +255,7 @@ class RestConnection(object):
                                    response.status_code, reason,
                                    content.rstrip('\n'),
                                    RestConnection.get_auth(headers))
-                    self.log.error(message)
+                    self.log.debug(message)
                     self.log.debug(''.join(traceback.format_stack()))
                     return False, content, response
             except requests.exceptions.HTTPError as errh:
@@ -266,7 +265,7 @@ class RestConnection(object):
                     # Known ssl bug, retry
                     pass
                 else:
-                    self.log.error("Error Connecting {0}".format(errc))
+                    self.log.debug("Error Connecting {0}".format(errc))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
             except requests.exceptions.Timeout as errt:
@@ -320,7 +319,7 @@ class RestConnection(object):
                                    response['status'], reason,
                                    content.rstrip('\n'),
                                    RestConnection.get_auth(headers))
-                    self.log.error(message)
+                    self.log.debug(message)
                     self.log.debug(''.join(traceback.format_stack()))
                     return False, content, response
             except socket.error as e:
