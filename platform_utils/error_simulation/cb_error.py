@@ -96,6 +96,8 @@ class CouchbaseError:
                 self.server, Bucket({"name": bucket_name}), 30,
                 self.server.rest_username, self.server.rest_password)
             mc_client.start_persistence()
+        elif action == CouchbaseError.KILL_MEMCACHED:
+            pass
         else:
             self.log.error("Unsupported action to revert: '{0}'"
                            .format(action))

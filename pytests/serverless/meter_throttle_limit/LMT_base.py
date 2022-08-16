@@ -686,30 +686,38 @@ class LMT(ServerlessOnPremBaseTest):
     def get_stat_from_prometheus(self, bucket):
         ru_from_prometheus = 0
         wu_from_prometheus = 0
+        num_throttled_prometheus = 0
         for node in bucket.servers:
             content = StatsHelper(node).get_prometheus_metrics_high()
-            wu_pattern = re.compile('meter_wu_total{bucket="%s"} (\d+)' %bucket.name)
-            ru_pattern = re.compile('meter_ru_total{bucket="%s"} (\d+)' %bucket.name)
+            wu_pattern = re.compile('meter_wu_total{bucket="%s"} (\d+)' % bucket.name)
+            ru_pattern = re.compile('meter_ru_total{bucket="%s"} (\d+)' % bucket.name)
+            num_throttled = re.compile('throttle_count_total{bucket="%s",for="kv"} (\d+)' % bucket.name)
             for line in content:
                 if wu_pattern.match(line):
                     wu_from_prometheus += int(wu_pattern.findall(line)[0])
                 elif ru_pattern.match(line):
                     ru_from_prometheus += int(ru_pattern.findall(line)[0])
-        return ru_from_prometheus, wu_from_prometheus
+                elif num_throttled.match(line):
+                    num_throttled_prometheus += int(num_throttled.findall(line)[0])
+        return num_throttled_prometheus, ru_from_prometheus, wu_from_prometheus
 
     def get_stat_from_metering(self, bucket):
-        ru_from_prometheus = 0
-        wu_from_prometheus = 0
+        wu_from_metering = 0
+        ru_from_metering = 0
+        num_throttle_metering = 0
         for node in bucket.servers:
             content = StatsHelper(node).metering()
-            wu_pattern = re.compile('counter_wu_total{bucket="%s"} (\d+)' %bucket.name)
-            ru_pattern = re.compile('counter_ru_total{bucket="%s"} (\d+)' %bucket.name)
+            wu_pattern = re.compile('meter_wu_total{bucket="%s"} (\d+)' % bucket.name)
+            ru_pattern = re.compile('meter_ru_total{bucket="%s"} (\d+)' % bucket.name)
+            num_throttle = re.compile('throttle_count_total{bucket="%s",for="kv"} (\d+)' % bucket.name)
             for line in content:
                 if wu_pattern.match(line):
-                    wu_from_prometheus += int(wu_pattern.findall(line)[0])
+                    wu_from_metering += int(wu_pattern.findall(line)[0])
                 elif ru_pattern.match(line):
-                    ru_from_prometheus += int(ru_pattern.findall(line)[0])
-        return ru_from_prometheus, wu_from_prometheus
+                    ru_from_metering += int(ru_pattern.findall(line)[0])
+                elif num_throttle.match(line):
+                    num_throttle_metering += int(num_throttle.findall(line)[0])
+        return num_throttle_metering, ru_from_metering, wu_from_metering
 
     def get_item_count(self):
         buckets = self.bucket_util.get_all_buckets(self.cluster)
