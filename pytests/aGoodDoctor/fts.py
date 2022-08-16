@@ -19,7 +19,7 @@ class DoctorFTS:
         self.cluster = cluster
         self.bucket_util = bucket_util
         self.input = TestInputSingleton.input
-        self.fts_index_partitions = self.input.param("fts_index_partition", 6)
+        self.fts_index_partitions = self.input.param("fts_index_partition", 1)
         self.log = logger.get("test")
         self.fts_helper = FtsHelper(self.cluster.fts_nodes[0])
         self.indexes = dict()
