@@ -4,8 +4,8 @@ import base64
 import random
 import string
 import requests
-from capellaAPI.CapellaAPI import CapellaAPI
 from pytests.basetestcase import BaseTestCase
+from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from couchbase_utils.capella_utils.capella_utils import CapellaUtils
 
 
@@ -50,7 +50,6 @@ class SecurityTest(BaseTestCase):
             print("Capella API returned " + str(
                 capella_api_resp.status_code))
             print(capella_api_resp.json()["message"])
-        CapellaUtils.log.info("Cluster created with cluster ID: {}".format(cluster_id))
         return capella_api_resp
 
     def connect_node_port(self, node, ports, expect_to_connect=True):
@@ -134,7 +133,8 @@ class SecurityTest(BaseTestCase):
                                       "plan": "Developer Pro",
                                       "projectId": self.project_id, "timezone": "PT",
                                       "description": "", "provider": "aws"}
-            resp = self.create_cluster(self.url.replace("cloud", ""), self.tenant_id, capella_api,
+            resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
+                                       capella_api,
                                        capella_cluster_config)
             self.assertEqual(expected_response_code[self.test_users[user]["role"]],
                              resp.status_code, msg="FAIL, Outcome: {0}, Expected: {1}"
@@ -214,7 +214,7 @@ class SecurityTest(BaseTestCase):
                 self.log.info("Deleting the ip")
                 # get ip id
                 url = '{}/v2/organizations/{}/projects/{}/clusters/{}' \
-                    .format("https://" + self.url.replace("cloud", ""), self.tenant_id,
+                    .format("https://" + self.url.replace("cloud", "", 1), self.tenant_id,
                             self.project_id,
                             self.cluster_id)
                 url = url + '/allowlists?page={0}&perPage={1}'.format(1, 100)
@@ -223,7 +223,7 @@ class SecurityTest(BaseTestCase):
                 # delete ip
                 del_ip_body = {"delete": ["{0}".format(ip_id)]}
                 url = '{}/v2/organizations/{}/projects/{}/clusters/{}' \
-                    .format("https://" + self.url.replace("cloud", ""), self.tenant_id,
+                    .format("https://" + self.url.replace("cloud", "", 1), self.tenant_id,
                             self.project_id,
                             self.cluster_id)
                 url = url + '/allowlists-bulk'
@@ -258,3 +258,40 @@ class SecurityTest(BaseTestCase):
                     self.assertEqual(200, response.status_code, "User should be able to login")
                 else:
                     self.assertEqual(401, response.status_code, "User should not be able to login")
+
+    def test_jump_tenant_boundary(self):
+        self.log.info("Jumping tenant boundaries")
+        self.log.info("Create a cluster in a different tenant where the user does not exist")
+        diff_tenant_id = self.input.param("diff_tenant_id", "00000000-0000-0000-0000-000000000000")
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        capella_cluster_config = {"region": "us-west-2", "name": self.user + "_Cluster",
+                                  "cidr": None, "singleAZ": False,
+                                  "specs": [{"services": ["kv"], "count": 3,
+                                             "compute": "m5.xlarge",
+                                             "disk": {"type": "gp3", "sizeInGb": 50,
+                                                      "iops": 3000}}],
+                                  "plan": "Developer Pro",
+                                  "projectId": self.project_id, "timezone": "PT",
+                                  "description": "", "provider": "aws"}
+        resp = self.create_cluster(self.url.replace("cloud", "", 1), diff_tenant_id, capella_api,
+                                   capella_cluster_config, timeout=30)
+        self.assertEqual(404, resp.status_code,
+                         msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 404))
+
+        self.log.info("Expose details of a user who is part of the tenant")
+        url = "{0}/v2/organizations/{1}/users/{2}".format("https://" +
+                                                          self.url.replace("cloud", "", 1),
+                                                          self.tenant_id,
+                                                          self.test_users["User1"]["userid"])
+        resp = capella_api.do_internal_request(url, method="GET", params='')
+        self.assertEqual(200, resp.status_code,
+                         msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 200))
+        self.log.info("Expose details of a user who is not part of the tenant")
+        url = "{0}/v2/organizations/{1}/users/{2}".format("https://" +
+                                                          self.url.replace("cloud", "", 1),
+                                                          diff_tenant_id,
+                                                          self.test_users["User1"]["userid"])
+        resp = capella_api.do_internal_request(url, method="GET", params='')
+        self.assertEqual(500, resp.status_code,
+                         msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 500))
