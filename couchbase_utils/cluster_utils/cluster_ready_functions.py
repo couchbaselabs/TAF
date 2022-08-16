@@ -208,20 +208,14 @@ class ClusterUtils:
         :param servers: List of TestInputServer objects
         :return str: Profile_type for the cluster node
         """
-        profile = None
-        cmd = "cat /etc/couchbase.d/config_profile"
-        for index, server in enumerate(servers):
-            shell = RemoteMachineShellConnection(server)
-            output, _ = shell.execute_command(cmd)
-            shell.disconnect()
-            output = "serverless" \
-                if output and output[0].strip() == "serverless" else "default"
-            self.log.debug("%s: Profile=%s" % (server.ip, output))
-            if index == 0:
-                profile = output
-            elif profile != output:
-                raise Exception("%s - Profile type mismatch" % server.ip)
-        return profile
+        profiles = []
+        for server in servers:
+            rest = RestConnection(server)
+            result = rest.get_pools_info()
+            profiles.append(result["configProfile"])
+        if len(list(set(profiles))) > 1:
+            raise Exception("Profile type mismatch")
+        return profiles[0]
 
     def set_rebalance_moves_per_nodes(self, cluster_node,
                                       rebalanceMovesPerNode=4):
