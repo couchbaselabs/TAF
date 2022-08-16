@@ -602,7 +602,8 @@ class CBASBaseTest(BaseTestCase):
         if not doc_loading_spec:
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
                 self.doc_spec_name)
-        self.over_ride_doc_loading_template_params(doc_loading_spec)
+        CollectionBase.over_ride_doc_loading_template_params(
+            self, doc_loading_spec)
         self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
 
         doc_loading_task = self.bucket_util.run_scenario_from_spec(
@@ -659,20 +660,6 @@ class CBASBaseTest(BaseTestCase):
                     self.bucket_size = kv_quota // int(
                         self.input.param("num_buckets", 1))
                 bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
-
-    def over_ride_doc_loading_template_params(self, target_spec):
-        for key, value in self.input.test_params.items():
-            if key == "durability":
-                target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
-                    self.durability_level
-            elif key == "sdk_timeout":
-                target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
-            elif key == "doc_size":
-                target_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_SIZE] \
-                    = self.doc_size
-            elif key == "randomize_value":
-                target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
-                    = self.randomize_value
 
     @staticmethod
     def create_or_delete_users(rbac_util, rbac_users_created, delete=False):

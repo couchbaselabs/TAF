@@ -66,6 +66,7 @@ class CollectionBase(ClusterSetup):
                                                    num_reader_threads="disk_io_optimized")
 
         try:
+            self.bucket_util.add_rbac_user(self.cluster.master)
             self.collection_setup()
         except Java_base_exception as exception:
             self.handle_setup_exception(exception)
@@ -127,8 +128,6 @@ class CollectionBase(ClusterSetup):
                 compression_settings=sdk_compression)
 
     def collection_setup(self):
-        self.bucket_util.add_rbac_user(self.cluster.master)
-
         # Create bucket(s) and add rbac user
         if CbServer.cluster_profile == "default" and self.bucket_storage == \
                 Bucket.StorageBackend.magma:
@@ -155,8 +154,10 @@ class CollectionBase(ClusterSetup):
                 self.data_spec_name)
 
         # Process params to over_ride values if required
-        self.over_ride_bucket_template_params(buckets_spec)
-        self.over_ride_doc_loading_template_params(doc_loading_spec)
+        CollectionBase.over_ride_bucket_template_params(
+            self, self.bucket_storage, buckets_spec)
+        CollectionBase.over_ride_doc_loading_template_params(
+            self, doc_loading_spec)
         self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
@@ -226,45 +227,52 @@ class CollectionBase(ClusterSetup):
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
 
-    def over_ride_bucket_template_params(self, bucket_spec):
-        if self.bucket_storage == Bucket.StorageBackend.magma:
+    @staticmethod
+    def over_ride_bucket_template_params(test_obj, bucket_storage,
+                                         bucket_spec):
+        if bucket_storage == Bucket.StorageBackend.magma:
             # Blindly override the following params
             bucket_spec[Bucket.evictionPolicy] = \
                 Bucket.EvictionPolicy.FULL_EVICTION
         else:
-            for key, val in self.input.test_params.items():
+            for key, val in test_obj.input.test_params.items():
                 if key == "replicas":
-                    bucket_spec[Bucket.replicaNumber] = self.num_replicas
+                    bucket_spec[Bucket.replicaNumber] = test_obj.num_replicas
                 elif key == "bucket_size":
-                    bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
+                    bucket_spec[Bucket.ramQuotaMB] = test_obj.bucket_size
                 elif key == "num_items":
                     bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
-                        self.num_items
+                        test_obj.num_items
                 elif key == "remove_default_collection":
                     bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
-                        self.input.param(key)
+                        test_obj.input.param(key)
                 elif key == "bucket_storage":
-                    bucket_spec[Bucket.storageBackend] = self.bucket_storage
+                    bucket_spec[Bucket.storageBackend] = \
+                        test_obj.bucket_storage
                 elif key == "compression_mode":
-                    bucket_spec[Bucket.compressionMode] = self.compression_mode
+                    bucket_spec[Bucket.compressionMode] = \
+                        test_obj.compression_mode
                 elif key == "flushEnabled":
-                    bucket_spec[Bucket.flushEnabled] = int(self.flush_enabled)
+                    bucket_spec[Bucket.flushEnabled] = \
+                        int(test_obj.flush_enabled)
                 elif key == "bucket_type":
-                    bucket_spec[Bucket.bucketType] = self.bucket_type
+                    bucket_spec[Bucket.bucketType] = test_obj.bucket_type
 
-    def over_ride_doc_loading_template_params(self, target_spec):
-        for key, value in self.input.test_params.items():
+    @staticmethod
+    def over_ride_doc_loading_template_params(test_obj, target_spec):
+        for key, value in test_obj.input.test_params.items():
             if key == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
-                    self.durability_level
+                    test_obj.durability_level
             elif key == "sdk_timeout":
-                target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
+                target_spec[MetaCrudParams.SDK_TIMEOUT] = test_obj.sdk_timeout
             elif key == "doc_size":
                 target_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_SIZE] \
-                    = self.doc_size
+                    = test_obj.doc_size
             elif key == "randomize_value":
-                target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
-                    = self.randomize_value
+                target_spec["doc_crud"][
+                    MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
+                    = test_obj.randomize_value
 
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
