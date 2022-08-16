@@ -475,12 +475,18 @@ class RebalanceTask(Task):
         self.result = True
         self.log.critical("Nodes in cluster: %s" % [node.ip for node in self.cluster.nodes_in_cluster])
         self.log.critical("KV nodes      : %s" % [node.ip for node in self.cluster.kv_nodes])
-        self.log.critical("Index nodes   : %s" % [node.ip for node in self.cluster.index_nodes])
-        self.log.critical("Query nodes   : %s" % [node.ip for node in self.cluster.query_nodes])
-        self.log.critical("CBAS nodes    : %s" % [node.ip for node in self.cluster.cbas_nodes])
-        self.log.critical("FTS nodes     : %s" % [node.ip for node in self.cluster.fts_nodes])
-        self.log.critical("Eventing nodes: %s" % [node.ip for node in self.cluster.eventing_nodes])
-        self.log.critical("Backup nodes  : %s" % [node.ip for node in self.cluster.backup_nodes])
+        if len(self.cluster.index_nodes):
+            self.log.critical("Index nodes   : %s" % [node.ip for node in self.cluster.index_nodes])
+        if len(self.cluster.query_nodes):
+            self.log.critical("Query nodes   : %s" % [node.ip for node in self.cluster.query_nodes])
+        if len(self.cluster.cbas_nodes):
+            self.log.critical("CBAS nodes    : %s" % [node.ip for node in self.cluster.cbas_nodes])
+        if len(self.cluster.fts_nodes):
+            self.log.critical("FTS nodes     : %s" % [node.ip for node in self.cluster.fts_nodes])
+        if len(self.cluster.eventing_nodes):
+            self.log.critical("Eventing nodes: %s" % [node.ip for node in self.cluster.eventing_nodes])
+        if len(self.cluster.backup_nodes):
+            self.log.critical("Backup nodes  : %s" % [node.ip for node in self.cluster.backup_nodes])
         return self.result
 
     def add_nodes(self):

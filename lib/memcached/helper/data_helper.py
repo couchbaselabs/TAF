@@ -28,10 +28,10 @@ class MemcachedClientHelper(object):
         if CbServer.use_https:
             node.memcached = CbServer.ssl_memcached_port
         if isinstance(server, dict):
-            log.info("creating memcached client: {0}:{1} {2}"
+            log.debug("creating memcached client: {0}:{1} {2}"
                      .format(server["ip"], node.memcached, bucket.name))
         else:
-            log.info("creating memcached client: {0}:{1} {2}"
+            log.debug("creating memcached client: {0}:{1} {2}"
                      .format(server.ip, node.memcached, bucket.name))
         BucketHelper(server).vbucket_map_ready(bucket, 60)
         vbuckets = BucketHelper(server).get_vbuckets(bucket)
