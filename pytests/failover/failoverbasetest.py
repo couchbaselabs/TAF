@@ -19,9 +19,9 @@ class FailoverBaseTest(BaseTestCase):
         self._cleanup_nodes = []
         self._failed_nodes = []
         super(FailoverBaseTest, self).setUp()
-        self.defaul_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
+        default_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
         self.default_view_name = "default_view"
-        self.default_view = View(self.default_view_name, self.defaul_map_func,
+        self.default_view = View(self.default_view_name, default_map_func,
                                  None)
         self.failoverMaster = self.input.param("failoverMaster", False)
         self.total_vbuckets = self.input.param("total_vbuckets", 1024)

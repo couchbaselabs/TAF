@@ -13,9 +13,6 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
-from BucketLib.bucket import Bucket
-from collections_helper.collections_spec_constants import \
-    MetaConstants, MetaCrudParams
 
 from java.lang import Exception as Java_base_exception
 
@@ -36,8 +33,8 @@ class RebalanceBaseTest(BaseTestCase):
         self.zone = self.input.param("zone", 1)
         self.replica_to_update = self.input.param("new_replica", None)
         self.default_view_name = "default_view"
-        self.defaul_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
-        self.default_view = View(self.default_view_name, self.defaul_map_func,
+        default_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
+        self.default_view = View(self.default_view_name, default_map_func,
                                  None)
         self.max_verify = self.input.param("max_verify", None)
         self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
