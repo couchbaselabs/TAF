@@ -557,32 +557,10 @@ class CBASBaseTest(BaseTestCase):
         # Prints bucket stats before doc_ops
         self.bucket_util.print_bucket_stats(cluster)
 
-        # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
-
-        self.log.info("Creating required SDK clients for client_pool")
-        CollectionBase.create_sdk_clients(self.task_manager.number_of_threads,
-                                          cluster.master,
-                                          cluster.buckets,
-                                          self.sdk_client_pool,
-                                          self.sdk_compression)
-
+        CollectionBase.create_clients_for_sdk_pool(self)
         self.cluster_util.print_cluster_stats(cluster)
         if load_data:
             self.load_data_into_buckets(cluster, doc_loading_spec)
-
-    def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
-        retry_exceptions = list()
-        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-        retry_exceptions.append(SDKException.TimeoutException)
-        retry_exceptions.append(SDKException.RequestCanceledException)
-        retry_exceptions.append(SDKException.DocumentNotFoundException)
-        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
-        if self.durability_level:
-            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-            retry_exceptions.append(SDKException.DurabilityImpossibleException)
-        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def set_num_writer_and_reader_threads(
             self, cluster, num_writer_threads="default",
@@ -604,7 +582,8 @@ class CBASBaseTest(BaseTestCase):
                 self.doc_spec_name)
         CollectionBase.over_ride_doc_loading_template_params(
             self, doc_loading_spec)
-        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
+        CollectionBase.set_retry_exceptions_for_initial_data_load(
+            doc_loading_spec, self.durability_level)
 
         doc_loading_task = self.bucket_util.run_scenario_from_spec(
             self.task, cluster, cluster.buckets, doc_loading_spec,

@@ -176,6 +176,27 @@ class RebalanceBaseTest(BaseTestCase):
             self.bucket_util.print_bucket_stats(self.cluster)
         self.log_setup_status("RebalanceBase", "complete")
 
+    def collection_setup(self):
+        CollectionBase.deploy_buckets_from_spec_file(self)
+
+        # Init sdk_client_pool if not initialized before
+        if self.sdk_client_pool is None:
+            self.init_sdk_pool_object()
+
+        # Create clients in SDK client pool
+        self.log.info("Creating required SDK clients for client_pool")
+        bucket_count = len(self.cluster.buckets)
+        max_clients = self.task_manager.number_of_threads
+        clients_per_bucket = int(ceil(max_clients / bucket_count))
+        for bucket in self.cluster.buckets:
+            self.sdk_client_pool.create_clients(
+                bucket,
+                [self.cluster.master],
+                clients_per_bucket,
+                compression_settings=self.sdk_compression)
+
+        CollectionBase.load_data_from_spec_file(self, "initial_load")
+
     def _create_default_bucket(self, bucket_size):
         if bucket_size:
             available_ram = bucket_size
@@ -222,107 +243,12 @@ class RebalanceBaseTest(BaseTestCase):
                                                    num_reader_threads="default")
         super(RebalanceBaseTest, self).tearDown()
 
-    def collection_setup(self):
-        # If True, creates bucket/scope/collections with simpler names
-        self.use_simple_names = self.input.param("use_simple_names", True)
-        self.over_ride_spec_params = self.input.param("override_spec_params", "").split(";")
-        self.log.info("Creating buckets from spec")
-        # Create bucket(s)
-        if CbServer.cluster_profile == "default" and self.bucket_storage == \
-                Bucket.StorageBackend.magma:
-            # get the TTL value
-            buckets_spec_from_conf = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
-            bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
-            # Blindly override the bucket spec if the backend storage is magma.
-            # So, Bucket spec in conf file will not take any effect.
-            self.spec_name = "single_bucket.bucket_for_magma_collections"
-            magma_bucket_spec = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
-            magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
-            buckets_spec = magma_bucket_spec
-        else:
-            buckets_spec = self.bucket_util.get_bucket_template_from_package(
-                self.spec_name)
-        doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package("initial_load")
-
-        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
-        # Process params to over_ride values if required
-        CollectionBase.over_ride_bucket_template_params(
-            self, self.bucket_storage, buckets_spec)
-        CollectionBase.over_ride_doc_loading_template_params(
-            self, doc_loading_spec)
-        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
-        self.bucket_util.create_buckets_using_json_data(self.cluster,
-                                                        buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
-
-        # Prints bucket stats before doc_ops
-        self.bucket_util.print_bucket_stats(self.cluster)
-        # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
-
-        # Create clients in SDK client pool
-        if self.sdk_client_pool:
-            self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(self.cluster.buckets)
-            max_clients = self.task_manager.number_of_threads
-            clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in self.cluster.buckets:
-                self.sdk_client_pool.create_clients(
-                    bucket,
-                    [self.cluster.master],
-                    clients_per_bucket,
-                    compression_settings=self.sdk_compression)
-
-        doc_loading_task = \
-            self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.cluster.buckets,
-                doc_loading_spec,
-                mutation_num=0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
-        if doc_loading_task.result is False:
-            self.fail("Initial doc_loading failed")
-
-        self.cluster_util.print_cluster_stats(self.cluster)
-
-        # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets,
-                                                     timeout=1200)
-        self.bucket_util.validate_docs_per_collections_all_buckets(
-            self.cluster,
-            timeout=self.wait_timeout)
-
-        self.cluster_util.print_cluster_stats(self.cluster)
-        self.bucket_util.print_bucket_stats(self.cluster)
-        self.bucket_helper_obj = BucketHelper(self.cluster.master)
-
     def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default",
                                           num_storage_threads="default"):
         bucket_helper = BucketHelper(self.cluster.master)
         bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
                                                 num_reader_threads=num_reader_threads,
                                                 num_storage_threads=num_storage_threads)
-
-    def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
-        retry_exceptions = list()
-        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-        retry_exceptions.append(SDKException.TimeoutException)
-        retry_exceptions.append(SDKException.RequestCanceledException)
-        retry_exceptions.append(SDKException.DocumentNotFoundException)
-        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
-        if self.durability_level:
-            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-            retry_exceptions.append(SDKException.DurabilityImpossibleException)
-        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def shuffle_nodes_between_zones_and_rebalance(self, to_remove=None):
         """

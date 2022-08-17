@@ -311,18 +311,18 @@ class volume(BaseTestCase):
 
         num_of_buckets = buckets_spec[MetaConstants.NUM_BUCKETS]
         buckets_spec["buckets"] = {}
-        for i in range(1,num_of_buckets+1):
+        for i in range(1, num_of_buckets+1):
             buckets_spec["buckets"]["bucket_{0}".format(i)] = {}
 
         # MB-38438, adding CollectionNotFoundException in retry exception
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS].append(
             SDKException.CollectionNotFoundException)
 
-        bucket_util.create_buckets_using_json_data(self.cluster, buckets_spec)
-        bucket_util.wait_for_collection_creation_to_complete(self.cluster)
+        self.bucket_util.create_buckets_using_json_data(self.cluster, buckets_spec)
+        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
 
         # Prints bucket stats before doc_ops
-        bucket_util.print_bucket_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         # Init sdk_client_pool if not initialized before
         if self.sdk_client_pool is None:
@@ -331,10 +331,10 @@ class volume(BaseTestCase):
         # Create clients in SDK client pool
         if self.sdk_client_pool:
             self.log.info("Creating required SDK clients for client_pool")
-            bucket_count = len(bucket_util.buckets)
+            bucket_count = len(self.cluster.buckets)
             max_clients = self.task_manager.number_of_threads
             clients_per_bucket = int(ceil(max_clients / bucket_count))
-            for bucket in bucket_util.buckets:
+            for bucket in self.cluster.buckets:
                 self.sdk_client_pool.create_clients(
                     bucket,
                     [cluster.master],
@@ -342,7 +342,6 @@ class volume(BaseTestCase):
                     compression_settings=self.sdk_compression)
 
         # TODO: remove this once the bug is fixed
-        # self.sleep(120, "MB-38497")
         self.sleep(10, "MB-38497")
         if load_data:
             self.reload_data_into_buckets(cluster)

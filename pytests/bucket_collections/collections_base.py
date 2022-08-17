@@ -23,8 +23,6 @@ class CollectionBase(ClusterSetup):
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
         self.doc_ops = self.input.param("doc_ops", None)
-        # If True, creates bucket/scope/collections with simpler names
-        self.use_simple_names = self.input.param("use_simple_names", True)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
         self.data_spec_name = self.input.param("data_spec_name",
@@ -66,7 +64,6 @@ class CollectionBase(ClusterSetup):
                                                    num_reader_threads="disk_io_optimized")
 
         try:
-            self.bucket_util.add_rbac_user(self.cluster.master)
             self.collection_setup()
         except Java_base_exception as exception:
             self.handle_setup_exception(exception)
@@ -99,6 +96,41 @@ class CollectionBase(ClusterSetup):
                                                    num_reader_threads="default")
         super(CollectionBase, self).tearDown()
 
+    def collection_setup(self):
+        ttl_buckets = [
+            "multi_bucket.buckets_for_rebalance_tests_with_ttl",
+            "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
+            "volume_templates.buckets_for_volume_tests_with_ttl",
+            "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_256",
+            "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_512",
+            "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_1024",
+            "magma_dgm.5_percent_dgm.5_node_1_replica_magma_ttl_256_single_bucket",
+            "magma_dgm.5_percent_dgm.5_node_1_replica_magma_ttl_512_single_bucket",
+            "magma_dgm.10_percent_dgm.5_node_2_replica_magma_ttl_256",
+            "magma_dgm.10_percent_dgm.5_node_2_replica_magma_ttl_512",
+            "magma_dgm.10_percent_dgm.5_node_2_replica_magma_ttl_1024",
+            "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_256",
+            "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_512",
+            "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_1024",
+            "magma_dgm.40_percent_dgm.5_node_2_replica_magma_ttl_512",
+            "magma_dgm.80_percent_dgm.5_node_2_replica_magma_ttl_512",
+        ]
+
+        self.bucket_util.add_rbac_user(self.cluster.master)
+        CollectionBase.deploy_buckets_from_spec_file(self)
+
+        # Change magma quota only for bloom filter testing
+        if self.change_magma_quota:
+            bucket_helper = BucketHelper(self.cluster.master)
+            bucket_helper.set_magma_quota_percentage()
+            self.sleep(30, "Wait for magma storage setting to apply")
+
+        validate_docs = False if self.spec_name in ttl_buckets else True
+
+        CollectionBase.create_clients_for_sdk_pool(self)
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name,
+                                                validate_docs)
+
     @staticmethod
     def create_sdk_clients(num_threads, master,
                            buckets, sdk_client_pool, sdk_compression):
@@ -127,105 +159,92 @@ class CollectionBase(ClusterSetup):
                 req_clients=req_clients,
                 compression_settings=sdk_compression)
 
-    def collection_setup(self):
+    @staticmethod
+    def deploy_buckets_from_spec_file(test_obj):
+        # If True, creates bucket/scope/collections with simpler names
+        use_simple_names = test_obj.input.param("use_simple_names", True)
         # Create bucket(s) and add rbac user
-        if CbServer.cluster_profile == "default" and self.bucket_storage == \
-                Bucket.StorageBackend.magma:
+        if CbServer.cluster_profile == "default" \
+                and test_obj.bucket_storage == Bucket.StorageBackend.magma:
             # get the TTL value
             buckets_spec_from_conf = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
+                test_obj.bucket_util.get_bucket_template_from_package(
+                    test_obj.spec_name)
             bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
             # Blindly override the bucket spec if the backend storage is magma.
             # So, Bucket spec in conf file will not take any effect.
-            self.spec_name = "single_bucket.bucket_for_magma_collections"
+            test_obj.spec_name = "single_bucket.bucket_for_magma_collections"
             magma_bucket_spec = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
+                test_obj.bucket_util.get_bucket_template_from_package(
+                    test_obj.spec_name)
             magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
             buckets_spec = magma_bucket_spec
         else:
-            buckets_spec = self.bucket_util.get_bucket_template_from_package(
-                self.spec_name)
-        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
+            buckets_spec = \
+                test_obj.bucket_util.get_bucket_template_from_package(
+                    test_obj.spec_name)
+        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = use_simple_names
 
-        doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package(
-                self.data_spec_name)
-
+        test_obj.log.info("Creating bucket from spec: %s" % test_obj.spec_name)
         # Process params to over_ride values if required
         CollectionBase.over_ride_bucket_template_params(
-            self, self.bucket_storage, buckets_spec)
-        CollectionBase.over_ride_doc_loading_template_params(
-            self, doc_loading_spec)
-        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
-        self.bucket_util.create_buckets_using_json_data(self.cluster,
-                                                        buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
+            test_obj, test_obj.bucket_storage, buckets_spec)
+        test_obj.bucket_util.create_buckets_using_json_data(
+            test_obj.cluster, buckets_spec)
+        test_obj.bucket_util.wait_for_collection_creation_to_complete(
+            test_obj.cluster)
 
         # Prints bucket stats before doc_ops
-        self.bucket_util.print_bucket_stats(self.cluster)
+        test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
+        test_obj.bucket_util.print_bucket_stats(test_obj.cluster)
 
-        # Change magma quota only for bloom filter testing
-        if self.change_magma_quota:
-            bucket_helper = BucketHelper(self.cluster.master)
-            bucket_helper.set_magma_quota_percentage()
-            self.sleep(30, "Sleep while magma storage quota setting is taking effect")
-
+    @staticmethod
+    def create_clients_for_sdk_pool(test_obj):
         # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
+        if test_obj.sdk_client_pool is None:
+            test_obj.init_sdk_pool_object()
 
-        self.log.info("Creating required SDK clients for client_pool")
-        self.create_sdk_clients(self.task_manager.number_of_threads,
-                                self.cluster.master,
-                                self.cluster.buckets,
-                                self.sdk_client_pool,
-                                self.sdk_compression)
+        test_obj.log.info("Creating required SDK clients for client_pool")
+        test_obj.create_sdk_clients(
+            test_obj.task_manager.number_of_threads,
+            test_obj.cluster.master,
+            test_obj.cluster.buckets,
+            test_obj.sdk_client_pool,
+            test_obj.sdk_compression)
 
+    @staticmethod
+    def load_data_from_spec_file(test_obj, data_spec_name, validate_docs=True):
+        test_obj.log.info("Load docs using spec file %s" % data_spec_name)
+        doc_loading_spec = \
+            test_obj.bucket_util.get_crud_template_from_package(data_spec_name)
+        # Process params to over_ride values if required
+        CollectionBase.over_ride_doc_loading_template_params(
+            test_obj, doc_loading_spec)
+        CollectionBase.set_retry_exceptions_for_initial_data_load(
+            doc_loading_spec, test_obj.durability_level)
         doc_loading_task = \
-            self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.cluster.buckets,
+            test_obj.bucket_util.run_scenario_from_spec(
+                test_obj.task,
+                test_obj.cluster,
+                test_obj.cluster.buckets,
                 doc_loading_spec,
                 mutation_num=0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
+                batch_size=test_obj.batch_size,
+                process_concurrency=test_obj.process_concurrency)
         if doc_loading_task.result is False:
-            self.fail("Initial doc_loading failed")
-
-        self.cluster_util.print_cluster_stats(self.cluster)
-
-        ttl_buckets = [
-            "multi_bucket.buckets_for_rebalance_tests_with_ttl",
-            "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
-            "volume_templates.buckets_for_volume_tests_with_ttl",
-            "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_256",
-            "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_512",
-            "magma_dgm.5_percent_dgm.5_node_2_replica_magma_ttl_1024",
-            "magma_dgm.5_percent_dgm.5_node_1_replica_magma_ttl_256_single_bucket",
-            "magma_dgm.5_percent_dgm.5_node_1_replica_magma_ttl_512_single_bucket",
-            "magma_dgm.10_percent_dgm.5_node_2_replica_magma_ttl_256",
-            "magma_dgm.10_percent_dgm.5_node_2_replica_magma_ttl_512",
-            "magma_dgm.10_percent_dgm.5_node_2_replica_magma_ttl_1024",
-            "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_256",
-            "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_512",
-            "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_1024",
-            "magma_dgm.40_percent_dgm.5_node_2_replica_magma_ttl_512",
-            "magma_dgm.80_percent_dgm.5_node_2_replica_magma_ttl_512",
-        ]
+            test_obj.fail("Initial doc_loading failed")
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets,
-                                                     timeout=1200)
-        if self.spec_name not in ttl_buckets:
-            self.bucket_util.validate_docs_per_collections_all_buckets(
-                self.cluster, timeout=2400)
+        test_obj.log.info("Wait for ep_queue_size to drain")
+        test_obj.bucket_util._wait_for_stats_all_buckets(
+            test_obj.cluster, test_obj.cluster.buckets, timeout=1200)
+        if validate_docs:
+            test_obj.bucket_util.validate_docs_per_collections_all_buckets(
+                test_obj.cluster, timeout=2400)
 
         # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats(self.cluster)
+        test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
+        test_obj.bucket_util.print_bucket_stats(test_obj.cluster)
 
     @staticmethod
     def over_ride_bucket_template_params(test_obj, bucket_storage,
@@ -348,24 +367,27 @@ class CollectionBase(ClusterSetup):
                             is_sub_doc=is_sub_doc)
                         self.task_manager.get_task_result(task)
 
-    def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
+    @staticmethod
+    def set_retry_exceptions_for_initial_data_load(doc_loading_spec, d_level):
         retry_exceptions = list()
         retry_exceptions.append(SDKException.AmbiguousTimeoutException)
         retry_exceptions.append(SDKException.TimeoutException)
         retry_exceptions.append(SDKException.RequestCanceledException)
         retry_exceptions.append(SDKException.DocumentNotFoundException)
         retry_exceptions.append(SDKException.ServerOutOfMemoryException)
-        if self.durability_level:
+        if d_level:
             retry_exceptions.append(SDKException.DurabilityAmbiguousException)
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
-    def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default",
+    def set_num_writer_and_reader_threads(self, num_writer_threads="default",
+                                          num_reader_threads="default",
                                           num_storage_threads="default"):
         bucket_helper = BucketHelper(self.cluster.master)
-        bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
-                                                num_reader_threads=num_reader_threads,
-                                                num_storage_threads=num_storage_threads)
+        bucket_helper.update_memcached_settings(
+            num_writer_threads=num_writer_threads,
+            num_reader_threads=num_reader_threads,
+            num_storage_threads=num_storage_threads)
 
     def set_allowed_hosts(self):
         """ First operation will fail and the second operation will succeed"""

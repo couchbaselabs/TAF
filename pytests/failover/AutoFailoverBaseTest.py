@@ -3,12 +3,10 @@ import time
 
 from BucketLib.bucket import Bucket
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import DocLoading, CbServer
+from Cb_constants import DocLoading
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
-from collections_helper.collections_spec_constants import \
-    MetaConstants, MetaCrudParams
 from couchbase_cli import CouchbaseCLI
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
@@ -17,7 +15,6 @@ from remote.remote_util import RemoteMachineShellConnection
 
 from pytests.bucket_collections.collections_base import CollectionBase
 from sdk_client3 import SDKClient
-from sdk_exceptions import SDKException
 
 from java.lang import Exception as Java_base_exception
 
@@ -58,7 +55,7 @@ class AutoFailoverBaseTest(ClusterSetup):
                 num_reader_threads="disk_io_optimized")
         if self.spec_name is not None:
             try:
-                self.collectionSetUp()
+                self.collection_setup()
             except Java_base_exception as exception:
                 self.handle_setup_exception(exception)
             except Exception as exception:
@@ -110,95 +107,9 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
-    def collectionSetUp(self):
-        # If True, creates bucket/scope/collections with simpler names
-        self.use_simple_names = self.input.param("use_simple_names", True)
-        self.over_ride_spec_params = \
-            self.input.param("override_spec_params", "").split(";")
-
-        # Create bucket(s)
-        if CbServer.cluster_profile == "default" and self.bucket_storage \
-                == Bucket.StorageBackend.magma:
-            # get the TTL value
-            buckets_spec_from_conf = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
-            bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
-            # Blindly override the bucket spec if the backend storage is magma.
-            # So, Bucket spec in conf file will not take any effect.
-            self.spec_name = "single_bucket.bucket_for_magma_collections"
-            magma_bucket_spec = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
-            magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
-            buckets_spec = magma_bucket_spec
-        else:
-            buckets_spec = self.bucket_util.get_bucket_template_from_package(
-                self.spec_name)
-        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
-        doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package("initial_load")
-
-        # Process params to over_ride values if required
-        CollectionBase.over_ride_bucket_template_params(
-            self, self.bucket_storage, buckets_spec)
-        CollectionBase.over_ride_doc_loading_template_params(
-            self, doc_loading_spec)
-        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
-        self.bucket_util.create_buckets_using_json_data(self.cluster,
-                                                        buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
-        # Prints bucket stats before doc_ops
-        self.bucket_util.print_bucket_stats(self.cluster)
-        # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
-
-        self.log.info("Creating required SDK clients for client_pool to node {0}".
-                      format(self.orchestrator))
-        CollectionBase.create_sdk_clients(self.task_manager.number_of_threads,
-                                          self.orchestrator,
-                                          self.cluster.buckets,
-                                          self.sdk_client_pool,
-                                          self.sdk_compression)
-
-        doc_loading_task = \
-            self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.cluster.buckets,
-                doc_loading_spec,
-                mutation_num=0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
-        if doc_loading_task.result is False:
-            self.fail("Initial doc_loading failed")
-
-        # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets,
-                                                     timeout=1200)
-        self.bucket_util.validate_docs_per_collections_all_buckets(
-            self.cluster)
-
-        self.bucket_helper_obj = BucketHelper(self.orchestrator)
-
-    def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
-        retry_exceptions = list()
-        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-        retry_exceptions.append(SDKException.TimeoutException)
-        retry_exceptions.append(SDKException.RequestCanceledException)
-        retry_exceptions.append(SDKException.DocumentNotFoundException)
-        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
-        if self.durability_level:
-            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-            retry_exceptions.append(SDKException.DurabilityImpossibleException)
-        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
-
     def bareSetUp(self):
         super(AutoFailoverBaseTest, self).setUp()
-        self.spec_name = self.input.param("bucket_spec",
-                                          None)
+        self.spec_name = self.input.param("bucket_spec", None)
         self._get_params()
         self.rest = RestConnection(self.orchestrator)
         if self.spec_name is None:
@@ -253,6 +164,11 @@ class AutoFailoverBaseTest(ClusterSetup):
             self.set_num_writer_and_reader_threads(num_writer_threads="default",
                                                    num_reader_threads="default")
         super(AutoFailoverBaseTest, self).tearDown()
+
+    def collection_setup(self):
+        CollectionBase.deploy_buckets_from_spec_file(self)
+        CollectionBase.create_clients_for_sdk_pool(self)
+        CollectionBase.load_data_from_spec_file(self, "initial_load")
 
     def _loadgen(self):
         tasks = []
@@ -964,7 +880,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
             self.load_all_buckets(self.initial_load_gen, "create", 0)
         else:
             try:
-                self.collectionSetUp()
+                self.collection_setup()
             except Java_base_exception as exception:
                 self.handle_setup_exception(exception)
             except Exception as exception:
@@ -976,70 +892,6 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
         self.loadgen_tasks = []
         self.log.info("=========Finished Diskautofailover base setup=========")
-
-    def collectionSetUp(self):
-        # If True, creates bucket/scope/collections with simpler names
-        self.use_simple_names = self.input.param("use_simple_names", True)
-        # Create bucket(s)
-        if CbServer.cluster_profile == "default" and self.bucket_storage ==\
-                Bucket.StorageBackend.magma:
-            # get the TTL value
-            buckets_spec_from_conf = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
-            bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
-            # Blindly override the bucket spec if the backend storage is magma.
-            # So, Bucket spec in conf file will not take any effect.
-            self.spec_name = "single_bucket.bucket_for_magma_collections"
-            magma_bucket_spec = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
-            magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
-            buckets_spec = magma_bucket_spec
-        else:
-            buckets_spec = self.bucket_util.get_bucket_template_from_package(
-                self.spec_name)
-        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
-        doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package("initial_load")
-        self.bucket_util.create_buckets_using_json_data(self.cluster,
-                                                        buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
-        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
-        # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
-
-        self.log.info("Creating required SDK clients for client_pool")
-        CollectionBase.create_sdk_clients(self.task_manager.number_of_threads,
-                                          self.cluster.master,
-                                          self.cluster.buckets,
-                                          self.sdk_client_pool,
-                                          self.sdk_compression)
-
-        doc_loading_task = \
-            self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.cluster.buckets,
-                doc_loading_spec,
-                mutation_num=0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
-        if doc_loading_task.result is False:
-            self.fail("Initial doc_loading failed")
-
-        self.cluster_util.print_cluster_stats(self.cluster)
-
-        # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets,
-                                                     timeout=1200)
-        self.bucket_util.validate_docs_per_collections_all_buckets(
-            self.cluster)
-
-        self.bucket_util.print_bucket_stats(self.cluster)
-        self.bucket_helper_obj = BucketHelper(self.cluster.master)
 
     def tearDown(self):
         self.log.info("=========Starting Diskautofailover teardown ==========")
