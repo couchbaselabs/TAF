@@ -100,13 +100,6 @@ class volume(BaseTestCase):
         self.rest.monitorRebalance()
         return bucket
 
-    def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default"):
-        for node in self.cluster_util.get_kv_nodes(self.cluster):
-            bucket_helper = BucketHelper(node)
-            bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
-                                                    num_reader_threads=num_reader_threads,
-                                                    num_storage_threads="default")
-
     def volume_doc_generator_users(self, key, start, end):
         template = '{{ "id":"{0}", "alias":"{1}", "name":"{2}", "user_since":"{3}", "employment":{4} }}'
         return GleamBookUsersDocumentGenerator(key, template,
@@ -413,13 +406,19 @@ class volume(BaseTestCase):
             self.gen_delete_users = None
             self._iter_count = 0
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads="disk_io_optimized",
+                    num_reader_threads="disk_io_optimized",
+                    num_storage_threads="default")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
             tasks_info = self.data_load()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads=self.new_num_writer_threads,
+                    num_reader_threads=self.new_num_reader_threads,
+                    num_storage_threads="default")
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
@@ -434,13 +433,19 @@ class volume(BaseTestCase):
             self.log.info("Step 6: Rebalance Out with Loading of docs")
             self.generate_docs()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
-            rebalance_task = self.rebalance(nodes_in = 0, nodes_out = 1)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads="disk_io_optimized",
+                    num_reader_threads="disk_io_optimized",
+                    num_storage_threads="default")
+            rebalance_task = self.rebalance(nodes_in=0, nodes_out=1)
             tasks_info = self.data_load()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads=self.new_num_writer_threads,
+                    num_reader_threads=self.new_num_reader_threads,
+                    num_storage_threads="default")
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
@@ -455,13 +460,19 @@ class volume(BaseTestCase):
             self.log.info("Step 7: Rebalance In_Out with Loading of docs")
             self.generate_docs()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads="disk_io_optimized",
+                    num_reader_threads="disk_io_optimized",
+                    num_storage_threads="default")
             rebalance_task = self.rebalance(nodes_in = 2, nodes_out = 1)
             tasks_info = self.data_load()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads=self.new_num_writer_threads,
+                    num_reader_threads=self.new_num_reader_threads,
+                    num_storage_threads="default")
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
@@ -476,13 +487,19 @@ class volume(BaseTestCase):
             self.log.info("Step 8: Swap with Loading of docs")
             self.generate_docs()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads="disk_io_optimized",
+                    num_reader_threads="disk_io_optimized",
+                    num_storage_threads="default")
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=1)
             tasks_info = self.data_load()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads=self.new_num_writer_threads,
+                    num_reader_threads=self.new_num_reader_threads,
+                    num_storage_threads="default")
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
@@ -501,13 +518,19 @@ class volume(BaseTestCase):
                     self.cluster.buckets[i], replicaNumber=2)
             self.generate_docs()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads="disk_io_optimized",
+                    num_reader_threads="disk_io_optimized",
+                    num_storage_threads="default")
             rebalance_task = self.rebalance(nodes_in =1, nodes_out= 0)
             tasks_info = self.data_load()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads=self.new_num_writer_threads,
+                    num_reader_threads=self.new_num_reader_threads,
+                    num_storage_threads="default")
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
@@ -525,13 +548,19 @@ class volume(BaseTestCase):
                 self.log.info("Step 10: Stopping and restarting memcached process")
                 self.generate_docs()
                 if not self.atomicity:
-                    self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                           num_reader_threads=self.new_num_reader_threads)
+                    self.bucket_util.update_memcached_num_threads_settings(
+                        self.cluster.master,
+                        num_writer_threads=self.new_num_writer_threads,
+                        num_reader_threads=self.new_num_reader_threads,
+                        num_storage_threads="default")
                 rebalance_task = self.task.async_rebalance(self.cluster, [], [])
                 tasks_info = self.data_load()
                 if not self.atomicity:
-                    self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                           num_reader_threads="disk_io_optimized")
+                    self.bucket_util.update_memcached_num_threads_settings(
+                        self.cluster.master,
+                        num_writer_threads="disk_io_optimized",
+                        num_reader_threads="disk_io_optimized",
+                        num_storage_threads="default")
                 # self.sleep(600, "Wait for Rebalance to start")
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 reached = self.cluster_util.rebalance_reached(
@@ -567,8 +596,11 @@ class volume(BaseTestCase):
             self.sleep(300)
             self.nodes = self.rest.node_statuses()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads=self.new_num_writer_threads,
+                    num_reader_threads=self.new_num_reader_threads,
+                    num_storage_threads="default")
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes], ejectedNodes=[self.chosen[0].id])
             # self.sleep(600)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg="Rebalance failed")
@@ -635,13 +667,19 @@ class volume(BaseTestCase):
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="full")
 
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads=self.new_num_writer_threads,
+                    num_reader_threads=self.new_num_reader_threads,
+                    num_storage_threads="default")
 
             rebalance_task = self.task.async_rebalance(self.cluster, [], [])
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads="disk_io_optimized",
+                    num_reader_threads="disk_io_optimized",
+                    num_storage_threads="default")
             # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
@@ -697,13 +735,19 @@ class volume(BaseTestCase):
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id, recoveryType="delta")
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads=self.new_num_writer_threads,
+                    num_reader_threads=self.new_num_reader_threads,
+                    num_storage_threads="default")
 
             rebalance_task = self.task.async_rebalance(self.cluster, [], [])
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads="disk_io_optimized",
+                    num_reader_threads="disk_io_optimized",
+                    num_storage_threads="default")
             # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
@@ -739,13 +783,19 @@ class volume(BaseTestCase):
                     self.cluster.buckets[i], replicaNumber=1)
             self.generate_docs()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads=self.new_num_writer_threads,
-                                                       num_reader_threads=self.new_num_reader_threads)
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads=self.new_num_writer_threads,
+                    num_reader_threads=self.new_num_reader_threads,
+                    num_storage_threads="default")
             rebalance_task = self.task.async_rebalance(self.cluster, [], [])
             tasks_info = self.data_load()
             if not self.atomicity:
-                self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                       num_reader_threads="disk_io_optimized")
+                self.bucket_util.update_memcached_num_threads_settings(
+                    self.cluster.master,
+                    num_writer_threads="disk_io_optimized",
+                    num_reader_threads="disk_io_optimized",
+                    num_storage_threads="default")
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(

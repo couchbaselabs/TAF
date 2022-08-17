@@ -60,9 +60,10 @@ class CollectionBase(ClusterSetup):
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
         self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
-            self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                   num_reader_threads="disk_io_optimized")
-
+            self.bucket_util.update_memcached_num_threads_settings(
+                self.cluster.master,
+                num_writer_threads="disk_io_optimized",
+                num_reader_threads="disk_io_optimized")
         try:
             self.collection_setup()
         except Java_base_exception as exception:
@@ -92,8 +93,11 @@ class CollectionBase(ClusterSetup):
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
         if self.disk_optimized_thread_settings:
-            self.set_num_writer_and_reader_threads(num_writer_threads="default",
-                                                   num_reader_threads="default")
+            self.bucket_util.update_memcached_num_threads_settings(
+                self.cluster.master,
+                num_writer_threads="default",
+                num_reader_threads="default",
+                num_storage_threads="default")
         super(CollectionBase, self).tearDown()
 
     def collection_setup(self):
@@ -379,15 +383,6 @@ class CollectionBase(ClusterSetup):
             retry_exceptions.append(SDKException.DurabilityAmbiguousException)
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
-
-    def set_num_writer_and_reader_threads(self, num_writer_threads="default",
-                                          num_reader_threads="default",
-                                          num_storage_threads="default"):
-        bucket_helper = BucketHelper(self.cluster.master)
-        bucket_helper.update_memcached_settings(
-            num_writer_threads=num_writer_threads,
-            num_reader_threads=num_reader_threads,
-            num_storage_threads=num_storage_threads)
 
     def set_allowed_hosts(self):
         """ First operation will fail and the second operation will succeed"""

@@ -251,15 +251,6 @@ class volume(BaseTestCase):
                             ejectedNodes=[])
         self.rest.monitorRebalance()
 
-    def set_num_writer_and_reader_threads(self, num_writer_threads="default",
-                                          num_reader_threads="default"):
-        for node in self.cluster_util.get_kv_nodes(self.cluster):
-            bucket_helper = BucketHelper(node)
-            bucket_helper.update_memcached_settings(
-                num_writer_threads=num_writer_threads,
-                num_reader_threads=num_reader_threads,
-                num_storage_threads="default")
-
     def generate_docs(self, doc_ops=None,
                       create_end=None, create_start=None,
                       update_end=None, update_start=None,
@@ -1258,9 +1249,11 @@ class volume(BaseTestCase):
             self.sleep(10)
             self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
             self.nodes = self.rest.node_statuses()
-            self.set_num_writer_and_reader_threads(
+            self.bucket_util.update_memcached_num_threads_settings(
+                self.cluster.master,
                 num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
+                num_reader_threads=self.new_num_reader_threads,
+                num_storage_threads="default")
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                 ejectedNodes=[self.chosen[0].id])
             self.assertTrue(self.rest.monitorRebalance(), msg="Rebalance failed")
@@ -1406,17 +1399,21 @@ class volume(BaseTestCase):
             if self.success_failed_over:
                 self.rest.set_recovery_type(otpNode=self.chosen[0].id,
                                             recoveryType="delta")
-            self.set_num_writer_and_reader_threads(
+            self.bucket_util.update_memcached_num_threads_settings(
+                self.cluster.master,
                 num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
+                num_reader_threads=self.new_num_reader_threads,
+                num_storage_threads="default")
 
             self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
             rebalance_task = self.task.async_rebalance(
                 self.cluster, [], [],
                 retry_get_process_num=3000)
-            self.set_num_writer_and_reader_threads(
+            self.bucket_util.update_memcached_num_threads_settings(
+                self.cluster.master,
                 num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
+                num_reader_threads="disk_io_optimized",
+                num_storage_threads="default")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks(tasks_info)
@@ -1489,9 +1486,11 @@ class volume(BaseTestCase):
                 bucket_helper.change_bucket_props(
                     self.cluster.buckets[i], replicaNumber=1)
             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-            self.set_num_writer_and_reader_threads(
+            self.bucket_util.update_memcached_num_threads_settings(
+                self.cluster.master,
                 num_writer_threads=self.new_num_writer_threads,
-                num_reader_threads=self.new_num_reader_threads)
+                num_reader_threads=self.new_num_reader_threads,
+                num_storage_threads="default")
             rebalance_task = self.task.async_rebalance(self.cluster, [], [],
                                                        retry_get_process_num=3000)
             tasks_info = self.data_load()

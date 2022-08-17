@@ -2409,6 +2409,21 @@ class BucketUtils(ScopeUtils):
             bucket_durability=bucket_durability, bucketWidth=bucket_width,
             bucketWeight=bucket_weight)
 
+    def update_memcached_num_threads_settings(self, cluster_node,
+                                              num_writer_threads=None,
+                                              num_reader_threads=None,
+                                              num_storage_threads=None):
+        params = dict()
+        if num_writer_threads is not None:
+            params["num_writer_threads"] = num_writer_threads
+        if num_reader_threads is not None:
+            params["num_reader_threads"] = num_reader_threads
+        if num_storage_threads is not None:
+            params["num_storage_threads"] = num_storage_threads
+
+        self.log.info("Updating memcached num_threads: %s" % params)
+        BucketHelper(cluster_node).update_memcached_settings(**params)
+
     def update_all_bucket_maxTTL(self, cluster, maxttl=0):
         for bucket in cluster.buckets:
             self.log.debug("Updating maxTTL for bucket %s to %ss"

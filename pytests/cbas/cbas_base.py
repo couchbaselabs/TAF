@@ -334,8 +334,9 @@ class CBASBaseTest(BaseTestCase):
             self.disk_optimized_thread_settings = self.input.param(
                 "disk_optimized_thread_settings", False)
             if self.disk_optimized_thread_settings:
-                self.set_num_writer_and_reader_threads(
-                    cluster, num_writer_threads="disk_io_optimized",
+                self.bucket_util.update_memcached_num_threads_settings(
+                    cluster.master,
+                    num_writer_threads="disk_io_optimized",
                     num_reader_threads="disk_io_optimized")
 
             if self.cluster_kv_infra[i] == "bkt_spec":
@@ -368,9 +369,11 @@ class CBASBaseTest(BaseTestCase):
     def tearDown(self):
         if self.disk_optimized_thread_settings:
             for cluster in self.cb_clusters.values():
-                self.set_num_writer_and_reader_threads(
-                    cluster, num_writer_threads="default",
-                    num_reader_threads="default")
+                self.bucket_util.update_memcached_num_threads_settings(
+                    cluster.master,
+                    num_writer_threads="default",
+                    num_reader_threads="default",
+                    num_storage_threads="default")
         super(CBASBaseTest, self).tearDown()
 
     def set_memory_for_services(self, cluster, server, services):
@@ -561,15 +564,6 @@ class CBASBaseTest(BaseTestCase):
         self.cluster_util.print_cluster_stats(cluster)
         if load_data:
             self.load_data_into_buckets(cluster, doc_loading_spec)
-
-    def set_num_writer_and_reader_threads(
-            self, cluster, num_writer_threads="default",
-            num_reader_threads="default", num_storage_threads="default"):
-        bucket_helper = BucketHelper(cluster.master)
-        bucket_helper.update_memcached_settings(
-            num_writer_threads=num_writer_threads,
-            num_reader_threads=num_reader_threads,
-            num_storage_threads=num_storage_threads)
 
     def load_data_into_buckets(self, cluster, doc_loading_spec=None,
                                async_load=False, validate_task=True,

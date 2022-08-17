@@ -888,13 +888,3 @@ class OPD:
             else:
                 self.log.info("Bucket:%s warm-up completed in %s." %
                               (bucket.name, str(time.time() - start_time)))
-
-    def set_num_writer_and_reader_threads(self,
-                                          num_writer_threads="default",
-                                          num_reader_threads="default",
-                                          num_storage_threads="default"):
-        bucket_helper = BucketHelper(self.cluster.master)
-        bucket_helper.update_memcached_settings(
-            num_writer_threads=num_writer_threads,
-            num_reader_threads=num_reader_threads,
-            num_storage_threads=num_storage_threads)

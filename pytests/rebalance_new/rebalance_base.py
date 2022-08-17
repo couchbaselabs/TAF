@@ -79,8 +79,10 @@ class RebalanceBaseTest(BaseTestCase):
         self.spec_name = self.input.param("bucket_spec", None)
         self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
-            self.set_num_writer_and_reader_threads(num_writer_threads="disk_io_optimized",
-                                                   num_reader_threads="disk_io_optimized")
+            self.bucket_util.update_memcached_num_threads_settings(
+                self.cluster.master,
+                num_writer_threads="disk_io_optimized",
+                num_reader_threads="disk_io_optimized")
         # Buckets creation and initial data load done by bucket_spec
         if self.spec_name is not None:
             try:
@@ -236,16 +238,12 @@ class RebalanceBaseTest(BaseTestCase):
     def tearDown(self):
         self.cluster_util.print_cluster_stats(self.cluster)
         if self.disk_optimized_thread_settings:
-            self.set_num_writer_and_reader_threads(num_writer_threads="default",
-                                                   num_reader_threads="default")
+            self.bucket_util.update_memcached_num_threads_settings(
+                self.cluster.master,
+                num_writer_threads="default",
+                num_reader_threads="default",
+                num_storage_threads="default")
         super(RebalanceBaseTest, self).tearDown()
-
-    def set_num_writer_and_reader_threads(self, num_writer_threads="default", num_reader_threads="default",
-                                          num_storage_threads="default"):
-        bucket_helper = BucketHelper(self.cluster.master)
-        bucket_helper.update_memcached_settings(num_writer_threads=num_writer_threads,
-                                                num_reader_threads=num_reader_threads,
-                                                num_storage_threads=num_storage_threads)
 
     def shuffle_nodes_between_zones_and_rebalance(self, to_remove=None):
         """
