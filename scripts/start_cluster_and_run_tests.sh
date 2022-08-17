@@ -82,6 +82,12 @@ fi
 COUCHBASE_NUM_VBUCKETS=64 python ./cluster_run --nodes=$servers_count $serverless &> $wd/cluster_run.log &
 pid=$!
 popd
+
+# Adding a submodule to the Git repository
+git submodule init
+git submodule update --init --force --remote
+
+# Start test execution
 guides/gradlew --refresh-dependencies testrunner -P jython="/opt/jython/bin/jython" -P "args=-i $ini $test_params $conf -m rest" 2>&1  | tee make_test.log
 
 kill $pid
