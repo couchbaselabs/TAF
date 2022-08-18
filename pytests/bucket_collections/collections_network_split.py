@@ -250,7 +250,7 @@ class CollectionsNetworkSplit(CollectionBase):
 
     def data_load(self, async_load=False):
         doc_loading_spec = self.get_common_spec()
-        self.over_ride_doc_loading_template_params(doc_loading_spec)
+        CollectionBase.over_ride_doc_loading_template_params(self, doc_loading_spec)
         self.set_retry_exceptions(doc_loading_spec)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
