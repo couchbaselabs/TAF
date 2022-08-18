@@ -13,7 +13,7 @@ from copy import deepcopy
 from threading import Thread
 
 from BucketLib.bucket import Bucket
-from Cb_constants import constants, CbServer
+from Cb_constants import constants, CbServer, ClusterRun
 from common_lib import sleep
 from global_vars import logger
 from testconstants import IS_CONTAINER
@@ -812,11 +812,7 @@ class RestConnection(newRC):
             params['services'] = ','.join(services)
 
         # Check for cluster_run case
-        if port in range(Cb_constants.constants.port,
-                         Cb_constants.constants.port + 10):
-            # TLS disabled for CE
-            if CbServer.enterprise_edition:
-                port += 10000
+        if ClusterRun.is_enabled:
             params['hostname'] = "%s:%s" % (remoteIp, port)
 
         params = urllib.urlencode(params)
@@ -1355,7 +1351,10 @@ class RestConnection(newRC):
                     node.ip = self.ip
                 node.port = int(key[key.rfind(":") + 1:])
                 if CbServer.use_https:
-                    node.port = CbServer.ssl_port
+                    if ClusterRun.is_enabled:
+                        node.port = node.port + 10000
+                    else:
+                        node.port = CbServer.ssl_port
                 node.replication = value['replication']
                 if 'gracefulFailoverPossible' in value.keys():
                     node.gracefulFailoverPossible = value['gracefulFailoverPossible']
@@ -2747,10 +2746,8 @@ class RestConnection(newRC):
         return zone_uri
 
     def shuffle_nodes_in_zones(self, moved_nodes, source_zone, target_zone):
-        # moved_nodes should be a IP list like
-        # ["192.168.171.144", "192.168.171.145"]
-        for i in range(0, len(moved_nodes)):
-            moved_nodes[i] = "ns_1@" + moved_nodes[i]
+        # moved_nodes should be a Node() list
+        moved_nodes = [node.id for node in moved_nodes]
 
         all_zones = self.get_all_zones_info()
         api = self.baseUrl + all_zones["uri"][1:]
@@ -3627,7 +3624,9 @@ class RestParser(object):
             node.id = parsed["otpNode"]
         if "hostname" in parsed:
             # should work for both: ipv4 and ipv6
-            node.ip = parsed["hostname"].rsplit(":", 1)[0]
+            node.ip, node.port = parsed["hostname"].rsplit(":", 1)
+            if CbServer.use_https:
+                node.port = int(node.port) + 10000
 
         # memoryQuota
         if CbServer.Settings.KV_MEM_QUOTA in parsed:

@@ -2,7 +2,7 @@ import json
 
 from BucketLib.bucket import Bucket
 from cb_tools.cb_tools_base import CbCmdBase
-from Cb_constants import CbServer
+from Cb_constants import CbServer, ClusterRun
 
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
@@ -19,10 +19,11 @@ class CbCli(CbCmdBase):
             self.cli_flags += " --no-ssl-verify"
 
     def __get_http_port(self):
-        port = self.port
-        if self.port == str(CbServer.ssl_port):
-            port = str(CbServer.port)
-        return port
+        if self.port == CbServer.ssl_port:
+            return CbServer.port
+        elif ClusterRun.is_enabled and self.port > ClusterRun.ssl_port:
+            return self.port - 10000
+        return self.port
 
     def create_bucket(self, bucket_dict, wait=False):
         """
@@ -126,8 +127,8 @@ class CbCli(CbCmdBase):
 
     def enable_n2n_encryption(self):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --enable" \
-             % (self.cbstatCmd, "localhost", self.__get_http_port(),
-                self.username, self.password)
+              % (self.cbstatCmd, "localhost", self.__get_http_port(),
+                 self.username, self.password)
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
@@ -135,7 +136,8 @@ class CbCli(CbCmdBase):
         return output
 
     def disable_n2n_encryption(self):
-        cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --disable" \
+        cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s " \
+              "--disable" \
               % (self.cbstatCmd, "localhost", self.__get_http_port(),
                  self.username, self.password)
         cmd += self.cli_flags
@@ -146,7 +148,8 @@ class CbCli(CbCmdBase):
         return output
 
     def set_n2n_encryption_level(self, level="all"):
-        cmd = "%s setting-security -c %s:%s -u %s -p %s --set --cluster-encryption-level %s" \
+        cmd = "%s setting-security -c %s:%s -u %s -p %s --set " \
+              "--cluster-encryption-level %s" \
               % (self.cbstatCmd, "localhost", self.__get_http_port(),
                  self.username, self.password, level)
         cmd += self.cli_flags

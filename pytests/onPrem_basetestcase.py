@@ -130,16 +130,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
         global_vars.bucket_util = self.bucket_util
 
         # Populate memcached_port in case of cluster_run
-        cluster_run_base_port = ClusterRun.port
         if int(self.input.servers[0].port) == ClusterRun.port:
-            for server in self.input.servers:
-                server.port = cluster_run_base_port
-                cluster_run_base_port += 1
-                # If not defined in node.ini under 'memcached_port' section
-                if server.memcached_port is CbServer.memcached_port:
-                    server.memcached_port = \
-                        ClusterRun.memcached_port \
-                        + (2 * (int(server.port) - ClusterRun.port))
+            # This flag will be used globally to decide port_mapping stuff
+            ClusterRun.is_enabled = True
 
         self.log_setup_status(self.__class__.__name__, "started")
 
@@ -366,14 +359,26 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.fail("Services did not honor enforce tls")
 
             if self.use_https:
-                for server in self.input.servers:
-                    server.port = str(CbServer.ssl_port)
-                    server.memcached_port = str(CbServer.ssl_memcached_port)
-                    server.fts_port = str(CbServer.ssl_fts_port)
-                    server.index_port = str(CbServer.ssl_index_port)
-                    server.n1ql_port = str(CbServer.ssl_n1ql_port)
-                    server.cbas_port = str(CbServer.ssl_cbas_port)
-                    server.eventing_port = str(CbServer.ssl_eventing_port)
+                if ClusterRun.is_enabled:
+                    for index, server in enumerate(self.input.servers):
+                        server.port = ClusterRun.port + (1 * index)
+                        # If undefined in node.ini under 'memcached_port'
+                        if server.memcached_port is CbServer.memcached_port:
+                            server.memcached_port = \
+                                ClusterRun.memcached_port + (2 * index)
+                        if self.use_https:
+                            server.port = int(server.port) + 10000
+                            server.memcached_port = \
+                                ClusterRun.ssl_memcached_port - (4 * index)
+                else:
+                    for server in self.input.servers:
+                        server.port = CbServer.ssl_port
+                        server.memcached_port = CbServer.ssl_memcached_port
+                        server.fts_port = CbServer.ssl_fts_port
+                        server.index_port = CbServer.ssl_index_port
+                        server.n1ql_port = CbServer.ssl_n1ql_port
+                        server.cbas_port = CbServer.ssl_cbas_port
+                        server.eventing_port = CbServer.ssl_eventing_port
             reload(Cb_constants)
 
             # Enforce IPv4 or IPv6 or both
@@ -461,7 +466,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         if self.port_info:
             self.cluster_util.change_port_info(cluster, self.port_info)
         if self.port:
-            self.port = str(self.port)
+            self.port = self.port
 
     def start_fetch_pcaps(self):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
@@ -497,14 +502,20 @@ class OnPremBaseTest(CouchbaseBaseTest):
             # n2n encryption level is not strict
             CbServer.use_https = False
             CbServer.n2n_encryption = False
-            for server in self.input.servers:
-                server.port = str(CbServer.port)
-                server.memcached_port = str(CbServer.memcached_port)
-                server.fts_port = str(CbServer.fts_port)
-                server.index_port = str(CbServer.index_port)
-                server.n1ql_port = str(CbServer.n1ql_port)
-                server.cbas_port = str(CbServer.cbas_port)
-                server.eventing_port = str(CbServer.eventing_port)
+            if ClusterRun.is_enabled:
+                for index, server in enumerate(self.input.servers):
+                    server.port = server.port - 10000
+                    server.memcached_port = \
+                        ClusterRun.memcached_port + (2 * index)
+            else:
+                for server in self.input.servers:
+                    server.port = CbServer.port
+                    server.memcached_port = CbServer.memcached_port
+                    server.fts_port = CbServer.fts_port
+                    server.index_port = CbServer.index_port
+                    server.n1ql_port = CbServer.n1ql_port
+                    server.cbas_port = CbServer.cbas_port
+                    server.eventing_port = CbServer.eventing_port
 
         if self.multiple_ca:
             CbServer.use_https = False

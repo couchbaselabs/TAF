@@ -22,7 +22,7 @@ test:
 	scripts/start_cluster_and_run_tests.sh b/resources/dev-4-nodes.ini $(TESTNAME)
 
 simple-test-serverless:
-	scripts/start_cluster_and_run_tests.sh --ini b/resources/dev-3-nodes.ini --test conf/sanity/serverless.conf --jython_path $(WORKSPACE)/jython_for_taf --serverless
+	scripts/start_cluster_and_run_tests.sh --ini b/resources/dev-3-nodes.ini --test conf/sanity/serverless.conf --jython_path $(WORKSPACE)/jython_for_taf --workspace_dir $(WORKSPACE) --serverless
 
 # specify number of nodes and testcase
 any-test:

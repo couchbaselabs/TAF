@@ -8,9 +8,10 @@ fi
 ini=""
 test=""
 serverless=""
-test_params=" -p infra_log_level=critical,log_level=info"
+test_params=" -p infra_log_level=error,log_level=info"
 jython_path="/opt/jython"
 install_jython=false
+workspace_dir=""
 quiet=false
 
 # Process cmd line args
@@ -36,6 +37,10 @@ while [[ $# -gt 0 ]]; do
             install_jython=true
             shift
             ;;
+        --workspace_dir)
+            workspace_dir=$2
+            shift  ; shift
+            ;;
         *)
             echo "ERROR: Invalid argument '$1'"
     esac
@@ -47,6 +52,7 @@ echo "  test - $test"
 echo "  serverless  - $serverless"
 echo "  jython_path - $jython_path"
 echo "  install_jython - $install_jython"
+echo "  workspace_dir  - $workspace_dir"
 echo "##################################################"
 
 # test if a number was passed instead of an ini file
@@ -57,6 +63,7 @@ if [ "$ini" -eq "$ini" ] 2>/dev/null; then
     echo "[global]
 username:Administrator
 password:asdasd
+cli:/path/to/build_dir
 
 [membase]
 rest_username:Administrator
@@ -76,6 +83,11 @@ rest_password:asdasd
         echo "port:$((9000+i-1))" >> ${ini}
         i=$((i+1))
     done
+fi
+
+if [ -n "$workspace_dir" ]; then
+    echo "Updating cli path to '$workspace_dir'"
+    sed -i "/^cli:.*/ccli:$workspace_dir/" ${ini}
 fi
 
 # test if a conf file or testcase was passed
@@ -108,7 +120,7 @@ else
    make
 fi
 
-COUCHBASE_NUM_VBUCKETS=64 python ./cluster_run --nodes=$servers_count $serverless &> $wd/cluster_run.log &
+./cluster_run --nodes=$servers_count $serverless &> $wd/cluster_run.log &
 pid=$!
 popd
 

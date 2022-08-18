@@ -85,8 +85,10 @@ class ServerlessOnPremBaseTest(ClusterSetup):
         for node in rest.get_nodes():
             index += 1
             rest.shuffle_nodes_in_zones(
-                [node.ip], node.server_group,
+                [node], node.server_group,
                 self.server_groups[index % total_zones])
+                # ["%s:%s" % (node.ip, node.port)], node.server_group,
+                # self.server_groups[index % total_zones])
 
     def remove_empty_server_groups(self, cluster):
         rest = RestConnection(cluster.master)

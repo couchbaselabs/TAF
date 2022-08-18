@@ -28,7 +28,7 @@ from collections import defaultdict
 import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import CbServer, DocLoading
+from Cb_constants import CbServer, DocLoading, ClusterRun
 from Jython_tasks.task import \
     BucketCreateTask, \
     BucketCreateFromSpecTask, \
@@ -1787,10 +1787,25 @@ class BucketUtils(ScopeUtils):
                                   b_stat["vBucketServerMap"]["serverList"]))
                 for server in b_stat["vBucketServerMap"]["serverList"]:
                     ip, mc_port = server.split(":")
+                    mc_port = int(mc_port)
                     for node in cluster.nodes_in_cluster:
+                        found = False
                         if node.ip == ip:
-                            bucket_obj.servers.append(node)
-                            break
+                            if ClusterRun.is_enabled:
+                                if CbServer.use_https:
+                                    n_index = (ClusterRun.ssl_memcached_port
+                                               - node.memcached_port) / 4
+                                    if mc_port == ClusterRun.memcached_port \
+                                            + (2 * n_index):
+                                        found = True
+                                else:
+                                    if node.memcached_port == mc_port:
+                                        found = True
+                            else:
+                                found = True
+                            if found:
+                                bucket_obj.servers.append(node)
+                                break
             except GetBucketInfoFailed:
                 pass
             finally:
@@ -1799,14 +1814,15 @@ class BucketUtils(ScopeUtils):
                 retry -= 1
             if not bucket_obj.servers:
                 sleep(2, "No servers_list found, Will retry...")
-        self.log.debug("Bucket %s occupies servers: %s" % (bucket_obj.name,
-                                                           bucket_obj.servers))
+        self.log.debug("Bucket %s occupies servers: %s"
+                       % (bucket_obj.name, bucket_obj.servers))
         cluster.bucketNodes[bucket_obj] = bucket_obj.servers
 
     @staticmethod
     def update_bucket_nebula_servers(cluster, nebula, bucket_obj):
         nebula_servers = list()
-        b_stats = BucketHelper(nebula.endpoint).get_bucket_json(bucket_obj.name)
+        b_stats = BucketHelper(nebula.endpoint)\
+            .get_bucket_json(bucket_obj.name)
         for server in b_stats["nodes"]:
             nebula_servers.append(nebula.servers[server["hostname"]])
         cluster.bucketDNNodes[bucket_obj] = nebula_servers
@@ -4959,9 +4975,10 @@ class BucketUtils(ScopeUtils):
                 if s_bucket["name"] == target_bucket.name:
                     return s_bucket
 
-        def get_server_node(server_ip):
+        def get_server_node(server_key):
+            ip, port = server_key.split(":")
             for t_node in server_nodes:
-                if t_node.ip == server_ip:
+                if t_node.ip == ip and int(t_node.port) == int(port):
                     return t_node
 
         result = True
@@ -5026,16 +5043,16 @@ class BucketUtils(ScopeUtils):
 
             # Calculate servers' utilization values as per the test
             for b_server in t_bucket.servers:
-                if b_server.ip not in test_values:
+                key = "%s:%s" % (b_server.ip, b_server.port)
+                if key not in test_values:
                     # Init values for new server
-                    test_values[b_server.ip] = dict()
+                    test_values[key] = dict()
                     for field in kv_limit_stat_fields:
-                        test_values[b_server.ip][field] = 0
+                        test_values[key][field] = 0
 
-                test_values[b_server.ip]["buckets"] += 1
-                test_values[b_server.ip]["weight"] += weight
-                test_values[b_server.ip]["memory"] += \
-                    t_bucket.ramQuotaMB * 1048576
+                test_values[key]["buckets"] += 1
+                test_values[key]["weight"] += weight
+                test_values[key]["memory"] += t_bucket.ramQuotaMB * 1048576
 
         # Begin limit/utilization validation
         for node_ip, test_stats in test_values.items():

@@ -9,7 +9,7 @@ import traceback
 import socket
 import time
 
-from Cb_constants import constants, CbServer
+from Cb_constants import constants, CbServer, ClusterRun
 from TestInput import TestInputSingleton
 from common_lib import sleep
 from global_vars import logger
@@ -109,12 +109,16 @@ class RestConnection(object):
             if hasattr(serverInfo, 'services'):
                 self.services = serverInfo.services
         if CbServer.use_https:
-            self.port = CbServer.ssl_port
-            index_port = CbServer.ssl_index_port
-            query_port = CbServer.ssl_n1ql_port
-            fts_port = CbServer.ssl_fts_port
-            eventing_port = CbServer.ssl_eventing_port
-            backup_port = CbServer.ssl_backup_port
+            if ClusterRun.is_enabled:
+                if int(self.port) < ClusterRun.ssl_port:
+                    self.port = int(self.port) + 10000
+            else:
+                self.port = CbServer.ssl_port
+                index_port = CbServer.ssl_index_port
+                query_port = CbServer.ssl_n1ql_port
+                fts_port = CbServer.ssl_fts_port
+                eventing_port = CbServer.ssl_eventing_port
+                backup_port = CbServer.ssl_backup_port
         self.input = TestInputSingleton.input
         if self.input is not None:
             """ from watson, services param order and format:
