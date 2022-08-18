@@ -27,16 +27,16 @@ from global_vars import logger
 
 letters = ascii_uppercase + ascii_lowercase + digits
 
-queries = ['select name from {}.{}.{} where age between 30 and 50 limit 10;',
-           'select age, count(*) from {}.{}.{} where marital = "M" group by age order by age limit 10;',
-           'select v.name, animal from {}.{}.{} as v unnest animals as animal where v.attributes.hair = "Burgundy" limit 10;',
-           'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {}{}{} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 10;',
-           'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {}.{}.{} WHERE gender is not MISSING limit 10;']
-indexes = ['create index {}{} on {}.{}.{}(age) where age between 30 and 50 WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}.{}.{}(marital,age) WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}.{}.{}(ALL `animals`,`attributes`.`hair`,`name`) where attributes.hair = "Burgundy" WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'CREATE INDEX {}{} ON {}.{}.{}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}.{}.{}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true, "num_replica": 0 }};']
+queries = ['select name from {} where age between 30 and 50 limit 10;',
+           'select age, count(*) from {} where marital = "M" group by age order by age limit 10;',
+           'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" limit 10;',
+           'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 10;',
+           'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 10;']
+indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "defer_build": true, "num_replica": 0 }};',
+           'create index {}{} on {}(marital,age) WITH {{ "defer_build": true, "num_replica": 0 }};',
+           'create index {}{} on {}(ALL `animals`,`attributes`.`hair`,`name`) where attributes.hair = "Burgundy" WITH {{ "defer_build": true, "num_replica": 0 }};',
+           'CREATE INDEX {}{} ON {}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true, "num_replica": 0 }};',
+           'create index {}{} on {}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true, "num_replica": 0 }};']
 
 
 class DoctorN1QL():
@@ -57,6 +57,7 @@ class DoctorN1QL():
         self.num_indexes = num_idx
         self.bucket_util = bucket_util
         self.cluster = cluster
+        self.sdkClients = dict()
         self.log = logger.get("test")
 
         self.sdkClient = SDKClient(cluster.query_nodes, None)
@@ -68,10 +69,12 @@ class DoctorN1QL():
         while i < self.num_indexes:
             for b in self.cluster.buckets:
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                    if b.name+s not in self.sdkClients.keys():
+                        self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
                     for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
-                        self.idx_q = indexes[i % len(indexes)].format("idx", i, b.name, s, c)
-                        self.indexes.update({"idx"+str(i): (self.idx_q, b.name, s, c)})
-                        self.queries.append(queries[i % len(indexes)].format(b.name, s, c))
+                        self.idx_q = indexes[i % len(indexes)].format("idx", i, c)
+                        self.indexes.update({"idx"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
+                        self.queries.append((queries[i % len(indexes)].format(c), self.sdkClients[b.name+s]))
                         i += 1
                         if i >= self.num_indexes:
                             break
@@ -84,9 +87,9 @@ class DoctorN1QL():
         self.stop_run = True
 
     def create_indexes(self):
-        for index in self.indexes.values():
+        for details in self.indexes.values():
             time.sleep(1)
-            self.execute_statement_on_n1ql(index[0])
+            self.execute_statement_on_n1ql(details[1], details[0])
 
     def wait_for_indexes_online(self, logger, indexes, timeout=86400):
         self.rest = GsiHelper(self.cluster.master, logger)
@@ -94,7 +97,7 @@ class DoctorN1QL():
         for index_name, details in indexes.items():
             stop_time = time.time() + timeout
             while time.time() < stop_time:
-                bucket = [bucket for bucket in self.cluster.buckets if bucket.name == details[1]]
+                bucket = [bucket for bucket in self.cluster.buckets if bucket.name == details[2]]
                 status = self.rest.polling_create_index_status(bucket[0], index_name)
                 print("index: {}, status: {}".format(index_name, status))
                 if status is True:
@@ -106,19 +109,19 @@ class DoctorN1QL():
         return status
 
     def build_indexes(self):
-        for index, b_s_c in self.indexes.items():
-            build_query = "BUILD INDEX on `%s`.`%s`.`%s`(%s) USING GSI" % (b_s_c[1], b_s_c[2], b_s_c[3], index)
+        for index_name, details in self.indexes.items():
+            build_query = "BUILD INDEX on `%s`(%s) USING GSI" % (details[4], index_name)
             time.sleep(1)
             try:
-                self.execute_statement_on_n1ql(build_query)
+                self.execute_statement_on_n1ql(details[1], build_query)
             except Exception as e:
                 print(e)
                 print("Failed %s" % build_query)
 
     def drop_indexes(self):
-        for index, b_s_c in self.indexes.items():
-            build_query = "DROP INDEX %s on `%s`.`%s`.`%s`" % (index, b_s_c[1], b_s_c[2], b_s_c[3])
-            self.execute_statement_on_n1ql(build_query)
+        for index, details in self.indexes.items():
+            build_query = "DROP INDEX %s on `%s`" % (index, details[4])
+            self.execute_statement_on_n1ql(details[1], build_query)
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries,
@@ -136,10 +139,11 @@ class DoctorN1QL():
         query_count = 0
         for i in range(0, num_queries):
             self.total_query_count += 1
+            query = random.choice(self.queries)
             threads.append(Thread(
                 target=self._run_query,
                 name="query_thread_{0}".format(self.total_query_count),
-                args=(random.choice(self.queries), False, 0)))
+                args=(query[1], query[0], False, 0)))
 
         i = 0
         for thread in threads:
@@ -154,11 +158,12 @@ class DoctorN1QL():
             threads = []
             new_queries_to_run = num_queries - self.total_count
             for i in range(0, new_queries_to_run):
+                query = random.choice(self.queries)
                 self.total_query_count += 1
                 threads.append(Thread(
                     target=self._run_query,
                     name="query_thread_{0}".format(self.total_query_count),
-                    args=(random.choice(self.queries), False, 0)))
+                    args=(query[1], query[0], False, 0)))
             i = 0
             self.total_count += new_queries_to_run
             for thread in threads:
@@ -170,12 +175,12 @@ class DoctorN1QL():
             raise Exception("Queries Failed:%s , Queries Error Out:%s" %
                             (self.failed_count, self.error_count))
 
-    def _run_query(self, query, validate_item_count=False, expected_count=0):
+    def _run_query(self, client, query, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
         client_context_id = name
         try:
             status, _, _, results, _ = self.execute_statement_on_n1ql(
-                query, client_context_id=client_context_id)
+                client, query, client_context_id=client_context_id)
             if status == QueryStatus.SUCCESS:
                 if validate_item_count:
                     if results[0]['$1'] != expected_count:
@@ -204,15 +209,12 @@ class DoctorN1QL():
                 self.error_count += 1
                 self.total_count -= 1
 
-    def execute_statement_on_n1ql(self, statement,
-                                  client_context_id=None):
+    def execute_statement_on_n1ql(self, client, statement, client_context_id=None):
         """
         Executes a statement on CBAS using the REST API using REST Client
         """
         try:
-            response = self.execute_via_sdk(statement, False,
-                                            client_context_id)
-
+            response = self.execute_via_sdk(client, statement, False, client_context_id)
             if type(response) == str:
                 response = json.loads(response)
             if "errors" in response:
@@ -243,7 +245,7 @@ class DoctorN1QL():
         except Exception as e:
             raise Exception(str(e))
 
-    def execute_via_sdk(self, statement, readonly=False,
+    def execute_via_sdk(self, client, statement, readonly=False,
                         client_context_id=None):
         options = QueryOptions.queryOptions()
         options.scanConsistency(QueryScanConsistency.NOT_BOUNDED)
@@ -253,7 +255,7 @@ class DoctorN1QL():
 
         output = {}
         try:
-            result = self.cluster_conn.query(statement)
+            result = client.query(statement)
 
             output["status"] = result.metaData().status()
             output["metrics"] = result.metaData().metrics()

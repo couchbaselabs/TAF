@@ -433,7 +433,7 @@ class OPD:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=14400)
-                if self.track_failures:
+                if self.track_failures and not self.cluster.cloud_cluster:
                     self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items,
                                                               timeout=14400)
             except Exception as e:
