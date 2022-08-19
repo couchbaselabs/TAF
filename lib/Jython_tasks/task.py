@@ -22,6 +22,7 @@ from java.lang import Thread
 from java.util.concurrent import Callable
 from reactor.util.function import Tuples
 
+import global_vars
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket
@@ -471,6 +472,12 @@ class RebalanceTask(Task):
             self.result = False
             self.test_log.error(str(e))
             return self.result
+
+        if CbServer.cluster_profile == "serverless":
+            for bucket in self.cluster.buckets:
+                global_vars.bucket_util.get_updated_bucket_server_list(
+                    self.cluster, bucket)
+
         self.complete_task()
         self.result = True
         self.log.critical("Nodes in cluster: %s" % [node.ip for node in self.cluster.nodes_in_cluster])

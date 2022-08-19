@@ -7,6 +7,7 @@ import random
 
 from ruamel.yaml import YAML
 
+import global_vars
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 import Cb_constants
@@ -123,6 +124,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
+        global_vars.cluster_util = self.cluster_util
+        global_vars.bucket_util = self.bucket_util
 
         # Fetch the profile_type from the master node
         # Value will be default / serverless
