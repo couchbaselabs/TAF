@@ -337,10 +337,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 status = False
                 while retry < retry_count:
                     for _, cluster in self.cb_clusters.items():
-                        tasks = [self.node_utils.async_enable_tls(node)
-                                 for node in cluster.servers]
-                        for task in tasks:
-                            self.task_manager.get_task_result(task)
+                        task = self.node_utils.async_enable_tls(cluster.master)
+                        self.task_manager.get_task_result(task)
                         self.log.info("Validating if services obey tls only "
                                       "on servers {0}".format(cluster.servers))
                         status = self.cluster_util.check_if_services_obey_tls(
@@ -480,10 +478,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Disable n2n encryption on nodes of all clusters
         if self.use_https and self.enforce_tls:
             for _, cluster in self.cb_clusters.items():
-                tasks = [self.node_utils.async_disable_tls(node)
-                         for node in cluster.servers]
-                for task in tasks:
-                    self.task_manager.get_task_result(task)
+                task = self.node_utils.async_disable_tls(cluster.master)
+                self.task_manager.get_task_result(task)
             # Set CbServer.use_https to False when
             # n2n encryption level is not strict
             CbServer.use_https = False
