@@ -1,14 +1,44 @@
 #!/bin/bash
 
 if [[ -z $2 ]] ; then
-    echo "$0 <ini> <conf>"
+    echo "$0 --ini <ini> --test <conf|test_to_run>"
     exit
 fi
 
+ini=""
+test=""
+serverless=""
+test_params=" -p infra_log_level=critical,log_level=info"
+jython_path="/opt/jython"
+quiet=false
+
+# Process cmd line args
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --ini)
+            ini=$2
+            shift ; shift
+            ;;
+        --test)
+            test=$2
+            shift ; shift
+            ;;
+        --serverless)
+            serverless=" --serverless"
+            shift
+            ;;
+        --jython_path)
+            jython_path=$2
+            shift ; shift
+            ;;
+        *)
+            echo "ERROR: Invalid argument '$1'"
+    esac
+done
 
 # test if a number was passed instead of an ini file
-if [ "$1" -eq "$1" ] 2>/dev/null; then
-    numnodes=$1
+if [ "$ini" -eq "$ini" ] 2>/dev/null; then
+    numnodes=$ini
     ini=make_test.ini
 
     echo "[global]
@@ -33,28 +63,13 @@ rest_password:asdasd
         echo "port:$((9000+i-1))" >> ${ini}
         i=$((i+1))
     done
-else
-    ini=$1
 fi
 
 # test if a conf file or testcase was passed
-if [[ -f $2 ]] ; then
+if [[ -f $test ]] ; then
     conf=" -c $2"
 else
     conf=" -t $2"
-fi
-
-if [[ -n $3 ]] ; then
-    quiet=true
-    test_params=" -p infra_log_level=critical,log_level=error,$3"
-else
-    test_params=""
-fi
-
-if [[ -n $4 ]] && [[ $4 == 1 ]] ; then
-    serverless=" --serverless"
-else
-    serverless=""
 fi
 
 servers_count=0
@@ -87,8 +102,11 @@ popd
 git submodule init
 git submodule update --init --force --remote
 
+chmod +x scripts/jython_install.sh
+./scripts/jython_install.sh --path "$jython_path"
+
 # Start test execution
-guides/gradlew --refresh-dependencies testrunner -P jython="/opt/jython/bin/jython" -P "args=-i $ini $test_params $conf -m rest" 2>&1  | tee make_test.log
+guides/gradlew --refresh-dependencies testrunner -P jython="${jython_path}/bin/jython" -P "args=-i $ini $test_params $conf -m rest" 2>&1  | tee make_test.log
 
 kill $pid
 wait
