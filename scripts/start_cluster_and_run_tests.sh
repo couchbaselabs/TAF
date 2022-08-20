@@ -10,6 +10,7 @@ test=""
 serverless=""
 test_params=" -p infra_log_level=critical,log_level=info"
 jython_path="/opt/jython"
+install_jython=false
 quiet=false
 
 # Process cmd line args
@@ -31,10 +32,22 @@ while [[ $# -gt 0 ]]; do
             jython_path=$2
             shift ; shift
             ;;
+        --install_jython)
+            install_jython=true
+            shift
+            ;;
         *)
             echo "ERROR: Invalid argument '$1'"
     esac
 done
+
+echo "##################################################"
+echo "  ini  - $ini"
+echo "  test - $test"
+echo "  serverless  - $serverless"
+echo "  jython_path - $jython_path"
+echo "  install_jython - $install_jython"
+echo "##################################################"
 
 # test if a number was passed instead of an ini file
 if [ "$ini" -eq "$ini" ] 2>/dev/null; then
@@ -67,9 +80,9 @@ fi
 
 # test if a conf file or testcase was passed
 if [[ -f $test ]] ; then
-    conf=" -c $2"
+    conf=" -c $test"
 else
-    conf=" -t $2"
+    conf=" -t $test"
 fi
 
 servers_count=0
@@ -94,18 +107,25 @@ else
    make dataclean
    make
 fi
+
 COUCHBASE_NUM_VBUCKETS=64 python ./cluster_run --nodes=$servers_count $serverless &> $wd/cluster_run.log &
 pid=$!
 popd
+
+if [ $install_jython == "true" ]; then
+  chmod +x scripts/jython_install.sh
+  echo "./scripts/jython_install.sh --path '$jython_path'"
+  ./scripts/jython_install.sh --path "$jython_path"
+fi
 
 # Adding a submodule to the Git repository
 git submodule init
 git submodule update --init --force --remote
 
-chmod +x scripts/jython_install.sh
-./scripts/jython_install.sh --path "$jython_path"
+git clone https://github.com/couchbaselabs/guides.git
 
 # Start test execution
+echo "guides/gradlew --refresh-dependencies testrunner -P jython='${jython_path}/bin/jython' -P 'args=-i $ini $test_params $conf -m rest' 2>&1  | tee make_test.log"
 guides/gradlew --refresh-dependencies testrunner -P jython="${jython_path}/bin/jython" -P "args=-i $ini $test_params $conf -m rest" 2>&1  | tee make_test.log
 
 kill $pid
