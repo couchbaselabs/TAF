@@ -1,12 +1,43 @@
 #!/bin/bash
 
+usage() {
+    echo "Usage:"
+    echo " -p|--path   Path to install"
+    echo " -h|--help   Displays this help message"
+    echo " --force     Force install"
+    echo ""
+}
+
+force_install=false
 jython_path=/opt/jython
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -p|--path)
+            jython_path=$2
+            shift ; shift
+            ;;
+        --force)
+            force_install=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown option '$1'"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
 jython_bin=${jython_path}/bin
 jython_exe=${jython_bin}/jython
 
-if [ ! -f "$jython_exe" ]; then
-    # Jython not present
-    echo "Installing Jython"
+if [ $force_install = "true" -o ! -f "$jython_exe" ]; then
+    echo "Installing Jython on '$jython_path'"
     rm -rf $jython_path
     mkdir $jython_path
     cd /tmp
