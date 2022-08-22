@@ -5013,68 +5013,63 @@ class BucketUtils(ScopeUtils):
                 test_values[b_server.ip]["memory"] += \
                     t_bucket.ramQuotaMB * 1048576
 
-            # Begin limit/utilization validation
-            for node_ip, test_stats in test_values.items():
-                server_node = get_server_node(node_ip)
-                server_kv_limits = server_node.limits[CbServer.Services.KV]
-                server_kv_usage = server_node.utilization[CbServer.Services.KV]
-                # MAX_WEIGHT check
-                self.log.debug("%s - max_weight=%s"
-                               % (node_ip, server_kv_limits["weight"]))
-                if server_kv_limits["weight"] \
-                        != CbServer.Serverless.MAX_WEIGHT:
-                    result = False
-                    self.log.critical(
-                        "%s - Expected limits::weight=%s, actual=%s"
-                        % (node_ip, CbServer.Serverless.MAX_WEIGHT,
-                           server_kv_limits["weight"]))
-                # MAX_BUCKETS check
-                self.log.debug("%s - max_buckets=%s"
-                               % (node_ip, server_kv_limits["buckets"]))
-                if server_kv_limits["buckets"] \
-                        != CbServer.Serverless.MAX_BUCKETS:
-                    result = False
-                    self.log.critical(
-                        "%s - Expected limits::buckets=%s, actual=%s"
-                        % (node_ip, CbServer.Serverless.MAX_BUCKETS,
-                           server_kv_limits["buckets"]))
-                # MEMORY usage check
-                self.log.debug("%s - Mem max=%s, Usage expected=%s, actual=%s"
-                               % (node_ip, server_kv_limits["memory"],
-                                  test_stats["memory"],
-                                  server_kv_usage["memory"]))
-                if server_kv_usage["memory"] > server_kv_limits["memory"]:
-                    result = False
-                    self.log.critical(
-                        "%s - memory usage more than expected=%s < actual=%s"
-                        % (node_ip, server_kv_limits["memory"],
-                           server_kv_usage["memory"]))
-                if server_kv_usage["memory"] != test_stats["memory"]:
-                    result = False
-                    self.log.critical(
-                        "%s - Memory usage mismatch. Expected=%s, actual=%s"
-                        % (node_ip, test_stats["memory"],
-                           server_kv_usage["memory"]))
-                # BUCKETS check
-                self.log.debug("%s - Num_Buckets expected=%s, actual=%s"
-                               % (node_ip, test_stats["buckets"],
-                                  server_kv_usage["buckets"]))
-                if server_kv_usage["buckets"] != test_stats["buckets"]:
-                    result = False
-                    self.log.critical(
-                        "%s - Mismatch in num_buckets. Expected=%s, actual=%s"
-                        % (node_ip, test_stats["buckets"],
-                           server_kv_usage["buckets"]))
-                # WEIGHT check
-                self.log.debug("%s - Node_weight expected=%s, actual=%s"
-                               % (node_ip, test_stats["weight"],
-                                  server_kv_usage["weight"]))
-                if server_kv_usage["weight"] != test_stats["weight"]:
-                    result = False
-                    self.log.critical(
-                        "%s - Mismatch in weight. Expected=%s, actual=%s"
-                        % (node_ip, test_stats["weight"],
-                           server_kv_usage["weight"]))
+        # Begin limit/utilization validation
+        for node_ip, test_stats in test_values.items():
+            server_node = get_server_node(node_ip)
+            server_kv_limits = server_node.limits[CbServer.Services.KV]
+            server_kv_usage = server_node.utilization[CbServer.Services.KV]
+            # MAX_WEIGHT check
+            self.log.debug("%s - max_weight=%s" % (node_ip,
+                                                   server_kv_limits["weight"]))
+            if server_kv_limits["weight"] != CbServer.Serverless.MAX_WEIGHT:
+                result = False
+                self.log.critical("%s - Expected limits::weight=%s, actual=%s"
+                                  % (node_ip, CbServer.Serverless.MAX_WEIGHT,
+                                     server_kv_limits["weight"]))
+            # MAX_BUCKETS check
+            self.log.debug("%s - max_buckets=%s"
+                           % (node_ip, server_kv_limits["buckets"]))
+            if server_kv_limits["buckets"] != CbServer.Serverless.MAX_BUCKETS:
+                result = False
+                self.log.critical("%s - Expected limits::buckets=%s, actual=%s"
+                                  % (node_ip, CbServer.Serverless.MAX_BUCKETS,
+                                     server_kv_limits["buckets"]))
+            # MEMORY usage check
+            self.log.debug("%s - Mem max=%s, Usage expected=%s, actual=%s"
+                           % (node_ip, server_kv_limits["memory"],
+                              test_stats["memory"],server_kv_usage["memory"]))
+            if server_kv_usage["memory"] > server_kv_limits["memory"]:
+                result = False
+                self.log.critical("%s - memory usage more than "
+                                  "expected=%s < actual=%s"
+                                  % (node_ip, server_kv_limits["memory"],
+                                     server_kv_usage["memory"]))
+            if server_kv_usage["memory"] != test_stats["memory"]:
+                result = False
+                self.log.critical("%s - Memory usage mismatch. "
+                                  "Expected=%s, actual=%s"
+                                  % (node_ip, test_stats["memory"],
+                                     server_kv_usage["memory"]))
+            # BUCKETS check
+            self.log.debug("%s - Num_Buckets expected=%s, actual=%s"
+                           % (node_ip, test_stats["buckets"],
+                              server_kv_usage["buckets"]))
+            if server_kv_usage["buckets"] != test_stats["buckets"]:
+                result = False
+                self.log.critical("%s - Mismatch in num_buckets. "
+                                  "Expected=%s, actual=%s"
+                                  % (node_ip, test_stats["buckets"],
+                                     server_kv_usage["buckets"]))
+            # WEIGHT check
+            self.log.debug("%s - Node_weight expected=%s, actual=%s"
+                           % (node_ip, test_stats["weight"],
+                              server_kv_usage["weight"]))
+            if server_kv_usage["weight"] != test_stats["weight"]:
+                result = False
+                self.log.critical("%s - Mismatch in weight. "
+                                  "Expected=%s, actual=%s"
+                                  % (node_ip, test_stats["weight"],
+                                     server_kv_usage["weight"]))
         return result
 
     def remove_scope_collections_for_bucket(self, cluster, bucket):
