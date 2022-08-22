@@ -97,7 +97,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         for dataplane_id in self.dataplanes:
             self.log.info("Destroying dataplane: {}".format(dataplane_id))
             ServerlessUtils.delete_dataplane(dataplane_id)
-        DedicatedUtils.delete_project(self.pod, self.tenant)
+        if not TestInputSingleton.input.capella.get("project", None):
+            DedicatedUtils.delete_project(self.pod, self.tenant)
 
     def generate_dataplane_config(self):
         provider = self.input.param("provider", AWS.__str__).lower()

@@ -150,10 +150,12 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         if self.skip_teardown_cleanup:
             return
 
-        for name, cluster in self.cb_clusters.items():
-            self.log.info("Destroying cluster: {}".format(name))
-            CapellaUtils.destroy_cluster(cluster)
-        CapellaUtils.delete_project(self.pod, self.tenant)
+        if not TestInputSingleton.input.capella.get("clusters", None):
+            for name, cluster in self.cb_clusters.items():
+                self.log.info("Destroying cluster: {}".format(name))
+                CapellaUtils.destroy_cluster(cluster)
+        if not TestInputSingleton.input.capella.get("project", None):
+            CapellaUtils.delete_project(self.pod, self.tenant)
 
     def __get_existing_cluster_details(self, cluster_ids):
         cluster_index = 1
