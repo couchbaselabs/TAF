@@ -17,14 +17,10 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
         with_default_bucket = self.input.param("with_default_bucket", False)
         if with_default_bucket:
-            bucket_params = self.__get_bucket_params(
-                b_name="default",
-                width=self.bucket_width)
-            params = urllib.urlencode(bucket_params)
-            helper = BucketHelper(self.cluster.master)
-            api = helper.baseUrl + self.b_create_endpoint
-            status, _, _ = helper._http_request(api, helper.POST, params)
-            self.assertTrue(status, "Bucket creation failed")
+            old_weight = self.bucket_weight
+            self.bucket_weight = 1
+            self.create_bucket(self.cluster)
+            self.bucket_weight = old_weight
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def tearDown(self):
@@ -313,26 +309,27 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.assertTrue(expected_err in json.loads(content)["_"],
                         "Mismatch in the error message")
 
-    def test_change_bucket_width(self):
+    def test_change_bucket_width_weight(self):
         """
        - Increase single / multiple / all bucket's width
         at the same time then trigger rebalance
        - Decrease single / multiple / all buckets' width
         and rebalance
         Cases will be executed both with/without data load
+       -Simultaniously increase / decrease the bucket's width+weight
+        at a same time and check the results
         """
         # bucket creation way to be updated after spec function available
         # at the base class
         def create_serverless_bucket():
-            helper = BucketHelper(self.cluster.master)
-            api = helper.baseUrl + self.b_create_endpoint
             for i in range(self.num_buckets):
                 name = "bucket_"+str(i)
                 bucket_params = self.__get_bucket_params(
                     b_name=name,
-                    width=self.bucket_width)
-                param = urllib.urlencode(bucket_params)
-                status, _, _ = helper._http_request(api, helper.POST, param)
+                    width=self.bucket_width, )
+                bucket_obj = Bucket(bucket_params)
+                self.bucket_util.create_bucket(self.cluster, bucket_obj,
+                                               wait_for_warmup=True)
         create_serverless_bucket()
         ###
 
@@ -357,14 +354,14 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                 raise Exception("doc load/verification failed")
 
         task = None
-        desired_width = self.input.param("desired_width", 1)
+        desired_width = self.input.param("desired_width", self.bucket_width)
+        desired_weight = self.input.param("desired_weight", self.bucket_weight)
         scale = self.input.param("bucket_scale", "all")
         data_load_after_rebalance = self.input.param(
             "data_load_after_rebalance", True)
         async_load = self.input.param("async_load", False)
 
-        buckets_to_consider = buckets = \
-            self.bucket_util.get_all_buckets(self.cluster)
+        buckets_to_consider = buckets = self.cluster.buckets
         CollectionBase.create_sdk_clients(
             self.task_manager.number_of_threads,
             self.cluster.master,
@@ -372,7 +369,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             self.sdk_client_pool,
             self.sdk_compression)
         validation = self.bucket_util.validate_serverless_buckets(
-            self.cluster, buckets)
+            self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
 
         if len(buckets) < 1:
@@ -383,20 +380,30 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             if len(buckets) <= 2:
                 self.fail("number of buckets should be greater than 2 for"
                           " width change in multiple buckets")
-            buckets_to_consider = max(2, buckets[:(len(buckets)/2)])
+            buckets_to_consider = buckets[:(len(buckets) / 2)]
 
         if async_load:
             task = data_load()
         for bucket in buckets_to_consider:
             self.bucket_util.update_bucket_property(self.cluster.master, bucket,
-                                                    bucket_width=desired_width)
+                                                    bucket_width=desired_width,
+                                                    bucket_weight=desired_weight)
+            if desired_width:
+                bucket.serverless.width = desired_width
+            if desired_weight:
+                bucket.serverless.weight = desired_weight
         rebalance_task = self.task.async_rebalance(
             self.cluster, [], [],
             retry_get_process_num=3000)
         self.task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
+        # validations
         if async_load:
             verify_data_load(task)
+        validation = self.bucket_util.validate_serverless_buckets(
+            self.cluster, self.cluster.buckets)
+        self.assertTrue(validation, "Bucket validation failed")
         if data_load_after_rebalance:
             task = data_load()
             verify_data_load(task)
