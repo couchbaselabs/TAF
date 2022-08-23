@@ -1719,6 +1719,143 @@ class basic_ops(ClusterSetup):
             rest.remove_all_replications()
             rest.remove_all_remote_clusters()
 
+    def test_warmup_scan_reset(self):
+        """
+        1. Create couchstore value eviction bucket
+        2. Disable compaction
+        3. Load limited number of docs on each vbucket (async then sync write)
+        4. Restart memcached and validate the the num_items per each vb
+        5. Also check warmedUpValues and warmedUpKeys from warmup stats
+
+        Ref: MB-53415
+        :return:
+        """
+        docs_per_vb = 2
+        total_docs = self.cluster.vbuckets * docs_per_vb
+        doc_val = {"f": "test"}
+        doc_keys = dict([(vb_num, list())
+                        for vb_num in range(0, self.cluster.vbuckets)])
+        index = -1
+        req_key_for_vb = doc_keys.keys()
+        d_level = Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
+
+        param = "warmup_backfill_scan_chunk_duration"
+        param_val = 0
+
+        # Create required doc_keys for each vbucket
+        self.log.info("Creating document keys for loading")
+        while req_key_for_vb:
+            index += 1
+            key = "%s_%s" % (self.key, index)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            if vb_for_key in req_key_for_vb:
+                doc_keys[vb_for_key].append(key)
+                if len(doc_keys[vb_for_key]) == docs_per_vb:
+                    req_key_for_vb.remove(vb_for_key)
+
+        # Open SDK client for loading
+        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+
+        # Load doc with async writes
+        self.log.info("Loading documents to each vbucket")
+        for vb_num in doc_keys.keys():
+            # Async write
+            key = doc_keys[vb_num][0]
+            result = client.crud(DocLoading.Bucket.DocOps.CREATE, key, doc_val)
+            self.assertTrue(result["status"], "Key '%s' insert failed" % key)
+
+            # Sync write
+            key = doc_keys[vb_num][1]
+            result = client.crud(DocLoading.Bucket.DocOps.CREATE, key, doc_val,
+                                 durability=d_level)
+            self.assertTrue(result["status"], "Key '%s' insert failed" % key)
+
+        # Close the SDK client
+        client.close()
+
+        # Wait for ep_queue_size to become Zero
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+
+        # Setting warmup_backfill_scan_chunk_duration=0 using diag_eval
+        diag_eval_cmd_format = \
+            'curl -u %s:%s -X POST localhost:8091/diag/eval' \
+            ' -d "ns_bucket:update_bucket_props(\\"%s\\",' \
+            ' [{extra_config_string, \\"%s=%s\\"}])."' \
+
+        diag_eval_cmd = diag_eval_cmd_format \
+            % (self.cluster.master.rest_username,
+               self.cluster.master.rest_password,
+               self.cluster.buckets[0].name, param, param_val)
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstat = Cbstats(shell)
+        cb_err = CouchbaseError(self.log, shell)
+
+        self.log.info("Running diag_eval and restarting couchbase-server")
+        shell.execute_command(diag_eval_cmd)
+        self.sleep(5, "Wait before restarting the cluster")
+        shell.restart_couchbase()
+
+        # Wait until bucket completes warmup
+        self.log.info("Wait for warmup to complete")
+        self.bucket_util.is_warmup_complete(self.cluster, self.cluster.buckets)
+
+        # Validate the diag_eval command is reflected in the server
+        all_stats = cbstat.all_stats(self.cluster.buckets[0])
+        curr_val = int(all_stats["ep_warmup_backfill_scan_chunk_duration"])
+        self.assertEqual(curr_val, param_val,
+                         "Unexpected value: '%s'" % curr_val)
+
+        # Run memcached restart and validate the warmup and vb stats
+        for index in range(1, 10):
+            self.log.info("Running iteration: %s" % index)
+            cb_err.create(CouchbaseError.KILL_MEMCACHED)
+
+            self.log.info("Wait for warmup to complete")
+            self.bucket_util.is_warmup_complete(self.cluster,
+                                                self.cluster.buckets)
+
+            warmup_stats = cbstat.all_stats(self.cluster.buckets[0].name,
+                                            "warmup")
+            for key in ["ep_warmup_estimated_key_count",
+                        "ep_warmup_estimated_value_count",
+                        "ep_warmup_key_count",
+                        "ep_warmup_value_count"]:
+                self.assertFalse(int(warmup_stats[key]) != total_docs,
+                                 "Value mismatch. %s = %s"
+                                 % (key, warmup_stats[key]))
+
+            vb_details = cbstat.vbucket_details(self.cluster.buckets[0].name)
+            for vb_num, vb_stats in vb_details.items():
+                self.assertFalse(int(vb_stats["num_items"]) != docs_per_vb,
+                                 "Vb %s reports less num_items: %s"
+                                 % (vb_num, vb_stats["num_items"]))
+
+        param_val = 100
+        self.log.info("Reset the value back to %s" % param_val)
+        diag_eval_cmd = diag_eval_cmd_format \
+            % (self.cluster.master.rest_username,
+               self.cluster.master.rest_password,
+               self.cluster.buckets[0].name, param, param_val)
+
+        self.log.info("Running diag_eval and restarting couchbase-server")
+        self.log.info(diag_eval_cmd)
+        shell.execute_command(diag_eval_cmd)
+        self.sleep(5, "Wait before restarting the cluster")
+        shell.restart_couchbase()
+
+        self.log.info("Wait for warmup to complete")
+        self.bucket_util.is_warmup_complete(self.cluster,
+                                            self.cluster.buckets)
+
+        all_stats = cbstat.all_stats(self.cluster.buckets[0])
+        curr_val = int(all_stats["ep_warmup_backfill_scan_chunk_duration"])
+        self.assertEqual(curr_val, param_val,
+                         "Unexpected value: '%s'" % curr_val)
+
+        shell.disconnect()
+
     def verify_stat(self, items, value="active"):
         mc = MemcachedClient(self.cluster.master.ip,
                              constants.memcached_port)
