@@ -76,7 +76,7 @@ class MemcachedClient(KeepRefs):
     def __init__(self, host='127.0.0.1', port=11211, timeout=30):
         super(MemcachedClient, self).__init__()
         self.host = host
-        self.port = port
+        self.port = int(port)
         self.timeout = timeout
         self._createConn()
         self.r = random.Random()

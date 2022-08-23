@@ -15,10 +15,10 @@ class MemcachedClientHelper(object):
                       admin_user=None, admin_pass=None):
         log = logger.get("test")
         if isinstance(server, dict):
-            log.info("creating memcached client: {0}:{1} {2}"
+            log.debug("creating memcached client: {0}:{1} {2}"
                      .format(server["ip"], server.memcached_port, bucket.name))
         else:
-            log.info("creating memcached client: {0}:{1} {2}"
+            log.debug("creating memcached client: {0}:{1} {2}"
                      .format(server.ip, server.memcached_port, bucket.name))
         BucketHelper(server).vbucket_map_ready(bucket, 60)
         vbuckets = BucketHelper(server).get_vbuckets(bucket)

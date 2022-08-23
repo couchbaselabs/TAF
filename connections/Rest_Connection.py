@@ -187,7 +187,6 @@ class RestConnection(object):
             username = self.username
         if password is None:
             password = self.password
-        # authorization = base64.encodestring('%s:%s' % (username, password)).strip("\n")
         authorization = base64.b64encode('{}:{}'.format(username, password).encode()).decode()
         return {'Content-Type': contentType,
                 'Authorization': 'Basic %s' % authorization,
@@ -340,8 +339,6 @@ class RestConnection(object):
             username = self.username
         if password is None:
             password = self.password
-        # authorization = base64.encodestring('%s:%s'
-        #                                     % (username, password)).strip("\n")
         authorization = base64.b64encode('{}:{}'.format(username, password).encode()).decode()
         return {'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': 'Basic %s' % authorization,

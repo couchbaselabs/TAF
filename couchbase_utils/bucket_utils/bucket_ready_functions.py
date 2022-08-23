@@ -959,10 +959,7 @@ class CollectionUtils(DocLoaderUtils):
             CollectionUtils.log.error(
                 "Collection '%s:%s:%s' creation failed: %s"
                 % (bucket, scope_name, collection_name, content))
-            # raise Exception("create_collection failed")
-        # Until MB-44741 is fixed/resolved
-        # content = json.loads(content)
-        # BucketHelper(node).wait_for_collections_warmup(bucket,content["uid"])
+            raise Exception("create_collection failed")
         bucket.stats.increment_manifest_uid()
         CollectionUtils.create_collection_object(bucket,
                                                  scope_name,
@@ -992,9 +989,6 @@ class CollectionUtils(DocLoaderUtils):
                 "Collection '%s:%s:%s' delete failed: %s"
                 % (bucket, scope_name, collection_name, content))
             raise Exception("delete_collection")
-        # Until MB-44741 is fixed/resolved
-        # content = json.loads(content)
-        # BucketHelper(node).wait_for_collections_warmup(bucket, content["uid"])
         bucket.stats.increment_manifest_uid()
         CollectionUtils.mark_collection_as_dropped(bucket,
                                                    scope_name,
@@ -2060,6 +2054,7 @@ class BucketUtils(ScopeUtils):
                 cluster.buckets.append(task.bucket_obj)
 
         for bucket in cluster.buckets:
+            self.get_updated_bucket_server_list(cluster, bucket)
             if not buckets_spec.get(bucket.name):
                 continue
             for scope_name, scope_spec \
