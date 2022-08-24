@@ -4337,7 +4337,7 @@ class CompareIndexKVData(Task):
             self.log.info("starting call")
             contentType = 'application/x-www-form-urlencoded'
             connection = 'close'
-            status, content, header = indexer_rest.execute_query(server=self.server, query=self.query,
+            status, content, header = indexer_rest.execute_query(query=self.query,
                                                                  contentType=contentType,
                                                                  connection=connection)
             newContent = json.loads(content)
@@ -7083,11 +7083,12 @@ class ExecuteQueryTask(Task):
                 self.log.info("starting call")
                 contentType = 'application/x-www-form-urlencoded'
                 connection = 'keep-alive'
-                status, content, header = indexer_rest.execute_query(server=self.server, query=self.query,
+                status, content, header = indexer_rest.execute_query(query=self.query,
                                                                      contentType=contentType,
-                                                                     connection=connection, isIndexerQuery=self.isIndexerQuery)
-                newContent = json.loads(content)
+                                                                     connection=connection,
+                                                                     isIndexerQuery=self.isIndexerQuery)
                 self.log.debug("Status of the query {}".format(status))
+                self.log.debug("Content of the query {}".format(json.loads(content)))
                 self.set_result(status)
                 self.log.info("check isIndexQuery status"+str(self.isIndexerQuery))
                 break

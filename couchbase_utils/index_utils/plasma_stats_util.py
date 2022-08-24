@@ -34,9 +34,10 @@ class PlasmaStatsUtil(IndexUtils):
         return baseURL
 
     def get_index_storage_stats(self, index_node=None, timeout=120):
+        rest_client = RestConnection(self.index_node)
         if index_node is None:
             index_node = self.index_node
-        api = self.get_index_baseURL() + 'stats/storage'
+        api = rest_client.indexUrl + 'stats/storage'
         self.log.info("api is:"+str(api))
         content = None
         counter = 0

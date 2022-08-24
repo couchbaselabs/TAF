@@ -414,15 +414,13 @@ class GsiHelper(RestConnection):
                 self.log.error("Failure during get_index_stats: %s" % content)
         return result
 
-    def execute_query(self, server, query, n1ql_port=8093, contentType='application/x-www-form-urlencoded',
-                      connection='keep-alive', timeout=600, isIndexerQuery=False):
+    def execute_query(self, query,  contentType='application/x-www-form-urlencoded',
+                      connection='keep-alive', isIndexerQuery=False):
+        url = "%squery" % self.queryUrl
         if isIndexerQuery:
             params = {'statement': query}
             params = urllib.urlencode(params)
-            self.log.debug('Query params: {0}'.format(params))
-            url = "http://%s:%s/query" % (server.ip, n1ql_port)
         else:
-            url = "http://%s:%s/query/service" % (server.ip, n1ql_port)
             params = urllib.urlencode({'scan_consistency': 'request_plus', 'statement': query})
         status, content, header = self._http_request(url, 'POST', params,
                                                      headers=self._create_capi_headers(contentType=contentType,

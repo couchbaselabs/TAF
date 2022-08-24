@@ -2298,7 +2298,9 @@ class BucketUtils(ScopeUtils):
             bucket_name=None,
             purge_interval=1,
             autoCompactionDefined="false",
-            fragmentation_percentage=50):
+            fragmentation_percentage=50,
+            vbuckets=None,
+            weight=None, width=None):
         success = True
         rest = RestConnection(cluster.master)
         info = rest.get_nodes_self()
@@ -2337,7 +2339,10 @@ class BucketUtils(ScopeUtils):
                         Bucket.durabilityMinLevel: bucket_durability,
                         Bucket.purge_interval: purge_interval,
                         Bucket.autoCompactionDefined: autoCompactionDefined,
-                        Bucket.fragmentationPercentage: fragmentation_percentage})
+                        Bucket.fragmentationPercentage: fragmentation_percentage,
+                        Bucket.numVBuckets: vbuckets,
+                        Bucket.weight: weight,
+                        Bucket.width: width})
                     tasks[bucket] = self.async_create_bucket(cluster, bucket)
                     count += 1
 

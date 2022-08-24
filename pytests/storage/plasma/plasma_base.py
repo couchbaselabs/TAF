@@ -65,6 +65,12 @@ class PlasmaBaseTest(StorageBase):
                 return True
         return False
 
+    def compareRR(self, initial_RR_map, final_RR_map):
+        for key in initial_RR_map:
+            if ((abs(initial_RR_map[key] - final_RR_map[key]) / initial_RR_map[key]) * 100.0) > 5:
+                return False
+        return True
+
     def kill_indexer(self, server, timeout=10, kill_sleep_time=20):
         self.stop_killIndexer = False
         counter = 0
@@ -135,15 +141,16 @@ class PlasmaBaseTest(StorageBase):
             index_stat = plasma_obj.get_index_storage_stats()
             for bucket in index_stat.keys():
                 for index in index_stat[bucket].keys():
-                    index_stat_map = index_stat[bucket][index]
-                    if plasma_stat_field in index_stat_map["MainStore"]:
-                        field_value_map[index] = index_stat_map["MainStore"][plasma_stat_field]
-                    elif plasma_stat_field in index_stat_map['MainStore']['lss_stats']:
-                        field_value_map[index] = index_stat_map["MainStore"]['lss_stats'][plasma_stat_field]
-                    else:
-                        self.fail("Negative digit in compressed count")
-                    self.log.debug("index name is:{} field is:{} field value is:{}".format(index, plasma_stat_field,
-                                                                                           field_value_map[index]))
+                    if index is not '#primary':
+                        index_stat_map = index_stat[bucket][index]
+                        if plasma_stat_field in index_stat_map["MainStore"]:
+                            field_value_map[index] = index_stat_map["MainStore"][plasma_stat_field]
+                        elif plasma_stat_field in index_stat_map['MainStore']['lss_stats']:
+                            field_value_map[index] = index_stat_map["MainStore"]['lss_stats'][plasma_stat_field]
+                        else:
+                            self.fail("Negative digit in compressed count")
+                        self.log.debug("index name is:{} field is:{} field value is:{}".format(index, plasma_stat_field,
+                                                                                               field_value_map[index]))
         return field_value_map
 
     def check_negative_plasma_stats(self, plasma_obj_dict):

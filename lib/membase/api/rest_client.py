@@ -2496,11 +2496,8 @@ class RestConnection(newRC):
         prepared = json.dumps(query)
         if is_prepared:
             if named_prepare and encoded_plan:
-                if len(servers) > 1:
-                    url = "%s://%s:%s/query/service" % (self.protocol, servers[1].ip, port)
-                else:
-                    url = "%s://%s:%s/query/service" % (self.protocol, self.ip, port)
-                headers = self._create_headers_encoded_prepared()
+                url = "%s/query/service" % (self.queryUrl)
+                headers = self._create_headers()
                 body = {'prepared': named_prepare,
                         'encoded_plan': encoded_plan}
                 status, content, content = self._http_request(url, method='POST',
@@ -2517,7 +2514,7 @@ class RestConnection(newRC):
                 prepared = str(prepared.encode('utf-8'))
                 params = 'prepared=' + urllib.quote(prepared, '~()')
             if 'creds' in query_params and query_params['creds']:
-                headers = self._create_headers_with_auth(
+                headers = self._create_headers(
                     query_params['creds'][0]['user'].encode('utf-8'),
                     query_params['creds'][0]['pass'].encode('utf-8'))
             api = "%s://%s:%s/query/service?%s" % (self.protocol, self.ip, port, params)
@@ -2525,7 +2522,7 @@ class RestConnection(newRC):
         else:
             params = {key: query}
             if 'creds' in query_params and query_params['creds']:
-                headers = self._create_headers_with_auth(
+                headers = self._create_headers(
                     query_params['creds'][0]['user'].encode('utf-8'),
                     query_params['creds'][0]['pass'].encode('utf-8'))
                 del query_params['creds']
@@ -2533,7 +2530,7 @@ class RestConnection(newRC):
             params = urllib.urlencode(params)
             if verbose:
                 self.test_log.debug('Query params: {0}'.format(params))
-            api = "%s://%s:%s/query?%s" % (self.protocol, self.ip, port, params)
+            api = "%squery?%s" % (self.queryUrl, params)
 
         status, content, header = self._http_request(api, 'POST',
                                                      timeout=timeout,

@@ -81,9 +81,11 @@ class StorageBase(BaseTestCase):
             self.dcp_servers = self.cluster.servers[self.nodes_init:
                                                     self.nodes_init+len(self.dcp_services)]
         nodes_in = nodes_init + self.dcp_servers
-        result = self.task.rebalance(self.cluster, nodes_in, [],
-                                     services=self.services[1:])
-        self.assertTrue(result, "Initial rebalance failed")
+        self.init_rebalance_skip = self.input.param("init_rebalance_skip", False)
+        if not self.init_rebalance_skip:
+            result = self.task.rebalance(self.cluster, nodes_in, [],
+                                         services=self.services[1:])
+            self.assertTrue(result, "Initial rebalance failed")
         for idx, node in enumerate(self.cluster.nodes_in_cluster):
             node.services = self.services[idx]
 
@@ -101,7 +103,8 @@ class StorageBase(BaseTestCase):
                 eviction_policy=self.bucket_eviction_policy,
                 autoCompactionDefined=self.autoCompactionDefined,
                 fragmentation_percentage=self.fragmentation,
-                flush_enabled=self.flush_enabled)
+                flush_enabled=self.flush_enabled,
+                weight=self.bucket_weight, width=self.bucket_width)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,
@@ -114,7 +117,8 @@ class StorageBase(BaseTestCase):
                 bucket_name=self.bucket_name,
                 ram_quota=self.bucket_ram_quota,
                 fragmentation_percentage=self.fragmentation,
-                flush_enabled=self.flush_enabled)
+                flush_enabled=self.flush_enabled,
+                weight=self.bucket_weight, width=self.bucket_width)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
         if self.change_magma_quota:
             bucket_helper = BucketHelper(self.cluster.master)
@@ -173,7 +177,10 @@ class StorageBase(BaseTestCase):
                                               self.buckets[0].name,
                                               CbServer.default_scope,
                                               self.collections[0])
-            self.query_client = RestConnection(self.dcp_servers[0])
+            self.cluster.query_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="n1ql",
+                                                                                     get_all_nodes=True)
+            self.query_client = RestConnection(self.cluster.query_nodes[0])
+            self.log.info("Query is: %s" % self.initial_idx_q)
             result = self.query_client.query_tool(self.initial_idx_q)
             self.assertTrue(result["status"] == "success", "Index query failed!")
 

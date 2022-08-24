@@ -3,6 +3,7 @@ Created on 07-May-2021
 
 @author: riteshagarwal
 '''
+from Cb_constants import CbServer
 from global_vars import logger
 import time
 from membase.api.rest_client import RestConnection
@@ -72,6 +73,8 @@ class IndexUtils:
             if bucket.name not in indexes_to_build:
                 indexes_to_build[bucket.name] = dict()
             for _, scope in bucket.scopes.items():
+                if scope.name == CbServer.system_scope:
+                    continue
                 if scope.name not in indexes_to_build[bucket.name]:
                     indexes_to_build[bucket.name][scope.name] = dict()
                 for _, collection in scope.collections.items():
