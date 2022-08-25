@@ -6,7 +6,6 @@ from common_lib import sleep
 from global_vars import logger
 from mc_bin_client import MemcachedClient, MemcachedError
 from membase.api.rest_client import RestConnection
-from Cb_constants.CBServer import CbServer
 
 
 class MemcachedClientHelper(object):
@@ -14,20 +13,12 @@ class MemcachedClientHelper(object):
     def direct_client(server, bucket, timeout=30,
                       admin_user=None, admin_pass=None):
         log = logger.get("test")
-        if isinstance(server, dict):
-            log.debug("creating memcached client: {0}:{1} {2}"
-                     .format(server["ip"], server.memcached_port, bucket.name))
-        else:
-            log.debug("creating memcached client: {0}:{1} {2}"
-                     .format(server.ip, server.memcached_port, bucket.name))
+        log.debug("creating memcached client: {0}:{1} {2}"
+                  .format(server.ip, server.memcached_port, bucket.name))
         BucketHelper(server).vbucket_map_ready(bucket, 60)
         vbuckets = BucketHelper(server).get_vbuckets(bucket)
-        if isinstance(server, dict):
-            client = MemcachedClient(server["ip"], server.memcached_port,
-                                     timeout=timeout)
-        else:
-            client = MemcachedClient(server.ip, server.memcached_port,
-                                     timeout=timeout)
+        client = MemcachedClient(server.ip, server.memcached_port,
+                                 timeout=timeout)
         if vbuckets is not None:
             client.vbucket_count = len(vbuckets)
         else:
