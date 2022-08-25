@@ -1097,6 +1097,119 @@ class basic_ops(BaseTestCase):
 
         self.validate_test_failure()
 
+    def test_warmup_scan_reset(self):
+        """
+        1. Create couchstore value eviction bucket
+        2. Disable compaction
+        3. Load limited number of docs on each vbucket (async then sync write)
+        4. Restart memcached and validate the the num_items per each vb
+        5. Also check warmedUpValues and warmedUpKeys from warmup stats
+
+        Ref: MB-53415
+        :return:
+        """
+        def load_vb(vb):
+            for doc_index in range(1, docs_per_vb):
+                d_key = doc_keys[vb][doc_index]
+                r = client.crud("create", d_key, doc_val, durability=d_level)
+                self.assertTrue(r["status"], "Key '%s' insert failed" % d_key)
+
+        docs_per_vb = 50
+        total_docs = self.cluster_util.vbuckets * docs_per_vb
+        doc_val = {"f": "test"}
+        doc_keys = dict([(vb_num, list())
+                        for vb_num in range(0, self.cluster_util.vbuckets)])
+        index = -1
+        req_key_for_vb = doc_keys.keys()
+        d_level = Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
+        bucket = self.bucket_util.buckets[0]
+
+        # Disable compaction before the test start
+        self.bucket_util.disable_compaction(bucket=bucket.name)
+
+        # Create required doc_keys for each vbucket
+        self.log.info("Creating document keys for loading")
+        while req_key_for_vb:
+            index += 1
+            key = "%s_%s" % (self.key, index)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            if vb_for_key in req_key_for_vb:
+                doc_keys[vb_for_key].append(key)
+                if len(doc_keys[vb_for_key]) == docs_per_vb:
+                    req_key_for_vb.remove(vb_for_key)
+
+        # Open SDK client for loading
+        client = SDKClient([self.cluster.master], bucket)
+
+        # Load doc with async writes
+        loading_tasks = list()
+        self.log.info("Loading documents to each vbucket")
+        for vb_num in doc_keys.keys():
+            # Async write
+            key = doc_keys[vb_num][0]
+            result = client.crud("create", key, doc_val)
+            self.assertTrue(result["status"], "Key '%s' insert failed" % key)
+
+            # Sync writes
+            load_thread = (Thread(target=load_vb, args=(vb_num,)))
+            load_thread.start()
+            loading_tasks.append(load_thread)
+
+        for load_thread in loading_tasks:
+            load_thread.join(300)
+
+        # Close the SDK client
+        client.close()
+
+        # Wait for ep_queue_size to become Zero
+        self.bucket_util._wait_for_stats_all_buckets()
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstat = Cbstats(shell)
+        cb_err = CouchbaseError(self.log, shell)
+
+        # Run memcached restart and validate the warmup and vb stats
+        for index in range(1, 10):
+            self.log.info("Running iteration: %s" % index)
+            cb_err.create(CouchbaseError.KILL_MEMCACHED)
+
+            self.log.info("Wait for warmup to complete")
+            self.bucket_util._wait_warmup_completed(
+                self.cluster_util.get_kv_nodes(), bucket)
+
+            retry = 10
+            check_ok = False
+            err = None
+            while not check_ok and retry > 0:
+                retry -= 1
+                self.sleep(3, "Will retry")
+                err = None
+                check_ok = True
+                try:
+                    warmup_stats = cbstat.all_stats(bucket.name, "warmup")
+                    for key in ["ep_warmup_estimated_key_count",
+                                "ep_warmup_estimated_value_count",
+                                "ep_warmup_key_count",
+                                "ep_warmup_value_count"]:
+                        if int(warmup_stats[key]) != total_docs:
+                            check_ok = False
+                            err = "Stat %s, %s != %s" \
+                                % (key, warmup_stats[key], total_docs)
+                            break
+                except Exception as e:
+                    check_ok = False
+                    err = str(e)
+
+            self.assertTrue(check_ok, "Validation failed: %s" % err)
+
+            vb_details = cbstat.vbucket_details(bucket.name)
+            for vb_num, vb_stats in vb_details.items():
+                self.assertFalse(int(vb_stats["num_items"]) != docs_per_vb,
+                                 "Vb %s reports less num_items: %s"
+                                 % (vb_num, vb_stats["num_items"]))
+
+        shell.disconnect()
+
     def verify_stat(self, items, value="active"):
         mc = MemcachedClient(self.cluster.master.ip,
                              constants.memcached_port)
