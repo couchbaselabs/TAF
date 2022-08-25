@@ -2752,7 +2752,6 @@ class RestConnection(newRC):
     def shuffle_nodes_in_zones(self, moved_nodes, source_zone, target_zone):
         # moved_nodes should be a IP list like
         # ["192.168.171.144", "192.168.171.145"]
-        request = ""
         for i in range(0, len(moved_nodes)):
             moved_nodes[i] = "ns_1@" + moved_nodes[i]
 
@@ -2792,9 +2791,12 @@ class RestConnection(newRC):
                     for k in range(0, len(moved_node_json)):
                         node_j.append(moved_node_json[k])
                     zone_json["nodes"] = node_j
-            group_json.append({"name": zone_json["name"], "uri": zone_json["uri"], "nodes": zone_json["nodes"]})
+            group_json.append({"name": zone_json["name"],
+                               "uri": zone_json["uri"],
+                               "nodes": zone_json["nodes"]})
         request = '{{"groups": {0} }}'.format(json.dumps(group_json))
-        status, content, header = self._http_request(api, "PUT", params=request)
+        status, content, header = self._http_request(api, "PUT",
+                                                     params=request)
         # sample request format
         # request = ' {"groups":[{"uri":"/pools/default/serverGroups/0","nodes": [] },\
         #                       {"uri":"/pools/default/serverGroups/c8275b7a88e6745c02815dde4a505e70","nodes": [] },\

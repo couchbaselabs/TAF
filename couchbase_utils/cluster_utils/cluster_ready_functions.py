@@ -321,7 +321,7 @@ class ClusterUtils:
                                    "rebalance out for ejected nodes, will "
                                    "retry after 10 seconds according to "
                                    "MB-8430: {0}".format(ex))
-                    sleep(10, "MB-8430")
+                    sleep(10, "MB-8430 [Won't fix]")
                     rest = RestConnection(removed)
                 start = time.time()
                 while time.time() - start < 30:
@@ -632,7 +632,8 @@ class ClusterUtils:
             for t_node in nodes:
                 t_node = t_node.split(":")
                 for server in cluster.servers:
-                    if server.ip == t_node[0] and server.port == t_node[1]:
+                    if server.ip == t_node[0] \
+                            and int(server.port) == int(t_node[1]):
                         list_to_append.append(server)
                         break
 

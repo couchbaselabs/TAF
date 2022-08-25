@@ -127,6 +127,44 @@ class OnPremBaseTest(CouchbaseBaseTest):
         global_vars.cluster_util = self.cluster_util
         global_vars.bucket_util = self.bucket_util
 
+        # Populate memcached_port in case of cluster_run
+        cluster_run_base_port = ClusterRun.port
+        if int(self.input.servers[0].port) == ClusterRun.port:
+            for server in self.input.servers:
+                server.port = cluster_run_base_port
+                cluster_run_base_port += 1
+                # If not defined in node.ini under 'memcached_port' section
+                if server.memcached_port is CbServer.memcached_port:
+                    server.memcached_port = \
+                        ClusterRun.memcached_port \
+                        + (2 * (int(server.port) - ClusterRun.port))
+
+        self.log_setup_status(self.__class__.__name__, "started")
+
+        # Force disable TLS to avoid initial connection issues
+        tasks = [self.node_utils.async_disable_tls(server)
+                 for server in self.servers]
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+
+        cluster_name_format = "C%s"
+        default_cluster_index = counter_index = 1
+        num_vb = self.vbuckets or CbServer.total_vbuckets
+        if len(self.input.clusters) > 1:
+            # Multi cluster setup
+            for _, nodes in self.input.clusters.iteritems():
+                cluster_name = cluster_name_format % counter_index
+                tem_cluster = CBCluster(name=cluster_name, servers=nodes,
+                                        vbuckets=num_vb)
+                self.cb_clusters[cluster_name] = tem_cluster
+                counter_index += 1
+        else:
+            # Single cluster
+            cluster_name = cluster_name_format % counter_index
+            self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
+                                                       servers=self.servers,
+                                                       vbuckets=num_vb)
+
         # Fetch the profile_type from the master node
         # Value will be default / serverless
         CbServer.cluster_profile = \
@@ -145,37 +183,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         if self.use_https:
             CbServer.use_https = True
             trust_all_certs()
-
-        # Populate memcached_port in case of cluster_run
-        cluster_run_base_port = ClusterRun.port
-        if int(self.input.servers[0].port) == ClusterRun.port:
-            for server in self.input.servers:
-                server.port = cluster_run_base_port
-                cluster_run_base_port += 1
-                # If not defined in node.ini under 'memcached_port' section
-                if server.memcached_port is CbServer.memcached_port:
-                    server.memcached_port = \
-                        ClusterRun.memcached_port \
-                        + (2 * (int(server.port) - ClusterRun.port))
-
-        self.log_setup_status(self.__class__.__name__, "started")
-        cluster_name_format = "C%s"
-        default_cluster_index = counter_index = 1
-        num_vb = self.vbuckets or CbServer.total_vbuckets
-        if len(self.input.clusters) > 1:
-            # Multi cluster setup
-            for _, nodes in self.input.clusters.iteritems():
-                cluster_name = cluster_name_format % counter_index
-                tem_cluster = CBCluster(name=cluster_name, servers=nodes,
-                                        vbuckets=num_vb)
-                self.cb_clusters[cluster_name] = tem_cluster
-                counter_index += 1
-        else:
-            # Single cluster
-            cluster_name = cluster_name_format % counter_index
-            self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
-                                                       servers=self.servers,
-                                                       vbuckets=num_vb)
 
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[cluster_name_format
@@ -297,8 +304,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         self.docker = DockerClient()
                         self.log.info("Build docker image")
                         _rand = random.randint(1, 1000)
-                        self.image_id = self.docker.buildImage(nebula_path,
-                                                               "directnebula-{}".format(_rand))
+                        self.image_id = \
+                            self.docker.buildImage(nebula_path,
+                                                   "directnebula-%s" % _rand)
                         self.log.info("Construct docker port mapping")
                         portMap = dict()
                         for i in range(9000, 9011):
@@ -307,10 +315,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         for i in range(11000, 11011):
                             i = str(i)
                             portMap.update({i: i})
-                        hostConfig = self.docker.portMapping(portMap)
+                        host_config = self.docker.portMapping(portMap)
                         self.log.info("Start Docker Container")
                         dn_container_id = self.docker.startDockerContainer(
-                            hostConfig, self.image_id, exposedPorts=portMap.keys(),
+                            host_config, self.image_id,
+                            exposedPorts=portMap.keys(),
                             tag="DirectNebula-{}".format(_rand))
                         self.docker_containers.append(dn_container_id)
                         self.use_https = False
@@ -332,8 +341,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.task_manager.get_task_result(task)
 
             # Enforce tls on nodes of all clusters
-            if (self.use_https and self.enforce_tls) \
-                    and not self.skip_cluster_reset:
+            if self.use_https and self.enforce_tls:
                 retry_count = self.input.param("tls_retry_count", 3)
                 CbServer.n2n_encryption = True
                 CbServer.use_https = True
@@ -375,8 +383,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         self.fail(msg)
 
             self.standard = self.input.param("standard", "pkcs8")
-            self.passphrase_type = self.input.param("passphrase_type", "script")
-            self.encryption_type = self.input.param("encryption_type", "aes256")
+            self.passphrase_type = \
+                self.input.param("passphrase_type", "script")
+            self.encryption_type = \
+                self.input.param("encryption_type", "aes256")
             if self.multiple_ca:
                 for _, cluster in self.cb_clusters.items():
                     cluster.x509 = x509main(
@@ -441,24 +451,21 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
     def modify_cluster_settings(self, cluster):
         if self.log_info:
-            self.cluster_util.change_log_info(cluster,
-                                              self.log_info)
+            self.cluster_util.change_log_info(cluster, self.log_info)
         if self.log_location:
-            self.cluster_util.change_log_location(cluster,
-                                                  self.log_location)
+            self.cluster_util.change_log_location(cluster, self.log_location)
         if self.stat_info:
-            self.cluster_util.change_stat_info(cluster,
-                                               self.stat_info)
+            self.cluster_util.change_stat_info(cluster, self.stat_info)
         if self.port_info:
-            self.cluster_util.change_port_info(cluster,
-                                               self.port_info)
+            self.cluster_util.change_port_info(cluster, self.port_info)
         if self.port:
             self.port = str(self.port)
 
     def start_fetch_pcaps(self):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
         is_test_failed = self.is_test_failed()
-        self.node_utils.start_fetch_pcaps(self.servers, log_path, is_test_failed)
+        self.node_utils.start_fetch_pcaps(self.servers, log_path,
+                                          is_test_failed)
 
     def tearDown(self):
         for container in self.docker_containers:
