@@ -14,6 +14,8 @@ class ServerlessOnPremBaseTest(ClusterSetup):
         self.bucket_limit = self.input.param("bucket_limit", None)
         # max_weight -> cluster's bucketWeightLimit
         self.max_weight = self.input.param("max_weight", None)
+        self.desired_width = self.input.param("desired_width",  None)
+        self.desired_weight = self.input.param("desired_weight", None)
         # End of serverless specific params
 
         # Split server_groups to a list

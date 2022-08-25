@@ -364,8 +364,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                 raise Exception("doc load/verification failed")
 
         task = None
-        desired_width = self.input.param("desired_width", self.bucket_width)
-        desired_weight = self.input.param("desired_weight", self.bucket_weight)
+
         scale = self.input.param("bucket_scale", "all")
         data_load_after_rebalance = self.input.param(
             "data_load_after_rebalance", True)
@@ -396,12 +395,12 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             task = data_load()
         for bucket in buckets_to_consider:
             self.bucket_util.update_bucket_property(self.cluster.master, bucket,
-                                                    bucket_width=desired_width,
-                                                    bucket_weight=desired_weight)
-            if desired_width:
-                bucket.serverless.width = desired_width
-            if desired_weight:
-                bucket.serverless.weight = desired_weight
+                                                    bucket_width=self.desired_width,
+                                                    bucket_weight=self.desired_weight)
+            if self.desired_width:
+                bucket.serverless.width = self.desired_width
+            if self.desired_weight:
+                bucket.serverless.weight = self.desired_weight
         rebalance_task = self.task.async_rebalance(
             self.cluster, [], [],
             retry_get_process_num=3000)
