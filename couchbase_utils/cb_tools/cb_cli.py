@@ -4,6 +4,8 @@ from BucketLib.bucket import Bucket
 from cb_tools.cb_tools_base import CbCmdBase
 from Cb_constants import CbServer
 
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
+
 
 class CbCli(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
@@ -99,6 +101,28 @@ class CbCli(CbCmdBase):
             raise Exception("\n".join(error))
         if "SUCCESS: Cluster is in developer preview mode" not in str(output):
             raise Exception("Expected output not seen: %s" % output)
+
+    def auto_failover(self, enable_auto_fo=1,
+                      fo_timeout=None, max_failovers=None,
+                      disk_fo=None, disk_fo_timeout=None,
+                      can_abort_rebalance=None):
+        cmd = "%s setting-autofailover -c localhost -u %s -p %s" \
+              % (self.cbstatCmd, self.username, self.password)
+        cmd += " --enable-auto-failover %s" % enable_auto_fo
+        if fo_timeout:
+            cmd += " --auto-failover-timeout %s" % fo_timeout
+        if max_failovers:
+            cmd += " --max-failovers %s" % max_failovers
+        if disk_fo:
+            cmd += " --enable-failover-on-data-disk-issues %s" % disk_fo
+        if disk_fo_timeout:
+            cmd += " --failover-data-disk-period %s" % disk_fo_timeout
+        if can_abort_rebalance:
+            cmd += " --can-abort-rebalance %s" % can_abort_rebalance
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+        return output
 
     def enable_n2n_encryption(self):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --enable" \

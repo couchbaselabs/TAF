@@ -180,15 +180,14 @@ class NodeUtils(object):
         shell_conn.disconnect()
 
     def _disable_tls(self, server):
-        RestConnection(server).update_autofailover_settings(False, 120)
-        self.log.info("Disabling n2n encryption on cluster "
-                      "with node {0}".format(server))
         shell_conn = RemoteMachineShellConnection(server)
         cb_cli = CbCli(shell_conn)
+        o = cb_cli.auto_failover(enable_auto_fo=0)
+        self.log.info("%s: %s" % (server.ip, o))
         o = cb_cli.set_n2n_encryption_level(level="control")
-        self.log.info(o)
+        self.log.info("%s: %s" % (server.ip, o))
         o = cb_cli.disable_n2n_encryption()
-        self.log.info(o)
+        self.log.info("%s: %s" % (server.ip, o))
         shell_conn.disconnect()
 
     def _get_trace(self, server, get_trace):
