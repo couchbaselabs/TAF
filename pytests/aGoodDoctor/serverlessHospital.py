@@ -107,7 +107,7 @@ class Murphy(BaseTestCase, OPD):
                      Bucket.storageBackend: Bucket.StorageBackend.magma,
                      Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
                      Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
-                     Bucket.num_vbuckets: 64,
+                     Bucket.numVBuckets: 64,
                      Bucket.width: 1, #self.bucket_width,
                      Bucket.weight: 30, #self.bucket_weight
                      })

@@ -127,13 +127,13 @@ class CreateBucketTests(ClusterSetup):
         def create_bucket(width=None, weight=None, num_vb=None):
             init_params.pop(Bucket.width, None)
             init_params.pop(Bucket.weight, None)
-            init_params.pop(Bucket.num_vbuckets, None)
+            init_params.pop(Bucket.numVBuckets, None)
             if width is not None:
                 init_params[Bucket.width] = width
             if weight is not None:
                 init_params[Bucket.weight] = weight
             if num_vb is not None:
-                init_params[Bucket.num_vbuckets] = num_vb
+                init_params[Bucket.numVBuckets] = num_vb
 
             status, content, _ = bucket_helper._http_request(
                 api, params=urllib.urlencode(init_params),

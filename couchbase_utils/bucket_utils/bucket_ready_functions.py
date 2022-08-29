@@ -1728,7 +1728,7 @@ class BucketUtils(ScopeUtils):
              Bucket.purge_interval: purge_interval,
              Bucket.autoCompactionDefined: autoCompactionDefined,
              Bucket.fragmentationPercentage: fragmentation_percentage,
-             Bucket.num_vbuckets: vbuckets,
+             Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
              Bucket.weight: weight})
         if cluster.type == "dedicated":
@@ -4122,8 +4122,8 @@ class BucketUtils(ScopeUtils):
             # validation procedures. And these values has to be updated
             # only by the update_bucket_props() to track the current value
             bucket.name = parsed[Bucket.name]
-            if Bucket.num_vbuckets in parsed:
-                bucket.num_vbuckets = parsed[Bucket.num_vbuckets]
+            if Bucket.numVBuckets in parsed:
+                bucket.num_vbuckets = parsed[Bucket.numVBuckets]
 
             bucket.bucketType = parsed[Bucket.bucketType]
             if Bucket.maxTTL in parsed:
@@ -4972,12 +4972,12 @@ class BucketUtils(ScopeUtils):
             num_vb = t_bucket.num_vbuckets or CbServer.Serverless.VB_COUNT
             self.log.debug("%s - required vb_num=%s, actual=%s"
                            % (t_bucket.name,
-                              server_bucket[Bucket.num_vbuckets], num_vb))
-            if num_vb != server_bucket[Bucket.num_vbuckets]:
+                              server_bucket[Bucket.numVBuckets], num_vb))
+            if num_vb != server_bucket[Bucket.numVBuckets]:
                 result = False
                 self.log.critical("Expected num_vbuckets=%s, actual %s"
                                   % (num_vb,
-                                     server_bucket[Bucket.num_vbuckets]))
+                                     server_bucket[Bucket.numVBuckets]))
 
             # Construct AZ map to validate the bucket distribution
             # across the server groups

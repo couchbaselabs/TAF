@@ -159,12 +159,12 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         bucket_params[Bucket.width] = 1
         for vb_num in [None, Bucket.vBucket.MIN_VALUE-1,
                        Bucket.vBucket.MAX_VALUE+1]:
-            bucket_params[Bucket.num_vbuckets] = vb_num
+            bucket_params[Bucket.numVBuckets] = vb_num
             content = create_bucket()["errors"]
             self.assertEqual(content["numVbuckets"], err_vb,
                              "Invalid error message for bucket::numVbuckets")
 
-        bucket_params.pop(Bucket.num_vbuckets)
+        bucket_params.pop(Bucket.numVBuckets)
         # Create with width > available sub-clusters
         self.log.info("Creating bucket with width > len(sub_cluster)")
         bucket_params[Bucket.width] = \
@@ -408,4 +408,3 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             task = data_load()
             verify_data_load(task)
         self.bucket_util.print_bucket_stats(self.cluster)
-
