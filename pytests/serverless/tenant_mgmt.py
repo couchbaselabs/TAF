@@ -15,12 +15,22 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         super(TenantManagementOnPrem, self).setUp()
         self.b_create_endpoint = "pools/default/buckets"
 
-        with_default_bucket = self.input.param("with_default_bucket", False)
-        if with_default_bucket:
+        self.spec_name = self.input.param("bucket_spec", None)
+        self.data_spec_name = self.input.param("data_spec_name", None)
+
+        self.bucket_util.delete_all_buckets(self.cluster)
+        if self.spec_name:
+            CollectionBase.deploy_buckets_from_spec_file(self)
+        elif self.input.param("with_default_bucket", False):
             old_weight = self.bucket_weight
             self.bucket_weight = 1
             self.create_bucket(self.cluster)
             self.bucket_weight = old_weight
+
+        # Load initial data from spec file
+        if self.data_spec_name:
+            pass
+
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def tearDown(self):

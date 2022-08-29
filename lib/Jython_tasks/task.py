@@ -25,7 +25,7 @@ from reactor.util.function import Tuples
 import global_vars
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
-from BucketLib.bucket import Bucket
+from BucketLib.bucket import Bucket, Serverless
 from Cb_constants import constants, CbServer, DocLoading
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
@@ -3959,6 +3959,18 @@ class BucketCreateFromSpecTask(Task):
         # bucket_utils.buckets list
         self.bucket_obj = Bucket()
 
+    def __set_serverless_params(self):
+        num_vbs = self.bucket_spec.get(Bucket.numVBuckets, None)
+        b_width = self.bucket_spec.get(Bucket.width, None)
+        b_weight = self.bucket_spec.get(Bucket.weight, None)
+        if CbServer.cluster_profile == "serverless" \
+                and b_width is not None and int(b_width) >= 1:
+            self.bucket_obj.serverless = Serverless()
+
+            self.bucket_obj.serverless.width = b_width
+            self.bucket_obj.serverless.weight = b_weight
+            self.bucket_obj.num_vbuckets = num_vbs
+
     def call(self):
         self.result = True
         self.start_task()
@@ -3967,6 +3979,7 @@ class BucketCreateFromSpecTask(Task):
             if key in bucket_params:
                 setattr(self.bucket_obj, key, value)
 
+        self.__set_serverless_params()
         self.create_bucket()
         if CbServer.default_collection not in \
                 self.bucket_spec[

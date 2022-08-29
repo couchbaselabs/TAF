@@ -19,14 +19,17 @@ class ServerlessOnPremBaseTest(ClusterSetup):
         # Split server_groups to a list
         self.server_groups = self.server_groups.split(':')
 
-        self.distribute_servers_across_available_zones()
-        self.remove_empty_server_groups(self.cluster)
-        self.assertTrue(
-            RestConnection(self.cluster.master).is_cluster_balanced(),
-            "Cluster is unbalanced")
         self.kv_distribution_dict = dict()
         for az in self.server_groups:
             self.kv_distribution_dict[az] = 1
+
+        if not self.skip_setup_cleanup:
+            self.distribute_servers_across_available_zones()
+            self.remove_empty_server_groups(self.cluster)
+            self.assertTrue(
+                RestConnection(self.cluster.master).is_cluster_balanced(),
+                "Cluster is unbalanced")
+
         self.cluster_util.print_cluster_stats(self.cluster)
         self.log_setup_status(self.__class__.__name__, "completed")
 

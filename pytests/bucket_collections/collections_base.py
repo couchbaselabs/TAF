@@ -253,7 +253,16 @@ class CollectionBase(ClusterSetup):
     @staticmethod
     def over_ride_bucket_template_params(test_obj, bucket_storage,
                                          bucket_spec):
-        if bucket_storage == Bucket.StorageBackend.magma:
+        # Set default values for serverless deployment
+        if CbServer.cluster_profile == "serverless":
+            bucket_spec[Bucket.ramQuotaMB] = 256
+            bucket_spec[Bucket.replicaNumber] = Bucket.ReplicaNum.TWO
+            bucket_storage = Bucket.StorageBackend.magma
+            bucket_spec[Bucket.evictionPolicy] = \
+                Bucket.EvictionPolicy.FULL_EVICTION
+
+        if CbServer.cluster_profile == "default" \
+                and bucket_storage == Bucket.StorageBackend.magma:
             # Blindly override the following params
             bucket_spec[Bucket.evictionPolicy] = \
                 Bucket.EvictionPolicy.FULL_EVICTION
