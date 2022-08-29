@@ -245,6 +245,11 @@ class StorageBase(BaseTestCase):
         self.skip_read_on_error = False
         self.track_failures = self.input.param("track_failures", True)
 
+        if CbServer.cluster_profile == "serverless":
+            # Workaround to hitting throttling on serverless config
+            _, status = RestConnection(self.cluster.master).set_throttle_limit(
+                limit=self.kv_throttling_limit)
+
     def find_nodes_with_service(self, service_type, nodes_list):
         filter_list = list()
         for node in nodes_list:
