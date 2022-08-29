@@ -153,6 +153,8 @@ class StorageBase(BaseTestCase):
         # Creation of collection of num_collections is > 1
         for bucket in self.cluster.buckets:
             for scope_name in self.scopes:
+                if scope_name == CbServer.system_scope:
+                    continue
                 for i in range(len(bucket.scopes[scope_name].collections), self.num_collections):
                     collection_name = collection_prefix + str(i)
                     self.log.info("Creating scope::collection {} {}\
