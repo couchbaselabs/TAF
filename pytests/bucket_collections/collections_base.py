@@ -209,7 +209,7 @@ class CollectionBase(ClusterSetup):
             test_obj.init_sdk_pool_object()
 
         test_obj.log.info("Creating required SDK clients for client_pool")
-        test_obj.create_sdk_clients(
+        CollectionBase.create_sdk_clients(
             test_obj.task_manager.number_of_threads,
             test_obj.cluster.master,
             test_obj.cluster.buckets,
