@@ -264,11 +264,10 @@ class ServerlessMetering(LMT):
                                            num_items=self.create_end - self.create_start)
         expected_ru = self.calculate_units(self.key_size, self.doc_size,
                                            read=True, num_items=self.read_end - self.read_start)
-        _, self.ru, self.wu = self.get_stat(self.bucket)
-        msg = "expected_wu {} != mcstats wu {}".format(expected_wu, self.wu)
-        self.assertEqual(self.wu, expected_wu, msg)
-        self.log.info("doc_ops {}".format(self.doc_ops))
-
+        for bucket in self.cluster.buckets:
+            _, self.ru, self.wu = self.get_stat(bucket)
+            msg = "bucket = {}, expected_wu {} != mcstats wu {}".format(bucket.name, expected_wu, self.wu)
+            self.assertEqual(self.wu, expected_wu, msg)
         count = 0
         while count < self.test_itr:
             msg = "Step {}: Starting doc_ops == {}".format(count, self.doc_ops)
@@ -314,12 +313,13 @@ class ServerlessMetering(LMT):
             if "read" in self.doc_ops:
                 expected_ru += self.calculate_units(self.key_size, self.doc_size,
                                                     num_items = self.read_end - self.read_start)
-
-            _, self.ru, self.wu = self.get_stat(self.bucket)
-            msg = "expected_ru {} != mcstats ru {}".format(expected_ru, self.ru)
-            self.assertEqual(self.ru, expected_ru, msg)
-            msg = "expected_wu {} != mcstats wu {}".format(expected_wu, self.wu)
-            self.assertEqual(self.wu, expected_wu, msg)
+            self.log.info("Expected wu after doc ops == {}".format(expected_wu))
+            for bucket in self.cluster.buckets:
+                _, self.ru, self.wu = self.get_stat(bucket)
+                msg = "bucket = {}, expected_ru {} != mcstats ru {}".format(bucket.name, expected_ru, self.ru)
+                self.assertEqual(self.ru, expected_ru, msg)
+                msg = "bucket = {}, expected_wu {} != mcstats wu {}".format(bucket.name, expected_wu, self.wu)
+                self.assertEqual(self.wu, expected_wu, msg)
 
     def test_ru_after_multi_get_ops(self):
         self.PrintStep(" Step 1: Initial loading with new loader starts")
