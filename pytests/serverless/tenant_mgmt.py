@@ -17,7 +17,6 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
         self.spec_name = self.input.param("bucket_spec", None)
         self.data_spec_name = self.input.param("data_spec_name", None)
-
         self.bucket_util.delete_all_buckets(self.cluster)
         if self.spec_name:
             CollectionBase.deploy_buckets_from_spec_file(self)
