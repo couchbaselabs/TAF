@@ -99,7 +99,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.multiple_ca = self.input.param("multiple_ca", False)
         # User defined throttling limit used in serverless config
         self.kv_throttling_limit = \
-            self.input.param("kv_throttling_limit", 200000)
+            self.input.param("kv_throttling_limit", 999999)
+        self.kv_storage_limit = \
+            self.input.param("kv_storage_limit", 100000)
 
         self.node_utils.cleanup_pcaps(self.servers)
         self.collect_pcaps = self.input.param("collect_pcaps", False)
@@ -1045,7 +1047,7 @@ class ClusterSetup(OnPremBaseTest):
         if CbServer.cluster_profile == "serverless":
             # Workaround to hitting throttling on serverless config
             _, status = RestConnection(self.cluster.master).set_throttle_limit(
-                limit=self.kv_throttling_limit)
+                throttle_limit=self.kv_throttling_limit, storage_limit=self.kv_storage_limit)
 
         # Used to track spare nodes.
         # Test case can use this for further rebalance

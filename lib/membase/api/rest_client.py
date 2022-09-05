@@ -3351,21 +3351,22 @@ class RestConnection(newRC):
 
     def get_throttle_limit(self, bucket=""):
         if bucket:
-            url = 'settings/throttle/' + bucket
+            url = 'pools/default/buckets/' + bucket
         else:
-            url = 'settings/throttle/'
+            url = 'internalSettings'
         api = self.baseUrl + url
         status, content, header = self._http_request(api, 'GET')
         return status, content
 
-    def set_throttle_limit(self, bucket="", limit=5000, service="kv"):
-        key = service + "ThrottleLimit"
+    def set_throttle_limit(self, bucket="", throttle_limit=5000, storage_limit=500, service="data"):
+        key_throttle_limit = service + "ThrottleLimit"
+        key_storage_limit = service + "StorageLimit"
         if bucket:
-            url = 'settings/throttle/' + bucket
+            url = 'pools/default/buckets/' + bucket
         else:
-            url = 'settings/throttle/'
+            url = 'internalSettings'
         api = self.baseUrl + url
-        params = urllib.urlencode({key: limit})
+        params = urllib.urlencode({key_throttle_limit: throttle_limit, "key_storage_limit": storage_limit})
         status, content, header = self._http_request(api, 'POST', params=params)
         return status, content
 

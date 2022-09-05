@@ -149,7 +149,7 @@ class LMT(ServerlessOnPremBaseTest):
                 for node in bucket.servers:
                     _, content = RestConnection(node).\
                         set_throttle_limit(bucket=bucket.name,
-                                           limit=self.bucket_throttling_limit)
+                                           throttle_limit=self.bucket_throttling_limit)
 
         # Initialise doc loader/generator params
         self.init_doc_params()
