@@ -17,6 +17,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
         self.spec_name = self.input.param("bucket_spec", None)
         self.data_spec_name = self.input.param("data_spec_name", None)
+        self.negative_case = self.input.param("negative_case", False)
         self.bucket_util.delete_all_buckets(self.cluster)
         if self.spec_name:
             CollectionBase.deploy_buckets_from_spec_file(self)
@@ -364,6 +365,10 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
         task = None
 
+        if self.negative_case:
+            self.desired_width = (len(self.cluster.servers) /
+                                  CbServer.Serverless.KV_SubCluster_Size) + 1
+
         scale = self.input.param("bucket_scale", "all")
         data_load_after_rebalance = self.input.param(
             "data_load_after_rebalance", True)
@@ -393,13 +398,21 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         if async_load:
             task = data_load()
         for bucket in buckets_to_consider:
-            self.bucket_util.update_bucket_property(self.cluster.master, bucket,
-                                                    bucket_width=self.desired_width,
-                                                    bucket_weight=self.desired_weight)
-            if self.desired_width:
-                bucket.serverless.width = self.desired_width
-            if self.desired_weight:
-                bucket.serverless.weight = self.desired_weight
+            try:
+                self.bucket_util.update_bucket_property(self.cluster.master, bucket,
+                                                        bucket_width=self.desired_width,
+                                                        bucket_weight=self.desired_weight)
+                if self.desired_width:
+                    bucket.serverless.width = self.desired_width
+                if self.desired_weight:
+                    bucket.serverless.weight = self.desired_weight
+            except Exception as e:
+                self.log.error("Exception occurred: %s" % str(e))
+                if not self.negative_case:
+                    raise e
+        if self.negative_case:
+            for bucket in buckets_to_consider:
+               self.assertTrue(bucket.serverless.width != self.desired_width)
         rebalance_task = self.task.async_rebalance(
             self.cluster, [], [],
             retry_get_process_num=3000)

@@ -44,18 +44,21 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         if self.spec_name:
             CollectionBase.deploy_buckets_from_spec_file(self)
         self.bucket_util.print_bucket_stats(self.cluster)
-        CollectionBase.create_sdk_clients(
-            self.task_manager.number_of_threads,
-            self.cluster.master,
-            self.cluster.buckets,
-            self.sdk_client_pool,
-            self.sdk_compression)
+        self.create_sdk_clients()
         validation = self.bucket_util.validate_serverless_buckets(
             self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
 
     def tearDown(self):
         super(TenantManagementOnPremFailover, self).tearDown()
+
+    def create_sdk_clients(self):
+        CollectionBase.create_sdk_clients(
+            self.task_manager.number_of_threads,
+            self.cluster.master,
+            self.cluster.buckets,
+            self.sdk_client_pool,
+            self.sdk_compression)
 
     def __update_server_obj(self):
         temp_data = self.servers_to_fail
@@ -176,7 +179,7 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
                 if failover_task.result is False:
                     self.fail("Failure during reverting failover operation")
 
-    def create_serverless_bucket(self, name_prefix="bucket_", num=2):
+    def create_serverless_bucket(self, name_prefix="bucket_", num=2, weight=1):
         def __get_bucket_params(b_name, ram_quota=256, width=1,
                                 weight=1):
             self.log.debug("Creating bucket param")
@@ -191,13 +194,14 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         for i in range(num):
             name = name_prefix + str(i)
             bucket_params = __get_bucket_params(
-                b_name=name)
+                b_name=name, weight=weight)
             bucket_obj = Bucket(bucket_params)
             try:
                 self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                                wait_for_warmup=True)
             except Exception as e:
                 raise e
+        self.create_sdk_clients()
 
     def test_failover_during_update(self):
         if self.async_data_load:
@@ -229,5 +233,40 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         validation = self.bucket_util.validate_serverless_buckets(
             self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
+
+    def test_failover_non_included_node(self):
+        weight = 1000
+        initial_bucket = self.cluster.buckets[0]
+        bucket_name = "test_bucket"
+        for i in range(2):
+            self.create_serverless_bucket(bucket_name + str(i), 1, weight)
+            weight += 1000
+        self.rebalance_util.data_load_collection(
+            self.cluster, self.doc_spec_name, False, async_load=True)
+        target_bucket = self.cluster.buckets[1]
+        second_bucket = self.cluster.buckets[2]
+        self.bucket_util.update_bucket_property(self.cluster.master,
+                                                target_bucket,
+                                                bucket_width=2)
+        target_bucket.serverless.width = 2
+        rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                   retry_get_process_num=3000)
+
+        self.sleep(5, "wait for re-balance to progress")
+        self.servers_to_fail = [second_bucket.servers[0]]
+        self.failover_task()
+        self.run_recovery_rebalance()
+        self.task_manager.get_task_result(rebalance_task)
+        validation = self.bucket_util.validate_serverless_buckets(
+            self.cluster, self.cluster.buckets)
+        self.assertTrue(validation, "Bucket validation failed")
+        # making sure bucket expanded to nodes with less total weight
+        self.assertTrue(set(initial_bucket.servers).
+                        issubset(set(target_bucket.servers)),
+                        "Target bucket not sub-set of nodes with less weight")
+        self.assertTrue(set(second_bucket.servers).
+                         isdisjoint(set(target_bucket.servers)),
+                         "Target bucket not expected in nodes with more weight")
+
 
 
