@@ -101,9 +101,9 @@ class SystemEventRestHelper:
         if events_count is not None:
             get_params.update({"limit": events_count})
 
-        response = requests.get(api, params=get_params,
-                                auth=(rest.username,
-                                      rest.password))
+        response = requests.get(
+            api, params=get_params, auth=(rest.username, rest.password),
+            verify=False)
 
         # MB-49617: Exception handling for non-json (plain text) case
         try:

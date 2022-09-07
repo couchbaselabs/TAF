@@ -3689,8 +3689,17 @@ class CbasUtil(UDFUtil):
         if not shell:
             shell = RemoteMachineShellConnection(server)
 
+        """
+        This check is requires as the mode param being used while running 
+        analytical query is not a released feature. Currently handle 
+        returned by the query is in incorrect format, where http protocol is 
+        being returned with ssl port
+        """
+        if "18095" in handle:
+            handle = handle.replace("http", "https")
+
         output, error = shell.execute_command(
-            """curl -g -v {0} -u {1}:{2}""".format(
+            "curl --tlsv1.2 -g -v {0} -u {1}:{2} -k".format(
                 handle, cluster.cbas_cc_node.rest_username,
                 cluster.cbas_cc_node.rest_password))
 
