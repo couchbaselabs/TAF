@@ -34,11 +34,12 @@ from Jython_tasks.task import \
     BucketCreateFromSpecTask, \
     ViewCreateTask, \
     ViewDeleteTask, \
-    ViewQueryTask
+    ViewQueryTask, DatabaseCreateTask
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope, Serverless
-from capella_utils.dedicated import CapellaUtils
+from capella_utils.dedicated import CapellaUtils as DedicatedCapellaUtils
+from capella_utils.serverless import CapellaUtils as ServerlessCapellaUtils
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
@@ -69,6 +70,8 @@ from testconstants import MAX_COMPACTION_THRESHOLD, \
 from sdk_client3 import SDKClient
 from couchbase_helper.tuq_generators import JsonGenerator
 from StatsLib.StatsOperations import StatsHelper
+from cluster_utils.cluster_ready_functions import Nebula
+from org.xbill.DNS import Lookup, Type
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods
@@ -1573,6 +1576,14 @@ class BucketUtils(ScopeUtils):
         self.task_manager.add_new_task(task)
         return task
 
+    def async_create_database(self, cluster, bucket):
+        if not isinstance(bucket, Bucket):
+            raise Exception("Create bucket needs Bucket object as parameter")
+        self.log.debug("Creating bucket: %s" % bucket.name)
+        task = DatabaseCreateTask(cluster, bucket)
+        self.task_manager.add_new_task(task)
+        return task
+
     def create_bucket(self, cluster, bucket, wait_for_warmup=True):
         raise_exception = None
         task = self.async_create_bucket(cluster, bucket)
@@ -1745,7 +1756,18 @@ class BucketUtils(ScopeUtils):
                 CloudCluster.Bucket.maxTTL:
                     {"unit": "seconds", "value": bucket_obj.maxTTL}
             }
-            CapellaUtils.create_bucket(cluster, bucket_params)
+            DedicatedCapellaUtils.create_bucket(cluster, bucket_params)
+            cluster.buckets.append(bucket_obj)
+        elif cluster.type == "serverless":
+            task = self.async_create_database(cluster, bucket_obj)
+            self.task_manager.get_task_result(task)
+            nebula = Nebula(task.srv, task.server)
+            self.log.info("Populate Nebula object done!!")
+            bucket_obj.serverless.nebula_endpoint = nebula.endpoint
+            bucket_obj.serverless.dapi = \
+                ServerlessCapellaUtils.get_database_DAPI(cluster.pod, cluster.tenant,
+                                                         bucket_obj.name)
+            self.update_bucket_nebula_servers(self.cluster, nebula, bucket_obj)
             cluster.buckets.append(bucket_obj)
         else:
             self.create_bucket(cluster, bucket_obj, wait_for_warmup)
@@ -2593,7 +2615,7 @@ class BucketUtils(ScopeUtils):
 
     def _wait_for_stat(self, bucket, stat_map=None,
                        cbstat_cmd="checkpoint",
-                       stat_name="num_items_for_persistence",
+                       stat_name="persistence:num_items_for_cursor",
                        stat_cond='==',
                        timeout=60):
         """
@@ -2627,7 +2649,7 @@ class BucketUtils(ScopeUtils):
                                     check_ep_items_remaining=False,
                                     timeout=600,
                                     cbstat_cmd="checkpoint",
-                                    stat_name="num_items_for_persistence"):
+                                    stat_name="persistence:num_items_for_cursor"):
         """
         Waits for queues to drain on all servers and buckets in a cluster.
 

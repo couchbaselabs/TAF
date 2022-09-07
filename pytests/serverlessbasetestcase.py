@@ -80,6 +80,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.cluster = CBCluster(username=self.rest_username,
                                  password=self.rest_password,
                                  servers=[None] * 40)
+        self.cluster.pod = self.pod
+        self.cluster.tenant = self.tenant
         self.cluster.type = "serverless"
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)

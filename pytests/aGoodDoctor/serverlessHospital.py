@@ -111,30 +111,9 @@ class Murphy(BaseTestCase, OPD):
                      Bucket.width: 1, #self.bucket_width,
                      Bucket.weight: 30, #self.bucket_weight
                      })
-            bucket.name = ServerlessUtils.create_serverless_database(
-                self.pod, self.tenant, bucket.name, "aws", "us-east-1",
-                bucket.serverless.width, bucket.serverless.weight,
-                dataplane_id=self.dataplane_id)
-            state = ServerlessUtils.is_database_ready(self.pod, self.tenant,
-                                                      bucket.name)
-            self.assertTrue(state == "healthy", "Database not healthy")
-            server = TestInputServer()
-            srv = ServerlessUtils.get_database_nebula_endpoint(
-                self.pod, self.tenant, bucket.name)
-            records = Lookup("_couchbases._tcp.{}".format(srv), Type.SRV).run()
-            for record in records:
-                server.ip = str(record.getTarget()).rstrip(".")
-                server.memcached_port = int(record.getPort())
-                self.log.info("SRV {} is resolved to {}.".format(srv,
-                                                                 server.ip))
-            access, secret = ServerlessUtils.generate_keys(self.pod, self.tenant,
-                                                           bucket.name)
-            ServerlessUtils.allow_my_ip(self.pod, self.tenant, bucket.name)
-            server.rest_username = access
-            server.rest_password = secret
-            server.type = "serverless"
-            server.port = "18091"
-            nebula = Nebula(srv, server)
+            task = self.bucket_util.async_create_database(self.cluster, bucket)
+            self.task_manager.get_task_result(task)
+            nebula = Nebula(task.srv, task.server)
             self.log.info("Populate Nebula object done!!")
             bucket.serverless.nebula_endpoint = nebula.endpoint
             bucket.serverless.dapi = \

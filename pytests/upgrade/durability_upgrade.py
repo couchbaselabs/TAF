@@ -31,7 +31,7 @@ class UpgradeTests(UpgradeBase):
     def __wait_for_persistence_and_validate(self):
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets,
-            cbstat_cmd="checkpoint", stat_name="num_items_for_persistence",
+            cbstat_cmd="checkpoint", stat_name="persistence:num_items_for_cursor",
             timeout=300)
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets,

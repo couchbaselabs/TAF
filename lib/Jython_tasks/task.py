@@ -56,6 +56,10 @@ from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from capella_utils.serverless import CapellaUtils as ServerlessUtils
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 # from cluster_utils.cluster_ready_functions import CBCluster
+from capella_utils.serverless import CapellaUtils as ServerlessCapellaUtils
+from org.xbill.DNS import Lookup, Type
+from constants.cloud_constants.capella_constants import AWS
+# from cluster_utils.cluster_ready_functions import Nebula
 
 
 class Task(Callable):
@@ -3884,6 +3888,50 @@ class PrintBucketStats(Task):
 
         self.plot_all_graphs()
         self.complete_task()
+
+
+class DatabaseCreateTask(Task):
+
+    def __init__(self, cluster, bucket_obj,
+                 provider=AWS.__str__,
+                 region=AWS.Region.US_EAST_1,
+                 dataplane_id=""):
+        Task.__init__(self, "CreateServerlessDatabaseTask")
+        self.cluster = cluster
+        self.bucket_obj = bucket_obj
+        self.dataplane_id = dataplane_id
+        self.provider = provider
+        self.region = region
+
+    def call(self):
+        try:
+            self.bucket_obj.name = ServerlessCapellaUtils.create_serverless_database(
+                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
+                self.provider, self.region,
+                self.bucket_obj.serverless.width, self.bucket_obj.serverless.weight,
+                dataplane_id=self.dataplane_id)
+            state = ServerlessCapellaUtils.is_database_ready(
+                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
+            if state != "healthy":
+                raise Exception("Database not healthy")
+            self.server = TestInputServer()
+            self.srv = ServerlessCapellaUtils.get_database_nebula_endpoint(
+                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
+            record = Lookup("_couchbases._tcp.{}".format(self.srv), Type.SRV).run()[0]
+            self.server.ip = str(record.getTarget()).rstrip(".")
+            self.server.memcached_port = int(record.getPort())
+            self.log.info("SRV {} is resolved to {}.".format(self.srv,
+                                                             self.server.ip))
+            access, secret = ServerlessCapellaUtils.generate_keys(
+                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
+            ServerlessCapellaUtils.allow_my_ip(self.cluster.pod,
+                                               self.cluster.tenant,
+                                               self.bucket_obj.name)
+            self.server.rest_username = access
+            self.server.rest_password = secret
+            self.server.port = "18091"
+        except Exception as e:
+            self.set_exception(e)
 
 
 class BucketCreateTask(Task):

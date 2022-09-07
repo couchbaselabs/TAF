@@ -18,6 +18,7 @@ class AWS(object):
 
     class Region(object):
         US_WEST_2 = "us-west-2"
+        US_EAST_1 = "us-east-1"
 
     class ComputeNode(object):
         VCPU4_RAM16 = "m5.xlarge"
