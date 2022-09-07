@@ -58,6 +58,9 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             DedicatedUtils.create_project(self.pod, self.tenant, "a_taf_run")
 
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
+        self.cb_image = self.input.capella.get("cb_image", "")
+        self.dapi_image = self.input.capella.get("dapi_image", "")
+        self.dn_image = self.input.capella.get("dn_image", "")
         self.dataplane_id = self.input.capella.get("dataplane", "")
         num_dataplanes = self.input.capella.get("num_dataplanes", 0)
         tasks = list()
@@ -112,77 +115,25 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 "couchbase": {
                     "image": self.cb_image,
                     "version": "7.2.0",
-                    "specs": [
-                        {
-                            "count": 3,
-                            "services": [
-                                {
-                                    "type": "kv"
-                                }
-                            ],
-                            "compute": {
-                                "type": "m5.xlarge"
-                            },
-                            "disk": {
-                                "type": "gp3",
-                                "sizeInGb": 50,
-                                "iops": 3000
-                            }
-                        },
-                        {
-                            "count": 2,
-                            "services": [
-                                {
-                                    "type": "index"
-                                }
-                            ],
-                            "compute": {
-                                "type": "m5.xlarge"
-                            },
-                            "disk": {
-                                "type": "gp3",
-                                "sizeInGb": 50,
-                                "iops": 3000
-                            }
-                        },
-                        {
-                            "count": 3,
-                            "services": [
-                                {
-                                    "type": "n1ql"
-                                }
-                            ],
-                            "compute": {
-                                "type": "m5.xlarge"
-                            },
-                            "disk": {
-                                "type": "gp3",
-                                "sizeInGb": 50,
-                                "iops": 3000
-                            }
-                        }
-                    ]
-                },
-                "dataApi": {
-                    "image": self.dapi_image,
-                    "compute": {
-                        "type": "a1.large",
-                        "count": {
-                            "overRide": 1
-                        }
-                    }
-                },
-                "nebula": {
-                    "image": self.dn_image,
-                    "compute": {
-                        "type": "a1.large",
-                        "count": {
-                            "overRide": 1
-                        }
-                    }
                 }
             }
         }
+        if self.dn_image:
+            self.dataplane_config["overRide"].update(
+                {
+                    "nebula": {
+                        "image": self.dn_image
+                        }
+                    }
+                )
+        if self.dapi_image:
+            self.dataplane_config["overRide"].update(
+                {
+                    "dataApi": {
+                        "image": self.dapi_image
+                        }
+                    }
+                )
 
 
 class ClusterSetup(OnCloudBaseTest):
