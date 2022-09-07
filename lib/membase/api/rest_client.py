@@ -3366,7 +3366,7 @@ class RestConnection(newRC):
         else:
             url = 'internalSettings'
         api = self.baseUrl + url
-        params = urllib.urlencode({key_throttle_limit: throttle_limit, "key_storage_limit": storage_limit})
+        params = urllib.urlencode({key_throttle_limit: throttle_limit, key_storage_limit: storage_limit})
         status, content, header = self._http_request(api, 'POST', params=params)
         return status, content
 
