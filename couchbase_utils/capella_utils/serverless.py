@@ -68,13 +68,16 @@ class CapellaUtils:
             raise Exception("Fetch database details failed: {}".
                             format(resp.content))
         state = json.loads(resp.content).get("data").get("status").get("state")
-        while state != "healthy":
+        end_time = time.time() + 120
+        while state != "healthy" and time.time() < end_time:
             CapellaUtils.log.info("Wait for database {} to be ready to use: {}".
                                   format(database_id, state))
             time.sleep(5)
             resp = capella_api.get_serverless_db_info(tenant.id, tenant.project_id,
                                                       database_id)
             state = json.loads(resp.content).get("data").get("status").get("state")
+        if state != "healthy":
+            raise Exception("Deploying a serverless database failed!")
         CapellaUtils.log.info("Database {} is ready to use: {}".
                               format(database_id, state))
         return json.loads(resp.content).get("data").get("status").get("state")
@@ -106,6 +109,20 @@ class CapellaUtils:
     def get_database_nebula_endpoint(pod, tenant, database_id):
         return CapellaUtils.get_database_details(pod, tenant,
                                                  database_id)['connect']['srv']
+
+    @staticmethod
+    def get_database_debug_info(pod, database_id):
+        capella_api = CapellaAPI(pod.url_public, None, None, pod.TOKEN)
+        resp = capella_api.get_serverless_database_debugInfo(database_id)
+        if resp.status_code != 200:
+            raise Exception("Get database debugging info failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
+    @staticmethod
+    def get_database_dataplane_id(pod, database_id):
+        resp = CapellaUtils.get_database_debug_info(pod, database_id)
+        return resp["database"]["config"]["dataplaneId"]
 
     @staticmethod
     def get_database_DAPI(pod, tenant, database_id):
@@ -160,3 +177,15 @@ class CapellaUtils:
         CapellaUtils.log.info("delete_serverless_dataplane response:{}".
                               format(resp))
         return resp
+
+    @staticmethod
+    def bypass_dataplane(pod, dataplane_id):
+        capella_api = CapellaAPI(pod.url_public, None, None, pod.TOKEN)
+        resp = capella_api.get_access_to_serverless_dataplane_nodes(dataplane_id)
+        CapellaUtils.log.info("bypass DN response:{}".
+                              format(resp))
+        if resp.status_code != 200:
+            raise Exception("Bypass DN failed: {}".
+                            format(resp.content))
+        data = json.loads(resp.content)["couchbaseCreds"]
+        return data["username"], data["password"], data["srv"]
