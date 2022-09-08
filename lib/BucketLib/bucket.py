@@ -125,6 +125,7 @@ class Serverless(object):
         self.weight = None
         self.nebula_endpoint = None
         self.dapi = None
+        self.dataplane_id = None
 
 
 class Bucket(object):

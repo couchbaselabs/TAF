@@ -3912,6 +3912,8 @@ class DatabaseCreateTask(Task):
                 dataplane_id=self.dataplane_id)
             state = ServerlessCapellaUtils.is_database_ready(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
+            dp_id = ServerlessUtils.get_database_dataplane_id(self.pod, self.bucket_obj.name)
+            self.bucket_obj.serverless.dataplane_id = dp_id
             if state != "healthy":
                 raise Exception("Database not healthy")
             self.server = TestInputServer()
