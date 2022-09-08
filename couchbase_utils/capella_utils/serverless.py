@@ -22,7 +22,7 @@ class CapellaUtils:
     def create_serverless_dataplane(pod, config=dict()):
         capella_api = CapellaAPI(pod.url_public, None, None, pod.TOKEN)
         resp = capella_api.create_serverless_dataplane(config)
-        if resp.status_code != 200:
+        if resp.status_code != 202:
             CapellaUtils.log.critical("Data plane creation failed with status\
             code:{} and error message:{}".format(resp.status_code, resp.content))
             CapellaUtils.log.critical("Response Json:{}".format(resp))

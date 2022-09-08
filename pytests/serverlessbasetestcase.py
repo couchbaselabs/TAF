@@ -62,13 +62,14 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.dapi_image = self.input.capella.get("dapi_image", "")
         self.dn_image = self.input.capella.get("dn_image", "")
         self.dataplane_id = self.input.capella.get("dataplane", "")
-        num_dataplanes = self.input.capella.get("num_dataplanes", 0)
+        num_dataplanes = self.input.param("num_dataplanes", 0)
         tasks = list()
         self.dataplanes = list()
         for _ in range(num_dataplanes):
             self.generate_dataplane_config()
             self.log.info(self.dataplane_config)
-            deploy_task = DeployDataplane(self.dataplane_config,
+            deploy_task = DeployDataplane(self.pod,
+                                          self.dataplane_config,
                                           timeout=self.wait_timeout)
             self.task_manager.add_new_task(deploy_task)
             tasks.append(deploy_task)
@@ -107,7 +108,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
     def generate_dataplane_config(self):
         provider = self.input.param("provider", AWS.__str__).lower()
-        region = self.input.param("region", AWS.Region.US_WEST_2)
+        region = self.input.param("region", AWS.Region.US_EAST_1)
         self.dataplane_config = {
             "provider": provider,
             "region": region,
