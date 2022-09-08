@@ -102,6 +102,10 @@ public class DocumentGenerator extends KVGenerator{
         super(ws, keyClass, valClass);
     }
 
+    public WorkLoadSettings get_work_load_settings() {
+        return this.ws;
+    }
+
     public Tuple2<String, Object> next() {
         long temp = this.ws.dr.createItr.incrementAndGet();
         String k = null;

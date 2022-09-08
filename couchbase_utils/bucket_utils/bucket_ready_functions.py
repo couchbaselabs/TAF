@@ -12,6 +12,7 @@ import re
 import threading
 import datetime
 from random import sample, choice
+from time import time
 
 import requests
 import concurrent.futures
@@ -56,7 +57,7 @@ from global_vars import logger
 
 from custom_exceptions.exception import StatsUnavailableException, \
     GetBucketInfoFailed
-from membase.api.rest_client import Node, RestConnection
+from membase.api.rest_client import RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
 from membase.helper.rebalance_helper import RebalanceHelper
 from memcached.helper.data_helper import MemcachedClientHelper, \
@@ -70,8 +71,18 @@ from sdk_client3 import SDKClient
 from couchbase_helper.tuq_generators import JsonGenerator
 from StatsLib.StatsOperations import StatsHelper
 from cluster_utils.cluster_ready_functions import Nebula
-from org.xbill.DNS import Lookup, Type
 import global_vars
+
+from com.couchbase.client.core.error import DocumentExistsException, \
+    TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
+from com.couchbase.test.docgen import \
+    WorkLoadSettings, DocumentGenerator, DocRange
+from com.couchbase.test.loadgen import WorkLoadGenerate
+from com.couchbase.test.sdk import Server
+from com.couchbase.test.sdk import SDKClient as NewSDKClient
+from couchbase.test.docgen import DRConstants
+
+from java.util import HashMap
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods
@@ -848,6 +859,273 @@ class DocLoaderUtils(object):
         if not async_load and validate_task:
             DocLoaderUtils.validate_doc_loading_results(doc_loading_task)
         return doc_loading_task
+
+    @staticmethod
+    def get_workload_settings(
+            key="test_doc", key_size=10, doc_size=1,
+            create_perc=0, read_perc=0, update_perc=0, delete_perc=0,
+            expiry_perc=0, process_concurrency=1, ops_rate=1,
+            load_type=None, key_type="SimpleKey", value_type="SimpleValue",
+            validate=False, gtm=False, deleted=False, mutated=0,
+            create_start=0, create_end=0, update_start=0, update_end=0,
+            read_start=0, read_end=0, delete_start=0, delete_end=0,
+            expiry_start=0, expiry_end=0):
+        """
+        :param key:
+        :param key_size:
+        :param doc_size:
+        :param create_perc:
+        :param read_perc:
+        :param update_perc:
+        :param delete_perc:
+        :param expiry_perc:
+        :param process_concurrency:
+        :param ops_rate:
+        :param load_type:
+        :param key_type:
+        :param value_type:
+        :param validate:
+        :param gtm:
+        :param deleted:
+        :param mutated:
+        :param create_start:
+        :param create_end:
+        :param update_start:
+        :param update_end:
+        :param read_start:
+        :param read_end:
+        :param delete_start:
+        :param delete_end:
+        :param expiry_start:
+        :param expiry_end:
+        :return: WorkLoadSettings object
+
+        Note: Java dependent
+        """
+        hm = HashMap()
+        hm.putAll({DRConstants.create_s: create_start,
+                   DRConstants.create_e: create_end,
+                   DRConstants.update_s: update_start,
+                   DRConstants.update_e: update_end,
+                   DRConstants.expiry_s: expiry_start,
+                   DRConstants.expiry_e: expiry_end,
+                   DRConstants.delete_s: delete_start,
+                   DRConstants.delete_e: delete_end,
+                   DRConstants.read_s: read_start,
+                   DRConstants.read_e: read_end})
+        dr = DocRange(hm)
+        ws = WorkLoadSettings(key, key_size, doc_size,
+                              create_perc, read_perc, update_perc,
+                              delete_perc, expiry_perc,
+                              process_concurrency, ops_rate,
+                              load_type, key_type, value_type, validate,
+                              gtm, deleted, mutated)
+        ws.dr = dr
+        return ws
+
+    @staticmethod
+    def perform_doc_loading(task_manager, loader_map, cluster, buckets=None,
+                            durability_level=Bucket.DurabilityLevel.NONE,
+                            maxttl=0, ttl_time_unit="seconds",
+                            process_concurrency=1,
+                            track_failures=True,
+                            async_load=True, validate_results=False,
+                            retries=0):
+        log = DocLoaderUtils.log
+        master = None
+        if buckets is None:
+            buckets = cluster.buckets
+        if cluster.master:
+            master = Server(cluster.master.ip, cluster.master.port,
+                            cluster.master.rest_username,
+                            cluster.master.rest_password,
+                            str(cluster.master.memcached_port))
+        tasks = list()
+        while process_concurrency > 0:
+            for bucket in buckets:
+                if bucket.serverless and bucket.serverless.nebula_endpoint:
+                    nebula = bucket.serverless.nebula_endpoint
+                    log.info("Using Nebula endpoint %s" % nebula.srv)
+                    master = Server(nebula.srv, nebula.port,
+                                    nebula.rest_username,
+                                    nebula.rest_password,
+                                    str(nebula.memcached_port))
+                for scope in bucket.scopes.keys():
+                    if scope == CbServer.system_scope:
+                        continue
+                    for collection in bucket.scopes[scope].collections.keys():
+                        client = NewSDKClient(master, bucket.name, scope,
+                                              collection)
+                        client.initialiseSDK()
+                        sleep(1, "Wait for SDK to warmup")
+                        task_name = "Loader_%s_%s_%s_%s_%s" \
+                                    % (bucket.name, scope, collection,
+                                       process_concurrency, "%s" % time())
+                        task = WorkLoadGenerate(
+                            task_name,
+                            loader_map[bucket.name+scope+collection],
+                            client, durability_level, maxttl, ttl_time_unit,
+                            track_failures, retries)
+                        tasks.append(task)
+                        task_manager.submit(task)
+                        process_concurrency -= 1
+
+        if async_load is False:
+            DocLoaderUtils.wait_for_doc_load_completion(task_manager, tasks)
+
+            if validate_results:
+                pass
+                # DocLoaderUtils.data_validation()
+
+        return tasks
+
+    @staticmethod
+    def wait_for_doc_load_completion(task_manager, tasks):
+        result = True
+        log = DocLoaderUtils.log
+        task_manager.getAllTaskResult()
+        for task in tasks:
+            task.result = True
+            unique_str = "%s:%s:%s:" % (task.sdk.bucket, task.sdk.scope,
+                                        task.sdk.collection)
+            for optype, failures in task.failedMutations.items():
+                for failure in failures:
+                    if failure is not None:
+                        log.error("Test Retrying {}: {}{} -> {}".format(optype, unique_str, failure.id(), failure.err().getClass().getSimpleName()))
+                        try:
+                            if optype == DocLoading.Bucket.DocOps.CREATE:
+                                task.docops.insert(
+                                    failure.id(), failure.document(),
+                                    task.sdk.connection, task.setOptions)
+                            elif optype == DocLoading.Bucket.DocOps.UPDATE:
+                                task.docops.upsert(
+                                    failure.id(), failure.document(),
+                                    task.sdk.connection, task.upsertOptions)
+                            elif optype == DocLoading.Bucket.DocOps.DELETE:
+                                task.docops.delete(
+                                    failure.id(),
+                                    task.sdk.connection, task.removeOptions)
+                        except (ServerOutOfMemoryException, TimeoutException) as e:
+                            log.error("Retry %s failed for key: %s - %s"
+                                      % (optype, failure.id(), e))
+                            task.result = False
+                        except (DocumentNotFoundException, DocumentExistsException) as e:
+                            log.error(e)
+                            pass
+            try:
+                task.sdk.disconnectCluster()
+            except Exception as e:
+                print(e)
+            if task.result is False:
+                log.error("Task failed: %s" % task.taskName)
+                result = False
+        return result
+
+    @staticmethod
+    def data_validation(task_manager, loader_map, cluster,
+                        buckets=None, doc_ops=None,
+                        process_concurrency=1, ops_rate=100,
+                        max_ttl=0, ttl_timeunit="seconds",
+                        track_failures=True):
+        cmd = dict()
+        validation_map = dict()
+        master = None
+        result = True
+        buckets = cluster.buckets if buckets is None else buckets
+        log = DocLoaderUtils.log
+        log.info("Validating Active/Replica Docs")
+        if cluster.master:
+            master = Server(cluster.master.ip, cluster.master.port,
+                            cluster.master.rest_username,
+                            cluster.master.rest_password,
+                            str(cluster.master.memcached_port))
+
+        for bucket in buckets:
+            for scope in bucket.scopes.keys():
+                if scope == CbServer.system_scope:
+                    continue
+                for collection in bucket.scopes[scope].collections.keys():
+                    common_key = bucket.name + scope + collection
+                    doc_gen = loader_map[common_key]
+                    workload_setting = doc_gen.get_work_load_settings()
+                    doc_range = workload_setting.dr
+                    cmd.update({"deleted": False})
+                    hm = HashMap()
+                    if workload_setting.creates > 0:
+                        op_type = DocLoading.Bucket.DocOps.CREATE
+                        hm.putAll({DRConstants.read_s: doc_range.create_s,
+                                   DRConstants.read_e: doc_range.create_e})
+                    elif workload_setting.update > 0:
+                        op_type = DocLoading.Bucket.DocOps.UPDATE
+                        hm.putAll({DRConstants.read_s: doc_range.update_s,
+                                   DRConstants.read_e: doc_range.update_e})
+                    elif workload_setting.deletes > 0:
+                        op_type = DocLoading.Bucket.DocOps.DELETE
+                        hm.putAll({DRConstants.read_s: doc_range.delete_s,
+                                   DRConstants.read_e: doc_range.delete_e})
+                        cmd.update({"deleted": True})
+                    else:
+                        continue
+                    ws = DocLoaderUtils.get_workload_settings(
+                        key=workload_setting.keyPrefix,
+                        key_size=workload_setting.keySize,
+                        doc_size=workload_setting.docSize,
+                        read_perc=100,
+                        ops_rate=ops_rate,
+                        process_concurrency=process_concurrency)
+                    ws.dr = DocRange(hm)
+                    dg = DocumentGenerator(ws,
+                                           workload_setting.keyType,
+                                           workload_setting.valueType)
+                    validation_map.update({common_key + op_type: dg})
+
+        tasks = list()
+        while process_concurrency > 0:
+            for bucket in buckets:
+                if bucket.serverless and bucket.serverless.nebula_endpoint:
+                    nebula = bucket.serverless.nebula_endpoint
+                    DocLoaderUtils.log.info("Nebula endpoint: %s" % nebula.srv)
+                    master = Server(nebula.srv, nebula.port,
+                                    nebula.rest_username,
+                                    nebula.rest_password,
+                                    str(nebula.memcached_port))
+                for scope in bucket.scopes.keys():
+                    if scope == CbServer.system_scope:
+                        continue
+                    for collection in bucket.scopes[scope].collections.keys():
+                        for op_type in doc_ops:
+                            if op_type not in [
+                                    DocLoading.Bucket.DocOps.CREATE,
+                                    DocLoading.Bucket.DocOps.UPDATE,
+                                    DocLoading.Bucket.DocOps.DELETE]:
+                                continue
+                            client = NewSDKClient(master, bucket.name, scope,
+                                                  collection)
+                            client.initialiseSDK()
+                            sleep(1, "Wait for SDK to warmup")
+                            task_name = "Validate_%s_%s_%s_%s_%s_%s" \
+                                        % (bucket.name, scope, collection,
+                                           op_type, str(process_concurrency),
+                                           time.time())
+                            task = WorkLoadGenerate(task_name, validation_map[bucket.name+scope+collection+op_type],
+                                                    client, "NONE",
+                                                    max_ttl, ttl_timeunit,
+                                                    track_failures, 0)
+                            task_manager.submit(task)
+                            tasks.append(task)
+                            process_concurrency -= 1
+        task_manager.getAllTaskResult()
+        for task in tasks:
+            try:
+                task.sdk.disconnectCluster()
+            except Exception as e:
+                DocLoaderUtils.log.critical(e)
+        for task in tasks:
+            if task.result is False:
+                DocLoaderUtils.log.error("Validation failed: %s"
+                                         % task.taskName)
+                result = False
+        return result
 
 
 class CollectionUtils(DocLoaderUtils):

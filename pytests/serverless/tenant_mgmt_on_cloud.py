@@ -1,28 +1,22 @@
-from time import time
-
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cluster_utils.cluster_ready_functions import Nebula
 from serverlessbasetestcase import OnCloudBaseTest
 from Cb_constants import CbServer
 from capellaAPI.capella.serverless.CapellaAPI import CapellaAPI
-from TestInput import TestInputServer
-from org.xbill.DNS import Lookup, Type
 
-from com.couchbase.test.sdk import Server, SDKClient
-from com.couchbase.test.sdk import SDKClient as NewSDKClient
-from com.couchbase.test.loadgen import WorkLoadGenerate
-from com.couchbase.test.docgen import \
-    WorkLoadSettings, DocumentGenerator, DocRange
-from couchbase.test.docgen import DRConstants
+from com.couchbase.test.taskmanager import TaskManager
+from com.couchbase.test.docgen import DocumentGenerator
 
-from java.util import HashMap
 from java.util.concurrent import ExecutionException
 
 
 class TenantMgmtOnCloud(OnCloudBaseTest):
     def setUp(self):
         super(TenantMgmtOnCloud, self).setUp()
+        self.key_type = "SimpleKey"
+        self.val_type = "SimpleValue"
+        self.doc_loading_tm = TaskManager(2)
         self.db_name = "TAF-TenantMgmtOnCloud"
 
     def tearDown(self):
@@ -119,16 +113,15 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         if not bucket:
             bucket = self.__get_serverless_bucket_obj(
                 self.db_name, self.bucket_width, self.bucket_weight)
-        task = self.bucket_util.async_create_database(self.cluster, bucket)
+        task = self.bucket_util.async_create_database(
+            self.cluster, bucket, dataplane_id=self.dataplane_id)
         self.task_manager.get_task_result(task)
         nebula = Nebula(task.srv, task.server)
-        self.log.info("Populate Nebula object done!!")
         bucket.serverless.nebula_endpoint = nebula.endpoint
-        bucket.serverless.dapi = \
-            self.serverless_util.get_database_DAPI(self.pod, self.tenant,
-                                              bucket.name)
-        self.bucket_util.update_bucket_nebula_servers(self.cluster, nebula,
-                                                      bucket)
+        bucket.serverless.dapi = self.serverless_util.get_database_DAPI(
+            self.pod, self.tenant, bucket.name)
+        self.bucket_util.update_bucket_nebula_servers(
+            self.cluster, nebula, bucket)
         self.cluster.buckets.append(bucket)
 
     def test_create_delete_database(self):
@@ -147,7 +140,33 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for _ in range(self.num_buckets):
             self.__create_database()
 
-        # TODO: Data loading to the initial buckets
+        loader_map = dict()
+        for bucket in self.cluster.buckets:
+            for scope in bucket.scopes.keys():
+                for collection in bucket.scopes[scope].collections.keys():
+                    if scope == CbServer.system_scope:
+                        continue
+                    work_load_settings = DocLoaderUtils.get_workload_settings(
+                        key=self.key, key_size=self.key_size,
+                        doc_size=self.doc_size,
+                        create_perc=100, create_start=0,
+                        create_end=self.num_items,
+                        ops_rate=100)
+                    dg = DocumentGenerator(work_load_settings,
+                                           self.key_type, self.val_type)
+                    loader_map.update(
+                        {bucket.name + scope + collection: dg})
+
+        DocLoaderUtils.perform_doc_loading(
+            self.doc_loading_tm, loader_map,
+            self.cluster, self.cluster.buckets,
+            async_load=False, validate_results=False)
+        result = DocLoaderUtils.data_validation(
+            self.doc_loading_tm, loader_map, self.cluster,
+            buckets=self.cluster.buckets, doc_ops=["create"],
+            process_concurrency=self.process_concurrency,
+            ops_rate=self.ops_rate)
+        self.assertTrue(result, "Data validation failed")
 
         new_buckets = list()
         for _ in range(dynamic_buckets):
