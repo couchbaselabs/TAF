@@ -3,7 +3,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 spec = {
     # Scope/Collection ops params
     MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
-    MetaCrudParams.COLLECTIONS_TO_DROP: 5,
+    MetaCrudParams.COLLECTIONS_TO_DROP: 15,
 
     MetaCrudParams.SCOPES_TO_DROP: 3,
     MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 0,
@@ -22,7 +22,7 @@ spec = {
         MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 3,
         MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 3,
         MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
-        MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 3,
+        MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 0,
     },
 
     "subdoc_crud": {
