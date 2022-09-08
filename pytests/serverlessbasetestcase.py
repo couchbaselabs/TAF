@@ -36,7 +36,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         # initialize pod object
         url = self.input.capella.get("pod")
         self.pod = Pod("https://%s" % url,
-                       self.input.capella.get("TOKEN_FOR_INTERNAL_SUPPORT",
+                       self.input.capella.get("token",
                                               None))
 
         self.tenant = Tenant(self.input.capella.get("tenant_id"),
