@@ -14,6 +14,7 @@ from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from constants.cloud_constants.capella_constants import AWS
 from security_config import trust_all_certs
+import global_vars
 
 
 class OnCloudBaseTest(CouchbaseBaseTest):
@@ -63,12 +64,19 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.dn_image = self.input.capella.get("dn_image", "")
         self.dataplane_id = self.input.capella.get("dataplane", "")
         num_dataplanes = self.input.param("num_dataplanes", 0)
+        self.cluster = CBCluster(username=self.rest_username,
+                                 password=self.rest_password,
+                                 servers=[None] * 40)
+        self.cluster.pod = self.pod
+        self.cluster.tenant = self.tenant
+        self.cluster.type = "serverless"
+
         tasks = list()
         self.dataplanes = list()
         for _ in range(num_dataplanes):
             self.generate_dataplane_config()
             self.log.info(self.dataplane_config)
-            deploy_task = DeployDataplane(self.pod,
+            deploy_task = DeployDataplane(self.cluster,
                                           self.dataplane_config,
                                           timeout=self.wait_timeout)
             self.task_manager.add_new_task(deploy_task)
@@ -81,14 +89,10 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         if self.dataplanes:
             self.dataplane_id = self.dataplanes[0]
 
-        self.cluster = CBCluster(username=self.rest_username,
-                                 password=self.rest_password,
-                                 servers=[None] * 40)
-        self.cluster.pod = self.pod
-        self.cluster.tenant = self.tenant
-        self.cluster.type = "serverless"
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
+        self.serverless_util = ServerlessUtils(self.cluster)
+        global_vars.serverless_util = self.serverless_util
 
     def tearDown(self):
         self.shutdown_task_manager()
@@ -98,11 +102,11 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         if self.skip_teardown_cleanup:
             return
         for bucket in self.cluster.buckets:
-            ServerlessUtils.delete_database(self.pod, self.tenant, bucket.name)
+            self.serverless_util.delete_database(self.pod, self.tenant, bucket.name)
 
         for dataplane_id in self.dataplanes:
             self.log.info("Destroying dataplane: {}".format(dataplane_id))
-            ServerlessUtils.delete_dataplane(dataplane_id)
+            self.serverless_util.delete_dataplane(dataplane_id)
         if not TestInputSingleton.input.capella.get("project", None):
             DedicatedUtils.delete_project(self.pod, self.tenant)
 

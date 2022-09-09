@@ -2,7 +2,6 @@ from time import time
 
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
-from capella_utils.serverless import CapellaUtils as ServerlessUtils
 from cluster_utils.cluster_ready_functions import Nebula
 from serverlessbasetestcase import OnCloudBaseTest
 from Cb_constants import CbServer
@@ -126,7 +125,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.log.info("Populate Nebula object done!!")
         bucket.serverless.nebula_endpoint = nebula.endpoint
         bucket.serverless.dapi = \
-            ServerlessUtils.get_database_DAPI(self.pod, self.tenant,
+            self.serverless_util.get_database_DAPI(self.pod, self.tenant,
                                               bucket.name)
         self.bucket_util.update_bucket_nebula_servers(self.cluster, nebula,
                                                       bucket)
@@ -160,7 +159,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.log.info("Populate Nebula object done!!")
             bucket.serverless.nebula_endpoint = nebula.endpoint
             bucket.serverless.dapi = \
-                ServerlessUtils.get_database_DAPI(self.pod, self.tenant,
+                self.serverless_util.get_database_DAPI(self.pod, self.tenant,
                                                   bucket.name)
             self.bucket_util.update_bucket_nebula_servers(self.cluster, nebula,
                                                           bucket)
@@ -170,7 +169,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         self.log.info("Removing '%s' buckets" % new_buckets)
         for bucket in new_buckets:
-            ServerlessUtils.delete_database(self.pod, self.tenant, bucket.name)
+            self.serverless_util.delete_database(self.pod, self.tenant, bucket.name)
 
     def test_create_database_negative(self):
         """
@@ -210,7 +209,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.sleep(120, "Waiting for bucket to complete scaling")
             for t_key in scenario_dict["spec"].keys():
                 t_bucket = name_key_map[t_key]
-                srv = ServerlessUtils.get_database_nebula_endpoint(
+                srv = self.serverless_util.get_database_nebula_endpoint(
                     self.cluster.pod, self.cluster.tenant, t_bucket.name)
                 self.bucket_util.update_bucket_nebula_servers(
                     self.cluster, Nebula(srv, t_bucket.servers[0]),

@@ -12,12 +12,8 @@ import threading
 from aGoodDoctor.bkrs import DoctorBKRS
 import os
 from BucketLib.bucket import Bucket
-from capella_utils.serverless import CapellaUtils as ServerlessUtils
-from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from aGoodDoctor.fts import DoctorFTS
-from TestInput import TestInputServer
 from cluster_utils.cluster_ready_functions import Nebula
-from org.xbill.DNS import Lookup, Type
 
 
 class Murphy(BaseTestCase, OPD):
@@ -98,8 +94,9 @@ class Murphy(BaseTestCase, OPD):
         self.PrintStep("Step 2: Create required buckets and collections.")
         self.log.info("Create CB buckets")
         # Create Buckets
-        for _ in range(self.num_buckets):
-            self.database_name = "VolumeTestBucket"
+        temp = list()
+        for i in range(self.num_buckets):
+            self.database_name = "VolumeTestBucket-{}".format(i)
             bucket = Bucket(
                     {Bucket.name: self.database_name,
                      Bucket.bucketType: Bucket.Type.MEMBASE,
@@ -113,13 +110,16 @@ class Murphy(BaseTestCase, OPD):
                      })
             task = self.bucket_util.async_create_database(self.cluster, bucket,
                                                           self.dataplane_id)
+            temp.append((task, bucket))
+            self.sleep(1)
+        for task, bucket in temp:
             self.task_manager.get_task_result(task)
             nebula = Nebula(task.srv, task.server)
             self.log.info("Populate Nebula object done!!")
             bucket.serverless.nebula_endpoint = nebula.endpoint
             bucket.serverless.dapi = \
-                ServerlessUtils.get_database_DAPI(self.pod, self.tenant,
-                                                  bucket.name)
+                self.serverless_util.get_database_DAPI(self.pod, self.tenant,
+                                                       bucket.name)
             self.bucket_util.update_bucket_nebula_servers(self.cluster, nebula, bucket)
             self.cluster.buckets.append(bucket)
 

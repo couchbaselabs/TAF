@@ -1765,7 +1765,7 @@ class BucketUtils(ScopeUtils):
             self.log.info("Populate Nebula object done!!")
             bucket_obj.serverless.nebula_endpoint = nebula.endpoint
             bucket_obj.serverless.dapi = \
-                ServerlessCapellaUtils.get_database_DAPI(cluster.pod, cluster.tenant,
+                ServerlessCapellaUtils(cluster).get_database_DAPI(cluster.pod, cluster.tenant,
                                                          bucket_obj.name)
             self.update_bucket_nebula_servers(self.cluster, nebula, bucket_obj)
             cluster.buckets.append(bucket_obj)

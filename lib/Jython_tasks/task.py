@@ -56,7 +56,6 @@ from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from capella_utils.serverless import CapellaUtils as ServerlessUtils
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 # from cluster_utils.cluster_ready_functions import CBCluster
-from capella_utils.serverless import CapellaUtils as ServerlessCapellaUtils
 from org.xbill.DNS import Lookup, Type
 from constants.cloud_constants.capella_constants import AWS
 # from cluster_utils.cluster_ready_functions import Nebula
@@ -206,19 +205,20 @@ class TimerTask(Task):
 
 
 class DeployDataplane(Task):
-    def __init__(self, pod, config, timeout=600):
+    def __init__(self, cluster, config, timeout=600):
         Task.__init__(self, "Deploy_dataplne_{}".format(time.time()))
         self.config = config
-        self.pod = pod
+        self.pod = cluster.pod
         self.timeout = timeout
+        self.serverless_util = ServerlessUtils(cluster)
 
     def call(self):
         try:
-            self.dataplane_id = ServerlessUtils.create_serverless_dataplane(
+            self.dataplane_id = self.serverless_util.create_serverless_dataplane(
                 self.pod, self.config)
             end = time.time() + self.timeout
             while time.time() < end:
-                status = ServerlessUtils.get_dataplane_deployment_status(
+                status = self.serverless_util.get_dataplane_deployment_status(
                     self.pod, self.dataplane_id)
                 if status == "ready":
                     self.result = True
@@ -3898,41 +3898,42 @@ class DatabaseCreateTask(Task):
                  provider=AWS.__str__,
                  region=AWS.Region.US_EAST_1,
                  dataplane_id=""):
-        Task.__init__(self, "CreateServerlessDatabaseTask")
+        Task.__init__(self, "CreateServerlessDatabaseTask_{}_{}".format(bucket_obj.name, time.time()))
         self.cluster = cluster
         self.bucket_obj = bucket_obj
         self.dataplane_id = dataplane_id
         self.provider = provider
         self.region = region
+        self.serverless_util = global_vars.serverless_util
 
     def call(self):
         try:
-            self.bucket_obj.name = ServerlessCapellaUtils.create_serverless_database(
+            self.bucket_obj.name = self.serverless_util.create_serverless_database(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
                 self.provider, self.region,
                 self.bucket_obj.serverless.width, self.bucket_obj.serverless.weight,
                 dataplane_id=self.dataplane_id)
-            state = ServerlessCapellaUtils.is_database_ready(
+            state = self.serverless_util.is_database_ready(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
             if self.cluster.pod.TOKEN:
-                dp_id = ServerlessUtils.get_database_dataplane_id(
+                dp_id = self.serverless_util.get_database_dataplane_id(
                     self.cluster.pod, self.bucket_obj.name)
                 self.bucket_obj.serverless.dataplane_id = dp_id
             if state != "healthy":
                 raise Exception("Database not healthy")
             self.server = TestInputServer()
-            self.srv = ServerlessCapellaUtils.get_database_nebula_endpoint(
+            self.srv = self.serverless_util.get_database_nebula_endpoint(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
             record = Lookup("_couchbases._tcp.{}".format(self.srv), Type.SRV).run()[0]
             self.server.ip = str(record.getTarget()).rstrip(".")
             self.server.memcached_port = int(record.getPort())
             self.log.info("SRV {} is resolved to {}.".format(self.srv,
                                                              self.server.ip))
-            access, secret = ServerlessCapellaUtils.generate_keys(
+            access, secret = self.serverless_util.generate_keys(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
-            ServerlessCapellaUtils.allow_my_ip(self.cluster.pod,
-                                               self.cluster.tenant,
-                                               self.bucket_obj.name)
+            self.serverless_util.allow_my_ip(self.cluster.pod,
+                                             self.cluster.tenant,
+                                             self.bucket_obj.name)
             self.server.rest_username = access
             self.server.rest_password = secret
             self.server.port = "18091"
