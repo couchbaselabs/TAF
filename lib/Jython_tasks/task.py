@@ -206,7 +206,7 @@ class TimerTask(Task):
 
 
 class DeployDataplane(Task):
-    def __init__(self, pod, config, timeout=1800):
+    def __init__(self, pod, config, timeout=600):
         Task.__init__(self, "Deploy_dataplne_{}".format(time.time()))
         self.config = config
         self.pod = pod
@@ -215,8 +215,9 @@ class DeployDataplane(Task):
     def call(self):
         try:
             self.dataplane_id = ServerlessUtils.create_serverless_dataplane(
-                self.config, self.timeout)
-            while True:
+                self.pod, self.config)
+            end = time.time() + self.timeout
+            while time.time() < end:
                 status = ServerlessUtils.get_dataplane_deployment_status(
                     self.pod, self.dataplane_id)
                 if status == "ready":
