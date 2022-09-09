@@ -111,7 +111,8 @@ class Murphy(BaseTestCase, OPD):
                      Bucket.width: 1, #self.bucket_width,
                      Bucket.weight: 30, #self.bucket_weight
                      })
-            task = self.bucket_util.async_create_database(self.cluster, bucket)
+            task = self.bucket_util.async_create_database(self.cluster, bucket,
+                                                          self.dataplane_id)
             self.task_manager.get_task_result(task)
             nebula = Nebula(task.srv, task.server)
             self.log.info("Populate Nebula object done!!")

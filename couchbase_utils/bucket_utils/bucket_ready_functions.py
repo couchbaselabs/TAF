@@ -1576,11 +1576,11 @@ class BucketUtils(ScopeUtils):
         self.task_manager.add_new_task(task)
         return task
 
-    def async_create_database(self, cluster, bucket):
+    def async_create_database(self, cluster, bucket, dataplane_id=""):
         if not isinstance(bucket, Bucket):
             raise Exception("Create bucket needs Bucket object as parameter")
         self.log.debug("Creating bucket: %s" % bucket.name)
-        task = DatabaseCreateTask(cluster, bucket)
+        task = DatabaseCreateTask(cluster, bucket, dataplane_id=dataplane_id)
         self.task_manager.add_new_task(task)
         return task
 

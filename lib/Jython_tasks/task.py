@@ -225,6 +225,7 @@ class DeployDataplane(Task):
                     break
                 self.log.debug("dataplane deployment is in progress: {}".
                                format(status))
+                self.sleep(5)
         except Exception as e:
             self.log.error(e)
             self.result = False

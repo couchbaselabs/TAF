@@ -27,14 +27,16 @@ class CapellaUtils:
             code:{} and error message:{}".format(resp.status_code, resp.content))
             CapellaUtils.log.critical("Response Json:{}".format(resp))
 
-        return resp.content["dataplaneId"]
+        return json.loads(resp.content)["dataplaneId"]
 
     @staticmethod
     def get_dataplane_deployment_status(pod, dataplane_id):
         capella_api = CapellaAPI(pod.url_public, None, None, pod.TOKEN)
         resp = capella_api.get_dataplane_deployment_status(dataplane_id)
-        CapellaUtils.log.info(resp)
-        return (resp["status"]["state"])
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Get Data plane status failed with status\
+            code:{} and error message:{}".format(resp.status_code, resp.content))
+        return (json.loads(resp.content)["status"]["state"])
 
     @staticmethod
     def create_serverless_database(pod, tenant, database_name,
