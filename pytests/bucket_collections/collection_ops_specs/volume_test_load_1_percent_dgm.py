@@ -18,10 +18,10 @@ spec = {
     # Doc loading params
     "doc_crud": {
         MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
-        MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 10,
-        MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 10,
-        MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 10,
-        MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
+        MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 8,
+        MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 8,
+        MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 8,
+        MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 8,
         MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 0,
     },
 
