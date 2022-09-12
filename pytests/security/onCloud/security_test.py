@@ -6,7 +6,7 @@ import string
 import requests
 from pytests.basetestcase import BaseTestCase
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
-from couchbase_utils.capella_utils.capella_utils import CapellaUtils
+from couchbase_utils.capella_utils.dedicated import CapellaUtils
 
 
 class SecurityTest(BaseTestCase):
