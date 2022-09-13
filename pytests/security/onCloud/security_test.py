@@ -88,6 +88,26 @@ class SecurityTest(BaseTestCase):
                              resp.status_code, msg="FAIL, Outcome: {0}, Expected: {1}".format(
                     resp.status_code, expected_response_code[self.test_users[user]["role"]]))
 
+    def test_delete_project(self):
+        self.log.info("creating a project to test deletion")
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        resp = capella_api.create_project(self.tenant_id, "Project_to_check_deletion")
+        project_id = json.loads(resp.content).get("id")
+        self.log.info("Verifying status code for deleting project")
+        expected_response_code = {"organizationOwner": 2, "projectCreator": 4,
+                                  "cloudManager": 4, "organizationMember": 4}
+        for user in self.test_users:
+            self.log.info("Verifying status code for Role: {0}"
+                          .format(self.test_users[user]["role"]))
+            capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                     self.test_users[user]["mailid"],
+                                     self.test_users[user]["password"])
+            resp = capella_api.delete_project(self.tenant_id, project_id)
+            self.assertEqual(expected_response_code[self.test_users[user]["role"]],
+                             resp.status_code // 100, msg="FAIL, Outcome: {0}, Expected: {1}".format(
+                    resp.status_code // 100, expected_response_code[self.test_users[user]["role"]]))
+
     def test_retrieve_cluster_details(self):
         self.log.info("Verifying status code for retrieving cluster details")
         expected_response_code = {"organizationOwner": 200, "projectCreator": 403,
