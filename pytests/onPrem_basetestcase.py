@@ -361,7 +361,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         break
                     else:
                         retry += 1
-                        self.sleep(10, "Retrying enforcing LTS on servers")
+                        self.sleep(10, "Retrying enforcing TLS on servers")
                 else:
                     self.fail("Services did not honor enforce tls")
 
