@@ -26,7 +26,7 @@ import global_vars
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket, Serverless
-from Cb_constants import constants, CbServer, DocLoading
+from Cb_constants import constants, CbServer, DocLoading, ClusterRun
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
     CBAS_Index, CBAS_UDF
@@ -181,7 +181,6 @@ class TimerTask(Task):
     """ A task that repeats the given function `f` with arguments `args` and
     key-word arguments `kwds` at the given `interval` """
 
-
     def __init__(self, f, args=(), kwds={}, interval=5):
         """ The constructor.
 
@@ -244,8 +243,8 @@ class DeployCloud(Task):
     def call(self):
         try:
             cluster_id, srv, servers = \
-                    DedicatedUtils.create_cluster(self.pod, self.tenant,
-                                                  self.config, self.timeout)
+                DedicatedUtils.create_cluster(self.pod, self.tenant,
+                                              self.config, self.timeout)
             self.cluster_id = cluster_id
             self.srv = srv
             self.servers = servers
@@ -363,17 +362,28 @@ class RebalanceTask(Task):
             self.test_log.error(e)
             raise e
 
+        nodes_to_remove = list()
+        node_ips_to_remove = list()
         valid_membership = ["active", "inactiveAdded"]
-        node_ips_to_remove = [node.ip for node in to_remove]
+        for node in to_remove:
+            nodes_to_remove.append("%s:%s" % (node.ip, node.port))
+            node_ips_to_remove.append(node.ip)
+
         # Get current 'active' nodes in the cluster
         # and update the nodes_in_cluster accordingly
         for r_node in self.rest.get_nodes(inactive=True):
             for server in self.cluster.servers:
-                if r_node.ip == server.ip:
-                    if r_node.ip not in node_ips_to_remove \
-                            and r_node.clusterMembership in valid_membership:
-                        self.servers.append(server)
-                    break
+                if r_node.ip == server.ip and r_node.port == server.port:
+                    if r_node.clusterMembership not in valid_membership:
+                        continue
+                    if ClusterRun.is_enabled:
+                        node_port_str = "%s:%s" % (r_node.ip, r_node.port)
+                        if node_port_str not in nodes_to_remove:
+                            self.servers.append(server)
+                    else:
+                        if r_node.ip not in node_ips_to_remove:
+                            self.servers.append(server)
+                        break
         # Update the nodes_in_cluster value
         self.cluster.nodes_in_cluster = self.servers
 
@@ -388,9 +398,12 @@ class RebalanceTask(Task):
         self.table.set_headers(["Nodes", "Zone", "Services", "Version / Config",
                                 "CPU", "Status", "Membership / Recovery"])
         for node, stat in cluster_stats.items():
-            node_ip = node.split(':')[0]
+            node_ip, node_port = node.split(':')
             node_status = "Cluster node"
-            if node_ip in node_ips_to_remove:
+            if ClusterRun.is_enabled:
+                if "%s:%s" % (node_ip, node_port) in nodes_to_remove:
+                    node_status = "--- OUT --->"
+            elif node_ip in node_ips_to_remove:
                 node_status = "--- OUT --->"
             self.table.add_row([node_ip, stat["serverGroup"],
                                 ", ".join(stat["services"]),
@@ -398,27 +411,34 @@ class RebalanceTask(Task):
                                 stat["cpu_utilization"], node_status,
                                 stat["clusterMembership"] + " / " + stat["recoveryType"]])
             # Remove the 'out' node from services list
+            if ClusterRun.is_enabled:
+                target_list = nodes_to_remove
+                target_val = "%s:%s" % (node_ip, node_port)
+            else:
+                target_list = node_ips_to_remove
+                target_val = node_ip
+
             self.cluster.kv_nodes = \
                 [node for node in self.cluster.kv_nodes
-                 if node.ip not in node_ips_to_remove]
+                 if target_val not in target_list]
             self.cluster.index_nodes = \
                 [node for node in self.cluster.index_nodes
-                 if node.ip not in node_ips_to_remove]
+                 if target_val not in target_list]
             self.cluster.query_nodes = \
                 [node for node in self.cluster.query_nodes
-                 if node.ip not in node_ips_to_remove]
+                 if target_val not in target_list]
             self.cluster.cbas_nodes = \
                 [node for node in self.cluster.cbas_nodes
-                 if node.ip not in node_ips_to_remove]
+                 if target_val not in target_list]
             self.cluster.eventing_nodes = \
                 [node for node in self.cluster.eventing_nodes
-                 if node.ip not in node_ips_to_remove]
+                 if target_val not in target_list]
             self.cluster.fts_nodes = \
                 [node for node in self.cluster.fts_nodes
-                 if node.ip not in node_ips_to_remove]
+                 if target_val not in target_list]
             self.cluster.backup_nodes = \
                 [node for node in self.cluster.backup_nodes
-                 if node.ip not in node_ips_to_remove]
+                 if target_val not in target_list]
 
         # Fetch last rebalance task to track starting of current rebalance
         self.prev_rebalance_status_id = None
@@ -449,6 +469,13 @@ class RebalanceTask(Task):
                    (self.thread_name, self.num_items)
 
     def call(self):
+        def print_nodes(msg, node_list):
+            if len(node_list) == 0:
+                return
+            self.log.critical(
+                "%s: %s" % (msg, ["%s:%s" % (t_node.ip, t_node.port)
+                                  for t_node in node_list]))
+
         self.start_task()
         try:
             if len(self.to_add) and len(self.to_add) == len(self.to_remove):
@@ -512,20 +539,15 @@ class RebalanceTask(Task):
 
         self.complete_task()
         self.result = True
-        self.log.critical("Nodes in cluster: %s" % [node.ip for node in self.cluster.nodes_in_cluster])
-        self.log.critical("KV nodes      : %s" % [node.ip for node in self.cluster.kv_nodes])
-        if len(self.cluster.index_nodes):
-            self.log.critical("Index nodes   : %s" % [node.ip for node in self.cluster.index_nodes])
-        if len(self.cluster.query_nodes):
-            self.log.critical("Query nodes   : %s" % [node.ip for node in self.cluster.query_nodes])
-        if len(self.cluster.cbas_nodes):
-            self.log.critical("CBAS nodes    : %s" % [node.ip for node in self.cluster.cbas_nodes])
-        if len(self.cluster.fts_nodes):
-            self.log.critical("FTS nodes     : %s" % [node.ip for node in self.cluster.fts_nodes])
-        if len(self.cluster.eventing_nodes):
-            self.log.critical("Eventing nodes: %s" % [node.ip for node in self.cluster.eventing_nodes])
-        if len(self.cluster.backup_nodes):
-            self.log.critical("Backup nodes  : %s" % [node.ip for node in self.cluster.backup_nodes])
+
+        print_nodes("Nodes in cluster", self.cluster.nodes_in_cluster)
+        print_nodes("KV nodes        ", self.cluster.kv_nodes)
+        print_nodes("Index nodes     ", self.cluster.index_nodes)
+        print_nodes("Query nodes     ", self.cluster.index_nodes)
+        print_nodes("CBAS nodes      ", self.cluster.cbas_nodes)
+        print_nodes("FTS nodes       ", self.cluster.fts_nodes)
+        print_nodes("Eventing nodes  ", self.cluster.eventing_nodes)
+        print_nodes("Backup nodes    ", self.cluster.backup_nodes)
         return self.result
 
     def add_nodes(self):
@@ -589,43 +611,30 @@ class RebalanceTask(Task):
 
     def start_rebalance(self):
         nodes = self.rest.node_statuses()
-
-        # Determine whether its a cluster_run/not
-        cluster_run = True
-
-        firstIp = self.servers[0].ip
-        if len(self.servers) == 1 and self.servers[0].port == '8091':
-            cluster_run = False
-        else:
-            for node in self.servers:
-                if node.ip != firstIp:
-                    cluster_run = False
-                    break
-
         remove_node_msg = "Removing node {0}:{1} from cluster"
-        ejectedNodes = list()
+        ejected_nodes = list()
         for server in self.to_remove:
             for node in nodes:
-                if cluster_run:
+                if ClusterRun.is_enabled:
                     if int(server.port) == int(node.port):
-                        ejectedNodes.append(node.id)
+                        ejected_nodes.append(node.id)
                         self.test_log.debug(remove_node_msg.format(node.ip,
                                                                    node.port))
                 else:
                     if self.use_hostnames:
                         if server.hostname == node.ip \
                                 and int(server.port) == int(node.port):
-                            ejectedNodes.append(node.id)
+                            ejected_nodes.append(node.id)
                             self.test_log.debug(remove_node_msg
                                                 .format(node.ip, node.port))
                     elif server.ip == node.ip \
                             and int(server.port) == int(node.port):
-                        ejectedNodes.append(node.id)
+                        ejected_nodes.append(node.id)
                         self.test_log.debug(remove_node_msg.format(node.ip,
                                                                    node.port))
 
         self.rest.rebalance(otpNodes=[node.id for node in nodes],
-                            ejectedNodes=ejectedNodes)
+                            ejectedNodes=ejected_nodes)
         self.start_time = time.time()
 
     def check(self):
@@ -650,7 +659,7 @@ class RebalanceTask(Task):
                                 self.test_log.error(msg)
                                 raise Exception(msg)
                 (status, progress) = self.rest._rebalance_status_and_progress(
-                        self.prev_rebalance_status_id)
+                    self.prev_rebalance_status_id)
                 self.test_log.info("Rebalance - status: %s, progress: %s",
                                    status,
                                    progress)
@@ -793,8 +802,8 @@ class GenericLoadingTask(Task):
                     self.log.debug(
                         "Sleep before reading the doc for verification")
                     Thread.sleep(self.timeout)
-#                     self.test_log.debug("Reading values {0} after failure"
-#                                         .format(fail.keys()))
+                    # self.test_log.debug("Reading values {0} after failure"
+                    # .format(fail.keys()))
                     read_map, _ = self.batch_read(fail.keys())
                     for key, value in fail.items():
                         if key in read_map and read_map[key]["cas"] != 0:
@@ -1363,9 +1372,9 @@ class LoadSubDocumentsTask(GenericLoadingTask):
             # self.success.update(success)
         elif self.op_type in ['read', 'lookup']:
             success, fail = self.batch_sub_doc_read(
-                    key_value,
-                    xattr=self.xattr,
-                    access_deleted=self.access_deleted)
+                key_value,
+                xattr=self.xattr,
+                access_deleted=self.access_deleted)
             if self.track_failures:
                 self.fail.update(fail)
             if not self.skip_read_success_results:
@@ -3912,7 +3921,8 @@ class DatabaseCreateTask(Task):
             self.bucket_obj.name = self.serverless_util.create_serverless_database(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
                 self.provider, self.region,
-                self.bucket_obj.serverless.width, self.bucket_obj.serverless.weight,
+                self.bucket_obj.serverless.width,
+                self.bucket_obj.serverless.weight,
                 dataplane_id=self.dataplane_id)
             state = self.serverless_util.is_database_ready(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
@@ -4370,10 +4380,11 @@ class MutateDocsFromSpecTask(Task):
             bucket_thread.join(timeout=180)
         return tasks
 
+
 class CompareIndexKVData(Task):
     def __init__(self, cluster, server, task_manager,
-                 sdk_client_pool, query, bucket, scope, collection, index_name, offset, field='body',
-                 track_failures=True):
+                 sdk_client_pool, query, bucket, scope, collection, index_name,
+                 offset, field='body', track_failures=True):
         super(CompareIndexKVData, self).__init__(
             "CompareIndexKVData_%s_%s_%s" % (index_name, offset, time.time()))
         self.cluster = cluster
@@ -4395,21 +4406,23 @@ class CompareIndexKVData(Task):
             self.log.info("starting call")
             contentType = 'application/x-www-form-urlencoded'
             connection = 'close'
-            status, content, header = indexer_rest.execute_query(query=self.query,
-                                                                 contentType=contentType,
-                                                                 connection=connection)
+            status, content, header = indexer_rest.execute_query(
+                query=self.query,
+                contentType=contentType,
+                connection=connection)
             newContent = json.loads(content)
             resultList = newContent['results']
 
             self.client = \
-                    self.sdk_client_pool.get_client_for_bucket(self.bucket,
-                                                               self.scope.name,
-                                                               self.collection.name)
+                self.sdk_client_pool.get_client_for_bucket(self.bucket,
+                                                           self.scope.name,
+                                                           self.collection.name)
             keys = self.create_list(resultList, 'id')
             success, fail = self.client.get_multi(
-                        keys)
+                keys)
             self.log.debug("field is: {}".format(self.field))
-            self.set_result(self.compareResult(success, resultList, self.field))
+            self.set_result(
+                self.compareResult(success, resultList, self.field))
         except Exception as e:
             self.log.error("Exception while comparing")
             self.test_log.error(e)
@@ -4418,30 +4431,30 @@ class CompareIndexKVData(Task):
             self.sdk_client_pool.release_client(self.client)
             self.complete_task()
 
-
     def compareResult(self, kvList, indexList, field='body'):
         if len(kvList) != len(indexList):
             return False
         size = len(kvList)
         kvListItems = kvList.items()
-        for x in range(size-1, -1, -1):
+        for x in range(size - 1, -1, -1):
             isFound = False
             for y in range(size):
                 if indexList[x]['id'] == kvListItems[y][0]:
                     isFound = True
-                    if indexList[x][field] != json.loads(str(kvListItems[y][1]['value']))[field]:
+                    if indexList[x][field] != \
+                            json.loads(str(kvListItems[y][1]['value']))[field]:
                         return False
                     break
             if not isFound:
                 return False
         return True
 
-
     def create_list(self, result, keyValue):
         keys = list()
         for key in result:
             keys.append(key[keyValue])
         return keys
+
 
 class ValidateDocsFromSpecTask(Task):
     def __init__(self, cluster, task_manager, loader_spec,
@@ -4797,7 +4810,8 @@ class AutoFailoverNodesFailureTask(Task):
     def call(self):
         self.start_task()
         rest = RestConnection(self.master)
-        if rest._rebalance_progress_status(include_failover=False) == "running":
+        if rest._rebalance_progress_status(
+                include_failover=False) == "running":
             self.rebalance_in_progress = True
         return_val = False
         while self.has_next() and not self.completed:
@@ -5116,7 +5130,7 @@ class AutoFailoverNodesFailureTask(Task):
         return False, None
 
     def get_failover_count(self):
-        self.sleep(10,"Waiting for node status to be updated")
+        self.sleep(10, "Waiting for node status to be updated")
         rest = RestConnection(self.master)
         cluster_status = rest.cluster_status()
         failover_count = 0
@@ -5324,7 +5338,7 @@ class ConcurrentFailoverTask(Task):
                                 Eg: {'10.112.212.101': 'stop_server',
                                      '10.112.212.102': 'stop_memcached'}
         """
-        super(ConcurrentFailoverTask, self)\
+        super(ConcurrentFailoverTask, self) \
             .__init__("ConcurrentFO_%s_nodes" % len(servers_to_fail))
 
         # To assist failover monitoring
@@ -5875,15 +5889,18 @@ class Atomicity(Task):
                 if op_type == "create":
                     ret = self.transaction_app.DeferTransaction(
                         self.clients[0][0].cluster,
-                        self.transaction, self.bucket, doc, update_keys, [], self.update_count)
+                        self.transaction, self.bucket, doc, update_keys, [],
+                        self.update_count)
                 elif op_type == "update":
                     ret = self.transaction_app.DeferTransaction(
                         self.clients[0][0].cluster,
-                        self.transaction, self.bucket, [], doc, [], self.update_count)
+                        self.transaction, self.bucket, [], doc, [],
+                        self.update_count)
                 elif op_type == "delete":
                     ret = self.transaction_app.DeferTransaction(
                         self.clients[0][0].cluster,
-                        self.transaction, self.bucket, [], [], doc, self.update_count)
+                        self.transaction, self.bucket, [], [], doc,
+                        self.update_count)
                 err = ret.getT2()
             else:
                 if op_type == "create":
@@ -6276,7 +6293,8 @@ class CompactBucketTask(Task):
         if status is False:
             while self.retries != 0:
                 sleep(60, "Wait before next compaction call", log_type="infra")
-                status = BucketHelper(self.server).compact_bucket(self.bucket.name)
+                status = BucketHelper(self.server).compact_bucket(
+                    self.bucket.name)
                 if status is True:
                     self.set_result(True)
                     break
@@ -6289,16 +6307,18 @@ class CompactBucketTask(Task):
             stop_time = time.time() + self.timeout
             while time.time() < stop_time:
                 if self.timeout > 0 and time.time() > stop_time:
-                    self.set_exception("API to check compaction status timed out in"
-                                       "%s seconds" % self.timeout)
+                    self.set_exception(
+                        "API to check compaction status timed out in"
+                        "%s seconds" % self.timeout)
                     break
                 status, self.progress = \
                     self.rest.check_compaction_status(self.bucket.name)
                 if self.progress > 0:
                     self.test_log.debug("Compaction started for %s"
-                                       % self.bucket.name)
+                                        % self.bucket.name)
                     break
-                sleep(2, "Wait before next check compaction call", log_type="infra")
+                sleep(2, "Wait before next check compaction call",
+                      log_type="infra")
 
             stop_time = time.time() + self.timeout
             while time.time() < stop_time:
@@ -6314,11 +6334,12 @@ class CompactBucketTask(Task):
                 if status is False:
                     self.progress = 100
                     self.test_log.debug("Compaction completed for %s"
-                                       % self.bucket.name)
+                                        % self.bucket.name)
                     self.test_log.info("%s compaction done: %s%%"
-                                        % (self.bucket.name, self.progress))
+                                       % (self.bucket.name, self.progress))
                     break
-                sleep(5, "Wait before next check compaction call", log_type="infra")
+                sleep(5, "Wait before next check compaction call",
+                      log_type="infra")
         else:
             self.test_log.error("Compaction failed to complete within "
                                 "%s retries" % self.retries)
@@ -6450,7 +6471,7 @@ class NodeInitializeTask(Task):
 
         if service_name in self.services_mem_quota_percent:
             percent = self.services_mem_quota_percent[service_name]
-            mem_quota = int(self.total_memory* percent / 100)
+            mem_quota = int(self.total_memory * percent / 100)
         return mem_quota
 
     def call(self):
@@ -6673,7 +6694,8 @@ class BucketFlushTask(Task):
 
 
 class CreateDatasetsTask(Task):
-    def __init__(self, cluster, bucket_util, cbas_util, cbas_name_cardinality=1,
+    def __init__(self, cluster, bucket_util, cbas_util,
+                 cbas_name_cardinality=1,
                  kv_name_cardinality=1, remote_datasets=False,
                  creation_methods=None, ds_per_collection=1,
                  ds_per_dv=None):
@@ -6693,8 +6715,8 @@ class CreateDatasetsTask(Task):
             self.creation_methods = creation_methods
         if self.ds_per_collection > 1:
             self.creation_methods = list(filter(lambda method: method !=
-                                                 'enable_cbas_from_kv',
-                        self.creation_methods))
+                                                               'enable_cbas_from_kv',
+                                                self.creation_methods))
         self.cbas_util = cbas_util
         self.ds_per_dv = ds_per_dv
         if remote_datasets:
@@ -6711,7 +6733,7 @@ class CreateDatasetsTask(Task):
                     for scope in self.bucket_util.get_active_scopes(bucket):
                         for collection in \
                                 self.bucket_util.get_active_collections(
-                                bucket, scope.name):
+                                    bucket, scope.name):
                             self.init_dataset_creation(
                                 bucket, scope, collection)
                 else:
@@ -6729,7 +6751,7 @@ class CreateDatasetsTask(Task):
     def dataset_present(self, dataset_name, dataverse_name):
         names_present = list(filter(
             lambda ds: ds.name == dataset_name and
-            ds.dataverse_name == dataverse_name,
+                       ds.dataverse_name == dataverse_name,
             self.created_datasets))
         if names_present:
             return True
@@ -6778,7 +6800,8 @@ class CreateDatasetsTask(Task):
 
             if creation_method == "cbas_collection":
                 dataset_obj = CBAS_Collection(
-                    name=name, dataverse_name=dataverse.name, link_name=link_name,
+                    name=name, dataverse_name=dataverse.name,
+                    link_name=link_name,
                     dataset_source="internal", dataset_properties={},
                     bucket=bucket, scope=scope, collection=collection,
                     enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
@@ -6873,13 +6896,14 @@ class CreateSynonymsTask(Task):
                     dataverse_name=self.dataverse.name,
                     synonym_on_synonym=self.synonym_on_synonym)
                 if not self.cbas_util.create_analytics_synonym(
-                    self.cluster, synonym.full_name,
-                    synonym.cbas_entity_full_name, if_not_exists=False,
-                    validate_error_msg=False, expected_error=None, username=None,
-                    password=None, timeout=300, analytics_timeout=300):
+                        self.cluster, synonym.full_name,
+                        synonym.cbas_entity_full_name, if_not_exists=False,
+                        validate_error_msg=False, expected_error=None,
+                        username=None,
+                        password=None, timeout=300, analytics_timeout=300):
                     results.append(False)
                 else:
-                    self.cbas_util.dataverses[self.cbas_entity.dataverse_name].\
+                    self.cbas_util.dataverses[self.cbas_entity.dataverse_name]. \
                         synonyms[synonym.name] = synonym
                     results.append(True)
             if not all(results):
@@ -6926,12 +6950,13 @@ class CreateCBASIndexesTask(Task):
                 else:
                     index.analytics_index = False
                 if not self.cbas_util.create_cbas_index(
-                    self.cluster, index_name=index.name,
-                    indexed_fields=index.indexed_fields,
-                    dataset_name=index.full_dataset_name,
-                    analytics_index=index.analytics_index,
-                    validate_error_msg=False, expected_error=None,
-                    username=None, password=None, timeout=300, analytics_timeout=300):
+                        self.cluster, index_name=index.name,
+                        indexed_fields=index.indexed_fields,
+                        dataset_name=index.full_dataset_name,
+                        analytics_index=index.analytics_index,
+                        validate_error_msg=False, expected_error=None,
+                        username=None, password=None, timeout=300,
+                        analytics_timeout=300):
                     raise Exception(
                         "Failed to create index {0} on {1}({2})".format(
                             index.name, index.full_dataset_name,
@@ -6946,7 +6971,8 @@ class CreateCBASIndexesTask(Task):
 
 
 class CreateUDFTask(Task):
-    def __init__(self, cluster, cbas_util, udf, dataverse, body, referenced_entities=[],
+    def __init__(self, cluster, cbas_util, udf, dataverse, body,
+                 referenced_entities=[],
                  parameters=[]):
         super(CreateUDFTask, self).__init__("CreateUDFTask")
         self.cluster = cluster
@@ -6961,16 +6987,20 @@ class CreateUDFTask(Task):
         self.start_task()
         try:
             if not self.cbas_util.create_udf(
-                self.cluster, name=self.udf, dataverse=self.dataverse.name,
-                or_replace=False, parameters=self.parameters, body=self.body,
-                if_not_exists=False, query_context=False, use_statement=False,
-                validate_error_msg=False, expected_error=None, username=None,
-                password=None, timeout=120, analytics_timeout=120):
+                    self.cluster, name=self.udf, dataverse=self.dataverse.name,
+                    or_replace=False, parameters=self.parameters,
+                    body=self.body,
+                    if_not_exists=False, query_context=False,
+                    use_statement=False,
+                    validate_error_msg=False, expected_error=None,
+                    username=None,
+                    password=None, timeout=120, analytics_timeout=120):
                 raise Exception(
                     "Couldn't create UDF {0} on dataverse {1}: def :{2}".format(
                         self.udf, self.dataverse.name, self.body))
             udf_obj = CBAS_UDF(
-                name=self.udf, dataverse_name=self.dataverse.name, parameters=[],
+                name=self.udf, dataverse_name=self.dataverse.name,
+                parameters=[],
                 body=self.body, referenced_entities=self.referenced_entities)
             self.cbas_util.dataverses[
                 self.dataverse.name].udfs[udf_obj.full_name] = udf_obj
@@ -6992,11 +7022,13 @@ class DropUDFTask(Task):
         try:
             for udf in self.dataverse.udfs.values():
                 if not self.cbas_util.drop_udf(
-                    self.cluster, name=udf.name, dataverse=self.dataverse.name,
-                    parameters=udf.parameters, if_exists=False,
-                    use_statement=False, query_context=False,
-                    validate_error_msg=False, expected_error=None, username=None,
-                    password=None, timeout=120, analytics_timeout=120):
+                        self.cluster, name=udf.name,
+                        dataverse=self.dataverse.name,
+                        parameters=udf.parameters, if_exists=False,
+                        use_statement=False, query_context=False,
+                        validate_error_msg=False, expected_error=None,
+                        username=None,
+                        password=None, timeout=120, analytics_timeout=120):
                     raise Exception("Could not drop {0} on {1}: def :".format(
                         udf.name, self.dataverse.name, udf.body))
         except Exception as e:
@@ -7017,10 +7049,10 @@ class DropCBASIndexesTask(Task):
         try:
             for index in self.dataset.indexes.values():
                 if not self.cbas_util.drop_cbas_index(
-                    self.cluster, index_name=index.name,
-                    dataset_name=index.full_dataset_name,
-                    analytics_index=index.analytics_index,
-                    timeout=120, analytics_timeout=120):
+                        self.cluster, index_name=index.name,
+                        dataset_name=index.full_dataset_name,
+                        analytics_index=index.analytics_index,
+                        timeout=120, analytics_timeout=120):
                     raise Exception("Failed to drop index {0} on {1}".format(
                         index.name, index.full_dataset_name))
                 self.cbas_util.dataverses[
@@ -7044,8 +7076,9 @@ class DropSynonymsTask(Task):
             for dv_name, dataverse in self.cbas_util.dataverses.items():
                 for synonym in dataverse.synonyms.values():
                     if not self.cbas_util.drop_analytics_synonym(
-                        self.cluster, synonym_full_name=synonym.full_name,
-                        if_exists=True, timeout=120, analytics_timeout=120):
+                            self.cluster, synonym_full_name=synonym.full_name,
+                            if_exists=True, timeout=120,
+                            analytics_timeout=120):
                         raise Exception(
                             "Unable to drop synonym " + synonym.full_name)
                     self.cbas_util.dataverses[dataverse.name].synonyms.pop(
@@ -7117,6 +7150,7 @@ class DropDataversesTask(Task):
             return
         self.complete_task()
 
+
 class ExecuteQueryTask(Task):
     def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600, retry=10):
         super(ExecuteQueryTask, self).__init__("ExecuteQueriesTask_%sstarted%s"
@@ -7131,6 +7165,7 @@ class ExecuteQueryTask(Task):
         self.timeout = timeout
         self.isIndexerQuery = isIndexerQuery
         self.retry = retry
+
     def call(self):
         self.start_task()
         indexer_rest = GsiHelper(self.server, self.log)
@@ -7156,7 +7191,8 @@ class ExecuteQueryTask(Task):
 
         if self.isIndexerQuery:
             self.log.info("Waiting for polling status:" + self.index_name)
-            result = indexer_rest.polling_create_index_status(self.bucket, index=self.index_name,
+            result = indexer_rest.polling_create_index_status(self.bucket,
+                                                              index=self.index_name,
                                                               timeout=self.timeout)
             self.set_result(result)
         if isException:

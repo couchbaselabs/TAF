@@ -11,7 +11,7 @@ import TestInput
 from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
-from Cb_constants import constants
+from Cb_constants import constants, ClusterRun
 from common_lib import sleep
 from global_vars import logger
 from platform_constants.os_constants import Linux, Mac, Windows
@@ -152,7 +152,7 @@ class RemoteMachineShellConnection:
         self.msi = False
         self.nonroot = False
         self.nr_home_path = "/home/%s/cb" % self.username
-        self.use_sudo = True
+        self.use_sudo = False if ClusterRun.is_enabled else True
 
         self.remote = (self.ip != "localhost" and self.ip != "127.0.0.1")
         if self.ip.find(":") != -1:

@@ -120,7 +120,7 @@ else
    make
 fi
 
-./cluster_run --nodes=$servers_count $serverless &> $wd/cluster_run.log &
+./cluster_run --dont-rename --nodes=$servers_count $serverless &> $wd/cluster_run.log &
 pid=$!
 popd
 

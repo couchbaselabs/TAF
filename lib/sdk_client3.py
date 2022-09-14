@@ -234,17 +234,12 @@ class SDKClient(object):
                               % bucket.serverless.nebula_endpoint)
         for server in servers:
             self.servers.append((server.ip, int(server.port)))
-            if server.ip == "127.0.0.1":
-                if CbServer.use_https:
-                    self.scheme = "https"
-                else:
-                    self.scheme = "http"
+            if CbServer.use_https:
+                self.scheme = "couchbases"
             else:
+                self.scheme = "couchbase"
+            if not ClusterRun.is_enabled:
                 self.hosts.append(server.ip)
-                if CbServer.use_https:
-                    self.scheme = "couchbases"
-                else:
-                    self.scheme = "couchbase"
 
         self.__create_conn()
         SDKClient.sdk_connections += 1
@@ -282,8 +277,7 @@ class SDKClient(object):
         while i <= 5:
             try:
                 # Code for cluster_run
-                if int(self.servers[0][1]) in xrange(ClusterRun.port,
-                                                     ClusterRun.port+10):
+                if ClusterRun.is_enabled:
                     master_seed = HashSet(Collections.singletonList(
                         SeedNode.create(
                             self.servers[0][0],

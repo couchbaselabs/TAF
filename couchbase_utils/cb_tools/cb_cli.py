@@ -107,8 +107,9 @@ class CbCli(CbCmdBase):
                       fo_timeout=None, max_failovers=None,
                       disk_fo=None, disk_fo_timeout=None,
                       can_abort_rebalance=None):
-        cmd = "%s setting-autofailover -c localhost -u %s -p %s" \
-              % (self.cbstatCmd, self.username, self.password)
+        cmd = "%s setting-autofailover -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
         cmd += " --enable-auto-failover %s" % enable_auto_fo
         if fo_timeout:
             cmd += " --auto-failover-timeout %s" % fo_timeout
