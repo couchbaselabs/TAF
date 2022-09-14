@@ -102,7 +102,11 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         if self.skip_teardown_cleanup:
             return
         for bucket in self.cluster.buckets:
+            self.log.info("Deleting database: {}".format(bucket.name))
             self.serverless_util.delete_database(self.pod, self.tenant, bucket.name)
+
+        for bucket in self.cluster.buckets:
+            self.serverless_util.wait_for_database_deleted(self.tenant, bucket.name)
 
         for dataplane_id in self.dataplanes:
             self.log.info("Destroying dataplane: {}".format(dataplane_id))

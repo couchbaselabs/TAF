@@ -75,22 +75,51 @@ class CapellaUtils:
         state = json.loads(resp.content).get("data").get("status").get("state")
         end_time = time.time() + timeout
         while state != "healthy" and time.time() < end_time:
-            CapellaUtils.log.info("Wait for database {} to be ready to use: {}".
-                                  format(database_id, state))
-            time.sleep(5)
-            resp = self.capella_api.get_serverless_db_info(tenant.id, tenant.project_id,
-                                                           database_id)
-            state = json.loads(resp.content).get("data").get("status").get("state")
+            try:
+                CapellaUtils.log.info("Wait for database {} to be ready to use: {}".
+                                      format(database_id, state))
+                time.sleep(5)
+                resp = self.capella_api.get_serverless_db_info(tenant.id, tenant.project_id,
+                                                               database_id)
+                if json.loads(resp.content) is None or\
+                    json.loads(resp.content).get("data") is None or\
+                    json.loads(resp.content).get("data").get("status") is None:
+                    self.log.critical("{}-{}".format(database_id, json.loads(resp.content)))
+                    continue
+                state = json.loads(resp.content).get("data").get("status").get("state")
+            except:
+                print resp.content
         if state != "healthy":
-            raise Exception("Deploying a serverless database failed with \
-                timeout {}. Current state: {}".format(timeout, state))
+            raise Exception("Deploying database {} failed with \
+                timeout {}. Current state: {}".format(database_id, timeout, state))
         CapellaUtils.log.info("Database {} is ready to use: {}".
                               format(database_id, state))
         return json.loads(resp.content).get("data").get("status").get("state")
 
+    def wait_for_database_deleted(self, tenant, database_id, timeout=1800):
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            resp = self.capella_api.get_serverless_db_info(tenant.id, tenant.project_id,
+                                                           database_id)
+            if resp.status_code == 404:
+                msg = {
+                    "database_id": database_id,
+                    "state": "Nuked!!"
+                }
+                self.log.info("Database deleted {}".format(msg))
+                return
+            msg = {
+                "database_id": database_id,
+                "state": json.loads(resp.content).get("data").get("status").get("state")
+            }
+            self.log.info(
+                "waiting for database to be deleted {}".format(msg))
+        raise Exception("timeout waiting for database to be deleted {}".format(
+            {"database_id": database_id}))
+
     def get_database_details(self, pod, tenant, database_id):
         resp = self.capella_api.get_serverless_db_info(tenant.id, tenant.project_id,
-                                                  database_id)
+                                                       database_id)
         if resp.status_code != 200:
             raise Exception("Fetch database details failed: {}".
                             format(resp.content))
