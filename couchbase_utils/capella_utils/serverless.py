@@ -66,23 +66,24 @@ class CapellaUtils:
         databaseId = json.loads(resp.content)['databaseId']
         return databaseId
 
-    def is_database_ready(self, pod, tenant, database_id):
+    def is_database_ready(self, pod, tenant, database_id, timeout=120):
         resp = self.capella_api.get_serverless_db_info(tenant.id, tenant.project_id,
-                                                  database_id)
+                                                       database_id)
         if resp.status_code != 200:
             raise Exception("Fetch database details failed: {}".
                             format(resp.content))
         state = json.loads(resp.content).get("data").get("status").get("state")
-        end_time = time.time() + 120
+        end_time = time.time() + timeout
         while state != "healthy" and time.time() < end_time:
             CapellaUtils.log.info("Wait for database {} to be ready to use: {}".
                                   format(database_id, state))
             time.sleep(5)
             resp = self.capella_api.get_serverless_db_info(tenant.id, tenant.project_id,
-                                                      database_id)
+                                                           database_id)
             state = json.loads(resp.content).get("data").get("status").get("state")
         if state != "healthy":
-            raise Exception("Deploying a serverless database failed!")
+            raise Exception("Deploying a serverless database failed with \
+                timeout {}. Current state: {}".format(timeout, state))
         CapellaUtils.log.info("Database {} is ready to use: {}".
                               format(database_id, state))
         return json.loads(resp.content).get("data").get("status").get("state")

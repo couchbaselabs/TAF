@@ -53,7 +53,6 @@ from table_view import TableView, plot_graph
 from gsiLib.GsiHelper_Rest import GsiHelper
 from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
-from capella_utils.serverless import CapellaUtils as ServerlessUtils
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 # from cluster_utils.cluster_ready_functions import CBCluster
 from org.xbill.DNS import Lookup, Type
@@ -210,7 +209,7 @@ class DeployDataplane(Task):
         self.config = config
         self.pod = cluster.pod
         self.timeout = timeout
-        self.serverless_util = ServerlessUtils(cluster)
+        self.serverless_util = global_vars.serverless_util
 
     def call(self):
         try:
@@ -3907,6 +3906,7 @@ class DatabaseCreateTask(Task):
         self.serverless_util = global_vars.serverless_util
 
     def call(self):
+        self.result = True
         try:
             self.bucket_obj.name = self.serverless_util.create_serverless_database(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
@@ -3914,7 +3914,8 @@ class DatabaseCreateTask(Task):
                 self.bucket_obj.serverless.width, self.bucket_obj.serverless.weight,
                 dataplane_id=self.dataplane_id)
             state = self.serverless_util.is_database_ready(
-                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
+                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
+                timeout=600)
             if self.cluster.pod.TOKEN:
                 dp_id = self.serverless_util.get_database_dataplane_id(
                     self.cluster.pod, self.bucket_obj.name)
@@ -3938,7 +3939,8 @@ class DatabaseCreateTask(Task):
             self.server.rest_password = secret
             self.server.port = "18091"
         except Exception as e:
-            self.set_exception(e)
+            self.result = False
+            self.log.critical(e)
 
 
 class BucketCreateTask(Task):

@@ -114,6 +114,7 @@ class Murphy(BaseTestCase, OPD):
             self.sleep(1)
         for task, bucket in temp:
             self.task_manager.get_task_result(task)
+            self.assertTrue(task.result, "Database deployment failed.")
             nebula = Nebula(task.srv, task.server)
             self.log.info("Populate Nebula object done!!")
             bucket.serverless.nebula_endpoint = nebula.endpoint

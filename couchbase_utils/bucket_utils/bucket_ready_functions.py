@@ -39,7 +39,6 @@ from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope, Serverless
 from capella_utils.dedicated import CapellaUtils as DedicatedCapellaUtils
-from capella_utils.serverless import CapellaUtils as ServerlessCapellaUtils
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
@@ -72,6 +71,7 @@ from couchbase_helper.tuq_generators import JsonGenerator
 from StatsLib.StatsOperations import StatsHelper
 from cluster_utils.cluster_ready_functions import Nebula
 from org.xbill.DNS import Lookup, Type
+import global_vars
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods
@@ -1765,8 +1765,8 @@ class BucketUtils(ScopeUtils):
             self.log.info("Populate Nebula object done!!")
             bucket_obj.serverless.nebula_endpoint = nebula.endpoint
             bucket_obj.serverless.dapi = \
-                ServerlessCapellaUtils(cluster).get_database_DAPI(cluster.pod, cluster.tenant,
-                                                         bucket_obj.name)
+                global_vars.serverless_util.get_database_DAPI(
+                    cluster.pod, cluster.tenant, bucket_obj.name)
             self.update_bucket_nebula_servers(self.cluster, nebula, bucket_obj)
             cluster.buckets.append(bucket_obj)
         else:
