@@ -127,7 +127,9 @@ class CapellaUtils:
 
     def allow_my_ip(self, pod, tenant, database_id):
         resp = self.capella_api.allow_my_ip(tenant.id, tenant.project_id,
-                                       database_id)
+                                            database_id)
+        print resp.status_code
+        print resp.content
         if resp.status_code != 200:
             result = json.loads(resp.content)
             if result["errorType"] == "ErrAllowListsCreateDuplicateCIDR":
