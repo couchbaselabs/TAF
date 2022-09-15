@@ -3625,7 +3625,7 @@ class RestParser(object):
         if "hostname" in parsed:
             # should work for both: ipv4 and ipv6
             node.ip, node.port = parsed["hostname"].rsplit(":", 1)
-            if CbServer.use_https:
+            if ClusterRun.is_enabled and CbServer.use_https:
                 node.port = int(node.port) + 10000
 
         # memoryQuota
