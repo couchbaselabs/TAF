@@ -3915,7 +3915,7 @@ class DatabaseCreateTask(Task):
                 dataplane_id=self.dataplane_id)
             state = self.serverless_util.is_database_ready(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
-                timeout=3600)
+                timeout=7200)
             if self.cluster.pod.TOKEN:
                 dp_id = self.serverless_util.get_database_dataplane_id(
                     self.cluster.pod, self.bucket_obj.name)

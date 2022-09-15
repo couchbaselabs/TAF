@@ -38,112 +38,115 @@ class Murphy(BaseTestCase, OPD):
         self.expire_start = 0
 
     def setUp(self):
-        BaseTestCase.setUp(self)
-        self.init_doc_params()
+        try:
+            BaseTestCase.setUp(self)
+            self.init_doc_params()
 
-        self.num_collections = self.input.param("num_collections", 1)
-        self.xdcr_collections = self.input.param("xdcr_collections", self.num_collections)
-        self.num_collections_bkrs = self.input.param("num_collections_bkrs", self.num_collections)
-        self.num_scopes = self.input.param("num_scopes", 1)
-        self.xdcr_scopes = self.input.param("xdcr_scopes", self.num_scopes)
-        self.num_buckets = self.input.param("num_buckets", 1)
-        self.kv_nodes = self.nodes_init
-        self.cbas_nodes = self.input.param("cbas_nodes", 0)
-        self.fts_nodes = self.input.param("fts_nodes", 0)
-        self.index_nodes = self.input.param("index_nodes", 0)
-        self.backup_nodes = self.input.param("backup_nodes", 0)
-        self.xdcr_remote_nodes = self.input.param("xdcr_remote_nodes", 0)
-        self.num_indexes = self.input.param("num_indexes", 0)
-        self.mutation_perc = 100
-        self.doc_ops = self.input.param("doc_ops", "create")
-        if self.doc_ops:
-            self.doc_ops = self.doc_ops.split(':')
+            self.num_collections = self.input.param("num_collections", 1)
+            self.xdcr_collections = self.input.param("xdcr_collections", self.num_collections)
+            self.num_collections_bkrs = self.input.param("num_collections_bkrs", self.num_collections)
+            self.num_scopes = self.input.param("num_scopes", 1)
+            self.xdcr_scopes = self.input.param("xdcr_scopes", self.num_scopes)
+            self.num_buckets = self.input.param("num_buckets", 1)
+            self.kv_nodes = self.nodes_init
+            self.cbas_nodes = self.input.param("cbas_nodes", 0)
+            self.fts_nodes = self.input.param("fts_nodes", 0)
+            self.index_nodes = self.input.param("index_nodes", 0)
+            self.backup_nodes = self.input.param("backup_nodes", 0)
+            self.xdcr_remote_nodes = self.input.param("xdcr_remote_nodes", 0)
+            self.num_indexes = self.input.param("num_indexes", 0)
+            self.mutation_perc = 100
+            self.doc_ops = self.input.param("doc_ops", "create")
+            if self.doc_ops:
+                self.doc_ops = self.doc_ops.split(':')
 
-        self.threads_calculation()
-        self.op_type = self.input.param("op_type", "create")
-        self.dgm = self.input.param("dgm", None)
-        self.num_buckets = self.input.param("num_buckets", 1)
-        self.mutate = 0
-        self.iterations = self.input.param("iterations", 10)
-        self.step_iterations = self.input.param("step_iterations", 1)
-        self.rollback = self.input.param("rollback", True)
-        self.vbucket_check = self.input.param("vbucket_check", True)
-        self.end_step = self.input.param("end_step", None)
-        self.key_prefix = "Users"
-        self.crashes = self.input.param("crashes", 20)
-        self.check_dump_thread = True
-        self.skip_read_on_error = False
-        self.suppress_error_table = False
-        self.track_failures = self.input.param("track_failures", True)
-        self.loader_dict = None
-        self.parallel_reads = self.input.param("parallel_reads", False)
-        self._data_validation = self.input.param("data_validation", True)
-        self.fragmentation = int(self.input.param("fragmentation", 50))
-        self.key_type = self.input.param("key_type", "SimpleKey")
-        self.val_type = self.input.param("val_type", "SimpleValue")
-        self.ops_rate = self.input.param("ops_rate", 10000)
-        self.cursor_dropping_checkpoint = self.input.param(
-            "cursor_dropping_checkpoint", None)
-        self.index_timeout = self.input.param("index_timeout", 3600)
-        self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
-                                                       True)
+            self.threads_calculation()
+            self.op_type = self.input.param("op_type", "create")
+            self.dgm = self.input.param("dgm", None)
+            self.num_buckets = self.input.param("num_buckets", 1)
+            self.mutate = 0
+            self.iterations = self.input.param("iterations", 10)
+            self.step_iterations = self.input.param("step_iterations", 1)
+            self.rollback = self.input.param("rollback", True)
+            self.vbucket_check = self.input.param("vbucket_check", True)
+            self.end_step = self.input.param("end_step", None)
+            self.key_prefix = "Users"
+            self.crashes = self.input.param("crashes", 20)
+            self.check_dump_thread = True
+            self.skip_read_on_error = False
+            self.suppress_error_table = False
+            self.track_failures = self.input.param("track_failures", True)
+            self.loader_dict = None
+            self.parallel_reads = self.input.param("parallel_reads", False)
+            self._data_validation = self.input.param("data_validation", True)
+            self.fragmentation = int(self.input.param("fragmentation", 50))
+            self.key_type = self.input.param("key_type", "SimpleKey")
+            self.val_type = self.input.param("val_type", "SimpleValue")
+            self.ops_rate = self.input.param("ops_rate", 10000)
+            self.cursor_dropping_checkpoint = self.input.param(
+                "cursor_dropping_checkpoint", None)
+            self.index_timeout = self.input.param("index_timeout", 3600)
+            self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
+                                                           True)
 
-        if self.xdcr_remote_nodes > 0:
-            pass
-        #######################################################################
-        self.PrintStep("Step 2: Create required buckets and collections.")
-        self.log.info("Create CB buckets")
-        # Create Buckets
-        temp = list()
-        for i in range(self.num_buckets):
-            self.database_name = "VolumeTestBucket-{}".format(i)
-            bucket = Bucket(
-                    {Bucket.name: self.database_name,
-                     Bucket.bucketType: Bucket.Type.MEMBASE,
-                     Bucket.replicaNumber: 2,
-                     Bucket.storageBackend: Bucket.StorageBackend.magma,
-                     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
-                     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
-                     Bucket.numVBuckets: 64,
-                     Bucket.width: 1, #self.bucket_width,
-                     Bucket.weight: 30, #self.bucket_weight
-                     })
-            task = self.bucket_util.async_create_database(self.cluster, bucket,
-                                                          self.dataplane_id)
-            temp.append((task, bucket))
-            self.cluster.buckets.append(bucket)
-            self.sleep(1)
-        for task, bucket in temp:
-            self.task_manager.get_task_result(task)
-            self.assertTrue(task.result, "Database deployment failed: {}".
-                            format(bucket.name))
-            nebula = Nebula(task.srv, task.server)
-            self.log.info("Populate Nebula object done!!")
-            bucket.serverless.nebula_endpoint = nebula.endpoint
-            bucket.serverless.dapi = \
-                self.serverless_util.get_database_DAPI(self.pod, self.tenant,
-                                                       bucket.name)
-            self.bucket_util.update_bucket_nebula_servers(self.cluster, nebula, bucket)
+            if self.xdcr_remote_nodes > 0:
+                pass
+            #######################################################################
+            self.PrintStep("Step 2: Create required buckets and collections.")
+            self.log.info("Create CB buckets")
+            # Create Buckets
+            temp = list()
+            for i in range(self.num_buckets):
+                self.database_name = "VolumeTestBucket-{}".format(i)
+                bucket = Bucket(
+                        {Bucket.name: self.database_name,
+                         Bucket.bucketType: Bucket.Type.MEMBASE,
+                         Bucket.replicaNumber: 2,
+                         Bucket.storageBackend: Bucket.StorageBackend.magma,
+                         Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
+                         Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
+                         Bucket.numVBuckets: 64,
+                         Bucket.width: 1, #self.bucket_width,
+                         Bucket.weight: 30, #self.bucket_weight
+                         })
+                task = self.bucket_util.async_create_database(self.cluster, bucket,
+                                                              self.dataplane_id)
+                temp.append((task, bucket))
+                self.cluster.buckets.append(bucket)
+                self.sleep(1)
+            for task, bucket in temp:
+                self.task_manager.get_task_result(task)
+                self.assertTrue(task.result, "Database deployment failed: {}".
+                                format(bucket.name))
+                nebula = Nebula(task.srv, task.server)
+                self.log.info("Populate Nebula object done!!")
+                bucket.serverless.nebula_endpoint = nebula.endpoint
+                bucket.serverless.dapi = \
+                    self.serverless_util.get_database_DAPI(self.pod, self.tenant,
+                                                           bucket.name)
+                self.bucket_util.update_bucket_nebula_servers(self.cluster, nebula, bucket)
 
-        self.buckets = self.cluster.buckets
-        self.create_required_collections(self.cluster, self.num_scopes,
-                                         self.num_collections)
-        if self.xdcr_remote_nodes > 0:
-            pass
+            self.buckets = self.cluster.buckets
+            self.create_required_collections(self.cluster, self.num_scopes,
+                                             self.num_collections)
+            if self.xdcr_remote_nodes > 0:
+                pass
 
-        if self.cluster.cbas_nodes:
-            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util,
-                                     self.num_indexes)
+            if self.cluster.cbas_nodes:
+                self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util,
+                                         self.num_indexes)
 
-        if self.cluster.backup_nodes:
-            self.drBackup = DoctorBKRS(self.cluster)
+            if self.cluster.backup_nodes:
+                self.drBackup = DoctorBKRS(self.cluster)
 
-        if self.cluster.index_nodes:
-            self.drIndex = DoctorN1QL(self.cluster, self.bucket_util,
-                                      self.num_indexes)
-        if self.cluster.fts_nodes:
-            self.drFTS = DoctorFTS(self.cluster, self.bucket_util,
-                                   self.num_indexes)
+            if self.cluster.index_nodes:
+                self.drIndex = DoctorN1QL(self.cluster, self.bucket_util,
+                                          self.num_indexes)
+            if self.cluster.fts_nodes:
+                self.drFTS = DoctorFTS(self.cluster, self.bucket_util,
+                                       self.num_indexes)
+        except:
+            self.tearDown()
 
     def tearDown(self):
         self.check_dump_thread = False
