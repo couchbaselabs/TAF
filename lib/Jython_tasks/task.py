@@ -53,6 +53,7 @@ from table_view import TableView, plot_graph
 from gsiLib.GsiHelper_Rest import GsiHelper
 from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
+from capella_utils.serverless import CapellaUtils as ServerlessUtils
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 # from cluster_utils.cluster_ready_functions import CBCluster
 from org.xbill.DNS import Lookup, Type
@@ -209,7 +210,7 @@ class DeployDataplane(Task):
         self.config = config
         self.pod = cluster.pod
         self.timeout = timeout
-        self.serverless_util = global_vars.serverless_util
+        self.serverless_util = ServerlessUtils(cluster)
 
     def call(self):
         try:

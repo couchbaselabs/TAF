@@ -145,8 +145,9 @@ class Murphy(BaseTestCase, OPD):
             if self.cluster.fts_nodes:
                 self.drFTS = DoctorFTS(self.cluster, self.bucket_util,
                                        self.num_indexes)
-        except:
+        except Exception as e:
             self.tearDown()
+            raise Exception("SetUp Failed - {}".format(e))
 
     def tearDown(self):
         self.check_dump_thread = False
