@@ -358,6 +358,8 @@ class StorageBase(BaseTestCase):
         for bucket in self.cluster.buckets:
             scopes_keys = scopes or bucket.scopes.keys()
             for scope in scopes_keys:
+                if scope == CbServer.system_scope:
+                    continue
                 collections_keys = collections or bucket.scopes[scope].collections.keys()
                 for collection in collections_keys:
                     if collection == "_default" and scope == "_default":
@@ -446,6 +448,8 @@ class StorageBase(BaseTestCase):
             for bucket in self.cluster.buckets:
                 scopes_keys = scopes or bucket.scopes.keys()
                 for scope in scopes_keys:
+                    if scope == CbServer.system_scope:
+                        continue
                     collections_keys = collections or bucket.scopes[scope].collections.keys()
                     for collection in collections_keys:
                         if collection == "_default" and scope == "_default":
@@ -483,6 +487,8 @@ class StorageBase(BaseTestCase):
             for bucket in self.cluster.buckets:
                 scopes_keys = scopes or bucket.scopes.keys()
                 for scope in scopes_keys:
+                    if scope == CbServer.system_scope:
+                        continue
                     collections_keys = collections or bucket.scopes[scope].collections.keys()
                     self.log.info("scope is {}".format(scope))
                     for collection in collections_keys:
