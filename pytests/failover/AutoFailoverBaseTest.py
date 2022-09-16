@@ -2,8 +2,7 @@
 import time
 
 from BucketLib.bucket import Bucket
-from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import DocLoading
+from Cb_constants import DocLoading, CbServer
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
@@ -851,12 +850,18 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 master_services = master_services[0].split(",")
             self._initialize_node_with_new_data_location(
                 server, self.data_location, master_services)
+            if self.use_https:
+                self.set_ports_for_server(server, "ssl")
+
         self.services = self.cluster_util.get_services(
             self.cluster.servers[:self.nodes_init], None)
         self.task.rebalance(self.cluster,
                             self.cluster.servers[1:self.nodes_init], [],
                             services=self.services,
                             retry_get_process_num=self.retry_get_process_num)
+
+        self.enable_tls_on_nodes()
+
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.disk_optimized_thread_settings = \
@@ -952,9 +957,13 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
     def _initialize_node_with_new_data_location(self, server, data_location,
                                                 services=None):
-        init_port = server.port or '8091'
         init_tasks = []
+        # Note: This won't support cluster_run
+        init_port = server.port or CbServer.port
+        if init_port == CbServer.ssl_port:
+            init_port = CbServer.port
         cli = CouchbaseCLI(server, server.rest_username, server.rest_password)
+        cli.hostname = "%s:%s" % (server.ip, init_port)
         output, error, _ = cli.node_init(data_location, None, None)
         self.log.info(output)
         if error or "ERROR" in output:

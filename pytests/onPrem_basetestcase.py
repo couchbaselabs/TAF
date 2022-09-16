@@ -336,27 +336,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.task_manager.get_task_result(task)
 
             # Enforce tls on nodes of all clusters
-            if self.use_https and self.enforce_tls:
-                retry_count = self.input.param("tls_retry_count", 3)
-                CbServer.n2n_encryption = True
-                CbServer.use_https = True
-                retry = 0
-                status = False
-                while retry < retry_count:
-                    for _, cluster in self.cb_clusters.items():
-                        task = self.node_utils.async_enable_tls(cluster.master)
-                        self.task_manager.get_task_result(task)
-                        self.log.info("Validating if services obey tls only "
-                                      "on servers {0}".format(cluster.servers))
-                        status = self.cluster_util.check_if_services_obey_tls(
-                            cluster.servers)
-                    if status:
-                        break
-                    else:
-                        retry += 1
-                        self.sleep(10, "Retrying enforcing TLS on servers")
-                else:
-                    self.fail("Services did not honor enforce tls")
+            self.enable_tls_on_nodes()
 
             if self.use_https:
                 if ClusterRun.is_enabled:
@@ -372,13 +352,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                 ClusterRun.ssl_memcached_port - (4 * index)
                 else:
                     for server in self.input.servers:
-                        server.port = CbServer.ssl_port
-                        server.memcached_port = CbServer.ssl_memcached_port
-                        server.fts_port = CbServer.ssl_fts_port
-                        server.index_port = CbServer.ssl_index_port
-                        server.n1ql_port = CbServer.ssl_n1ql_port
-                        server.cbas_port = CbServer.ssl_cbas_port
-                        server.eventing_port = CbServer.ssl_eventing_port
+                        self.set_ports_for_server(server, "ssl")
             reload(Cb_constants)
 
             # Enforce IPv4 or IPv6 or both
@@ -474,6 +448,48 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.node_utils.start_fetch_pcaps(self.servers, log_path,
                                           is_test_failed)
 
+    def set_ports_for_server(self, server, port_type="non_ssl"):
+        self.log.debug("Setting %s ports for server %s" % (port_type, server))
+        if port_type == "non_ssl":
+            server.port = CbServer.port
+            server.memcached_port = CbServer.memcached_port
+            server.fts_port = CbServer.fts_port
+            server.index_port = CbServer.index_port
+            server.n1ql_port = CbServer.n1ql_port
+            server.cbas_port = CbServer.cbas_port
+            server.eventing_port = CbServer.eventing_port
+        elif port_type == "ssl":
+            server.port = CbServer.ssl_port
+            server.memcached_port = CbServer.ssl_memcached_port
+            server.fts_port = CbServer.ssl_fts_port
+            server.index_port = CbServer.ssl_index_port
+            server.n1ql_port = CbServer.ssl_n1ql_port
+            server.cbas_port = CbServer.ssl_cbas_port
+            server.eventing_port = CbServer.ssl_eventing_port
+
+    def enable_tls_on_nodes(self):
+        if self.use_https and self.enforce_tls:
+            retry_count = self.input.param("tls_retry_count", 3)
+            CbServer.n2n_encryption = True
+            CbServer.use_https = True
+            retry = 0
+            status = False
+            while retry < retry_count:
+                for _, cluster in self.cb_clusters.items():
+                    task = self.node_utils.async_enable_tls(cluster.master)
+                    self.task_manager.get_task_result(task)
+                    self.log.info("Validating if services obey tls only "
+                                  "on servers {0}".format(cluster.servers))
+                    status = self.cluster_util.check_if_services_obey_tls(
+                        cluster.servers)
+                if status:
+                    break
+                else:
+                    retry += 1
+                    self.sleep(10, "Retrying enforcing TLS on servers")
+            else:
+                self.fail("Services did not honor enforce tls")
+
     def tearDown(self):
         for container in self.docker_containers:
             self.docker.killContainer(container)
@@ -509,13 +525,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         ClusterRun.memcached_port + (2 * index)
             else:
                 for server in self.input.servers:
-                    server.port = CbServer.port
-                    server.memcached_port = CbServer.memcached_port
-                    server.fts_port = CbServer.fts_port
-                    server.index_port = CbServer.index_port
-                    server.n1ql_port = CbServer.n1ql_port
-                    server.cbas_port = CbServer.cbas_port
-                    server.eventing_port = CbServer.eventing_port
+                    self.set_ports_for_server(server, "non_ssl")
 
         if self.multiple_ca:
             CbServer.use_https = False
