@@ -163,7 +163,7 @@ class volume(CollectionBase):
 
     def tearDown(self):
         # Do not call the base class's teardown, as we want to keep the cluster intact after the volume run
-        if self.scrape_interval:
+        if self.scrape_interval and CbServer.cluster_profile != "serverless":
             self.log.info("Reverting prometheus settings back to default")
             StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
         self.close_all_threads()

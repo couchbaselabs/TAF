@@ -87,7 +87,7 @@ class CollectionsRebalance(CollectionBase):
 
     def tearDown(self):
         self.bucket_util.print_bucket_stats(self.cluster)
-        if self.scrape_interval:
+        if self.scrape_interval and CbServer.cluster_profile != "serverless":
             self.log.info("Reverting prometheus settings back to default")
             StatsHelper(self.cluster.master).reset_stats_settings_from_diag_eval()
         if self.rebalance_moves_per_node:
