@@ -279,6 +279,67 @@ class SecurityTest(BaseTestCase):
                 else:
                     self.assertEqual(401, response.status_code, "User should not be able to login")
 
+    def test_delete_and_restore_backup_data(self):
+        expected_response_code = {"organizationOwner": 200, "projectCreator": 403,
+                                  "cloudManager": 403, "organizationMember": 403}
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user,
+                                 self.passwd)
+        capella_api.load_sample_bucket(self.tenant_id, self.project_id,
+                                       self.cluster_id, "travel-sample")
+        capella_api.backup_now(self.tenant_id, self.project_id, self.cluster_id, "travel-sample")
+        url = "{}/v2/organizations/{}/projects/{}/clusters/{}/backups".format("https://" +
+                                                                              self.url.replace(
+                                                                                  "cloud",
+                                                                                  "", 1),
+                                                                              self.tenant_id,
+                                                                              self.project_id,
+                                                                              self.cluster_id)
+        resp = capella_api.do_internal_request(url, method="GET", params='')
+        bucketID = json.loads(resp.content)["data"][0]["data"]["bucketId"]
+        backupID = json.loads(resp.content)["data"][0]["data"]["id"]
+        for user in self.test_users:
+            self.log.info("Verifying status code for role : {0}"
+                          .format(self.test_users[user]["role"]))
+            capella_api_user = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                          self.test_users[user]["mailid"],
+                                          self.test_users[user]["password"])
+            self.log.info("Verifying status code for deleting backup data")
+            url = "{}/v2/organizations/{}/projects/{}/clusters/{}/backups/{}/cycle".format(
+                "https://" +
+                self.url.replace(
+                    "cloud", "",
+                    1),
+                self.tenant_id,
+                self.project_id,
+                self.cluster_id,
+                backupID)
+            result = capella_api_user.do_internal_request(url, method="DELETE", params='')
+            self.assertEqual(expected_response_code[self.test_users[user]["role"]] // 100,
+                             result.status_code // 100,
+                             msg="FAIL, Outcome: {0}, Expected: {1}"
+                             .format(result.status_code,
+                                     expected_response_code[self.test_users[user]["role"]]))
+            self.log.info("Verifying status code for restoring backup data")
+            payload = {"sourceClusterId": self.cluster_id,
+                       "targetClusterId": self.cluster_id,
+                       "options": {"services": ["data", "query", "index", "search"],
+                                   "filterKeys": "",
+                                   "filterValues": "",
+                                   "mapData": "", "includeData": "", "excludeData": "",
+                                   "autoCreateBuckets": True,
+                                   "autoRemoveCollections": True, "forceUpdates": True}}
+            url = r"{}/v2/organizations/{}/projects/{}/clusters/{}/buckets/{}/restore" \
+                .format("https://" + self.url.replace("cloud", "", 1), self.tenant_id,
+                        self.project_id, self.cluster_id, bucketID)
+            resp = capella_api_user.do_internal_request(url, method="POST",
+                                                        params=json.dumps(payload))
+            self.assertEqual(expected_response_code[self.test_users[user]["role"]] // 100,
+                             resp.status_code // 100,
+                             msg="FAIL, Outcome: {0}, Expected: {1}"
+                             .format(resp.status_code,
+                                     expected_response_code[self.test_users[user]["role"]]))
+
     def test_jump_tenant_boundary(self):
         self.log.info("Jumping tenant boundaries")
         self.log.info("Create a cluster in a different tenant where the user does not exist")
