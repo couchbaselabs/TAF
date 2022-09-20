@@ -167,11 +167,11 @@ public class WorkLoadGenerate extends Task{
                 .retryStrategy(this.dg.ws.retryStrategy);
         int ops = 0;
         boolean flag = false;
-        if (this.sdkClientPool != null)
-            this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
 
         Instant trackFailureTime_start = Instant.now();
         while(! this.stop_loading) {
+        	if (this.sdkClientPool != null)
+                this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
             Instant trackFailureTime_end = Instant.now();
             Duration timeElapsed = Duration.between(trackFailureTime_start, trackFailureTime_end);
             if(timeElapsed.toMinutes() > 5) {
@@ -293,10 +293,14 @@ public class WorkLoadGenerate extends Task{
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
+            if(this.sdkClientPool != null)
+                this.sdkClientPool.release_client(this.sdk);
         }
         System.out.println(this.taskName + " is completed!");
         this.result = true;
         if (retryTimes > 0 && failedMutations.size() > 0)
+        	if (this.sdkClientPool != null)
+                this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
             for (Entry<String, List<Result>> optype: failedMutations.entrySet()) {
                 for (Result r: optype.getValue()) {
                     System.out.println("Loader Retrying: " + r.id() + " -> " + r.err().getClass().getSimpleName());
@@ -333,9 +337,8 @@ public class WorkLoadGenerate extends Task{
                         }
                     }
                 }
+                if(this.sdkClientPool != null)
+                    this.sdkClientPool.release_client(this.sdk);
             }
-
-        if(this.sdkClientPool != null)
-            this.sdkClientPool.release_client(this.sdk);
     }
 }

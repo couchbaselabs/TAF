@@ -231,7 +231,7 @@ class SDKClient(object):
             if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
                 self.hosts = [bucket.serverless.nebula_endpoint.srv]
                 self.log.info("For SDK, Nebula endpoint used for bucket is: %s"
-                              % bucket.serverless.nebula_endpoint)
+                              % bucket.serverless.nebula_endpoint.ip)
         for server in servers:
             self.servers.append((server.ip, int(server.port)))
             if CbServer.use_https:
@@ -240,8 +240,11 @@ class SDKClient(object):
                 self.scheme = "couchbase"
             if not ClusterRun.is_enabled:
                 self.hosts.append(server.ip)
-
+        strt = time.time()
         self.__create_conn()
+        if bucket is not None:
+            self.log.debug("SDK connection to bucket: {} took {}s".format(
+                bucket.name, time.time()-strt))
         SDKClient.sdk_connections += 1
 
     def __create_conn(self):

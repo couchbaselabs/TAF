@@ -16,15 +16,8 @@ def sleep(seconds, message=None, log_type="test"):
     log = logger.get(log_type)
     sleep_msg = "Sleep %s seconds. Reason: %s" % (seconds, message)
 
-    log.debug("Sleep is called from %s -> %s():L%s"
-              % (inspect.stack()[1][1],
-                 inspect.stack()[1][3],
-                 inspect.stack()[1][2]))
     if message:
         log.info(sleep_msg)
-    else:
-        log.debug(sleep_msg)
-
     time.sleep(seconds)
 
 

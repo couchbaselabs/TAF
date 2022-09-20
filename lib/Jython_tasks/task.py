@@ -220,6 +220,8 @@ class DeployDataplane(Task):
                 status = self.serverless_util.get_dataplane_deployment_status(
                     self.dataplane_id)
                 if status == "ready":
+                    self.log.debug("dataplane : {} is {}".
+                                   format(self.dataplane_id, status))
                     self.result = True
                     break
                 self.log.debug("dataplane deployment is in progress: {}".
@@ -3946,6 +3948,7 @@ class PrintBucketStats(Task):
 class DatabaseCreateTask(Task):
 
     def __init__(self, cluster, bucket_obj,
+                 tenant=None,
                  provider=AWS.__str__,
                  region=AWS.Region.US_EAST_1,
                  dataplane_id="",
@@ -3953,29 +3956,34 @@ class DatabaseCreateTask(Task):
         Task.__init__(self, "CreateServerlessDatabaseTask_{}_{}".format(bucket_obj.name, time.time()))
         self.cluster = cluster
         self.bucket_obj = bucket_obj
+        self.tenant = tenant or self.cluster.tenant
         self.dataplane_id = dataplane_id
         self.provider = provider
         self.region = region
         self.timeout = timeout
-        self.serverless_util = global_vars.serverless_util
+        if self.tenant.id == self.cluster.tenant.id:
+            self.serverless_util = global_vars.serverless_util
+        else:
+            self.serverless_util = ServerlessUtils(cluster, self.tenant)
 
     def call(self):
         self.result = True
         try:
             self.bucket_obj.name = self.serverless_util.create_serverless_database(
-                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
+                self.cluster.pod, self.tenant, self.bucket_obj.name,
                 self.provider, self.region,
                 self.bucket_obj.serverless.width,
                 self.bucket_obj.serverless.weight,
                 dataplane_id=self.dataplane_id)
             self.cluster.append_bucket(self.bucket_obj)
             state = self.serverless_util.is_database_ready(
-                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
+                self.cluster.pod, self.tenant, self.bucket_obj.name,
                 timeout=self.timeout)
-            if self.cluster.pod.TOKEN:
-                dp_id = self.serverless_util.get_database_dataplane_id(
-                    self.cluster.pod, self.bucket_obj.name)
-                self.bucket_obj.serverless.dataplane_id = dp_id
+            dp_id = self.serverless_util.get_database_dataplane_id(
+                self.cluster.pod, self.bucket_obj.name)
+            self.bucket_obj.serverless.dataplane_id = dp_id
+            self.log.info("Dataplane id for bucket {} is {}".format(
+                self.bucket_obj.name, dp_id))
             if state != "healthy":
                 self.log.critical("Database {} did not turned healthy".format(
                     self.bucket_obj.name))
@@ -3984,7 +3992,7 @@ class DatabaseCreateTask(Task):
                 return
             self.server = TestInputServer()
             self.srv = self.serverless_util.get_database_nebula_endpoint(
-                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
+                self.cluster.pod, self.tenant, self.bucket_obj.name)
             count = 20
             while count > 0:
                 records = Lookup("_couchbases._tcp.{}".format(self.srv), Type.SRV).run()
@@ -3992,13 +4000,13 @@ class DatabaseCreateTask(Task):
                     break
                 else:
                     self.log.critical("SRV resolutions of {} failed. Retrying...".format(self.srv))
-                    time.sleep(5)
+                    time.sleep(10)
                 count -= 1
                 if count == 0:
                     self.result = False
                     self.complete_task()
                     return
-            record = records[0]
+            record = random.choice(records)
             self.server.ip = str(record.getTarget()).rstrip(".")
             self.server.memcached_port = int(record.getPort())
             self.log.info("SRV {} is resolved to {}.".format(self.srv,
@@ -4022,11 +4030,8 @@ class DatabaseCreateTask(Task):
             self.server.rest_username = access
             self.server.rest_password = secret
             self.server.port = "18091"
-        except Exception as e:
-            self.result = False
-            self.log.critical(e)
-
-        if self.result:
+            self.log.info("Access/Secret for bucket {} is {}:{}".format(
+                self.bucket_obj.name, access, secret))
             nebula_class = common_lib.get_module(
                 "cluster_utils.cluster_ready_functions", "Nebula")
             nebula = nebula_class(self.srv, self.server)
@@ -4034,10 +4039,13 @@ class DatabaseCreateTask(Task):
             self.bucket_obj.serverless.nebula_endpoint = nebula.endpoint
             self.bucket_obj.serverless.dapi = \
                 self.serverless_util.get_database_DAPI(
-                    self.cluster.pod, self.cluster.tenant,
+                    self.cluster.pod, self.tenant,
                     self.bucket_obj.name)
             global_vars.bucket_util.update_bucket_nebula_servers(
                 self.cluster, self.bucket_obj)
+        except Exception as e:
+            self.result = False
+            self.log.critical(e)
 
 
 class MonitorServerlessDatabaseScaling(Task):

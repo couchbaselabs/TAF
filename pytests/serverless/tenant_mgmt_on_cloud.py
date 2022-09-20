@@ -134,7 +134,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.log.info("dataplane_id is %s" % dataplane_id)
             if dataplane_id not in dataplanes:
                 dataplanes[dataplane_id] = dict()
-                dataplanes[dataplane_id]["node"], \
+                _, dataplanes[dataplane_id]["node"], \
                     dataplanes[dataplane_id]["username"], \
                     dataplanes[dataplane_id]["password"] = \
                     self.serverless_util.bypass_dataplane(dataplane_id)
@@ -1216,7 +1216,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                                bucket.name)
         self.log.info("Bucket :: %s, Dataplane :: %s" % (bucket.name, dp_id))
         try:
-            host, u_name, pwd = self.serverless_util.bypass_dataplane(dp_id)
+            _, host, u_name, pwd = self.serverless_util.bypass_dataplane(dp_id)
             self.cluster.servers = \
                 self.cluster_util.construct_servers_from_master_details(
                     host, u_name, pwd)
@@ -1277,7 +1277,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.pod, self.cluster.buckets[0].name)
 
         self.log.info("Creating bypass for dataplane :: %s" % dp_id)
-        host, u_name, pwd = self.serverless_util.bypass_dataplane(dp_id)
+        _, host, u_name, pwd = self.serverless_util.bypass_dataplane(dp_id)
         self.cluster.servers = \
             self.cluster_util.construct_servers_from_master_details(
                 host, u_name, pwd)

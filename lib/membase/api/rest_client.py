@@ -1597,7 +1597,7 @@ class RestConnection(newRC):
                         'vb_replica_curr_items']
         return stat_dict
 
-    def get_fts_stats(self, index_name, bucket_name, stat_name):
+    def get_fts_stats(self, index_name=None, bucket_name=None, stat_name=None):
         """
         List of fts stats available as of 03/16/2017 -
         default:default_idx3:avg_queries_latency: 0,
@@ -1638,9 +1638,11 @@ class RestConnection(newRC):
         :param stat_name: any of the above
         :return:
         """
-        api = "{0}{1}".format(self.fts_baseUrl, 'api/nsstats')
+        api = "{0}{1}".format(self.ftsUrl, 'api/nsstats')
         status, content, header = self._http_request(api)
         json_parsed = json.loads(content)
+        if bucket_name is None or index_name is None:
+            return json_parsed
         try:
             return status, json_parsed[bucket_name + ':' + index_name + ':' + stat_name]
         except:
@@ -3577,6 +3579,14 @@ class Node(object):
         self.limits = None
         self.utilization = None
 
+    def __str__(self):
+        ip_str = "ip:{0} port:{1}".format(self.ip, self.port)
+        return ip_str
+
+    def __repr__(self):
+        ip_str = "ip:{0} port:{1}".format(self.ip, self.port)
+        return ip_str
+
 
 class AutoFailoverSettings(object):
     def __init__(self):
@@ -3668,16 +3678,16 @@ class RestParser(object):
             available_storage = parsed['availableStorage']
             for key in available_storage:
                 # let's assume there is only one disk in each node
-                dict_parsed = parsed['availableStorage']
-                if 'path' in dict_parsed and 'sizeKBytes' in dict_parsed \
-                        and 'usagePercent' in dict_parsed:
-                    disk_storage = NodeDiskStorage()
-                    disk_storage.path = dict_parsed['path']
-                    disk_storage.sizeKBytes = dict_parsed['sizeKBytes']
-                    disk_storage.type = key
-                    disk_storage.usagePercent = dict_parsed['usagePercent']
-                    node.availableStorage.append(disk_storage)
-                    self.test_log.info(disk_storage)
+                storage_list = available_storage[key]
+                for dict_parsed in storage_list:
+                    if 'path' in dict_parsed and 'sizeKBytes' in dict_parsed \
+                            and 'usagePercent' in dict_parsed:
+                        disk_storage = NodeDiskStorage()
+                        disk_storage.path = dict_parsed['path']
+                        disk_storage.sizeKBytes = dict_parsed['sizeKBytes']
+                        disk_storage.type = key
+                        disk_storage.usagePercent = dict_parsed['usagePercent']
+                        node.availableStorage.append(disk_storage)
 
         if 'storage' in parsed:
             storage = parsed['storage']
@@ -3703,6 +3713,14 @@ class RestParser(object):
 
         if "storageTotals" in parsed:
             storage_totals = parsed["storageTotals"]
+            if storage_totals.get("hdd"):
+                if storage_totals["hdd"].get("total"):
+                    hdd_bytes = storage_totals["hdd"]["total"]
+                    node.storageTotalDisk = hdd_bytes / (1024 * 1024)
+                if storage_totals["hdd"].get("used"):
+                    hdd_bytes = storage_totals["hdd"]["used"]
+                    node.storageUsedDisk = hdd_bytes / (1024 * 1024)
+
             if storage_totals.get("ram"):
                 if storage_totals["ram"].get("total"):
                     ram_kb = storage_totals["ram"]["total"]

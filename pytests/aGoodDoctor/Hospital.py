@@ -94,6 +94,7 @@ class Murphy(BaseTestCase, OPD):
         self.index_timeout = self.input.param("index_timeout", 86400)
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
                                                        True)
+        self.gtm = self.input.param("gtm", False)
         #######################################################################
         self.capella_run = self.input.param("capella_run", False)
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
@@ -264,13 +265,13 @@ class Murphy(BaseTestCase, OPD):
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
-        self.stop_stats = False
-        stat_th = threading.Thread(target=self.dump_magma_stats,
-                                   kwargs=dict(server=self.cluster.master,
-                                               bucket=self.cluster.buckets[0],
-                                               shard=0,
-                                               kvstore=0))
-        stat_th.start()
+        # self.stop_stats = False
+        # stat_th = threading.Thread(target=self.dump_magma_stats,
+        #                            kwargs=dict(server=self.cluster.master,
+        #                                        bucket=self.cluster.buckets[0],
+        #                                        shard=0,
+        #                                        kvstore=0))
+        # stat_th.start()
 
         self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
         perc = 100/len(self.doc_ops)
@@ -290,8 +291,8 @@ class Murphy(BaseTestCase, OPD):
             self.generate_docs()
             self.perform_load(validate_data=True)
             self.loop += 1
-        self.stop_stats = True
-        stat_th.join()
+        # self.stop_stats = True
+        # stat_th.join()
 
         # Starting the backup here.
         if self.backup_nodes > 0:

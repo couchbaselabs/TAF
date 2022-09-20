@@ -317,7 +317,7 @@ class Murphy(BaseTestCase, OPD):
 
         self.rebl_nodes = self.nodes_init
         self.max_rebl_nodes = self.input.param("max_rebl_nodes",
-                                               self.nodes_init + 5)
+                                               self.nodes_init + 6)
         self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
         perc = 100/len(self.doc_ops)
         self.expiry_perc = perc
@@ -333,7 +333,7 @@ class Murphy(BaseTestCase, OPD):
             self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             self.generate_docs()
             tasks = self.perform_load(wait_for_load=False)
-            self.rebl_nodes += 1
+            self.rebl_nodes += 3
             if self.rebl_nodes > self.max_rebl_nodes:
                 self.rebl_nodes = self.nodes_init
             config = self.rebalance_config(self.rebl_nodes)

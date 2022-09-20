@@ -43,8 +43,9 @@ class RestfulDAPITest(BaseTestCase):
                      Bucket.width: self.bucket_width or 1,
                      Bucket.weight: self.bucket_weight or 30
                      })
-            task = self.bucket_util.async_create_database(self.cluster, bucket,
-                                                          self.dataplane_id)
+            task = self.bucket_util.async_create_database(cluster=self.cluster,
+                                                          bucket=bucket,
+                                                          dataplane_id=self.dataplane_id)
             temp.append((task, bucket))
             self.sleep(1)
         for task, bucket in temp:

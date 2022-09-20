@@ -19,10 +19,11 @@ from org.xbill.DNS import Lookup, Type
 class CapellaUtils:
     log = logging.getLogger(__name__)
 
-    def __init__(self, cluster):
+    def __init__(self, cluster, tenant=None):
+        tenant = tenant or cluster.tenant
         self.capella_api = CapellaAPI(cluster.pod.url_public,
-                                      cluster.tenant.user,
-                                      cluster.tenant.pwd,
+                                      tenant.user,
+                                      tenant.pwd,
                                       cluster.pod.TOKEN)
 
     def create_serverless_dataplane(self, pod, config=dict()):
@@ -130,6 +131,9 @@ class CapellaUtils:
     def get_database_details(self, pod, tenant, database_id):
         resp = self.capella_api.get_serverless_db_info(tenant.id, tenant.project_id,
                                                        database_id)
+        if resp.status_code == 502:
+            self.log.critical("BAD GATEWAY ERROR: {}".format(resp.content))
+            self.get_database_details(pod, tenant, database_id)
         if resp.status_code != 200:
             raise Exception("Fetch database details failed: {}".
                             format(resp.content))
@@ -148,7 +152,7 @@ class CapellaUtils:
 
     def get_database_nebula_endpoint(self, pod, tenant, database_id):
         return self.get_database_details(pod, tenant,
-                                                 database_id)['connect']['srv']
+                                         database_id)['connect']['srv']
 
     def get_database_debug_info(self, pod, database_id):
         resp = self.capella_api.get_serverless_database_debugInfo(database_id)
@@ -190,6 +194,9 @@ class CapellaUtils:
     def generate_keys(self, pod, tenant, database_id):
         resp = self.capella_api.generate_keys(tenant.id, tenant.project_id,
                                               database_id)
+        if resp.status_code in [502, 503]:
+            self.log.critical(resp.content)
+            self.generate_keys(pod, tenant, database_id)
         if resp.status_code != 201:
             raise Exception("Create database keys failed: {}".
                             format(resp.content))
@@ -212,16 +219,25 @@ class CapellaUtils:
         :param dataplane_id:
         :return node_endpoint, username, password:
         """
-        resp = self.capella_api.get_access_to_serverless_dataplane_nodes(
-            dataplane_id)
-        CapellaUtils.log.info("bypass DN response:%s" % resp)
-        if resp.status_code != 200:
-            raise Exception("Bypass DN failed: %s" % resp.content)
-        data = json.loads(resp.content)["couchbaseCreds"]
-        data["srv"] = json.loads(resp.content)["srv"]
+        try:
+            resp = self.capella_api.get_access_to_serverless_dataplane_nodes(
+                dataplane_id)
+            if resp is None:
+                self.log.critical("Bypassing datapane failed!!!")
+                self.bypass_dataplane(dataplane_id)
+            if resp.status_code != 200:
+                raise Exception("Bypass DN failed: %s" % resp.content)
+            self.log.info("Response code: {}".format(resp.status_code))
+            self.log.info("Bypass content: {}".format(resp.content))
+            data = json.loads(resp.content)["couchbaseCreds"]
+            data["srv"] = json.loads(resp.content)["srv"]
 
-        records = Lookup("_couchbases._tcp.%s" % data["srv"], Type.SRV).run()
-        return str(records[0].getTarget()), data["username"], data["password"]
+            records = Lookup("_couchbases._tcp.%s" % data["srv"], Type.SRV).run()
+            return data["srv"], str(records[0].getTarget()), data["username"], data["password"]
+        except Exception as e:
+            self.log.critical("{}: Bypassing datapane failed!!! Retrying...".format(e))
+            time.sleep(10)
+            self.bypass_dataplane(dataplane_id)
 
     def get_dataplane_info(self, dataplane_id):
         resp = self.capella_api.get_serverless_dataplane_info(dataplane_id)
@@ -229,5 +245,23 @@ class CapellaUtils:
             CapellaUtils.log.critical("Fetch Dataplane info response:{}".
                                       format(resp.status_code))
             raise Exception("Fetch Dataplane info failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
+    def change_dataplane_cluster_specs(self, dataplane_id, specs):
+        resp = self.capella_api.modify_cluster_specs(dataplane_id, specs)
+        if resp.status_code != 202:
+            CapellaUtils.log.critical("Modifying Dataplane specs response:{}".
+                                      format(resp.status_code))
+            raise Exception("Modifying Dataplane specs failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
+    def get_scaling_records(self, dataplane_id, page=1, perPage=100):
+        resp = self.capella_api.get_all_scaling_records(dataplane_id, page, perPage)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Fetch scaling records failed:{}".
+                                      format(resp.status_code))
+            raise Exception("Fetch scaling records failed: {}".
                             format(resp.content))
         return json.loads(resp.content)

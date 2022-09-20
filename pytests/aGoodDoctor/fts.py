@@ -65,7 +65,7 @@ class DoctorFTS:
             "planParams": {
                 "maxPartitionsPerPIndex": 1024,
                 "indexPartitions": 1,
-                "numReplicas": 1,
+                "numReplicas": 1
              },
             "params": {
                 "doc_config": {

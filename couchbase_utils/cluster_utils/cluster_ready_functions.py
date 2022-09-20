@@ -108,17 +108,17 @@ class CBCluster:
         self.nodes_in_cluster = list()
 
         for server in servers:
-            if "Data" in server.services:
+            if "Data" in server.services or "kv" in server.services:
                 self.kv_nodes.append(server)
-            if "Query" in server.services:
+            if "Query" in server.services or "n1ql" in server.services:
                 self.query_nodes.append(server)
-            if "Index" in server.services:
+            if "Index" in server.services or "index" in server.services:
                 self.index_nodes.append(server)
-            if "Eventing" in server.services:
+            if "Eventing" in server.services or "eventing" in server.services:
                 self.eventing_nodes.append(server)
-            if "Analytics" in server.services:
+            if "Analytics" in server.services or "cbas" in server.services:
                 self.cbas_nodes.append(server)
-            if "FTS" in server.services:
+            if "FTS" in server.services or "fts" in server.services:
                 self.fts_nodes.append(server)
             self.nodes_in_cluster.append(server)
         self.master = self.kv_nodes[0]
@@ -138,6 +138,14 @@ class CBCluster:
         self.master = [server for server in self.servers
                        if server.ip == master_ip][0]
         return status, content
+
+
+class Dataplane(CBCluster):
+    def __init__(self, id, srv, user, pwd):
+        self.id = id
+        self.srv = srv
+        self.user = user
+        self.pwd = pwd
 
 
 class ClusterUtils:

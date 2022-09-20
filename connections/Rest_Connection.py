@@ -144,7 +144,7 @@ class RestConnection(object):
             self.type = serverInfo.type
         except:
             self.type = "default"
-        if self.type == "serverless" or self.type == "nebula":
+        if self.type != "default" or self.type == "nebula":
             nodes_self_url = self.baseUrl + "pools/default"
         else:
             nodes_self_url = self.baseUrl + 'nodes/self'
@@ -205,6 +205,34 @@ class RestConnection(object):
             if val.startswith("Basic "):
                 return "auth: " + base64.decodestring(val[6:])
         return ""
+
+    def urllib_request(self, api, method='GET', headers=None,
+                       params={}, timeout=300, verify=False):
+        session = requests.Session()
+        headers = headers or self.get_headers_for_content_type_json()
+        params = json.dumps(params)
+        try:
+            if method == "GET":
+                resp = session.get(api, params=params, headers=headers,
+                                   timeout=timeout, verify=verify)
+            elif method == "POST":
+                resp = session.post(api, data=params, headers=headers,
+                                    timeout=timeout, verify=verify)
+            elif method == "DELETE":
+                resp = session.delete(api, data=params, headers=headers,
+                                      timeout=timeout, verify=verify)
+            elif method == "PUT":
+                resp = session.put(api, data=params, headers=headers,
+                                   timeout=timeout, verify=verify)
+            return resp
+        except requests.exceptions.HTTPError as errh:
+            self.log.error("HTTP Error {0}".format(errh))
+        except requests.exceptions.ConnectionError as errc:
+            self.log.error("Error Connecting {0}".format(errc))
+        except requests.exceptions.Timeout as errt:
+            self.log.error("Timeout Error: {0}".format(errt))
+        except requests.exceptions.RequestException as err:
+            self.log.error("Something else: {0}".format(err))
 
     def _urllib_request(self, api, method='GET', params='', headers=None,
                         timeout=300, verify=False, session=None):
@@ -350,7 +378,6 @@ class RestConnection(object):
                 'Accept': '*/*'}
 
     def get_headers_for_content_type_json(self):
-        authorization = base64.encodestring('%s:%s'
-                                            % (self.username, self.password)).strip("\n")
+        authorization = base64.b64encode('{}:{}'.format(self.username, self.password).encode()).decode()
         return {'Content-type': 'application/json',
                 'Authorization': 'Basic %s' % authorization}
