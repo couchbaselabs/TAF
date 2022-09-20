@@ -19,6 +19,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.data_spec_name = self.input.param("data_spec_name", None)
         self.negative_case = self.input.param("negative_case", False)
         self.bucket_util.delete_all_buckets(self.cluster)
+        self.nodes_in = self.input.param("nodes_in", 0)
+        self.nodes_out = self.input.param("nodes_out", 0)
         if self.spec_name:
             CollectionBase.deploy_buckets_from_spec_file(self)
         elif self.input.param("with_default_bucket", False):
@@ -344,8 +346,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         ###
 
         def data_load():
-            doc_loading_spec_name = \
-                "volume_test_load_with_CRUD_on_collections"
+            doc_loading_spec_name = "initial_load"
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
                 doc_loading_spec_name)
             tasks = self.bucket_util.run_scenario_from_spec(self.task,
@@ -372,9 +373,16 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         scale = self.input.param("bucket_scale", "all")
         data_load_after_rebalance = self.input.param(
             "data_load_after_rebalance", True)
+        update_during_rebalance = self.input.param(
+            "update_during_rebalance", False)
         async_load = self.input.param("async_load", False)
-
+        nodes_in = self.cluster.servers[
+                   self.nodes_init:self.nodes_init + self.nodes_in]
+        nodes_out = self.cluster.servers[self.nodes_init -
+                                         self.nodes_out:self.nodes_init]
         buckets_to_consider = buckets = self.cluster.buckets
+        task = None
+        rebalance_task_during_update = None
         CollectionBase.create_sdk_clients(
             self.task_manager.number_of_threads,
             self.cluster.master,
@@ -397,6 +405,11 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
         if async_load:
             task = data_load()
+        if update_during_rebalance:
+            rebalance_task_during_update = self.task.async_rebalance(
+                self.cluster, nodes_in, nodes_out,
+                retry_get_process_num=3000)
+            self.sleep(10, "Wait for rebalance to make progress")
         for bucket in buckets_to_consider:
             try:
                 self.bucket_util.update_bucket_property(self.cluster.master, bucket,
@@ -412,7 +425,12 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                     raise e
         if self.negative_case:
             for bucket in buckets_to_consider:
-               self.assertTrue(bucket.serverless.width != self.desired_width)
+                self.assertTrue(bucket.serverless.width != self.desired_width)
+                self.assertTrue(bucket.serverless.weight != self.desired_weight)
+        if update_during_rebalance:
+            self.task_manager.get_task_result(rebalance_task_during_update)
+            self.assertTrue(rebalance_task_during_update.result,
+                            "Rebalance Failed")
         rebalance_task = self.task.async_rebalance(
             self.cluster, [], [],
             retry_get_process_num=3000)
