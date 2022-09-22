@@ -752,6 +752,19 @@ class RestConnection(newRC):
                 replications.append(item)
         return replications
 
+    def get_utilisation_map(self):
+        util_map = dict()
+        content = self.cluster_status()
+        for node in content["nodes"]:
+            util_map[node["otpNode"]] = dict()
+            util_map[node["otpNode"]]["memory"] = node["utilization"][
+                "kv"]["memory"]
+            util_map[node["otpNode"]]["buckets"] = node["utilization"][
+                "kv"]["buckets"]
+            util_map[node["otpNode"]]["weight"] = node["utilization"][
+                "kv"]["weight"]
+        return util_map
+
     def remove_all_replications(self):
         replications = self.get_replications()
         for replication in replications:
@@ -975,7 +988,8 @@ class RestConnection(newRC):
         return status
 
     def rebalance(self, otpNodes=[], ejectedNodes=[],
-                  deltaRecoveryBuckets=None):
+                  deltaRecoveryBuckets=None,
+                  defrag_options=None):
         knownNodes = ','.join(otpNodes)
         ejectedNodesString = ','.join(ejectedNodes)
         if deltaRecoveryBuckets is None:
@@ -990,6 +1004,9 @@ class RestConnection(newRC):
                       'deltaRecoveryBuckets': deltaRecoveryBuckets,
                       'user': self.username,
                       'password': self.password}
+        if defrag_options:
+            params['defragmentZones'] = defrag_options["defragmentZones"]
+            params['knownNodes'] = defrag_options["knownNodes"]
         self.test_log.debug('Rebalance params: {0}'.format(params))
         params = urllib.urlencode(params)
         api = self.baseUrl + "controller/rebalance"

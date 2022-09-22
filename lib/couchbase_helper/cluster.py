@@ -519,7 +519,8 @@ class ServerTasks(object):
                         use_hostnames=False, services=None,
                         check_vbucket_shuffling=True,
                         retry_get_process_num=25,
-                        add_nodes_server_groups=None):
+                        add_nodes_server_groups=None,
+                        defrag_options=None):
         """
         Asynchronously rebalances a cluster
 
@@ -575,7 +576,8 @@ class ServerTasks(object):
                 services=services,
                 check_vbucket_shuffling=check_vbucket_shuffling,
                 retry_get_process_num=retry_get_process_num,
-                add_nodes_server_groups=add_nodes_server_groups)
+                add_nodes_server_groups=add_nodes_server_groups,
+                defrag_options=defrag_options)
         self.jython_task_manager.add_new_task(_task)
         return _task
 

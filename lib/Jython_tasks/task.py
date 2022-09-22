@@ -328,7 +328,8 @@ class RebalanceTask(Task):
     def __init__(self, cluster, to_add=[], to_remove=[],
                  use_hostnames=False, services=None,
                  check_vbucket_shuffling=True,
-                 retry_get_process_num=25, add_nodes_server_groups=None):
+                 retry_get_process_num=25, add_nodes_server_groups=None,
+                 defrag_options=None):
         super(RebalanceTask, self).__init__(
             "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
             .format(",".join([node.ip for node in to_add]),
@@ -345,6 +346,7 @@ class RebalanceTask(Task):
         self.result = False
         self.retry_get_process_num = retry_get_process_num
         self.server_groups_to_add = dict()
+        self.defrag_options = None
 
         if isinstance(add_nodes_server_groups, dict):
             """
@@ -391,6 +393,17 @@ class RebalanceTask(Task):
         self.previous_progress = 0
         self.old_vbuckets = dict()
         self.thread_used = "Rebalance_task"
+        """
+        defrag_options :
+        { "defragmentZones" : [AZ1, AZ2]}
+        this will target only AZ1 and AZ2 while performing re-balance 
+        de-fragment
+        """
+        if defrag_options:
+            self.defrag_options = dict()
+            self.defrag_options["defragmentZones"] = ",".\
+                    join(defrag_options["defragmentZones"])
+            self.defrag_options["knownNodesIP"] = defrag_options["knownNodes"]
 
         cluster_stats = self.rest.get_cluster_stats()
         self.table = TableView(self.test_log.info)
@@ -610,6 +623,13 @@ class RebalanceTask(Task):
 
     def start_rebalance(self):
         nodes = self.rest.node_statuses()
+        if self.defrag_options:
+            self.defrag_options["knownNodes"] = []
+            for node in nodes:
+                if node.ip in self.defrag_options["knownNodesIP"]:
+                    self.defrag_options["knownNodes"].append(node.id)
+            self.defrag_options["knownNodes"] = ",". \
+                join(self.defrag_options["knownNodes"])
         remove_node_msg = "Removing node {0}:{1} from cluster"
         ejected_nodes = list()
         for server in self.to_remove:
@@ -633,7 +653,7 @@ class RebalanceTask(Task):
                                                                    node.port))
 
         self.rest.rebalance(otpNodes=[node.id for node in nodes],
-                            ejectedNodes=ejected_nodes)
+                            ejectedNodes=ejected_nodes, defrag_options=self.defrag_options)
         self.start_time = time.time()
 
     def check(self):
