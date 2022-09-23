@@ -201,4 +201,5 @@ class CapellaUtils:
             raise Exception("Bypass DN failed: {}".
                             format(resp.content))
         data = json.loads(resp.content)["couchbaseCreds"]
+        data["srv"] = json.loads(resp.content)["srv"]
         return data["username"], data["password"], data["srv"]

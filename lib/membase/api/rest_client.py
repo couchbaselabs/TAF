@@ -3367,6 +3367,12 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api, 'POST', params=params)
         return status, content
 
+    def get_prometheus_metrics(self):
+        url = 'metrics'
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'GET')
+        return status, content
+
     def load_trusted_CAs(self):
         """
         Instructs the cluster to load trusted CAs(.pem files) from the node's inbox/CA folder
