@@ -1,5 +1,6 @@
 from BucketLib.bucket import Bucket
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
+from Jython_tasks.task import MonitorServerlessDatabaseScaling
 from cluster_utils.cluster_ready_functions import Nebula
 from serverlessbasetestcase import OnCloudBaseTest
 from Cb_constants import CbServer
@@ -225,27 +226,21 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
     def test_update_bucket_width(self):
         def verify_bucket_scaling():
-            self.sleep(120, "Waiting for bucket to complete scaling")
             for t_key in scenario_dict["spec"].keys():
                 t_bucket = name_key_map[t_key]
-                srv = self.serverless_util.get_database_nebula_endpoint(
-                    self.cluster.pod, self.cluster.tenant, t_bucket.name)
-                self.bucket_util.update_bucket_nebula_servers(
-                    self.cluster, Nebula(srv, t_bucket.servers[0]),
-                    t_bucket)
                 if "update_spec" in scenario_dict["spec"][t_key]:
-                    self.assertTrue(
-                        len(self.cluster.bucketDNNodes[t_bucket]) == (
-                                scenario_dict["spec"][t_key]["update_spec"]
-                                ["overRide"]["width"]
-                                * CbServer.Serverless.KV_SubCluster_Size),
-                        "Bucket scaling failed")
+                    node_len = \
+                        scenario_dict["spec"][t_key][
+                            "update_spec"]["overRide"]["width"] \
+                        * CbServer.Serverless.KV_SubCluster_Size
                 else:
-                    self.assertTrue(
-                        len(self.cluster.bucketDNNodes[t_bucket]) == (
-                            scenario_dict["spec"][t_key]["width"]
-                            * CbServer.Serverless.KV_SubCluster_Size),
-                        "Bucket scaling failed")
+                    node_len = scenario_dict["spec"][t_key]["width"] \
+                        * CbServer.Serverless.KV_SubCluster_Size
+                task = MonitorServerlessDatabaseScaling(
+                    self.cluster, t_bucket, nebula_ref=Nebula,
+                    desired_node_len=node_len, timeout=60)
+                self.task_manager.add_new_task(task)
+                self.task_manager.get_task_result(task)
 
         index = 0
         name_key_map = dict()

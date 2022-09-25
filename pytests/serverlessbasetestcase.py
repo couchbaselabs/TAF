@@ -92,6 +92,10 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
         self.serverless_util = ServerlessUtils(self.cluster)
+
+        # Setting global_vars for future reference
+        global_vars.cluster_util = self.cluster_util
+        global_vars.bucket_util = self.bucket_util
         global_vars.serverless_util = self.serverless_util
 
     def tearDown(self):

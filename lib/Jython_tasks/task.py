@@ -55,10 +55,9 @@ from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from capella_utils.serverless import CapellaUtils as ServerlessUtils
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
-# from cluster_utils.cluster_ready_functions import CBCluster
-from org.xbill.DNS import Lookup, Type
 from constants.cloud_constants.capella_constants import AWS
-# from cluster_utils.cluster_ready_functions import Nebula
+
+from org.xbill.DNS import Lookup, Type
 
 
 class Task(Callable):
@@ -3952,6 +3951,73 @@ class DatabaseCreateTask(Task):
         except Exception as e:
             self.result = False
             self.log.critical(e)
+
+
+class MonitorServerlessDatabaseScaling(Task):
+    def __init__(self, cluster, bucket, nebula_ref,
+                 desired_node_len=CbServer.Serverless.KV_SubCluster_Size,
+                 timeout=60):
+        """
+        :param cluster: Cluster object
+        :param bucket: Bucket object
+        :param nebula_ref: Reference to Nebula class to create object
+        :param desired_node_len: Desired length the bucket is going to scale
+        :param timeout: Max time (seconds) to weight between each state change
+        """
+        super(MonitorServerlessDatabaseScaling, self).__init__(
+            "MonitorDBScaling_%s" % bucket.name)
+        self.cluster = cluster
+        self.bucket = bucket
+        self.desired_node_len = desired_node_len
+        self.timeout = timeout
+        self.state = "unknown"
+        self.nebula = nebula_ref
+        self.serverless_util = global_vars.serverless_util
+        self.test_log.info("%s - Monitor scaling to %s nodes"
+                           % (bucket.name, desired_node_len))
+
+    def call(self):
+        s_index = 0
+        states = ["rebalancing", "healthy"]
+        len_states = len(states)
+        self.start_task()
+        timeout = self.timeout
+        while timeout > 0 and s_index < len_states:
+            db_info = json.loads(
+                self.serverless_util.capella_api.get_database_debug_info(
+                    self.bucket.name).content)
+            curr_state = db_info["dataplane"]["couchbase"]["state"]
+            if curr_state != self.state:
+                self.log.critical("DB %s state change: %s --> %s"
+                                  % (self.bucket.name, self.state, curr_state))
+                self.state = curr_state
+                # Reset timeout after state change
+                timeout = self.timeout
+                # Track known states
+                if curr_state == states[s_index]:
+                    s_index += 1
+            self.sleep(0.5)
+            timeout -= 1
+
+        self.log.debug("Fetching SRV records for %s" % self.bucket.name)
+        srv = self.serverless_util.get_database_nebula_endpoint(
+            self.cluster.pod, self.cluster.tenant, self.bucket.name)
+        self.log.debug("Updating nebula servers for %s" % self.bucket.name)
+        global_vars.bucket_util.update_bucket_nebula_servers(
+            self.cluster, self.nebula(srv, self.bucket.servers[0]),
+            self.bucket)
+        if len(self.cluster.bucketDNNodes[self.bucket]) \
+                == self.desired_node_len:
+            self.result = True
+        else:
+            self.test_log.error(
+                "%s - Expected node_len %s != %s actual"
+                % (self.bucket.name, self.desired_node_len,
+                   len(self.cluster.bucketDNNodes[self.bucket])))
+        self.complete_task()
+        if self.result is False:
+            self.set_exception(
+                Exception("Bucket %s scaling failed" % self.bucket.name))
 
 
 class BucketCreateTask(Task):
