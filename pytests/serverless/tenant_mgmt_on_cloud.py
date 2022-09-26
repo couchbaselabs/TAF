@@ -6,8 +6,9 @@ from serverlessbasetestcase import OnCloudBaseTest
 from Cb_constants import CbServer
 from capellaAPI.capella.serverless.CapellaAPI import CapellaAPI
 
-from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.docgen import DocumentGenerator
+from com.couchbase.test.sdk import Server
+from com.couchbase.test.taskmanager import TaskManager
 
 from java.util.concurrent import ExecutionException
 
@@ -21,6 +22,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.db_name = "TAF-TenantMgmtOnCloud"
 
     def tearDown(self):
+        if self.sdk_client_pool:
+            self.sdk_client_pool.shutdown()
         super(TenantMgmtOnCloud, self).tearDown()
 
     def __get_width_scenarios(self, target_scenario):
@@ -142,6 +145,24 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.__create_database()
 
         loader_map = dict()
+        req_clients_per_bucket = 1
+
+        # Create sdk_client_pool
+        if self.sdk_client_pool:
+            self.sdk_client_pool = \
+                self.bucket_util.initialize_java_sdk_client_pool()
+
+            for bucket in self.cluster.buckets:
+                nebula = bucket.serverless.nebula_endpoint
+                self.log.info("Using Nebula endpoint %s" % nebula.srv)
+                server = Server(nebula.srv, nebula.port,
+                                nebula.rest_username,
+                                nebula.rest_password,
+                                str(nebula.memcached_port))
+                self.sdk_client_pool.create_clients(
+                    bucket.name, server, req_clients_per_bucket)
+            self.sleep(5, "Wait for SDK client pool to warmup")
+
         for bucket in self.cluster.buckets:
             for scope in bucket.scopes.keys():
                 for collection in bucket.scopes[scope].collections.keys():
@@ -161,12 +182,13 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         DocLoaderUtils.perform_doc_loading(
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
-            async_load=False, validate_results=False)
+            async_load=False, validate_results=False,
+            sdk_client_pool=self.sdk_client_pool)
         result = DocLoaderUtils.data_validation(
             self.doc_loading_tm, loader_map, self.cluster,
             buckets=self.cluster.buckets, doc_ops=["create"],
             process_concurrency=self.process_concurrency,
-            ops_rate=self.ops_rate)
+            ops_rate=self.ops_rate, sdk_client_pool=self.sdk_client_pool)
         self.assertTrue(result, "Data validation failed")
 
         new_buckets = list()

@@ -80,6 +80,7 @@ from com.couchbase.test.docgen import \
 from com.couchbase.test.loadgen import WorkLoadGenerate
 from com.couchbase.test.sdk import Server
 from com.couchbase.test.sdk import SDKClient as NewSDKClient
+from com.couchbase.test.sdk import SDKClientPool
 from couchbase.test.docgen import DRConstants
 
 from java.util import HashMap
@@ -924,18 +925,22 @@ class DocLoaderUtils(object):
         return ws
 
     @staticmethod
+    def initialize_java_sdk_client_pool():
+        return SDKClientPool()
+
+    @staticmethod
     def perform_doc_loading(task_manager, loader_map, cluster, buckets=None,
                             durability_level=Bucket.DurabilityLevel.NONE,
                             maxttl=0, ttl_time_unit="seconds",
                             process_concurrency=1,
                             track_failures=True,
                             async_load=True, validate_results=False,
-                            retries=0):
+                            retries=0, sdk_client_pool=None):
         log = DocLoaderUtils.log
-        master = None
+        master = client = None
         if buckets is None:
             buckets = cluster.buckets
-        if cluster.master:
+        if sdk_client_pool is None and cluster.master:
             master = Server(cluster.master.ip, cluster.master.port,
                             cluster.master.rest_username,
                             cluster.master.rest_password,
@@ -943,7 +948,9 @@ class DocLoaderUtils(object):
         tasks = list()
         while process_concurrency > 0:
             for bucket in buckets:
-                if bucket.serverless and bucket.serverless.nebula_endpoint:
+                if sdk_client_pool is None \
+                        and bucket.serverless \
+                        and bucket.serverless.nebula_endpoint:
                     nebula = bucket.serverless.nebula_endpoint
                     log.info("Using Nebula endpoint %s" % nebula.srv)
                     master = Server(nebula.srv, nebula.port,
@@ -954,18 +961,27 @@ class DocLoaderUtils(object):
                     if scope == CbServer.system_scope:
                         continue
                     for collection in bucket.scopes[scope].collections.keys():
-                        client = NewSDKClient(master, bucket.name, scope,
-                                              collection)
-                        client.initialiseSDK()
-                        sleep(1, "Wait for SDK to warmup")
                         task_name = "Loader_%s_%s_%s_%s_%s" \
                                     % (bucket.name, scope, collection,
                                        process_concurrency, "%s" % time())
-                        task = WorkLoadGenerate(
-                            task_name,
-                            loader_map[bucket.name+scope+collection],
-                            client, durability_level, maxttl, ttl_time_unit,
-                            track_failures, retries)
+                        if sdk_client_pool:
+                            task = WorkLoadGenerate(
+                                task_name,
+                                loader_map[bucket.name + scope + collection],
+                                sdk_client_pool, durability_level, maxttl,
+                                ttl_time_unit, track_failures, retries)
+                            task.set_collection_for_load(
+                                bucket.name, scope, collection)
+                        else:
+                            client = NewSDKClient(master, bucket.name,
+                                                  scope, collection)
+                            client.initialiseSDK()
+                            sleep(1, "Wait for SDK to warmup")
+                            task = WorkLoadGenerate(
+                                task_name,
+                                loader_map[bucket.name + scope + collection],
+                                client, durability_level, maxttl, ttl_time_unit,
+                                track_failures, retries)
                         tasks.append(task)
                         task_manager.submit(task)
                         process_concurrency -= 1
@@ -1026,7 +1042,7 @@ class DocLoaderUtils(object):
                         buckets=None, doc_ops=None,
                         process_concurrency=1, ops_rate=100,
                         max_ttl=0, ttl_timeunit="seconds",
-                        track_failures=True):
+                        track_failures=True, sdk_client_pool=None):
         cmd = dict()
         validation_map = dict()
         master = None
@@ -1034,7 +1050,7 @@ class DocLoaderUtils(object):
         buckets = cluster.buckets if buckets is None else buckets
         log = DocLoaderUtils.log
         log.info("Validating Active/Replica Docs")
-        if cluster.master:
+        if sdk_client_pool is None and cluster.master:
             master = Server(cluster.master.ip, cluster.master.port,
                             cluster.master.rest_username,
                             cluster.master.rest_password,
@@ -1082,7 +1098,9 @@ class DocLoaderUtils(object):
         tasks = list()
         while process_concurrency > 0:
             for bucket in buckets:
-                if bucket.serverless and bucket.serverless.nebula_endpoint:
+                if sdk_client_pool is None \
+                        and bucket.serverless \
+                        and bucket.serverless.nebula_endpoint:
                     nebula = bucket.serverless.nebula_endpoint
                     DocLoaderUtils.log.info("Nebula endpoint: %s" % nebula.srv)
                     master = Server(nebula.srv, nebula.port,
@@ -1099,18 +1117,29 @@ class DocLoaderUtils(object):
                                     DocLoading.Bucket.DocOps.UPDATE,
                                     DocLoading.Bucket.DocOps.DELETE]:
                                 continue
-                            client = NewSDKClient(master, bucket.name, scope,
-                                                  collection)
-                            client.initialiseSDK()
-                            sleep(1, "Wait for SDK to warmup")
                             task_name = "Validate_%s_%s_%s_%s_%s_%s" \
                                         % (bucket.name, scope, collection,
                                            op_type, str(process_concurrency),
                                            time.time())
-                            task = WorkLoadGenerate(task_name, validation_map[bucket.name+scope+collection+op_type],
-                                                    client, "NONE",
-                                                    max_ttl, ttl_timeunit,
-                                                    track_failures, 0)
+                            if sdk_client_pool:
+                                task = WorkLoadGenerate(
+                                    task_name,
+                                    validation_map[
+                                        bucket.name + scope + collection + op_type],
+                                    sdk_client_pool, "NONE",
+                                    max_ttl, ttl_timeunit,
+                                    track_failures, 0)
+                                task.set_collection_for_load(bucket.name, scope,
+                                                             collection)
+                            else:
+                                client = NewSDKClient(master, bucket.name, scope,
+                                                      collection)
+                                client.initialiseSDK()
+                                sleep(1, "Wait for SDK to warmup")
+                                task = WorkLoadGenerate(task_name, validation_map[bucket.name+scope+collection+op_type],
+                                                        client, "NONE",
+                                                        max_ttl, ttl_timeunit,
+                                                        track_failures, 0)
                             task_manager.submit(task)
                             tasks.append(task)
                             process_concurrency -= 1

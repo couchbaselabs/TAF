@@ -40,13 +40,21 @@ public class SDKClient {
             .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
             .ioConfig(IoConfig.enableDnsSrv(true))
             .build();
-    
+
     public SDKClient(Server master, String bucket, String scope, String collection) {
         super();
         this.master = master;
         this.bucket = bucket;
         this.scope = scope;
         this.collection = collection;
+    }
+
+    public SDKClient(Server master, String bucket) {
+        super();
+        this.master = master;
+        this.bucket = bucket;
+        this.scope = "_default";
+        this.collection = "_default";
     }
 
     public SDKClient() {
@@ -89,7 +97,9 @@ public class SDKClient {
         this.bucketObj = this.cluster.bucket(bucket);
     }
 
-    private void selectCollection(String scope, String collection) {
+    public void selectCollection(String scope, String collection) {
         this.connection = this.bucketObj.scope(scope).collection(collection);
+        this.scope = scope;
+        this.collection = collection;
     }
 }

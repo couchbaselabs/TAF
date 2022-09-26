@@ -27,6 +27,7 @@ import com.couchbase.test.docgen.DocType.Person;
 import com.couchbase.test.docgen.DocumentGenerator;
 import com.couchbase.test.sdk.DocOps;
 import com.couchbase.test.sdk.SDKClient;
+import com.couchbase.test.sdk.SDKClientPool;
 import com.couchbase.test.taskmanager.Task;
 
 import com.couchbase.test.sdk.Result;
@@ -49,6 +50,10 @@ public class WorkLoadGenerate extends Task{
     public InsertOptions setOptions;
     public RemoveOptions removeOptions;
     public GetOptions getOptions;
+    public SDKClientPool sdkClientPool;
+    public String bucket_name;
+    public String scope = "_default";
+    public String collection = "_default";
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability) {
         super(taskName);
@@ -58,11 +63,33 @@ public class WorkLoadGenerate extends Task{
         this.durability = durability;
     }
 
-    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability, int exp, String exp_unit, boolean trackFailures, int retryTimes) {
+    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClientPool client_pool, String durability) {
+        super(taskName);
+        this.dg = dg;
+        this.docops = new DocOps();
+        this.sdkClientPool = client_pool;
+        this.durability = durability;
+    }
+
+    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability,
+            int exp, String exp_unit, boolean trackFailures, int retryTimes) {
         super(taskName);
         this.dg = dg;
         this.docops = new DocOps();
         this.sdk = client;
+        this.durability = durability;
+        this.trackFailures = trackFailures;
+        this.retryTimes = retryTimes;
+        this.exp = exp;
+        this.exp_unit = exp_unit;
+    }
+
+    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClientPool client_pool, String durability,
+            int exp, String exp_unit, boolean trackFailures, int retryTimes) {
+        super(taskName);
+        this.dg = dg;
+        this.docops = new DocOps();
+        this.sdkClientPool = client_pool;
         this.durability = durability;
         this.trackFailures = trackFailures;
         this.retryTimes = retryTimes;
@@ -82,6 +109,26 @@ public class WorkLoadGenerate extends Task{
         this.exp = exp;
         this.exp_unit = exp_unit;
         this.retryStrategy = retryStrategy;
+    }
+
+    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClientPool client_pool, String durability,
+            int exp, String exp_unit, boolean trackFailures, int retryTimes, String retryStrategy) {
+        super(taskName);
+        this.dg = dg;
+        this.docops = new DocOps();
+        this.sdkClientPool = client_pool;
+        this.durability = durability;
+        this.trackFailures = trackFailures;
+        this.retryTimes = retryTimes;
+        this.exp = exp;
+        this.exp_unit = exp_unit;
+        this.retryStrategy = retryStrategy;
+    }
+
+    public void set_collection_for_load(String bucket_name, String scope, String collection) {
+        this.bucket_name = bucket_name;
+        this.scope = scope;
+        this.collection = collection;
     }
 
     @Override
@@ -115,6 +162,9 @@ public class WorkLoadGenerate extends Task{
                 .retryStrategy(this.dg.ws.retryStrategy);
         int ops = 0;
         boolean flag = false;
+        if (this.sdkClientPool != null)
+            this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
+
         Instant trackFailureTime_start = Instant.now();
         while(true) {
             Instant trackFailureTime_end = Instant.now();
@@ -200,7 +250,10 @@ public class WorkLoadGenerate extends Task{
                                         System.out.println("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
                                         System.out.println("Actual Value - " + a);
                                         System.out.println("Expected Value - " + b);
-                                        this.sdk.disconnectCluster();
+                                        if(this.sdkClientPool != null)
+                                            this.sdkClientPool.release_client(this.sdk);
+                                        else
+                                            this.sdk.disconnectCluster();
                                         System.out.println(this.taskName + " is completed!");
                                         return;
                                     }
@@ -208,7 +261,10 @@ public class WorkLoadGenerate extends Task{
                                     System.out.println("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
                                     System.out.println("Actual Value - " + a);
                                     System.out.println("Expected Value - " + b);
-                                    this.sdk.disconnectCluster();
+                                    if(this.sdkClientPool != null)
+                                        this.sdkClientPool.release_client(this.sdk);
+                                    else
+                                        this.sdk.disconnectCluster();
                                     System.out.println(this.taskName + " is completed!");
                                     return;
                                 }
@@ -277,5 +333,10 @@ public class WorkLoadGenerate extends Task{
                     }
                 }
             }
+
+        if(this.sdkClientPool != null)
+            this.sdkClientPool.release_client(this.sdk);
+        else
+            this.sdk.disconnectCluster();
     }
 }
