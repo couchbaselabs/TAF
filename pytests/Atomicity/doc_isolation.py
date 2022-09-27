@@ -3,12 +3,12 @@ from threading import Thread
 
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
+from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
+from sdk_exceptions import SDKException
 
 import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from reactor.util.function import Tuples
-
-from sdk_exceptions import SDKException
 
 
 class IsolationDocTest(ClusterSetup):
@@ -26,6 +26,9 @@ class IsolationDocTest(ClusterSetup):
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Set indexer storage
+        RestConnection(self.cluster.master).set_indexer_storage_mode()
 
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
