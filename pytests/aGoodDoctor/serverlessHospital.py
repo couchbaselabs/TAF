@@ -112,19 +112,11 @@ class Murphy(BaseTestCase, OPD):
                 task = self.bucket_util.async_create_database(self.cluster, bucket,
                                                               self.dataplane_id)
                 temp.append((task, bucket))
-                self.cluster.buckets.append(bucket)
                 self.sleep(1)
             for task, bucket in temp:
                 self.task_manager.get_task_result(task)
                 self.assertTrue(task.result, "Database deployment failed: {}".
                                 format(bucket.name))
-                nebula = Nebula(task.srv, task.server)
-                self.log.info("Populate Nebula object done!!")
-                bucket.serverless.nebula_endpoint = nebula.endpoint
-                bucket.serverless.dapi = \
-                    self.serverless_util.get_database_DAPI(self.pod, self.tenant,
-                                                           bucket.name)
-                self.bucket_util.update_bucket_nebula_servers(self.cluster, nebula, bucket)
 
             self.buckets = self.cluster.buckets
             self.create_required_collections(self.cluster, self.num_scopes,

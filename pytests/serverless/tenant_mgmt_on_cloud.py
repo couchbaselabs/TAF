@@ -259,7 +259,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     node_len = scenario_dict["spec"][t_key]["width"] \
                         * CbServer.Serverless.KV_SubCluster_Size
                 task = MonitorServerlessDatabaseScaling(
-                    self.cluster, t_bucket, nebula_ref=Nebula,
+                    self.cluster, t_bucket,
                     desired_node_len=node_len, timeout=60)
                 self.task_manager.add_new_task(task)
                 self.task_manager.get_task_result(task)

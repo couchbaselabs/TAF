@@ -22,6 +22,7 @@ from java.lang import Thread
 from java.util.concurrent import Callable
 from reactor.util.function import Tuples
 
+import common_lib
 import global_vars
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
@@ -3991,15 +3992,27 @@ class DatabaseCreateTask(Task):
             self.result = False
             self.log.critical(e)
 
+        if self.result:
+            nebula_class = common_lib.get_module(
+                "cluster_utils.cluster_ready_functions", "Nebula")
+            nebula = nebula_class(self.srv, self.server)
+            self.bucket_obj.serverless.nebula_endpoint = nebula.endpoint
+            self.bucket_obj.serverless.dapi = \
+                self.serverless_util.get_database_DAPI(
+                    self.cluster.pod, self.cluster.tenant,
+                    self.bucket_obj.name)
+            global_vars.bucket_util.update_bucket_nebula_servers(
+                self.cluster, nebula, self.bucket_obj)
+            self.cluster.append_bucket(self.bucket_obj)
+
 
 class MonitorServerlessDatabaseScaling(Task):
-    def __init__(self, cluster, bucket, nebula_ref,
+    def __init__(self, cluster, bucket,
                  desired_node_len=CbServer.Serverless.KV_SubCluster_Size,
                  timeout=60):
         """
         :param cluster: Cluster object
         :param bucket: Bucket object
-        :param nebula_ref: Reference to Nebula class to create object
         :param desired_node_len: Desired length the bucket is going to scale
         :param timeout: Max time (seconds) to weight between each state change
         """
@@ -4010,7 +4023,6 @@ class MonitorServerlessDatabaseScaling(Task):
         self.desired_node_len = desired_node_len
         self.timeout = timeout
         self.state = "unknown"
-        self.nebula = nebula_ref
         self.serverless_util = global_vars.serverless_util
         self.test_log.info("%s - Monitor scaling to %s nodes"
                            % (bucket.name, desired_node_len))
@@ -4042,8 +4054,10 @@ class MonitorServerlessDatabaseScaling(Task):
         srv = self.serverless_util.get_database_nebula_endpoint(
             self.cluster.pod, self.cluster.tenant, self.bucket.name)
         self.log.debug("Updating nebula servers for %s" % self.bucket.name)
+        nebula_class = common_lib.get_module(
+            "cluster_utils.cluster_ready_functions", "Nebula")
         global_vars.bucket_util.update_bucket_nebula_servers(
-            self.cluster, self.nebula(srv, self.bucket.servers[0]),
+            self.cluster, nebula_class(srv, self.bucket.servers[0]),
             self.bucket)
         if len(self.cluster.bucketDNNodes[self.bucket]) \
                 == self.desired_node_len:

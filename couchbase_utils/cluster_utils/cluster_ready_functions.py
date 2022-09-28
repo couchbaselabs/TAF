@@ -9,6 +9,7 @@ import json
 import re
 import time
 import os
+from threading import Lock
 
 from Cb_constants import constants, CbServer
 from Jython_tasks.task import MonitorActiveTask, FunctionCallTask
@@ -85,6 +86,16 @@ class CBCluster:
     def __str__(self):
         return "Couchbase Cluster: %s, Nodes: %s" % (
             self.name, ', '.join([s.ip for s in self.servers]))
+
+    def append_bucket(self, bucket_obj):
+        """
+        :param bucket_obj: Bucket object to append to CBCluster.buckets list
+        :return: None
+
+        Thread safe method to add bucket_obj to the cluster's list
+        """
+        with Lock():
+            self.buckets.append(bucket_obj)
 
     def refresh_object(self, servers):
         self.kv_nodes = list()

@@ -1,3 +1,4 @@
+import importlib
 import inspect
 import time
 from threading import Lock
@@ -47,6 +48,13 @@ def humanbytes(B):
         return '{0:.2f} GiB'.format(B / GB)
     elif TB <= B:
         return '{0:.2f} TiB'.format(B / TB)
+
+
+def get_module(import_str, target_obj=None):
+    target_module = importlib.import_module(import_str)
+    if target_obj:
+        return getattr(target_module, target_obj)
+    return target_module
 
 
 class Counter(object):

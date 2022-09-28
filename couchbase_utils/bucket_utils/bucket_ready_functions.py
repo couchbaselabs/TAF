@@ -2069,14 +2069,6 @@ class BucketUtils(ScopeUtils):
         elif cluster.type == "serverless":
             task = self.async_create_database(cluster, bucket_obj)
             self.task_manager.get_task_result(task)
-            nebula = Nebula(task.srv, task.server)
-            self.log.info("Populate Nebula object done!!")
-            bucket_obj.serverless.nebula_endpoint = nebula.endpoint
-            bucket_obj.serverless.dapi = \
-                global_vars.serverless_util.get_database_DAPI(
-                    cluster.pod, cluster.tenant, bucket_obj.name)
-            self.update_bucket_nebula_servers(self.cluster, nebula, bucket_obj)
-            cluster.buckets.append(bucket_obj)
         else:
             self.create_bucket(cluster, bucket_obj, wait_for_warmup)
             if self.enable_time_sync:
