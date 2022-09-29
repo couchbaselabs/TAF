@@ -275,9 +275,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         cluster_name, cluster, services=None,
                         services_mem_quota_percent=mem_quota_percent)
 
-                # Update initial service map for the master node
-                self.cluster_util.update_cluster_nodes_service_list(cluster)
-
                 # Set this unconditionally
                 RestConnection(cluster.master).set_internalSetting(
                     "magmaMinMemoryQuota", 256)
@@ -354,6 +351,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     for server in self.input.servers:
                         self.set_ports_for_server(server, "ssl")
             reload(Cb_constants)
+
+            # Update initial service map for the master node
+            self.cluster_util.update_cluster_nodes_service_list(self.cluster)
 
             # Enforce IPv4 or IPv6 or both
             if self.ipv4_only or self.ipv6_only:
