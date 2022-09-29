@@ -358,7 +358,7 @@ class StorageBase(BaseTestCase):
         for bucket in self.cluster.buckets:
             scopes_keys = scopes or bucket.scopes.keys()
             for scope in scopes_keys:
-                if scope == CbServer.system_scope:
+                if scope == CbServer.system_scope or scope == "_default":
                     continue
                 collections_keys = collections or bucket.scopes[scope].collections.keys()
                 for collection in collections_keys:
@@ -443,12 +443,11 @@ class StorageBase(BaseTestCase):
             self.printOps = PrintBucketStats(self.cluster, bucket,
                                              monitor_stats=["doc_ops"], sleep=1)
             self.task_manager.add_new_task(self.printOps)
-
         while i > 0:
             for bucket in self.cluster.buckets:
                 scopes_keys = scopes or bucket.scopes.keys()
                 for scope in scopes_keys:
-                    if scope == CbServer.system_scope:
+                    if scope == CbServer.system_scope or scope == "_default":
                         continue
                     collections_keys = collections or bucket.scopes[scope].collections.keys()
                     for collection in collections_keys:
