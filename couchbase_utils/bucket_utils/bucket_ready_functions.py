@@ -2241,8 +2241,8 @@ class BucketUtils(ScopeUtils):
                                            len(buckets_spec["buckets"]))
 
         # Fetch and define RAM quota for buckets
-        node_info = rest_conn.get_nodes_self()
         if Bucket.ramQuotaMB not in buckets_spec:
+            node_info = rest_conn.get_nodes_self()
             if node_info.memoryQuota and int(node_info.memoryQuota) > 0:
                 ram_available = node_info.memoryQuota
                 ram_available -= total_ram_requested_explicitly
@@ -2366,22 +2366,45 @@ class BucketUtils(ScopeUtils):
                                        async_create=True):
         self.log.info("Creating required buckets from template")
         load_data_from_existing_tar = False
-        rest_conn = RestConnection(cluster.master)
-        if CbServer.cluster_profile == "serverless":
-            self.specs_for_serverless(buckets_spec)
-        buckets_spec = BucketUtils.expand_buckets_spec(rest_conn,
-                                                       buckets_spec)
-        if CbServer.cluster_profile is "serverless":
-            self.balance_scopes_collections_items(buckets_spec)
-
         bucket_creation_tasks = list()
-        for bucket_name, bucket_spec in buckets_spec.items():
-            if bucket_spec[MetaConstants.BUCKET_TAR_SRC]:
-                load_data_from_existing_tar = True
-            bucket_creation_tasks.append(
-                self.create_bucket_from_dict_spec(cluster,
-                                                  bucket_name, bucket_spec,
-                                                  async_create=async_create))
+        bucket_names_ref = dict()
+        if cluster.type == "serverless":
+            # On Cloud - serverless deployment
+            buckets_spec[Bucket.ramQuotaMB] = 256
+            buckets_spec = BucketUtils.expand_buckets_spec(None, buckets_spec)
+
+            for bucket_name, bucket_spec in buckets_spec.items():
+                b_obj = Bucket({
+                    Bucket.name: bucket_name,
+                    Bucket.bucketType: Bucket.Type.MEMBASE,
+                    Bucket.replicaNumber: Bucket.ReplicaNum.TWO,
+                    Bucket.storageBackend: Bucket.StorageBackend.magma,
+                    Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
+                    Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
+                    Bucket.width: bucket_spec[Bucket.width],
+                    Bucket.weight: bucket_spec[Bucket.weight]})
+                if Bucket.numVBuckets in bucket_spec:
+                    b_obj.numVBuckets = bucket_spec[Bucket.numVBuckets]
+                task = self.async_create_database(cluster, b_obj)
+                bucket_creation_tasks.append(task)
+                bucket_names_ref[task.thread_name] = bucket_name
+        else:
+            # On Prem case
+            rest_conn = RestConnection(cluster.master)
+            if CbServer.cluster_profile is "serverless":
+                self.specs_for_serverless(buckets_spec)
+            buckets_spec = BucketUtils.expand_buckets_spec(
+                rest_conn, buckets_spec)
+            if CbServer.cluster_profile is "serverless":
+                self.balance_scopes_collections_items(buckets_spec)
+
+            for bucket_name, bucket_spec in buckets_spec.items():
+                if bucket_spec[MetaConstants.BUCKET_TAR_SRC]:
+                    load_data_from_existing_tar = True
+                bucket_creation_tasks.append(
+                    self.create_bucket_from_dict_spec(
+                        cluster, bucket_name, bucket_spec,
+                        async_create=async_create))
 
         for task in bucket_creation_tasks:
             self.task_manager.get_task_result(task)
@@ -2389,10 +2412,16 @@ class BucketUtils(ScopeUtils):
                 self.log.error("Failure in bucket creation task: %s"
                                % task.thread_name)
             else:
-                cluster.buckets.append(task.bucket_obj)
+                if cluster.type == "serverless":
+                    spec = buckets_spec.get(bucket_names_ref[task.thread_name])
+                    buckets_spec[task.bucket_obj.name] = spec
+                    buckets_spec.pop(bucket_names_ref[task.thread_name])
+                else:
+                    cluster.buckets.append(task.bucket_obj)
 
         for bucket in cluster.buckets:
-            self.get_updated_bucket_server_list(cluster, bucket)
+            if cluster.type != "serverless":
+                self.get_updated_bucket_server_list(cluster, bucket)
             if not buckets_spec.get(bucket.name):
                 continue
             for scope_name, scope_spec \
@@ -2401,15 +2430,23 @@ class BucketUtils(ScopeUtils):
                     continue
 
                 if scope_name != CbServer.default_scope:
-                    self.create_scope_object(bucket, scope_spec)
+                    if cluster.type == "serverless":
+                        self.create_scope(bucket.servers[0], bucket,
+                                          scope_spec)
+                    else:
+                        self.create_scope_object(bucket, scope_spec)
 
                 for c_name, c_spec in scope_spec["collections"].items():
                     if type(c_spec) is not dict:
                         continue
                     c_spec["name"] = c_name
-                    self.create_collection_object(bucket,
-                                                  scope_name,
-                                                  c_spec)
+                    if cluster.type == "serverless" \
+                            and c_name != CbServer.default_collection:
+                        self.create_collection(bucket.servers[0], bucket,
+                                               scope_name, c_spec)
+                    else:
+                        self.create_collection_object(
+                            bucket, scope_name, c_spec)
 
         if load_data_from_existing_tar:
             for bucket_name, bucket_spec in buckets_spec.items():
