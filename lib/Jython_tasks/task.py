@@ -425,32 +425,51 @@ class RebalanceTask(Task):
             # Remove the 'out' node from services list
             if ClusterRun.is_enabled:
                 target_list = nodes_to_remove
-                target_val = "%s:%s" % (node_ip, node_port)
+
+                self.cluster.kv_nodes = \
+                    [node for node in self.cluster.kv_nodes
+                     if "%s:%s" % (node.ip, node.port) not in target_list]
+                self.cluster.index_nodes = \
+                    [node for node in self.cluster.index_nodes
+                     if "%s:%s" % (node.ip, node.port) not in target_list]
+                self.cluster.query_nodes = \
+                    [node for node in self.cluster.query_nodes
+                     if "%s:%s" % (node.ip, node.port) not in target_list]
+                self.cluster.cbas_nodes = \
+                    [node for node in self.cluster.cbas_nodes
+                     if "%s:%s" % (node.ip, node.port) not in target_list]
+                self.cluster.eventing_nodes = \
+                    [node for node in self.cluster.eventing_nodes
+                     if "%s:%s" % (node.ip, node.port) not in target_list]
+                self.cluster.fts_nodes = \
+                    [node for node in self.cluster.fts_nodes
+                     if "%s:%s" % (node.ip, node.port) not in target_list]
+                self.cluster.backup_nodes = \
+                    [node for node in self.cluster.backup_nodes
+                     if "%s:%s" % (node.ip, node.port) not in target_list]
             else:
                 target_list = node_ips_to_remove
-                target_val = node_ip
-
-            self.cluster.kv_nodes = \
-                [node for node in self.cluster.kv_nodes
-                 if target_val not in target_list]
-            self.cluster.index_nodes = \
-                [node for node in self.cluster.index_nodes
-                 if target_val not in target_list]
-            self.cluster.query_nodes = \
-                [node for node in self.cluster.query_nodes
-                 if target_val not in target_list]
-            self.cluster.cbas_nodes = \
-                [node for node in self.cluster.cbas_nodes
-                 if target_val not in target_list]
-            self.cluster.eventing_nodes = \
-                [node for node in self.cluster.eventing_nodes
-                 if target_val not in target_list]
-            self.cluster.fts_nodes = \
-                [node for node in self.cluster.fts_nodes
-                 if target_val not in target_list]
-            self.cluster.backup_nodes = \
-                [node for node in self.cluster.backup_nodes
-                 if target_val not in target_list]
+                self.cluster.kv_nodes = \
+                    [node for node in self.cluster.kv_nodes
+                     if node.ip not in target_list]
+                self.cluster.index_nodes = \
+                    [node for node in self.cluster.index_nodes
+                     if node.ip not in target_list]
+                self.cluster.query_nodes = \
+                    [node for node in self.cluster.query_nodes
+                     if node.ip not in target_list]
+                self.cluster.cbas_nodes = \
+                    [node for node in self.cluster.cbas_nodes
+                     if node.ip not in target_list]
+                self.cluster.eventing_nodes = \
+                    [node for node in self.cluster.eventing_nodes
+                     if node.ip not in target_list]
+                self.cluster.fts_nodes = \
+                    [node for node in self.cluster.fts_nodes
+                     if node.ip not in target_list]
+                self.cluster.backup_nodes = \
+                    [node for node in self.cluster.backup_nodes
+                     if node.ip not in target_list]
 
         # Fetch last rebalance task to track starting of current rebalance
         self.prev_rebalance_status_id = None
