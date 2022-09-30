@@ -1028,10 +1028,11 @@ class DocLoaderUtils(object):
                         except (DocumentNotFoundException, DocumentExistsException) as e:
                             log.error(e)
                             pass
-            try:
-                task.sdk.disconnectCluster()
-            except Exception as e:
-                print(e)
+            if task.sdkClientPool is None:
+                try:
+                    task.sdk.disconnectCluster()
+                except Exception as e:
+                    print(e)
             if task.result is False:
                 log.error("Task failed: %s" % task.taskName)
                 result = False
