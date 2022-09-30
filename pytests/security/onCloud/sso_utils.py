@@ -374,29 +374,29 @@ class SsoUtils:
         resp = self.capella_api.do_internal_request(url, method="POST", params=json.dumps(body))
         return resp
 
-    def update_team(self, tenant_id, body):
+    def update_team(self, tenant_id, team_id, body):
         """
         Update team in the organization
         """
-        url = "{0}/v2/organizations/{1}/teams".format("https://" + self.url, tenant_id)
+        url = "{0}/v2/organizations/{1}/teams/{2}".format("https://" + self.url, tenant_id, team_id)
         resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
         return resp
 
-    def update_team_org_roles(self, tenant_id, body):
+    def update_team_org_roles(self, tenant_id, team_id, body):
         """
         Update team org roles in the organization
         """
-        url = "{0}/v2/organizations/{1}/teams/org-roles".format("https://" + self.url,
-                                                                tenant_id)
+        url = "{0}/v2/organizations/{1}/teams/{2}/org-roles".format("https://" + self.url,
+                                                                    tenant_id, team_id)
         resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
         return resp
 
-    def update_team_project_roles(self, tenant_id, body):
+    def update_team_project_roles(self, tenant_id, team_id, body):
         """
         Update team project roles in the organization
         """
-        url = "{0}/v2/organizations/{1}/teams/projects".format("https://" + self.url,
-                                                               tenant_id)
+        url = "{0}/v2/organizations/{1}/teams/{2}/projects".format("https://" + self.url,
+                                                                   tenant_id, team_id)
         resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
         return resp
 
