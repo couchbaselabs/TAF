@@ -391,3 +391,156 @@ class SsoTests(BaseTestCase):
         # user without sufficient permissions
         teams_resp = self.unauth_z_sso.list_teams(self.tenant_id)
         self.validate_response(teams_resp, 4)
+
+    def test_update_realm_default_team(self):
+        resp = self.sso.list_realms(self.tenant_id)
+        realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+        response = self.sso.show_realm(self.tenant_id, realm_id)
+        team_id = json.loads(response.content)["data"]["defaultTeamId"]
+
+        # User with valid tenantId and realm ID
+        self.log.info("Update realm with valid tenantId and realm ID")
+        resp = self.sso.update_realm_default_team(self.tenant_id, realm_id, team_id)
+        self.validate_response(resp, 2)
+
+        # user with insufficient permissions
+        self.log.info("Update realm with invalid tenant Id")
+        resp = self.sso.update_realm_default_team(self.diff_tenant_id, realm_id, team_id)
+        self.validate_response(resp, 4)
+
+        # User with invalid realm Id
+        self.log.info("Update realm with invalid realm Id")
+        realm_id = self.input.param("realm_id", "00000000-0000-0000-0000-000000000000")
+        resp = self.sso.update_realm_default_team(self.tenant_id, realm_id, team_id)
+        self.validate_response(resp, 4)
+
+    def test_delete_realm(self):
+        resp = self.sso.list_realms(self.tenant_id)
+        realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+
+        # User with valid tenantId and realm ID
+        self.log.info("Delete realm with valid tenantId and realm ID")
+        resp = self.sso.delete_realm(self.tenant_id, realm_id)
+        self.validate_response(resp, 2)
+
+        # user with insufficient permissions
+        self.log.info("Delete realm with invalid tenant Id")
+        resp = self.sso.delete_realm(self.diff_tenant_id, realm_id)
+        self.validate_response(resp, 4)
+
+        # User with invalid realm Id
+        self.log.info("Delete realm with invalid realm Id")
+        realm_id = self.input.param("realm_id", "00000000-0000-0000-0000-000000000000")
+        resp = self.sso.delete_realm(self.tenant_id, realm_id)
+        self.validate_response(resp, 4)
+
+    def test_update_org_roles(self):
+        resp = self.sso.list_realms(self.tenant_id)
+        team_id = json.loads(resp.content)["data"][0]["data"]["defaultTeamId"]
+
+        body = {
+            "orgRoles": ["organizationOwner"]
+        }
+        self.log.info("Update organisation role wth valid tenantId")
+        resp = self.sso.update_team_org_roles(self.tenant_id, body, team_id)
+        self.validate_response(resp, 2)
+
+        self.log.info("Update organisation role wth invalid tenantId")
+        resp = self.sso.update_team_org_roles(self.diff_tenant_id, body, team_id)
+        self.validate_response(resp, 4)
+
+    def test_update_project_roles(self):
+        resp = self.sso.list_realms(self.tenant_id)
+        team_id = json.loads(resp.content)["data"][0]["data"]["defaultTeamId"]
+
+        body = {
+            "projects": [
+                {
+                    "projectId": self.project_id,
+                    "projectName": "SSO_API_TEST",
+                    "roles": ["projectOwner"]
+                }
+            ]
+        }
+        self.log.info("Update project role with valid tenantId")
+        resp = self.sso.update_team_project_roles(self.tenant_id, body, team_id)
+        self.validate_response(resp, 2)
+
+        self.log.info("Update project role with invalid tenantId")
+        resp = self.sso.update_team_project_roles(self.diff_tenant_id, body, team_id)
+        self.validate_response(resp, 4)
+
+    def test_team(self):
+        self.log.info("Test to check the functionality of team")
+        self.log.info("Test to create team")
+        body = {
+            "name": "Demo1",
+            "orgRoles": ["organizationOwner"],
+            "projects": [
+                {
+                    "projectId": self.project_id,
+                    "projectName": "SSO_API_TEST",
+                    "roles": ["projectOwner"]
+                }
+            ],
+            "groups": ["Example Okta Group One"]
+        }
+        # User with invalid tenantId
+        self.log.info("Create team with invalid tenantId")
+        resp = self.sso.create_team(self.diff_tenant_id, body)
+        self.validate_response(resp, 4)
+
+        # User with valid tenantID and body
+        self.log.info("Create team with valid tenantID")
+        resp = self.sso.create_team(self.tenant_id, body)
+        self.validate_response(resp, 2)
+
+        resp = self.sso.list_realms(self.tenant_id)
+        team_id = json.loads(resp.content)["data"][0]["data"]["defaultTeamId"]
+        self.log.info("Test to Update team")
+        body = {
+            "name": "team_changed"
+        }
+        # User with valid tenantID
+        self.log.info("Update team with valid tenantId")
+        resp = self.sso.update_team(self.tenant_id, body, team_id)
+        self.validate_response(resp, 2)
+
+        # User with invalid tenantId
+        self.log.info("Update team with invalid tenantId")
+        resp = self.sso.update_team(self.diff_tenant_id, body, team_id)
+        self.validate_response(resp, 4)
+
+        self.log.info("Test to get team")
+        # User with valid tenantId and realm ID
+        self.log.info("Show team with valid tenantId and team ID")
+        resp = self.sso.show_team(self.tenant_id, team_id)
+        self.validate_response(resp, 2)
+
+        # User with insufficient permissions
+        self.log.info("Show team with invalid tenant Id")
+        resp = self.sso.show_team(self.diff_tenant_id, team_id)
+        self.validate_response(resp, 4)
+
+        # User with invalid team Id
+        self.log.info("Show team with invalid team Id")
+        team_id = self.input.param("team_id", "00000000-0000-0000-0000-000000000000")
+        resp = self.sso.show_team(self.tenant_id, team_id)
+        self.validate_response(resp, 4)
+
+        self.log.info("Test to Delete the team")
+        # User with valid tenantId and teamId
+        self.log.info("Delete team with valid tenantId and valid teamId")
+        resp = self.sso.delete_team(self.tenant_id, team_id)
+        self.validate_response((resp, 2))
+
+        # User with invalid tenantId
+        self.log.info("Delete team with invalid tenantId")
+        resp = self.sso.delete_team(self.diff_tenant_id, team_id)
+        self.validate_response(resp, 4)
+
+        # User with invalid teamId
+        self.log.info("Delete team with invalid teamId")
+        team_id = self.input.param("team_id", "00000000-0000-0000-0000-000000000000")
+        resp = self.sso.delete_team(self.tenant_id, team_id)
+        self.validate_response(resp, 4)
