@@ -102,7 +102,8 @@ class ServerlessMetering(LMT):
                                   self.ignore_exceptions,
                                   _sync=True)
             self.bucket_util.get_all_buckets(self.cluster)
-            self.expected_wu += self.calculate_units(self.doc_size, 0) * items
+            expected_ru = items - (bucket.stats.itemCount - items)
+            self.expected_wu += self.calculate_units(self.doc_size, 0) * (bucket.stats.itemCount - items)
             if self.doc_size > 1000:
                 expected_num_throttled += bucket.stats.itemCount/2
             num_throttled, ru, wu = self.get_stat(bucket)

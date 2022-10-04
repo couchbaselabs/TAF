@@ -562,6 +562,17 @@ class RemoteMachineShellConnection:
     def start_prometheus(self):
         return self.kill_process("prometheus", "prometheus", signum=18)
 
+    def kill_dpagent(self):
+        self.log.debug("%s - Killing dpagent process" % self.ip)
+        self.extract_remote_info()
+        if self.info.type.lower() == Windows.NAME:
+            o, r = self.execute_command("taskkill /F /T /IM dpagent*")
+            self.log_command_output(o, r)
+        else:
+            o, r = self.execute_command("systemctl kill dpagent")
+            self.log_command_output(o, r)
+        return o, r
+
     def kill_goxdcr(self):
         self.log.debug("%s - Killing goxdcr process" % self.ip)
         self.extract_remote_info()

@@ -1,6 +1,7 @@
 import time
 import copy
 import re
+import json
 
 from cb_tools.mc_stat import McStat
 from remote.remote_util import RemoteMachineShellConnection
@@ -686,12 +687,13 @@ class LMT(ServerlessOnPremBaseTest):
     def get_stat_from_prometheus(self, bucket):
         ru_from_prometheus = 0
         wu_from_prometheus = 0
-        num_throttled_prometheus = 0
+        num_throttled_prometheus, total_storage_bytes = 0, 0
         for node in bucket.servers:
             content = StatsHelper(node).get_prometheus_metrics_high()
             wu_pattern = re.compile('meter_wu_total{bucket="%s"} (\d+)' % bucket.name)
             ru_pattern = re.compile('meter_ru_total{bucket="%s"} (\d+)' % bucket.name)
             num_throttled = re.compile('throttle_count_total{bucket="%s",for="kv"} (\d+)' % bucket.name)
+            storage_bytes = re.compile('storage_bytes{bucket="%s"} (\d+)' % bucket.name)
             for line in content:
                 if wu_pattern.match(line):
                     wu_from_prometheus += int(wu_pattern.findall(line)[0])
@@ -699,17 +701,29 @@ class LMT(ServerlessOnPremBaseTest):
                     ru_from_prometheus += int(ru_pattern.findall(line)[0])
                 elif num_throttled.match(line):
                     num_throttled_prometheus += int(num_throttled.findall(line)[0])
-        return num_throttled_prometheus, ru_from_prometheus, wu_from_prometheus
+                elif storage_bytes.match(line):
+                    total_storage_bytes += int(storage_bytes.findall(line)[0])
+        return total_storage_bytes, num_throttled_prometheus, ru_from_prometheus, wu_from_prometheus
+
+    def get_storage_from_node(self, bucket):
+        total_storage = 0
+        for node in bucket.servers:
+            remote_client = RemoteMachineShellConnection(node)
+            cmd = "du -sbh /opt/couchbase/var/lib/couchbase/data/" + bucket.name
+            output, e = remote_client.execute_command(cmd)
+            total_storage += float(output[0].split("\t")[0].strip("M"))
 
     def get_stat_from_metering(self, bucket):
         wu_from_metering = 0
         ru_from_metering = 0
-        num_throttle_metering = 0
+        num_throttle_metering, total_storage_bytes = 0, 0
+
         for node in bucket.servers:
             content = StatsHelper(node).metering()
             wu_pattern = re.compile('meter_wu_total{bucket="%s"} (\d+)' % bucket.name)
             ru_pattern = re.compile('meter_ru_total{bucket="%s"} (\d+)' % bucket.name)
             num_throttle = re.compile('throttle_count_total{bucket="%s",for="kv"} (\d+)' % bucket.name)
+            storage_bytes = re.compile('storage_bytes{bucket="%s",for="kv"} (\d+)' % bucket.name)
             for line in content:
                 if wu_pattern.match(line):
                     wu_from_metering += int(wu_pattern.findall(line)[0])
@@ -717,7 +731,9 @@ class LMT(ServerlessOnPremBaseTest):
                     ru_from_metering += int(ru_pattern.findall(line)[0])
                 elif num_throttle.match(line):
                     num_throttle_metering += int(num_throttle.findall(line)[0])
-        return num_throttle_metering, ru_from_metering, wu_from_metering
+                elif storage_bytes.match(line):
+                    total_storage_bytes += int(storage_bytes.findall(line)[0])
+        return total_storage_bytes, num_throttle_metering, ru_from_metering, wu_from_metering
 
     def get_item_count(self):
         buckets = self.bucket_util.get_all_buckets(self.cluster)
@@ -881,3 +897,19 @@ class LMT(ServerlessOnPremBaseTest):
         if exception:
             self.log.info("txn failed")
         self.sleep(1)
+
+    def set_throttle_limit(self, bucket, throttling_limit=5000, storage_limit=500):
+        for node in bucket.servers:
+            status, content = RestConnection(node).\
+                set_throttle_limit(bucket=bucket.name,
+                                   throttle_limit=throttling_limit,
+                                   storage_limit=storage_limit)
+            if not status:
+                print(content)
+                self.log.error("set throttle limit failed")
+
+    def get_throttle_limit(self, bucket):
+        _, content = RestConnection(bucket.servers[0]).\
+            get_throttle_limit(bucket=bucket.name)
+        output = json.loads(content)
+        return output["dataThrottleLimit"]

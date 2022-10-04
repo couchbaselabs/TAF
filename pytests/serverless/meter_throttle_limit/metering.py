@@ -13,6 +13,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from cb_tools.cbstats import Cbstats
 from cb_tools.cbepctl import Cbepctl
 from com.couchbase.test.transactions import SimpleTransaction as Transaction
+from membase.api.rest_client import RestConnection
 
 
 class ServerlessMetering(LMT):
@@ -101,9 +102,7 @@ class ServerlessMetering(LMT):
             expected_wu += self.calculate_units(self.total_size, 0) / 2 * self.num_items
         else:
             expected_wu += self.calculate_units(self.total_size, 0) * self.num_items
-        expected_ru = expected_ru + ru + \
-                      self.calculate_units(self.total_size,
-                                           0, read=True) * self.num_items
+        expected_ru += ru
         for key, value in key_value.iteritems():
             result = self.client.crud(DocLoading.Bucket.DocOps.TOUCH, key, exp=10,
                                       durability=self.durability_level)
@@ -124,7 +123,7 @@ class ServerlessMetering(LMT):
     def test_cu_in_batch_operation(self):
         self.log.info("Loading %s docs into bucket" % self.num_items)
         doc_gen = doc_generator(self.key, 0, self.num_items,
-                                doc_size=2000)
+                                doc_size=self.doc_size)
         # create documents
         load_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, doc_gen,
@@ -140,7 +139,8 @@ class ServerlessMetering(LMT):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         _, self.ru, self.wu = self.get_stat(self.bucket)
-        self.compare_ru_wu_stat(self.ru, self.wu, 0, self.num_items)
+        expected_wu = self.calculate_units(20, self.doc_size, 0) * self.num_items
+        self.compare_ru_wu_stat(self.ru, self.wu, 0, expected_wu)
 
         # Load with doc_ttl set
         self.log.info("Setting doc_ttl=1 for %s docs" % 10000)
@@ -155,7 +155,8 @@ class ServerlessMetering(LMT):
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
         _, self.ru, self.wu = self.get_stat(self.bucket)
-        self.compare_ru_wu_stat(self.ru, self.wu, 0, self.num_items * 2)
+        expected_wu += self.calculate_units(20, self.doc_size, 0) * self.num_items
+        self.compare_ru_wu_stat(self.ru, self.wu, 0, expected_wu)
 
         self.sleep(2)
         # Read task to trigger expiry_purger
@@ -171,7 +172,7 @@ class ServerlessMetering(LMT):
         self.task_manager.add_new_task(load_task)
         self.task_manager.get_task_result(load_task)
         _, self.ru, self.wu = self.get_stat(self.bucket)
-        self.compare_ru_wu_stat(self.ru, self.wu, 0, self.num_items * 2)
+        self.compare_ru_wu_stat(self.ru, self.wu, 0, expected_wu)
 
     def validate_result(self, result):
         if result["status"] is False:
@@ -210,8 +211,7 @@ class ServerlessMetering(LMT):
                                self.expected_wu, 0, durability=self.durability_level)
         _, self.expected_ru, self.expected_wu = self.get_stat(self.bucket)
         self.total_size, ru = self.get_sizeof_document("metering-0")
-        self.expected_ru += ru + (self.calculate_units(self.total_size, 0,
-                                                       read=True) * self.num_items)
+        self.expected_ru += ru
         self.total_size += self.sub_doc_size
 
         # subdoc operations with system xattrs
@@ -229,12 +229,9 @@ class ServerlessMetering(LMT):
             self.expected_wu += (self.calculate_units(self.total_size, 0) * self.num_items)
             _, self.ru, self.wu = self.get_stat(self.bucket)
             self.compare_ru_wu_stat(self.ru, self.wu, self.expected_ru, self.expected_wu)
-            self.expected_ru += (self.calculate_units(self.total_size, 0,
-                                                      read=True) * self.num_items)
 
         # delete a file with system xattrs, both ru and wu will increase
-        if not self.xattr:
-            self.expected_ru = self.ru
+        self.expected_ru = self.ru
         self.log.info("performing delete")
         if self.durability_level != "NONE":
             self.expected_wu += (self.num_items * 2)
@@ -531,3 +528,125 @@ class ServerlessMetering(LMT):
         self.expected_ru += 4 + (read_units * size)
         self.expected_wu += write_units * len(self.docs)
         self.check_ru_wu_for_transaction()
+
+    def test_metering_delete_collection(self):
+        self.bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+        # create a scope
+        scope_name = "my_scope"
+        self.log.info("Creating scope '%s'" % scope_name)
+        self.bucket_util.create_scope(self.cluster.master,
+                                      self.bucket,
+                                      {"name": scope_name})
+        # create a collection
+        collection_name = "my_collection"
+        self.bucket_util.create_collection(self.cluster.master,
+                                           self.bucket,
+                                           scope_name,
+                                           {"name": collection_name})
+
+        # load data to the scope and collection
+        gen_add = doc_generator(self.key, 0, self.num_items)
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_add, "create", 0,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            compression=self.sdk_compression,
+            timeout_secs=self.sdk_timeout,
+            scope=scope_name,
+            collection=collection_name)
+        self.task_manager.get_task_result(task)
+        # check metering
+        storage, num_throttled, ru, wu = self.get_stat_from_prometheus(self.bucket)
+        self.get_storage_from_node(self.bucket)
+        # delete the collection
+        self.bucket_util.drop_collection(self.cluster.master,
+                                           self.bucket,
+                                           scope_name,
+                                           collection_name)
+        # perform load again in the bucket, check if throttling is happening
+        task = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, gen_add, "create", 0,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level,
+            compression=self.sdk_compression,
+            timeout_secs=self.sdk_timeout)
+        self.task_manager.get_task_result(task)
+        storage, num_throttled, ru, wu = self.get_stat_from_prometheus(self.bucket)
+        self.log.info("add validation check")
+
+    def test_limits_boundary_values(self):
+        """ throttling limit = -1 to 2147483647
+            storage limit = -1 to 2147483647
+        """
+        def check_error_msg(status, output, storagelimit=False):
+            import json
+            if status == False:
+                content = json.loads(output)["errors"]
+                if storagelimit:
+                    actual_error = content["dataStorageLimit"]
+                    expected_error = '"dataStorageLimit" must be an integer between -1 and 2147483647'
+                else:
+                    actual_error = content["dataThrottleLimit"]
+                    expected_error = '"dataThrottleLimit" must be an integer between -1 and 2147483647'
+                self.assertEqual(actual_error, expected_error)
+            else:
+                self.fail("expected to fail but passsed")
+
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+        for node in bucket.servers:
+            rest_node = RestConnection(node)
+            status, content = rest_node.\
+                set_throttle_limit(bucket=bucket.name,
+                                   throttle_limit=-2)
+            check_error_msg(status, content)
+            status, content = rest_node.\
+                set_throttle_limit(bucket=bucket.name,
+                                   throttle_limit=2147483648)
+            check_error_msg(status, content)
+
+            status, content = rest_node.\
+                set_throttle_limit(bucket=bucket.name,
+                                   storage_limit=-2)
+            check_error_msg(status, content, True)
+            status, content = rest_node.\
+                set_throttle_limit(bucket=bucket.name,
+                                   storage_limit=2147483648)
+            check_error_msg(status, content, True)
+
+            status, content = rest_node.\
+                set_throttle_limit(bucket=bucket.name,
+                                   throttle_limit=-2,
+                                   storage_limit=-2)
+            check_error_msg(status, content)
+            check_error_msg(status, content, True)
+            status, content = rest_node.\
+                set_throttle_limit(bucket=bucket.name,
+                                   throttle_limit=2147483648,
+                                   storage_limit=2147483648)
+            check_error_msg(status, content)
+            check_error_msg(status, content, True)
+
+    def test_zero_limits(self):
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+        for i in [1, 2]:
+            if i == 1:
+                self.set_throttle_limit(bucket, throttling_limit=0)
+            else:
+                self.set_throttle_limit(bucket, storage_limit=0)
+            gen_add = doc_generator(self.key, 0, 100)
+            task = self.task.async_load_gen_docs(
+                self.cluster, self.bucket, gen_add, "create", 0,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
+                compression=self.sdk_compression,
+                timeout_secs=self.sdk_timeout)
+            self.task_manager.get_task_result(task)
+            self.bucket_util.get_all_buckets(self.cluster)
+            storage, num_throttled, ru, wu = self.get_stat_from_prometheus(self.bucket)
+            bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+            self.assertEqual(bucket.stats.itemCount, wu)
+
+

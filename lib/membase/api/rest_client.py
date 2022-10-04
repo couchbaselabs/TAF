@@ -3363,6 +3363,14 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api, 'POST', params=version)
         return status, content
 
+    def get_server_list(self, bucket):
+        url = 'pools/default/buckets/' + bucket
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'GET')
+        _stats = json.loads(content)
+        servers = _stats['vBucketServerMap']['serverList']
+        return servers
+
     def get_throttle_limit(self, bucket=""):
         if bucket:
             url = 'pools/default/buckets/' + bucket

@@ -14,6 +14,7 @@ class CouchbaseError:
     KILL_PROMETHEUS = "kill_prometheus"
     KILL_MEMCACHED = "kill_memcached"
     KILL_BEAMSMP = "kill_beam.smp"
+    KILL_DPAGENT = "kill_dp_agent"
 
     def __init__(self, logger, shell_conn, node=None):
         self.log = logger
@@ -58,6 +59,9 @@ class CouchbaseError:
             self.__handle_shell_error(error)
         elif action == CouchbaseError.KILL_PROMETHEUS:
             _, error = self.__interrupt_process("prometheus", "kill")
+            self.__handle_shell_error(error)
+        elif action == CouchbaseError.KILL_DPAGENT:
+            _, error = self.shell_conn.kill_dpagent()
             self.__handle_shell_error(error)
         elif action == CouchbaseError.STOP_SERVER:
             self.shell_conn.stop_server()
