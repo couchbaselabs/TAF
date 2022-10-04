@@ -98,6 +98,12 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         global_vars.bucket_util = self.bucket_util
         global_vars.serverless_util = self.serverless_util
 
+        self.__init_collection_specific_params()
+
+    def __init_collection_specific_params(self):
+        self.spec_name = self.input.param("bucket_spec", None)
+        self.data_spec_name = self.input.param("data_spec_name", None)
+
     def tearDown(self):
         self.shutdown_task_manager()
         if self.sdk_client_pool:

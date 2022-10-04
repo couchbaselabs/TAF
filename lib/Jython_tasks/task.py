@@ -4008,36 +4008,50 @@ class DatabaseCreateTask(Task):
 
 class MonitorServerlessDatabaseScaling(Task):
     def __init__(self, cluster, bucket,
-                 desired_node_len=CbServer.Serverless.KV_SubCluster_Size,
-                 timeout=60):
+                 desired_ram_quota=None, desired_width=None,
+                 desired_weight=None, timeout=60):
         """
         :param cluster: Cluster object
         :param bucket: Bucket object
-        :param desired_node_len: Desired length the bucket is going to scale
+        :param desired_ram_quota: Desired RAM quota to validate
+        :param desired_width: Desired bucket.width to validate
+        :param desired_weight: Desired bucket.weight to validate
         :param timeout: Max time (seconds) to weight between each state change
         """
         super(MonitorServerlessDatabaseScaling, self).__init__(
             "MonitorDBScaling_%s" % bucket.name)
         self.cluster = cluster
         self.bucket = bucket
-        self.desired_node_len = desired_node_len
+        self.desired_ram_quota = desired_ram_quota
+        self.desired_width = desired_width
+        self.desired_weight = desired_weight
         self.timeout = timeout
         self.state = "unknown"
         self.serverless_util = global_vars.serverless_util
+        self.desired_node_len = \
+            CbServer.Serverless.KV_SubCluster_Size * self.desired_width
         self.test_log.info("%s - Monitor scaling to %s nodes"
-                           % (bucket.name, desired_node_len))
+                           % (bucket.name, self.desired_node_len))
+        self.test_log.info("Expected width=%s, weight=%s, RAM=%s"
+                           % (self.desired_width, self.desired_weight,
+                              self.desired_ram_quota))
 
-    def call(self):
+    def get_db_debug_json(self):
+        return json.loads(
+            self.serverless_util.capella_api.get_database_debug_info(
+                self.bucket.name).content)
+
+    def __track_width_scaling(self):
         s_index = 0
         states = ["rebalancing", "healthy"]
         len_states = len(states)
-        self.start_task()
+
         timeout = self.timeout
         while timeout > 0 and s_index < len_states:
-            db_info = json.loads(
-                self.serverless_util.capella_api.get_database_debug_info(
-                    self.bucket.name).content)
+            db_info = self.get_db_debug_json()
             curr_state = db_info["dataplane"]["couchbase"]["state"]
+            self.test_log.debug("Bucket %s: state=%s"
+                                % (self.bucket.name, curr_state))
             if curr_state != self.state:
                 self.log.critical("DB %s state change: %s --> %s"
                                   % (self.bucket.name, self.state, curr_state))
@@ -4047,8 +4061,62 @@ class MonitorServerlessDatabaseScaling(Task):
                 # Track known states
                 if curr_state == states[s_index]:
                     s_index += 1
+            self.sleep(1)
+            timeout -= 1
+
+    def __track_weight_scaling(self):
+        timeout = self.timeout
+        while timeout > 0:
+            db_info = self.get_db_debug_json()
+            sizing_info = db_info["database"]["config"]["sizing"]
+            self.test_log.debug("Bucket %s: weight=%s, overRideWeight=%s"
+                                % (self.bucket.name, sizing_info["weight"],
+                                   sizing_info["weightOverRide"]))
+            if sizing_info["weightOverRide"] == self.desired_weight \
+                    and sizing_info["weight"] == self.desired_weight:
+                break
             self.sleep(0.5)
             timeout -= 1
+
+    def __track_ram_scaling(self):
+        timeout = self.timeout
+        while timeout > 0:
+            db_info = self.get_db_debug_json()
+            sizing_info = db_info["database"]["config"]["sizing"]
+            self.test_log.debug("Bucket %s: memoryQuota=%s"
+                                % (self.bucket.name,
+                                   sizing_info["memoryQuota"]))
+            if sizing_info["memoryQuota"] == self.bucket.ramQuotaMB:
+                break
+            self.sleep(0.5)
+            timeout -= 1
+
+    def call(self):
+        self.start_task()
+
+        self.result = True
+        if self.desired_node_len:
+            self.__track_width_scaling()
+        if self.desired_weight:
+            self.__track_weight_scaling()
+        if self.desired_ram_quota:
+            self.__track_ram_scaling()
+
+        sizing_info = self.get_db_debug_json()["database"]["config"]["sizing"]
+        self.test_log.critical(
+            "Expected %s sizing: width=%s, weight=%s, ram=%s"
+            % (self.bucket.name, self.bucket.serverless.width,
+               self.bucket.serverless.weight, self.bucket.ramQuotaMB))
+        self.test_log.critical(
+            "Actual %s sizing: width=%s, weight=%s, ram=%s"
+            % (self.bucket.name, sizing_info["width"], sizing_info["weight"],
+               sizing_info["memoryQuota"]))
+        if sizing_info["width"] != self.bucket.serverless.width \
+                or sizing_info["weight"] != self.bucket.serverless.weight \
+                or sizing_info["memoryQuota"] != self.bucket.ramQuotaMB:
+            self.test_log.critical("Bucket %s sizing mismatch"
+                                   % self.bucket.name)
+            self.result = False
 
         self.log.debug("Fetching SRV records for %s" % self.bucket.name)
         srv = self.serverless_util.get_database_nebula_endpoint(
@@ -4059,9 +4127,10 @@ class MonitorServerlessDatabaseScaling(Task):
         global_vars.bucket_util.update_bucket_nebula_servers(
             self.cluster, nebula_class(srv, self.bucket.servers[0]),
             self.bucket)
+        self.log.critical("Status :: %s" % self.result)
         if len(self.cluster.bucketDNNodes[self.bucket]) \
                 == self.desired_node_len:
-            self.result = True
+            self.result = self.result and True
         else:
             self.test_log.error(
                 "%s - Expected node_len %s != %s actual"

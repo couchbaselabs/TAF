@@ -35,7 +35,7 @@ from Jython_tasks.task import \
     BucketCreateFromSpecTask, \
     ViewCreateTask, \
     ViewDeleteTask, \
-    ViewQueryTask, DatabaseCreateTask
+    ViewQueryTask, DatabaseCreateTask, MonitorServerlessDatabaseScaling
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope, Serverless
@@ -1892,6 +1892,18 @@ class BucketUtils(ScopeUtils):
         self.task_manager.add_new_task(task)
         return task
 
+    def async_monitor_database_scaling(self, cluster, bucket,
+                                       desired_ram_quota=None,
+                                       desired_width=None,
+                                       desired_weight=None, timeout=60):
+        self.log.debug("Monitoring scaling for db %s" % bucket.name)
+        task = MonitorServerlessDatabaseScaling(
+            cluster, bucket, desired_ram_quota=desired_ram_quota,
+            desired_width=desired_width, desired_weight=desired_weight,
+            timeout=timeout)
+        self.task_manager.add_new_task(task)
+        return task
+
     def create_bucket(self, cluster, bucket, wait_for_warmup=True):
         raise_exception = None
         task = self.async_create_bucket(cluster, bucket)
@@ -2377,6 +2389,7 @@ class BucketUtils(ScopeUtils):
                 b_obj = Bucket({
                     Bucket.name: bucket_name,
                     Bucket.bucketType: Bucket.Type.MEMBASE,
+                    Bucket.ramQuotaMB: bucket_spec[Bucket.ramQuotaMB],
                     Bucket.replicaNumber: Bucket.ReplicaNum.TWO,
                     Bucket.storageBackend: Bucket.StorageBackend.magma,
                     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
