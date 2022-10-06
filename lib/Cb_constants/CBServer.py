@@ -100,6 +100,7 @@ class CbServer(object):
     eventing_collection = "_eventing"
     mobile_collection = "_mobile"
     query_collection = "_query"
+    regulator_collection = "_regulator"
 
     total_vbuckets = 1024
 

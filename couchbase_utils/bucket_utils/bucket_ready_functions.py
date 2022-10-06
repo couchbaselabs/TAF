@@ -5728,7 +5728,8 @@ class BucketUtils(ScopeUtils):
                             "collections": {
                                 CbServer.eventing_collection: {},
                                 CbServer.query_collection: {},
-                                CbServer.mobile_collection: {}
+                                CbServer.mobile_collection: {},
+                                CbServer.regulator_collection: {}
                             }
                         }
                     }
