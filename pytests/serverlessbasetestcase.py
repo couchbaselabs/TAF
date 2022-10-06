@@ -62,7 +62,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.cb_image = self.input.capella.get("cb_image", "")
         self.dapi_image = self.input.capella.get("dapi_image", "")
         self.dn_image = self.input.capella.get("dn_image", "")
-        self.dataplane_id = self.input.capella.get("dataplane", "")
+        self.dataplane_id = self.input.capella.get("dataplane_id", "")
         num_dataplanes = self.input.param("num_dataplanes", 0)
         self.cluster = CBCluster(username=self.rest_username,
                                  password=self.rest_password,
@@ -125,6 +125,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             DedicatedUtils.delete_project(self.pod, self.tenant)
 
     def generate_dataplane_config(self):
+        if not(self.cb_image or self.dn_image or self.dapi_image):
+            raise Exception("Please provide atleast one image while deploying a dataplane.")
         provider = self.input.param("provider", AWS.__str__).lower()
         region = self.input.param("region", AWS.Region.US_EAST_1)
         self.dataplane_config = {
