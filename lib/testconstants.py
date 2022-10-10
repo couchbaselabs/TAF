@@ -18,15 +18,15 @@ CB_RELEASE_BUILDS = {"0.0.0": "0000", "2.1.1": "764", "2.2.0": "821",
                      "7.0.0": "0000", "7.0.1": "0000", "7.0.2": "0000",
                      "7.0.3": "0000", "7.0.4": "0000", "7.1.0": "0000",
                      "7.1.1": "0000", "7.1.2": "0000", "7.2.0": "0000",
-                     "8.0.0": "0000"}
+                     "7.5.0": "0000", "8.0.0": "0000"}
 
 CB_VERSION_NAME = {"0.0": "master",
                    "4.0": "sherlock", "4.1": "sherlock",
                    "4.5": "watson", "4.6": "watson", "4.7": "spock",
                    "5.0": "spock", "5.1": "spock", "5.5": "vulcan",
                    "6.0": "alice", "6.5": "mad-hatter", "6.6": "mad-hatter",
-                   "7.0": "cheshire-cat", "7.1": "neo", "7.2": "elixir",
-                   "8.0": "morpheus"}
+                   "7.0": "cheshire-cat", "7.1": "neo", "7.2": "neo",
+                   "7.5": "elixir", "8.0": "morpheus"}
 
 SYSTEMD_SERVER = ["centos 8", "centos 7", "suse 12", "suse 15", "ubuntu 16.04",
                   "ubuntu 18.04", "ubuntu 20.04", "debian 8", "debian 9",
