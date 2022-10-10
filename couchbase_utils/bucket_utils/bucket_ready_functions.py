@@ -1892,15 +1892,10 @@ class BucketUtils(ScopeUtils):
         self.task_manager.add_new_task(task)
         return task
 
-    def async_monitor_database_scaling(self, cluster, bucket,
-                                       desired_ram_quota=None,
-                                       desired_width=None,
-                                       desired_weight=None, timeout=60):
-        self.log.debug("Monitoring scaling for db %s" % bucket.name)
-        task = MonitorServerlessDatabaseScaling(
-            cluster, bucket, desired_ram_quota=desired_ram_quota,
-            desired_width=desired_width, desired_weight=desired_weight,
-            timeout=timeout)
+    def async_monitor_database_scaling(self, tracking_list, timeout=300):
+        self.log.debug("Monitoring scaling for db %s"
+                       % [tracker["bucket"].name for tracker in tracking_list])
+        task = MonitorServerlessDatabaseScaling(tracking_list, timeout)
         self.task_manager.add_new_task(task)
         return task
 

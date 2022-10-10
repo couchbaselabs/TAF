@@ -33,7 +33,7 @@ class CapellaUtils:
 
         return json.loads(resp.content)["dataplaneId"]
 
-    def get_dataplane_deployment_status(self, pod, dataplane_id):
+    def get_dataplane_deployment_status(self, dataplane_id):
         resp = self.capella_api.get_dataplane_deployment_status(dataplane_id)
         if resp.status_code != 200:
             CapellaUtils.log.critical("Get Data plane status failed with status\

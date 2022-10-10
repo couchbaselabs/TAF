@@ -1,4 +1,4 @@
-from random import choice
+from random import choice, sample
 
 from BucketLib.bucket import Bucket
 from bucket_collections.collections_base import CollectionBase
@@ -56,17 +56,19 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         }
 
     def __get_single_bucket_scenarios(self, target_scenario):
+        scenarios = list()
         bucket_name = choice(self.cluster.buckets).name
         weight_incr = {1: 30, 2: 15, 3: 10, 4: 7}
         weight_start = {1: 30, 2: 210, 3: 270, 4: 300}
         if target_scenario == "single_bucket_width_change":
-            return [{bucket_name: {Bucket.width: width}}
-                    for width in range(2, 4)]
+            for width in range(2, 4):
+                scenarios.append({bucket_name: {Bucket.width: width}})
+            scenarios = scenarios + scenarios[::-1][1:]
         if target_scenario == "single_bucket_weight_increment":
-            return [{bucket_name: {Bucket.weight: index*30}}
-                    for index in range(2, 14)]
+            for index in range(2, 14):
+                scenarios.append({bucket_name: {Bucket.weight: index*30}})
+            scenarios = scenarios + scenarios[::-1][1:]
         if target_scenario == "single_bucket_width_weight_incremental":
-            scenarios = list()
             width = 1
             weight = 30
             while width <= 4:
@@ -76,12 +78,11 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 weight += weight_incr[width]
                 if weight > 390:
                     width += 1
-                    weight = weight_start[width]
+                    if width in weight_start:
+                        weight = weight_start[width]
             scenarios = scenarios + scenarios[::-1][1:]
-            return scenarios
         if target_scenario == "single_bucket_width_weight_random":
             max_scenarios = 20
-            scenarios = list()
             # Creates 20 random scenarios of random width/weight update
             for scenario_index in range(max_scenarios):
                 width = choice(range(1, 5))
@@ -89,11 +90,107 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     + (weight_incr[width] * choice(range(1, 13)))
                 scenarios.append({bucket_name: {Bucket.width: width,
                                                 Bucket.weight: weight}})
+        return scenarios
+
+    def __get_five_bucket_scenarios(self, target_scenario):
+        scenarios = list()
+        buckets = sample(self.cluster.buckets, 5)
+        if target_scenario == "five_buckets_width_update":
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 2},
+                buckets[1].name: {Bucket.width: 2},
+                buckets[2].name: {Bucket.width: 2},
+                buckets[3].name: {Bucket.width: 2},
+                buckets[4].name: {Bucket.width: 2},
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 3},
+                buckets[1].name: {Bucket.width: 2},
+                buckets[2].name: {Bucket.width: 1},
+                buckets[3].name: {Bucket.width: 3},
+                buckets[4].name: {Bucket.width: 3},
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 4},
+                buckets[1].name: {Bucket.width: 1},
+                buckets[2].name: {Bucket.width: 2},
+                buckets[3].name: {Bucket.width: 4},
+                buckets[4].name: {Bucket.width: 2},
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 1},
+                buckets[1].name: {Bucket.width: 3},
+                buckets[2].name: {Bucket.width: 4},
+                buckets[3].name: {Bucket.width: 1},
+                buckets[4].name: {Bucket.width: 4},
+            })
+            return scenarios
+        if target_scenario == "five_buckets_weight_update":
+            scenarios.append({
+                buckets[0].name: {Bucket.weight: 60},
+                buckets[1].name: {Bucket.weight: 120},
+                buckets[2].name: {Bucket.weight: 90},
+                buckets[3].name: {Bucket.weight: 60},
+                buckets[4].name: {Bucket.weight: 60},
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.weight: 90},
+                buckets[1].name: {Bucket.weight: 240},
+                buckets[2].name: {Bucket.weight: 330},
+                buckets[3].name: {Bucket.weight: 180},
+                buckets[4].name: {Bucket.weight: 150},
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.weight: 120},
+                buckets[1].name: {Bucket.weight: 390},
+                buckets[2].name: {Bucket.weight: 30},
+                buckets[3].name: {Bucket.weight: 330},
+                buckets[4].name: {Bucket.weight: 360},
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.weight: 240},
+                buckets[1].name: {Bucket.weight: 390},
+                buckets[2].name: {Bucket.weight: 240},
+                buckets[3].name: {Bucket.weight: 30},
+                buckets[4].name: {Bucket.weight: 9999},
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.weight: 300},
+                buckets[1].name: {Bucket.weight: 9999},
+                buckets[2].name: {Bucket.weight: 9999},
+                buckets[3].name: {Bucket.weight: 9999},
+                buckets[4].name: {Bucket.weight: 30},
+            })
+            return scenarios
+        if target_scenario == "five_buckets_width_weight_update":
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 2, Bucket.weight: 210},
+                buckets[1].name: {Bucket.width: 2, Bucket.weight: 240},
+                buckets[2].name: {Bucket.width: 2, Bucket.weight: 390},
+                buckets[3].name: {Bucket.width: 2, Bucket.weight: 210},
+                buckets[4].name: {Bucket.width: 2, Bucket.weight: 255}
+            })
             return scenarios
 
-    def __get_multi_bucket_scenarios(self, num_buckets_to_target=2):
+    def __get_ten_bucket_scenarios(self, target_scenario):
         scenarios = list()
-        return scenarios
+        buckets = sample(self.cluster.buckets, 10)
+        if target_scenario == "ten_buckets_width_update":
+            return scenarios
+        if target_scenario == "ten_buckets_weight_update":
+            return scenarios
+        if target_scenario == "ten_buckets_width_weight_update":
+            return scenarios
+
+    def __get_twenty_bucket_scenarios(self, target_scenario):
+        scenarios = list()
+        buckets = sample(self.cluster.buckets, 20)
+        if target_scenario == "twenty_buckets_width_update":
+            return scenarios
+        if target_scenario == "twenty_buckets_weight_update":
+            return scenarios
+        if target_scenario == "twenty_buckets_width_weight_update":
+            return scenarios
 
     def get_serverless_bucket_obj(self, db_name, width, weight, num_vbs=None):
         self.log.debug("Creating server bucket_obj %s:%s:%s"
@@ -297,6 +394,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 if b_obj.name == b_name:
                     return b_obj
 
+        scenarios = None
         doc_loading_tasks = None
         self.bucket_name_format = "tntMgmtScaleTest-%s"
         target_scenario = self.input.param("target_scenario")
@@ -305,8 +403,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.__create_required_buckets(buckets_spec=spec)
         if target_scenario.startswith("single_bucket_"):
             scenarios = self.__get_single_bucket_scenarios(target_scenario)
-        else:
-            scenarios = self.__get_multi_bucket_scenarios(target_scenario)
+        elif target_scenario.startswith("five_buckets_"):
+            scenarios = self.__get_five_bucket_scenarios(target_scenario)
+        elif target_scenario.startswith("ten_buckets_"):
+            scenarios = self.__get_ten_bucket_scenarios(target_scenario)
+        elif target_scenario.startswith("twenty_buckets_"):
+            scenarios = self.__get_twenty_bucket_scenarios(target_scenario)
 
         if self.with_data_load:
             self.create_sdk_client_pool(self.cluster.buckets, 1)
@@ -332,41 +434,37 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         capella_api = CapellaAPI(self.pod.url_public, None, None, self.token)
         for scenario in scenarios:
-            monitor_tasks = list()
-            for bucket_name, update_dict in scenario.items():
+            to_track = list()
+            for bucket_name, s_dict in scenario.items():
                 bucket_obj = get_bucket_with_name(bucket_name)
 
-                args_to_monitor_db_scale_task = {
+                db_info = {
                     "cluster": self.cluster,
                     "bucket": bucket_obj,
                     "desired_ram_quota": None,
                     "desired_width": None,
-                    "desired_weight": None,
-                    "timeout": 300
+                    "desired_weight": None
                 }
 
                 over_ride = dict()
-                if Bucket.width in update_dict:
-                    over_ride[Bucket.width] = update_dict[Bucket.width]
-                    args_to_monitor_db_scale_task["desired_width"] = \
-                        update_dict[Bucket.width]
-                    bucket_obj.serverless.width = update_dict[Bucket.width]
-                if Bucket.weight in update_dict:
-                    over_ride[Bucket.weight] = update_dict[Bucket.weight]
-                    args_to_monitor_db_scale_task["desired_weight"] = \
-                        update_dict[Bucket.weight]
-                    bucket_obj.serverless.weight = update_dict[Bucket.weight]
+                if Bucket.width in s_dict and (bucket_obj.serverless.width
+                                               != s_dict[Bucket.width]):
+                    over_ride[Bucket.width] = s_dict[Bucket.width]
+                    db_info["desired_width"] = s_dict[Bucket.width]
+                    bucket_obj.serverless.width = s_dict[Bucket.width]
+                if Bucket.weight in s_dict and (bucket_obj.serverless.weight
+                                                != s_dict[Bucket.weight]):
+                    over_ride[Bucket.weight] = s_dict[Bucket.weight]
+                    db_info["desired_weight"] = s_dict[Bucket.weight]
+                    bucket_obj.serverless.weight = s_dict[Bucket.weight]
                 resp = capella_api.update_database(
                     bucket_obj.name, {"overRide": over_ride})
-                self.assertTrue(resp.status_code == 200,
-                                "Update Api failed")
+                self.assertTrue(resp.status_code == 200, "Update Api failed")
+                to_track.append(db_info)
 
-                monitor_task = self.bucket_util.async_monitor_database_scaling(
-                    **args_to_monitor_db_scale_task)
-                monitor_tasks.append(monitor_task)
-
-            for monitor_task in monitor_tasks:
-                self.task_manager.get_task_result(monitor_task)
+            monitor_task = self.bucket_util.async_monitor_database_scaling(
+                to_track, timeout=600)
+            self.task_manager.get_task_result(monitor_task)
 
         if self.with_data_load:
             DocLoaderUtils.wait_for_doc_load_completion(self.doc_loading_tm,

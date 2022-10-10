@@ -218,7 +218,7 @@ class DeployDataplane(Task):
             end = time.time() + self.timeout
             while time.time() < end:
                 status = self.serverless_util.get_dataplane_deployment_status(
-                    self.pod, self.dataplane_id)
+                    self.dataplane_id)
                 if status == "ready":
                     self.result = True
                     break
@@ -4007,139 +4007,239 @@ class DatabaseCreateTask(Task):
 
 
 class MonitorServerlessDatabaseScaling(Task):
-    def __init__(self, cluster, bucket,
-                 desired_ram_quota=None, desired_width=None,
-                 desired_weight=None, timeout=60):
+    def __init__(self, tracking_list, timeout=60):
         """
-        :param cluster: Cluster object
-        :param bucket: Bucket object
-        :param desired_ram_quota: Desired RAM quota to validate
-        :param desired_width: Desired bucket.width to validate
-        :param desired_weight: Desired bucket.weight to validate
+        :param tracking_list: List of dict()
+             Each dict is of format:
+                 {"cluster": cluster_obj,
+                  "bucket": bucket_obj,
+                  # Below keys are optional
+                  "desired_width": None,
+                  "desired_ram_quota": None,
+                  "desired_weight": None}
         :param timeout: Max time (seconds) to weight between each state change
         """
         super(MonitorServerlessDatabaseScaling, self).__init__(
-            "MonitorDBScaling_%s" % bucket.name)
-        self.cluster = cluster
-        self.bucket = bucket
-        self.desired_ram_quota = desired_ram_quota
-        self.desired_width = desired_width
-        self.desired_weight = desired_weight
+            "MonitorDBScaling_%d_buckets" % len(tracking_list))
         self.timeout = timeout
-        self.state = "unknown"
+        self.scaling_tasks = tracking_list
         self.serverless_util = global_vars.serverless_util
-        self.desired_node_len = \
-            CbServer.Serverless.KV_SubCluster_Size * self.desired_width
-        self.test_log.info("%s - Monitor scaling to %s nodes"
-                           % (bucket.name, self.desired_node_len))
-        self.test_log.info("Expected width=%s, weight=%s, RAM=%s"
-                           % (self.desired_width, self.desired_weight,
-                              self.desired_ram_quota))
 
-    def get_db_debug_json(self):
-        return json.loads(
-            self.serverless_util.capella_api.get_database_debug_info(
-                self.bucket.name).content)
+        # Populate default 'None' if not given by the caller
+        for sub_task in self.scaling_tasks:
+            for key in ["desired_width", "desired_weight",
+                        "desired_ram_quota"]:
+                if key not in sub_task:
+                    sub_task[key] = None
+            self.test_log.info("%s :: Expected width=%s, weight=%s, RAM=%s"
+                               % (sub_task["bucket"].name,
+                                  sub_task["desired_width"],
+                                  sub_task["desired_weight"],
+                                  sub_task["desired_ram_quota"]))
 
-    def __track_width_scaling(self):
-        s_index = 0
+    def get_db_debug_json(self, bucket_name):
+        return json.loads(self.serverless_util.capella_api
+                          .get_database_debug_info(bucket_name).content)
+
+    def __track_dataplane_rebalance(self, data_plane_buckets_map):
         states = ["rebalancing", "healthy"]
+        timeout = self.timeout
+        rebalanced = False
         len_states = len(states)
 
-        timeout = self.timeout
-        while timeout > 0 and s_index < len_states:
-            db_info = self.get_db_debug_json()
-            curr_state = db_info["dataplane"]["couchbase"]["state"]
-            self.test_log.debug("Bucket %s: state=%s"
-                                % (self.bucket.name, curr_state))
-            if curr_state != self.state:
-                self.log.critical("DB %s state change: %s --> %s"
-                                  % (self.bucket.name, self.state, curr_state))
-                self.state = curr_state
-                # Reset timeout after state change
-                timeout = self.timeout
-                # Track known states
-                if curr_state == states[s_index]:
-                    s_index += 1
+        while not rebalanced and timeout > 0:
+            rebalanced = True
+            for dp_id, dp_info in data_plane_buckets_map.items():
+                if dp_info["s_index"] == len_states:
+                    continue
+                db_info = self.get_db_debug_json(dp_info["buckets"][0].name)
+                if "dataplane" not in db_info:
+                    self.test_log.critical("Key 'dataplane' missing in :: %s"
+                                           % db_info)
+                    rebalanced = False
+                    continue
+                curr_state = db_info["dataplane"]["couchbase"]["state"]
+                self.test_log.debug("Bucket %s: state=%s"
+                                    % (dp_info["buckets"][0].name, curr_state))
+                if curr_state != dp_info["state"]:
+                    self.log.critical("Dataplane %s state change: %s --> %s"
+                                      % (dp_id, dp_info["state"], curr_state))
+                    dp_info["state"] = curr_state
+                    # Track known states
+                    if curr_state == states[dp_info["s_index"]]:
+                        dp_info["s_index"] += 1
+                if dp_info["s_index"] != len_states:
+                    rebalanced = False
+
             self.sleep(1)
             timeout -= 1
 
-    def __track_weight_scaling(self):
-        timeout = self.timeout
-        while timeout > 0:
-            db_info = self.get_db_debug_json()
-            sizing_info = db_info["database"]["config"]["sizing"]
-            self.test_log.debug("Bucket %s: weight=%s, overRideWeight=%s"
-                                % (self.bucket.name, sizing_info["weight"],
-                                   sizing_info["weightOverRide"]))
-            if sizing_info["weightOverRide"] == self.desired_weight \
-                    and sizing_info["weight"] == self.desired_weight:
+    def __track_bucket_width_updates(self):
+        retries = 3
+        result = False
+        bucket_info = dict()
+        for sub_task in self.scaling_tasks:
+            if sub_task["desired_width"] is None:
+                continue
+
+            dataplane_id = json.loads(
+                self.serverless_util.capella_api
+                    .get_database_debug_info(sub_task["bucket"].name)
+                    .content)["dataplane"]["id"]
+            bucket_info[sub_task["bucket"].name] = dict()
+            bucket_info[sub_task["bucket"].name]["scaled"] = False
+            bucket_info[sub_task["bucket"].name]["cluster"] \
+                = sub_task["cluster"]
+            bucket_info[sub_task["bucket"].name]["bucket"] = sub_task["bucket"]
+            bucket_info[sub_task["bucket"].name]["dataplane_id"] = dataplane_id
+            bucket_info[sub_task["bucket"].name]["expected_node_len"] = \
+                CbServer.Serverless.KV_SubCluster_Size \
+                * sub_task["desired_width"]
+
+        while retries > 0:
+            dataplane_buckets_map = dict()
+            for b_name, b_info in bucket_info.items():
+                if b_info["scaled"]:
+                    continue
+                dataplane_id = json.loads(self.serverless_util.capella_api
+                                          .get_database_debug_info(b_name)
+                                          .content)["dataplane"]["id"]
+                if dataplane_id not in dataplane_buckets_map:
+                    dataplane_buckets_map[dataplane_id] = dict()
+                    dataplane_buckets_map[dataplane_id]["buckets"] = list()
+                    dataplane_buckets_map[dataplane_id]["state"] = "unknown"
+                    dataplane_buckets_map[dataplane_id]["s_index"] = 0
+                dataplane_buckets_map[dataplane_id]["buckets"].append(
+                    b_info["bucket"])
+
+            self.__track_dataplane_rebalance(dataplane_buckets_map)
+
+            result = True
+            for b_name, b_info in bucket_info.items():
+                bucket = b_info["bucket"]
+                self.update_bucket_nebula_and_kv_nodes(b_info["cluster"],
+                                                       bucket)
+                if len(b_info["cluster"].bucketDNNodes[bucket]) \
+                        != b_info["expected_node_len"]:
+                    result = False
+                    self.test_log.warning(
+                        "%s not yet scaled. Expected node_len %s != %s actual"
+                        % (b_name, b_info["expected_node_len"],
+                           len(b_info["cluster"].bucketDNNodes[bucket])))
+
+            # Break for external while loop
+            if result:
                 break
-            self.sleep(0.5)
+            retries -= 1
+        return result
+
+    def __track_weight_scaling(self):
+        buckets_to_track = dict()
+        for sub_task in self.scaling_tasks:
+            if sub_task["desired_weight"] is None:
+                continue
+            bucket = sub_task["bucket"]
+            buckets_to_track[bucket.name] = dict()
+            buckets_to_track[bucket.name]["bucket"] = bucket
+            buckets_to_track[bucket.name]["scaled"] = False
+            buckets_to_track[bucket.name]["desired_weight"] = \
+                sub_task["desired_weight"]
+
+        weight_scaled = False
+        timeout = self.timeout
+        while not weight_scaled and timeout > 0:
+            weight_scaled = True
+            for b_name, b_info in buckets_to_track.items():
+                if b_info["scaled"]:
+                    continue
+                db_info = self.get_db_debug_json(b_name)
+                sizing_info = db_info["database"]["config"]["sizing"]
+                self.test_log.debug("Bucket %s: weight=%s, overRideWeight=%s"
+                                    % (b_name, sizing_info["weight"],
+                                       sizing_info["weightOverRide"]))
+                if sizing_info["weightOverRide"] == b_info["desired_weight"] \
+                        and sizing_info["weight"] == b_info["desired_weight"]:
+                    b_info["scaled"] = True
+                    self.test_log.info("%s - weight scaled to %s"
+                                       % (b_name, b_info["desired_weight"]))
+                else:
+                    weight_scaled = False
+            self.sleep(1)
             timeout -= 1
+        return weight_scaled
 
     def __track_ram_scaling(self):
+        buckets_to_track = dict()
+        for sub_task in self.scaling_tasks:
+            if sub_task["desired_ram_quota"] is None:
+                continue
+            bucket = sub_task["bucket"]
+            buckets_to_track[bucket.name] = dict()
+            buckets_to_track[bucket.name]["bucket"] = bucket
+            buckets_to_track[bucket.name]["scaled"] = False
+
+        result = False
         timeout = self.timeout
-        while timeout > 0:
-            db_info = self.get_db_debug_json()
-            sizing_info = db_info["database"]["config"]["sizing"]
-            self.test_log.debug("Bucket %s: memoryQuota=%s"
-                                % (self.bucket.name,
-                                   sizing_info["memoryQuota"]))
-            if sizing_info["memoryQuota"] == self.bucket.ramQuotaMB:
-                break
-            self.sleep(0.5)
+        while not result and timeout > 0:
+            result = True
+            for b_name, b_info in buckets_to_track.items():
+                if b_info["scaled"]:
+                    continue
+
+                db_info = self.get_db_debug_json(b_name)
+                sizing_info = db_info["database"]["config"]["sizing"]
+                self.test_log.debug("Bucket %s: memoryQuota=%s"
+                                    % (b_name, sizing_info["memoryQuota"]))
+                if sizing_info["memoryQuota"] == b_info["bucket"].ramQuotaMB:
+                    b_info["scaled"] = True
+                    self.test_log.info("%s - RAM scaled to %s"
+                                       % (b_name, b_info["bucket"].ramQuotaMB))
+                else:
+                    result = False
+            self.sleep(1)
             timeout -= 1
+        return result
 
-    def call(self):
-        self.start_task()
-
-        self.result = True
-        if self.desired_node_len:
-            self.__track_width_scaling()
-        if self.desired_weight:
-            self.__track_weight_scaling()
-        if self.desired_ram_quota:
-            self.__track_ram_scaling()
-
-        sizing_info = self.get_db_debug_json()["database"]["config"]["sizing"]
-        self.test_log.critical(
-            "Expected %s sizing: width=%s, weight=%s, ram=%s"
-            % (self.bucket.name, self.bucket.serverless.width,
-               self.bucket.serverless.weight, self.bucket.ramQuotaMB))
-        self.test_log.critical(
-            "Actual %s sizing: width=%s, weight=%s, ram=%s"
-            % (self.bucket.name, sizing_info["width"], sizing_info["weight"],
-               sizing_info["memoryQuota"]))
-        if sizing_info["width"] != self.bucket.serverless.width \
-                or sizing_info["weight"] != self.bucket.serverless.weight \
-                or sizing_info["memoryQuota"] != self.bucket.ramQuotaMB:
-            self.test_log.critical("Bucket %s sizing mismatch"
-                                   % self.bucket.name)
-            self.result = False
-
-        self.log.debug("Fetching SRV records for %s" % self.bucket.name)
+    def update_bucket_nebula_and_kv_nodes(self, cluster, bucket):
+        self.log.debug("Fetching SRV records for %s" % bucket.name)
         srv = self.serverless_util.get_database_nebula_endpoint(
-            self.cluster.pod, self.cluster.tenant, self.bucket.name)
-        self.log.debug("Updating nebula servers for %s" % self.bucket.name)
+            cluster.pod, cluster.tenant, bucket.name)
+        self.log.debug("Updating nebula servers for %s" % bucket.name)
         nebula_class = common_lib.get_module(
             "cluster_utils.cluster_ready_functions", "Nebula")
         global_vars.bucket_util.update_bucket_nebula_servers(
-            self.cluster, nebula_class(srv, self.bucket.servers[0]),
-            self.bucket)
-        self.log.critical("Status :: %s" % self.result)
-        if len(self.cluster.bucketDNNodes[self.bucket]) \
-                == self.desired_node_len:
-            self.result = self.result and True
-        else:
-            self.test_log.error(
-                "%s - Expected node_len %s != %s actual"
-                % (self.bucket.name, self.desired_node_len,
-                   len(self.cluster.bucketDNNodes[self.bucket])))
+            cluster, nebula_class(srv, bucket.servers[0]), bucket)
+
+    def call(self):
+        self.result = True
+        self.start_task()
+
+        self.result = self.__track_bucket_width_updates()
+        self.result = self.result and self.__track_weight_scaling()
+        self.result = self.result and self.__track_ram_scaling()
+
+        # Update the latest Nebula and KV node details
+        for sub_task in self.scaling_tasks:
+            bucket = sub_task["bucket"]
+            self.update_bucket_nebula_and_kv_nodes(sub_task["cluster"], bucket)
+
+            sizing_info = self.get_db_debug_json(bucket.name)[
+                "database"]["config"]["sizing"]
+            self.test_log.critical(
+                "Actual %s sizing: width=%s, weight=%s, ram=%s"
+                % (bucket.name, sizing_info["width"],
+                   sizing_info["weight"],
+                   sizing_info["memoryQuota"]))
+            if sizing_info["width"] != bucket.serverless.width \
+                    or sizing_info["weight"] != bucket.serverless.weight \
+                    or sizing_info["memoryQuota"] != bucket.ramQuotaMB:
+                self.test_log.warning("Bucket %s sizing mismatch"
+                                      % bucket.name)
+                self.result = False
+
         self.complete_task()
         if self.result is False:
-            self.set_exception(
-                Exception("Bucket %s scaling failed" % self.bucket.name))
+            self.set_exception(Exception("Bucket scaling failed"))
 
 
 class BucketCreateTask(Task):
