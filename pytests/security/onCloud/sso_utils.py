@@ -274,7 +274,7 @@ tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
 
 class SsoUtils:
     def __init__(self, url, secret_key, access_key, user, passwd):
-        self.url = url
+        self.url = url.replace("cloud", "", 1)
         self.capella_api = CapellaAPI("https://" + url, secret_key, access_key, user, passwd)
 
     def check_realm_exists(self, realm_name):
