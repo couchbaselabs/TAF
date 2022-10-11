@@ -519,3 +519,56 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                         self.bucket_util.async_monitor_database_scaling(
                             self.cluster, bucket)
                     self.task_manager.get_task_result(monitor_task)
+
+    def test_scope_collection_limit(self):
+        self.bucket_name_format = "scopeCollectionLimitTest-%s"
+
+        COLLECTION_LIMIT = 100
+        SCOPE_LIMIT = 100
+        SAMPLE_COLLECTIONS = 4
+
+        collection_limit_per_scope = self.get_bucket_spec(
+            collections_per_scope=(COLLECTION_LIMIT - SAMPLE_COLLECTIONS))
+        # checking collection limit
+        self.__create_required_buckets(collection_limit_per_scope)
+
+        # checking collection limit per bucket exceed
+        collection_limit_per_scope_exceed = self.get_bucket_spec(
+            collections_per_scope=COLLECTION_LIMIT - SAMPLE_COLLECTIONS + 1)
+        exception = False
+        try:
+            self.__create_required_buckets(collection_limit_per_scope_exceed)
+        except Exception as ex:
+            self.log.debug("Caught exception" % ex)
+            exception = True
+        self.assertTrue(exception, "Expected exception as collection per "
+                                   "scope limit is reached")
+
+        # checking overall collection limit exceed
+        collection_overall_limit_exceed = self.get_bucket_spec(
+            collections_per_scope=11, scopes_per_bucket=10)
+        exception = False
+        try:
+            self.__create_required_buckets(collection_overall_limit_exceed)
+        except Exception as ex:
+            self.log.debug("Caught exception" % ex)
+            exception = True
+        self.assertTrue(exception, "Expected exception as total collection "
+                                   "per bucket limit crossed")
+
+        # checking scope limit
+        scope_limit = self.get_bucket_spec(scopes_per_bucket=SCOPE_LIMIT,
+                                           collections_per_scope=0)
+        self.__create_required_buckets(scope_limit)
+
+        # checking scope limit exceed
+        scope_limit_exceed = self.get_bucket_spec(
+            scopes_per_bucket=SCOPE_LIMIT + 1, collections_per_scope=0)
+        exception = False
+        try:
+            self.__create_required_buckets(scope_limit_exceed)
+        except Exception as ex:
+            self.log.debug("Caught exception" % ex)
+            exception = True
+        self.assertTrue(exception, "Expected exception as "
+                                   "scope limit is reached")

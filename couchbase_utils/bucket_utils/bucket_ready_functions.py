@@ -2436,7 +2436,7 @@ class BucketUtils(ScopeUtils):
                     in buckets_spec[bucket.name]["scopes"].items():
                 if type(scope_spec) is not dict:
                     continue
-
+                scope_spec["name"] = scope_name
                 if scope_name != CbServer.default_scope:
                     if cluster.type == "serverless":
                         self.create_scope(bucket.servers[0], bucket,
