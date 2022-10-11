@@ -32,17 +32,18 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.sdk_client_pool.shutdown()
         super(TenantMgmtOnCloud, self).tearDown()
 
-    def __get_bucket_spec(self, num_buckets=1):
+    def get_bucket_spec(self, num_buckets=1, scopes_per_bucket=1,
+                        collections_per_scope=1, items_per_collection=0):
         self.log.debug("Getting spec for %s buckets" % num_buckets)
         buckets = dict()
         for i in range(num_buckets):
             buckets[self.bucket_name_format % i] = dict()
         return {
-            MetaConstants.NUM_BUCKETS: 1,
+            MetaConstants.NUM_BUCKETS: num_buckets,
             MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
-            MetaConstants.NUM_SCOPES_PER_BUCKET: 1,
-            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 1,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 10000,
+            MetaConstants.NUM_SCOPES_PER_BUCKET: scopes_per_bucket,
+            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: collections_per_scope,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: items_per_collection,
             MetaConstants.USE_SIMPLE_NAMES: True,
 
             Bucket.bucketType: Bucket.Type.MEMBASE,
@@ -94,8 +95,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         scenarios = list()
         return scenarios
 
-    def __get_serverless_bucket_obj(self, db_name, width, weight,
-                                    num_vbs=None):
+    def get_serverless_bucket_obj(self, db_name, width, weight, num_vbs=None):
         self.log.debug("Creating server bucket_obj %s:%s:%s"
                        % (db_name, width, weight))
         bucket_obj = Bucket({
@@ -113,9 +113,9 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         return bucket_obj
 
-    def __create_database(self, bucket=None):
+    def create_database(self, bucket=None):
         if not bucket:
-            bucket = self.__get_serverless_bucket_obj(
+            bucket = self.get_serverless_bucket_obj(
                 self.db_name, self.bucket_width, self.bucket_weight)
         task = self.bucket_util.async_create_database(
             self.cluster, bucket, dataplane_id=self.dataplane_id)
@@ -140,9 +140,9 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         else:
             self.log.info("Creating '%s' buckets" % self.num_buckets)
             for _ in range(self.num_buckets):
-                self.__create_database()
+                self.create_database()
 
-    def __create_sdk_client_pool(self, buckets, req_clients_per_bucket):
+    def create_sdk_client_pool(self, buckets, req_clients_per_bucket):
         if self.sdk_client_pool:
             self.sdk_client_pool = \
                 self.bucket_util.initialize_java_sdk_client_pool()
@@ -174,8 +174,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         loader_map = dict()
 
         # Create sdk_client_pool
-        self.__create_sdk_client_pool(buckets=self.cluster.buckets,
-                                      req_clients_per_bucket=1)
+        self.create_sdk_client_pool(buckets=self.cluster.buckets,
+                                    req_clients_per_bucket=1)
 
         for bucket in self.cluster.buckets:
             for scope in bucket.scopes.keys():
@@ -207,7 +207,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         new_buckets = list()
         for _ in range(dynamic_buckets):
-            bucket = self.__get_serverless_bucket_obj(
+            bucket = self.get_serverless_bucket_obj(
                 self.db_name, self.bucket_width, self.bucket_weight)
             task = self.bucket_util.async_create_database(self.cluster, bucket)
             self.task_manager.get_task_result(task)
@@ -238,7 +238,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         """
         db_name = "tntmgmtrecreatedb"
         max_itr = 5
-        bucket = self.__get_serverless_bucket_obj(
+        bucket = self.get_serverless_bucket_obj(
             db_name, self.bucket_width, self.bucket_weight)
 
         for itr in range(1, max_itr):
@@ -275,7 +275,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             "\"message\":\"Not able to create serverless database. " \
             "The name provided must be at least two characters in length. " \
             "Please try again.\"}"
-        bucket = self.__get_serverless_bucket_obj("123,", 1, 30)
+        bucket = self.get_serverless_bucket_obj("123,", 1, 30)
         task = self.bucket_util.async_create_database(self.cluster, bucket)
         try:
             self.task_manager.get_task_result(task)
@@ -283,7 +283,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             if invalid_char_err not in str(exception):
                 self.fail("Exception mismatch. Got::%s" % exception)
 
-        bucket = self.__get_serverless_bucket_obj("1", 1, 30)
+        bucket = self.get_serverless_bucket_obj("1", 1, 30)
         task = self.bucket_util.async_create_database(self.cluster, bucket)
         try:
             self.task_manager.get_task_result(task)
@@ -301,7 +301,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.bucket_name_format = "tntMgmtScaleTest-%s"
         target_scenario = self.input.param("target_scenario")
 
-        spec = self.__get_bucket_spec(self.num_buckets)
+        spec = self.get_bucket_spec(self.num_buckets)
         self.__create_required_buckets(buckets_spec=spec)
         if target_scenario.startswith("single_bucket_"):
             scenarios = self.__get_single_bucket_scenarios(target_scenario)
@@ -309,7 +309,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             scenarios = self.__get_multi_bucket_scenarios(target_scenario)
 
         if self.with_data_load:
-            self.__create_sdk_client_pool(self.cluster.buckets, 1)
+            self.create_sdk_client_pool(self.cluster.buckets, 1)
             loader_map = dict()
             for bucket in self.cluster.buckets:
                 work_load_settings = DocLoaderUtils.get_workload_settings(
@@ -390,7 +390,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         loader_key = "%s%s%s" % (bucket.name, CbServer.default_scope,
                                  CbServer.default_collection)
-        self.__create_sdk_client_pool([bucket], 1)
+        self.create_sdk_client_pool([bucket], 1)
         dgm_index = 0
         storage_band = 1
         target_dgms = [3, 2.3, 2.0, 1.9, 1.8, 1.5]
