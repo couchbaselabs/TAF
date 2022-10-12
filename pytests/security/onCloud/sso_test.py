@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import json
 import requests
 
@@ -259,3 +261,110 @@ class SSOTest(BaseTestCase):
         else:
             self.log.info("Got Response: {0} {1}".format(response.status_code, response.content))
             self.fail("Oversize payload should have been ignored by auth0")
+
+    def test_high_quantity_saml_to_auth0(self):
+        no_of_iters = self.input.param("no_of_iters", 10000)
+        req_no = 0
+        try:
+            while req_no < no_of_iters:
+                self.log.info("Request number: {0}".format(req_no))
+                self.log.info("Login with SSO")
+
+                # This code is different from the rest of the lifecycle. This is the code
+                # that will go and perform the SAML attestation.
+                login_flow = self.sso.initiate_idp_login(self.realm_name)
+                self.assertEqual(login_flow.status_code // 100, 2)
+                login_flow = json.loads(login_flow.content)
+                self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
+
+                # Get the SAML Request
+                saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+                self.assertEqual(saml_request.status_code // 100, 2)
+                c = saml_request.cookies
+
+                saml_request_dict = self.sso.parse_saml_request(saml_request.content)
+                self.log.info(saml_request_dict)
+                self.assertIsNotNone(saml_request_dict["SAMLRequest"])
+                self.assertIsNotNone(saml_request_dict["RelayState"])
+
+                identifier = self.sso.decode_saml_request(saml_request_dict['SAMLRequest'])
+                self.log.info("Got Request ID: {}".format(identifier))
+
+                s = SAMLResponse(requestId=identifier, spname=self.realm_entity,
+                                 acs=self.realm_callback)
+                s.generateRoot()
+                s.subject("test-user1")
+                s.attribute("uid", ["test-user1"])
+                s.attribute("mail", ["test-user1@capella.test"])
+
+                ss = SAMLSignatory()
+                dgst = ss.digest(s.to_string())
+                s.add_digest(dgst, self.sso.get_certificate())
+                sig = self.sso.sign(ss.digest(s.signed_info_to_string()))
+                s.add_signature(sig)
+
+                response = s.to_base64()
+
+                response = self.sso.send_saml_response(self.realm_callback, response,
+                                                       saml_request_dict["RelayState"],
+                                                       cookies=c)
+                self.log.info("Got Response: {0} {1}".format(response.status_code,
+                                                             response.content))
+                req_no = req_no + 1
+        except requests.ConnectionError as er:
+            self.log.info(er)
+            pass
+        else:
+            self.log.info("Got Response: {0} {1}".format(response.status_code, response.content))
+            self.log.info("High quantity SAML requests should have given ConnectionError")
+
+    def test_duplicate_saml_to_auth0(self):
+        self.log.info("Login with SSO")
+
+        # This code is different from the rest of the lifecycle. This is the code
+        # that will go and perform the SAML attestation.
+        login_flow = self.sso.initiate_idp_login(self.realm_name)
+        self.assertEqual(login_flow.status_code // 100, 2)
+        login_flow = json.loads(login_flow.content)
+        self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
+
+        # Get the SAML Request
+        saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+        self.assertEqual(saml_request.status_code // 100, 2)
+        c = saml_request.cookies
+
+        saml_request_dict = self.sso.parse_saml_request(saml_request.content)
+        self.log.info(saml_request_dict)
+        self.assertIsNotNone(saml_request_dict["SAMLRequest"])
+        self.assertIsNotNone(saml_request_dict["RelayState"])
+
+        identifier = self.sso.decode_saml_request(saml_request_dict['SAMLRequest'])
+        self.log.info("Got Request ID: {}".format(identifier))
+
+        s = SAMLResponse(requestId=identifier, spname=self.realm_entity, acs=self.realm_callback)
+        s.generateRoot()
+        s.subject("test-user1")
+        s.attribute("uid", ["test-user1"])
+        s.attribute("mail", ["test-user1@capella.test"])
+
+        ss = SAMLSignatory()
+        dgst = ss.digest(s.to_string())
+        s.add_digest(dgst, self.sso.get_certificate())
+        sig = self.sso.sign(ss.digest(s.signed_info_to_string()))
+        s.add_signature(sig)
+
+        self.log.info("Digest: {}".format(dgst))
+        self.log.info("Signature: {}".format(sig))
+
+        self.log.info(s.to_string())
+        response = s.to_base64()
+        response = self.sso.send_saml_response(self.realm_callback, response,
+                                               saml_request_dict["RelayState"],
+                                               cookies=c)
+        self.assertEqual(response.status_code // 100, 3)
+
+        # replay the same response, this should give 4xx error
+        response = self.sso.send_saml_response(self.realm_callback, response,
+                                               saml_request_dict["RelayState"],
+                                               cookies=c)
+        self.assertEqual(response.status_code // 100, 4)
