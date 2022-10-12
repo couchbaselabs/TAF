@@ -26,6 +26,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.db_name = "TAF-TenantMgmtOnCloud"
         self.token = self.input.capella.get("token")
         self.with_data_load = self.input.param("with_data_load", False)
+        self.capella_api = CapellaAPI(self.pod.url_public, None, None,
+                                      self.token)
 
     def tearDown(self):
         if self.sdk_client_pool:
@@ -389,12 +391,48 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             if name_too_short_err not in str(exception):
                 self.fail("Exception mismatch. Got::%s" % exception)
 
-    def test_bucket_scaling(self):
-        def get_bucket_with_name(b_name):
-            for b_obj in self.cluster.buckets:
-                if b_obj.name == b_name:
-                    return b_obj
+    def __get_bucket_with_name(self, b_name):
+        for b_obj in self.cluster.buckets:
+            if b_obj.name == b_name:
+                return b_obj
 
+    def __trigger_bucket_param_updates(self, scenario):
+        """
+        :param scenario:
+        :return:
+        """
+        to_track = list()
+        for bucket_name, s_dict in scenario.items():
+            bucket_obj = self.__get_bucket_with_name(bucket_name)
+            db_info = {
+                "cluster": self.cluster,
+                "bucket": bucket_obj,
+                "desired_ram_quota": None,
+                "desired_width": None,
+                "desired_weight": None
+            }
+
+            over_ride = dict()
+            if Bucket.width in s_dict and (bucket_obj.serverless.width
+                                           != s_dict[Bucket.width]):
+                over_ride[Bucket.width] = s_dict[Bucket.width]
+                db_info["desired_width"] = s_dict[Bucket.width]
+                bucket_obj.serverless.width = s_dict[Bucket.width]
+            if Bucket.weight in s_dict and (bucket_obj.serverless.weight
+                                            != s_dict[Bucket.weight]):
+                over_ride[Bucket.weight] = s_dict[Bucket.weight]
+                db_info["desired_weight"] = s_dict[Bucket.weight]
+                bucket_obj.serverless.weight = s_dict[Bucket.weight]
+            resp = self.capella_api.update_database(
+                bucket_obj.name, {"overRide": over_ride})
+            self.assertTrue(resp.status_code == 200, "Update Api failed")
+            to_track.append(db_info)
+        return to_track
+
+    def test_bucket_scaling(self):
+        """
+        :return:
+        """
         scenarios = None
         doc_loading_tasks = None
         self.bucket_name_format = "tntMgmtScaleTest-%s"
@@ -435,36 +473,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 async_load=True, validate_results=False,
                 sdk_client_pool=self.sdk_client_pool)
 
-        capella_api = CapellaAPI(self.pod.url_public, None, None, self.token)
         for scenario in scenarios:
-            to_track = list()
-            for bucket_name, s_dict in scenario.items():
-                bucket_obj = get_bucket_with_name(bucket_name)
-
-                db_info = {
-                    "cluster": self.cluster,
-                    "bucket": bucket_obj,
-                    "desired_ram_quota": None,
-                    "desired_width": None,
-                    "desired_weight": None
-                }
-
-                over_ride = dict()
-                if Bucket.width in s_dict and (bucket_obj.serverless.width
-                                               != s_dict[Bucket.width]):
-                    over_ride[Bucket.width] = s_dict[Bucket.width]
-                    db_info["desired_width"] = s_dict[Bucket.width]
-                    bucket_obj.serverless.width = s_dict[Bucket.width]
-                if Bucket.weight in s_dict and (bucket_obj.serverless.weight
-                                                != s_dict[Bucket.weight]):
-                    over_ride[Bucket.weight] = s_dict[Bucket.weight]
-                    db_info["desired_weight"] = s_dict[Bucket.weight]
-                    bucket_obj.serverless.weight = s_dict[Bucket.weight]
-                resp = capella_api.update_database(
-                    bucket_obj.name, {"overRide": over_ride})
-                self.assertTrue(resp.status_code == 200, "Update Api failed")
-                to_track.append(db_info)
-
+            to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
                 to_track, timeout=600)
             self.task_manager.get_task_result(monitor_task)
@@ -472,6 +482,92 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         if self.with_data_load:
             DocLoaderUtils.wait_for_doc_load_completion(self.doc_loading_tm,
                                                         doc_loading_tasks)
+
+    def test_create_delete_db_during_bucket_scaling(self):
+        """
+        1. Deploy 'N' databases with width=1, weight=30
+        2. Scale half of the DBs to width=2
+        3. Scale one DB from width 1->2 and another from 2->3
+           and CREATE & DELETE databases in parallel
+        4. Scale one DB from width 2->3 and another from 3->2
+           and CREATE & DELETE databases in parallel
+        :return:
+        """
+
+        b_index = 0
+        scenario = dict()
+        self.bucket_name_format = "tntMgmtScaleTest-%s"
+        scale_type = self.input.param("scale_type", Bucket.width)
+
+        # Deploy initial databases
+        spec = self.get_bucket_spec(self.num_buckets)
+        self.create_required_buckets(buckets_spec=spec)
+
+        # Initially scale first half of the buckets to width=2 and weight=300
+        half_of_bucket_index = int(self.num_buckets/2)
+        for index, bucket in self.cluster.buckets[:half_of_bucket_index]:
+            scenario[bucket.name] = {Bucket.width: 2,
+                                     Bucket.weight: 300}
+        to_track = self.__trigger_bucket_param_updates(scenario)
+        monitor_task = self.bucket_util.async_monitor_database_scaling(
+            to_track, timeout=600)
+        self.task_manager.get_task_result(monitor_task)
+
+        # Perform scaling and perform new DB create/delete
+        if scale_type == Bucket.width:
+            scenario = {self.cluster.buckets[0].name: {Bucket.width: 3},
+                        self.cluster.buckets[-1].name: {Bucket.width: 2}}
+        elif scale_type == Bucket.weight:
+            scenario = {self.cluster.buckets[0].name: {Bucket.weight: 390},
+                        self.cluster.buckets[-1].name: {Bucket.weight: 210}}
+        else:
+            scenario = {self.cluster.buckets[0].name: {Bucket.width: 3,
+                                                       Bucket.weight: 280},
+                        self.cluster.buckets[-1].name: {Bucket.width: 2,
+                                                        Bucket.weight: 300}}
+        to_track = self.__trigger_bucket_param_updates(scenario)
+        monitor_task = self.bucket_util.async_monitor_database_scaling(
+            to_track, timeout=600)
+        # Create DB
+        db_to_create = self.get_serverless_bucket_obj(
+            db_name="tntMgmtCreateDeleteDB-%s" % b_index, width=1, weight=30)
+        self.log.info("Creating DB: %s" % db_to_create.name)
+        task = self.bucket_util.async_create_database(self.cluster,
+                                                      db_to_create)
+        # Drop DB
+        db_to_drop = self.cluster.buckets[-2]
+        self.log.info("Dropping DB: %s" % db_to_drop.name)
+        self.serverless_util.delete_database(self.pod, self.tenant, db_to_drop)
+        # Wait for create DB to complete
+        self.log.info("Wait for %s creation to complete: %s" % db_to_drop.name)
+        self.task_manager.get_task_result(task)
+        self.task_manager.get_task_result(monitor_task)
+
+        # Update width scaling for couple for DBs
+        if scale_type == Bucket.width:
+            scenario = {self.cluster.buckets[0].name: {Bucket.width: 2},
+                        self.cluster.buckets[-1].name: {Bucket.width: 3}}
+        elif scale_type == Bucket.weight:
+            scenario = {self.cluster.buckets[0].name: {Bucket.weight: 225},
+                        self.cluster.buckets[-1].name: {Bucket.weight: 375}}
+        else:
+            scenario = {self.cluster.buckets[0].name: {Bucket.width: 2,
+                                                       Bucket.weight: 330},
+                        self.cluster.buckets[-1].name: {Bucket.width: 3,
+                                                        Bucket.weight: 390}}
+        to_track = self.__trigger_bucket_param_updates(scenario)
+        monitor_task = self.bucket_util.async_monitor_database_scaling(
+            to_track, timeout=600)
+        # Drop the DB which was created earlier
+        target_db = db_to_create
+        self.log.info("Dropping DB: %s" % target_db.name)
+        self.serverless_util.delete_database(self.pod, self.tenant, target_db)
+        # Create DB
+        target_db = db_to_drop
+        self.log.info("Creating DB: %s" % target_db.name)
+        task = self.bucket_util.async_create_database(self.cluster, target_db)
+        self.task_manager.get_task_result(task)
+        self.task_manager.get_task_result(monitor_task)
 
     def test_bucket_auto_ram_scaling(self):
         """
