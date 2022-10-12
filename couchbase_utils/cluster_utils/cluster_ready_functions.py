@@ -387,6 +387,31 @@ class ClusterUtils:
                         server_set.append(server)
         return server_set
 
+    @staticmethod
+    def construct_servers_from_master_details(node_ip, username, password):
+        """
+        Used to construct TestInputServer objects from the
+        single node auth details.
+        :param node_ip:
+        :param username:
+        :param password:
+        :return: List of TestInputServer objects
+        """
+        def get_obj(ip):
+            serv = TestInputServer()
+            serv.ip = ip
+            serv.rest_username = username
+            serv.rest_password = password
+            serv.memcached_port = CbServer.ssl_memcached_port
+            return serv
+
+        server = get_obj(node_ip)
+        servers = [server]
+        rest = RestConnection(server)
+        for node in rest.get_nodes():
+            servers.append(get_obj(node.hostname.split(":")[0]))
+        return servers
+
     def change_checkpoint_params(self, cluster):
         chk_max_items = self.input.param("chk_max_items", None)
         chk_period = self.input.param("chk_period", None)

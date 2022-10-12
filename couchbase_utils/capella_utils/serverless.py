@@ -8,11 +8,12 @@ Created on Aug 10, 2022
 
 # -*- coding: utf-8 -*-
 # Generic/Built-in
-import logging
-
 import json
-from capellaAPI.capella.serverless.CapellaAPI import CapellaAPI
+import logging
 import time
+
+from capellaAPI.capella.serverless.CapellaAPI import CapellaAPI
+from org.xbill.DNS import Lookup, Type
 
 
 class CapellaUtils:
@@ -202,16 +203,21 @@ class CapellaUtils:
                               format(resp))
         return resp
 
-    def bypass_dataplane(self, pod, dataplane_id):
-        resp = self.capella_api.get_access_to_serverless_dataplane_nodes(dataplane_id)
-        CapellaUtils.log.info("bypass DN response:{}".
-                              format(resp))
+    def bypass_dataplane(self, dataplane_id):
+        """
+        :param dataplane_id:
+        :return node_endpoint, username, password:
+        """
+        resp = self.capella_api.get_access_to_serverless_dataplane_nodes(
+            dataplane_id)
+        CapellaUtils.log.info("bypass DN response:%s" % resp)
         if resp.status_code != 200:
-            raise Exception("Bypass DN failed: {}".
-                            format(resp.content))
+            raise Exception("Bypass DN failed: %s" % resp.content)
         data = json.loads(resp.content)["couchbaseCreds"]
         data["srv"] = json.loads(resp.content)["srv"]
-        return data["username"], data["password"], data["srv"]
+
+        records = Lookup("_couchbases._tcp.%s" % data["srv"], Type.SRV).run()
+        return str(records[0].getTarget()), data["username"], data["password"]
 
     def get_dataplane_info(self, dataplane_id):
         resp = self.capella_api.get_serverless_dataplane_info(dataplane_id)
