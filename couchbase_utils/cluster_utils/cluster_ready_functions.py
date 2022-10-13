@@ -11,7 +11,7 @@ import time
 import os
 from threading import Lock
 
-from Cb_constants import constants, CbServer
+from Cb_constants import constants, CbServer, ClusterRun
 from Jython_tasks.task import MonitorActiveTask, FunctionCallTask
 from TestInput import TestInputSingleton, TestInputServer
 from cb_tools.cb_collectinfo import CbCollectInfo
@@ -721,8 +721,11 @@ class ClusterUtils:
                                       .format(ip, hostname))
                         ip = hostname
                         shell.disconnect()
-                    if (port != constants.port and port == int(server.port)) \
-                            or (port == constants.port and server.ip == ip):
+
+                    if ClusterRun.is_enabled:
+                        if port != constants.port and port == int(server.port):
+                            node_list.append(server)
+                    elif server.ip == ip:
                         node_list.append(server)
             self.log.debug("All nodes in cluster: {0}".format(node_list))
             if get_all_nodes:
