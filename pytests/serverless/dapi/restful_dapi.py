@@ -52,5 +52,5 @@ class RestfulDAPITest(BaseTestCase):
             self.assertTrue(response.status_code == 200,
                             "DAPI is not healthy for database: {}".format(bucket.name))
             self.log.info(json.loads(response.content)["health"])
-            self.assertTrue(json.loads(response.content)["health"] == "OK",
+            self.assertTrue(json.loads(response.content)["health"].lower() == "ok",
                             "DAPI health is not OK")
