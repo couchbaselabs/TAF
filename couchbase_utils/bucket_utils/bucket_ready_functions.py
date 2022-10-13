@@ -5829,3 +5829,54 @@ class BucketUtils(ScopeUtils):
             get_range_api_metrics(metric_name, label_values=label_values)
         item_count = content["data"][0]["values"][-1][-1]
         return int(item_count)
+
+    def get_stat_from_metrics(self, bucket):
+        num_throttled, ru, wu = 0, 0, 0
+        for server in bucket.servers:
+            _, output = RestConnection(server).get_prometheus_metrics()
+            output = output.splitlines()
+            if "Forbidden" in output:
+                self.log.error("Prometheus stats failed with error %s" % output)
+            wu_pattern = re.compile('meter_wu_total{bucket="%s",for="kv"} (\d+)' % bucket.name)
+            ru_pattern = re.compile('meter_ru_total{bucket="%s",for="kv"} (\d+)' % bucket.name)
+            num_throttled_pattern = re.compile('throttle_count_total{bucket="%s",for="kv"} (\d+)' % bucket.name)
+            for line in output:
+                if wu_pattern.match(line):
+                    wu += int(wu_pattern.findall(line)[0])
+                elif ru_pattern.match(line):
+                    ru += int(ru_pattern.findall(line)[0])
+                elif num_throttled_pattern.match(line):
+                    num_throttled += int(num_throttled_pattern.findall(line)[0])
+        self.log.info("num_throttled %s, ru %s, wu %s" % (num_throttled, ru, wu))
+        return num_throttled, ru, wu
+
+    def set_throttle_limit(self, bucket, throttling_limit=5000, storage_limit=500):
+        for node in bucket.servers:
+            _, content = RestConnection(node).\
+                set_throttle_limit(bucket=bucket.name,
+                                   throttle_limit=throttling_limit,
+                                   storage_limit=storage_limit)
+
+    def get_throttle_limit(self, bucket):
+        throttle_limit = list()
+        for server in bucket.servers:
+            _, content = RestConnection(server).\
+                get_throttle_limit(bucket=bucket.name)
+            output = json.loads(content)
+            if output["dataThrottleLimit"] not in throttle_limit:
+                throttle_limit.append(output["dataThrottleLimit"])
+        return throttle_limit[0]
+
+    def calculate_units(self, key, value, sub_doc_size=0, xattr=0,
+                        read=False, num_items=1, durability="NONE"):
+        if read:
+            limit = 4096
+        else:
+            limit = 1024
+        total_size = key + value + sub_doc_size + xattr
+        expected_cu, remainder = divmod(total_size, limit)
+        if remainder:
+            expected_cu += 1
+        if durability != "NONE" and not read:
+            expected_cu *= 2
+        return expected_cu * num_items
