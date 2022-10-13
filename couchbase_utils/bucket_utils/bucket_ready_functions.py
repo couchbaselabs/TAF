@@ -2084,6 +2084,8 @@ class BucketUtils(ScopeUtils):
     def get_updated_bucket_server_list(self, cluster, bucket_obj):
         retry = 15
         helper = BucketHelper(cluster.master)
+        self.log.debug("Updating server_list for bucket :: %s"
+                       % bucket_obj.name)
         while retry > 0:
             # Reset the known servers list
             bucket_obj.servers = list()
@@ -3024,9 +3026,11 @@ class BucketUtils(ScopeUtils):
         """
         tasks = list()
         for bucket in buckets:
-            for server in self.cluster_util.get_bucket_kv_nodes(cluster, bucket):
-                if bucket.bucketType == 'memcached':
-                    continue
+            if cluster.type == "default":
+                self.get_updated_bucket_server_list(cluster, bucket)
+            if bucket.bucketType == 'memcached':
+                continue
+            for server in bucket.servers:
                 if check_ep_items_remaining:
                     dcp_cmd = "dcp"
                     tasks.append(self.task.async_wait_for_stats(
@@ -5287,6 +5291,9 @@ class BucketUtils(ScopeUtils):
 
     def validate_docs_per_collections_all_buckets(self, cluster, timeout=1200,
                                                   num_zone=1):
+        if cluster.type == "default":
+            for bucket in cluster.buckets:
+                self.get_updated_bucket_server_list(cluster, bucket)
         self.log.info("Validating collection stats and item counts")
         vbucket_stats = self.get_vbucket_seqnos(
             self.cluster_util.get_kv_nodes(cluster),
