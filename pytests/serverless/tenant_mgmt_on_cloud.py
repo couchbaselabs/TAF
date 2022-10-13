@@ -32,12 +32,13 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.sdk_client_pool.shutdown()
         super(TenantMgmtOnCloud, self).tearDown()
 
-    def get_bucket_spec(self, num_buckets=1, scopes_per_bucket=1,
-                        collections_per_scope=1, items_per_collection=0):
+    def get_bucket_spec(self, bucket_name_format="taf-tntMgmt", num_buckets=1,
+                        scopes_per_bucket=1, collections_per_scope=1,
+                        items_per_collection=0):
         self.log.debug("Getting spec for %s buckets" % num_buckets)
         buckets = dict()
         for i in range(num_buckets):
-            buckets[self.bucket_name_format % i] = dict()
+            buckets[bucket_name_format % i] = dict()
         return {
             MetaConstants.NUM_BUCKETS: num_buckets,
             MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
@@ -218,7 +219,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.cluster, bucket, dataplane_id=self.dataplane_id)
         self.task_manager.get_task_result(task)
 
-    def __create_required_buckets(self, buckets_spec=None):
+    def create_required_buckets(self, buckets_spec=None):
         if buckets_spec or self.spec_name:
             if buckets_spec is None:
                 self.log.info("Creating buckets from spec: %s"
@@ -266,7 +267,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.db_name = "%s-testCreateDeleteDatabase" % self.db_name
         dynamic_buckets = self.input.param("other_buckets", 1)
         # Create Buckets
-        self.__create_required_buckets()
+        self.create_required_buckets()
 
         loader_map = dict()
 
@@ -399,8 +400,10 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.bucket_name_format = "tntMgmtScaleTest-%s"
         target_scenario = self.input.param("target_scenario")
 
-        spec = self.get_bucket_spec(self.num_buckets)
-        self.__create_required_buckets(buckets_spec=spec)
+        spec = self.get_bucket_spec(
+            bucket_name_format=self.bucket_name_format,
+            num_buckets=self.num_buckets)
+        self.create_required_buckets(buckets_spec=spec)
         if target_scenario.startswith("single_bucket_"):
             scenarios = self.__get_single_bucket_scenarios(target_scenario)
         elif target_scenario.startswith("five_buckets_"):
@@ -476,7 +479,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         """
         start_index = 0
         batch_size = 50000
-        self.__create_required_buckets()
+        self.create_required_buckets()
         bucket = self.cluster.buckets[0]
 
         work_load_settings = DocLoaderUtils.get_workload_settings(
@@ -528,16 +531,18 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         SAMPLE_COLLECTIONS = 4
 
         collection_limit_per_scope = self.get_bucket_spec(
+            bucket_name_format=self.bucket_name_format,
             collections_per_scope=(COLLECTION_LIMIT - SAMPLE_COLLECTIONS))
         # checking collection limit
-        self.__create_required_buckets(collection_limit_per_scope)
+        self.create_required_buckets(collection_limit_per_scope)
 
         # checking collection limit per bucket exceed
         collection_limit_per_scope_exceed = self.get_bucket_spec(
+            bucket_name_format=self.bucket_name_format,
             collections_per_scope=COLLECTION_LIMIT - SAMPLE_COLLECTIONS + 1)
         exception = False
         try:
-            self.__create_required_buckets(collection_limit_per_scope_exceed)
+            self.create_required_buckets(collection_limit_per_scope_exceed)
         except Exception as ex:
             self.log.debug("Caught exception" % ex)
             exception = True
@@ -546,10 +551,11 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         # checking overall collection limit exceed
         collection_overall_limit_exceed = self.get_bucket_spec(
+            bucket_name_format=self.bucket_name_format,
             collections_per_scope=11, scopes_per_bucket=10)
         exception = False
         try:
-            self.__create_required_buckets(collection_overall_limit_exceed)
+            self.create_required_buckets(collection_overall_limit_exceed)
         except Exception as ex:
             self.log.debug("Caught exception" % ex)
             exception = True
@@ -557,16 +563,18 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                    "per bucket limit crossed")
 
         # checking scope limit
-        scope_limit = self.get_bucket_spec(scopes_per_bucket=SCOPE_LIMIT,
-                                           collections_per_scope=0)
-        self.__create_required_buckets(scope_limit)
+        scope_limit = self.get_bucket_spec(
+            bucket_name_format=self.bucket_name_format,
+            scopes_per_bucket=SCOPE_LIMIT, collections_per_scope=0)
+        self.create_required_buckets(scope_limit)
 
         # checking scope limit exceed
         scope_limit_exceed = self.get_bucket_spec(
+            bucket_name_format=self.bucket_name_format,
             scopes_per_bucket=SCOPE_LIMIT + 1, collections_per_scope=0)
         exception = False
         try:
-            self.__create_required_buckets(scope_limit_exceed)
+            self.create_required_buckets(scope_limit_exceed)
         except Exception as ex:
             self.log.debug("Caught exception" % ex)
             exception = True
