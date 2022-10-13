@@ -2321,6 +2321,7 @@ class BucketUtils(ScopeUtils):
                 self.balance_scopes_collections_items(
                     bucket_spec["buckets"][bucket], bucket_spec)
 
+
     def balance_scopes_collections_items(self, bucket_spec, default_spec=None):
         def get_divisor(max_limits_variable):
             factor_list = []
@@ -2399,13 +2400,10 @@ class BucketUtils(ScopeUtils):
         else:
             # On Prem case
             rest_conn = RestConnection(cluster.master)
-            if CbServer.cluster_profile is "serverless":
+            if CbServer.cluster_profile == "serverless":
                 self.specs_for_serverless(buckets_spec)
             buckets_spec = BucketUtils.expand_buckets_spec(
                 rest_conn, buckets_spec)
-            if CbServer.cluster_profile is "serverless":
-                self.balance_scopes_collections_items(buckets_spec)
-
             for bucket_name, bucket_spec in buckets_spec.items():
                 if bucket_spec[MetaConstants.BUCKET_TAR_SRC]:
                     load_data_from_existing_tar = True
