@@ -4065,6 +4065,13 @@ class MonitorServerlessDatabaseScaling(Task):
                     self.log.critical("Dataplane %s state change: %s --> %s"
                                       % (dp_id, dp_info["state"], curr_state))
                     dp_info["state"] = curr_state
+                    # Reset to self.timeout if the state is healthy
+                    # else set huge timeout since scaling/rebalance is
+                    # not guaranteed to complete in less time always
+                    if curr_state == states[1]:
+                        timeout = self.timeout
+                    else:
+                        timeout = 3600
                     # Track known states
                     if curr_state == states[dp_info["s_index"]]:
                         dp_info["s_index"] += 1
