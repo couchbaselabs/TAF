@@ -438,15 +438,15 @@ class SsoTests(BaseTestCase):
             "orgRoles": ["organizationOwner"]
         }
         self.log.info("Update organisation role wth valid tenantId")
-        resp = self.sso.update_team_org_roles(self.tenant_id, body, team_id)
+        resp = self.sso.update_team_org_roles(self.tenant_id, team_id, body)
         self.validate_response(resp, 2)
 
         self.log.info("Update organisation role wth invalid tenantId")
-        resp = self.sso.update_team_org_roles(self.diff_tenant_id, body, team_id)
+        resp = self.sso.update_team_org_roles(self.diff_tenant_id, team_id, body)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
-        resp = self.unauth_z_sso.update_team_org_roles(self.tenant_id, body, team_id)
+        resp = self.unauth_z_sso.update_team_org_roles(self.tenant_id, team_id, body)
         self.validate_response(resp, 4)
 
     def test_update_project_roles(self):
@@ -463,15 +463,15 @@ class SsoTests(BaseTestCase):
             ]
         }
         self.log.info("Update project role with valid tenantId")
-        resp = self.sso.update_team_project_roles(self.tenant_id, body, team_id)
+        resp = self.sso.update_team_project_roles(self.tenant_id, team_id, body)
         self.validate_response(resp, 2)
 
         self.log.info("Update project role with invalid tenantId")
-        resp = self.sso.update_team_project_roles(self.diff_tenant_id, body, team_id)
+        resp = self.sso.update_team_project_roles(self.diff_tenant_id, team_id, body)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
-        resp = self.unauth_z_sso.update_team_project_roles(self.tenant_id, body, team_id)
+        resp = self.unauth_z_sso.update_team_project_roles(self.tenant_id, team_id, body)
         self.validate_response(resp, 4)
 
     def test_team(self):
@@ -503,8 +503,9 @@ class SsoTests(BaseTestCase):
         resp = self.unauth_z_sso.create_team(self.tenant_id, body)
         self.validate_response(resp, 4)
 
-        resp = self.sso.list_realms(self.tenant_id)
-        team_id = json.loads(resp.content)["data"][0]["data"]["defaultTeamId"]
+        resp = self.sso.list_teams(self.tenant_id)
+        data = json.loads(resp.content)
+        team_id = data['data'][0]['data']['id']
         self.log.info("Test to Update team")
         body = {
             "name": "team_changed"
@@ -556,6 +557,9 @@ class SsoTests(BaseTestCase):
         resp = self.unauth_z_sso.show_team(self.tenant_id, team_id)
         self.validate_response(resp, 4)
 
+        resp = self.sso.list_teams(self.tenant_id)
+        data = json.loads(resp.content)
+        team_id = data['data'][0]['data']['id']
         self.log.info("Test to Delete the team")
         # User with valid tenantId and teamId
         self.log.info("Delete team with valid tenantId and valid teamId")
