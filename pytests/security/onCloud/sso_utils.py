@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import base64
 import json
 import os
@@ -228,12 +230,10 @@ tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
 
         return self.capella.do_internal_request(url, method="GET")
 
-    @staticmethod
     def get_saml_request(self, login_url):
         # We can just return the output from this.
         return requests.get(login_url)
 
-    @staticmethod
     def parse_saml_request(self, html):
         # Here we're going to try and grab all of the input elements and convert
         # them into a dict so that we can work better with them
@@ -248,7 +248,6 @@ tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
 
         return form_inputs
 
-    @staticmethod
     def decode_saml_request(self, saml):
         # We need to grab certain elements to construct a response
         xml = base64.b64decode(saml)
@@ -256,7 +255,6 @@ tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
 
         return xdoc.attrib['ID']
 
-    @staticmethod
     def send_saml_response(self, url, response, relay_state, cookies={}):
         result = requests.post(url,
                                data="SAMLResponse={}&RelayState={}".format(response, relay_state),
@@ -267,8 +265,7 @@ tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
 
         return result
 
-    @staticmethod
-    def continue_saml_response(url, cookies={}):
+    def continue_saml_response(self, url, cookies={}):
         return requests.get(url, verify=False, allow_redirects=False, cookies=cookies)
 
 
