@@ -260,6 +260,9 @@ class SAMLResponse:
     def to_base64(self):
         return base64.urlsafe_b64encode(self.to_string())
 
+    def to_base64_incomplete_string(self):
+        n = len(self.to_string())
+        return base64.urlsafe_b64encode(self.to_string()[: - 1])
 
 if __name__ == "__main__":
     s = SAMLResponse(requestId="special_doc", acs="http://acs/", spname="http://spname/")

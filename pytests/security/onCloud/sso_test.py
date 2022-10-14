@@ -368,3 +368,101 @@ class SSOTest(BaseTestCase):
                                                saml_request_dict["RelayState"],
                                                cookies=c)
         self.assertEqual(response.status_code // 100, 4)
+
+    def test_incomplete_payload(self):
+        self.log.info("Login with SSO")
+
+        # This code is different from the rest of the lifecycle. This is the code
+        # that will go and perform the SAML attestation.
+        login_flow = self.sso.initiate_idp_login(self.realm_name)
+        self.assertEqual(login_flow.status_code // 100, 2)
+        login_flow = json.loads(login_flow.content)
+        self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
+
+        # Get the SAML Request
+        saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+        self.assertEqual(saml_request.status_code // 100, 2)
+        c = saml_request.cookies
+
+        saml_request_dict = self.sso.parse_saml_request(saml_request.content)
+        self.log.info(saml_request_dict)
+        self.assertIsNotNone(saml_request_dict["SAMLRequest"])
+        self.assertIsNotNone(saml_request_dict["RelayState"])
+
+        id = self.sso.decode_saml_request(saml_request_dict['SAMLRequest'])
+        self.log.info("Got Request ID: {}".format(id))
+
+        s = SAMLResponse(requestId=id, spname=self.realm_entity, acs=self.realm_callback)
+        s.generateRoot()
+        s.subject("test-user1")
+        s.attribute("uid", ["test-user1"])
+        s.attribute("mail", ["test-user1@capella.test"])
+
+        self.log.info(s.to_string())
+
+        ss = SAMLSignatory()
+        dgst = ss.digest(s.to_string())
+        s.add_digest(dgst, self.sso.get_certificate())
+        sig = self.sso.sign(ss.digest(s.signed_info_to_string()))
+        s.add_signature(sig)
+
+        self.log.info("Digest: {}".format(dgst))
+        self.log.info("Signature: {}".format(sig))
+
+        response = s.to_base64_incomplete_string()
+        login_response = self.sso.send_saml_response(self.realm_callback, response,
+                                                     saml_request_dict["RelayState"],
+                                                     cookies=c)
+
+        self.assertEqual(login_response.status_code // 100, 3)
+        error_msg = "?error=invalid_request&"
+        if error_msg not in login_response.content:
+            self.fail("Failed to get the expected error message")
+
+    def test_invalid_data(self):
+        self.log.info("Login with SSO")
+
+        # This code is different from the rest of the lifecycle. This is the code
+        # that will go and perform the SAML attestation.
+        login_flow = self.sso.initiate_idp_login(self.realm_name)
+        self.assertEqual(login_flow.status_code // 100, 2)
+        login_flow = json.loads(login_flow.content)
+        self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
+
+        # Get the SAML Request
+        saml_request = self.sso.get_saml_request(self, login_flow['loginURL'])
+        self.assertEqual(saml_request.status_code // 100, 2)
+        c = saml_request.cookies
+
+        saml_request_dict = self.sso.parse_saml_request(self, saml_request.content)
+        self.log.info(saml_request_dict)
+        self.assertIsNotNone(saml_request_dict["SAMLRequest"])
+        self.assertIsNotNone(saml_request_dict["RelayState"])
+
+        identifier = self.sso.decode_saml_request(self, saml_request_dict['SAMLRequest'])
+        self.log.info("Got Request ID: {}".format(identifier))
+
+        s = SAMLResponse(requestId=identifier, spname=self.realm_entity, acs=self.realm_callback)
+        s.generateRoot()
+        s.subject("test-user1")
+        s.attribute("uid", ["test-user1"])
+        s.attribute("mail", ["test-user1@capella.test"])
+        s.attribute("group", [""+str(1)])
+
+        ss = SAMLSignatory()
+        dgst = ss.digest(s.to_string())
+        s.add_digest(dgst, self.sso.get_certificate())
+        sig = self.sso.sign(ss.digest(s.signed_info_to_string()))
+        s.add_signature(sig)
+
+        self.log.info("Digest: {}".format(dgst))
+        self.log.info("Signature: {}".format(sig))
+
+        self.log.info(s.to_string())
+        response = s.to_base64()
+
+        login_response = self.sso.send_saml_response(self.realm_callback, response,
+                                                     saml_request_dict["RelayState"],
+                                                     cookies=c)
+        self.assertEqual(login_response.status_code // 100, 3)
+
