@@ -1,3 +1,5 @@
+import math
+import time
 from random import choice, sample
 
 from BucketLib.bucket import Bucket
@@ -678,3 +680,121 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             exception = True
         self.assertTrue(exception, "Expected exception as "
                                    "scope limit is reached")
+
+    def test_defrag_dbaas(self):
+        """
+        creating given number of buckets on cloud
+        expanding weight / deleting buckets from a target node
+        waiting for re-balance to trigger by control plane
+        asserting on bucket movements
+        this method is only intended to use in a sandbox
+        """
+        if "sandbox" not in self.pod.url_public:
+            self.log.info("test_defrag_dbaas case skipped as sandbox env not "
+                          "detected in pod url")
+            return
+        delete_scenario = self.input.param("delete_scenario", False)
+        weight_limit = self.input.param("weight_limit", 10000)
+
+        def wait_for_defragmentation(node_dictionary, timeout=600):
+            end_time = time.time() + timeout
+            while time.time() < end_time:
+                if not delete_scenario:
+                    buckets_in_target = get_bucket_stats(
+                        server_param=node_dictionary[target_node]["node"])
+                    other_buckets = node_dictionary[target_node]["bucket"] -\
+                                    buckets_in_target[target_node]["bucket"]
+                    other_bucket_dict = get_bucket_stats(buckets=list(
+                        other_buckets))
+                    if len(other_bucket_dict) > 0:
+                        break
+                else:
+                    if len(node_dictionary[target_node]["bucket"]) > 0:
+                        break
+                self.sleep(10, "waiting for re-balance trigger")
+            else:
+                self.assertTrue(False, "Expected bucket movement after "
+                                       "de-fragment re-balance")
+
+        # creating and expanding single bucket with width = 2 to make sure
+        # we have enough data nodes to create scenario
+        def pre_test():
+            bucket_specs = self.get_bucket_spec(num_buckets=1,
+                                                bucket_name_format="SingleBucket-%s")
+            self.create_required_buckets(bucket_specs)
+            bucket_name = self.cluster.buckets[0].name
+            scenarios = {bucket_name: {Bucket.width: 2}}
+            track = self.__trigger_bucket_param_updates(scenarios)
+            monitor_task = self.bucket_util.async_monitor_database_scaling(
+                track, timeout=600)
+            self.task_manager.get_task_result(monitor_task)
+            return bucket_name
+
+        # required for compare bucket movement before and after de-frag
+        # rebalance
+        def get_bucket_stats(buckets=None, server_param=None):
+            if not buckets:
+                buckets = self.cluster.buckets
+            node_map = dict()
+            for bucket in buckets:
+                server = bucket.servers[0]
+                if server_param:
+                    server = server_param
+                try:
+                    stat = Cbstats(server)
+                    status = stat.vbucket_details(bucket.name)
+                except Exception as e:
+                    self.log.warning(e)
+                    continue
+                for v_bucket in status:
+                    for node in str(status[v_bucket]["topology"]).split("\""):
+                        if "ns_1@" in node:
+                            if node not in node_map.keys():
+                                node_map[node] = dict()
+                                node_map[node]["bucket"] = set()
+                                node_map[node]["node"] = server
+                            node_map[node]["bucket"].add(bucket)
+            return node_map
+
+        pre_test()
+        # creating initial buckets
+        bucket_specs = self.get_bucket_spec(num_buckets=self.num_buckets,
+                                            bucket_name_format="DefragBucks-%s")
+        self.create_required_buckets(bucket_specs)
+
+        # assuming a target node
+        node_dict = get_bucket_stats()
+        target_node = None
+        bucket_to_update = []
+        for node in node_dict.keys():
+            if len(node_dict[node]["bucket"]) > 2:
+                for buck in node_dict[node]["bucket"]:
+                    if buck.serverless.width <= 1:
+                        bucket_to_update.append(buck)
+                        target_node = node
+            if target_node:
+                break
+        dynamic_scenarios = {}
+        self.assertTrue(len(bucket_to_update) > 0, "Desired thershold "
+                                                   "common bucket not found "
+                                                   "on any single node")
+        desired_weight = int(math.floor(weight_limit /
+                                        len(bucket_to_update)))
+
+        # updating weight / deleting buckets
+        if not delete_scenario:
+            for bucket in bucket_to_update:
+                dynamic_scenarios[bucket.name] = \
+                    {Bucket.weight: desired_weight}
+            to_track = self.__trigger_bucket_param_updates(dynamic_scenarios)
+            monitor_task = self.bucket_util.async_monitor_database_scaling(
+                to_track, timeout=600)
+            self.task_manager.get_task_result(monitor_task)
+        else:
+            for bucket in bucket_to_update:
+                self.serverless_util.delete_database(self.pod, self.tenant,
+                                                     bucket.name)
+        # verification
+        wait_for_defragmentation(node_dict)
+
+
