@@ -2128,8 +2128,9 @@ class BucketUtils(ScopeUtils):
         cluster.bucketNodes[bucket_obj] = bucket_obj.servers
 
     @staticmethod
-    def update_bucket_nebula_servers(cluster, nebula, bucket_obj):
+    def update_bucket_nebula_servers(cluster, bucket_obj):
         nebula_servers = list()
+        nebula = bucket_obj.serverless.nebula_obj
         b_stats = BucketHelper(nebula.endpoint)\
             .get_bucket_json(bucket_obj.name)
         for server in b_stats["nodes"]:

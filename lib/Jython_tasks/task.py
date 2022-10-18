@@ -3996,13 +3996,14 @@ class DatabaseCreateTask(Task):
             nebula_class = common_lib.get_module(
                 "cluster_utils.cluster_ready_functions", "Nebula")
             nebula = nebula_class(self.srv, self.server)
+            self.bucket_obj.serverless.nebula_obj = nebula
             self.bucket_obj.serverless.nebula_endpoint = nebula.endpoint
             self.bucket_obj.serverless.dapi = \
                 self.serverless_util.get_database_DAPI(
                     self.cluster.pod, self.cluster.tenant,
                     self.bucket_obj.name)
             global_vars.bucket_util.update_bucket_nebula_servers(
-                self.cluster, nebula, self.bucket_obj)
+                self.cluster, self.bucket_obj)
             self.cluster.append_bucket(self.bucket_obj)
 
 
@@ -4209,13 +4210,17 @@ class MonitorServerlessDatabaseScaling(Task):
 
     def update_bucket_nebula_and_kv_nodes(self, cluster, bucket):
         self.log.debug("Fetching SRV records for %s" % bucket.name)
-        srv = self.serverless_util.get_database_nebula_endpoint(
+        known_srv = bucket.serverless.nebula_obj.endpoint.srv
+        curr_srv = self.serverless_util.get_database_nebula_endpoint(
             cluster.pod, cluster.tenant, bucket.name)
+        if curr_srv != known_srv:
+            self.result = False
+            self.test_log.critical("Mismatch in bucket %s srv. %s != %s"
+                                   % (bucket.name, curr_srv, known_srv))
+            return
         self.log.debug("Updating nebula servers for %s" % bucket.name)
-        nebula_class = common_lib.get_module(
-            "cluster_utils.cluster_ready_functions", "Nebula")
-        global_vars.bucket_util.update_bucket_nebula_servers(
-            cluster, nebula_class(srv, bucket.servers[0]), bucket)
+        bucket.serverless.nebula_obj.update_server_list()
+        global_vars.bucket_util.update_bucket_nebula_servers(cluster, bucket)
 
     def call(self):
         self.result = True

@@ -123,6 +123,7 @@ class Serverless(object):
     def __init__(self):
         self.width = None
         self.weight = None
+        self.nebula_obj = None
         self.nebula_endpoint = None
         self.dapi = None
         self.dataplane_id = None

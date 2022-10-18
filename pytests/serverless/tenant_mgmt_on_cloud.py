@@ -313,12 +313,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.task_manager.get_task_result(task)
             nebula = Nebula(task.srv, task.server)
             self.log.info("Populate Nebula object done!!")
+            bucket.serverless.nebula_obj = nebula
             bucket.serverless.nebula_endpoint = nebula.endpoint
             bucket.serverless.dapi = \
                 self.serverless_util.get_database_DAPI(self.pod, self.tenant,
                                                        bucket.name)
-            self.bucket_util.update_bucket_nebula_servers(self.cluster, nebula,
-                                                          bucket)
+            self.bucket_util.update_bucket_nebula_servers(self.cluster, bucket)
             new_buckets.append(bucket)
 
         # TODO: Load docs to new buckets

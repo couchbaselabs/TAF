@@ -76,9 +76,7 @@ class OPD:
                  Bucket.weight: self.bucket_weight})
             self.bucket_util.create_bucket(cluster, bucket)
             if bucket.serverless and self.nebula_details.get(cluster):
-                self.bucket_util.update_bucket_nebula_servers(cluster,
-                                                              self.nebula_details[cluster],
-                                                              bucket)
+                self.bucket_util.update_bucket_nebula_servers(cluster, bucket)
                 bucket.serverless.nebula_endpoint = self.nebula_details[cluster].endpoint
 
         # rebalance the new buckets across all nodes.
