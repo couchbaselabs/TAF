@@ -23,9 +23,10 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         self.password = self.input.param("password", "")
         self.bucket_throttling_limit = self.input.param("throttle_limit", 5000)
         # create the required database
-        spec = self.get_bucket_spec(num_buckets=self.num_buckets,
-                     scopes_per_bucket=self.num_scopes,
-                     collections_per_scope=self.num_collections)
+        spec = self.get_bucket_spec(bucket_name_format="taf-meter-throttle%s",
+                                    num_buckets=self.num_buckets,
+                                    scopes_per_bucket=self.num_scopes,
+                                    collections_per_scope=self.num_collections)
         self.create_required_buckets(spec)
         self.get_servers_for_databases()
         self.expected_stats = dict()
