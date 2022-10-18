@@ -272,7 +272,11 @@ class AutoFailoverBaseTest(ClusterSetup):
             for i in range(1, self.zone):
                 node_in_zone = list(set(nodes_in_zone[zones[i]]) -
                                     set([node for node in rest.get_nodes_in_zone(zones[i])]))
-                rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[i])
+                moved_nodes = []
+                for otp_node in rest.node_statuses():
+                    if otp_node.ip in node_in_zone:
+                        moved_nodes.append(otp_node)
+                rest.shuffle_nodes_in_zones(moved_nodes, zones[0], zones[i])
         self.zones = nodes_in_zone
         otpnodes = [node.id for node in rest.node_statuses()]
         nodes_to_remove = [node.id for node in rest.node_statuses()
