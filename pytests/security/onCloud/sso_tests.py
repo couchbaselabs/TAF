@@ -75,19 +75,29 @@ class SsoTests(BaseTestCase):
         self.user = self.input.capella.get("capella_user")
         self.passwd = self.input.capella.get("capella_pwd")
         self.tenant_id = self.input.capella.get("tenant_id")
-        self.project_id = self.input.capella.get("project_id")
+        self.project_id = self.input.capella.get("project")
         self.secret_key = self.input.capella.get("secret_key")
         self.access_key = self.input.capella.get("access_key")
-        self.sso = SsoUtils(self.url, self.secret_key, self.access_key, self.user, self.passwd)
-        self.diff_tenant_id = "00000000-0000-0000-0000-000000000000"
+
+        self.invalid_id = "00000000-0000-0000-0000-000000000000"
+
         self.user_unauthz = self.input.capella.get("user_unauthz")
         self.passwd_unauthz = self.input.capella.get("passwd_unauthz")
+
+        self.sso = SsoUtils(self.url, self.secret_key, self.access_key, self.user, self.passwd)
         self.unauth_z_sso = SsoUtils(self.url, self.secret_key, self.access_key, self.user_unauthz,
                                      self.passwd_unauthz)
         self._generate_key_pair()
         self._generate_ssigned_cert()
+        self.get_team_id()
 
     def tearDown(self):
+        resp = self.sso.list_realms(self.tenant_id)
+        if json.loads(resp.content)["data"]:
+            self.log.info("Destroying the realm")
+            realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+            resp = self.sso.delete_realm(self.tenant_id, realm_id)
+            self.validate_response(resp, 2)
         super(SsoTests, self).tearDown()
 
     def _generate_key_pair(self):
@@ -198,12 +208,28 @@ class SsoTests(BaseTestCase):
                          msg="Expected:{0} :: Resp: {1}, {2}"
                          .format(expected_response, response, response.content))
 
-    def test_create_realm_with_diff_payload(self):
+    def get_team_id(self):
         teams_resp = self.sso.list_teams(self.tenant_id)
+        self.assertEqual(teams_resp.status_code // 100, 2, msg="No team present")
         data = json.loads(teams_resp.content)
         team = data['data'][0]['data']
-        team_id = team['id']
+        self.team_id = team['id']
 
+    def create_realm(self, team_id):
+        body = {
+            'connectionOptionsSAML': {
+                'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
+                                                          self.get_certificate())
+            },
+            'standard': 'SAML 2.0',
+            'vendor': 'Okta',
+            'defaultTeamId': team_id
+        }
+        self.log.info("Creating realm")
+        realm_resp = self.sso.create_realm(self.tenant_id, body)
+        self.validate_response(realm_resp, 2)
+
+    def test_create_realm_with_diff_payload(self):
         # 1. metadataXML - valid
         body = {
             'connectionOptionsSAML': {
@@ -212,59 +238,45 @@ class SsoTests(BaseTestCase):
             },
             'standard': 'SAML 2.0',
             'vendor': 'Okta',
-            'defaultTeamId': team_id
+            'defaultTeamId': self.team_id
         }
 
         realm_resp = self.sso.create_realm(self.tenant_id, body)
         self.validate_response(realm_resp, 2)
 
-        # 2. signingCertificate and signInEndpoint - valid
-        body = {
-            'connectionOptionsSAML': {
-                "signingCertificate": cert,
-                "signInEndpoint": "http://capella.test/idp"
-            },
-            'standard': 'SAML 2.0',
-            'vendor': 'Okta',
-            'defaultTeamId': team_id
-        }
-
-        realm_resp = self.sso.create_realm(self.tenant_id, body)
-        self.validate_response(realm_resp, 2)
-
-        # 3. no payload - invalid
+        # 2. no payload - invalid
         body = {}
 
         realm_resp = self.sso.create_realm(self.tenant_id, body)
         self.validate_response(realm_resp, 4)
 
-        # 4. no standard - invalid
+        # 3. no standard - invalid
         body = {
             'connectionOptionsSAML': {
                 'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
                                                           self.get_certificate())
             },
             'vendor': 'Okta',
-            'defaultTeamId': team_id
+            'defaultTeamId': self.team_id
         }
 
         realm_resp = self.sso.create_realm(self.tenant_id, body)
         self.validate_response(realm_resp, 4)
 
-        # 5. no vendor - invalid
+        # 4. no vendor - invalid
         body = {
             'connectionOptionsSAML': {
                 'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
                                                           self.get_certificate())
             },
             'standard': 'SAML 2.0',
-            'defaultTeamId': team_id
+            'defaultTeamId': self.team_id
         }
 
         realm_resp = self.sso.create_realm(self.tenant_id, body)
         self.validate_response(realm_resp, 4)
 
-        # 6. no profiles - invalid
+        # 5. no profiles - invalid
         body = {
             'connectionOptionsSAML': {
                 'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
@@ -278,15 +290,21 @@ class SsoTests(BaseTestCase):
         self.validate_response(realm_resp, 4)
 
     def test_check_realm_exists(self):
+        self.create_realm(self.team_id)
+
         realms_resp = self.sso.list_realms(self.tenant_id)
         data = json.loads(realms_resp.content)
         realm = data['data'][0]['data']
         realm_name = realm['name']
+        resp = self.sso.check_realm_exists(realm_name)
+        self.validate_response(resp, 2)
+
         non_exist_realm_name = self.input.param("non_exist_realm_name", "test-realm")
         resp = self.sso.check_realm_exists(non_exist_realm_name)
         self.validate_response(resp, 4)
-        resp = self.sso.check_realm_exists(realm_name)
-        self.validate_response(resp, 2)
+
+        resp = self.sso.check_realm_exists("")
+        self.validate_response(resp, 4)
 
     def test_expired_csrf_token(self):
         code = self.input.param("code", "test")
@@ -302,10 +320,6 @@ class SsoTests(BaseTestCase):
         realms_resp = self.sso.list_realms(self.tenant_id)
         data = json.loads(realms_resp.content)
         no_realms = len(data['data'])
-        teams_resp = self.sso.list_teams(self.tenant_id)
-        data = json.loads(teams_resp.content)
-        team = data['data'][0]['data']
-        team_id = team['id']
         body = {
             'connectionOptionsSAML': {
                 'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
@@ -313,22 +327,17 @@ class SsoTests(BaseTestCase):
             },
             'standard': 'SAML 2.0',
             'vendor': 'Okta',
-            'defaultTeamId': team_id
+            'defaultTeamId': self.team_id
         }
         create_more = limit - no_realms
         while create_more:
-            realm_resp = self.sso.create_realm(self.tenant_id, body)
-            self.validate_response(realm_resp, 2)
+            self.create_realm(self.team_id)
             create_more = create_more - 1
+
         realm_resp = self.sso.create_realm(self.tenant_id, body)
         self.validate_response(realm_resp, 4)
 
     def test_create_realm_unauthz(self):
-        teams_resp = self.sso.list_teams(self.tenant_id)
-        data = json.loads(teams_resp.content)
-        team = data['data'][0]['data']
-        team_id = team['id']
-
         body = {
             'connectionOptionsSAML': {
                 'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
@@ -336,9 +345,10 @@ class SsoTests(BaseTestCase):
             },
             'standard': 'SAML 2.0',
             'vendor': 'Okta',
-            'defaultTeamId': team_id
+            'defaultTeamId': self.team_id
         }
-        realm_resp = self.sso.create_realm(self.diff_tenant_id, body)
+        # different tenant id
+        realm_resp = self.sso.create_realm(self.invalid_id, body)
         self.validate_response(realm_resp, 4)
 
         # user without sufficient permissions
@@ -346,6 +356,8 @@ class SsoTests(BaseTestCase):
         self.validate_response(realm_resp, 4)
 
     def test_show_realms(self):
+        self.create_realm(self.team_id)
+
         realms_resp = self.sso.list_realms(self.tenant_id)
         data = json.loads(realms_resp.content)
         realm = data['data'][0]['data']
@@ -355,7 +367,7 @@ class SsoTests(BaseTestCase):
         self.validate_response(resp, 2)
 
         # different tenant id
-        resp = self.sso.show_realm(self.diff_tenant_id, realm_id)
+        resp = self.sso.show_realm(self.invalid_id, realm_id)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
@@ -363,17 +375,17 @@ class SsoTests(BaseTestCase):
         self.validate_response(resp, 4)
 
         # invalid realm id
-        invalid_realm_id = self.input.param("invalid_realm_id",
-                                            "00000000-0000-0000-0000-000000000000")
-        resp = self.sso.show_realm(self.tenant_id, invalid_realm_id)
+        resp = self.sso.show_realm(self.tenant_id, self.invalid_id)
         self.validate_response(resp, 4)
 
     def test_list_realms(self):
+        self.create_realm(self.team_id)
+
         resp = self.sso.list_realms(self.tenant_id)
         self.validate_response(resp, 2)
 
         # different tenant id
-        resp = self.sso.list_realms(self.diff_tenant_id)
+        resp = self.sso.list_realms(self.invalid_id)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
@@ -381,32 +393,45 @@ class SsoTests(BaseTestCase):
         self.validate_response(resp, 4)
 
     def test_update_realm_default_team(self):
+        self.create_realm(self.team_id)
+
         resp = self.sso.list_realms(self.tenant_id)
         realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
-        response = self.sso.show_realm(self.tenant_id, realm_id)
-        team_id = json.loads(response.content)["data"]["defaultTeamId"]
 
         # User with valid tenantId and realm ID
         self.log.info("Update realm with valid tenantId and realm ID")
-        resp = self.sso.update_realm_default_team(self.tenant_id, realm_id, team_id)
+        resp = self.sso.update_realm_default_team(self.tenant_id, realm_id, self.team_id)
         self.validate_response(resp, 2)
 
         # user with insufficient permissions
         self.log.info("Update realm with invalid tenant Id")
-        resp = self.sso.update_realm_default_team(self.diff_tenant_id, realm_id, team_id)
+        resp = self.sso.update_realm_default_team(self.invalid_id, realm_id, self.team_id)
         self.validate_response(resp, 4)
 
         # User with invalid realm Id
         self.log.info("Update realm with invalid realm Id")
-        realm_id = self.input.param("realm_id", "00000000-0000-0000-0000-000000000000")
-        resp = self.sso.update_realm_default_team(self.tenant_id, realm_id, team_id)
+        resp = self.sso.update_realm_default_team(self.tenant_id, self.invalid_id,
+                                                  self.team_id)
+        self.validate_response(resp, 4)
+
+        # User with invalid team id
+        self.log.info("Update realm with invalid team Id")
+        resp = self.sso.update_realm_default_team(self.tenant_id, realm_id, self.invalid_id)
+        self.validate_response(resp, 4)
+
+        # User with no realm team id
+        self.log.info("Update realm with no team Id")
+        resp = self.sso.update_realm_default_team(self.tenant_id, realm_id, "")
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
-        resp = self.unauth_z_sso.update_realm_default_team(self.tenant_id, realm_id, team_id)
+        self.log.info("Update realm without sufficient permissions")
+        resp = self.unauth_z_sso.update_realm_default_team(self.tenant_id, realm_id, self.team_id)
         self.validate_response(resp, 4)
 
     def test_delete_realm(self):
+        self.create_realm(self.team_id)
+
         resp = self.sso.list_realms(self.tenant_id)
         realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
 
@@ -415,44 +440,48 @@ class SsoTests(BaseTestCase):
         resp = self.sso.delete_realm(self.tenant_id, realm_id)
         self.validate_response(resp, 2)
 
+        self.create_realm(self.team_id)
+
+        resp = self.sso.list_realms(self.tenant_id)
+        realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+
         # user with insufficient permissions
         self.log.info("Delete realm with invalid tenant Id")
-        resp = self.sso.delete_realm(self.diff_tenant_id, realm_id)
+        resp = self.sso.delete_realm(self.invalid_id, realm_id)
         self.validate_response(resp, 4)
 
         # User with invalid realm Id
         self.log.info("Delete realm with invalid realm Id")
-        realm_id = self.input.param("realm_id", "00000000-0000-0000-0000-000000000000")
-        resp = self.sso.delete_realm(self.tenant_id, realm_id)
+        resp = self.sso.delete_realm(self.tenant_id, self.invalid_id)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
+        self.log.info("Delete realm without sufficient permissions")
         resp = self.unauth_z_sso.delete_realm(self.tenant_id, realm_id)
         self.validate_response(resp, 4)
 
     def test_update_org_roles(self):
-        resp = self.sso.list_realms(self.tenant_id)
-        team_id = json.loads(resp.content)["data"][0]["data"]["defaultTeamId"]
-
         body = {
             "orgRoles": ["organizationOwner"]
         }
         self.log.info("Update organisation role wth valid tenantId")
-        resp = self.sso.update_team_org_roles(self.tenant_id, team_id, body)
+        resp = self.sso.update_team_org_roles(self.tenant_id, self.team_id, body)
         self.validate_response(resp, 2)
 
         self.log.info("Update organisation role wth invalid tenantId")
-        resp = self.sso.update_team_org_roles(self.diff_tenant_id, team_id, body)
+        resp = self.sso.update_team_org_roles(self.invalid_id, self.team_id, body)
+        self.validate_response(resp, 4)
+
+        self.log.info("Update organisation role wth missing team_id")
+        resp = self.sso.update_team_org_roles(self.invalid_id, "", body)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
-        resp = self.unauth_z_sso.update_team_org_roles(self.tenant_id, team_id, body)
+        self.log.info("Update organisation role without sufficient permissions")
+        resp = self.unauth_z_sso.update_team_org_roles(self.tenant_id, self.team_id, body)
         self.validate_response(resp, 4)
 
     def test_update_project_roles(self):
-        resp = self.sso.list_realms(self.tenant_id)
-        team_id = json.loads(resp.content)["data"][0]["data"]["defaultTeamId"]
-
         body = {
             "projects": [
                 {
@@ -463,22 +492,27 @@ class SsoTests(BaseTestCase):
             ]
         }
         self.log.info("Update project role with valid tenantId")
-        resp = self.sso.update_team_project_roles(self.tenant_id, team_id, body)
+        resp = self.sso.update_team_project_roles(self.tenant_id, self.team_id, body)
         self.validate_response(resp, 2)
 
         self.log.info("Update project role with invalid tenantId")
-        resp = self.sso.update_team_project_roles(self.diff_tenant_id, team_id, body)
+        resp = self.sso.update_team_project_roles(self.invalid_id, self.team_id, body)
+        self.validate_response(resp, 4)
+
+        self.log.info("Update project role wth missing team_id")
+        resp = self.sso.update_team_project_roles(self.invalid_id, "", body)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
-        resp = self.unauth_z_sso.update_team_project_roles(self.tenant_id, team_id, body)
+        self.log.info("Update project role without sufficient permissions")
+        resp = self.unauth_z_sso.update_team_project_roles(self.tenant_id, self.team_id, body)
         self.validate_response(resp, 4)
 
     def test_team(self):
-        self.log.info("Test to check the functionality of team")
+        self.log.info("Test to check the functionalities of team")
         self.log.info("Test to create team")
         body = {
-            "name": "Demo1",
+            "name": "Demo",
             "orgRoles": ["organizationOwner"],
             "projects": [
                 {
@@ -491,7 +525,12 @@ class SsoTests(BaseTestCase):
         }
         # User with invalid tenantId
         self.log.info("Create team with invalid tenantId")
-        resp = self.sso.create_team(self.diff_tenant_id, body)
+        resp = self.sso.create_team(self.invalid_id, body)
+        self.validate_response(resp, 4)
+
+        # user without sufficient permissions
+        self.log.info("Create team without sufficient permissions")
+        resp = self.unauth_z_sso.create_team(self.tenant_id, body)
         self.validate_response(resp, 4)
 
         # User with valid tenantID and body
@@ -499,42 +538,42 @@ class SsoTests(BaseTestCase):
         resp = self.sso.create_team(self.tenant_id, body)
         self.validate_response(resp, 2)
 
-        # user without sufficient permissions
-        resp = self.unauth_z_sso.create_team(self.tenant_id, body)
-        self.validate_response(resp, 4)
-
         resp = self.sso.list_teams(self.tenant_id)
         data = json.loads(resp.content)
         team_id = data['data'][0]['data']['id']
         self.log.info("Test to Update team")
         body = {
-            "name": "team_changed"
+            "name": "team_name_changed"
         }
         # User with valid tenantID
         self.log.info("Update team with valid tenantId")
-        resp = self.sso.update_team(self.tenant_id, body, team_id)
+        resp = self.sso.update_team(self.tenant_id, team_id, body)
         self.validate_response(resp, 2)
 
         # User with invalid tenantId
         self.log.info("Update team with invalid tenantId")
-        resp = self.sso.update_team(self.diff_tenant_id, body, team_id)
+        resp = self.sso.update_team(self.invalid_id, team_id, body)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
-        resp = self.unauth_z_sso.update_team(self.tenant_id, body, team_id)
+        self.log.info("Update team without sufficient permissions")
+        resp = self.unauth_z_sso.update_team(self.tenant_id, team_id, body)
         self.validate_response(resp, 4)
 
         self.log.info("Test to list teams")
+        self.log.info("List teams with valid tenantId")
         resp = self.sso.list_teams(self.tenant_id)
         self.validate_response(resp, 2)
 
         # different tenant id
-        resp = self.sso.list_teams(self.diff_tenant_id)
+        self.log.info("List teams with invalid tenantId")
+        resp = self.sso.list_teams(self.invalid_id)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
+        self.log.info("List teams without sufficient permissions")
         resp = self.unauth_z_sso.list_teams(self.tenant_id)
-        self.validate_response(resp, 4)
+        self.validate_response(resp, 2)
 
         self.log.info("Test to get team")
         # User with valid tenantId and team ID
@@ -544,18 +583,18 @@ class SsoTests(BaseTestCase):
 
         # User with insufficient permissions
         self.log.info("Show team with invalid tenant Id")
-        resp = self.sso.show_team(self.diff_tenant_id, team_id)
+        resp = self.sso.show_team(self.invalid_id, team_id)
         self.validate_response(resp, 4)
 
         # User with invalid team Id
         self.log.info("Show team with invalid team Id")
-        team_id = self.input.param("team_id", "00000000-0000-0000-0000-000000000000")
-        resp = self.sso.show_team(self.tenant_id, team_id)
+        resp = self.sso.show_team(self.tenant_id, self.invalid_id)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
+        self.log.info("Show team without sufficient permissions")
         resp = self.unauth_z_sso.show_team(self.tenant_id, team_id)
-        self.validate_response(resp, 4)
+        self.validate_response(resp, 2)
 
         resp = self.sso.list_teams(self.tenant_id)
         data = json.loads(resp.content)
@@ -568,16 +607,16 @@ class SsoTests(BaseTestCase):
 
         # User with invalid tenantId
         self.log.info("Delete team with invalid tenantId")
-        resp = self.sso.delete_team(self.diff_tenant_id, team_id)
+        resp = self.sso.delete_team(self.invalid_id, team_id)
         self.validate_response(resp, 4)
 
         # User with invalid teamId
         self.log.info("Delete team with invalid teamId")
-        team_id = self.input.param("team_id", "00000000-0000-0000-0000-000000000000")
-        resp = self.sso.delete_team(self.tenant_id, team_id)
+        resp = self.sso.delete_team(self.tenant_id, self.invalid_id)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
+        self.log.info("Delete team without sufficient permissions")
         resp = self.unauth_z_sso.delete_team(self.tenant_id, team_id)
         self.validate_response(resp, 4)
 
