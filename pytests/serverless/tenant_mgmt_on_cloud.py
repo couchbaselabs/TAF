@@ -435,11 +435,11 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         """
         scenarios = None
         doc_loading_tasks = None
-        self.bucket_name_format = "tntMgmtScaleTest-%s"
+        bucket_name_format = "tntMgmtScaleTest-%s"
         target_scenario = self.input.param("target_scenario")
 
         spec = self.get_bucket_spec(
-            bucket_name_format=self.bucket_name_format,
+            bucket_name_format=bucket_name_format,
             num_buckets=self.num_buckets)
         self.create_required_buckets(buckets_spec=spec)
         if target_scenario.startswith("single_bucket_"):
@@ -496,11 +496,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         b_index = 0
         scenario = dict()
-        self.bucket_name_format = "tntMgmtScaleTest-%s"
+        bucket_name_format = "tntMgmtScaleTest-%s"
         scale_type = self.input.param("scale_type", Bucket.width)
 
         # Deploy initial databases
-        spec = self.get_bucket_spec(self.num_buckets)
+        spec = self.get_bucket_spec(self.num_buckets,
+                                    bucket_name_format=bucket_name_format)
         self.create_required_buckets(buckets_spec=spec)
 
         # Initially scale first half of the buckets to width=2 and weight=300
@@ -620,21 +621,21 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     self.task_manager.get_task_result(monitor_task)
 
     def test_scope_collection_limit(self):
-        self.bucket_name_format = "scopeCollectionLimitTest-%s"
+        bucket_name_format = "scopeCollectionLimitTest-%s"
 
         COLLECTION_LIMIT = 100
         SCOPE_LIMIT = 100
         SAMPLE_COLLECTIONS = 4
 
         collection_limit_per_scope = self.get_bucket_spec(
-            bucket_name_format=self.bucket_name_format,
+            bucket_name_format=bucket_name_format,
             collections_per_scope=(COLLECTION_LIMIT - SAMPLE_COLLECTIONS))
         # checking collection limit
         self.create_required_buckets(collection_limit_per_scope)
 
         # checking collection limit per bucket exceed
         collection_limit_per_scope_exceed = self.get_bucket_spec(
-            bucket_name_format=self.bucket_name_format,
+            bucket_name_format=bucket_name_format,
             collections_per_scope=COLLECTION_LIMIT - SAMPLE_COLLECTIONS + 1)
         exception = False
         try:
@@ -647,7 +648,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         # checking overall collection limit exceed
         collection_overall_limit_exceed = self.get_bucket_spec(
-            bucket_name_format=self.bucket_name_format,
+            bucket_name_format=bucket_name_format,
             collections_per_scope=11, scopes_per_bucket=10)
         exception = False
         try:
@@ -660,13 +661,13 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         # checking scope limit
         scope_limit = self.get_bucket_spec(
-            bucket_name_format=self.bucket_name_format,
+            bucket_name_format=bucket_name_format,
             scopes_per_bucket=SCOPE_LIMIT, collections_per_scope=0)
         self.create_required_buckets(scope_limit)
 
         # checking scope limit exceed
         scope_limit_exceed = self.get_bucket_spec(
-            bucket_name_format=self.bucket_name_format,
+            bucket_name_format=bucket_name_format,
             scopes_per_bucket=SCOPE_LIMIT + 1, collections_per_scope=0)
         exception = False
         try:
