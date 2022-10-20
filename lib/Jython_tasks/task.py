@@ -3980,7 +3980,7 @@ class DatabaseCreateTask(Task):
             self.srv = self.serverless_util.get_database_nebula_endpoint(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
             records = Lookup("_couchbases._tcp.{}".format(self.srv), Type.SRV).run()
-            if len(records) == 0:
+            if records is None or len(records) == 0:
                 self.log.critical("SRV resolutions of {} failed".format(self.srv))
                 self.result = False
                 self.complete_task()

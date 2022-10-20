@@ -42,12 +42,14 @@ class CapellaUtils:
 
     def create_serverless_database(self, pod, tenant, database_name,
                                    provider, region, width=None, weight=None,
-                                   dataplane_id=None):
+                                   dataplane_id=None,
+                                   dontImportSampleData=True):
         database_config = {
             "name": database_name,
             "projectId": tenant.project_id,
             "provider": provider,
             "region": region,
+            "dontImportSampleData": dontImportSampleData
         }
         if width or weight or dataplane_id:
             database_config.update({
@@ -96,6 +98,13 @@ class CapellaUtils:
                               format(database_id, state))
         return json.loads(resp.content).get("data").get("status").get("state")
 
+    def update_database(self, database_id, override):
+        resp = self.capella_api.update_database(database_id, override)
+        if resp.status_code != 200:
+            raise Exception("Couldn't update database {} with  {}".format(
+                            database_id, override)
+                            )
+
     def wait_for_database_deleted(self, tenant, database_id, timeout=1800):
         end_time = time.time() + timeout
         while time.time() < end_time:
@@ -128,8 +137,6 @@ class CapellaUtils:
     def allow_my_ip(self, pod, tenant, database_id):
         resp = self.capella_api.allow_my_ip(tenant.id, tenant.project_id,
                                             database_id)
-        print resp.status_code
-        print resp.content
         if resp.status_code != 200:
             result = json.loads(resp.content)
             if result["errorType"] == "ErrAllowListsCreateDuplicateCIDR":
@@ -205,3 +212,12 @@ class CapellaUtils:
         data = json.loads(resp.content)["couchbaseCreds"]
         data["srv"] = json.loads(resp.content)["srv"]
         return data["username"], data["password"], data["srv"]
+
+    def get_dataplane_info(self, dataplane_id):
+        resp = self.capella_api.get_serverless_dataplane_info(dataplane_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Fetch Dataplane info response:{}".
+                                      format(resp.status_code))
+            raise Exception("Fetch Dataplane info failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
