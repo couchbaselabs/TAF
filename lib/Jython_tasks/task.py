@@ -3971,11 +3971,21 @@ class DatabaseCreateTask(Task):
                     self.cluster.pod, self.bucket_obj.name)
                 self.bucket_obj.serverless.dataplane_id = dp_id
             if state != "healthy":
-                raise Exception("Database not healthy")
+                self.log.critical("Database {} did not turned healthy".format(
+                    self.bucket_obj.name))
+                self.result = False
+                self.complete_task()
+                return
             self.server = TestInputServer()
             self.srv = self.serverless_util.get_database_nebula_endpoint(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
-            record = Lookup("_couchbases._tcp.{}".format(self.srv), Type.SRV).run()[0]
+            records = Lookup("_couchbases._tcp.{}".format(self.srv), Type.SRV).run()
+            if len(records) == 0:
+                self.log.critical("SRV resolutions of {} failed".format(self.srv))
+                self.result = False
+                self.complete_task()
+                return
+            record = records[0]
             self.server.ip = str(record.getTarget()).rstrip(".")
             self.server.memcached_port = int(record.getPort())
             self.log.info("SRV {} is resolved to {}.".format(self.srv,
