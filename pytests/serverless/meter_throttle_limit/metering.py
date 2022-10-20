@@ -1,6 +1,7 @@
 import copy
 import random
 import string
+import threading
 
 from Cb_constants import DocLoading
 from cb_tools.mc_stat import Mcthrottle
@@ -12,7 +13,6 @@ from security_utils.audit_ready_functions import audit
 from couchbase_helper.documentgenerator import doc_generator
 from cb_tools.cbstats import Cbstats
 from cb_tools.cbepctl import Cbepctl
-from com.couchbase.test.transactions import SimpleTransaction as Transaction
 from membase.api.rest_client import RestConnection
 
 
@@ -69,14 +69,14 @@ class ServerlessMetering(LMT):
 
         # write/update the document
         key_value = self.get_key_value(self.num_items, self.doc_size)
-        expected_wu = self.calculate_units(self.doc_size, 0) * self.num_items
+        expected_wu = self.bucket_util.calculate_units(self.doc_size, 0) * self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.CREATE, key_value,
                                self.bucket, expected_wu,
                                0, durability=self.durability_level)
 
         # read the document
         self.total_size, ru = self.get_sizeof_document(self.key + str(0))
-        expected_ru = ru + self.calculate_units(self.total_size, 0,
+        expected_ru = ru + self.bucket_util.calculate_units(self.total_size, 0,
                                                 read=True) * self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.READ, key_value,
                                self.bucket, expected_wu,
@@ -84,14 +84,14 @@ class ServerlessMetering(LMT):
 
         # replace the document
         key_value = self.get_key_value(self.num_items, self.doc_size, char="b")
-        expected_wu += self.calculate_units(self.total_size, 0) * self.num_items
+        expected_wu += self.bucket_util.calculate_units(self.total_size, 0) * self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.REPLACE, key_value,
                                self.bucket, expected_wu,
                                expected_ru, durability=self.durability_level)
 
         # update the document
         key_value = self.get_key_value(self.num_items, self.doc_size, char="c")
-        expected_wu += self.calculate_units(self.total_size, 0) * self.num_items
+        expected_wu += self.bucket_util.calculate_units(self.total_size, 0) * self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.UPDATE, key_value,
                                self.bucket, expected_wu,
                                expected_ru, durability=self.durability_level)
@@ -99,9 +99,9 @@ class ServerlessMetering(LMT):
         # touch the document
         self.total_size, ru = self.get_sizeof_document(self.key + str(0))
         if self.durability_level != "NONE":
-            expected_wu += self.calculate_units(self.total_size, 0) / 2 * self.num_items
+            expected_wu += self.bucket_util.calculate_units(self.total_size, 0) / 2 * self.num_items
         else:
-            expected_wu += self.calculate_units(self.total_size, 0) * self.num_items
+            expected_wu += self.bucket_util.calculate_units(self.total_size, 0) * self.num_items
         expected_ru += ru
         for key, value in key_value.iteritems():
             result = self.client.crud(DocLoading.Bucket.DocOps.TOUCH, key, exp=10,
@@ -139,7 +139,7 @@ class ServerlessMetering(LMT):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         _, self.ru, self.wu = self.get_stat(self.bucket)
-        expected_wu = self.calculate_units(20, self.doc_size, 0) * self.num_items
+        expected_wu = self.bucket_util.calculate_units(20, self.doc_size, 0) * self.num_items
         self.compare_ru_wu_stat(self.ru, self.wu, 0, expected_wu)
 
         # Load with doc_ttl set
@@ -155,7 +155,7 @@ class ServerlessMetering(LMT):
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
         _, self.ru, self.wu = self.get_stat(self.bucket)
-        expected_wu += self.calculate_units(20, self.doc_size, 0) * self.num_items
+        expected_wu += self.bucket_util.calculate_units(20, self.doc_size, 0) * self.num_items
         self.compare_ru_wu_stat(self.ru, self.wu, 0, expected_wu)
 
         self.sleep(2)
@@ -183,7 +183,7 @@ class ServerlessMetering(LMT):
     def get_sizeof_document(self, key, doc_gen="", xattr=False):
         result = self.client.crud(DocLoading.Bucket.DocOps.READ, key)
         size = len(result["key"]) + len(result["value"])
-        ru = self.calculate_units(size, 0, read=True)
+        ru = self.bucket_util.calculate_units(size, 0, read=True)
         if xattr:
             key_value = []
             key, val = next(doc_gen)
@@ -193,7 +193,7 @@ class ServerlessMetering(LMT):
             if success:
                 if success[key]["value"][0]:
                     size += len(success[key]["value"][0]) + len(key)
-            ru = self.calculate_units(size, 0, read=True) * 2
+            ru = self.bucket_util.calculate_units(size, 0, read=True) * 2
         return size, ru
 
     def test_cu_in_subdoc_operations(self):
@@ -206,7 +206,7 @@ class ServerlessMetering(LMT):
 
         # create few documents
         key_value = self.get_key_value(self.num_items, self.doc_size)
-        self.expected_wu = self.calculate_units(self.doc_size, 0) * self.num_items
+        self.expected_wu = self.bucket_util.calculate_units(self.doc_size, 0) * self.num_items
         self.perform_operation(DocLoading.Bucket.DocOps.CREATE, key_value, self.bucket,
                                self.expected_wu, 0, durability=self.durability_level)
         _, self.expected_ru, self.expected_wu = self.get_stat(self.bucket)
@@ -226,7 +226,7 @@ class ServerlessMetering(LMT):
                                                    create_path=self.xattr,
                                                    xattr=self.xattr)
                 self.assertFalse(failed_items, "Subdoc Xattr operation failed")
-            self.expected_wu += (self.calculate_units(self.total_size, 0) * self.num_items)
+            self.expected_wu += (self.bucket_util.calculate_units(self.total_size, 0) * self.num_items)
             _, self.ru, self.wu = self.get_stat(self.bucket)
             self.compare_ru_wu_stat(self.ru, self.wu, self.expected_ru, self.expected_wu)
 
@@ -257,9 +257,9 @@ class ServerlessMetering(LMT):
         self.create_start = 0
         self.create_end = self.num_items
         self.perform_load(validate_data=False)
-        expected_wu = self.calculate_units(self.key_size, self.doc_size,
+        expected_wu = self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                            num_items=self.create_end - self.create_start)
-        expected_ru = self.calculate_units(self.key_size, self.doc_size,
+        expected_ru = self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                            read=True, num_items=self.read_end - self.read_start)
         for bucket in self.cluster.buckets:
             _, self.ru, self.wu = self.get_stat(bucket)
@@ -287,15 +287,15 @@ class ServerlessMetering(LMT):
             self.perform_load(validate_data=False)
             count += 1
             if "update" in self.doc_ops:
-                expected_wu += self.calculate_units(self.key_size, self.doc_size,
+                expected_wu += self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                                     num_items=self.update_end - self.update_start)
 
             if "delete" in self.doc_ops:
-                expected_wu += self.calculate_units(self.key_size, self.doc_size,
+                expected_wu += self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                                     num_items = self.delete_end - self.delete_start)
 
             if "create" in self.doc_ops:
-                expected_wu += self.calculate_units(self.key_size, self.doc_size,
+                expected_wu += self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                                     num_items = self.create_end - self.create_start)
 
             if "expiry" in self.doc_ops:
@@ -305,10 +305,10 @@ class ServerlessMetering(LMT):
              to kickoff")
                 self.sleep(self.exp_pager_stime*30, "Wait for KV purger to scan expired docs and add \
             tombstones.")
-                expected_wu += self.calculate_units(self.key_size, self.doc_size,
+                expected_wu += self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                                     num_items = self.expiry_end - self.expiry_start)
             if "read" in self.doc_ops:
-                expected_ru += self.calculate_units(self.key_size, self.doc_size,
+                expected_ru += self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                                     num_items = self.read_end - self.read_start)
             self.log.info("Expected wu after doc ops == {}".format(expected_wu))
             for bucket in self.cluster.buckets:
@@ -332,7 +332,7 @@ class ServerlessMetering(LMT):
             task = self.perform_load(wait_for_load=False, validate_data=False)
             temp_tasks.extend(task)
         self.wait_for_doc_load_completion(temp_tasks)
-        expected_ru = self.num_read_threads * (self.calculate_units(self.key_size,
+        expected_ru = self.num_read_threads * (self.bucket_util.calculate_units(self.key_size,
                                                                     self.doc_size,
                                                                     read=True,
                                                                     num_items=self.num_items))
@@ -360,7 +360,7 @@ class ServerlessMetering(LMT):
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets, timeout=3600)
 
-        expected_wu = self.calculate_units(self.key_size, self.doc_size,
+        expected_wu = self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                            num_items=self.create_end - self.create_start)
         _, self.ru, self.wu = self.get_stat(self.bucket)
         msg = "expected_wu {} != mcstats wu {}".format(expected_wu, self.wu)
@@ -479,8 +479,8 @@ class ServerlessMetering(LMT):
         self.keys = []
         self.expected_num_throttled = 0
         self.throttling = self.input.param("throttling", False)
-        write_units = self.calculate_units(15, self.doc_size) * 2
-        read_units = self.calculate_units(15, self.doc_size, read=True) * 2
+        write_units = self.bucket_util.calculate_units(15, self.doc_size) * 2
+        read_units = self.bucket_util.calculate_units(15, self.doc_size, read=True) * 2
         self.sdk_timeout = (write_units / self.bucket_throttling_limit) + 10
         gen_create = doc_generator("throttling", 0, self.num_items,
                                    doc_size=self.doc_size,
@@ -628,25 +628,32 @@ class ServerlessMetering(LMT):
             check_error_msg(status, content)
             check_error_msg(status, content, True)
 
+    def thread_change_limit(self, bucket, throttling_limit, storage_limit):
+        self.sleep(20)
+        self.bucket_util.set_throttle_limit(bucket, throttling_limit, storage_limit)
+        self.assertEqual(self.bucket_util.get_throttle_limit(bucket), throttling_limit)
+
     def test_zero_limits(self):
         bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         for i in [1, 2]:
             if i == 1:
-                self.set_throttle_limit(bucket, throttling_limit=0)
+                self.bucket_util.set_throttle_limit(bucket, throttling_limit=0)
+                gen_add = doc_generator(self.key, 0, 100)
+                self.expected_wu = self.bucket_util.calculate_units(15, self.doc_size, num_items=100)
             else:
-                self.set_throttle_limit(bucket, storage_limit=0)
-            gen_add = doc_generator(self.key, 0, 100)
+                self.bucket_util.set_throttle_limit(bucket, storage_limit=0)
+                gen_add = doc_generator(self.key, 100, 200)
+                self.expected_wu += self.bucket_util.calculate_units(15, self.doc_size, num_items=100)
+            thread = threading.Thread(target=self.thread_change_limit, args=(bucket, 5000, 10))
+            thread.start()
             task = self.task.async_load_gen_docs(
-                self.cluster, self.bucket, gen_add, "create", 0,
+                self.cluster, bucket, gen_add, "create", 0,
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
                 timeout_secs=self.sdk_timeout)
+            thread.join()
             self.task_manager.get_task_result(task)
-            self.bucket_util.get_all_buckets(self.cluster)
-            storage, num_throttled, ru, wu = self.get_stat_from_prometheus(self.bucket)
-            bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
-            self.assertEqual(bucket.stats.itemCount, wu)
-
-
+            num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
+            self.assertEqual(self.expected_wu, wu)

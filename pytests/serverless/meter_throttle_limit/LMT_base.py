@@ -646,19 +646,6 @@ class LMT(ServerlessOnPremBaseTest):
         for task in tasks:
             self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
-    def calculate_units(self, key, value, sub_doc_size=0, xattr=0, read=False, num_items=1):
-        if read:
-            limit = 4096
-        else:
-            limit = 1024
-        total_size = key + value + sub_doc_size + xattr
-        expected_cu, remainder = divmod(total_size, limit)
-        if remainder:
-            expected_cu += 1
-        if self.durability_level != "NONE" and not read:
-            expected_cu *= 2
-        return expected_cu * num_items
-
     def get_stat(self, bucket):
         throttle_limit = list()
         ru = 0
@@ -897,19 +884,3 @@ class LMT(ServerlessOnPremBaseTest):
         if exception:
             self.log.info("txn failed")
         self.sleep(1)
-
-    def set_throttle_limit(self, bucket, throttling_limit=5000, storage_limit=500):
-        for node in bucket.servers:
-            status, content = RestConnection(node).\
-                set_throttle_limit(bucket=bucket.name,
-                                   throttle_limit=throttling_limit,
-                                   storage_limit=storage_limit)
-            if not status:
-                print(content)
-                self.log.error("set throttle limit failed")
-
-    def get_throttle_limit(self, bucket):
-        _, content = RestConnection(bucket.servers[0]).\
-            get_throttle_limit(bucket=bucket.name)
-        output = json.loads(content)
-        return output["dataThrottleLimit"]

@@ -37,7 +37,7 @@ class ServerlessThrottling(LMT):
         throttle_limit = self.bucket_throttling_limit/len(self.bucket.servers)
         expected_wu = 0
         expected_num_throttled = 0
-        write_units = self.calculate_units(self.doc_size, 0)
+        write_units = self.bucket_util.calculate_units(self.doc_size, 0)
         self.generate_data_for_vbuckets(target_vbucket)
 
         for op_type in ["create", "update", "replace"]:
@@ -88,7 +88,7 @@ class ServerlessThrottling(LMT):
         expected_num_throttled, expected_ru, expected_wu = self.get_stat(self.bucket)
 
         self.total_size = self.doc_size + self.sub_doc_size + 10
-        write_units = self.calculate_units(self.total_size, 0)
+        write_units = self.bucket_util.calculate_units(self.total_size, 0)
         expected_ru = 0
 
         for sub_doc_op in ["subdoc_insert", "subdoc_upsert", "subdoc_replace"]:
@@ -146,7 +146,7 @@ class ServerlessThrottling(LMT):
                     sdk_client_pool=self.sdk_client_pool,
                     print_ops_rate=False)
                 self.task_manager.get_task_result(load_task)
-                write_units = self.calculate_units(self.doc_size, 0) * batch_size
+                write_units = self.bucket_util.calculate_units(self.doc_size, 0) * batch_size
                 throttle_limit, expected_num_throttled = self.calculate_expected_num_throttled(
                                                         node, self.bucket, throttle_limit,
                                                         write_units, expected_num_throttled)
@@ -155,7 +155,7 @@ class ServerlessThrottling(LMT):
 
                 self.sleep(60)
                 num_throttled, ru, wu = self.get_stat(bucket)
-                self.expected_wu += self.calculate_units(self.doc_size, 0) * self.num_items
+                self.expected_wu += self.bucket_util.calculate_units(self.doc_size, 0) * self.num_items
                 self.assertEqual(wu, self.expected_wu)
                 if 0 < num_throttled < expected_num_throttled:
                     self.fail("num_throlled value %s expected_num_throttled %s"
@@ -180,7 +180,7 @@ class ServerlessThrottling(LMT):
         else:
             throttle_limit = [5000]
         for bucket in self.buckets:
-            self.set_throttle_limit(bucket, random.choice(throttle_limit))
+            self.bucket_util.set_throttle_limit(bucket, random.choice(throttle_limit))
         gen_docs = doc_generator("throttling", 0, self.num_items,
                                  doc_size=self.doc_size,
                                  mutation_type="create",
@@ -189,7 +189,7 @@ class ServerlessThrottling(LMT):
         for load_task in tasks:
             self.task_manager.get_task_result(load_task)
         self.key_size = 10
-        expected_wu = self.calculate_units(self.key_size, self.doc_size) * self.num_items
+        expected_wu = self.bucket_util.calculate_units(self.key_size, self.doc_size) * self.num_items
 
         for bucket in self.cluster.buckets:
             storage, num_throttled, self.ru, self.wu = self.get_stat_from_prometheus(bucket)
@@ -208,16 +208,16 @@ class ServerlessThrottling(LMT):
         self.loop = self.input.param("loop", 1)
         self.load_single_node = self.input.param("load_single_node", False)
         self.num_non_throttled_bucket = self.input.param("num_non_throttle_bucket", 1)
-        self.expected_wu = self.calculate_units(15, self.doc_size) * self.num_items
+        self.expected_wu = self.bucket_util.calculate_units(15, self.doc_size) * self.num_items
         if self.load_single_node:
             self.loop = len(self.buckets[0].servers)
 
         for bucket in self.buckets:
             if self.num_non_throttled_bucket > 1:
-                self.set_throttle_limit(bucket, -1)
+                self.bucket_util.set_throttle_limit(bucket, -1)
                 self.num_non_throttled_bucket -=1
             else:
-                self.set_throttle_limit(bucket, self.bucket_throttling_limit)
+                self.bucket_util.set_throttle_limit(bucket, self.bucket_throttling_limit)
 
         for i in range(self.loop):
             tasks = []
@@ -248,7 +248,7 @@ class ServerlessThrottling(LMT):
             for bucket in self.cluster.buckets:
                 storage, num_throttled, self.ru, self.wu = self.get_stat_from_prometheus(bucket)
                 self.assertEqual(self.wu, self.expected_wu)
-            self.expected_wu += self.calculate_units(15, self.doc_size) * self.num_items
+            self.expected_wu += self.bucket_util.calculate_units(15, self.doc_size) * self.num_items
 
     def test_throttling_read_write(self):
         """
@@ -262,7 +262,7 @@ class ServerlessThrottling(LMT):
         self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         self.loop = self.input.param("loop", 1)
         self.load_single_node = self.input.param("load_single_node", False)
-        self.expected_wu = self.calculate_units(15, self.doc_size) * self.num_items
+        self.expected_wu = self.bucket_util.calculate_units(15, self.doc_size) * self.num_items
         if self.load_single_node:
             self.loop = len(self.buckets[0].servers)
         self.gen_docs = doc_generator("throttling", 0, self.num_items,
@@ -302,8 +302,8 @@ class ServerlessThrottling(LMT):
                 self.task_manager.get_task_result(load_task)
             for task in task_info:
                 self.task_manager.get_task_result(task)
-            self.expected_ru += self.calculate_units(15, self.doc_size, read=True) * self.num_items
-            self.expected_wu += self.calculate_units(15, self.doc_size) * self.num_items
+            self.expected_ru += self.bucket_util.calculate_units(15, self.doc_size, read=True) * self.num_items
+            self.expected_wu += self.bucket_util.calculate_units(15, self.doc_size) * self.num_items
             for bucket in self.buckets:
                 storage, num_throttled, self.ru, self.wu = self.get_stat_from_prometheus(bucket)
                 self.assertEqual(self.wu, self.expected_wu)
@@ -327,14 +327,14 @@ class ServerlessThrottling(LMT):
         self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         self.loop = self.input.param("loop", 1)
         self.num_non_throttled_bucket = self.input.param("num_non_throttle_bucket", 1)
-        self.expected_wu = self.calculate_units(15, self.doc_size) * self.num_items
+        self.expected_wu = self.bucket_util.calculate_units(15, self.doc_size) * self.num_items
 
         for bucket in self.buckets:
             if self.num_non_throttled_bucket > 1:
-                self.set_throttle_limit(bucket, -1)
+                self.bucket_util.set_throttle_limit(bucket, -1)
                 self.num_non_throttled_bucket -=1
             else:
-                self.set_throttle_limit(bucket, self.bucket_throttling_limit)
+                self.bucket_util.set_throttle_limit(bucket, self.bucket_throttling_limit)
         gen_docs = doc_generator("throttling", 0, self.num_items,
                                          doc_size=self.doc_size,
                                          mutation_type="create",
@@ -353,7 +353,7 @@ class ServerlessThrottling(LMT):
             task = self.data_load(gen_docs, "read")
             for load_task in task:
                 self.task_manager.get_task_result(load_task)
-            self.expected_ru += self.calculate_units(15, self.doc_size, read=True) * self.num_items
+            self.expected_ru += self.bucket_util.calculate_units(15, self.doc_size, read=True) * self.num_items
             for bucket in self.cluster.buckets:
                 storage, num_throttled, self.ru, self.wu = self.get_stat_from_prometheus(bucket)
                 self.assertEqual(self.ru, self.expected_ru)

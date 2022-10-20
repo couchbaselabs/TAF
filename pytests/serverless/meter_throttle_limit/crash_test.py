@@ -82,7 +82,7 @@ class ServerlessMetering(LMT):
                     self.cluster, self.cluster.buckets, timeout=100)
                 self.bucket_util.get_all_buckets(self.cluster)
                 self.log.info("num_items in bucket %s" % bucket.stats.itemCount)
-                self.expected_wu = self.calculate_units(self.doc_size, 0) * bucket.stats.itemCount
+                self.expected_wu = self.bucket_util.calculate_units(self.doc_size, 0) * bucket.stats.itemCount
                 num_throttled, ru, wu = self.get_stat_from_metering(bucket)
                 self.log.info("numthrottled:%s, ru:%s, wu:%s" % (num_throttled, ru, wu))
                 if "kill" not in error_to_simulate or self.crash_other_node:
@@ -103,7 +103,7 @@ class ServerlessMetering(LMT):
                                   _sync=True)
             self.bucket_util.get_all_buckets(self.cluster)
             expected_ru = items - (bucket.stats.itemCount - items)
-            self.expected_wu += self.calculate_units(self.doc_size, 0) * (bucket.stats.itemCount - items)
+            self.expected_wu += self.bucket_util.calculate_units(self.doc_size, 0) * (bucket.stats.itemCount - items)
             if self.doc_size > 1000:
                 expected_num_throttled += bucket.stats.itemCount/2
             num_throttled, ru, wu = self.get_stat(bucket)
