@@ -177,6 +177,53 @@ class CollectionsNetworkSplit(CollectionBase):
                               format(bucket.name, uid_key, expected_diff, int_uid_diff))
 
     @staticmethod
+    def get_common_spec_for_serverless():
+        spec = {
+            # Scope/Collection ops params
+            MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
+            MetaCrudParams.COLLECTIONS_TO_DROP: 0,
+
+            MetaCrudParams.SCOPES_TO_DROP: 3,
+            MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 2,
+            MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 2,
+
+            MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 5,
+
+            MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS: "all",
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS: "all",
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_OPS: "all",
+
+            # Doc loading params
+            "doc_crud": {
+
+                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 1000,
+
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 5,
+                MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 5,
+                MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 5,
+            },
+
+            "subdoc_crud": {
+                MetaCrudParams.SubDocCrud.XATTR_TEST: False,
+
+                MetaCrudParams.SubDocCrud.INSERT_PER_COLLECTION: 0,
+                MetaCrudParams.SubDocCrud.UPSERT_PER_COLLECTION: 0,
+                MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION: 0,
+                MetaCrudParams.SubDocCrud.LOOKUP_PER_COLLECTION: 0,
+            },
+
+            MetaCrudParams.SUPPRESS_ERROR_TABLE: True,
+
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",
+            MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all"
+        }
+        return spec
+
+    @staticmethod
     def get_common_spec():
         spec = {
             # Scope/Collection ops params
@@ -249,7 +296,10 @@ class CollectionsNetworkSplit(CollectionBase):
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def data_load(self, async_load=False):
-        doc_loading_spec = self.get_common_spec()
+        if CbServer.cluster_profile == "serverless":
+            doc_loading_spec = self.get_common_spec_for_serverless()
+        else:
+            doc_loading_spec = self.get_common_spec()
         CollectionBase.over_ride_doc_loading_template_params(self, doc_loading_spec)
         self.set_retry_exceptions(doc_loading_spec)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
