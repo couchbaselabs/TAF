@@ -234,8 +234,9 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             # Process params to over_ride values if required
             CollectionBase.over_ride_bucket_template_params(
                 self, self.bucket_storage, buckets_spec)
-            self.bucket_util.create_buckets_using_json_data(
+            result = self.bucket_util.create_buckets_using_json_data(
                 self.cluster, buckets_spec)
+            self.assertTrue(result, "Bucket creation failed")
             self.sleep(5, "Wait for collections creation to complete")
         else:
             self.log.info("Creating '%s' buckets" % self.num_buckets)

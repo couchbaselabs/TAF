@@ -2375,6 +2375,7 @@ class BucketUtils(ScopeUtils):
 
     def create_buckets_using_json_data(self, cluster, buckets_spec,
                                        async_create=True):
+        result = True
         self.log.info("Creating required buckets from template")
         load_data_from_existing_tar = False
         bucket_creation_tasks = list()
@@ -2418,6 +2419,7 @@ class BucketUtils(ScopeUtils):
         for task in bucket_creation_tasks:
             self.task_manager.get_task_result(task)
             if task.result is False:
+                result = False
                 self.log.error("Failure in bucket creation task: %s"
                                % task.thread_name)
             else:
@@ -2472,6 +2474,7 @@ class BucketUtils(ScopeUtils):
                     for c_name, collection in scope.collections.items():
                         collection.num_items = \
                             collection_item_count[s_name][c_name]["items"]
+        return result
 
     def load_bucket_from_tar(self, kv_nodes, bucket_obj, tar_src, tar_dir):
         """
