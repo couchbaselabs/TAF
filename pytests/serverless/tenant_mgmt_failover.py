@@ -29,6 +29,7 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
                                               "volume_test_load_with_CRUD_on_collections")
         self.recovery_strategy = self.input.param("recovery_strategy", "full")
         self.validate_stat = self.input.param("validate_stat", False)
+        self.enable_data_load = self.input.param("data_loading", True)
         self.cbas_util = CbasUtil(self.task)
         self.rebalance_util = CBASRebalanceUtil(
             self.cluster_util, self.bucket_util, self.task, True,
@@ -53,12 +54,13 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         super(TenantManagementOnPremFailover, self).tearDown()
 
     def create_sdk_clients(self):
-        CollectionBase.create_sdk_clients(
-            self.task_manager.number_of_threads,
-            self.cluster.master,
-            self.cluster.buckets,
-            self.sdk_client_pool,
-            self.sdk_compression)
+        if self.enable_data_load:
+            CollectionBase.create_sdk_clients(
+                self.task_manager.number_of_threads,
+                self.cluster.master,
+                self.cluster.buckets,
+                self.sdk_client_pool,
+                self.sdk_compression)
 
     def __update_server_obj(self):
         temp_data = self.servers_to_fail
@@ -204,9 +206,10 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         self.create_sdk_clients()
 
     def test_failover_during_update(self):
+        data_load_task = None
         if self.validate_stat:
             self.expected_stat = self.bucket_util.get_initial_stats(self.cluster.buckets)
-        if self.async_data_load:
+        if self.enable_data_load and self.async_data_load:
             data_load_task = self.rebalance_util.data_load_collection(
                 self.cluster, self.doc_spec_name, False, async_load=True)
         for bucket in self.cluster.buckets:
@@ -228,7 +231,7 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         self.task_manager.get_task_result(rebalance_task)
         if self.validate_bucket_creation:
             self.test_bucket_creation()
-        if self.async_data_load:
+        if self.enable_data_load and self.async_data_load:
             self.rebalance_util.wait_for_data_load_to_complete(data_load_task,
                                                                False)
         if self.validate_stat:
@@ -276,6 +279,3 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         self.assertTrue(set(second_bucket.servers).
                          isdisjoint(set(target_bucket.servers)),
                          "Target bucket not expected in nodes with more weight")
-
-
-

@@ -877,11 +877,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         break
 
             shell.disconnect()
-        if result and force_collect and not self.stop_server_on_crash:
-            self.fetch_cb_collect_logs()
-            self.get_cbcollect_info = False
-        if (self.is_test_failed() or result) and self.collect_data:
-            self.copy_data_on_slave()
+        if not ClusterRun.is_enabled:
+            if result and force_collect and not self.stop_server_on_crash:
+                self.fetch_cb_collect_logs()
+                self.get_cbcollect_info = False
+            if (self.is_test_failed() or result) and self.collect_data:
+                self.copy_data_on_slave()
 
         return result
 

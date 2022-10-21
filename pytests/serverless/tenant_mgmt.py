@@ -337,25 +337,18 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             for i in range(self.num_buckets):
                 name = "bucket_"+str(i)
                 bucket_params = self.__get_bucket_params(
-                    b_name=name,
-                    width=self.bucket_width, )
+                    b_name=name, width=self.bucket_width)
                 bucket_obj = Bucket(bucket_params)
                 self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                                wait_for_warmup=True)
-        create_serverless_bucket()
-        ###
 
         def data_load():
             doc_loading_spec_name = "initial_load"
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
                 doc_loading_spec_name)
-            tasks = self.bucket_util.run_scenario_from_spec(self.task,
-                                                            self.cluster,
-                                                            buckets,
-                                                            doc_loading_spec,
-                                                            mutation_num=0,
-                                                            async_load=
-                                                            True)
+            tasks = self.bucket_util.run_scenario_from_spec(
+                self.task, self.cluster, buckets, doc_loading_spec,
+                mutation_num=0, async_load=True)
             return tasks
 
         def verify_data_load(load_task):
@@ -364,13 +357,13 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             if load_task.result is False:
                 raise Exception("doc load/verification failed")
 
-        task = None
         self.validate_stat = self.input.param("validate_stat", False)
         if self.negative_case:
             self.desired_width = (len(self.cluster.servers) /
                                   CbServer.Serverless.KV_SubCluster_Size) + 1
 
         scale = self.input.param("bucket_scale", "all")
+        enable_data_load = self.input.param("data_loading", True)
         data_load_after_rebalance = self.input.param(
             "data_load_after_rebalance", True)
         update_during_rebalance = self.input.param(
@@ -380,15 +373,12 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                    self.nodes_init:self.nodes_init + self.nodes_in]
         nodes_out = self.cluster.servers[self.nodes_init -
                                          self.nodes_out:self.nodes_init]
-        buckets_to_consider = buckets = self.cluster.buckets
+
         task = None
         rebalance_task_during_update = None
-        CollectionBase.create_sdk_clients(
-            self.task_manager.number_of_threads,
-            self.cluster.master,
-            buckets,
-            self.sdk_client_pool,
-            self.sdk_compression)
+
+        create_serverless_bucket()
+        buckets_to_consider = buckets = self.cluster.buckets
         validation = self.bucket_util.validate_serverless_buckets(
             self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
@@ -403,8 +393,15 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                           " width change in multiple buckets")
             buckets_to_consider = buckets[:(len(buckets) / 2)]
 
-        if async_load:
-            task = data_load()
+        if enable_data_load:
+            CollectionBase.create_sdk_clients(
+                self.task_manager.number_of_threads,
+                self.cluster.master,
+                buckets,
+                self.sdk_client_pool,
+                self.sdk_compression)
+            if async_load:
+                task = data_load()
         if update_during_rebalance:
             rebalance_task_during_update = self.task.async_rebalance(
                 self.cluster, nodes_in, nodes_out,
@@ -412,12 +409,14 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             self.sleep(10, "Wait for rebalance to make progress")
 
         if self.validate_stat:
-            self.expected_stat = self.bucket_util.get_initial_stats(self.cluster.buckets)
+            self.expected_stat = self.bucket_util.get_initial_stats(
+                self.cluster.buckets)
         for bucket in buckets_to_consider:
             try:
-                self.bucket_util.update_bucket_property(self.cluster.master, bucket,
-                                                        bucket_width=self.desired_width,
-                                                        bucket_weight=self.desired_weight)
+                self.bucket_util.update_bucket_property(
+                    self.cluster.master, bucket,
+                    bucket_width=self.desired_width,
+                    bucket_weight=self.desired_weight)
                 if self.desired_width:
                     bucket.serverless.width = self.desired_width
                 if self.desired_weight:
@@ -434,21 +433,20 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             self.task_manager.get_task_result(rebalance_task_during_update)
             self.assertTrue(rebalance_task_during_update.result,
                             "Rebalance Failed")
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, [], [],
-            retry_get_process_num=3000)
+        rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                   retry_get_process_num=3000)
         self.task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
         if self.validate_stat:
             self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
         # validations
-        if async_load:
+        if enable_data_load and async_load:
             verify_data_load(task)
         validation = self.bucket_util.validate_serverless_buckets(
             self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
-        if data_load_after_rebalance:
+        if enable_data_load and data_load_after_rebalance:
             task = data_load()
             verify_data_load(task)
             if self.validate_stat:
