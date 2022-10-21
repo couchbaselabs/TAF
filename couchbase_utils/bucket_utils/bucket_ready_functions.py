@@ -5891,3 +5891,48 @@ class BucketUtils(ScopeUtils):
         if durability != "NONE" and not read:
             expected_cu *= 2
         return expected_cu * num_items
+
+    def get_total_items_bucket(self, bucket):
+        sum = 0
+        bucket_helper = BucketHelper(bucket.servers[0])
+        for server in bucket.servers:
+            server_stats = bucket_helper.get_bucket_stats_for_node(
+                bucket, server)
+            sum += server_stats["curr_items"]
+        return sum
+
+    def get_initial_stats(self, buckets):
+        expected_stats = dict()
+        for bucket in buckets:
+            expected_stats[bucket.name] = dict()
+            expected_stats[bucket.name]["num_throttled"], \
+                expected_stats[bucket.name]["ru"], \
+                expected_stats[bucket.name]["wu"] = \
+                self.get_stat_from_metrics(bucket)
+        return expected_stats
+
+    def update_stat_on_buckets(self, buckets, expected_stats,
+                               write_units, read_units=0):
+        for bucket in buckets:
+            num_throttle = 0
+            expected_stats[bucket.name]["wu"] += write_units
+            expected_stats[bucket.name]["ru"] += read_units
+            throttle_limit = self.get_throttle_limit(bucket)
+            if throttle_limit != -1:
+                if write_units:
+                    num_throttle += write_units/self.get_throttle_limit(bucket)
+                if read_units:
+                    num_throttle += read_units/self.get_throttle_limit(bucket)
+            expected_stats[bucket.name]["num_throttled"] += num_throttle
+        return expected_stats
+
+    def validate_stats(self, buckets, expected_stats):
+        for bucket in buckets:
+            num_throttle, ru, wu = self.get_stat_from_metrics(bucket)
+            if num_throttle < expected_stats[bucket.name]["num_throttled"] \
+                or ru < expected_stats[bucket.name]["ru"] \
+                    or wu != expected_stats[bucket.name]["wu"]:
+                self.log.info("actual stats %s %s %s, expected stats %s %s %s"
+                              % (num_throttle, ru, wu, expected_stats[bucket.name]["num_throttled"],
+                                 expected_stats[bucket.name]["ru"],
+                                 expected_stats[bucket.name]["wu"]))

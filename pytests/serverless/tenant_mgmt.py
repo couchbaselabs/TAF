@@ -365,7 +365,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                 raise Exception("doc load/verification failed")
 
         task = None
-
+        self.validate_stat = self.input.param("validate_stat", False)
         if self.negative_case:
             self.desired_width = (len(self.cluster.servers) /
                                   CbServer.Serverless.KV_SubCluster_Size) + 1
@@ -410,6 +410,9 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                 self.cluster, nodes_in, nodes_out,
                 retry_get_process_num=3000)
             self.sleep(10, "Wait for rebalance to make progress")
+
+        if self.validate_stat:
+            self.expected_stat = self.bucket_util.get_initial_stats(self.cluster.buckets)
         for bucket in buckets_to_consider:
             try:
                 self.bucket_util.update_bucket_property(self.cluster.master, bucket,
@@ -437,6 +440,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
+        if self.validate_stat:
+            self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
         # validations
         if async_load:
             verify_data_load(task)
@@ -446,4 +451,9 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         if data_load_after_rebalance:
             task = data_load()
             verify_data_load(task)
+            if self.validate_stat:
+                for bucket in self.cluster.buckets:
+                    self.expected_stat[bucket.name]["wu"] += \
+                        self.bucket_util.get_total_items_bucket(bucket)
+                self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
         self.bucket_util.print_bucket_stats(self.cluster)

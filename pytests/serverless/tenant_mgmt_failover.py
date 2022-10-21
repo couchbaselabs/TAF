@@ -16,8 +16,7 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         self.timeout = self.input.param("timeout", 200)
         self.get_from_engaged = self.input.param("get_from_engaged", None)
         self.nodes_in = self.input.param("nodes_in", 0)
-        self.validate_bucket_creation = self.input.param("validate_bucket_creation"
-                                                         , True)
+        self.validate_bucket_creation = self.input.param("validate_bucket_creation", True)
         self.pick_zone_wise = self.input.param("pick_zone_wise", False)
         self.spec_name = self.input.param("bucket_spec", None)
         self.data_spec_name = self.input.param("data_spec_name", None)
@@ -29,6 +28,7 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         self.doc_spec_name = self.input.param("doc_spec_name",
                                               "volume_test_load_with_CRUD_on_collections")
         self.recovery_strategy = self.input.param("recovery_strategy", "full")
+        self.validate_stat = self.input.param("validate_stat", False)
         self.cbas_util = CbasUtil(self.task)
         self.rebalance_util = CBASRebalanceUtil(
             self.cluster_util, self.bucket_util, self.task, True,
@@ -204,6 +204,8 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         self.create_sdk_clients()
 
     def test_failover_during_update(self):
+        if self.validate_stat:
+            self.expected_stat = self.bucket_util.get_initial_stats(self.cluster.buckets)
         if self.async_data_load:
             data_load_task = self.rebalance_util.data_load_collection(
                 self.cluster, self.doc_spec_name, False, async_load=True)
@@ -229,10 +231,17 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         if self.async_data_load:
             self.rebalance_util.wait_for_data_load_to_complete(data_load_task,
                                                                False)
+        if self.validate_stat:
+            for bucket in self.cluster.buckets:
+                self.expected_stat[bucket.name]["wu"] += \
+                    self.bucket_util.get_total_items_bucket(bucket)
+            self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
         self.run_recovery_rebalance()
         validation = self.bucket_util.validate_serverless_buckets(
             self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
+        if self.validate_stat:
+            self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
 
     def test_failover_non_included_node(self):
         weight = 1000
