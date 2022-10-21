@@ -3945,13 +3945,15 @@ class DatabaseCreateTask(Task):
     def __init__(self, cluster, bucket_obj,
                  provider=AWS.__str__,
                  region=AWS.Region.US_EAST_1,
-                 dataplane_id=""):
+                 dataplane_id="",
+                 timeout=600):
         Task.__init__(self, "CreateServerlessDatabaseTask_{}_{}".format(bucket_obj.name, time.time()))
         self.cluster = cluster
         self.bucket_obj = bucket_obj
         self.dataplane_id = dataplane_id
         self.provider = provider
         self.region = region
+        self.timeout = timeout
         self.serverless_util = global_vars.serverless_util
 
     def call(self):
@@ -3965,7 +3967,7 @@ class DatabaseCreateTask(Task):
                 dataplane_id=self.dataplane_id)
             state = self.serverless_util.is_database_ready(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
-                timeout=7200)
+                timeout=self.timeout)
             if self.cluster.pod.TOKEN:
                 dp_id = self.serverless_util.get_database_dataplane_id(
                     self.cluster.pod, self.bucket_obj.name)
@@ -3979,12 +3981,19 @@ class DatabaseCreateTask(Task):
             self.server = TestInputServer()
             self.srv = self.serverless_util.get_database_nebula_endpoint(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
-            records = Lookup("_couchbases._tcp.{}".format(self.srv), Type.SRV).run()
-            if records is None or len(records) == 0:
-                self.log.critical("SRV resolutions of {} failed".format(self.srv))
-                self.result = False
-                self.complete_task()
-                return
+            count = 20
+            while count > 0:
+                records = Lookup("_couchbases._tcp.{}".format(self.srv), Type.SRV).run()
+                if records:
+                    break
+                else:
+                    self.log.critical("SRV resolutions of {} failed. Retrying...".format(self.srv))
+                    time.sleep(5)
+                count -= 1
+                if count == 0:
+                    self.result = False
+                    self.complete_task()
+                    return
             record = records[0]
             self.server.ip = str(record.getTarget()).rstrip(".")
             self.server.memcached_port = int(record.getPort())
