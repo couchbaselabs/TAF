@@ -7,6 +7,8 @@ from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from membase.api.rest_client import RestConnection
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
+from error_simulation.cb_error import CouchbaseError
+from remote.remote_util import RemoteMachineShellConnection
 from pytests.bucket_collections.collections_base import CollectionBase
 
 
@@ -16,6 +18,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.b_create_endpoint = "pools/default/buckets"
 
         self.spec_name = self.input.param("bucket_spec", None)
+        self.error_sim = None
         self.data_spec_name = self.input.param("data_spec_name", None)
         self.negative_case = self.input.param("negative_case", False)
         self.bucket_util.delete_all_buckets(self.cluster)
@@ -455,3 +458,142 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                         self.bucket_util.get_total_items_bucket(bucket)
                 self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
         self.bucket_util.print_bucket_stats(self.cluster)
+
+    def test_scaling_rebalance_failures(self):
+        """
+        Scaling failures during re-balance
+        nodes added to accommodate scaling
+        weight width updated while data-load happens in parallel
+        followed by different re-balance failure scenarios and assertions
+        """
+        def create_sdk_clients():
+            CollectionBase.create_sdk_clients(
+                self.task_manager.number_of_threads,
+                self.cluster.master,
+                self.cluster.buckets,
+                self.sdk_client_pool,
+                self.sdk_compression)
+
+        def rebalance_failure(rebal_failure, target_buckets=None,
+                              error_type=None):
+            if rebal_failure == "delete_bucket":
+                bucket_conn = BucketHelper(self.cluster.master)
+                for bucket_obj in target_buckets:
+                    status = bucket_conn.delete_bucket(bucket_obj.name)
+                    self.assertFalse(status, "Bucket wasn't expected to get "
+                                             "deleted while re-balance running")
+
+            elif rebal_failure == "induce_error":
+                shell = RemoteMachineShellConnection(self.cluster.servers[1])
+                self.error_sim = CouchbaseError(self.log, shell)
+                self.error_sim.create(error_type)
+            elif rebal_failure == "stop_rebalance":
+                counter = 0
+                expected_progress = [20, 40, 80]
+                for progress in expected_progress:
+                    if rest.is_cluster_balanced():
+                        break
+                    counter += 1
+                    reached = self.cluster_util.rebalance_reached(rest,
+                                                                  progress)
+                    self.assertTrue(reached,
+                                    "Rebalance failed or did not reach "
+                                    "{0}%".format(progress))
+                    stopped = rest.stop_rebalance(wait_timeout=30)
+                    self.assertTrue(stopped, msg="Unable to stop rebalance")
+                    self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=1200)
+                    self.task.async_rebalance(self.cluster, [], [],
+                                              retry_get_process_num=3000)
+                    self.sleep(5, "Waiting before next iteration")
+                if counter < len(expected_progress):
+                    self.log.info("Cluster balanced before stopping for "
+                                  "progress{0}".format(expected_progress[counter]))
+
+        def data_load(doc_loading_spec_name=None, async_load=False):
+            if not doc_loading_spec_name:
+                doc_loading_spec_name = "initial_load"
+            doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+                doc_loading_spec_name)
+            task = self.bucket_util.run_scenario_from_spec(self.task,
+                                                           self.cluster,
+                                                           self.cluster.buckets,
+                                                           doc_loading_spec,
+                                                           mutation_num=0,
+                                                           async_load=True)
+            if async_load:
+                return task
+            self.task.jython_task_manager.get_task_result(task)
+            self.bucket_util.validate_doc_loading_results(task)
+            if task.result is False:
+                raise Exception("doc load/verification failed")
+        second_rebalance = self.input.param("second_rebalance", True)
+        fail_case = self.input.param("fail_case", "induce_error")
+        nodes_in = self.cluster.servers[
+                   self.nodes_init:self.nodes_init + self.nodes_in]
+        num_bucket_update = self.input.param("num_bucket_update",
+                                             len(self.cluster.buckets))
+        sim_error = self.input.param("sim_error", None)
+        rest = RestConnection(self.cluster.master)
+        target_buckets = self.cluster.buckets[:num_bucket_update]
+        create_sdk_clients()
+        data_load()
+        data_load_task = data_load(
+            doc_loading_spec_name="volume_test_load_with_CRUD_on_collections",
+            async_load=True)
+        # adding a required sub-cluster before scaling to simulate control
+        # plane like action
+        if nodes_in:
+            add_to_nodes = dict()
+            for zone in rest.get_zone_names():
+                add_to_nodes[zone] = 1
+            rebalance_task = self.task.async_rebalance(self.cluster,
+                                                       nodes_in, [],
+                                                       add_nodes_server_groups=
+                                                       add_to_nodes,
+                                                       retry_get_process_num=
+                                                       3000)
+            self.task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Re-balance failed")
+
+        # bucket scaling
+        for bucket in target_buckets:
+            self.bucket_util.update_bucket_property(self.cluster.master, bucket,
+                                                    bucket_width=
+                                                    self.desired_width,
+                                                    bucket_weight=
+                                                    self.desired_weight)
+            if self.desired_width:
+                bucket.serverless.width = self.desired_width
+            if self.desired_weight:
+                bucket.serverless.weight = self.desired_weight
+        # scaling re-balance
+        rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                   retry_get_process_num=3000)
+        self.sleep(10, "Wait for Rebalance to start")
+        rebalance_failure(fail_case, target_buckets, sim_error)
+        self.task_manager.get_task_result(rebalance_task)
+        # induced error removal
+        if self.error_sim:
+            self.sleep(60, "Waiting before resolving induced error")
+            self.error_sim.revert(sim_error)
+        if second_rebalance:
+            self.sleep(60, "Waiting for error resolved before re-balance")
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                       retry_get_process_num=3000)
+            self.task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Rebalance failed")
+
+        # assertions
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets,
+                                                     timeout=1200)
+        self.task.jython_task_manager.get_task_result(data_load_task)
+        self.bucket_util.validate_doc_loading_results(data_load_task)
+        self.assertTrue(rest.is_cluster_balanced(), "Cluster not balanced!")
+        validation = self.bucket_util.validate_serverless_buckets(
+            self.cluster, self.cluster.buckets)
+        self.assertTrue(validation, "Bucket validation failed")
+
+
+

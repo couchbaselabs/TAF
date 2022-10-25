@@ -26,7 +26,7 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         self.async_data_load = self.input.param("async_data_load", True)
         self.max_count = self.input.param("maxCount", 1)
         self.doc_spec_name = self.input.param("doc_spec_name",
-                                              "volume_test_load_with_CRUD_on_collections")
+                                              "initial_load")
         self.recovery_strategy = self.input.param("recovery_strategy", "full")
         self.validate_stat = self.input.param("validate_stat", False)
         self.enable_data_load = self.input.param("data_loading", True)
