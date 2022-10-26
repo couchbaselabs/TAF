@@ -44,8 +44,7 @@ class RestfulDAPITest(BaseTestCase):
         for bucket in self.buckets:
             self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
                                           "access_token": bucket.serverless.nebula_endpoint.rest_username,
-                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password,
-                                          "test": "health"})
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
             self.log.info("Checking DAPI health for DB: {}".format(bucket.name))
             self.log.info(bucket.serverless.dapi)
             response = self.rest_dapi.check_dapi_health()
@@ -54,3 +53,84 @@ class RestfulDAPITest(BaseTestCase):
             self.log.info(json.loads(response.content)["health"])
             self.assertTrue(json.loads(response.content)["health"].lower() == "ok",
                             "DAPI health is not OK")
+
+    def test_dapi_insert(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Checking DAPI health for DB: {}".format(bucket.name))
+            self.log.info(bucket.serverless.dapi)
+            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
+            self.assertTrue(response.status_code == 201,
+                            "Insertion failed for database: {}".format(bucket.name))
+
+    def test_dapi_get(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Checking DAPI health for DB: {}".format(bucket.name))
+            self.log.info(bucket.serverless.dapi)
+            # Insert Doc
+            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
+            self.assertTrue(response.status_code == 201,
+                            "Insertion failed for database: {}".format(bucket.name))
+            # Read Doc
+            response = self.rest_dapi.get_doc("k", "_default", "_default")
+            self.assertTrue(response.status_code == 200,
+                            "Reading doc for database: {}".format(bucket.name))
+            self.log.info(json.loads(response.content))
+            val = json.loads(response.content).values()[0]
+            self.assertTrue(val == {"inserted": True}, "Value mismatch")
+
+    def test_dapi_upsert(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Checking DAPI health for DB: {}".format(bucket.name))
+            self.log.info(bucket.serverless.dapi)
+            # Insert Doc
+            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
+            self.assertTrue(response.status_code == 201,
+                            "Insertion failed for database: {}".format(bucket.name))
+            # Read Doc
+            response = self.rest_dapi.get_doc("k", "_default", "_default")
+            self.assertTrue(response.status_code == 200,
+                            "Reading doc for database: {}".format(bucket.name))
+            val = json.loads(response.content).values()[0]
+            self.assertTrue(val == {"inserted": True}, "Value mismatch")
+            # Upsert Doc
+            response = self.rest_dapi.upsert_doc("k", {"updated": True}, "_default", "_default")
+            self.assertTrue(response.status_code == 201,
+                            "DAPI is not healthy for database: {}".format(bucket.name))
+            # Read Doc
+            response = self.rest_dapi.get_doc("k", "_default", "_default")
+            self.assertTrue(response.status_code == 200,
+                            "Reading doc for database: {}".format(bucket.name))
+            val = json.loads(response.content).values()[0]
+            self.assertTrue(val == {"updated": True}, "Value mismatch")
+
+    def test_dapi_delete(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Checking DAPI health for DB: {}".format(bucket.name))
+            self.log.info(bucket.serverless.dapi)
+            # Insert Doc
+            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
+            self.assertTrue(response.status_code == 201,
+                            "Insertion failed for database: {}".format(bucket.name))
+            # Delete Doc
+            response = self.rest_dapi.delete_doc("k", "_default", "_default")
+            self.assertTrue(response.status_code == 200,
+                            "Delete doc for database: {}".format(bucket.name))
+            #Read Doc
+            response = self.rest_dapi.get_doc("k", "_default", "_default")
+            self.assertTrue(response.status_code == 400,
+                            "Reading doc for database: {}".format(bucket.name))
+            val = json.loads(response.content)["error"]["errorDetails"]["msg"]
+            self.assertTrue(val == "document not found",
+                            "Wrong error msg for deleted doc: {}".format(val))

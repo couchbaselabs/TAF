@@ -1,13 +1,16 @@
 import logging
 import requests
 import base64
+import json
 
 log = logging.getLogger()
 
 
 class RestfulDAPI:
     def __init__(self, args):
-        self.dapi_endpoint = "https://" + args.get("dapi_endpoint")
+
+        self.endpoint = "https://" + args.get("dapi_endpoint")
+        self.endpoint_v1 = "https://" + args.get("dapi_endpoint") + "/v1"
         self.username = args.get("access_token")
         self.password = args.get("access_secret")
         self.header = self._create_headers(self.username, self.password)
@@ -25,9 +28,10 @@ class RestfulDAPI:
                 'Accept': '*/*'}
 
     def _urllib_request(self, api, method='GET', headers=None,
-                        params='', timeout=300, verify=False):
+                        params={}, timeout=300, verify=False):
         session = requests.Session()
         headers = headers or self.header
+        params = json.dumps(params)
         try:
             if method == "GET":
                 resp = session.get(api, params=params, headers=headers,
@@ -52,34 +56,36 @@ class RestfulDAPI:
             self._log.error("Something else: {0}".format(err))
 
     def check_dapi_health(self):
-        url = self.dapi_endpoint + "/health"
+        url = self.endpoint + "/health"
         return self._urllib_request(url)
 
     def get_doc(self, doc_id, scope, collection):
-        url = self.dapi_endpoint + "/scopes/" + scope + "/collections/" \
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
               + collection + "/docs/" + doc_id
         return self._urllib_request(url)
 
     def insert_doc(self, doc_id, doc_content, scope, collection):
         params = doc_content
-        url = self.dapi_endpoint + "/scopes/" + scope + "/collections/" \
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
             + collection + "/docs/" + doc_id
-        return self._urllib_request(url, methos="POST", params=params)
+        return self._urllib_request(url, method="POST", params=params)
 
     def upsert_doc(self, existing_doc_id, doc_content, scope, collection):
         params = doc_content
-        url = self.dapi_endpoint + "/scopes/" + scope + "/collections/" \
-            + collection + "/docs/" + existing_doc_id + "&upsert=true"
-        return self._urllib_request(url, methos="POST", params=params)
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
+            + collection + "/docs/" + existing_doc_id + "?upsert=true"
+        return self._urllib_request(url, method="POST", params=params)
 
     def update_doc(self, existing_doc_id, doc_content, scope, collection):
         params = doc_content
-        url = self.dapi_endpoint + "/scopes/" + scope + "/collections/" \
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
             + collection + "/docs/" + existing_doc_id
-        return self._urllib_request(url, methos="POST", params=params)
+        return self._urllib_request(url, method="POST", params=params)
 
-    def delete_doc(self):
-        pass
+    def delete_doc(self, existing_doc_id, scope, collection):
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
+            + collection + "/docs/" + existing_doc_id
+        return self._urllib_request(url, method="DELETE")
 
     def get_collection_docs(self):
         pass
