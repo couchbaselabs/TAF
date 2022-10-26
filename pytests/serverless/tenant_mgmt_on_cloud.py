@@ -833,6 +833,79 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.task_manager.get_task_result(task)
         self.task_manager.get_task_result(monitor_task)
 
+    def test_scaling_with_dgm_buckets(self):
+        target_dgm = self.input.param("target_dgm", 90)
+        num_dgm_buckets = self.input.param("num_dgm_buckets", 1)
+        target_scenario = self.input.param("target_scenario")
+
+        bucket_name_format = "tntMgmtScaleDgmBucket"
+        batch_size = 50000
+        scenarios = list()
+
+        spec = self.get_bucket_spec(num_buckets=self.num_buckets,
+                                    bucket_name_format=bucket_name_format)
+        self.create_required_buckets(buckets_spec=spec)
+
+        if target_scenario.startswith("single_bucket_"):
+            scenarios = self.__get_single_bucket_scenarios(target_scenario)
+        elif target_scenario.startswith("five_buckets_"):
+            scenarios = self.__get_five_bucket_scenarios(target_scenario)
+        elif target_scenario.startswith("ten_buckets_"):
+            scenarios = self.__get_ten_bucket_scenarios(target_scenario)
+        elif target_scenario.startswith("twenty_buckets_"):
+            scenarios = self.__get_twenty_bucket_scenarios(target_scenario)
+
+        work_load_settings = [DocLoaderUtils.get_workload_settings(
+            key=self.key, key_size=self.key_size, doc_size=self.doc_size,
+            create_perc=100, create_start=0, create_end=0,
+            ops_rate=self.ops_rate) for _ in range(num_dgm_buckets)]
+        doc_gens = [DocumentGenerator(ws, self.key_type, self.val_type)
+                    for ws in work_load_settings]
+        target_buckets = sample(self.cluster.buckets, num_dgm_buckets)
+        loading_for_buckets = dict()
+        for bucket in target_buckets:
+            loading_for_buckets[bucket.name] = True
+
+        self.create_sdk_client_pool(target_buckets, 1)
+        continue_data_load = True
+        while continue_data_load:
+            loading_tasks = list()
+            continue_data_load = False
+            for index, bucket in enumerate(target_buckets):
+                if loading_for_buckets[bucket.name] is False:
+                    continue
+                continue_data_load = True
+                loader_key = "%s%s%s" % (bucket.name, CbServer.default_scope,
+                                         CbServer.default_collection)
+                ws = work_load_settings[index]
+                ws.dr.create_s = ws.dr.create_e
+                ws.dr.create_e += batch_size
+                tasks = DocLoaderUtils.perform_doc_loading(
+                    self.doc_loading_tm, {loader_key: doc_gens[index]},
+                    self.cluster, buckets=[bucket],
+                    sdk_client_pool=self.sdk_client_pool)
+                loading_tasks.extend(tasks)
+
+            DocLoaderUtils.wait_for_doc_load_completion(
+                self.doc_loading_tm, loading_tasks)
+
+            for index, bucket in enumerate(target_buckets):
+                if loading_for_buckets[bucket.name] is False:
+                    continue
+                for server in bucket.servers:
+                    stat = Cbstats(server)
+                    resident_mem = stat.get_stats_memc(bucket.name)[
+                        "vb_active_perc_mem_resident"]
+                    if int(resident_mem) <= int(target_dgm):
+                        loading_for_buckets[bucket.name] = False
+                        break
+
+        for scenario in scenarios:
+            to_track = self.__trigger_bucket_param_updates(scenario)
+            monitor_task = self.bucket_util.async_monitor_database_scaling(
+                to_track, timeout=600)
+            self.task_manager.get_task_result(monitor_task)
+
     def test_bucket_auto_ram_scaling(self):
         """
         :return:
