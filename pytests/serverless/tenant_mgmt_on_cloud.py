@@ -629,60 +629,53 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
     def test_scope_collection_limit(self):
         bucket_name_format = "scopeCollectionLimitTest-%s"
 
-        COLLECTION_LIMIT = 100
-        SCOPE_LIMIT = 100
-        SAMPLE_COLLECTIONS = 4
+        collection_limit = 100
+        scope_limit = 100
+        sample_collections = 4
 
         collection_limit_per_scope = self.get_bucket_spec(
             bucket_name_format=bucket_name_format,
-            collections_per_scope=(COLLECTION_LIMIT - SAMPLE_COLLECTIONS))
+            collections_per_scope=(collection_limit - sample_collections))
         # checking collection limit
         self.create_required_buckets(collection_limit_per_scope)
 
         # checking collection limit per bucket exceed
         collection_limit_per_scope_exceed = self.get_bucket_spec(
             bucket_name_format=bucket_name_format,
-            collections_per_scope=COLLECTION_LIMIT - SAMPLE_COLLECTIONS + 1)
-        exception = False
+            collections_per_scope=collection_limit - sample_collections + 1)
         try:
             self.create_required_buckets(collection_limit_per_scope_exceed)
+            self.fail("Expected exception as collection per "
+                      "scope limit is reached")
         except Exception as ex:
             self.log.debug("Caught exception" % ex)
-            exception = True
-        self.assertTrue(exception, "Expected exception as collection per "
-                                   "scope limit is reached")
 
         # checking overall collection limit exceed
         collection_overall_limit_exceed = self.get_bucket_spec(
             bucket_name_format=bucket_name_format,
             collections_per_scope=11, scopes_per_bucket=10)
-        exception = False
         try:
             self.create_required_buckets(collection_overall_limit_exceed)
+            self.fail("Expected exception as total collection "
+                      "per bucket limit crossed")
         except Exception as ex:
             self.log.debug("Caught exception" % ex)
-            exception = True
-        self.assertTrue(exception, "Expected exception as total collection "
-                                   "per bucket limit crossed")
 
         # checking scope limit
-        scope_limit = self.get_bucket_spec(
+        spec = self.get_bucket_spec(
             bucket_name_format=bucket_name_format,
-            scopes_per_bucket=SCOPE_LIMIT, collections_per_scope=0)
-        self.create_required_buckets(scope_limit)
+            scopes_per_bucket=scope_limit, collections_per_scope=0)
+        self.create_required_buckets(spec)
 
         # checking scope limit exceed
-        scope_limit_exceed = self.get_bucket_spec(
+        spec = self.get_bucket_spec(
             bucket_name_format=bucket_name_format,
-            scopes_per_bucket=SCOPE_LIMIT + 1, collections_per_scope=0)
-        exception = False
+            scopes_per_bucket=scope_limit + 1, collections_per_scope=0)
         try:
-            self.create_required_buckets(scope_limit_exceed)
+            self.create_required_buckets(spec)
+            self.fail("Expected exception due to scope limit violation")
         except Exception as ex:
             self.log.debug("Caught exception" % ex)
-            exception = True
-        self.assertTrue(exception, "Expected exception as "
-                                   "scope limit is reached")
 
     def test_defrag_dbaas(self):
         """
