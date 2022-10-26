@@ -69,11 +69,14 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             for width in range(2, 4):
                 scenarios.append({bucket_name: {Bucket.width: width}})
             scenarios = scenarios + scenarios[::-1][1:]
-        if target_scenario == "single_bucket_weight_increment":
+        elif target_scenario == "single_bucket_width_increment":
+            for width in range(2, 4):
+                scenarios.append({bucket_name: {Bucket.width: width}})
+        elif target_scenario == "single_bucket_weight_change":
             for index in range(2, 14):
                 scenarios.append({bucket_name: {Bucket.weight: index*30}})
             scenarios = scenarios + scenarios[::-1][1:]
-        if target_scenario == "single_bucket_width_weight_incremental":
+        elif target_scenario == "single_bucket_width_weight_incremental":
             width = 1
             weight = 30
             while width <= 4:
@@ -86,7 +89,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     if width in weight_start:
                         weight = weight_start[width]
             scenarios = scenarios + scenarios[::-1][1:]
-        if target_scenario == "single_bucket_width_weight_random":
+        elif target_scenario == "single_bucket_width_weight_random":
             max_scenarios = 20
             # Creates 20 random scenarios of random width/weight update
             for scenario_index in range(max_scenarios):
@@ -796,5 +799,3 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                      bucket.name)
         # verification
         wait_for_defragmentation(node_dict)
-
-
