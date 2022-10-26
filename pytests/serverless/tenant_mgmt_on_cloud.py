@@ -184,21 +184,278 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         scenarios = list()
         buckets = sample(self.cluster.buckets, 10)
         if target_scenario == "ten_buckets_width_update":
-            return scenarios
-        if target_scenario == "ten_buckets_weight_update":
-            return scenarios
-        if target_scenario == "ten_buckets_width_weight_update":
-            return scenarios
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 2},
+                buckets[1].name: {Bucket.width: 2},
+                buckets[2].name: {Bucket.width: 2},
+                buckets[3].name: {Bucket.width: 2},
+                buckets[4].name: {Bucket.width: 2},
+                buckets[5].name: {Bucket.width: 2},
+                buckets[6].name: {Bucket.width: 2},
+                buckets[7].name: {Bucket.width: 2},
+                buckets[8].name: {Bucket.width: 2},
+                buckets[9].name: {Bucket.width: 2}
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 3},
+                buckets[1].name: {Bucket.width: 3},
+                buckets[2].name: {Bucket.width: 3},
+                buckets[3].name: {Bucket.width: 3},
+                buckets[4].name: {Bucket.width: 3},
+                buckets[5].name: {Bucket.width: 3},
+                buckets[6].name: {Bucket.width: 3},
+                buckets[7].name: {Bucket.width: 3},
+                buckets[8].name: {Bucket.width: 3},
+                buckets[9].name: {Bucket.width: 3}
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 4},
+                buckets[1].name: {Bucket.width: 4},
+                buckets[2].name: {Bucket.width: 4},
+                buckets[3].name: {Bucket.width: 4},
+                buckets[4].name: {Bucket.width: 4},
+                buckets[5].name: {Bucket.width: 4},
+                buckets[6].name: {Bucket.width: 4},
+                buckets[7].name: {Bucket.width: 4},
+                buckets[8].name: {Bucket.width: 4},
+                buckets[9].name: {Bucket.width: 4}
+            })
+        elif target_scenario == "ten_buckets_weight_update":
+            scenarios.append({
+                buckets[0].name: {Bucket.weight: 240},
+                buckets[1].name: {Bucket.weight: 390},
+                buckets[2].name: {Bucket.weight: 240},
+                buckets[3].name: {Bucket.weight: 30},
+                buckets[4].name: {Bucket.weight: 353},
+                buckets[5].name: {Bucket.weight: 240},
+                buckets[6].name: {Bucket.weight: 390},
+                buckets[7].name: {Bucket.weight: 240},
+                buckets[8].name: {Bucket.weight: 30},
+                buckets[9].name: {Bucket.weight: 9999},
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.weight: 30},
+                buckets[1].name: {Bucket.weight: 90},
+                buckets[2].name: {Bucket.weight: 9999},
+                buckets[3].name: {Bucket.weight: 420},
+                buckets[4].name: {Bucket.weight: 383},
+                buckets[5].name: {Bucket.weight: 503},
+                buckets[6].name: {Bucket.weight: 310},
+                buckets[7].name: {Bucket.weight: 120},
+                buckets[8].name: {Bucket.weight: 60},
+                buckets[9].name: {Bucket.weight: 225},
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.weight: 330},
+                buckets[1].name: {Bucket.weight: 900},
+                buckets[2].name: {Bucket.weight: 30},
+                buckets[3].name: {Bucket.weight: 308},
+                buckets[4].name: {Bucket.weight: 375},
+                buckets[5].name: {Bucket.weight: 435},
+                buckets[6].name: {Bucket.weight: 503},
+                buckets[7].name: {Bucket.weight: 90},
+                buckets[8].name: {Bucket.weight: 9999},
+                buckets[9].name: {Bucket.weight: 465},
+            })
+        elif target_scenario == "ten_buckets_width_weight_update":
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 1, Bucket.weight: 90},
+                buckets[1].name: {Bucket.width: 1, Bucket.weight: 120},
+                buckets[2].name: {Bucket.width: 1, Bucket.weight: 150},
+                buckets[3].name: {Bucket.width: 1, Bucket.weight: 180},
+                buckets[4].name: {Bucket.width: 1, Bucket.weight: 390},
+                buckets[5].name: {Bucket.width: 2, Bucket.weight: 210},
+                buckets[6].name: {Bucket.width: 2, Bucket.weight: 315},
+                buckets[7].name: {Bucket.width: 2, Bucket.weight: 375},
+                buckets[8].name: {Bucket.width: 2, Bucket.weight: 390},
+                buckets[9].name: {Bucket.width: 2, Bucket.weight: 240}
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 2, Bucket.weight: 270},
+                buckets[1].name: {Bucket.width: 2, Bucket.weight: 300},
+                buckets[2].name: {Bucket.width: 2, Bucket.weight: 375},
+                buckets[3].name: {Bucket.width: 2, Bucket.weight: 225},
+                buckets[4].name: {Bucket.width: 2, Bucket.weight: 300},
+                buckets[5].name: {Bucket.width: 3, Bucket.weight: 390},
+                buckets[6].name: {Bucket.width: 3, Bucket.weight: 370},
+                buckets[7].name: {Bucket.width: 3, Bucket.weight: 270},
+                buckets[8].name: {Bucket.width: 3, Bucket.weight: 320},
+                buckets[9].name: {Bucket.width: 3, Bucket.weight: 340}
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[1].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[2].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[3].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[4].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[5].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[6].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[7].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[8].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[9].name: {Bucket.width: 4, Bucket.weight: 398}
+            })
+        return scenarios
 
     def __get_twenty_bucket_scenarios(self, target_scenario):
         scenarios = list()
         buckets = sample(self.cluster.buckets, 20)
         if target_scenario == "twenty_buckets_width_update":
-            return scenarios
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 2},
+                buckets[1].name: {Bucket.width: 2},
+                buckets[2].name: {Bucket.width: 2},
+                buckets[3].name: {Bucket.width: 2},
+                buckets[4].name: {Bucket.width: 2},
+                buckets[5].name: {Bucket.width: 2},
+
+                buckets[6].name: {Bucket.width: 3},
+                buckets[7].name: {Bucket.width: 3},
+
+                buckets[8].name: {Bucket.width: 4},
+                buckets[9].name: {Bucket.width: 4}
+            })
+            scenarios.append({
+                buckets[10].name: {Bucket.width: 2},
+                buckets[11].name: {Bucket.width: 2},
+                buckets[12].name: {Bucket.width: 2},
+                buckets[13].name: {Bucket.width: 2},
+
+                buckets[14].name: {Bucket.width: 3},
+                buckets[15].name: {Bucket.width: 3},
+                buckets[16].name: {Bucket.width: 3},
+
+                buckets[17].name: {Bucket.width: 4},
+                buckets[18].name: {Bucket.width: 4},
+                buckets[19].name: {Bucket.width: 4}
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 3},
+                buckets[1].name: {Bucket.width: 3},
+                buckets[2].name: {Bucket.width: 3},
+                buckets[3].name: {Bucket.width: 3},
+                buckets[4].name: {Bucket.width: 3},
+                buckets[5].name: {Bucket.width: 3},
+                buckets[10].name: {Bucket.width: 4},
+                buckets[11].name: {Bucket.width: 4},
+                buckets[12].name: {Bucket.width: 4},
+                buckets[13].name: {Bucket.width: 4},
+
+                buckets[6].name: {Bucket.width: 4},
+                buckets[7].name: {Bucket.width: 4},
+                buckets[14].name: {Bucket.width: 4},
+                buckets[15].name: {Bucket.width: 4},
+            })
         if target_scenario == "twenty_buckets_weight_update":
-            return scenarios
+            weights = range(30, 504)
+            for n in range(3):
+                scenario_dict = dict()
+                for i in range(20):
+                    scenario_dict[buckets[i].name] = {
+                        Bucket.weight: choice(weights)}
+                scenarios.append(scenario_dict)
+            # Add scenario to set max weight for buckets
+            scenario_dict = dict()
+            for i in range(20):
+                scenario_dict[buckets[i].name] = 503
+            scenarios.append(scenario_dict)
         if target_scenario == "twenty_buckets_width_weight_update":
-            return scenarios
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 1, Bucket.weight: 60},
+                buckets[1].name: {Bucket.width: 1, Bucket.weight: 120},
+                buckets[2].name: {Bucket.width: 1, Bucket.weight: 180},
+                buckets[3].name: {Bucket.width: 1, Bucket.weight: 390},
+                buckets[4].name: {Bucket.width: 1, Bucket.weight: 270},
+                buckets[6].name: {Bucket.width: 1, Bucket.weight: 90},
+                buckets[7].name: {Bucket.width: 1, Bucket.weight: 300},
+                buckets[8].name: {Bucket.width: 1, Bucket.weight: 360},
+                buckets[9].name: {Bucket.width: 1, Bucket.weight: 150},
+
+                buckets[10].name: {Bucket.width: 2, Bucket.weight: 210},
+                buckets[11].name: {Bucket.width: 2, Bucket.weight: 390},
+                buckets[12].name: {Bucket.width: 2, Bucket.weight: 360},
+                buckets[13].name: {Bucket.width: 2, Bucket.weight: 240},
+
+                buckets[14].name: {Bucket.width: 3, Bucket.weight: 270},
+                buckets[15].name: {Bucket.width: 3, Bucket.weight: 390},
+                buckets[16].name: {Bucket.width: 3, Bucket.weight: 300},
+
+                buckets[17].name: {Bucket.width: 4, Bucket.weight: 300},
+                buckets[18].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[19].name: {Bucket.width: 4, Bucket.weight: 338}
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 1, Bucket.weight: 360},
+                buckets[1].name: {Bucket.width: 1, Bucket.weight: 60},
+                buckets[2].name: {Bucket.width: 1, Bucket.weight: 120},
+
+                buckets[3].name: {Bucket.width: 2, Bucket.weight: 210},
+                buckets[4].name: {Bucket.width: 2, Bucket.weight: 255},
+                buckets[6].name: {Bucket.width: 2, Bucket.weight: 390},
+                buckets[7].name: {Bucket.width: 2, Bucket.weight: 300},
+                buckets[8].name: {Bucket.width: 2, Bucket.weight: 375},
+                buckets[9].name: {Bucket.width: 2, Bucket.weight: 270},
+                buckets[10].name: {Bucket.width: 2, Bucket.weight: 315},
+                buckets[11].name: {Bucket.width: 2, Bucket.weight: 285},
+
+                buckets[12].name: {Bucket.width: 3, Bucket.weight: 280},
+                buckets[13].name: {Bucket.width: 3, Bucket.weight: 310},
+                buckets[14].name: {Bucket.width: 3, Bucket.weight: 390},
+                buckets[15].name: {Bucket.width: 3, Bucket.weight: 270},
+
+                buckets[16].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[17].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[18].name: {Bucket.width: 4, Bucket.weight: 300},
+                buckets[19].name: {Bucket.width: 4, Bucket.weight: 368}
+            })
+            scenarios.append({
+                buckets[0].name: {Bucket.width: 1, Bucket.weight: 60},
+                buckets[1].name: {Bucket.width: 1, Bucket.weight: 270},
+
+                buckets[2].name: {Bucket.width: 2, Bucket.weight: 270},
+                buckets[3].name: {Bucket.width: 2, Bucket.weight: 360},
+                buckets[4].name: {Bucket.width: 2, Bucket.weight: 390},
+                buckets[6].name: {Bucket.width: 2, Bucket.weight: 225},
+
+                buckets[7].name: {Bucket.width: 3, Bucket.weight: 270},
+                buckets[8].name: {Bucket.width: 3, Bucket.weight: 280},
+                buckets[9].name: {Bucket.width: 3, Bucket.weight: 380},
+                buckets[10].name: {Bucket.width: 3, Bucket.weight: 310},
+                buckets[11].name: {Bucket.width: 3, Bucket.weight: 300},
+
+                buckets[12].name: {Bucket.width: 4, Bucket.weight: 375},
+                buckets[13].name: {Bucket.width: 4, Bucket.weight: 315},
+                buckets[14].name: {Bucket.width: 4, Bucket.weight: 308},
+                buckets[15].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[16].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[17].name: {Bucket.width: 4, Bucket.weight: 390},
+                buckets[18].name: {Bucket.width: 4, Bucket.weight: 383},
+                buckets[19].name: {Bucket.width: 4, Bucket.weight: 398}
+            })
+            scenarios.append({
+                buckets[1].name: {Bucket.width: 1, Bucket.weight: 30},
+
+                buckets[2].name: {Bucket.width: 2, Bucket.weight: 210},
+                buckets[3].name: {Bucket.width: 2, Bucket.weight: 375},
+
+                buckets[7].name: {Bucket.width: 3, Bucket.weight: 310},
+                buckets[8].name: {Bucket.width: 3, Bucket.weight: 380},
+                buckets[10].name: {Bucket.width: 3, Bucket.weight: 390},
+                buckets[11].name: {Bucket.width: 3, Bucket.weight: 280},
+
+                buckets[0].name: {Bucket.width: 4, Bucket.weight: 315},
+                buckets[4].name: {Bucket.width: 4, Bucket.weight: 390},
+                buckets[6].name: {Bucket.width: 4, Bucket.weight: 300},
+                buckets[9].name: {Bucket.width: 4, Bucket.weight: 383},
+                buckets[12].name: {Bucket.width: 4, Bucket.weight: 330},
+                buckets[13].name: {Bucket.width: 4, Bucket.weight: 315},
+                buckets[14].name: {Bucket.width: 4, Bucket.weight: 308},
+                buckets[15].name: {Bucket.width: 4, Bucket.weight: 398},
+                buckets[16].name: {Bucket.width: 4, Bucket.weight: 300},
+                buckets[17].name: {Bucket.width: 4, Bucket.weight: 390},
+                buckets[18].name: {Bucket.width: 4, Bucket.weight: 323},
+                buckets[19].name: {Bucket.width: 4, Bucket.weight: 398}
+            })
+        return scenarios
 
     def get_serverless_bucket_obj(self, db_name, width, weight, num_vbs=None):
         self.log.debug("Creating server bucket_obj %s:%s:%s"
@@ -506,7 +763,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         scale_type = self.input.param("scale_type", Bucket.width)
 
         # Deploy initial databases
-        spec = self.get_bucket_spec(self.num_buckets,
+        spec = self.get_bucket_spec(num_buckets=self.num_buckets,
                                     bucket_name_format=bucket_name_format)
         self.create_required_buckets(buckets_spec=spec)
 
