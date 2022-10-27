@@ -59,9 +59,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             DedicatedUtils.create_project(self.pod, self.tenant, "a_taf_run")
 
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
-        self.cb_image = self.input.capella.get("cb_image", "")
-        self.dapi_image = self.input.capella.get("dapi_image", "")
-        self.dn_image = self.input.capella.get("dn_image", "")
         self.dataplane_id = self.input.capella.get("dataplane_id", "")
         num_dataplanes = self.input.param("num_dataplanes", 0)
         self.cluster = CBCluster(username=self.rest_username,
@@ -125,21 +122,51 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             DedicatedUtils.delete_project(self.pod, self.tenant)
 
     def generate_dataplane_config(self):
-        if not(self.cb_image or self.dn_image or self.dapi_image):
+        cb_image = self.input.capella.get("cb_image", "")
+        dapi_image = self.input.capella.get("dapi_image", "")
+        dn_image = self.input.capella.get("dn_image", "")
+
+        if not(cb_image or dn_image or dapi_image):
             raise Exception("Please provide atleast one image while deploying a dataplane.")
         provider = self.input.param("provider", AWS.__str__).lower()
         region = self.input.param("region", AWS.Region.US_EAST_1)
+
+        cb_version = cb_image.split("-")[3]
+        services_type = self.input.param("services", None)
+        compute = self.input.param("compute", None)
+        num_nodes = self.input.param("num_nodes", None)
+        disk_type = self.input.param("disk_type", None)
+        disk_size = self.input.param("disk_size", None)
+        disk_iops = self.input.param("disk_iops", None)
+
         self.dataplane_config = {
             "provider": provider,
             "region": region,
             "overRide": {
                 "couchbase": {
-                    "image": self.cb_image,
-                    "version": "7.2.0",
+                    "image": cb_image,
+                    "version": cb_version
                 }
             }
         }
-        if self.dn_image:
+        if services_type:
+            spec = dict()
+            spec["services"] = [{"type": services_type}]
+            if compute:
+                spec["compute"] = {"type": compute}
+            if num_nodes:
+                spec["count"] = num_nodes
+            if disk_type or disk_size or disk_iops:
+                spec["disk"] = dict()
+                if disk_type:
+                    spec["disk"]["type"] = disk_type
+                if disk_size:
+                    spec["disk"]["sizeInGb"] = disk_size
+                if disk_iops:
+                    spec["disk"]["iops"] = disk_iops
+            self.dataplane_config["overRide"]["couchbase"]["specs"] = [spec]
+
+        if dn_image:
             self.dataplane_config["overRide"].update(
                 {
                     "nebula": {
@@ -147,7 +174,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                         }
                     }
                 )
-        if self.dapi_image:
+        if dapi_image:
             self.dataplane_config["overRide"].update(
                 {
                     "dataApi": {
