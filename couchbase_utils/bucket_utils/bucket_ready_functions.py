@@ -5875,8 +5875,8 @@ class BucketUtils(ScopeUtils):
             _, content = RestConnection(server).\
                 get_throttle_limit(bucket=bucket.name)
             output = json.loads(content)
-            if output["dataThrottleLimit"] not in throttle_limit:
-                throttle_limit.append(output["dataThrottleLimit"])
+            throttle_limit.append(output["dataThrottleLimit"])
+        self.log.info("throttling limit of bucket on all nodes %s" % throttle_limit)
         return throttle_limit[0]
 
     def calculate_units(self, key, value, sub_doc_size=0, xattr=0,

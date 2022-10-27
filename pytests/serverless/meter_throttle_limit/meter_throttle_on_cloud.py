@@ -1,7 +1,5 @@
 import random
 from serverless.tenant_mgmt_on_cloud import TenantMgmtOnCloud
-from org.xbill.DNS import Lookup, Type
-from capella_utils.serverless import CapellaUtils as ServerlessUtils
 from membase.api.rest_client import RestConnection
 
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
@@ -18,9 +16,6 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         self.num_collections = self.input.param("num_collections", 1)
         self.num_scopes = self.input.param("num_scopes", 1)
         self.ops_rate = self.input.param("ops_rate", 1000)
-        self.srv = self.input.param("srv", "")
-        self.username = self.input.param("username", "")
-        self.password = self.input.param("password", "")
         self.bucket_throttling_limit = self.input.param("throttle_limit", 5000)
         # create the required database
         spec = self.get_bucket_spec(bucket_name_format="taf-meter-throttle%s",
@@ -41,36 +36,20 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         super(MeteringOnCloud, self).tearDown()
 
     def get_servers_for_databases(self):
-        dataplanes_id = dict()
-        self.cluster.pod.TOKEN = self.token
-        self.serverless_util = ServerlessUtils(self.cluster)
+        dataplanes = dict()
         for bucket in self.cluster.buckets:
             dataplane_id = self.serverless_util.get_database_dataplane_id(self.pod, bucket.name)
-            if dataplane_id not in dataplanes_id:
-                self.username, self.password, self.srv = self.serverless_util.bypass_dataplane(self.pod,
-                                                              dataplane_id)
-                dataplanes_id[dataplane_id] = [self.username, self.password, self.srv]
-                self.log.info("srv is {}".format(self.srv))
-                self.log.info("username {0} and password {0}".format(self.username, self.password))
-            records = Lookup("_couchbases._tcp.{}".format(dataplanes_id[dataplane_id][2]), Type.SRV).run()
-            self.log.info(records)
-            bucket.servers = list()
-            server = dict()
-            for record in records:
-                server["ip"] = str(record.getTarget()).rstrip(".")
-                server["username"] = dataplanes_id[dataplane_id][0]
-                server["password"] = dataplanes_id[dataplane_id][1]
-                server["port"] = 18091
-                break
-            output = RestConnection(server).get_server_list(bucket.name)
-            for node in output:
-                server = dict()
-                server["ip"] = node.split(":")[0]
-                server["username"] = dataplanes_id[dataplane_id][0]
-                server["password"] = dataplanes_id[dataplane_id][1]
-                server["port"] = 18091
-                bucket.servers.append(server)
-            self.log.info(bucket.servers)
+            self.log.info("dataplane_id is %s" % dataplane_id)
+            if dataplane_id not in dataplanes:
+                dataplanes[dataplane_id] = dict()
+                dataplanes[dataplane_id]["node"], dataplanes[dataplane_id]["username"], \
+                dataplanes[dataplane_id]["password"] = \
+                    self.serverless_util.bypass_dataplane(dataplane_id)
+            self.cluster.nodes_in_cluster = self.cluster_util.construct_servers_from_master_details(
+                dataplanes[dataplane_id]["node"], dataplanes[dataplane_id]["username"],
+                dataplanes[dataplane_id]["password"])
+            self.cluster.master = self.cluster.nodes_in_cluster[0]
+            self.bucket_util.get_updated_bucket_server_list(self.cluster, bucket)
 
     def load_data(self, create_start=0, create_end=1000, create_perc=0,
                   read_start=0, read_end=0, read_perc=0,
@@ -118,11 +97,13 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                     loader_map.update(
                         {bucket.name + scope + collection: dg})
 
-        DocLoaderUtils.perform_doc_loading(self.doc_loading_tm, loader_map,
+        doc_loading_tasks = DocLoaderUtils.perform_doc_loading(self.doc_loading_tm, loader_map,
                                            self.cluster, self.cluster.buckets,
                                            durability_level=self.durability_level,
                                            async_load=False, validate_results=False,
                                            sdk_client_pool=self.sdk_client_pool)
+        DocLoaderUtils.wait_for_doc_load_completion(self.doc_loading_tm,
+                                                        doc_loading_tasks)
 
         if data_validation:
             result = DocLoaderUtils.data_validation(
@@ -135,8 +116,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
     def validate_stats(self):
         for bucket in self.cluster.buckets:
             num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
-            print("validating wu %s and expected wu %s"
-                  %(wu, self.expected_stats[bucket.name]["wu"]))
+            self.assertEqual(wu, self.expected_stats[bucket.name]["wu"])
             if ru < self.expected_stats[bucket.name]["ru"] or num_throttled < \
                     self.expected_stats[bucket.name]["num_throttled"]:
                 self.log.info("num_throttled actual {0} and expected {1}".
@@ -145,15 +125,16 @@ class MeteringOnCloud(TenantMgmtOnCloud):
             self.expected_stats[bucket.name]["num_throttled"] = num_throttled
 
     def update_expected_throttle_limit(self, bucket, num_items, doc_size):
-        if self.bucket_util.get_throttle_limit(bucket) in [-1, 2147483647]:
+        throttle_limit = self.bucket_util.get_throttle_limit(bucket)
+        if throttle_limit in [-1, 2147483647] or self.ops_rate < throttle_limit:
             self.expected_stats[bucket.name]["num_throttled"] += 0
         else:
             self.expected_stats[bucket.name]["num_throttled"] += \
-                ((num_items * doc_size) / self.bucket_util.get_throttle_limit(bucket)) * 10
+                ((num_items * doc_size) / throttle_limit)
 
     def update_expected_stat(self, key_size, doc_size, start, end,
                                          write_bucket=[], read_bucket=[]):
-        num_items = (end - start) * (self.num_scopes * self.num_collections + 1)
+        num_items = (end - start) * (self.num_scopes * self.num_collections)
         for bucket in write_bucket:
             self.expected_stats[bucket.name]["wu"] += \
                 self.bucket_util.calculate_units(key_size,
@@ -163,23 +144,20 @@ class MeteringOnCloud(TenantMgmtOnCloud):
 
         for bucket in read_bucket:
             self.expected_stats[bucket.name]["ru"] += \
-                    self.bucket_util.calculate_units(key_size, doc_size) * num_items
+                    self.bucket_util.calculate_units(key_size, doc_size, read=True) * num_items
             self.update_expected_throttle_limit(bucket, num_items, doc_size)
         self.validate_stats()
 
-    def different_load(self, num_loop=1, num_write_bucket=1, num_read_bucket=0,
+    def different_load(self, num_loop=1, start=0, num_write_bucket=1, num_read_bucket=0,
                        load="load_single_database"):
-        start = self.num_items
-        end = self.num_items + 3000
+        end = start + self.num_items
         self.load_data(create_start=start, create_end=end, create_perc=100)
-        self.update_expected_stat(self.key_size, self.doc_size, 0,
-                                  self.num_items, self.cluster.buckets)
+        self.update_expected_stat(self.key_size, self.doc_size, start,
+                                  end, self.cluster.buckets)
         mutated = 0
         for loop in range(num_loop):
-            # start = self.num_items
-            # end = self.num_items + 100
             start = end
-            end = start + 2000
+            end = start + self.num_items
             write_bucket = self.cluster.buckets[:1]
             if num_read_bucket > 1:
                 read_bucket = self.cluster.buckets[1:]
@@ -211,7 +189,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                 self.update_expected_stat(self.key_size, self.doc_size,
                                                       start, end, read_bucket=read_bucket)
                 self.doc_size = 500
-                self.load_data(create_start=start, create_end=end, create_perc=100)
+                self.load_data(update_start=start, update_end=end, update_perc=100)
                 self.update_expected_stat(self.key_size, self.doc_size,
                                                       start, end, self.cluster.buckets)
 
@@ -221,23 +199,26 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                 self.load_data(create_start=start, create_end=end, create_perc=100, buckets=write_bucket)
                 self.update_expected_stat(self.key_size, self.doc_size,
                                                       start, end, write_bucket)
-                self.load_data(update_start=0, update_end=100, update_perc=100, mutated=mutated, buckets=write_bucket)
+                self.load_data(update_start=0, update_end=100, update_perc=100,
+                               mutated=mutated, buckets=write_bucket)
                 mutated += 1
                 self.update_expected_stat(self.key_size, self.doc_size,
-                                                      start, end, write_bucket)
+                                                      0, 100, write_bucket)
 
             elif load == "change_throttling_limit":
                 throttling_limit = [-1, 100, 2000, 40000]
                 self.bucket_util.set_throttle_limit(write_bucket,
-                                                           throttling_limit=random.choice(throttling_limit))
+                                                    throttling_limit= random.choice(throttling_limit))
                 self.doc_size = 500000
                 self.load_data(create_start=start, create_end=end, create_perc=100)
                 self.update_expected_stat(self.key_size, self.doc_size,
                                                       start, end, self.cluster.buckets)
-                self.bucket_util.set_throttle_limit(write_bucket, throttling_limit=500)
+                self.bucket_util.set_throttle_limit(write_bucket,
+                                                    throttling_limit=random.choice(throttling_limit))
                 start = end
                 end = start + 100
-                self.bucket_util.set_throttle_limit(write_bucket, throttling_limit=5000)
+                self.bucket_util.set_throttle_limit(write_bucket,
+                                                    throttling_limit=random.choice(throttling_limit))
                 self.doc_size = 500000
                 self.load_data(create_start=start, create_end=end, create_perc=100)
                 self.update_expected_stat(self.key_size, self.doc_size,
@@ -262,7 +243,9 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         self.db_name = "%s-testmetering" % self.db_name
         # validate initial throughput is 5000/3 = 1666
         for bucket in self.cluster.buckets:
-            self.assertEqual(self.bucket_util.get_throttle_limit(bucket), 5000)
+            print(bucket.servers)
+            self.assertEqual(self.bucket_util.get_throttle_limit(bucket),
+                             self.bucket_throttling_limit)
 
         # validate create, update, delete stat
         for op_type in ["create", "update", "delete"]:
@@ -276,8 +259,8 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                                           0, self.num_items, self.cluster.buckets)
             if op_type == "delete":
                 self.load_data(delete_start=0, delete_end=self.num_items, delete_perc=100)
-                # self.update_expected_stat(self.key_size, self.doc_size,
-                #                           0, self.num_items, self.cluster.buckets)
+                self.update_expected_stat(self.key_size, self.doc_size,
+                                          0, self.num_items, self.cluster.buckets)
 
     def test_diff_throttling_limit(self):
         self.test_single_bucket = self.input.param("test_single_bucket", False)
@@ -294,11 +277,14 @@ class MeteringOnCloud(TenantMgmtOnCloud):
 
         if self.test_single_bucket:
             bucket = self.cluster.buckets[0]
+            start = 0
             for limit in self.throttling_limits:
                 self.bucket_util.set_throttle_limit(bucket, limit)
+                self.log.info("testing throttling limit %s" % limit)
                 self.assertEqual(self.bucket_util.get_throttle_limit(bucket), limit)
                 # perform load and validate stats
-                self.different_load()
+                self.different_load(start=start)
+                start += self.num_items * 2
         else:
             for bucket in self.cluster.buckets:
                 limit = random.choice(self.throttling_limits)
