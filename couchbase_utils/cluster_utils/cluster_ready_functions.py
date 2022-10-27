@@ -388,15 +388,15 @@ class ClusterUtils:
         return server_set
 
     def change_checkpoint_params(self, cluster):
-        self.chk_max_items = self.input.param("chk_max_items", None)
-        self.chk_period = self.input.param("chk_period", None)
-        if self.chk_max_items or self.chk_period:
+        chk_max_items = self.input.param("chk_max_items", None)
+        chk_period = self.input.param("chk_period", None)
+        if chk_max_items or chk_period:
             for server in cluster.servers:
                 rest = RestConnection(server)
-                if self.chk_max_items:
-                    rest.set_chk_max_items(self.chk_max_items)
-                if self.chk_period:
-                    rest.set_chk_period(self.chk_period)
+                if chk_max_items:
+                    rest.set_chk_max_items(chk_max_items)
+                if chk_period:
+                    rest.set_chk_period(chk_period)
 
     def change_password(self, cluster, new_password="new_password"):
         nodes = RestConnection(cluster.master).node_statuses()
