@@ -196,7 +196,11 @@ class CollectionsQuorumLoss(CollectionBase):
         # Shuffle the nodes
         node_in_zone = list(set(nodes_in_zone[zones[1]]) -
                             set([node for node in rest.get_nodes_in_zone(zones[1])]))
-        rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[1])
+        moved_nodes = []
+        for otp_node in rest.node_statuses():
+            if otp_node.ip in node_in_zone:
+                moved_nodes.append(otp_node)
+        rest.shuffle_nodes_in_zones(moved_nodes, zones[0], zones[1])
         self.task.rebalance(self.cluster, [], [],
                             retry_get_process_num=self.retry_get_process_num)
         return second_zone_servers
