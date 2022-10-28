@@ -5905,6 +5905,7 @@ class BucketUtils(ScopeUtils):
     def get_initial_stats(self, buckets):
         expected_stats = dict()
         for bucket in buckets:
+            self.get_throttle_limit(bucket)
             expected_stats[bucket.name] = dict()
             expected_stats[bucket.name]["num_throttled"], \
                 expected_stats[bucket.name]["ru"], \

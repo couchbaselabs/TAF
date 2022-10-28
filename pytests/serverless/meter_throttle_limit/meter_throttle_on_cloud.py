@@ -25,12 +25,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         self.create_required_buckets(spec)
         self.get_servers_for_databases()
         self.expected_stats = dict()
-        for bucket in self.cluster.buckets:
-            self.expected_stats[bucket.name] = dict()
-            self.expected_stats[bucket.name]["num_throttled"], \
-                self.expected_stats[bucket.name]["ru"], \
-                self.expected_stats[bucket.name]["wu"] = \
-                self.bucket_util.get_stat_from_metrics(bucket)
+        self.expected_stats = self.bucket_util.get_initial_stats(self.cluster.buckets)
 
     def tearDown(self):
         super(MeteringOnCloud, self).tearDown()
@@ -57,27 +52,15 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                   delete_start=0, delete_end=0, delete_perc=0,
                   data_validation=False, buckets=[]):
         loader_map = dict()
-        req_clients_per_bucket = 1
         if len(buckets) > 1:
             self.buckets = buckets
         else:
             self.buckets = self.cluster.buckets
 
         # Create sdk_client_pool
-        if self.sdk_client_pool:
-            self.sdk_client_pool = \
-                self.bucket_util.initialize_java_sdk_client_pool()
-
-            for bucket in self.cluster.buckets:
-                nebula = bucket.serverless.nebula_endpoint
-                self.log.info("Using Nebula endpoint %s" % nebula.srv)
-                server = Server(nebula.srv, nebula.port,
-                                nebula.rest_username,
-                                nebula.rest_password,
-                                str(nebula.memcached_port))
-                self.sdk_client_pool.create_clients(
-                    bucket.name, server, req_clients_per_bucket)
-            self.sleep(5, "Wait for SDK client pool to warmup")
+        self.init_sdk_pool_object()
+        self.create_sdk_client_pool(buckets=self.cluster.buckets,
+                                    req_clients_per_bucket=1)
 
         for bucket in self.buckets:
             for scope in bucket.scopes.keys():
