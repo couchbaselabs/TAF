@@ -506,20 +506,16 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 self.create_database()
 
     def create_sdk_client_pool(self, buckets, req_clients_per_bucket):
-        if self.sdk_client_pool:
-            self.sdk_client_pool = \
-                self.bucket_util.initialize_java_sdk_client_pool()
-
-            for bucket in buckets:
-                nebula = bucket.serverless.nebula_endpoint
-                self.log.info("Using Nebula endpoint %s" % nebula.srv)
-                server = Server(nebula.srv, nebula.port,
-                                nebula.rest_username,
-                                nebula.rest_password,
-                                str(nebula.memcached_port))
-                self.sdk_client_pool.create_clients(
-                    bucket.name, server, req_clients_per_bucket)
-            self.sleep(5, "Wait for SDK client pool to warmup")
+        for bucket in buckets:
+            nebula = bucket.serverless.nebula_endpoint
+            self.log.info("Using Nebula endpoint %s" % nebula.srv)
+            server = Server(nebula.srv, nebula.port,
+                            nebula.rest_username,
+                            nebula.rest_password,
+                            str(nebula.memcached_port))
+            self.sdk_client_pool.create_clients(
+                bucket.name, server, req_clients_per_bucket)
+        self.sleep(5, "Wait for SDK client pool to warmup")
 
     def test_create_delete_database(self):
         """
@@ -537,6 +533,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         loader_map = dict()
 
         # Create sdk_client_pool
+        self.init_sdk_pool_object()
         self.create_sdk_client_pool(buckets=self.cluster.buckets,
                                     req_clients_per_bucket=1)
 
@@ -715,6 +712,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             scenarios = self.__get_twenty_bucket_scenarios(target_scenario)
 
         if self.with_data_load:
+            self.init_sdk_pool_object()
             self.create_sdk_client_pool(self.cluster.buckets, 1)
             loader_map = dict()
             for bucket in self.cluster.buckets:
@@ -866,6 +864,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for bucket in target_buckets:
             loading_for_buckets[bucket.name] = True
 
+        self.init_sdk_pool_object()
         self.create_sdk_client_pool(target_buckets, 1)
         continue_data_load = True
         while continue_data_load:
@@ -924,6 +923,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         loader_key = "%s%s%s" % (bucket.name, CbServer.default_scope,
                                  CbServer.default_collection)
+        self.init_sdk_pool_object()
         self.create_sdk_client_pool([bucket], 1)
         dgm_index = 0
         storage_band = 1

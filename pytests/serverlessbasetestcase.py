@@ -121,6 +121,15 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         if not TestInputSingleton.input.capella.get("project", None):
             DedicatedUtils.delete_project(self.pod, self.tenant)
 
+    def init_sdk_pool_object(self):
+        """
+        Overriding the method from CouchbaseBaseTest class
+        :return:
+        """
+        if self.sdk_client_pool:
+            self.sdk_client_pool = \
+                self.bucket_util.initialize_java_sdk_client_pool()
+
     def generate_dataplane_config(self):
         cb_image = self.input.capella.get("cb_image", "")
         dapi_image = self.input.capella.get("dapi_image", "")
