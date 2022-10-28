@@ -936,8 +936,12 @@ class DocLoaderUtils(object):
                             track_failures=True,
                             async_load=True, validate_results=False,
                             retries=0, sdk_client_pool=None):
+        def get_bucket_obj(b_name):
+            for t_bucket in buckets:
+                if t_bucket.name == b_name:
+                    return t_bucket
         log = DocLoaderUtils.log
-        master = client = None
+        master = None
         if buckets is None:
             buckets = cluster.buckets
         if sdk_client_pool is None and cluster.master:
@@ -947,51 +951,47 @@ class DocLoaderUtils(object):
                             str(cluster.master.memcached_port))
         tasks = list()
         while process_concurrency > 0:
-            for bucket in buckets:
-                if sdk_client_pool is None \
-                        and bucket.serverless \
-                        and bucket.serverless.nebula_endpoint:
-                    nebula = bucket.serverless.nebula_endpoint
-                    log.info("Using Nebula endpoint %s" % nebula.srv)
-                    master = Server(nebula.srv, nebula.port,
-                                    nebula.rest_username,
-                                    nebula.rest_password,
-                                    str(nebula.memcached_port))
-                for scope in bucket.scopes.keys():
-                    if scope == CbServer.system_scope:
-                        continue
-                    for collection in bucket.scopes[scope].collections.keys():
-                        task_name = "Loader_%s_%s_%s_%s_%s" \
-                                    % (bucket.name, scope, collection,
-                                       process_concurrency, "%s" % time())
-                        if sdk_client_pool:
-                            task = WorkLoadGenerate(
-                                task_name,
-                                loader_map[bucket.name + scope + collection],
-                                sdk_client_pool, durability_level, maxttl,
-                                ttl_time_unit, track_failures, retries)
-                            task.set_collection_for_load(
-                                bucket.name, scope, collection)
-                        else:
-                            client = NewSDKClient(master, bucket.name,
-                                                  scope, collection)
-                            client.initialiseSDK()
-                            sleep(1, "Wait for SDK to warmup")
-                            task = WorkLoadGenerate(
-                                task_name,
-                                loader_map[bucket.name + scope + collection],
-                                client, durability_level, maxttl, ttl_time_unit,
-                                track_failures, retries)
-                        tasks.append(task)
-                        task_manager.submit(task)
-                        process_concurrency -= 1
+            for loader_map_key, dg in loader_map.items():
+                bucket_name, scope, collection = loader_map_key.split(":")
+                bucket = get_bucket_obj(bucket_name)
+                task_name = "Loader_%s_%s_%s_%s_%s" \
+                            % (bucket_name, scope, collection,
+                               process_concurrency, "%s" % time())
+                if sdk_client_pool:
+                    task = WorkLoadGenerate(
+                        task_name, dg, sdk_client_pool,
+                        durability_level, maxttl,
+                        ttl_time_unit, track_failures, retries)
+                    task.set_collection_for_load(
+                        bucket.name, scope, collection)
+                else:
+                    if bucket.serverless \
+                            and bucket.serverless.nebula_endpoint:
+                        nebula = bucket.serverless.nebula_endpoint
+                        log.info("Using Nebula endpoint %s" % nebula.srv)
+                        master = Server(nebula.srv, nebula.port,
+                                        nebula.rest_username,
+                                        nebula.rest_password,
+                                        str(nebula.memcached_port))
+                    client = NewSDKClient(master, bucket.name,
+                                          scope, collection)
+                    client.initialiseSDK()
+                    sleep(1, "Wait for SDK to warmup")
+                    task = WorkLoadGenerate(
+                        task_name, dg, client, durability_level,
+                        maxttl, ttl_time_unit, track_failures, retries)
+                tasks.append(task)
+                task_manager.submit(task)
+                process_concurrency -= 1
 
         if async_load is False:
             DocLoaderUtils.wait_for_doc_load_completion(task_manager, tasks)
 
             if validate_results:
-                pass
-                # DocLoaderUtils.data_validation()
+                DocLoaderUtils.data_validation(
+                    task_manager, loader_map, cluster, buckets,
+                    process_concurrency=process_concurrency, ops_rate=100,
+                    sdk_client_pool=sdk_client_pool)
 
         return tasks
 
@@ -1044,12 +1044,57 @@ class DocLoaderUtils(object):
                         process_concurrency=1, ops_rate=100,
                         max_ttl=0, ttl_timeunit="seconds",
                         track_failures=True, sdk_client_pool=None):
-        cmd = dict()
-        validation_map = dict()
+        def get_bucket_obj(b_name):
+            for t_bucket in buckets:
+                if t_bucket.name == b_name:
+                    return t_bucket
+
+        def update_validation_map(b_name, s_name, c_name, doc_op,
+                                  start_index, end_index, docs_deleted=False):
+            hm = HashMap()
+            hm.putAll({DRConstants.read_s: start_index,
+                       DRConstants.read_e: end_index})
+            ws = DocLoaderUtils.get_workload_settings(
+                key=workload_setting.keyPrefix,
+                key_size=workload_setting.keySize,
+                doc_size=workload_setting.docSize,
+                read_perc=100,
+                deleted=docs_deleted,
+                ops_rate=ops_rate,
+                process_concurrency=process_concurrency)
+            ws.dr = DocRange(hm)
+            dg = DocumentGenerator(ws,
+                                   workload_setting.keyType,
+                                   workload_setting.valueType)
+            v_key = "%s:%s:%s:%s" % (b_name, s_name, c_name, doc_op)
+            validation_map.update({v_key: dg})
+
         master = None
         result = True
+        validation_map = dict()
         buckets = cluster.buckets if buckets is None else buckets
         log = DocLoaderUtils.log
+        log.info("Creating doc_gens for running validations")
+        for loader_map_key, doc_gen in loader_map.items():
+            bucket_name, scope, collection = loader_map_key.split(":")
+            workload_setting = doc_gen.get_work_load_settings()
+            doc_range = workload_setting.dr
+            if workload_setting.creates > 0:
+                start, end = doc_range.create_s, doc_range.create_e
+                update_validation_map(bucket_name, scope, collection,
+                                      DocLoading.Bucket.DocOps.CREATE,
+                                      start, end)
+            if workload_setting.updates > 0:
+                start, end = doc_range.update_s, doc_range.update_e
+                update_validation_map(bucket_name, scope, collection,
+                                      DocLoading.Bucket.DocOps.UPDATE,
+                                      start, end)
+            if workload_setting.deletes > 0:
+                start, end = doc_range.delete_s, doc_range.delete_e
+                update_validation_map(bucket_name, scope, collection,
+                                      DocLoading.Bucket.DocOps.DELETE,
+                                      start, end, docs_deleted=True)
+
         log.info("Validating Active/Replica Docs")
         if sdk_client_pool is None and cluster.master:
             master = Server(cluster.master.ip, cluster.master.port,
@@ -1057,93 +1102,43 @@ class DocLoaderUtils(object):
                             cluster.master.rest_password,
                             str(cluster.master.memcached_port))
 
-        for bucket in buckets:
-            for scope in bucket.scopes.keys():
-                if scope == CbServer.system_scope:
-                    continue
-                for collection in bucket.scopes[scope].collections.keys():
-                    common_key = bucket.name + scope + collection
-                    doc_gen = loader_map[common_key]
-                    workload_setting = doc_gen.get_work_load_settings()
-                    doc_range = workload_setting.dr
-                    cmd.update({"deleted": False})
-                    hm = HashMap()
-                    if workload_setting.creates > 0:
-                        op_type = DocLoading.Bucket.DocOps.CREATE
-                        hm.putAll({DRConstants.read_s: doc_range.create_s,
-                                   DRConstants.read_e: doc_range.create_e})
-                    elif workload_setting.update > 0:
-                        op_type = DocLoading.Bucket.DocOps.UPDATE
-                        hm.putAll({DRConstants.read_s: doc_range.update_s,
-                                   DRConstants.read_e: doc_range.update_e})
-                    elif workload_setting.deletes > 0:
-                        op_type = DocLoading.Bucket.DocOps.DELETE
-                        hm.putAll({DRConstants.read_s: doc_range.delete_s,
-                                   DRConstants.read_e: doc_range.delete_e})
-                        cmd.update({"deleted": True})
-                    else:
-                        continue
-                    ws = DocLoaderUtils.get_workload_settings(
-                        key=workload_setting.keyPrefix,
-                        key_size=workload_setting.keySize,
-                        doc_size=workload_setting.docSize,
-                        read_perc=100,
-                        ops_rate=ops_rate,
-                        process_concurrency=process_concurrency)
-                    ws.dr = DocRange(hm)
-                    dg = DocumentGenerator(ws,
-                                           workload_setting.keyType,
-                                           workload_setting.valueType)
-                    validation_map.update({common_key + op_type: dg})
-
         tasks = list()
         while process_concurrency > 0:
-            for bucket in buckets:
-                if sdk_client_pool is None \
-                        and bucket.serverless \
-                        and bucket.serverless.nebula_endpoint:
-                    nebula = bucket.serverless.nebula_endpoint
-                    DocLoaderUtils.log.info("Nebula endpoint: %s" % nebula.srv)
-                    master = Server(nebula.srv, nebula.port,
-                                    nebula.rest_username,
-                                    nebula.rest_password,
-                                    str(nebula.memcached_port))
-                for scope in bucket.scopes.keys():
-                    if scope == CbServer.system_scope:
-                        continue
-                    for collection in bucket.scopes[scope].collections.keys():
-                        for op_type in doc_ops:
-                            if op_type not in [
-                                    DocLoading.Bucket.DocOps.CREATE,
-                                    DocLoading.Bucket.DocOps.UPDATE,
-                                    DocLoading.Bucket.DocOps.DELETE]:
-                                continue
-                            task_name = "Validate_%s_%s_%s_%s_%s_%s" \
-                                        % (bucket.name, scope, collection,
-                                           op_type, str(process_concurrency),
-                                           time.time())
-                            if sdk_client_pool:
-                                task = WorkLoadGenerate(
-                                    task_name,
-                                    validation_map[
-                                        bucket.name + scope + collection + op_type],
-                                    sdk_client_pool, "NONE",
-                                    max_ttl, ttl_timeunit,
-                                    track_failures, 0)
-                                task.set_collection_for_load(bucket.name, scope,
-                                                             collection)
-                            else:
-                                client = NewSDKClient(master, bucket.name, scope,
-                                                      collection)
-                                client.initialiseSDK()
-                                sleep(1, "Wait for SDK to warmup")
-                                task = WorkLoadGenerate(task_name, validation_map[bucket.name+scope+collection+op_type],
-                                                        client, "NONE",
-                                                        max_ttl, ttl_timeunit,
-                                                        track_failures, 0)
-                            task_manager.submit(task)
-                            tasks.append(task)
-                            process_concurrency -= 1
+            for map_key, doc_gen in validation_map.items():
+                bucket_name, scope, collection, op_type = map_key.split(":")
+                bucket = get_bucket_obj(bucket_name)
+
+                task_name = "Validate_%s_%s_%s_%s_%s_%s" \
+                            % (bucket_name, scope, collection,
+                               op_type, str(process_concurrency),
+                               time.time())
+                if sdk_client_pool:
+                    task = WorkLoadGenerate(
+                        task_name, doc_gen, sdk_client_pool, "NONE",
+                        max_ttl, ttl_timeunit, track_failures, 0)
+                    task.set_collection_for_load(bucket_name, scope,
+                                                 collection)
+                else:
+                    if bucket.serverless \
+                            and bucket.serverless.nebula_endpoint:
+                        nebula = bucket.serverless.nebula_endpoint
+                        DocLoaderUtils.log.info(
+                            "Nebula endpoint: %s" % nebula.srv)
+                        master = Server(nebula.srv, nebula.port,
+                                        nebula.rest_username,
+                                        nebula.rest_password,
+                                        str(nebula.memcached_port))
+
+                    client = NewSDKClient(master, bucket_name, scope,
+                                          collection)
+                    client.initialiseSDK()
+                    sleep(1, "Wait for SDK to warmup")
+                    task = WorkLoadGenerate(
+                        task_name, doc_gen, client, "NONE",
+                        max_ttl, ttl_timeunit, track_failures, 0)
+                task_manager.submit(task)
+                tasks.append(task)
+                process_concurrency -= 1
         task_manager.getAllTaskResult()
         for task in tasks:
             try:

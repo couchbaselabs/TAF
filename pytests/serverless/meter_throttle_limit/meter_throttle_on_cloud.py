@@ -62,7 +62,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                     dg = DocumentGenerator(work_load_settings,
                                            self.key_type, self.val_type)
                     loader_map.update(
-                        {bucket.name + scope + collection: dg})
+                        {"%s:%s:%s" % (bucket.name, scope, collection): dg})
 
         doc_loading_tasks = DocLoaderUtils.perform_doc_loading(self.doc_loading_tm, loader_map,
                                            self.cluster, self.cluster.buckets,
@@ -70,7 +70,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                                            async_load=False, validate_results=False,
                                            sdk_client_pool=self.sdk_client_pool)
         DocLoaderUtils.wait_for_doc_load_completion(self.doc_loading_tm,
-                                                        doc_loading_tasks)
+                                                    doc_loading_tasks)
 
         if data_validation:
             result = DocLoaderUtils.data_validation(

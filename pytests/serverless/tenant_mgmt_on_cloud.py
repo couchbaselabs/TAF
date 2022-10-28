@@ -548,7 +548,6 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.create_required_buckets()
 
         loader_map = dict()
-
         # Create sdk_client_pool
         self.init_sdk_pool_object()
         self.create_sdk_client_pool(buckets=self.cluster.buckets,
@@ -568,7 +567,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     dg = DocumentGenerator(work_load_settings,
                                            self.key_type, self.val_type)
                     loader_map.update(
-                        {bucket.name + scope + collection: dg})
+                        {"%s:%s:%s" % (bucket.name, scope, collection): dg})
 
         DocLoaderUtils.perform_doc_loading(
             self.doc_loading_tm, loader_map,
@@ -742,8 +741,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 dg = DocumentGenerator(work_load_settings,
                                        self.key_type, self.val_type)
                 loader_map.update(
-                    {bucket.name + CbServer.default_scope
-                     + CbServer.default_collection: dg})
+                    {"%s:%s:%s" % (bucket.name, CbServer.default_scope,
+                                   CbServer.default_collection): dg})
 
             doc_loading_tasks = DocLoaderUtils.perform_doc_loading(
                 self.doc_loading_tm, loader_map,
@@ -902,8 +901,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 if loading_for_buckets[bucket.name] is False:
                     continue
                 continue_data_load = True
-                loader_key = "%s%s%s" % (bucket.name, CbServer.default_scope,
-                                         CbServer.default_collection)
+                loader_key = "%s:%s:%s" % (bucket.name, CbServer.default_scope,
+                                           CbServer.default_collection)
                 ws = work_load_settings[index]
                 ws.dr.create_s = ws.dr.create_e
                 ws.dr.create_e += batch_size
@@ -955,8 +954,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         dg = DocumentGenerator(work_load_settings,
                                self.key_type, self.val_type)
 
-        loader_key = "%s%s%s" % (bucket.name, CbServer.default_scope,
-                                 CbServer.default_collection)
+        loader_key = "%s:%s:%s" % (bucket.name, CbServer.default_scope,
+                                   CbServer.default_collection)
         self.init_sdk_pool_object()
         self.create_sdk_client_pool([bucket], 1)
         dgm_index = 0
