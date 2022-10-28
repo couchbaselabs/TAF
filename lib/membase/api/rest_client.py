@@ -1664,13 +1664,14 @@ class RestConnection(object):
                 nodes.append(node)
         return nodes
 
-    def cluster_status(self):
+    def cluster_status(self, parse=True):
         parsed = {}
         api = self.baseUrl + 'pools/default'
         status, content, header = self._http_request(api)
-        if status:
-            parsed = json.loads(content)
-        return parsed
+        if parse:
+            if status:
+                parsed = json.loads(content)
+            return parsed
 
     #     def fetch_vbucket_map(self, bucket="default"):
     #         """Return vbucket map for bucket
@@ -1698,14 +1699,15 @@ class RestConnection(object):
     #             server_list.append(node[0])
     #         return vbucket_map, server_list, num_replica
 
-    def get_pools_info(self):
+    def get_pools_info(self, parse=True):
         parsed = {}
         api = self.baseUrl + 'pools'
         status, content, header = self._http_request(api)
-        json_parsed = json.loads(content)
-        if status:
-            parsed = json_parsed
-        return parsed
+        if parse:
+            json_parsed = json.loads(content)
+            if status:
+                parsed = json_parsed
+            return parsed
 
     def get_pools_default(self, query='', timeout=30):
         parsed = {}
@@ -1718,6 +1720,13 @@ class RestConnection(object):
         if status:
             parsed = json_parsed
         return parsed
+
+    def get_bucket_details(self, bucket_name="default", parse=True):
+        api = self.baseUrl + 'pools/default/buckets/{0}'.format(bucket_name)
+        status, content, header = self._http_request(api)
+        if parse:
+            json_parsed = json.loads(content)
+            return json_parsed
 
     def get_pools(self):
         version = None
