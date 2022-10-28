@@ -30,6 +30,8 @@ class UpgradeBase(BaseTestCase):
                                                 "6.0.1-2037")
         self.upgrade_version = self.input.param("upgrade_version",
                                                 "6.5.0-3939")
+        self.test_storage_upgrade = \
+            self.input.param("test_storage_upgrade", False)
         self.upgrade_type = self.input.param("upgrade_type", "online_swap")
         self.prefer_master = self.input.param("prefer_master", False)
         self.update_nodes = self.input.param("update_nodes", "kv").split(";")
@@ -68,6 +70,7 @@ class UpgradeBase(BaseTestCase):
         self.upgrade_function["offline"] = self.offline
 
         self.__validate_upgrade_type()
+
 
         self.log.info("Installing initial version %s on servers"
                       % self.initial_version)
@@ -119,6 +122,19 @@ class UpgradeBase(BaseTestCase):
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket = self.cluster.buckets[0]
 
+        if self.test_storage_upgrade:
+            for i in range(3):
+                bucket_name = "testBucket" + str(i)
+                self.bucket_util.create_default_bucket(
+                    self.cluster,
+                    replica=self.num_replicas,
+                    compression_mode=self.compression_mode,
+                    ram_quota=self.bucket_size,
+                    bucket_type=self.bucket_type,
+                    storage=self.bucket_storage,
+                    eviction_policy=self.bucket_eviction_policy,
+                    bucket_durability=self.bucket_durability_level,
+                    bucket_name=bucket_name)
         # Create clients in SDK client pool
         if self.sdk_client_pool is not None:
             clients_per_bucket = \
@@ -134,6 +150,7 @@ class UpgradeBase(BaseTestCase):
                                       randomize_doc_size=True,
                                       randomize_value=True,
                                       randomize=True)
+
         async_load_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, self.gen_load,
             DocLoading.Bucket.DocOps.CREATE,
@@ -163,6 +180,7 @@ class UpgradeBase(BaseTestCase):
         self.assertTrue(current_items == self.num_items,
                         "Mismatch in doc_count. Actual: %s, Expected: %s"
                         % (current_items, self.num_items))
+
         self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]
 
@@ -370,7 +388,6 @@ class UpgradeBase(BaseTestCase):
             for vb_type in vb_types:
                 vb_details[vb_type] = \
                     cbstats.vbucket_list(self.bucket.name, vb_type)
-
         if install_on_spare_node:
             # Install target version on spare node
             self.install_version_on_node([self.spare_node], version)

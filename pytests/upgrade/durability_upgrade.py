@@ -1,3 +1,4 @@
+import time
 from random import choice
 from threading import Thread
 
@@ -142,9 +143,53 @@ class UpgradeTests(UpgradeBase):
         DocLoaderUtils.sdk_client_pool.shutdown()
 
     def test_upgrade(self):
+        self.thread_keeper = dict()
+        thread_list = []
+
+        def check_res(target_node):
+            self.log.info("verification for storage upgrade")
+            timeout = time.time() + 7
+            while time.time() < timeout:
+                try:
+                    rest = RestConnection(target_node)
+                    node = rest.get_nodes_self()
+                    if node.status == 'healthy':
+                        return True
+                except Exception:
+                    continue
+                finally:
+                    self.sleep(5)
+            return False
+
+        def parallel_api_calls(target_node):
+            rest = RestConnection(target_node)
+            rest.username = self.test_user[0]["name"]
+            rest.password = self.test_user[0]["password"]
+            while self.thread_keeper[target_node] is not None:
+                try:
+                    for iter1 in range(4):
+                        rest.cluster_status(parse=False)
+                        rest.get_pools_info(parse=False)
+                    for bucket in self.cluster.buckets:
+                        rest.get_bucket_details(bucket.name, False)
+                except Exception:
+                    continue
+        self.test_user = None
+        iter = 0
+        if self.test_storage_upgrade:
+            user_name = "Random"
+            user_pass = "Random"
+            permissions = 'data_writer[*],data_reader[*]'
+            self.role_list = [{"id": user_name,
+                         "name": user_name,
+                         "roles": "%s" % permissions}]
+            self.test_user = [{'id': user_name, 'name': user_name,
+                         'password': user_pass}]
+            self.bucket_util.add_rbac_user(self.cluster.master,
+                                           testuser=self.test_user,
+                                           rolelist=self.role_list)
         create_batch_size = 10000
         update_task = None
-
         t_durability_level = ""
         if self.cluster_supports_sync_write:
             t_durability_level = Bucket.DurabilityLevel.MAJORITY
@@ -159,18 +204,48 @@ class UpgradeTests(UpgradeBase):
                 replicate_to=1,
                 durability=t_durability_level,
                 timeout_secs=30)
-
         create_gen = doc_generator(self.key, self.num_items,
                                    self.num_items+create_batch_size)
         self.log.info("Upgrading cluster nodes to target version")
         node_to_upgrade = self.fetch_node_to_upgrade()
         while node_to_upgrade is not None:
-            self.log.info("Selected node for upgrade: %s"
-                          % node_to_upgrade.ip)
+            iter += 1
+            self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
+
+            if self.test_storage_upgrade:
+                gen_loader = doc_generator("create", 0, 100000,
+                                           randomize_doc_size=True,
+                                           randomize_value=True,
+                                           randomize=True)
+                for bucket in self.cluster.buckets:
+                    if "testBucket" in bucket.name:
+                        self.task.async_continuous_doc_ops(
+                            self.cluster, bucket, gen_loader,
+                            op_type=DocLoading.Bucket.DocOps.CREATE,
+                            process_concurrency=1,
+                            persist_to=1,
+                            replicate_to=1,
+                            durability=Bucket.DurabilityLevel.MAJORITY,
+                            timeout_secs=30)
+
+                for node in self.cluster.nodes_in_cluster:
+                    new_threads = []
+                    if node.ip != node_to_upgrade.ip:
+                        if node not in self.thread_keeper:
+                            self.thread_keeper[node] = True
+                        for i in range(7):
+                            new_threads.append(Thread(target=parallel_api_calls,
+                                                      args=[node]))
+                        for threads in new_threads:
+                            threads.start()
+                            thread_list.append(threads)
+
             self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                      self.upgrade_version)
             self.cluster_util.print_cluster_stats(self.cluster)
-
+            for node in self.thread_keeper.keys():
+                if node not in self.cluster.nodes_in_cluster:
+                    self.thread_keeper[node] = None
             # Validate sync_write results after upgrade
             if self.atomicity:
                 create_batch_size = 10
@@ -195,8 +270,10 @@ class UpgradeTests(UpgradeBase):
                     skip_read_on_error=True,
                     suppress_error_table=True)
             self.task_manager.get_task_result(sync_write_task)
-
-            node_to_upgrade = self.fetch_node_to_upgrade()
+            if self.test_storage_upgrade and iter >= self.nodes_init:
+                node_to_upgrade = None
+            else:
+                node_to_upgrade = self.fetch_node_to_upgrade()
             if self.atomicity:
                 self.sleep(10)
                 current_items = self.bucket_util.get_bucket_current_item_count(
@@ -248,10 +325,32 @@ class UpgradeTests(UpgradeBase):
             # Halt further upgrade if test has failed during current upgrade
             if self.test_failure is not None:
                 break
+        if self.test_storage_upgrade:
+            self.sleep(30, "waiting to try cause storage upgrade failure")
+            node_to_check = None
+            for node in self.thread_keeper.keys():
+                if self.thread_keeper[node] is not None:
+                    node_to_check = node
+                    break
+            status = check_res(node_to_check)
+            self.assertTrue(status, "expected nodes to be warmed up")
+            for node in self.thread_keeper.keys():
+                self.thread_keeper[node] = None
+            for threads in thread_list:
+                threads.join()
+            retry = 2
+            for i in range(retry):
+                bucket_found = False
+                for bucket in self.cluster.buckets:
+                    if "testBucket" in bucket.name:
+                        bucket_found = True
+                        self.bucket_util.delete_bucket(self.cluster, bucket,
+                                                       wait_for_bucket_deletion=True)
+                if not bucket_found:
+                    break
 
-        # Validate default num_items before collection tests
-        self.bucket_util.validate_docs_per_collections_all_buckets(
-            self.cluster)
+        self.log.info("starting doc verification")
+        self.bucket_util.validate_docs_per_collections_all_buckets(self.cluster)
 
         # Play with collection if upgrade was successful
         if not self.test_failure:
