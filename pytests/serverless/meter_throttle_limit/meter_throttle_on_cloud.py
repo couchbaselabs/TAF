@@ -75,7 +75,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         if data_validation:
             result = DocLoaderUtils.data_validation(
                 self.doc_loading_tm, loader_map, self.cluster,
-                buckets=self.cluster.buckets, doc_ops=["create"],
+                buckets=self.cluster.buckets,
                 process_concurrency=self.process_concurrency,
                 ops_rate=self.ops_rate, sdk_client_pool=self.sdk_client_pool)
             self.assertTrue(result, "Data validation failed")

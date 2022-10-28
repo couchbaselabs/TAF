@@ -1039,8 +1039,7 @@ class DocLoaderUtils(object):
         return result
 
     @staticmethod
-    def data_validation(task_manager, loader_map, cluster,
-                        buckets=None, doc_ops=None,
+    def data_validation(task_manager, loader_map, cluster, buckets=None,
                         process_concurrency=1, ops_rate=100,
                         max_ttl=0, ttl_timeunit="seconds",
                         track_failures=True, sdk_client_pool=None):
