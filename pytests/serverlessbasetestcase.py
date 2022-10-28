@@ -6,7 +6,7 @@ Created on Feb 16, 2022
 from Cb_constants import CbServer
 from Jython_tasks.task import DeployDataplane
 from TestInput import TestInputSingleton
-from bucket_utils.bucket_ready_functions import BucketUtils
+from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
 from capella_utils.common_utils import Pod, Tenant
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from capella_utils.serverless import CapellaUtils as ServerlessUtils
@@ -129,6 +129,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         if self.sdk_client_pool:
             self.sdk_client_pool = \
                 self.bucket_util.initialize_java_sdk_client_pool()
+            DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
 
     def generate_dataplane_config(self):
         cb_image = self.input.capella.get("cb_image", "")

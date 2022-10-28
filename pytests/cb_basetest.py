@@ -169,7 +169,7 @@ class CouchbaseBaseTest(unittest.TestCase):
 
         # SDKClientPool object for creating generic clients across tasks
         if self.sdk_client_pool is True:
-            self.init_sdk_pool_object()
+            CouchbaseBaseTest.init_sdk_pool_object(self)
 
         # Variable for initializing the current (start of test) timestamp
         self.start_timestamp = datetime.now()
