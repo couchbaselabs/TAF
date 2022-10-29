@@ -5,7 +5,6 @@ from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from Cb_constants import CbServer
 from com.couchbase.test.docgen import DocumentGenerator
-from com.couchbase.test.sdk import Server
 
 
 class MeteringOnCloud(TenantMgmtOnCloud):
@@ -24,8 +23,14 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                                     collections_per_scope=self.num_collections)
         self.create_required_buckets(spec)
         self.get_servers_for_databases()
-        self.expected_stats = dict()
-        self.expected_stats = self.bucket_util.get_initial_stats(self.cluster.buckets)
+        self.expected_stats = \
+            self.bucket_util.get_initial_stats(self.cluster.buckets)
+
+        # Create sdk_client_pool
+        self.sdk_client_pool = True
+        self.init_sdk_pool_object()
+        self.create_sdk_client_pool(buckets=self.cluster.buckets,
+                                    req_clients_per_bucket=1)
 
     def tearDown(self):
         super(MeteringOnCloud, self).tearDown()
@@ -56,11 +61,6 @@ class MeteringOnCloud(TenantMgmtOnCloud):
             self.buckets = buckets
         else:
             self.buckets = self.cluster.buckets
-
-        # Create sdk_client_pool
-        self.init_sdk_pool_object()
-        self.create_sdk_client_pool(buckets=self.cluster.buckets,
-                                    req_clients_per_bucket=1)
 
         for bucket in self.buckets:
             for scope in bucket.scopes.keys():
