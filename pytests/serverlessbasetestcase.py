@@ -142,12 +142,25 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         region = self.input.param("region", AWS.Region.US_EAST_1)
 
         cb_version = cb_image.split("-")[3]
-        services_type = self.input.param("services", None)
-        compute = self.input.param("compute", None)
-        num_nodes = self.input.param("num_nodes", None)
-        disk_type = self.input.param("disk_type", None)
-        disk_size = self.input.param("disk_size", None)
-        disk_iops = self.input.param("disk_iops", None)
+        services_type = self.input.param("services", ["kv", "n1ql", "fts", "index"])
+        disk_type = self.input.param("disk_type", "gp3")
+        kv_disk_size = self.input.param("kv_disk_size", 100)
+        index_disk_size = self.input.param("index_disk_size", 100)
+        n1ql_disk_size = self.input.param("n1ql_disk_size", 50)
+        fts_disk_size = self.input.param("fts_disk_size", 100)
+        disk_size = {"kv": kv_disk_size,
+                     "index": index_disk_size,
+                     "n1ql": n1ql_disk_size,
+                     "fts": fts_disk_size}
+        nodes = {"kv": self.input.param("kv_nodes", 3),
+                 "index": self.input.param("index_nodes", 2),
+                 "n1ql": self.input.param("n1ql_nodes", 2),
+                 "fts": self.input.param("fts_nodes", 2)}
+        compute = {"kv": "c6gd.2xlarge",
+                   "index": "c6gd.4xlarge",
+                   "n1ql": "c6gd.2xlarge",
+                   "fts": "c6gd.4xlarge"}
+        disk_iops = self.input.param("disk_iops", 3000)
 
         self.dataplane_config = {
             "provider": provider,
@@ -160,21 +173,20 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             }
         }
         if services_type:
+            self.dataplane_config["overRide"]["couchbase"]["specs"] = list()
+        for service in services_type:
             spec = dict()
-            spec["services"] = [{"type": services_type}]
-            if compute:
-                spec["compute"] = {"type": compute}
-            if num_nodes:
-                spec["count"] = num_nodes
-            if disk_type or disk_size or disk_iops:
-                spec["disk"] = dict()
-                if disk_type:
-                    spec["disk"]["type"] = disk_type
-                if disk_size:
-                    spec["disk"]["sizeInGb"] = disk_size
-                if disk_iops:
-                    spec["disk"]["iops"] = disk_iops
-            self.dataplane_config["overRide"]["couchbase"]["specs"] = [spec]
+            spec["services"] = [{"type": service}]
+            spec["compute"] = {"type": compute[service]}
+            spec["count"] = nodes[service]
+            spec["disk"] = dict()
+            if disk_type:
+                spec["disk"]["type"] = disk_type
+            if disk_size:
+                spec["disk"]["sizeInGb"] = disk_size[service]
+            if disk_iops:
+                spec["disk"]["iops"] = disk_iops
+            self.dataplane_config["overRide"]["couchbase"]["specs"].append(spec)
 
         if dn_image:
             self.dataplane_config["overRide"].update(
