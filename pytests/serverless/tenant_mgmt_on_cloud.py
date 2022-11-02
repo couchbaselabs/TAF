@@ -37,9 +37,9 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.sdk_client_pool.shutdown()
         super(TenantMgmtOnCloud, self).tearDown()
 
-    def get_bucket_spec(self, bucket_name_format="taf-tntMgmt", num_buckets=1,
-                        scopes_per_bucket=1, collections_per_scope=1,
-                        items_per_collection=0):
+    def get_bucket_spec(self, bucket_name_format="taf-tntMgmt-%s",
+                        num_buckets=1, scopes_per_bucket=1,
+                        collections_per_scope=1, items_per_collection=0):
         self.log.debug("Getting spec for %s buckets" % num_buckets)
         buckets = dict()
         for i in range(num_buckets):
@@ -632,9 +632,6 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         task = self.bucket_util.async_create_database(self.cluster, bucket)
         self.task_manager.get_task_result(task)
 
-    def test_bucket_collection_limit(self):
-        pass
-
     def test_create_database_negative(self):
         """
         1. Create serverless database using invalid name and validate
@@ -794,7 +791,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         # Initially scale first half of the buckets to width=2 and weight=300
         half_of_bucket_index = int(self.num_buckets/2)
-        for index, bucket in self.cluster.buckets[:half_of_bucket_index]:
+        for index, bucket in enumerate(
+                self.cluster.buckets[:half_of_bucket_index]):
             scenario[bucket.name] = {Bucket.width: 2,
                                      Bucket.weight: 300}
         to_track = self.__trigger_bucket_param_updates(scenario)
@@ -863,7 +861,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         num_dgm_buckets = self.input.param("num_dgm_buckets", 1)
         target_scenario = self.input.param("target_scenario")
 
-        bucket_name_format = "tntMgmtScaleDgmBucket"
+        bucket_name_format = "tntMgmtScaleDgmBucket-%s"
         batch_size = 50000
         scenarios = list()
 
