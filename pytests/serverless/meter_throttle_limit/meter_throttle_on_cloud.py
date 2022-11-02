@@ -22,7 +22,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                                     scopes_per_bucket=self.num_scopes,
                                     collections_per_scope=self.num_collections)
         self.create_required_buckets(spec)
-        self.get_servers_for_databases()
+        self.get_servers_for_databases(self.cluster, self.pod)
         self.expected_stats = \
             self.bucket_util.get_initial_stats(self.cluster.buckets)
 
@@ -34,22 +34,6 @@ class MeteringOnCloud(TenantMgmtOnCloud):
 
     def tearDown(self):
         super(MeteringOnCloud, self).tearDown()
-
-    def get_servers_for_databases(self):
-        dataplanes = dict()
-        for bucket in self.cluster.buckets:
-            dataplane_id = self.serverless_util.get_database_dataplane_id(self.pod, bucket.name)
-            self.log.info("dataplane_id is %s" % dataplane_id)
-            if dataplane_id not in dataplanes:
-                dataplanes[dataplane_id] = dict()
-                dataplanes[dataplane_id]["node"], dataplanes[dataplane_id]["username"], \
-                dataplanes[dataplane_id]["password"] = \
-                    self.serverless_util.bypass_dataplane(dataplane_id)
-            self.cluster.nodes_in_cluster = self.cluster_util.construct_servers_from_master_details(
-                dataplanes[dataplane_id]["node"], dataplanes[dataplane_id]["username"],
-                dataplanes[dataplane_id]["password"])
-            self.cluster.master = self.cluster.nodes_in_cluster[0]
-            self.bucket_util.get_updated_bucket_server_list(self.cluster, bucket)
 
     def load_data(self, create_start=0, create_end=1000, create_perc=0,
                   read_start=0, read_end=0, read_perc=0,

@@ -30,6 +30,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.with_data_load = self.input.param("with_data_load", False)
         self.capella_api = CapellaAPI(self.pod.url_public, None, None,
                                       self.token)
+        self.validate_stat = self.input.param("validate_stat", False)
 
     def tearDown(self):
         if self.sdk_client_pool:
@@ -59,6 +60,22 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             Bucket.maxTTL: 0,
             "buckets": buckets
         }
+
+    def get_servers_for_databases(self, cluster, pod):
+        dataplanes = dict()
+        for bucket in cluster.buckets:
+            dataplane_id = self.serverless_util.get_database_dataplane_id(pod, bucket.name)
+            self.log.info("dataplane_id is %s" % dataplane_id)
+            if dataplane_id not in dataplanes:
+                dataplanes[dataplane_id] = dict()
+                dataplanes[dataplane_id]["node"], dataplanes[dataplane_id]["username"], \
+                dataplanes[dataplane_id]["password"] = \
+                    self.serverless_util.bypass_dataplane(dataplane_id)
+            cluster.nodes_in_cluster = self.cluster_util.construct_servers_from_master_details(
+                dataplanes[dataplane_id]["node"], dataplanes[dataplane_id]["username"],
+                dataplanes[dataplane_id]["password"])
+            cluster.master = cluster.nodes_in_cluster[0]
+            self.bucket_util.get_updated_bucket_server_list(cluster, bucket)
 
     def __get_single_bucket_scenarios(self, target_scenario):
         scenarios = list()
@@ -711,6 +728,9 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         elif target_scenario.startswith("twenty_buckets_"):
             scenarios = self.__get_twenty_bucket_scenarios(target_scenario)
 
+        if self.validate_stat:
+            self.get_servers_for_databases(self.cluster, self.pod)
+            self.expected_stat = self.bucket_util.get_initial_stats(self.cluster.buckets)
         if self.with_data_load:
             self.init_sdk_pool_object()
             self.create_sdk_client_pool(self.cluster.buckets, 1)
@@ -743,6 +763,13 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         if self.with_data_load:
             DocLoaderUtils.wait_for_doc_load_completion(self.doc_loading_tm,
                                                         doc_loading_tasks)
+            if self.validate_stat:
+                for bucket in self.cluster.buckets:
+                    self.expected_stat[bucket.name]["wu"] += self.bucket_util.calculate_units(
+                            self.key_size, self.doc_size, num_items=self.num_items)
+        if self.validate_stat:
+            self.get_servers_for_databases(self.cluster, self.pod)
+            self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
 
     def test_create_delete_db_during_bucket_scaling(self):
         """
@@ -840,6 +867,9 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         batch_size = 50000
         scenarios = list()
 
+        if self.validate_stat:
+            self.get_servers_for_databases(self.cluster, self.pod)
+
         spec = self.get_bucket_spec(num_buckets=self.num_buckets,
                                     bucket_name_format=bucket_name_format)
         self.create_required_buckets(buckets_spec=spec)
@@ -898,12 +928,18 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     if int(resident_mem) <= int(target_dgm):
                         loading_for_buckets[bucket.name] = False
                         break
+        if self.validate_stat:
+            self.expected_stat = self.bucket_util.get_initial_stats(self.cluster.buckets)
 
         for scenario in scenarios:
             to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
                 to_track, timeout=600)
             self.task_manager.get_task_result(monitor_task)
+
+        if self.validate_stat:
+            self.get_servers_for_databases(self.cluster, self.pod)
+            self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
 
     def test_bucket_auto_ram_scaling(self):
         """
