@@ -104,6 +104,9 @@ class CapellaUtils(object):
                 if capella_api_resp.status_code == 202:
                     cluster_id = json.loads(capella_api_resp.content).get("id")
                     break
+                elif capella_api_resp.status_code == 500:
+                    CapellaUtils.log.critical(str(capella_api_resp.content))
+                    raise Exception(str(capella_api_resp.content))
             else:
                 cluster_details["place"]["hosted"].update({"CIDR": subnet})
                 cluster_details.update({"projectId": tenant.project_id})
@@ -111,6 +114,9 @@ class CapellaUtils(object):
                 if capella_api_resp.status_code == 202:
                     cluster_id = capella_api_resp.headers['Location'].split("/")[-1]
                     break
+                elif capella_api_resp.status_code == 500:
+                    CapellaUtils.log.critical(str(capella_api_resp.content))
+                    raise Exception(str(capella_api_resp.content))
 
             CapellaUtils.log.critical("Create capella_utils cluster failed.")
             CapellaUtils.log.critical("Capella API returned " + str(
