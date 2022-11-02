@@ -134,3 +134,88 @@ class RestfulDAPITest(BaseTestCase):
             val = json.loads(response.content)["error"]["errorDetails"]["msg"]
             self.assertTrue(val == "document not found",
                             "Wrong error msg for deleted doc: {}".format(val))
+
+    def test_get_scopes(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password,
+                                          "test": "scopes"})
+            self.log.info("To get list of all scopes for DB: {}".format(bucket.name))
+            self.log.info(bucket.serverless.dapi)
+
+            number_of_scopes, scope_name , scope_suffix = 10, "scope", 0
+            scope_name_list = ["_default", "_system"]
+            for i in range(number_of_scopes):
+                scope_suffix += 1
+                scope_name = "scope" + str(scope_suffix)
+                scope_name_list.append(scope_name)
+                response = self.rest_dapi.create_scope({"scopeName": scope_name})
+                self.log.info("response for creation of scope: {}".format(response.status_code))
+                self.assertTrue(response.status_code == 200,
+                                "Creation of scope failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_scope_list()
+            self.log.info("status code for getting list of scope: {}".format(response.status_code))
+            self.log.info(json.loads(response.content))
+            self.assertTrue(response.status_code == 200,
+                            "Getting list of scopes failed for database {}".format(bucket.name))
+
+            response_dict = json.loads(response.content)
+            response_list = response_dict["scopes"]
+            scope_list = []
+            for scope in response_list:
+                scope_list.append(scope["Name"])
+
+            scope_list.sort()
+            scope_name_list.sort()
+            self.assertTrue(scope_list == scope_name_list,
+                            "Wrong scopes received for database {}".format(bucket.name))
+
+    def test_get_collections(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+
+            self.log.info("To get list of all collections within a scope in database {}".format(bucket.name))
+            self.log.info(bucket.serverless.dapi)
+
+            scope = "testScope"
+            response = self.rest_dapi.create_scope({"scopeName": scope})
+            self.log.info(response.status_code)
+            self.assertTrue(response.status_code == 200,
+                            "Creation of scope failed for database {}".format(bucket.name))
+
+            number_of_collection, collection_name, collection_suffix = 10, "collection", 0
+            collection_name_list = []
+            for i in range(number_of_collection):
+                collection_suffix += 1
+                collection_name = "collection" + str(collection_suffix)
+                collection_name_list.append(collection_name)
+                response = self.rest_dapi.create_collection(scope, {"name": collection_name})
+                self.log.info("Response code for creation of collection: {}".format(response.status_code))
+                self.assertTrue(response.status_code == 200,
+                                "Creation of collection failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_collection_list(scope)
+
+            self.log.info(response.status_code)
+            self.log.info(json.loads(response.content))
+
+            self.assertTrue(response.status_code == 200,
+                            "Getting list of collections failed for database {}".format(bucket.name))
+
+            collection_list = json.loads(response.content)
+            collection_list = collection_list["collections"]
+            self.assertTrue(len(collection_list) == number_of_collection,
+                            "Getting all collections failed for testscope for database {}".format(bucket.name))
+
+            temp_collection_list = []
+            for collection in collection_list:
+                temp_collection_list.append(collection["Name"])
+
+            temp_collection_list.sort()
+            collection_name_list.sort()
+            self.assertTrue(temp_collection_list == collection_name_list,
+                            "Wrong collection/s received for database {}".format(bucket.name))

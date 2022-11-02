@@ -59,6 +59,14 @@ class RestfulDAPI:
         url = self.endpoint + "/health"
         return self._urllib_request(url)
 
+    def get_scope_list(self):
+        url = self.endpoint_v1 + "/scopes"
+        return self._urllib_request(url)
+
+    def get_collection_list(self, scope="_default"):
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections"
+        return self._urllib_request(url)
+
     def get_doc(self, doc_id, scope, collection):
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
               + collection + "/docs/" + doc_id
@@ -95,3 +103,13 @@ class RestfulDAPI:
 
     def execute_query(self):
         pass
+
+    def create_scope(self, scope_name):
+        params = scope_name
+        url = self.endpoint_v1 + "/scopes"
+        return self._urllib_request(url, method="POST", params=params)
+
+    def create_collection(self, scope, collection_name):
+        params = collection_name
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections"
+        return self._urllib_request(url, method="POST", params=params)
