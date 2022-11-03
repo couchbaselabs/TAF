@@ -3965,6 +3965,7 @@ class DatabaseCreateTask(Task):
                 self.bucket_obj.serverless.width,
                 self.bucket_obj.serverless.weight,
                 dataplane_id=self.dataplane_id)
+            self.cluster.append_bucket(self.bucket_obj)
             state = self.serverless_util.is_database_ready(
                 self.cluster.pod, self.cluster.tenant, self.bucket_obj.name,
                 timeout=self.timeout)
@@ -4023,7 +4024,6 @@ class DatabaseCreateTask(Task):
                     self.bucket_obj.name)
             global_vars.bucket_util.update_bucket_nebula_servers(
                 self.cluster, self.bucket_obj)
-            self.cluster.append_bucket(self.bucket_obj)
 
 
 class MonitorServerlessDatabaseScaling(Task):
