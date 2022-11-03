@@ -5,6 +5,7 @@ from random import choice, randint, sample
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
+from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
 from error_simulation.cb_error import CouchbaseError
@@ -459,6 +460,42 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                 self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
         self.bucket_util.print_bucket_stats(self.cluster)
 
+    def test_continuous_width_updates(self):
+        num_itr = self.input.param("iterations", 1)
+        self.create_bucket(self.cluster)
+
+        bucket = self.cluster.buckets[0]
+        self.sdk_client_pool.create_clients(
+            bucket=bucket, servers=bucket.servers, req_clients=1)
+
+        doc_gen = doc_generator(self.key, 0, self.num_items)
+        loading_task = self.task.async_continuous_doc_ops(
+            self.cluster, bucket, doc_gen,
+            sdk_client_pool=self.sdk_client_pool)
+        for i in range(1, num_itr+1):
+            self.log.info("Iteration :: %s" % i)
+
+            for b_width in [2, 3, 2, 1]:
+                self.log.info("Updating bucket width=%s" % b_width)
+                self.bucket_util.update_bucket_property(
+                    self.cluster.master, bucket, bucket_width=b_width)
+                bucket.serverless.width = self.desired_width
+
+                rebalance_task = self.task.async_rebalance(
+                    self.cluster, [], [], retry_get_process_num=3000)
+                self.task_manager.get_task_result(rebalance_task)
+
+                self.log.critical("Doc loading failures: %s"
+                                  % loading_task.fail)
+
+                if rebalance_task.result is not True:
+                    loading_task.end_task()
+                    self.task_manager.get_task_result(loading_task)
+                    self.fail("Rebalance Failed")
+
+        loading_task.end_task()
+        self.task_manager.get_task_result(loading_task)
+
     def test_scaling_rebalance_failures(self):
         """
         Scaling failures during re-balance
@@ -594,6 +631,3 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         validation = self.bucket_util.validate_serverless_buckets(
             self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
-
-
-
