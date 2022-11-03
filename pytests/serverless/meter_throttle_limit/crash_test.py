@@ -80,33 +80,32 @@ class ServerlessMetering(LMT):
                 # validation of stats
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=100)
-                self.bucket_util.get_all_buckets(self.cluster)
-                self.log.info("num_items in bucket %s" % bucket.stats.itemCount)
-                self.expected_wu = self.bucket_util.calculate_units(self.doc_size, 0) * bucket.stats.itemCount
-                num_throttled, ru, wu = self.get_stat_from_metering(bucket)
+                total_items = self.bucket_util.get_total_items_bucket(bucket)
+                self.expected_wu = self.bucket_util.calculate_units(self.doc_size, 0) * total_items
+                num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
                 self.log.info("numthrottled:%s, ru:%s, wu:%s" % (num_throttled, ru, wu))
-                if "kill" not in error_to_simulate or self.crash_other_node:
+                if self.crash_other_node:
                     self.assertEqual(wu, self.expected_wu)
-                elif wu > self.expected_wu:
-                    self.log.fail("wu actual:%s, wu expected:%s"
-                                  %(wu, self.expected_wu))
-                if self.doc_size > 1000 and num_throttled < bucket.stats.itemCount/2:
+                elif wu != self.expected_wu or wu != 0:
+                    self.log.info("wu actual:%s, wu expected:%s"
+                                  % (wu, self.expected_wu))
+                if self.doc_size > 1000 and num_throttled < total_items/2:
                     self.log.fail("throttling didnt occur as expected")
                 start += items
                 end += items
 
             # perform load after the crash/stop process and check stats are working fine
-            expected_num_throttled, expected_ru, self.expected_wu = self.get_stat_from_metering(bucket)
+            expected_num_throttled, expected_ru, self.expected_wu = self.bucket_util.get_stat_from_metrics(bucket)
             self.generate_docs(doc_ops="create", create_start=start, create_end=end)
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            self.bucket_util.get_all_buckets(self.cluster)
-            expected_ru = items - (bucket.stats.itemCount - items)
-            self.expected_wu += self.bucket_util.calculate_units(self.doc_size, 0) * (bucket.stats.itemCount - items)
+            total_items = self.bucket_util.get_total_items_bucket(bucket)
+            expected_ru = items - (total_items - items)
+            self.expected_wu += self.bucket_util.calculate_units(self.doc_size, 0) * (total_items - items)
             if self.doc_size > 1000:
-                expected_num_throttled += bucket.stats.itemCount/2
-            num_throttled, ru, wu = self.get_stat(bucket)
+                expected_num_throttled += items/2
+            num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
             if wu != self.expected_wu or ru != expected_ru or num_throttled < expected_num_throttled:
                 self.fail("load after crash failed in stats "
                           "Actual:(ru:%s, wu:%s, num_throttled:%s),"

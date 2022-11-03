@@ -89,7 +89,7 @@ class LMT(ServerlessOnPremBaseTest):
         if not self.ep_queue_stats:
             self.monitor_stats = ["doc_ops"]
 
-        self.test_itr = self.input.param("test_itr", 2)
+        self.test_itr = self.input.param("test_itr", 1)
         self.deep_copy = self.input.param("deep_copy", False)
 
         # Bucket Creation
