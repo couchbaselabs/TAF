@@ -1,7 +1,9 @@
 from pytests.serverless.serverless_onprem_basetest import \
     ServerlessOnPremBaseTest
 from BucketLib.bucket import Bucket
+from threading import Thread
 from cbas_utils.cbas_utils import CBASRebalanceUtil ,CbasUtil
+from collections_helper.collections_spec_constants import MetaCrudParams
 from Cb_constants import CbServer
 from Jython_tasks.task import ConcurrentFailoverTask
 from membase.api.rest_client import RestConnection
@@ -53,12 +55,45 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
     def tearDown(self):
         super(TenantManagementOnPremFailover, self).tearDown()
 
-    def create_sdk_clients(self):
+    @staticmethod
+    def data_load_spec():
+        spec = {
+            # Scope/Collection ops params
+            MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
+            MetaCrudParams.COLLECTIONS_TO_DROP: 0,
+
+            MetaCrudParams.SCOPES_TO_DROP: 0,
+            MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 2,
+            MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 2,
+
+            MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 1,
+
+            MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS: "all",
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS: "all",
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_OPS: "all",
+
+            # Doc loading params
+            "doc_crud": {
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 30,
+                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 1000,
+                MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 0,
+                MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 0,
+            },
+
+        }
+        return spec
+
+    def create_sdk_clients(self, buckets=None):
+        if not buckets:
+            buckets = self.cluster.buckets
         if self.enable_data_load:
             CollectionBase.create_sdk_clients(
                 self.task_manager.number_of_threads,
                 self.cluster.master,
-                self.cluster.buckets,
+                buckets,
                 self.sdk_client_pool,
                 self.sdk_compression)
 
@@ -181,7 +216,9 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
                 if failover_task.result is False:
                     self.fail("Failure during reverting failover operation")
 
-    def create_serverless_bucket(self, name_prefix="bucket_", num=2, weight=1):
+    def create_serverless_bucket(self, name_prefix="bucket_", num=2,
+                                 weight=1, wait_for_warmup=True):
+        bucket_objects = []
         def __get_bucket_params(b_name, ram_quota=256, width=1,
                                 weight=1):
             self.log.debug("Creating bucket param")
@@ -200,10 +237,11 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
             bucket_obj = Bucket(bucket_params)
             try:
                 self.bucket_util.create_bucket(self.cluster, bucket_obj,
-                                               wait_for_warmup=True)
+                                               wait_for_warmup=wait_for_warmup)
+                bucket_objects.append(bucket_obj)
             except Exception as e:
                 raise e
-        self.create_sdk_clients()
+        self.create_sdk_clients(buckets=bucket_objects)
 
     def test_failover_during_update(self):
         data_load_task = None
@@ -279,3 +317,67 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         self.assertTrue(set(second_bucket.servers).
                          isdisjoint(set(target_bucket.servers)),
                          "Target bucket not expected in nodes with more weight")
+
+    def test_create_bucket_during_failover(self):
+        self.thread_fail_Exception = None
+        self.timeout = 240
+        self.create_buckets = True
+
+        def parallel_bucket_creation():
+            iter = 0
+            while self.create_buckets and \
+                    self.rest._rebalance_progress_status() != "running":
+                iter += 1
+                try:
+                    self.create_serverless_bucket("test_bucket" + str(iter),
+                                                  1, 30, wait_for_warmup=False)
+                except Exception as e:
+                    if self.rest._rebalance_progress_status() == "running":
+                        break
+                    self.thread_fail_Exception = e
+                    return
+                self.sleep(5, "waiting 5 seconds before next bucket creation")
+
+        data_load_task = self.rebalance_util.data_load_collection(
+            self.cluster, "volume_test_load_with_CRUD_on_collections",
+            False, async_load=True)
+
+        # start bucket creation thread
+        bucket_creation_thread = Thread(target=parallel_bucket_creation)
+        bucket_creation_thread.start()
+        self.failover_task()
+        self.create_serverless_bucket("after_failover", 2, 30,
+                                      wait_for_warmup=True)
+        self.run_recovery_rebalance()
+
+        # thread stopped
+        self.create_buckets = False
+        bucket_creation_thread.join()
+
+        for bucket in self.cluster.buckets:
+            self.bucket_util._wait_warmup_completed(bucket, wait_time=60)
+
+        # bucket creation after node recovered
+        self.create_serverless_bucket("after_recovery", 2, 30,
+                                      wait_for_warmup=True)
+        if self.thread_fail_Exception is not None:
+            raise Exception(self.thread_fail_Exception)
+        self.rebalance_util.wait_for_data_load_to_complete(data_load_task,
+                                                           False)
+        # assertions
+        self.bucket_util.validate_doc_loading_results(data_load_task)
+        bucket_clients = []
+        self.create_sdk_clients(buckets=bucket_clients)
+        data_spec = self.data_load_spec()
+        self.bucket_util.run_scenario_from_spec(self.task, self.cluster,
+                                                self.cluster.buckets,
+                                                data_spec)
+        validation = self.bucket_util.validate_serverless_buckets(
+            self.cluster, self.cluster.buckets)
+        self.assertTrue(validation, "Bucket validation failed")
+
+
+
+
+
+
