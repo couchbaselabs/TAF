@@ -157,6 +157,10 @@ class CapellaUtils:
                             format(resp.content))
         return json.loads(resp.content)
 
+    def get_all_dataplanes(self):
+        resp = self.capella_api.get_all_dataplanes()
+        return json.loads(resp.content)
+
     def get_database_dataplane_id(self, pod, database_id):
         resp = self.get_database_debug_info(pod, database_id)
         return resp["database"]["config"]["dataplaneId"]
