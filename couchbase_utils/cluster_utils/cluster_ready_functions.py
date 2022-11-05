@@ -405,12 +405,9 @@ class ClusterUtils:
             serv.memcached_port = CbServer.ssl_memcached_port
             return serv
 
-        server = get_obj(node_ip)
-        servers = [server]
-        rest = RestConnection(server)
-        for node in rest.get_nodes():
-            servers.append(get_obj(node.hostname.split(":")[0]))
-        return servers
+        rest = RestConnection(get_obj(node_ip))
+        return [get_obj(node.hostname.split(":")[0])
+                for node in rest.get_nodes(node_ip)]
 
     def change_checkpoint_params(self, cluster):
         chk_max_items = self.input.param("chk_max_items", None)

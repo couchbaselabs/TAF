@@ -332,7 +332,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
        - Decrease single / multiple / all buckets' width
         and rebalance
         Cases will be executed both with/without data load
-       -Simultaniously increase / decrease the bucket's width+weight
+       -Simultaneously increase / decrease the bucket's width+weight
         at a same time and check the results
         """
         # bucket creation way to be updated after spec function available
