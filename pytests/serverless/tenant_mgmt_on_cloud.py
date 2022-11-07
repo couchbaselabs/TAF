@@ -64,16 +64,20 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
     def get_servers_for_databases(self, cluster, pod):
         dataplanes = dict()
         for bucket in cluster.buckets:
-            dataplane_id = self.serverless_util.get_database_dataplane_id(pod, bucket.name)
+            dataplane_id = self.serverless_util.get_database_dataplane_id(
+                pod, bucket.name)
             self.log.info("dataplane_id is %s" % dataplane_id)
             if dataplane_id not in dataplanes:
                 dataplanes[dataplane_id] = dict()
-                dataplanes[dataplane_id]["node"], dataplanes[dataplane_id]["username"], \
-                dataplanes[dataplane_id]["password"] = \
+                dataplanes[dataplane_id]["node"], \
+                    dataplanes[dataplane_id]["username"], \
+                    dataplanes[dataplane_id]["password"] = \
                     self.serverless_util.bypass_dataplane(dataplane_id)
-            cluster.nodes_in_cluster = self.cluster_util.construct_servers_from_master_details(
-                dataplanes[dataplane_id]["node"], dataplanes[dataplane_id]["username"],
-                dataplanes[dataplane_id]["password"])
+            cluster.nodes_in_cluster = \
+                self.cluster_util.construct_servers_from_master_details(
+                    dataplanes[dataplane_id]["node"],
+                    dataplanes[dataplane_id]["username"],
+                    dataplanes[dataplane_id]["password"])
             cluster.master = cluster.nodes_in_cluster[0]
             self.bucket_util.get_updated_bucket_server_list(cluster, bucket)
 
@@ -696,8 +700,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 over_ride[Bucket.weight] = s_dict[Bucket.weight]
                 db_info["desired_weight"] = s_dict[Bucket.weight]
                 bucket_obj.serverless.weight = s_dict[Bucket.weight]
-            resp = self.capella_api.update_database(
-                bucket_obj.name, over_ride)
+            resp = self.capella_api.update_database(bucket_obj.name, over_ride)
             self.assertTrue(resp.status_code == 200, "Update Api failed")
             to_track.append(db_info)
         return to_track
@@ -726,7 +729,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         if self.validate_stat:
             self.get_servers_for_databases(self.cluster, self.pod)
-            self.expected_stat = self.bucket_util.get_initial_stats(self.cluster.buckets)
+            self.expected_stat = self.bucket_util.get_initial_stats(
+                self.cluster.buckets)
         if self.with_data_load:
             self.init_sdk_pool_object()
             self.create_sdk_client_pool(self.cluster.buckets, 1)
@@ -761,11 +765,14 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                         doc_loading_tasks)
             if self.validate_stat:
                 for bucket in self.cluster.buckets:
-                    self.expected_stat[bucket.name]["wu"] += self.bucket_util.calculate_units(
-                            self.key_size, self.doc_size, num_items=self.num_items)
+                    self.expected_stat[bucket.name]["wu"] \
+                        += self.bucket_util.calculate_units(
+                            self.key_size, self.doc_size,
+                            num_items=self.num_items)
         if self.validate_stat:
             self.get_servers_for_databases(self.cluster, self.pod)
-            self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
+            self.bucket_util.validate_stats(self.cluster.buckets,
+                                            self.expected_stat)
 
     def test_create_delete_db_during_bucket_scaling(self):
         """
@@ -926,7 +933,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                         loading_for_buckets[bucket.name] = False
                         break
         if self.validate_stat:
-            self.expected_stat = self.bucket_util.get_initial_stats(self.cluster.buckets)
+            self.expected_stat = self.bucket_util.get_initial_stats(
+                self.cluster.buckets)
 
         for scenario in scenarios:
             to_track = self.__trigger_bucket_param_updates(scenario)
@@ -936,7 +944,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         if self.validate_stat:
             self.get_servers_for_databases(self.cluster, self.pod)
-            self.bucket_util.validate_stats(self.cluster.buckets, self.expected_stat)
+            self.bucket_util.validate_stats(self.cluster.buckets,
+                                            self.expected_stat)
 
     def test_bucket_auto_ram_scaling(self):
         """
@@ -1132,7 +1141,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     buckets_in_target = get_bucket_stats(
                         server_param=node_dictionary[target_node]["node"])
                     other_buckets = node_dictionary[target_node]["bucket"] -\
-                                    buckets_in_target[target_node]["bucket"]
+                        buckets_in_target[target_node]["bucket"]
                     other_bucket_dict = get_bucket_stats(buckets=list(
                         other_buckets))
                     if len(other_bucket_dict) > 0:
@@ -1148,15 +1157,15 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         # creating and expanding single bucket with width = 2 to make sure
         # we have enough data nodes to create scenario
         def pre_test():
-            bucket_specs = self.get_bucket_spec(num_buckets=1,
-                                                bucket_name_format="SingleBucket-%s")
-            self.create_required_buckets(bucket_specs)
+            pre_test_bucket_specs = self.get_bucket_spec(
+                num_buckets=1, bucket_name_format="SingleBucket-%s")
+            self.create_required_buckets(pre_test_bucket_specs)
             bucket_name = self.cluster.buckets[0].name
             scenarios = {bucket_name: {Bucket.width: 2}}
             track = self.__trigger_bucket_param_updates(scenarios)
-            monitor_task = self.bucket_util.async_monitor_database_scaling(
+            db_monitor_task = self.bucket_util.async_monitor_database_scaling(
                 track, timeout=600)
-            self.task_manager.get_task_result(monitor_task)
+            self.task_manager.get_task_result(db_monitor_task)
             return bucket_name
 
         # required for compare bucket movement before and after de-frag
@@ -1165,30 +1174,31 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             if not buckets:
                 buckets = self.cluster.buckets
             node_map = dict()
-            for bucket in buckets:
-                server = bucket.servers[0]
+            for t_bucket in buckets:
+                server = t_bucket.servers[0]
                 if server_param:
                     server = server_param
                 try:
                     stat = Cbstats(server)
-                    status = stat.vbucket_details(bucket.name)
+                    status = stat.vbucket_details(t_bucket.name)
                 except Exception as e:
                     self.log.warning(e)
                     continue
                 for v_bucket in status:
-                    for node in str(status[v_bucket]["topology"]).split("\""):
-                        if "ns_1@" in node:
-                            if node not in node_map.keys():
-                                node_map[node] = dict()
-                                node_map[node]["bucket"] = set()
-                                node_map[node]["node"] = server
-                            node_map[node]["bucket"].add(bucket)
+                    for t_node in str(status[v_bucket]["topology"])\
+                            .split("\""):
+                        if "ns_1@" in t_node:
+                            if t_node not in node_map.keys():
+                                node_map[t_node] = dict()
+                                node_map[t_node]["bucket"] = set()
+                                node_map[t_node]["node"] = server
+                            node_map[t_node]["bucket"].add(t_bucket)
             return node_map
 
         pre_test()
         # creating initial buckets
-        bucket_specs = self.get_bucket_spec(num_buckets=self.num_buckets,
-                                            bucket_name_format="DefragBucks-%s")
+        bucket_specs = self.get_bucket_spec(
+            num_buckets=self.num_buckets, bucket_name_format="DefragBucks-%s")
         self.create_required_buckets(bucket_specs)
 
         # assuming a target node
