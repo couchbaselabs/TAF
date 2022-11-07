@@ -219,3 +219,125 @@ class RestfulDAPITest(BaseTestCase):
             collection_name_list.sort()
             self.assertTrue(temp_collection_list == collection_name_list,
                             "Wrong collection/s received for database {}".format(bucket.name))
+
+    def test_get_documents(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+
+            self.log.info("Get list of all documents within a collection in database {}".format(bucket.name))
+            self.log.info(bucket.serverless.dapi)
+
+            length_of_list, key, content = 10, "key", "content"
+            document_name_list = []
+            key_value, content_value = 0, 0
+
+            for i in range(length_of_list):
+                key_value += 1
+                content_value += 1
+                key = "key" + str(key_value)
+                content = "content" + str(content_value)
+                document_name_list.append(key)
+                response = self.rest_dapi.insert_doc(key, {"content": content}, "_default", "_default")
+                if response.status_code == 201:
+                    self.assertTrue(response.status_code == 201,
+                                    "Insertion failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_document_list("_default", "_default")
+            self.assertTrue(response.status_code == 200,
+                            "Getting list of documents failed for databsase {}".format(bucket.name))
+
+            self.log.info(response.status_code)
+            if response.status_code == 200:
+                self.log.info(json.loads(response.content))
+
+            response_dict = json.loads(response.content)
+            document_list = response_dict["docs"]
+            self.log.info(document_list)
+            document_name_check_list = []
+            for documents in document_list:
+                document_name_check_list.append(documents['meta_id'])
+            document_name_list.sort()
+            document_name_check_list.sort()
+            self.log.info(document_name_list)
+            self.log.info(document_name_check_list)
+            self.assertTrue(document_name_list == document_name_check_list,
+                            "Wrong document received for database {}".format(bucket.name))
+
+    def test_get_subdocument(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+
+            self.log.info("Get list of all sub-documents within a document in database {}".format(bucket.name))
+            self.log.info(bucket.serverless.dapi)
+
+            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
+            self.log.info(response.status_code)
+
+            self.assertTrue(response.status_code == 201,
+                            "Insertion failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_doc("k", "_default", "_default")
+            self.log.info(response.status_code)
+
+            self.assertTrue(response.status_code == 200,
+                            "Getting document failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.insert_subdoc("k",
+                                                    [{"type": "insert", "path": "counter3", "value": 4},
+                                                     {"type": "insert", "path": "counter1", "value": 10}],
+                                                    "_default", "_default")
+            self.log.info(response.status_code)
+
+            self.assertTrue(response.status_code == 200,
+                            "Sub doc insertion failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_doc("k", "_default", "_default")
+            self.log.info(response.content)
+            response = self.rest_dapi.get_subdoc("k",
+                                                 [{"type": "get", "path": "counter3"}],
+                                                 "_default", "_default")
+            self.log.info("printing status code for getting subdoc: {}".format(response.status_code))
+            if response.status_code == 200:
+                self.log.info("printing response content for getting subbdoc {}".format(response.content))
+
+            self.assertTrue(response.status_code == 200,
+                            "Getting subdocs failed for database {}".format(bucket.name))
+
+    def test_insert_subdocument(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+
+            self.log.info("Mutating subdocument inside a document in database {}".format(bucket.name))
+            self.log.info(bucket.serverless.dapi)
+
+            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
+            self.log.info(response.status_code)
+
+            self.assertTrue(response.status_code == 201,
+                            "Insertion failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_doc("k", "_default", "_default")
+            self.log.info(response.status_code)
+
+            self.assertTrue(response.status_code == 200,
+                            "Getting document failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.insert_subdoc("k",
+                                                    [{"type": "insert", "path": "counter3", "value": 4},
+                                                     {"type": "insert", "path": "counter1", "value": 10}],
+                                                    "_default", "_default")
+            self.log.info(response.status_code)
+
+            self.assertTrue(response.status_code == 200,
+                            "Sub doc insertion failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_subdoc("k", [{"type": "get", "path": "counter3"}], "_default", "_default")
+            self.log.info("printing response status code for getting subdoc {}".format(response.status_code))
+            self.assertTrue(response.status_code == 200, "Getting subdoc failed for database {}".format(bucket.name))
+            self.log.info(response.content)

@@ -67,10 +67,24 @@ class RestfulDAPI:
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections"
         return self._urllib_request(url)
 
+    def get_document_list(self, scope="_default", collection = "_default"):
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection + "/docs"
+        return self._urllib_request(url)
+
     def get_doc(self, doc_id, scope, collection):
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
               + collection + "/docs/" + doc_id
         return self._urllib_request(url)
+
+    def get_subdoc(self, doc_id, doc_content, scope, collection):
+        params = doc_content
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection + "/subdocs/" + doc_id
+        return self._urllib_request(url, method="POST", params=params)
+
+    def insert_subdoc(self, doc_id, doc_content, scope, collection):
+        params = doc_content
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection + "/subdocs/" + doc_id
+        return self._urllib_request(url, method="POST", params=params)
 
     def insert_doc(self, doc_id, doc_content, scope, collection):
         params = doc_content
