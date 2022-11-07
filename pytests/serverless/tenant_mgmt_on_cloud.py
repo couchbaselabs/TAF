@@ -1,6 +1,7 @@
 import math
 import time
 from random import choice, sample
+from threading import Thread
 
 from BucketLib.bucket import Bucket
 from bucket_collections.collections_base import CollectionBase
@@ -999,55 +1000,127 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     self.task_manager.get_task_result(monitor_task)
 
     def test_scope_collection_limit(self):
-        bucket_name_format = "scopeCollectionLimitTest-%s"
+        """
+        1. Create bucket with max scopes
+        2. Create bucket with max collections under default scope
+        3. Create bucket with default scopes/collections
+           a. Create 100 scopes with no collections.
+              Then create an extra scope to validate the failure.
+           b. Create 1 collection under each of the prev. scope then create
+              an extra collection to validate failure
+           c. Drop 90 scopes now. then create 9 more collections such that
+              we have 10 scopes and 10 collections per scope.
+              Again try creating an extra collection to validate failure.
+           d. Now recreate 90 scopes with no collections and validate
 
-        collection_limit = 100
-        scope_limit = 100
-        sample_collections = 4
+        Note: Scope / collection limit = 100 excluding the default scope/col.
+              Meaning we can create 100 custom scope/collection
+        """
+        def create_scopes(b_obj, index_range):
+            self.log.info("Bucket :: %s, create %s scopes"
+                          % (b_obj.name, len(index_range)))
+            try:
+                for s_i in index_range:
+                    self.bucket_util.create_scope(b_obj.servers[0], b_obj,
+                                                  {"name": "scope-%s" % s_i})
+            except Exception as err:
+                self.log.critical("Create scope failed: %s" % err)
+                self.task_failure = True
 
-        collection_limit_per_scope = self.get_bucket_spec(
-            bucket_name_format=bucket_name_format,
-            collections_per_scope=(collection_limit - sample_collections))
-        # checking collection limit
-        self.create_required_buckets(collection_limit_per_scope)
+        def create_collections(b_obj, scope_name, index_range):
+            self.log.info("Bucket::Scope - %s::%s, create %s collections"
+                          % (b_obj.name, scope_name, len(index_range)))
+            try:
+                for c_i in index_range:
+                    self.bucket_util.create_collection(
+                        b_obj.servers[0], b_obj, scope_name,
+                        {"name": "col-%s" % c_i})
+            except Exception as err:
+                self.log.critical("Create collection failed: %s" % err)
+                self.task_failure = True
 
-        # checking collection limit per bucket exceed
-        collection_limit_per_scope_exceed = self.get_bucket_spec(
-            bucket_name_format=bucket_name_format,
-            collections_per_scope=collection_limit - sample_collections + 1)
+        self.task_failure = False
+        scope_limit = collection_limit = 100
+        bucket_name_format = "tntMgmtLimit-%s"
+
+        self.log.info("Creating required buckets")
+        b_spec = self.get_bucket_spec(num_buckets=3,
+                                      bucket_name_format=bucket_name_format)
+        self.create_required_buckets(b_spec)
+
+        # Set bucket object references
+        b1 = self.cluster.buckets[0]
+        b2 = self.cluster.buckets[1]
+        b3 = self.cluster.buckets[2]
+
+        bucket_with_max_scopes_thread = Thread(target=create_scopes,
+                                               args=(b1, range(scope_limit)))
+        bucket_with_max_cols_thread = Thread(target=create_collections,
+                                             args=(b2, CbServer.default_scope,
+                                                   range(collection_limit)))
+        bucket_with_max_scopes_thread.start()
+        bucket_with_max_cols_thread.start()
+
         try:
-            self.create_required_buckets(collection_limit_per_scope_exceed)
-            self.fail("Expected exception as collection per "
-                      "scope limit is reached")
-        except Exception as ex:
-            self.log.debug("Caught exception" % ex)
+            server = b3.servers[0]
+            create_scopes(b3, range(scope_limit))
+            self.log.info("Creating an extra scope in %s" % b3.name)
+            try:
+                self.bucket_util.create_scope(server, b3,
+                                              {"name": "err_scope"})
+            except Exception as exception:
+                self.log.debug("Failed as expected: %s" % exception)
+            else:
+                self.fail("Scope created violating the limits")
 
-        # checking overall collection limit exceed
-        collection_overall_limit_exceed = self.get_bucket_spec(
-            bucket_name_format=bucket_name_format,
-            collections_per_scope=11, scopes_per_bucket=10)
-        try:
-            self.create_required_buckets(collection_overall_limit_exceed)
-            self.fail("Expected exception as total collection "
-                      "per bucket limit crossed")
-        except Exception as ex:
-            self.log.debug("Caught exception" % ex)
+            self.log.info("Creating %s custom collections" % collection_limit)
+            for i in range(collection_limit):
+                self.bucket_util.create_collection(
+                    server, b3, "scope-%s" % i, {"name": "col-%s" % i})
 
-        # checking scope limit
-        spec = self.get_bucket_spec(
-            bucket_name_format=bucket_name_format,
-            scopes_per_bucket=scope_limit, collections_per_scope=0)
-        self.create_required_buckets(spec)
+            self.log.info("Trying to create an extra collection")
+            for i in range(scope_limit):
+                try:
+                    self.bucket_util.create_collection(
+                        server, b3, "scope-%s" % i, {"name": "err_col"})
+                except Exception as e:
+                    self.log.debug("Failed as expected" % e)
+                else:
+                    self.fail("Collection created violating the limits")
 
-        # checking scope limit exceed
-        spec = self.get_bucket_spec(
-            bucket_name_format=bucket_name_format,
-            scopes_per_bucket=scope_limit + 1, collections_per_scope=0)
-        try:
-            self.create_required_buckets(spec)
-            self.fail("Expected exception due to scope limit violation")
-        except Exception as ex:
-            self.log.debug("Caught exception" % ex)
+            self.log.info("Dropping 90 scopes from the bucket")
+            for i in range(10, scope_limit):
+                self.bucket_util.drop_scope(server, b3, "scope-%s" % i)
+
+            self.log.info("Creating 10 collections per existing scope")
+            for i in range(10):
+                c_range = range(10)
+                c_range.pop(i)
+                create_collections(b3, "scope-%s" % i, c_range)
+
+            self.log.info("Validate collections limit")
+            for i in range(10):
+                try:
+                    self.bucket_util.create_collection(
+                        server, b3, "scope-%s" % i, {"name": "errcol"})
+                except Exception as e:
+                    self.log.debug("Collection create failed as expected: %s"
+                                   % e)
+                else:
+                    self.fail("Collection created violating the limits")
+
+            self.log.info("Creating 90 scopes with 0 collections")
+            create_scopes(b3, range(10, scope_limit))
+            try:
+                self.bucket_util.create_scope(server, b3, {"name": "errscope"})
+            except Exception as e:
+                self.log.debug("Scope create failed as expected: %s" % e)
+            else:
+                self.fail("Scope created violating the limits")
+        finally:
+            bucket_with_max_scopes_thread.join()
+            bucket_with_max_cols_thread.join()
+            self.assertFalse(self.task_failure, "Failure in create task")
 
     def test_initial_cluster_deployment_state(self):
         self.assertTrue("sandbox" in self.pod.url_public,
