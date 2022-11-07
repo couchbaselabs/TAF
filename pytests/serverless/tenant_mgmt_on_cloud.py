@@ -697,7 +697,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 db_info["desired_weight"] = s_dict[Bucket.weight]
                 bucket_obj.serverless.weight = s_dict[Bucket.weight]
             resp = self.capella_api.update_database(
-                bucket_obj.name, {"overRide": over_ride})
+                bucket_obj.name, over_ride)
             self.assertTrue(resp.status_code == 200, "Update Api failed")
             to_track.append(db_info)
         return to_track
