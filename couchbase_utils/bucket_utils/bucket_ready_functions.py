@@ -5873,6 +5873,14 @@ class BucketUtils(ScopeUtils):
         self.log.info("throttling limit of bucket on all nodes %s" % throttle_limit)
         return throttle_limit[0]
 
+    def get_storage_quota(self, bucket):
+        storage_quota = None
+        server = bucket.servers[0]
+        _, content = RestConnection(server).get_storage_quota()
+        output = json.loads(content)
+        storage_quota = output["storageTotals"]["hdd"]["quotaTotal"]
+        return storage_quota
+
     def calculate_units(self, key, value, sub_doc_size=0, xattr=0,
                         read=False, num_items=1, durability="NONE"):
         if read:

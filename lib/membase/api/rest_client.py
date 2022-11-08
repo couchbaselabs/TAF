@@ -3380,6 +3380,12 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api, 'GET')
         return status, content
 
+    def get_storage_quota(self):
+        url = 'pools/default/'
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'GET')
+        return status, content
+
     def set_throttle_limit(self, bucket="", throttle_limit=5000, storage_limit=500, service="data"):
         key_throttle_limit = service + "ThrottleLimit"
         key_storage_limit = service + "StorageLimit"

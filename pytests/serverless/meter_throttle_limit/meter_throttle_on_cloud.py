@@ -22,7 +22,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                                     scopes_per_bucket=self.num_scopes,
                                     collections_per_scope=self.num_collections)
         self.create_required_buckets(spec)
-        self.get_servers_for_databases(self.cluster, self.pod)
+        self.get_servers_for_databases()
         self.expected_stats = \
             self.bucket_util.get_initial_stats(self.cluster.buckets)
 

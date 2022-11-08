@@ -1,5 +1,6 @@
 import math
 import time
+import re
 from random import choice, sample
 from threading import Thread
 
@@ -62,11 +63,11 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             "buckets": buckets
         }
 
-    def get_servers_for_databases(self, cluster, pod):
+    def get_servers_for_databases(self):
         dataplanes = dict()
-        for bucket in cluster.buckets:
+        for bucket in self.cluster.buckets:
             dataplane_id = self.serverless_util.get_database_dataplane_id(
-                pod, bucket.name)
+                self.pod, bucket.name)
             self.log.info("dataplane_id is %s" % dataplane_id)
             if dataplane_id not in dataplanes:
                 dataplanes[dataplane_id] = dict()
@@ -74,13 +75,13 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     dataplanes[dataplane_id]["username"], \
                     dataplanes[dataplane_id]["password"] = \
                     self.serverless_util.bypass_dataplane(dataplane_id)
-            cluster.nodes_in_cluster = \
+            self.cluster.nodes_in_cluster = \
                 self.cluster_util.construct_servers_from_master_details(
                     dataplanes[dataplane_id]["node"],
                     dataplanes[dataplane_id]["username"],
                     dataplanes[dataplane_id]["password"])
-            cluster.master = cluster.nodes_in_cluster[0]
-            self.bucket_util.get_updated_bucket_server_list(cluster, bucket)
+            self.cluster.master = self.cluster.nodes_in_cluster[0]
+            self.bucket_util.get_updated_bucket_server_list(self.cluster, bucket)
 
     def __get_single_bucket_scenarios(self, target_scenario):
         scenarios = list()
@@ -729,7 +730,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             scenarios = self.__get_twenty_bucket_scenarios(target_scenario)
 
         if self.validate_stat:
-            self.get_servers_for_databases(self.cluster, self.pod)
+            self.get_servers_for_databases()
             self.expected_stat = self.bucket_util.get_initial_stats(
                 self.cluster.buckets)
         if self.with_data_load:
@@ -771,7 +772,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                             self.key_size, self.doc_size,
                             num_items=self.num_items)
         if self.validate_stat:
-            self.get_servers_for_databases(self.cluster, self.pod)
+            self.get_servers_for_databases()
             self.bucket_util.validate_stats(self.cluster.buckets,
                                             self.expected_stat)
 
@@ -873,7 +874,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         scenarios = list()
 
         if self.validate_stat:
-            self.get_servers_for_databases(self.cluster, self.pod)
+            self.get_servers_for_databases()
 
         spec = self.get_bucket_spec(num_buckets=self.num_buckets,
                                     bucket_name_format=bucket_name_format)
@@ -944,7 +945,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.task_manager.get_task_result(monitor_task)
 
         if self.validate_stat:
-            self.get_servers_for_databases(self.cluster, self.pod)
+            self.get_servers_for_databases()
             self.bucket_util.validate_stats(self.cluster.buckets,
                                             self.expected_stat)
 
@@ -1308,3 +1309,45 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                      bucket.name)
         # verification
         wait_for_defragmentation(node_dict)
+
+    def test_auto_ebs_sacling(self):
+        """
+        :return:
+        """
+
+        loader_map = dict()
+        self.create_required_buckets()
+        self.get_servers_for_databases()
+        storage_quota_init = self.bucket_util.get_storage_quota(self.cluster.buckets[0])
+
+        for bucket in self.cluster.buckets:
+            for scope in bucket.scopes.keys():
+                for collection in bucket.scopes[scope].collections.keys():
+                    if scope == CbServer.system_scope:
+                        continue
+                    work_load_settings = DocLoaderUtils.get_workload_settings(
+                        key=self.key, key_size=self.key_size, doc_size=self.doc_size,
+                        create_perc=100, create_start=0, create_end=self.num_items,
+                        ops_rate=self.ops_rate)
+                    dg = DocumentGenerator(work_load_settings,
+                                           self.key_type, self.val_type)
+                    loader_map.update(
+                        {"%s:%s:%s" % (bucket.name, scope, collection): dg})
+
+        self.init_sdk_pool_object()
+        self.create_sdk_client_pool(buckets=self.cluster.buckets,
+                                    req_clients_per_bucket=1)
+        DocLoaderUtils.perform_doc_loading(
+            self.doc_loading_tm, loader_map, self.cluster,
+            self.cluster.buckets, async_load=False, validate_results=False,
+            sdk_client_pool=self.sdk_client_pool)
+
+        iteration = 1
+        while iteration < 5:
+            storage_quota = int(re.findall('\d+', str(self.bucket_util.get_storage_quota(self.cluster.buckets[0])))[0])
+            self.log.info("Iteration =={} , storage_quota =={}".format(iteration, storage_quota))
+            if storage_quota > storage_quota_init:
+                break
+            self.sleep(60, "60 second sleep before next iteration")
+            iteration+=1
+        self.assertTrue(storage_quota > storage_quota_init, "EBS scaling fails")
