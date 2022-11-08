@@ -608,6 +608,13 @@ class RestConnection(newRC):
                                 "failed with error {1}".format(self.ip, content))
         return status, content, header
 
+    def set_serverless_bucket_limit(self, limit):
+        api = self.baseUrl + "/settings/serverless"
+        params = {'tenantLimit': limit}
+        params = urllib.urlencode(params)
+        status, content, header = self._http_request(api, 'POST', params)
+        return status
+
     def set_encryption_level(self, level="control"):
         _ = self.update_autofailover_settings(False, 120)
         api = self.baseUrl + "settings/security"

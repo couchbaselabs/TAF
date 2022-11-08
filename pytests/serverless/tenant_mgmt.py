@@ -3,6 +3,7 @@ import urllib
 from random import choice, randint, sample
 
 from BucketLib.BucketOperations import BucketHelper
+from collections_helper.collections_spec_constants import MetaCrudParams
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
@@ -42,16 +43,58 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
     def tearDown(self):
         super(TenantManagementOnPrem, self).tearDown()
 
-    def __get_bucket_params(self, b_name, ram_quota=256, width=1, weight=1):
+    @staticmethod
+    def data_load_spec():
+        spec = {
+            # Scope/Collection ops params
+            MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
+            MetaCrudParams.COLLECTIONS_TO_DROP: 0,
+
+            MetaCrudParams.SCOPES_TO_DROP: 0,
+            MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 3,
+            MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 2,
+
+            MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 1,
+
+            MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS: "all",
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS: "all",
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_OPS: "all",
+
+            # Doc loading params
+            "doc_crud": {
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 30,
+                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 1000,
+                MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 0,
+                MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 0,
+            },
+
+        }
+        return spec
+
+    def __get_bucket_params(self, b_name, ram_quota=256, width=1, weight=1,
+                            replica=Bucket.ReplicaNum.TWO):
         self.log.debug("Creating bucket param")
         return {
             Bucket.name: b_name,
-            Bucket.replicaNumber: Bucket.ReplicaNum.TWO,
+            Bucket.replicaNumber: replica,
             Bucket.ramQuotaMB: ram_quota,
             Bucket.storageBackend: Bucket.StorageBackend.magma,
             Bucket.width: width,
             Bucket.weight: weight
         }
+
+    def create_sdk_clients(self, buckets=None):
+        if not buckets:
+            buckets = self.cluster.buckets
+        CollectionBase.create_sdk_clients(
+            self.task_manager.number_of_threads,
+            self.cluster.master,
+            buckets,
+            self.sdk_client_pool,
+            self.sdk_compression)
 
     def test_cluster_scaling(self):
         """
@@ -503,13 +546,6 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         weight width updated while data-load happens in parallel
         followed by different re-balance failure scenarios and assertions
         """
-        def create_sdk_clients():
-            CollectionBase.create_sdk_clients(
-                self.task_manager.number_of_threads,
-                self.cluster.master,
-                self.cluster.buckets,
-                self.sdk_client_pool,
-                self.sdk_compression)
 
         def rebalance_failure(rebal_failure, target_buckets=None,
                               error_type=None):
@@ -573,7 +609,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         sim_error = self.input.param("sim_error", None)
         rest = RestConnection(self.cluster.master)
         target_buckets = self.cluster.buckets[:num_bucket_update]
-        create_sdk_clients()
+        self.create_sdk_clients()
         data_load()
         data_load_task = data_load(
             doc_loading_spec_name="volume_test_load_with_CRUD_on_collections",
@@ -631,3 +667,172 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         validation = self.bucket_util.validate_serverless_buckets(
             self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
+
+    def test_one_server_group_bucket(self):
+        rest = RestConnection(self.cluster.master)
+        bucket_params = self.__get_bucket_params(b_name="bucket_1", width=1,
+                                                 weight=30, replica=0)
+        bucket_obj = Bucket(bucket_params)
+        self.bucket_util.create_bucket(self.cluster, bucket_obj,
+                                       wait_for_warmup=True)
+        self.assertTrue(rest.is_cluster_balanced(), "Cluster unbalanced")
+        self.create_sdk_clients()
+        data_spec = self.data_load_spec()
+        self.bucket_util.run_scenario_from_spec(self.task, self.cluster,
+                                                self.cluster.buckets,
+                                                data_spec)
+
+    def test_two_server_group_bucket(self):
+        bucket_params = self.__get_bucket_params(b_name="bucket_1", width=1,
+                                                 weight=30, replica=1)
+        rest = RestConnection(self.cluster.master)
+        bucket_obj = Bucket(bucket_params)
+        self.bucket_util.create_bucket(self.cluster, bucket_obj,
+                                       wait_for_warmup=True)
+        self.assertTrue(rest.is_cluster_balanced(), "Cluster unbalanced")
+        self.create_sdk_clients()
+        data_spec = self.data_load_spec()
+        self.bucket_util.run_scenario_from_spec(self.task, self.cluster,
+                                                self.cluster.buckets,
+                                                data_spec)
+
+    def test_recreate_bucket(self):
+        """test recreate buckets steps
+        1. creating initial buckets for continuous data load
+            * with these buckets checking is same clusters are allocated
+            when buckets recreated
+        2. creating rest buckets till the cluster limit
+        3. deleting and recreating all buckets accompanied with
+            * swap re-balance of nodes
+            * data load in some buckets
+        """
+
+        sleep_before_recreate = self.input.param("sleep_before_recreate", 10)
+        init_buckets = self.input.param("init_bucket", 3)
+        replace_nodes = self.input.param("replace_nodes", True)
+        init_weight = self.input.param("init_weight", 30)
+        replace_nodes_num = self.input.param("replace_nodes_num", 2)
+        rest = RestConnection(self.cluster.master)
+        helper = BucketHelper(self.cluster.master)
+        expectedError = "Need more space in availability zones"
+        buckets = []
+        for counter in range(init_buckets):
+            name = "init_bucket" + str(counter)
+            bucket_params = self.__get_bucket_params(b_name=name,
+                                                     width=1, weight=30,
+                                                     replica=1)
+            bucket_obj = Bucket(bucket_params)
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
+                                           wait_for_warmup=True)
+
+        def create_bucket_map():
+            server_bucket_map = dict()
+            for bucket in self.cluster.buckets:
+                for server in bucket.servers:
+                    if server not in server_bucket_map:
+                        server_bucket_map[server] = [bucket]
+                    else:
+                        server_bucket_map[server].append(bucket)
+            return server_bucket_map
+
+        def check_cluster_allocation(bucket):
+            server_bucket_map = create_bucket_map()
+            self.bucket_util.delete_bucket(self.cluster, bucket)
+            self.bucket_util.create_bucket(self.cluster, bucket,
+                                           wait_for_warmup=True)
+            post_server_bucket_map = create_bucket_map()
+            for key in server_bucket_map.keys():
+                self.assertTrue(post_server_bucket_map[key].sort() ==
+                                server_bucket_map[key].sort(),
+                                "Recreated bucket deployed in different nodes")
+
+        check_cluster_allocation(self.cluster.buckets[0])
+        self.create_sdk_clients()
+
+        def swap_rebalance():
+            zone_map = dict()
+            for zone in rest.get_zone_names():
+                zone_map[zone] = rest.get_nodes_in_zone(zone)
+            key_list = list(zone_map.keys())
+            add_to_nodes = dict()
+            node_to_replace = []
+
+            # selecting zone-wise nodes to replace in var node_to_replace
+            for i in range(replace_nodes_num):
+                print(key_list[i % len(key_list)])
+                if key_list[i % len(key_list)] not in add_to_nodes:
+                    add_to_nodes[key_list[i % len(key_list)]] = 1
+                else:
+                    add_to_nodes[key_list[i % len(key_list)]] += 1
+                for node in self.cluster.servers:
+                    if self.cluster.master.ip != node.ip and node.ip in \
+                            zone_map[key_list[i % len(key_list)]]:
+                        node_to_replace.append(node)
+                        break
+
+            nodes_in = self.cluster.servers[self.nodes_init:
+                                            self.nodes_init + replace_nodes_num]
+
+            rebalance_task = self.task.async_rebalance(self.cluster,
+                                                       nodes_in,
+                                                       node_to_replace,
+                                                       retry_get_process_num=3000,
+                                                       add_nodes_server_groups=
+                                                       add_to_nodes)
+            self.task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Re-balance Failed")
+
+        # hitting API to create bucket in order to validate from response
+        def create_bucket(bucket_params):
+            api = helper.baseUrl + self.b_create_endpoint
+            params = urllib.urlencode(bucket_params)
+            status, cont, _ = helper._http_request(api, helper.POST, params)
+            if not status:
+                return json.loads(cont)
+            return True
+
+        iterator = 0
+        while iterator < 100:
+            iterator += 1
+            b_name = "bucket_1" + str(iterator)
+            bucket_params = self.__get_bucket_params(b_name=b_name, width=1,
+                                                     weight=init_weight)
+            cont = create_bucket(bucket_params)
+            if not isinstance(cont, bool):
+                self.assertTrue(expectedError in cont["_"],
+                                "Invalid error message for bucket::Number")
+                break
+            buckets.append(b_name)
+        else:
+            self.fail("not expected to create 100 buckets")
+
+        bucket_length = len(buckets)
+        # checking bucket recreate
+        data_spec = self.data_load_spec()
+        data_spec[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 0
+        for iter in range(bucket_length):
+            async_load_task = self.bucket_util.run_scenario_from_spec(
+                self.task, self.cluster, self.cluster.buckets, data_spec,
+                async_load=True)
+            # deleting bucket here
+            helper.delete_bucket(buckets[iter])
+            self.sleep(sleep_before_recreate, "waiting after bucket deleted")
+            if replace_nodes:
+                swap_rebalance()
+                replace_nodes = False
+            # recreating bucket
+            cont = create_bucket(self.__get_bucket_params(
+                b_name=buckets[iter], width=1, weight=30))
+            self.assertTrue(isinstance(cont, bool), "bucket not recreated")
+
+            # checking bucket creation post limit reached
+            cont = create_bucket(self.__get_bucket_params(
+                b_name=buckets[iter], width=1, weight=init_weight))
+            self.assertFalse(isinstance(cont, bool),
+                             "bucket not expected to be created")
+            self.task_manager.get_task_result(async_load_task)
+            self.bucket_util.validate_doc_loading_results(async_load_task)
+            if async_load_task.result is False:
+                self.log_failure("Doc CRUDs failed")
+
+        self.assertTrue(rest.is_cluster_balanced(), "Cluster unbalanced")
