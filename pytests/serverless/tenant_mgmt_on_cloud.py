@@ -39,6 +39,62 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.sdk_client_pool.shutdown()
         super(TenantMgmtOnCloud, self).tearDown()
 
+    def _assert_if_not_sandbox_run(self):
+        self.assertTrue("sandbox" in self.pod.url_public,
+                        "Test supported only on sandbox env!")
+
+    def _assert_num_dataplane_deployed(self, num_dataplane):
+        self.log.info("Validate the num dataplanes are '%s'" % num_dataplane)
+        resp = self.serverless_util.get_all_dataplanes()
+        if num_dataplane == 0:
+            req = {'errorType': 'NotFound', 'message': 'Not Found.'}
+            self.assertEqual(resp, req, "Dataplanes present ! :: %s" % resp)
+        else:
+            self.assertTrue(
+                isinstance(resp, list) and len(resp) == num_dataplane,
+                "Deployed more than 1 dataplane")
+
+    def validate_cluster_deployment(self, cluster, req_nodes_dict):
+        req_kv_nodes = req_nodes_dict.get(CbServer.Services.KV)
+        req_index_nodes = req_kv_nodes.get(CbServer.Services.INDEX, 0)
+        req_n1ql_nodes = req_kv_nodes.get(CbServer.Services.N1QL, 0)
+        req_cbas_nodes = req_kv_nodes.get(CbServer.Services, 0)
+        req_eventing_nodes = req_kv_nodes.get(CbServer.Services, 0)
+        req_fts_nodes = req_kv_nodes.get(CbServer.Services, 0)
+        req_backup_nodes = req_kv_nodes.get(CbServer.Services, 0)
+
+        total_nodes = sum([req_kv_nodes, req_index_nodes, req_index_nodes,
+                           req_cbas_nodes, req_eventing_nodes, req_fts_nodes,
+                           req_backup_nodes])
+
+        self.cluster_util.update_cluster_nodes_service_list(cluster)
+        self.log.critical("Total nodes in the cluster: %s"
+                          % len(cluster.servers))
+        self.log.critical("KV Nodes: %s" % len(cluster.kv_nodes))
+        self.log.critical("Index Nodes: %s" % len(cluster.index_nodes))
+        self.log.critical("Query Nodes: %s" % len(cluster.query_nodes))
+        self.log.critical("Fts Nodes: %s" % len(cluster.fts_nodes))
+        self.log.critical("CBAS Nodes: %s" % len(cluster.cbas_nodes))
+        self.log.critical("Eventing Nodes: %s" % len(cluster.eventing_nodes))
+        self.log.critical("Backup Nodes: %s" % len(cluster.backup_nodes))
+
+        self.assertEqual(req_kv_nodes, len(cluster.kv_nodes),
+                         "Mismatch in KV nodes")
+        self.assertEqual(req_index_nodes, len(cluster.index_nodes),
+                         "Mismatch in index nodes")
+        self.assertEqual(req_n1ql_nodes, len(cluster.query_nodes),
+                         "Mismatch in query nodes")
+        self.assertEqual(req_fts_nodes, len(cluster.fts_nodes),
+                         "Mismatch in fts nodes")
+        self.assertEqual(req_eventing_nodes, len(cluster.eventing_nodes),
+                         "Mismatch in eventing nodes")
+        self.assertEqual(req_cbas_nodes, len(cluster.cbas_nodes),
+                         "Mismatch in cbas nodes")
+        self.assertEqual(req_backup_nodes, len(cluster.backup_nodes),
+                         "Mismatch in backup nodes")
+        self.assertEqual(total_nodes, len(cluster.servers),
+                         "Mismatch in total nodes")
+
     def get_bucket_spec(self, bucket_name_format="taf-tntMgmt-%s",
                         num_buckets=1, scopes_per_bucket=1,
                         collections_per_scope=1, items_per_collection=0):
@@ -1124,13 +1180,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.assertFalse(self.task_failure, "Failure in create task")
 
     def test_initial_cluster_deployment_state(self):
-        self.assertTrue("sandbox" in self.pod.url_public,
-                        "Test supported only on sandbox env!")
-
-        self.log.info("Making sure there are no active dataplanes deployed")
-        resp = self.serverless_util.get_all_dataplanes()
-        req = {'errorType': 'NotFound', 'message': 'Not Found.'}
-        self.assertEqual(resp, req, "Dataplanes present ! :: %s" % resp)
+        self._assert_if_not_sandbox_run()
+        self._assert_num_dataplane_deployed(0)
 
         self.bucket_width = 1
         self.bucket_weight = 30
@@ -1138,10 +1189,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.create_database()
         bucket = self.cluster.buckets[0]
 
-        self.log.info("Validating num_dataplanes deployed")
-        resp = self.serverless_util.get_all_dataplanes()
-        self.assertTrue(isinstance(resp, list) and len(resp) == 1,
-                        "Deployed more than 1 dataplane")
+        self._assert_num_dataplane_deployed(1)
 
         dp_id = self.serverless_util.get_database_dataplane_id(self.pod,
                                                                bucket.name)
@@ -1151,39 +1199,17 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.cluster.servers = \
                 self.cluster_util.construct_servers_from_master_details(
                     host, u_name, pwd)
+            self.cluster.master = self.cluster.servers[0]
             for server in self.cluster.servers:
                 server.port = CbServer.ssl_port
-            self.cluster.master = self.cluster.servers[0]
-            self.cluster_util.update_cluster_nodes_service_list(self.cluster)
-            self.log.critical("Total nodes in the cluster: %s"
-                              % len(self.cluster.servers))
-            self.log.critical("KV Nodes: %s" % len(self.cluster.kv_nodes))
-            self.log.critical("Index Nodes: %s"
-                              % len(self.cluster.index_nodes))
-            self.log.critical("Query Nodes: %s"
-                              % len(self.cluster.query_nodes))
-            self.log.critical("Fts Nodes: %s" % len(self.cluster.fts_nodes))
-            self.log.critical("CBAS Nodes: %s" % len(self.cluster.cbas_nodes))
-            self.log.critical("Eventing Nodes: %s"
-                              % len(self.cluster.eventing_nodes))
-            self.log.critical("Backup Nodes: %s"
-                              % len(self.cluster.backup_nodes))
-            self.assertEqual(3, len(self.cluster.kv_nodes),
-                             "Mismatch in KV nodes")
-            self.assertEqual(2, len(self.cluster.index_nodes),
-                             "Mismatch in index nodes")
-            self.assertEqual(2, len(self.cluster.query_nodes),
-                             "Mismatch in query nodes")
-            self.assertEqual(2, len(self.cluster.fts_nodes),
-                             "Mismatch in fts nodes")
-            self.assertEqual(0, len(self.cluster.eventing_nodes),
-                             "Mismatch in eventing nodes")
-            self.assertEqual(0, len(self.cluster.cbas_nodes),
-                             "Mismatch in cbas nodes")
-            self.assertEqual(0, len(self.cluster.backup_nodes),
-                             "Mismatch in backup nodes")
-            self.assertEqual(9, len(self.cluster.servers),
-                             "Mismatch in total nodes")
+            validation_dict = {
+                CbServer.Services.KV: 3,
+                CbServer.Services.INDEX: 2,
+                CbServer.Services.N1QL: 2,
+                CbServer.Services.FTS: 2
+            }
+            self.validate_cluster_deployment(self.cluster, validation_dict)
+            self.bucket_util.validate_serverless_buckets(self.cluster)
         finally:
             self.log.info("Cleaning up database and dataplane")
             self.serverless_util.delete_database(
@@ -1192,6 +1218,94 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 self.tenant, bucket.name)
             self.cluster.buckets.remove(bucket)
             self.serverless_util.delete_dataplane(dp_id)
+
+    def test_cluster_scaling_wrt_db_count(self):
+        """
+        1. Make sure there is no other dataplane present
+        2. Create 25 DBs with default settings
+        3. Validate cluster sizing
+        4. Create 26th DB and make sure cluster scaling happens for KV
+        5. Continue to create 50 and 100 DBs and repeat step 3, 4
+        :return:
+        """
+        self._assert_if_not_sandbox_run()
+        self._assert_num_dataplane_deployed(0)
+
+        self.bucket_width = 1
+        self.bucket_weight = 30
+        num_buckets = 25
+        cluster_deployment_spec = {
+            CbServer.Services.KV: 3,
+            CbServer.Services.INDEX: 2,
+            CbServer.Services.N1QL: 2,
+            CbServer.Services.FTS: 2
+        }
+
+        self.log.info("Creating first %s databases" % num_buckets)
+        b_name_format = "tntmgmt-set-1-%s"
+        spec = self.get_bucket_spec(bucket_name_format=b_name_format,
+                                    num_buckets=num_buckets)
+        self.create_required_buckets(spec)
+        self._assert_num_dataplane_deployed(1)
+
+        dp_id = self.serverless_util.get_database_dataplane_id(
+            self.pod, self.cluster.buckets[0].name)
+
+        self.log.info("Creating bypass for dataplane :: %s" % dp_id)
+        host, u_name, pwd = self.serverless_util.bypass_dataplane(dp_id)
+        self.cluster.servers = \
+            self.cluster_util.construct_servers_from_master_details(
+                host, u_name, pwd)
+        self.cluster.master = self.cluster.servers[0]
+        for server in self.cluster.servers:
+            server.port = CbServer.ssl_port
+
+        self.validate_cluster_deployment(self.cluster, cluster_deployment_spec)
+        self.bucket_util.validate_serverless_buckets(self.cluster)
+
+        for itr in [2, 3, 4]:
+            cluster_deployment_spec[CbServer.Services.KV] = \
+                itr * CbServer.Serverless.KV_SubCluster_Size
+
+            b_num = (itr-1) * num_buckets + 1
+            self.log.info("Creating %sth bucket" % b_num)
+            bucket = self.get_serverless_bucket_obj(
+                b_name_format % b_num, self.bucket_width, self.bucket_weight)
+            self.create_database(bucket)
+
+            self._assert_num_dataplane_deployed(1)
+            self.cluster.servers = \
+                self.cluster_util.construct_servers_from_master_details(
+                    host, u_name, pwd)
+            self.cluster.master = self.cluster.servers[0]
+            for server in self.cluster.servers:
+                server.port = CbServer.ssl_port
+            self.validate_cluster_deployment(self.cluster,
+                                             cluster_deployment_spec)
+            self.bucket_util.validate_serverless_buckets(self.cluster)
+
+            b_name_format = "tntmgmt-set-{0}-{1}".format(itr, "%s")
+            self.log.info("Targeting %s databases in the dataplane"
+                          % (itr*num_buckets))
+            spec = self.get_bucket_spec(bucket_name_format=b_name_format,
+                                        num_buckets=num_buckets-1)
+            self.create_required_buckets(spec)
+            self._assert_num_dataplane_deployed(1)
+
+            curr_dp_id = self.serverless_util.get_database_dataplane_id(
+                self.pod, self.cluster.buckets[0].name)
+            self.assertEqual(dp_id, curr_dp_id,
+                             "Dataplane id changed to '%s'" % curr_dp_id)
+
+            self.cluster.servers = \
+                self.cluster_util.construct_servers_from_master_details(
+                    host, u_name, pwd)
+            for server in self.cluster.servers:
+                server.port = CbServer.ssl_port
+            self.cluster.master = self.cluster.servers[0]
+            self.validate_cluster_deployment(self.cluster,
+                                             cluster_deployment_spec)
+            self.bucket_util.validate_serverless_buckets(self.cluster)
 
     def test_defrag_dbaas(self):
         """
