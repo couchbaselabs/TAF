@@ -54,6 +54,7 @@ public class WorkLoadGenerate extends Task{
     public String bucket_name;
     public String scope = "_default";
     public String collection = "_default";
+    public boolean stop_loading = false;
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability) {
         super(taskName);
@@ -125,6 +126,10 @@ public class WorkLoadGenerate extends Task{
         this.retryStrategy = retryStrategy;
     }
 
+    public void stop_work_load() {
+        this.stop_loading = true;
+    }
+
     public void set_collection_for_load(String bucket_name, String scope, String collection) {
         this.bucket_name = bucket_name;
         this.scope = scope;
@@ -166,7 +171,7 @@ public class WorkLoadGenerate extends Task{
             this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
 
         Instant trackFailureTime_start = Instant.now();
-        while(true) {
+        while(! this.stop_loading) {
             Instant trackFailureTime_end = Instant.now();
             Duration timeElapsed = Duration.between(trackFailureTime_start, trackFailureTime_end);
             if(timeElapsed.toMinutes() > 5) {
@@ -277,7 +282,7 @@ public class WorkLoadGenerate extends Task{
                 }
             }
             if(ops == 0)
-                break;
+                this.stop_loading = true;
             else if(ops < dg.ws.ops/dg.ws.workers && flag) {
                 flag = false;
                 continue;
