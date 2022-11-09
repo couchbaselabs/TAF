@@ -66,14 +66,14 @@ class CreateBucketTests(BaseTestCase):
         for bucket_dict in bucket_specs:
             name, spec = bucket_dict.keys()[0], bucket_dict.values()[0]
             self.bucket_util.create_default_bucket(
-                self.cluster, bucket_name=name,
+                bucket_name=name,
                 bucket_type=spec[Bucket.bucketType],
                 ram_quota=self.bucket_size, replica=self.num_replicas)
 
         tasks = list()
         load_gen = doc_generator(self.key, 0, self.num_items)
         self.log.info("Loading %s items to all buckets" % self.num_items)
-        for bucket in self.cluster.buckets:
+        for bucket in self.bucket_util.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, load_gen,
                 DocLoading.Bucket.DocOps.CREATE)
@@ -85,7 +85,7 @@ class CreateBucketTests(BaseTestCase):
         # Validate doc_items count
         self.log.info("Validating the items on the buckets")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+                                                     self.bucket_util.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     def test_invalid_bucket_name(self):
