@@ -71,6 +71,7 @@ class ServerlessMetering(LMT):
                                    target_vbucket=target_vbucket)
                 _ = self.loadgen_docs(self.retry_exceptions,
                                       self.ignore_exceptions,
+                                      suppress_error_table=False,
                                       _sync=True)
                 self.log.info("Waiting for ep-queues to get drained")
 
@@ -90,23 +91,23 @@ class ServerlessMetering(LMT):
                     self.log.info("wu actual:%s, wu expected:%s"
                                   % (wu, self.expected_wu))
                 if self.doc_size > 1000 and num_throttled < total_items/2:
-                    self.log.fail("throttling didnt occur as expected")
+                    self.fail("throttling didnt occur as expected")
                 start += items
-                end += items
+                end += 10000
 
             # perform load after the crash/stop process and check stats are working fine
             expected_num_throttled, expected_ru, self.expected_wu = self.bucket_util.get_stat_from_metrics(bucket)
+            self.key = "test-crash"
             self.generate_docs(doc_ops="create", create_start=start, create_end=end)
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
             total_items = self.bucket_util.get_total_items_bucket(bucket)
-            expected_ru = items - (total_items - items)
-            self.expected_wu += self.bucket_util.calculate_units(self.doc_size, 0) * (total_items - items)
-            if self.doc_size > 1000:
-                expected_num_throttled += items/2
+            units = self.bucket_util.calculate_units(self.doc_size, 0) * (total_items - items)
+            self.expected_wu += units
+            expected_num_throttled += units / self.bucket_util.get_throttle_limit(bucket)
             num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
-            if wu != self.expected_wu or ru != expected_ru or num_throttled < expected_num_throttled:
+            if wu != self.expected_wu or ru < expected_ru or num_throttled < expected_num_throttled:
                 self.fail("load after crash failed in stats "
                           "Actual:(ru:%s, wu:%s, num_throttled:%s),"
                           " expected:(ru:%s, wu:%s, num_throttled:%s)" %

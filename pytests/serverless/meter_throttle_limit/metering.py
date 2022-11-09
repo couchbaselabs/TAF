@@ -180,11 +180,12 @@ class ServerlessMetering(LMT):
         self.task_manager.add_new_task(load_task)
         self.task_manager.get_task_result(load_task)
         _, self.ru, self.wu = self.get_stat(self.bucket)
+        expected_wu += self.num_items
         self.compare_ru_wu_stat(self.ru, self.wu, 0, expected_wu)
 
     def validate_result(self, result):
         if result["status"] is False:
-            self.log.critical("%s Loading failed: %s" % (result))
+            self.log.critical("%s Loading failed: %s" % result)
             return False
         return True
 
@@ -237,7 +238,7 @@ class ServerlessMetering(LMT):
                 self.assertFalse(failed_items, "Subdoc Xattr operation failed")
             self.expected_wu += (self.bucket_util.calculate_units(self.total_size, 0,
                                                                   durability=self.durability_level) * self.num_items)
-            _, self.expected_ru, self.wu = self.get_stat(self.bucket)
+            _, self.ru, self.wu = self.get_stat(self.bucket)
             self.compare_ru_wu_stat(self.ru, self.wu, self.expected_ru, self.expected_wu)
 
         # delete a file with system xattrs, both ru and wu will increase
@@ -516,7 +517,7 @@ class ServerlessMetering(LMT):
         # create, update and delete docs in transactions
         self.transaction_operations(self.client, create_docs=self.docs,
                                     commit=True)
-        self.expected_ru = 4
+        self.expected_ru = 1
         self.expected_wu = write_units * len(self.docs)
         self.check_ru_wu_for_transaction()
 
@@ -606,7 +607,7 @@ class ServerlessMetering(LMT):
                 content = json.loads(output)["errors"]
                 if storagelimit:
                     actual_error = content["dataStorageLimit"]
-                    expected_error = '"dataStorageLimit" must be an integer between -1 and 2147483647'
+                    expected_error = '"dataStorageLimit" must be an integer between -1 and 100000'
                 else:
                     actual_error = content["dataThrottleLimit"]
                     expected_error = '"dataThrottleLimit" must be an integer between -1 and 2147483647'
