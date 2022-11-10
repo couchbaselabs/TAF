@@ -5364,9 +5364,15 @@ class BackupUtils(object):
             self._configure_backup(
                 cluster, archive, repo, disable_analytics, exclude, include)
 
-        bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5}'.format(
-            shell.return_bin_path_based_on_os(shell.return_os_type()),
-            archive, repo, cluster.cbas_cc_node.ip, username, password)
+        if CbServer.use_https:
+            bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbases://{3} --username {4} --password {5} --no-ssl-verify'.format(
+                shell.return_bin_path_based_on_os(shell.return_os_type()),
+                archive, repo, cluster.cbas_cc_node.ip, username, password)
+        else:
+            bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5}'.format(
+                shell.return_bin_path_based_on_os(shell.return_os_type()),
+                archive, repo, cluster.cbas_cc_node.ip, username, password)
+
         o, r = shell.execute_command(bkup_cmd)
         shell.log_command_output(o, r)
         shell.disconnect()
@@ -5379,9 +5385,16 @@ class BackupUtils(object):
 
         shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
         shell.log.info('Restore backup using cbbackupmgr')
-        restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5} --force-updates'.format(
-            shell.return_bin_path_based_on_os(shell.return_os_type()),
-            archive, repo, cluster.cbas_cc_node.ip, username, password)
+
+        if CbServer.use_https:
+            restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbases://{3} --username {4} --password {5} --force-updates --no-ssl-verify'.format(
+                shell.return_bin_path_based_on_os(shell.return_os_type()),
+                archive, repo, cluster.cbas_cc_node.ip, username, password)
+        else:
+            restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5} --force-updates'.format(
+                shell.return_bin_path_based_on_os(shell.return_os_type()),
+                archive, repo, cluster.cbas_cc_node.ip, username, password)
+
         restore_cmd = self._build_backup_cmd_with_optional_parameters(
             disable_analytics, exclude, include, mappings, restore_cmd)
         o, r = shell.execute_command(restore_cmd)
