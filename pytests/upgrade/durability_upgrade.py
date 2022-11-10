@@ -167,7 +167,7 @@ class UpgradeTests(UpgradeBase):
                     for iter1 in range(4):
                         rest.cluster_status(parse=False)
                         rest.get_pools_info(parse=False)
-                    for bucket in self.cluster.buckets:
+                    for bucket in self.bucket_util.get_all_buckets():
                         rest.get_bucket_details(bucket.name, False)
                 except Exception:
                     continue
@@ -182,8 +182,7 @@ class UpgradeTests(UpgradeBase):
                          "roles": "%s" % permissions}]
             self.test_user = [{'id': user_name, 'name': user_name,
                          'password': user_pass}]
-            self.bucket_util.add_rbac_user(self.cluster.master,
-                                           testuser=self.test_user,
+            self.bucket_util.add_rbac_user(testuser=self.test_user,
                                            rolelist=self.role_list)
         create_batch_size = 10000
         update_task = None
@@ -214,7 +213,7 @@ class UpgradeTests(UpgradeBase):
                                            randomize_doc_size=True,
                                            randomize_value=True,
                                            randomize=True)
-                for bucket in self.cluster.buckets:
+                for bucket in self.bucket_util.get_all_buckets():
                     if "testBucket" in bucket.name:
                         self.task.async_continuous_doc_ops(
                             self.cluster, bucket, gen_loader,
@@ -338,10 +337,11 @@ class UpgradeTests(UpgradeBase):
             retry = 2
             for i in range(retry):
                 bucket_found = False
-                for bucket in self.cluster.buckets:
+                for bucket in self.bucket_util.get_all_buckets():
                     if "testBucket" in bucket.name:
                         bucket_found = True
-                        self.bucket_util.delete_bucket(self.cluster, bucket,
+                        self.bucket_util.delete_bucket(self.cluster.master,
+                                                       bucket,
                                                        wait_for_bucket_deletion=True)
                 if not bucket_found:
                     break
