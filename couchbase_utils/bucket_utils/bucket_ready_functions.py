@@ -5902,7 +5902,11 @@ class BucketUtils(ScopeUtils):
         for server in bucket.servers:
             server_stats = bucket_helper.get_bucket_stats_for_node(
                 bucket, server)
-            sum += server_stats["curr_items"]
+            try:
+                sum += server_stats["curr_items"]
+            except:
+                self.log.info("bucket is not loaded")
+                break
         return sum
 
     def get_initial_stats(self, buckets):
@@ -5914,6 +5918,7 @@ class BucketUtils(ScopeUtils):
                 expected_stats[bucket.name]["ru"], \
                 expected_stats[bucket.name]["wu"] = \
                 self.get_stat_from_metrics(bucket)
+            expected_stats[bucket.name]["total_items"] = 0
         return expected_stats
 
     def update_stat_on_buckets(self, buckets, expected_stats,

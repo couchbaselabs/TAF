@@ -1,14 +1,9 @@
 import random
-import string
+import threading
 
-from Cb_constants import DocLoading
-from sdk_client3 import SDKClient
 from LMT_base import LMT
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
-from pytests.crash_test.constants import signum
-from couchbase_helper.documentgenerator import \
-    doc_generator
 
 class ServerlessMetering(LMT):
     def setUp(self):
@@ -33,6 +28,17 @@ class ServerlessMetering(LMT):
             error_sim = CouchbaseError(self.log, remote)
             error_sim.revert(error_to_simulate)
             remote.disconnect()
+
+    def load_thread(self, start, end, target_vbucket):
+        self.generate_docs(doc_ops="create",
+                           create_start=start,
+                           create_end=end,
+                           target_vbucket=target_vbucket)
+        _ = self.loadgen_docs(self.retry_exceptions,
+                              self.ignore_exceptions,
+                              _sync=True)
+        self.log.info("Waiting for ep-queues to get drained")
+
 
     def test_stop_process(self):
         # set throttle limit to a very high value and load data
@@ -64,16 +70,10 @@ class ServerlessMetering(LMT):
             for node_i in target_vbucket_nodes:
                 target_vbucket.extend(self.get_active_vbuckets(node_i, bucket))
 
+            tmp_total_items = self.bucket_util.get_total_items_bucket(bucket)
             for _ in range(self.num_times_to_affect):
-                self.generate_docs(doc_ops="create",
-                                   create_start=start,
-                                   create_end=end,
-                                   target_vbucket=target_vbucket)
-                _ = self.loadgen_docs(self.retry_exceptions,
-                                      self.ignore_exceptions,
-                                      suppress_error_table=False,
-                                      _sync=True)
-                self.log.info("Waiting for ep-queues to get drained")
+                thread = threading.Thread(target=self.load_thread, args=(start, end, target_vbucket))
+                thread.start()
 
                 #kill/crash/restart memcached
                 self.stop_process(nodes, error_to_simulate)
@@ -81,19 +81,30 @@ class ServerlessMetering(LMT):
                 # validation of stats
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=100)
-                total_items = self.bucket_util.get_total_items_bucket(bucket)
-                self.expected_wu = self.bucket_util.calculate_units(self.doc_size, 0) * total_items
+                thread.join()
+
+                items_loaded = self.check_actual_items(self.num_items, tmp_total_items, bucket)
+                self.expected_wu += self.bucket_util.calculate_units(self.doc_size, 0,
+                                            durability=self.durability_level) * items_loaded
                 num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
                 self.log.info("numthrottled:%s, ru:%s, wu:%s" % (num_throttled, ru, wu))
+                self.assertEqual(self.bucket_util.get_throttle_limit(bucket), self.kv_throttling_limit)
+                units = self.bucket_util.calculate_units(self.doc_size, 0) * items_loaded
+                if self.bucket_util.get_throttle_limit(bucket) == -1:
+                    self.assertEqual(num_throttled, 0)
+                else:
+                    expected_num_throttled = units / self.bucket_util.get_throttle_limit(bucket)
+                    if num_throttled < expected_num_throttled:
+                        self.fail("throttling didnot happen")
+
                 if self.crash_other_node:
                     self.assertEqual(wu, self.expected_wu)
                 elif wu != self.expected_wu or wu != 0:
                     self.log.info("wu actual:%s, wu expected:%s"
                                   % (wu, self.expected_wu))
-                if self.doc_size > 1000 and num_throttled < total_items/2:
-                    self.fail("throttling didnt occur as expected")
                 start += items
-                end += 10000
+                end += items
+                tmp_total_items += items_loaded
 
             # perform load after the crash/stop process and check stats are working fine
             expected_num_throttled, expected_ru, self.expected_wu = self.bucket_util.get_stat_from_metrics(bucket)
@@ -102,13 +113,20 @@ class ServerlessMetering(LMT):
             _ = self.loadgen_docs(self.retry_exceptions,
                                   self.ignore_exceptions,
                                   _sync=True)
-            total_items = self.bucket_util.get_total_items_bucket(bucket)
-            units = self.bucket_util.calculate_units(self.doc_size, 0) * (total_items - items)
+
+            items_loaded = self.check_actual_items(self.num_items, tmp_total_items, bucket)
+            units = self.bucket_util.calculate_units(self.doc_size, 0,
+                            durability=self.durability_level) * items_loaded
             self.expected_wu += units
-            expected_num_throttled += units / self.bucket_util.get_throttle_limit(bucket)
+
+            # validate stats
             num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
+            if self.bucket_util.get_throttle_limit(bucket) == -1:
+                self.assertEqual(num_throttled, 0)
+            else:
+                expected_num_throttled += units / self.bucket_util.get_throttle_limit(bucket)
             if wu != self.expected_wu or ru < expected_ru or num_throttled < expected_num_throttled:
                 self.fail("load after crash failed in stats "
-                          "Actual:(ru:%s, wu:%s, num_throttled:%s),"
+                          "Actual:(ru:%s, wu:%s, num_throttled:%s)," 
                           " expected:(ru:%s, wu:%s, num_throttled:%s)" %
                           (ru, wu, num_throttled, expected_ru, self.expected_wu, expected_num_throttled))

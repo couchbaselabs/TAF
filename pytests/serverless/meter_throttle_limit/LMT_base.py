@@ -884,3 +884,14 @@ class LMT(ServerlessOnPremBaseTest):
         if exception:
             self.log.info("txn failed")
         self.sleep(1)
+
+    def check_actual_items(self, expected_items, previous_items, bucket):
+        iteration = 0
+        actual_items = expected_items
+        while iteration < 4:
+            actual_items = self.bucket_util.get_total_items_bucket(bucket) - previous_items
+            if expected_items == actual_items:
+                break
+            self.sleep(5)
+            iteration += 1
+        return actual_items
