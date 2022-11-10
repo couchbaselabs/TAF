@@ -281,7 +281,8 @@ class CBASBaseTest(BaseTestCase):
                         False, 120, False):
                     self.fail("Disabling Auto-Failover failed")
 
-                self.log.info("Setting node to node encryption level to all")
+                self.log.info("Setting node to node encryption level to {0}".format(
+                    self.input.param("n2n_encryption_level", "control")))
                 self.security_util.set_n2n_encryption_level_on_nodes(
                     cluster.nodes_in_cluster,
                     level=self.input.param("n2n_encryption_level", "control"))
@@ -291,6 +292,9 @@ class CBASBaseTest(BaseTestCase):
                 if not rest.update_autofailover_settings(
                         True, 300, False):
                     self.fail("Enabling Auto-Failover failed")
+
+                if not self.cbas_util.wait_for_cbas_to_recover(cluster, 300):
+                    self.fail("Analytics service Failed to recover")
 
             if self.input.param("analytics_loggers", None):
                 """
@@ -366,6 +370,27 @@ class CBASBaseTest(BaseTestCase):
                       .format(self.case_number, self._testMethodName))
 
     def tearDown(self):
+        if self.input.param("n2n_encryption", False):
+            for i, (cluster_name, cluster) in enumerate(self.cb_clusters.items()):
+                rest = RestConnection(cluster.master)
+                self.log.info("Disabling Auto-Failover")
+                if not rest.update_autofailover_settings(
+                        False, 120, False):
+                    self.fail("Disabling Auto-Failover failed")
+
+                self.log.info("Disabling node to node encryption")
+                self.security_util.disable_n2n_encryption_cli_on_nodes(cluster.nodes_in_cluster)
+                CbServer.use_https = True
+
+                self.log.info("Enabling Auto-Failover")
+                if not rest.update_autofailover_settings(
+                        True, 300, False):
+                    self.fail("Enabling Auto-Failover failed")
+                # Waiting for CBAS to recover so that it can be removed successfully during
+                # teardown.
+                if not self.cbas_util.wait_for_cbas_to_recover(cluster, 300):
+                    self.fail("Analytics service Failed to recover")
+
         if self.disk_optimized_thread_settings:
             for cluster in self.cb_clusters.values():
                 self.set_num_writer_and_reader_threads(
