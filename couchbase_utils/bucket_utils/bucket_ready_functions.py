@@ -3889,7 +3889,7 @@ class BucketUtils(ScopeUtils):
             if type == "rebalance":
                 rest = RestConnection(cluster.master)
                 nodes = rest.node_statuses()
-                if (len(nodes) - num_replicas) >= 1:
+                if (len(cluster.kv_nodes) - num_replicas) >= 1:
                     self.assertTrue(replica_result["total"] == num_replicas * total_vbuckets,
                                     "total vbuckets do not match for replica data set (= criteria), actual {0} expected {1}"
                                     .format(replica_result["total"], num_replicas * total_vbuckets))
