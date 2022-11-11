@@ -820,7 +820,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     {"%s:%s:%s" % (bucket.name, CbServer.default_scope,
                                    CbServer.default_collection): dg})
 
-            doc_loading_tasks = DocLoaderUtils.perform_doc_loading(
+            _, doc_loading_tasks = DocLoaderUtils.perform_doc_loading(
                 self.doc_loading_tm, loader_map,
                 self.cluster, self.cluster.buckets,
                 async_load=True, validate_results=False,
@@ -985,7 +985,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 ws = work_load_settings[index]
                 ws.dr.create_s = ws.dr.create_e
                 ws.dr.create_e += batch_size
-                tasks = DocLoaderUtils.perform_doc_loading(
+                _, tasks = DocLoaderUtils.perform_doc_loading(
                     self.doc_loading_tm, {loader_key: doc_gens[index]},
                     self.cluster, buckets=[bucket],
                     sdk_client_pool=self.sdk_client_pool)

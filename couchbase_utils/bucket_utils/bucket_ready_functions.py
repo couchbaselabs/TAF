@@ -942,6 +942,7 @@ class DocLoaderUtils(object):
                     return t_bucket
         log = DocLoaderUtils.log
         master = None
+        result = True
         if buckets is None:
             buckets = cluster.buckets
         if sdk_client_pool is None and cluster.master:
@@ -988,12 +989,12 @@ class DocLoaderUtils(object):
             DocLoaderUtils.wait_for_doc_load_completion(task_manager, tasks)
 
             if validate_results:
-                DocLoaderUtils.data_validation(
+                result = DocLoaderUtils.data_validation(
                     task_manager, loader_map, cluster, buckets,
                     process_concurrency=process_concurrency, ops_rate=100,
                     sdk_client_pool=sdk_client_pool)
 
-        return tasks
+        return result, tasks
 
     @staticmethod
     def wait_for_doc_load_completion(task_manager, tasks):

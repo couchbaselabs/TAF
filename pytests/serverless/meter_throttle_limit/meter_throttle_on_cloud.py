@@ -55,20 +55,22 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                         key=self.key, key_size=self.key_size,
                         doc_size=self.doc_size,
                         create_perc=create_perc, create_start=create_start,
-                        create_end=create_end, read_perc=read_perc, read_start=read_start,
-                        read_end=read_end, update_start=update_start, update_end=update_end,
-                        update_perc=update_perc, mutated=mutated, delete_start=delete_start,
-                        delete_end=delete_end, delete_perc=delete_perc, ops_rate=self.ops_rate)
+                        create_end=create_end, read_perc=read_perc,
+                        read_start=read_start, read_end=read_end,
+                        update_start=update_start, update_end=update_end,
+                        update_perc=update_perc, mutated=mutated,
+                        delete_start=delete_start, delete_end=delete_end,
+                        delete_perc=delete_perc, ops_rate=self.ops_rate)
                     dg = DocumentGenerator(work_load_settings,
                                            self.key_type, self.val_type)
                     loader_map.update(
                         {"%s:%s:%s" % (bucket.name, scope, collection): dg})
 
-        doc_loading_tasks = DocLoaderUtils.perform_doc_loading(self.doc_loading_tm, loader_map,
-                                           self.cluster, self.cluster.buckets,
-                                           durability_level=self.durability_level,
-                                           async_load=False, validate_results=False,
-                                           sdk_client_pool=self.sdk_client_pool)
+        _, doc_loading_tasks = DocLoaderUtils.perform_doc_loading(
+            self.doc_loading_tm, loader_map,
+            self.cluster, self.cluster.buckets,
+            durability_level=self.durability_level, async_load=False,
+            validate_results=False, sdk_client_pool=self.sdk_client_pool)
         DocLoaderUtils.wait_for_doc_load_completion(self.doc_loading_tm,
                                                     doc_loading_tasks)
 
