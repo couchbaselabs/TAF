@@ -257,8 +257,6 @@ public class WorkLoadGenerate extends Task{
                                         System.out.println("Expected Value - " + b);
                                         if(this.sdkClientPool != null)
                                             this.sdkClientPool.release_client(this.sdk);
-                                        else
-                                            this.sdk.disconnectCluster();
                                         System.out.println(this.taskName + " is completed!");
                                         return;
                                     }
@@ -268,8 +266,6 @@ public class WorkLoadGenerate extends Task{
                                     System.out.println("Expected Value - " + b);
                                     if(this.sdkClientPool != null)
                                         this.sdkClientPool.release_client(this.sdk);
-                                    else
-                                        this.sdk.disconnectCluster();
                                     System.out.println(this.taskName + " is completed!");
                                     return;
                                 }
@@ -341,7 +337,5 @@ public class WorkLoadGenerate extends Task{
 
         if(this.sdkClientPool != null)
             this.sdkClientPool.release_client(this.sdk);
-        else
-            this.sdk.disconnectCluster();
     }
 }
