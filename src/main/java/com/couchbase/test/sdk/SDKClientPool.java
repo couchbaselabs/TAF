@@ -32,6 +32,20 @@ public class SDKClientPool {
         this.clients = new HashMap<String, HashMap>();
     }
 
+    public void force_close_clients_for_bucket(String bucket_name) {
+        if (! this.clients.containsKey(bucket_name))
+            return;
+
+        HashMap<String, Object> hm = this.clients.get(bucket_name);
+        ArrayList<SDKClient> sdk_clients;
+        sdk_clients = (ArrayList)(hm.get("idle_clients"));
+        sdk_clients.addAll((ArrayList)hm.get("busy_clients"));
+        for(SDKClient sdk_client: sdk_clients) {
+            sdk_client.disconnectCluster();
+        }
+        this.clients.remove(bucket_name);
+    }
+
     public void create_clients(String bucket_name, Server server, int req_clients) throws Exception {
         HashMap<String, Object> bucket_hm;
         if (this.clients.containsKey(bucket_name))

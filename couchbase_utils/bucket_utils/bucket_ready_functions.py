@@ -1000,8 +1000,8 @@ class DocLoaderUtils(object):
     def wait_for_doc_load_completion(task_manager, tasks):
         result = True
         log = DocLoaderUtils.log
-        task_manager.getAllTaskResult()
         for task in tasks:
+            task_manager.getTaskResult(task)
             task.result = True
             unique_str = "%s:%s:%s:" % (task.sdk.bucket, task.sdk.scope,
                                         task.sdk.collection)
@@ -1139,13 +1139,13 @@ class DocLoaderUtils(object):
                 task_manager.submit(task)
                 tasks.append(task)
                 process_concurrency -= 1
-        task_manager.getAllTaskResult()
         for task in tasks:
-            try:
-                task.sdk.disconnectCluster()
-            except Exception as e:
-                DocLoaderUtils.log.critical(e)
-        for task in tasks:
+            task_manager.getTaskResult(task)
+            if sdk_client_pool is None:
+                try:
+                    task.sdk.disconnectCluster()
+                except Exception as e:
+                    DocLoaderUtils.log.critical(e)
             if task.result is False:
                 DocLoaderUtils.log.error("Validation failed: %s"
                                          % task.taskName)
@@ -2572,9 +2572,7 @@ class BucketUtils(ScopeUtils):
                 break
         return bucket_obj
 
-    def print_bucket_stats(self, cluster):
-        if cluster.type in ["serverless"]:
-            return
+    def __print_on_prem_bucket_stats(self, cluster):
         table = TableView(self.log.info)
         buckets = self.get_all_buckets(cluster)
         if len(buckets) == 0:
@@ -2612,6 +2610,27 @@ class BucketUtils(ScopeUtils):
                         bucket_data += ["-"]
                 table.add_row(bucket_data)
         table.display("Bucket statistics")
+
+    def __print_serverless_bucket_stats(self, cluster):
+        table = TableView(self.log.info)
+        if len(cluster.buckets) == 0:
+            table.add_row(["No buckets"])
+        else:
+            table.set_headers(["Bucket", "Width / Weight", "Num Items"])
+            for bucket in cluster.buckets:
+                bucket_data = [
+                    bucket.name,
+                    "%s / %s" % (bucket.serverless.width,
+                                 bucket.serverless.weight),
+                    self.get_expected_total_num_items(bucket)]
+                table.add_row(bucket_data)
+        table.display("Bucket statistics")
+
+    def print_bucket_stats(self, cluster):
+        if cluster.type == "serverless":
+            self.__print_serverless_bucket_stats(cluster)
+        else:
+            self.__print_on_prem_bucket_stats(cluster)
 
     @staticmethod
     def get_vbucket_num_for_key(doc_key, total_vbuckets=1024):
@@ -5332,8 +5351,12 @@ class BucketUtils(ScopeUtils):
                     return t_node
 
         result = True
-        rest = RestConnection(cluster.master)
-        helper = BucketHelper(cluster.master)
+        rest_endpoint_node = cluster.master
+        if cluster.type == "serverless":
+            rest_endpoint_node = buckets[0].servers[0]
+
+        rest = RestConnection(rest_endpoint_node)
+        helper = BucketHelper(rest_endpoint_node)
         # Stats wrt Cluster nodes
         server_buckets = helper.get_buckets_json()
         server_nodes = rest.get_nodes()

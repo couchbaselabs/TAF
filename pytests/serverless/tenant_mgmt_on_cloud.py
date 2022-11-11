@@ -27,13 +27,15 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         super(TenantMgmtOnCloud, self).setUp()
         self.key_type = "SimpleKey"
         self.val_type = "SimpleValue"
-        self.doc_loading_tm = TaskManager(2)
+        self.doc_loading_tm = TaskManager(self.thread_to_use)
         self.db_name = "TAF-TenantMgmtOnCloud"
         self.token = self.input.capella.get("token")
         self.with_data_load = self.input.param("with_data_load", False)
-        self.capella_api = CapellaAPI(self.pod.url_public, None, None,
-                                      self.token)
+        self.capella_api =  self.serverless_util.capella_api
         self.validate_stat = self.input.param("validate_stat", False)
+
+        self.weight_incr = {1: 30, 2: 15, 3: 10, 4: 7}
+        self.weight_start = {1: 30, 2: 210, 3: 270, 4: 300}
 
     def tearDown(self):
         if self.sdk_client_pool:
@@ -54,6 +56,10 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.assertTrue(
                 isinstance(resp, list) and len(resp) == num_dataplane,
                 "Deployed more than 1 dataplane")
+
+    def get_random_weight_for_width(self, width=1):
+        return self.weight_start[width] \
+                 + (self.weight_incr[width] * choice(range(1, 13)))
 
     def validate_cluster_deployment(self, cluster, req_nodes_dict):
         req_kv_nodes = req_nodes_dict.get(CbServer.Services.KV)
@@ -143,8 +149,6 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
     def __get_single_bucket_scenarios(self, target_scenario):
         scenarios = list()
         bucket_name = choice(self.cluster.buckets).name
-        weight_incr = {1: 30, 2: 15, 3: 10, 4: 7}
-        weight_start = {1: 30, 2: 210, 3: 270, 4: 300}
         if target_scenario == "single_bucket_width_change":
             for width in range(2, 4):
                 scenarios.append({bucket_name: {Bucket.width: width}})
@@ -163,19 +167,18 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 scenarios.append(
                     {bucket_name: {Bucket.width: width,
                                    Bucket.weight: weight}})
-                weight += weight_incr[width]
+                weight += self.weight_incr[width]
                 if weight > 390:
                     width += 1
-                    if width in weight_start:
-                        weight = weight_start[width]
+                    if width in self.weight_start:
+                        weight = self.weight_start[width]
             scenarios = scenarios + scenarios[::-1][1:]
         elif target_scenario == "single_bucket_width_weight_random":
             max_scenarios = 20
             # Creates 20 random scenarios of random width/weight update
             for scenario_index in range(max_scenarios):
                 width = choice(range(1, 5))
-                weight = weight_start[width] \
-                    + (weight_incr[width] * choice(range(1, 13)))
+                weight = self.get_random_weight_for_width(width)
                 scenarios.append({bucket_name: {Bucket.width: width,
                                                 Bucket.weight: weight}})
         return scenarios
