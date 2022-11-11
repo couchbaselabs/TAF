@@ -1,4 +1,5 @@
 import math
+import string
 import time
 import re
 from random import choice, sample
@@ -674,10 +675,19 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         4. Check the recreate was successful
         :return:
         """
-        db_name = "tntmgmtrecreatedb"
         max_itr = 5
+        spl_chars = " -"
+        char_set = string.ascii_letters + string.digits + spl_chars
+        db_name = "tnt mgmt-max-name-size-"
+        while len(db_name) != 93:
+            db_name += choice(char_set)
         bucket = self.get_serverless_bucket_obj(
             db_name, self.bucket_width, self.bucket_weight)
+
+        self.log.info("Testing with bucket name=%s" % bucket.name)
+        task = self.bucket_util.async_create_database(self.cluster, bucket)
+        self.task_manager.get_task_result(task)
+        self.assertTrue(task.result, "Database creation failed")
 
         for itr in range(1, max_itr):
             self.log.info("Iteration :: %s" % itr)
@@ -692,6 +702,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 self.tenant, bucket_name)
         task = self.bucket_util.async_create_database(self.cluster, bucket)
         self.task_manager.get_task_result(task)
+        self.assertTrue(task.result, "Database creation failed")
 
     def test_create_database_negative(self):
         """
@@ -710,21 +721,24 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             "\"message\":\"Not able to create serverless database. " \
             "The name provided must be at least two characters in length. " \
             "Please try again.\"}"
-        bucket = self.get_serverless_bucket_obj("123,", 1, 30)
-        task = self.bucket_util.async_create_database(self.cluster, bucket)
-        try:
-            self.task_manager.get_task_result(task)
-        except ExecutionException as exception:
-            if invalid_char_err not in str(exception):
-                self.fail("Exception mismatch. Got::%s" % exception)
+        name_too_long_err = \
+            "Not able to create serverless database. The name provided " \
+            "exceeds the maximum number of characters allowed. " \
+            "Please reduce the size of the name to 93 characters or " \
+            "less and try again."
 
-        bucket = self.get_serverless_bucket_obj("1", 1, 30)
-        task = self.bucket_util.async_create_database(self.cluster, bucket)
-        try:
-            self.task_manager.get_task_result(task)
-        except ExecutionException as exception:
-            if name_too_short_err not in str(exception):
-                self.fail("Exception mismatch. Got::%s" % exception)
+        name_to_err_map = {"123,": invalid_char_err,
+                           "1": name_too_short_err,
+                           "a"*94: name_too_long_err}
+        for name, expected_err in name_to_err_map.items():
+            self.log.info("Trying to create database with name=%s" % name)
+            bucket = self.get_serverless_bucket_obj(name, 1, 30)
+            task = self.bucket_util.async_create_database(self.cluster, bucket)
+            try:
+                self.task_manager.get_task_result(task)
+            except ExecutionException as exception:
+                if expected_err not in str(exception):
+                    self.fail("Exception mismatch. Got::%s" % exception)
 
     def __get_bucket_with_name(self, b_name):
         for b_obj in self.cluster.buckets:
