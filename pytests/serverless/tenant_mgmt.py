@@ -836,3 +836,61 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                 self.log_failure("Doc CRUDs failed")
 
         self.assertTrue(rest.is_cluster_balanced(), "Cluster unbalanced")
+
+    def tenant_bucket_limit_test(self):
+        rest = RestConnection(self.cluster.master)
+        rest.set_serverless_bucket_limit(8)
+        nodes_in = self.cluster.servers[
+                   self.nodes_init:self.nodes_init + 3]
+        # creating bucket within limit
+        for i in range(8):
+            b_name = "test_bucket" + str(i)
+            bucket_params = self.__get_bucket_params(b_name=b_name, width=1,
+                                                     weight=30)
+            bucket_obj = Bucket(bucket_params)
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
+                                           wait_for_warmup=True)
+
+        # trying exceeding limit
+        b_name = "exceed_limit"
+        bucket_params = self.__get_bucket_params(b_name=b_name, width=1,
+                                                 weight=30)
+        bucket_obj = Bucket(bucket_params)
+        try:
+            self.bucket_util.create_bucket(self.cluster, bucket_obj,
+                                           wait_for_warmup=True)
+        except Exception as e:
+            self.log.info(e)
+        else:
+            self.fail("expected bucket creation to fail")
+
+        # reducing limit to less than current value
+        rest.set_serverless_bucket_limit(3)
+        zone_to_add = dict()
+        for zone in rest.get_zone_names():
+            zone_to_add[zone] = 1
+        try:
+            rebalance_task = self.task.async_rebalance(self.cluster,
+                                                       nodes_in,
+                                                       retry_get_process_num=3000,
+                                                       add_nodes_server_groups=zone_to_add)
+            self.task_manager.get_task_result(rebalance_task)
+            self.assertTrue(rebalance_task.result, "Re-balance Failed")
+        except Exception as e:
+            self.log.info(e)
+        else:
+            self.fail("expected re-balance to fail")
+
+        for bucket in self.cluster.buckets:
+            self.bucket_util._wait_warmup_completed(bucket, wait_time=20)
+        rest.set_serverless_bucket_limit(8)
+        rebalance_task = self.task.async_rebalance(self.cluster,
+                                                   [], [],
+                                                   retry_get_process_num=3000)
+        self.task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result, "Re-balance Failed")
+        self.assertFalse(rest.set_serverless_bucket_limit(0),
+                         "Able to set tenant limit as 0")
+        self.assertFalse(rest.set_serverless_bucket_limit(-1),
+                         "Able to set a negative tenant limit")
+        self.assertTrue(rest.is_cluster_balanced(), "Cluster unbalanced")
