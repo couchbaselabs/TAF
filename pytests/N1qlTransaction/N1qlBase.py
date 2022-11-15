@@ -208,7 +208,7 @@ class N1qlBase(CollectionBase):
             queries = []
             docin = {}
             letters = string.ascii_lowercase
-            value = [ ''.join(random.choice(letters) for i in range(self.doc_size))][0]
+            value = '{ "abcd": { "def": repeat("abcd", 102400)}}'
             docs["key1234"] = value
             query_params["memory_quota"] = self.memory_quota
             for key, value in docs.iteritems():
