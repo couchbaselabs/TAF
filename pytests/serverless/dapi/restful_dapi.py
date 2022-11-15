@@ -129,7 +129,7 @@ class RestfulDAPITest(BaseTestCase):
                             "Delete doc for database: {}".format(bucket.name))
             #Read Doc
             response = self.rest_dapi.get_doc("k", "_default", "_default")
-            self.assertTrue(response.status_code == 400,
+            self.assertTrue(response.status_code == 404,
                             "Reading doc for database: {}".format(bucket.name))
             val = json.loads(response.content)["error"]["errorDetails"]["msg"]
             self.assertTrue(val == "document not found",
