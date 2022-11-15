@@ -46,8 +46,9 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
                                                           + 1]
         if self.spec_name:
             CollectionBase.deploy_buckets_from_spec_file(self)
+            self.create_sdk_clients()
         self.bucket_util.print_bucket_stats(self.cluster)
-        self.create_sdk_clients()
+
         validation = self.bucket_util.validate_serverless_buckets(
             self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
@@ -217,14 +218,15 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
                     self.fail("Failure during reverting failover operation")
 
     def create_serverless_bucket(self, name_prefix="bucket_", num=2,
-                                 weight=1, wait_for_warmup=True):
+                                 weight=1, wait_for_warmup=True,
+                                 replicas=Bucket.ReplicaNum.TWO):
         bucket_objects = []
         def __get_bucket_params(b_name, ram_quota=256, width=1,
                                 weight=1):
             self.log.debug("Creating bucket param")
             return {
                 Bucket.name: b_name,
-                Bucket.replicaNumber: Bucket.ReplicaNum.TWO,
+                Bucket.replicaNumber: replicas,
                 Bucket.ramQuotaMB: ram_quota,
                 Bucket.storageBackend: Bucket.StorageBackend.magma,
                 Bucket.width: width,
@@ -376,8 +378,57 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
             self.cluster, self.cluster.buckets)
         self.assertTrue(validation, "Bucket validation failed")
 
+    def bucket_update_during_failover(self):
+        init_replicas = self.input.param("init_replicas", 2)
+        if self.spec_name:
+            doc_loading_spec_name = "initial_load"
+            doc_loading_spec = self.bucket_util.get_crud_template_from_package(
+                doc_loading_spec_name)
+            task = self.bucket_util.run_scenario_from_spec(self.task,
+                                                           self.cluster,
+                                                           self.cluster.buckets,
+                                                           doc_loading_spec,
+                                                           mutation_num=0,
+                                                           async_load=True)
+            self.task.jython_task_manager.get_task_result(task)
+            self.bucket_util.validate_doc_loading_results(task)
+            if task.result is False:
+                raise Exception("doc load/verification failed")
+        if self.num_buckets > 0:
+            self.create_serverless_bucket("test_buckets", self.num_buckets, 30,
+                                          wait_for_warmup=True,
+                                          replicas=init_replicas)
 
+        data_spec = self.data_load_spec()
+        data_spec[MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] \
+            = 100000
+        data_task = self.bucket_util.run_scenario_from_spec(self.task,
+                                                        self.cluster,
+                                                self.cluster.buckets,
+                                                data_spec, async_load=True)
+        if self.pick_zone_wise:
+            self.servers_to_fail = self.servers_to_fail[
+                                   :self.num_node_failures]
+        failover_thread = Thread(target=self.failover_task)
+        failover_thread.start()
+        for bucket in self.cluster.buckets:
+            self.bucket_util.update_bucket_property(self.cluster.master, bucket,
+                                                    bucket_width=
+                                                    self.desired_width,
+                                                    bucket_weight=
+                                                    self.desired_weight)
+            if self.desired_width:
+                bucket.serverless.width = self.desired_width
+            if self.desired_weight:
+                bucket.serverless.weight = self.desired_weight
 
-
-
-
+        rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                   retry_get_process_num=3000)
+        self.task_manager.get_task_result(rebalance_task)
+        failover_thread.join()
+        self.run_recovery_rebalance()
+        self.task.jython_task_manager.get_task_result(data_task)
+        validation = self.bucket_util.validate_serverless_buckets(
+            self.cluster, self.cluster.buckets)
+        self.assertTrue(validation, "Bucket validation failed")
+        self.assertTrue(self.rest.is_cluster_balanced(), "Cluster unbalanced")
