@@ -341,3 +341,101 @@ class RestfulDAPITest(BaseTestCase):
             self.log.info("printing response status code for getting subdoc {}".format(response.status_code))
             self.assertTrue(response.status_code == 200, "Getting subdoc failed for database {}".format(bucket.name))
             self.log.info(response.content)
+
+    def test_create_scope(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Creation of scope for database {}".format(bucket.name))
+
+            scope_name = "testScope"
+            response = self.rest_dapi.create_scope({"scopeName": scope_name})
+            self.log.info(response.status_code)
+            self.assertTrue(response.status_code == 200,
+                            "Create scope failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_collection_list(scope_name)
+            self.log.info("Response code for getting scope {}".format(response.status_code))
+            self.assertTrue(response.status_code == 200,
+                            "Get test scope failed for database {}".format(bucket.name))
+
+    def test_create_collection(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Creation of collection for database {}".format(bucket.name))
+
+            collection_name = "testCollection"
+            response = self.rest_dapi.create_collection("_default", {"name": collection_name})
+            self.log.info(response.status_code)
+            self.assertTrue(response.status_code == 200,
+                            "Create collection for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_document_list("_default", collection_name)
+            self.log.info("Response code for getting collection {}".format(response.status_code))
+            self.assertTrue(response.status_code == 200,
+                            "Getting test collection failed for database {}".format(bucket.name))
+
+    def test_delete_collection(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Deletion of collection for database {}".format(bucket.name))
+
+            collection_name = "testCollection"
+            response = self.rest_dapi.create_collection("_default", {"name": collection_name})
+            self.log.info(response.status_code)
+            self.assertTrue(response.status_code == 200,
+                            "Create collection for database {}".format(bucket.name))
+
+            response = self.rest_dapi.delete_collection("_default", collection_name)
+            self.log.info(response.status_code)
+            self.assertTrue(response.status_code == 200,
+                            "Deletion of collection failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_collection_list("_default")
+            self.log.info(response.status_code)
+            collection_list = json.loads(response.content)
+            collection_list = collection_list["collections"]
+
+            collection_name_list = []
+            for collection in collection_list:
+                collection_name_list.append(collection["Name"])
+
+            self.log.info(collection_name_list)
+            for collection in collection_name_list:
+                self.assertTrue(collection != collection_name,
+                                "Getting delete collection: {} for database {}".format(collection_name, bucket.name))
+
+    def test_delete_scope(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Deletion of scope for database {}".format(bucket.name))
+
+            scope_name = "testScope"
+            response = self.rest_dapi.create_scope({"scopeName": scope_name})
+            self.log.info(response.status_code)
+            self.assertTrue(response.status_code == 200,
+                            "Create scope {} failed for database {}".format(scope_name, bucket.name))
+
+            response = self.rest_dapi.delete_scope(scope_name)
+            self.log.info("Response code for deletion of scope {}".format(response.status_code))
+            self.assertTrue(response.status_code == 200,
+                            "Deletion of scope {} failed for database {}".format(scope_name, bucket.name))
+
+            response = self.rest_dapi.get_scope_list()
+            self.log.info(response.status_code)
+            scope_list = json.loads(response.content)
+            scope_list = scope_list["scopes"]
+            scope_name_list = []
+            for scope in scope_list:
+                scope_name_list.append(scope["Name"])
+
+            for scope in scope_name_list:
+                self.assertTrue(scope != scope_name,
+                                "Getting deleted scope: {} for database {}".format(scope_name, bucket.name))

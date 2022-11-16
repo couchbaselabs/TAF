@@ -127,3 +127,11 @@ class RestfulDAPI:
         params = collection_name
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections"
         return self._urllib_request(url, method="POST", params=params)
+
+    def delete_collection(self, scope, collection):
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection
+        return self._urllib_request(url, method="DELETE")
+
+    def delete_scope(self, scope):
+        url = self.endpoint_v1 + "/scopes/" + scope
+        return self._urllib_request(url, method="DELETE")
