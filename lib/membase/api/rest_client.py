@@ -1432,17 +1432,17 @@ class RestConnection(newRC):
                 parsed = json_parsed
             return parsed
 
-    def get_pools_default(self, query='', timeout=30):
+    def get_pools_default(self, query='', timeout=60):
         parsed = {}
         api = self.baseUrl + 'pools/default'
         if query:
             api += "?" + query
 
         status, content, header = self._http_request(api, timeout=timeout)
+        if not status:
+            self.test_log.error("Error while getting {0}. Please retry".format(api))
         json_parsed = json.loads(content)
-        if status:
-            parsed = json_parsed
-        return parsed
+        return json_parsed
 
     def get_bucket_details(self, bucket_name="default", parse=True):
         api = self.baseUrl + 'pools/default/buckets/{0}'.format(bucket_name)
@@ -3386,33 +3386,6 @@ class RestConnection(newRC):
         _stats = json.loads(content)
         servers = _stats['vBucketServerMap']['serverList']
         return servers
-
-    def get_throttle_limit(self, bucket=""):
-        if bucket:
-            url = 'pools/default/buckets/' + bucket
-        else:
-            url = 'internalSettings'
-        api = self.baseUrl + url
-        status, content, header = self._http_request(api, 'GET')
-        return status, content
-
-    def get_storage_quota(self):
-        url = 'pools/default/'
-        api = self.baseUrl + url
-        status, content, header = self._http_request(api, 'GET')
-        return status, content
-
-    def set_throttle_limit(self, bucket="", throttle_limit=5000, storage_limit=500, service="data"):
-        key_throttle_limit = service + "ThrottleLimit"
-        key_storage_limit = service + "StorageLimit"
-        if bucket:
-            url = 'pools/default/buckets/' + bucket
-        else:
-            url = 'internalSettings'
-        api = self.baseUrl + url
-        params = urllib.urlencode({key_throttle_limit: throttle_limit, key_storage_limit: storage_limit})
-        status, content, header = self._http_request(api, 'POST', params=params)
-        return status, content
 
     def get_prometheus_metrics(self):
         url = 'metrics'

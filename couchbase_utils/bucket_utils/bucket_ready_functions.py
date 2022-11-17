@@ -5857,28 +5857,32 @@ class BucketUtils(ScopeUtils):
         self.log.info("num_throttled %s, ru %s, wu %s" % (num_throttled, ru, wu))
         return num_throttled, ru, wu
 
-    def set_throttle_limit(self, bucket, throttling_limit=5000, storage_limit=500):
-        for node in bucket.servers:
-            _, content = RestConnection(node).\
-                set_throttle_limit(bucket=bucket.name,
-                                   throttle_limit=throttling_limit,
-                                   storage_limit=storage_limit)
+    def set_throttle_limit(self, bucket, throttling_limit=5000, service="data"):
+        for server in bucket.servers:
+            bucket_helper = BucketHelper(server)
+            _, content = bucket_helper.set_throttle_limit(bucket_name=bucket.name,
+                                                          throttle_limit=throttling_limit,
+                                                          service=service)
+
+    def set_storage_limit(self, bucket, storage_limit=500, service="data"):
+        for server in bucket.servers:
+            bucket_helper = BucketHelper(server)
+            _, content = bucket_helper.set_storage_limit(bucket_name=bucket.name,
+                                                         storage_limit=storage_limit,
+                                                         serivce=service)
 
     def get_throttle_limit(self, bucket):
-        throttle_limit = list()
-        for server in bucket.servers:
-            _, content = RestConnection(server).\
-                get_throttle_limit(bucket=bucket.name)
-            output = json.loads(content)
-            throttle_limit.append(output["dataThrottleLimit"])
-        self.log.info("throttling limit of bucket on all nodes %s" % throttle_limit)
-        return throttle_limit[0]
+        bucket_helper = BucketHelper(bucket.servers[0])
+        output = bucket_helper.get_bucket_json(bucket.name)
+        return output["dataThrottleLimit"]
+
+    def get_storage_limit(self, bucket):
+        bucket_helper = BucketHelper(bucket.servers[0])
+        output = bucket_helper.get_bucket_json(bucket.name)
+        return output["dataStorageLimit"]
 
     def get_storage_quota(self, bucket):
-        storage_quota = None
-        server = bucket.servers[0]
-        _, content = RestConnection(server).get_storage_quota()
-        output = json.loads(content)
+        output = RestConnection(bucket.servers[0]).get_pools_default()
         storage_quota = output["storageTotals"]["hdd"]["quotaTotal"]
         return storage_quota
 
