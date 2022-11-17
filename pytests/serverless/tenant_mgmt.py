@@ -1,11 +1,13 @@
 import json
 import urllib
-from random import choice, randint, sample
+import time
+from random import choice, randint, sample, randrange
 
 from BucketLib.BucketOperations import BucketHelper
 from collections_helper.collections_spec_constants import MetaCrudParams
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
+from threading import Thread
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
@@ -20,7 +22,6 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.b_create_endpoint = "pools/default/buckets"
 
         self.spec_name = self.input.param("bucket_spec", None)
-        self.error_sim = None
         self.data_spec_name = self.input.param("data_spec_name", None)
         self.negative_case = self.input.param("negative_case", False)
         self.bucket_util.delete_all_buckets(self.cluster)
@@ -384,7 +385,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             for i in range(self.num_buckets):
                 name = "bucket_"+str(i)
                 bucket_params = self.__get_bucket_params(
-                    b_name=name, width=self.bucket_width)
+                    b_name=name, width=self.bucket_width,
+                    weight=self.bucket_weight)
                 bucket_obj = Bucket(bucket_params)
                 self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                                wait_for_warmup=True)
@@ -411,10 +413,11 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
         scale = self.input.param("bucket_scale", "all")
         enable_data_load = self.input.param("data_loading", True)
-        data_load_after_rebalance = self.input.param(
-            "data_load_after_rebalance", True)
-        update_during_rebalance = self.input.param(
-            "update_during_rebalance", False)
+        data_load_after_rebalance = self.input.param("data_load_after_rebalance",
+                                                     True)
+        update_during_rebalance = self.input.param("update_during_rebalance",
+                                                   False)
+        random_scale = self.input.param("random_scale", False)
         async_load = self.input.param("async_load", False)
         nodes_in = self.cluster.servers[
                    self.nodes_init:self.nodes_init + self.nodes_in]
@@ -460,14 +463,20 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                 self.cluster.buckets)
         for bucket in buckets_to_consider:
             try:
+                set_width = self.desired_width
+                set_weight = self.desired_weight
+                if random_scale:
+                    set_width = randrange(1, self.desired_width+1)
+                    set_weight = randrange(30, self.desired_weight)
+
                 self.bucket_util.update_bucket_property(
                     self.cluster.master, bucket,
-                    bucket_width=self.desired_width,
-                    bucket_weight=self.desired_weight)
+                    bucket_width=set_width,
+                    bucket_weight=set_weight)
                 if self.desired_width:
-                    bucket.serverless.width = self.desired_width
+                    bucket.serverless.width = set_width
                 if self.desired_weight:
-                    bucket.serverless.weight = self.desired_weight
+                    bucket.serverless.weight = set_weight
             except Exception as e:
                 self.log.error("Exception occurred: %s" % str(e))
                 if not self.negative_case:
@@ -548,40 +557,61 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         """
 
         def rebalance_failure(rebal_failure, target_buckets=None,
-                              error_type=None):
-            if rebal_failure == "delete_bucket":
-                bucket_conn = BucketHelper(self.cluster.master)
-                for bucket_obj in target_buckets:
-                    status = bucket_conn.delete_bucket(bucket_obj.name)
-                    self.assertFalse(status, "Bucket wasn't expected to get "
-                                             "deleted while re-balance running")
-
-            elif rebal_failure == "induce_error":
-                shell = RemoteMachineShellConnection(self.cluster.servers[1])
-                self.error_sim = CouchbaseError(self.log, shell)
-                self.error_sim.create(error_type)
-            elif rebal_failure == "stop_rebalance":
-                counter = 0
-                expected_progress = [20, 40, 80]
-                for progress in expected_progress:
-                    if rest.is_cluster_balanced():
-                        break
-                    counter += 1
-                    reached = self.cluster_util.rebalance_reached(rest,
-                                                                  progress)
-                    self.assertTrue(reached,
-                                    "Rebalance failed or did not reach "
-                                    "{0}%".format(progress))
-                    stopped = rest.stop_rebalance(wait_timeout=30)
-                    self.assertTrue(stopped, msg="Unable to stop rebalance")
-                    self.bucket_util._wait_for_stats_all_buckets(
-                        self.cluster, self.cluster.buckets, timeout=1200)
-                    self.task.async_rebalance(self.cluster, [], [],
-                                              retry_get_process_num=3000)
-                    self.sleep(5, "Waiting before next iteration")
-                if counter < len(expected_progress):
-                    self.log.info("Cluster balanced before stopping for "
-                                  "progress{0}".format(expected_progress[counter]))
+                              error_type=None, num_target_node=1, interval=20,
+                              timeout=100, wait_before_Start=20):
+            try:
+                self.sleep(wait_before_Start,
+                           "waiting before inducing failure")
+                if rebal_failure == "delete_bucket":
+                    bucket_conn = BucketHelper(self.cluster.master)
+                    for bucket_obj in target_buckets:
+                        status = bucket_conn.delete_bucket(bucket_obj.name)
+                        self.assertFalse(status,
+                                         "Bucket wasn't expected to get "
+                                         "deleted while re-balance running")
+                elif rebal_failure == "induce_error":
+                    end_time = time.time() + timeout
+                    target_nodes = self.cluster.servers[fail_start_server
+                                                        :num_target_node]
+                    while time.time() <= end_time:
+                        error_sim_list = []
+                        for node in target_nodes:
+                            shell = RemoteMachineShellConnection(node)
+                            error_sim = CouchbaseError(self.log, shell)
+                            error_sim.create(error_type)
+                            error_sim_list.append(error_sim)
+                        self.sleep(interval, "Error induced waiting before "
+                                             "resolving the same")
+                        for error in error_sim_list:
+                            error.revert(sim_error)
+                        self.sleep(5)
+                elif rebal_failure == "stop_rebalance":
+                    counter = 0
+                    expected_progress = [20, 40, 80]
+                    for progress in expected_progress:
+                        if rest.is_cluster_balanced():
+                            break
+                        counter += 1
+                        reached = self.cluster_util.rebalance_reached(rest,
+                                                                      progress)
+                        self.assertTrue(reached,
+                                        "Rebalance failed or did not reach "
+                                        "{0}%".format(progress))
+                        stopped = rest.stop_rebalance(wait_timeout=30)
+                        self.assertTrue(stopped,
+                                        msg="Unable to stop rebalance")
+                        self.bucket_util._wait_for_stats_all_buckets(
+                            self.cluster, self.cluster.buckets, timeout=1200)
+                        self.task.async_rebalance(self.cluster, [], [],
+                                                  retry_get_process_num=3000)
+                        self.sleep(5, "Waiting before next iteration")
+                    if counter < len(expected_progress):
+                        self.log.info("Cluster balanced before stopping for "
+                                      "progress{0}".format(
+                            expected_progress[counter]))
+            except Exception as e:
+                self.log(e)
+                self.thread_fail = True
 
         def data_load(doc_loading_spec_name=None, async_load=False):
             if not doc_loading_spec_name:
@@ -602,13 +632,26 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                 raise Exception("doc load/verification failed")
         second_rebalance = self.input.param("second_rebalance", True)
         fail_case = self.input.param("fail_case", "induce_error")
+        weight_change = self.input.param("weight_add", 100)
         nodes_in = self.cluster.servers[
                    self.nodes_init:self.nodes_init + self.nodes_in]
         num_bucket_update = self.input.param("num_bucket_update",
                                              len(self.cluster.buckets))
+        num_target_nodes = self.input.param("num_target_nodes", 2)
+        self.thread_fail = self.input.param("thread_fail", False)
+        scale_cluster = self.input.param("scale_cluster", False)
+        scale_cluster_nodes_in = self.input.param("scale_cluster_nodes_in", 3)
         sim_error = self.input.param("sim_error", None)
+        fail_start_server = self.input.param("fail_start_server", 0)
+        fail_interval = self.input.param("fail_interval", 20)
+        expect_data_fail = self.input.param("expect_data_fail", False)
+        fail_timeout = self.input.param("fail_timeout", 150)
+        expect_scale_fail = self.input.param("expect_scale_fail", False)
+        wait_before_fail = self.input.param("wait_before_fail", 20)
         rest = RestConnection(self.cluster.master)
         target_buckets = self.cluster.buckets[:num_bucket_update]
+        status = rest.update_autofailover_settings(True, 300)
+        self.assertTrue(status, "Auto-failover enable failed")
         self.create_sdk_clients()
         data_load()
         data_load_task = data_load(
@@ -628,30 +671,80 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                                                        3000)
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Re-balance failed")
+            self.nodes_init += self.nodes_in
 
-        # bucket scaling
+            # bucket scaling
+        failure_thread = Thread(target=rebalance_failure,
+                                args=(fail_case, target_buckets, sim_error,
+                                      num_target_nodes, fail_interval,
+                                      fail_timeout, wait_before_fail))
+        failure_thread.start()
         for bucket in target_buckets:
-            self.bucket_util.update_bucket_property(self.cluster.master, bucket,
-                                                    bucket_width=
-                                                    self.desired_width,
-                                                    bucket_weight=
-                                                    self.desired_weight)
-            if self.desired_width:
-                bucket.serverless.width = self.desired_width
-            if self.desired_weight:
-                bucket.serverless.weight = self.desired_weight
+            try:
+                self.bucket_util.update_bucket_property(self.cluster.master,
+                                                        bucket,
+                                                        bucket_width=
+                                                        self.desired_width,
+                                                        ram_quota_mb=
+                                                        self.desired_ram)
+                if self.desired_width:
+                    bucket.serverless.width = self.desired_width
+            except Exception as e:
+                self.log.info(e)
+                self.assertTrue(expect_scale_fail,
+                                "Didn't expect bucket scaling to fail for "
+                                "this case")
+
+        if self.desired_weight:
+            for bucket in target_buckets:
+                while bucket.serverless.weight < self.desired_weight:
+                    if bucket.serverless.weight + weight_change > \
+                            self.desired_weight:
+                        next_weight = self.desired_weight
+                    else:
+                        next_weight = bucket.serverless.weight + weight_change
+                    self.bucket_util.update_bucket_property(
+                        self.cluster.master,
+                        bucket,
+                        bucket_weight=
+                        next_weight)
+                    bucket.serverless.weight = next_weight
+                while bucket.serverless.weight > self.desired_weight:
+                    if bucket.serverless.weight - weight_change < \
+                            self.desired_weight:
+                        next_weight = self.desired_weight
+                    else:
+                        next_weight = bucket.serverless.weight - weight_change
+                    self.bucket_util.update_bucket_property(
+                        self.cluster.master,
+                        bucket,
+                        bucket_weight=
+                        next_weight)
+                    bucket.serverless.weight = next_weight
+
         # scaling re-balance
-        rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+        nodes_in = []
+        nodes_out = []
+        zone_group = None
+        if scale_cluster:
+            nodes_in = self.cluster.servers[
+                       self.nodes_init:self.nodes_init + scale_cluster_nodes_in]
+            nodes_out = self.cluster.servers[self.nodes_init -
+                                             self.nodes_out:self.nodes_init]
+            if len(nodes_in) > 0:
+                zone_group = dict()
+                for zone in rest.get_zone_names():
+                    zone_group[zone] = 1
+
+        rebalance_task = self.task.async_rebalance(self.cluster, nodes_in,
+                                                   nodes_out,
+                                                   add_nodes_server_groups=zone_group,
                                                    retry_get_process_num=3000)
-        self.sleep(10, "Wait for Rebalance to start")
-        rebalance_failure(fail_case, target_buckets, sim_error)
+
         self.task_manager.get_task_result(rebalance_task)
-        # induced error removal
-        if self.error_sim:
-            self.sleep(60, "Waiting before resolving induced error")
-            self.error_sim.revert(sim_error)
+        failure_thread.join()
+        self.assertFalse(self.thread_fail, "Rebalance thread failed")
         if second_rebalance:
-            self.sleep(60, "Waiting for error resolved before re-balance")
             rebalance_task = self.task.async_rebalance(self.cluster, [], [],
                                                        retry_get_process_num=3000)
             self.task_manager.get_task_result(rebalance_task)
@@ -663,6 +756,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                                                      timeout=1200)
         self.task.jython_task_manager.get_task_result(data_load_task)
         self.bucket_util.validate_doc_loading_results(data_load_task)
+        if expect_data_fail is False and data_load_task.result is False:
+            self.log_failure("Doc CRUDs failed")
         self.assertTrue(rest.is_cluster_balanced(), "Cluster not balanced!")
         validation = self.bucket_util.validate_serverless_buckets(
             self.cluster, self.cluster.buckets)
@@ -719,7 +814,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         for counter in range(init_buckets):
             name = "init_bucket" + str(counter)
             bucket_params = self.__get_bucket_params(b_name=name,
-                                                     width=1, weight=30,
+                                                     width=1,
+                                                     weight=30,
                                                      replica=1)
             bucket_obj = Bucket(bucket_params)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
@@ -759,7 +855,6 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
             # selecting zone-wise nodes to replace in var node_to_replace
             for i in range(replace_nodes_num):
-                print(key_list[i % len(key_list)])
                 if key_list[i % len(key_list)] not in add_to_nodes:
                     add_to_nodes[key_list[i % len(key_list)]] = 1
                 else:
@@ -769,7 +864,6 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                             zone_map[key_list[i % len(key_list)]]:
                         node_to_replace.append(node)
                         break
-
             nodes_in = self.cluster.servers[self.nodes_init:
                                             self.nodes_init + replace_nodes_num]
 

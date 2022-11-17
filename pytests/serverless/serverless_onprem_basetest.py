@@ -16,6 +16,7 @@ class ServerlessOnPremBaseTest(ClusterSetup):
         self.max_weight = self.input.param("max_weight", None)
         self.desired_width = self.input.param("desired_width",  None)
         self.desired_weight = self.input.param("desired_weight", None)
+        self.desired_ram = self.input.param("desired_ram", None)
         # End of serverless specific params
 
         # Split server_groups to a list
