@@ -1,7 +1,7 @@
 from basetestcase import BaseTestCase
 from BucketLib.bucket import Bucket
 from ServerlessLib.dapi.dapi import RestfulDAPI
-from cluster_utils.cluster_ready_functions import Nebula
+from couchbase_helper.documentgenerator import doc_generator
 import json
 
 
@@ -10,6 +10,12 @@ class RestfulDAPITest(BaseTestCase):
         BaseTestCase.setUp(self)
         self.num_buckets = self.input.param("num_buckets", 1)
         self.create_databases(self.num_buckets)
+        self.value_size = self.input.param("value_size", 255)
+        self.key_size = self.input.param("key_size", 8)
+        self.number_of_docs = self.input.param("number_of_docs", 10)
+        self.randomize_value = self.input.param("randomize_value", False)
+        self.randomize_doc_size = self.input.param("randomize_doc_size", False)
+        self.randomize = self.input.param("randomize", False)
 
     def tearDown(self):
         BaseTestCase.tearDown(self)
@@ -61,9 +67,31 @@ class RestfulDAPITest(BaseTestCase):
                                           "access_secret": bucket.serverless.nebula_endpoint.rest_password})
             self.log.info("Checking DAPI health for DB: {}".format(bucket.name))
             self.log.info(bucket.serverless.dapi)
-            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
-            self.assertTrue(response.status_code == 201,
-                            "Insertion failed for database: {}".format(bucket.name))
+
+            gen_obj = doc_generator("key", 0, self.number_of_docs,
+                                    key_size=self.key_size, doc_size=self.value_size,
+                                    randomize_value=self.randomize_value)
+
+            document_name_list = []
+            for i in range(self.number_of_docs):
+                if gen_obj.has_next():
+                    key, doc = gen_obj.next()
+                    document_name_list.append(key)
+                    doc = doc.toMap()
+                    doc = dict(doc)
+                    self.log.info(doc)
+                    response = self.rest_dapi.insert_doc(key, doc, "_default", "_default")
+                    self.log.info("Response code for inserting doc: {}".format(response.status_code))
+
+                    self.assertTrue(response.status_code == 201,
+                                    "Document insertion failed with doc size {} "
+                                    "and key size {} for database {}".format(
+                                        self.value_size, self.key_size, self.number_of_docs))
+
+            for key in document_name_list:
+                response = self.rest_dapi.get_doc(key, "_default", "_default")
+                self.assertTrue(response.status_code == 200,
+                                "Get failed for document with key: {} in database {}".format(key, bucket.name))
 
     def test_dapi_get(self):
         for bucket in self.buckets:
