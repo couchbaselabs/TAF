@@ -131,8 +131,8 @@ class RestfulDAPITest(BaseTestCase):
             response = self.rest_dapi.get_doc("k", "_default", "_default")
             self.assertTrue(response.status_code == 404,
                             "Reading doc for database: {}".format(bucket.name))
-            val = json.loads(response.content)["error"]["errorDetails"]["msg"]
-            self.assertTrue(val == "document not found",
+            val = json.loads(response.content)["error"]["message"]
+            self.assertTrue(val == "The requested document was not found in the collection",
                             "Wrong error msg for deleted doc: {}".format(val))
 
     def test_get_scopes(self):
