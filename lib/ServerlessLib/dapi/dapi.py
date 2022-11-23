@@ -96,13 +96,19 @@ class RestfulDAPI:
         params = doc_content
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
             + collection + "/docs/" + existing_doc_id + "?upsert=true"
-        return self._urllib_request(url, method="POST", params=params)
+        return self._urllib_request(url, method="PUT", params=params)
+
+    def upsert_doc_with_lock_time(self, doc_id, doc_content, scope, collection):
+        params = doc_content
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
+            + collection + "/docs/" + doc_id + "?lockTime=10s"
+        return self._urllib_request(url, method="PUT", params=params)
 
     def update_doc(self, existing_doc_id, doc_content, scope, collection):
         params = doc_content
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
             + collection + "/docs/" + existing_doc_id
-        return self._urllib_request(url, method="POST", params=params)
+        return self._urllib_request(url, method="PUT", params=params)
 
     def delete_doc(self, existing_doc_id, scope, collection):
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
@@ -115,8 +121,10 @@ class RestfulDAPI:
     def create_primary_index(self):
         pass
 
-    def execute_query(self):
-        pass
+    def execute_query(self, query, scope):
+        params = query
+        url = self.endpoint_v1 + "/scopes/" + scope + "/query?"
+        return self._urllib_request(url, method="POST", params=params)
 
     def create_scope(self, scope_name):
         params = scope_name

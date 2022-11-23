@@ -3,6 +3,8 @@ from BucketLib.bucket import Bucket
 from ServerlessLib.dapi.dapi import RestfulDAPI
 from couchbase_helper.documentgenerator import doc_generator
 import json
+import string
+import random
 
 
 class RestfulDAPITest(BaseTestCase):
@@ -16,6 +18,9 @@ class RestfulDAPITest(BaseTestCase):
         self.randomize_value = self.input.param("randomize_value", False)
         self.randomize_doc_size = self.input.param("randomize_doc_size", False)
         self.randomize = self.input.param("randomize", False)
+        self.mixed_key = self.input.param("mixed_key", False)
+        self.number_of_collections = self.input.param("number_of_collections", 10)
+        self.number_of_scopes = self.input.param("number_of_scopes", 10)
 
     def tearDown(self):
         BaseTestCase.tearDown(self)
@@ -70,28 +75,55 @@ class RestfulDAPITest(BaseTestCase):
 
             gen_obj = doc_generator("key", 0, self.number_of_docs,
                                     key_size=self.key_size, doc_size=self.value_size,
-                                    randomize_value=self.randomize_value)
+                                    randomize_value=self.randomize_value, randomize_doc_size=self.randomize_doc_size)
 
-            document_name_list = []
+            # insertion with mixed key - combination of characters, digits and letter
+            if self.mixed_key:
+                key = ''.join(random.choice(string.ascii_uppercase + string.digits +
+                                            string.punctuation + string.ascii_lowercase)
+                              for length in range(self.key_size))
+                doc = ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase + string.digits)
+                              for length in range(self.value_size))
+                self.log.info(key)
+                self.log.info(doc)
+                response = self.rest_dapi.insert_doc(key, doc, "_default", "_default")
+                self.assertTrue(response.status_code == 201,
+                                "Document insertion failed with mixed key {} for database {}".format(key, bucket.name))
+                # get doc
+                response = self.rest_dapi.get_doc(key, "_default", "_default")
+                self.assertTrue(response.status_code == 200,
+                                "Get document failed with mixed key {} for database {}".format(key, bucket.name))
+
+            document_list = []
             for i in range(self.number_of_docs):
                 if gen_obj.has_next():
                     key, doc = gen_obj.next()
-                    document_name_list.append(key)
                     doc = doc.toMap()
                     doc = dict(doc)
+                    document_list.append({"key": key, "doc": doc})
                     self.log.info(doc)
                     response = self.rest_dapi.insert_doc(key, doc, "_default", "_default")
                     self.log.info("Response code for inserting doc: {}".format(response.status_code))
 
                     self.assertTrue(response.status_code == 201,
-                                    "Document insertion failed with doc size {} "
-                                    "and key size {} for database {}".format(
-                                        self.value_size, self.key_size, self.number_of_docs))
+                                    "Document insertion failed with doc {} "
+                                    "and key {} for database {}".format(
+                                        doc, key, bucket.name))
 
-            for key in document_name_list:
+            for doc in document_list:
+                key = doc["key"]
                 response = self.rest_dapi.get_doc(key, "_default", "_default")
                 self.assertTrue(response.status_code == 200,
                                 "Get failed for document with key: {} in database {}".format(key, bucket.name))
+
+            # validate duplicate doc insert
+            for doc in document_list:
+                key = doc["key"]
+                document = doc["doc"]
+                response = self.rest_dapi.insert_doc(key, document, "_default", "_default")
+                self.log.info(response.status_code)
+                self.assertTrue(response.status_code == 404,
+                                "Duplicate entry Insertion for database {}".format(bucket.name))
 
     def test_dapi_get(self):
         for bucket in self.buckets:
@@ -100,17 +132,42 @@ class RestfulDAPITest(BaseTestCase):
                                           "access_secret": bucket.serverless.nebula_endpoint.rest_password})
             self.log.info("Checking DAPI health for DB: {}".format(bucket.name))
             self.log.info(bucket.serverless.dapi)
-            # Insert Doc
-            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
-            self.assertTrue(response.status_code == 201,
-                            "Insertion failed for database: {}".format(bucket.name))
-            # Read Doc
-            response = self.rest_dapi.get_doc("k", "_default", "_default")
-            self.assertTrue(response.status_code == 200,
-                            "Reading doc for database: {}".format(bucket.name))
-            self.log.info(json.loads(response.content))
-            val = json.loads(response.content).values()[0]
-            self.assertTrue(val == {"inserted": True}, "Value mismatch")
+
+            # insertion of document
+            gen_obj = doc_generator("key", 0, self.number_of_docs, key_size=self.key_size,
+                                    doc_size=self.value_size, randomize_value=self.randomize_value)
+            document_list = []
+            for i in range(self.number_of_docs):
+                if gen_obj.has_next():
+                    key, doc = gen_obj.next()
+                    doc = doc.toMap()
+                    doc = dict(doc)
+                    key_document = {"key": key, "doc": doc}
+                    document_list.append(key_document)
+                    self.log.info(doc)
+                    response = self.rest_dapi.insert_doc(key, doc, "_default", "_default")
+                    self.log.info("Response code for inserting doc: {}".format(response.status_code))
+
+                    self.assertTrue(response.status_code == 201,
+                                    "Document insertion failed with doc size {} "
+                                    "and key size {} for database {}".format(
+                                        self.value_size, self.key_size, self.number_of_docs))
+            # Reading of documents
+            for doc in document_list:
+                key = doc["key"]
+                document = doc["doc"]
+                response = self.rest_dapi.get_doc(key, "_default", "_default")
+                self.assertTrue(response.status_code == 200,
+                                "Get failed for with key {} for database {}".format(key, bucket.name))
+                val = json.loads(response.content).values()[0]
+                self.assertTrue(val == document, "Value mismatch")
+
+            # GET for non existing document
+            key = "monkey"
+            response = self.rest_dapi.get_doc(key, "_default", "_default")
+            self.log.info("Response code for getting non existing document {}".format(response.status_code))
+            self.assertTrue(response.status_code == 404,
+                            "Get success for non existing document for database {}".format(bucket.name))
 
     def test_dapi_upsert(self):
         for bucket in self.buckets:
@@ -120,25 +177,120 @@ class RestfulDAPITest(BaseTestCase):
             self.log.info("Checking DAPI health for DB: {}".format(bucket.name))
             self.log.info(bucket.serverless.dapi)
             # Insert Doc
-            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
-            self.assertTrue(response.status_code == 201,
-                            "Insertion failed for database: {}".format(bucket.name))
+            gen_obj = doc_generator("key", 0, self.number_of_docs, key_size=self.key_size,
+                                    doc_size=self.value_size, randomize_value=self.randomize_value)
+            document_list = []
+            for i in range(self.number_of_docs):
+                if gen_obj.has_next():
+                    key, doc = gen_obj.next()
+                    doc = doc.toMap()
+                    doc = dict(doc)
+                    key_document = {"key": key, "doc": doc}
+                    document_list.append(key_document)
+                    self.log.info(doc)
+                    self.log.info(key)
+                    response = self.rest_dapi.insert_doc(key, doc, "_default", "_default")
+                    self.log.info("Response code for inserting doc: {}".format(response.status_code))
+
+                    self.assertTrue(response.status_code == 201,
+                                    "Document insertion failed with doc size {} "
+                                    "and key size {} for database {}".format(
+                                        self.value_size, self.key_size, bucket.name))
             # Read Doc
-            response = self.rest_dapi.get_doc("k", "_default", "_default")
-            self.assertTrue(response.status_code == 200,
-                            "Reading doc for database: {}".format(bucket.name))
-            val = json.loads(response.content).values()[0]
-            self.assertTrue(val == {"inserted": True}, "Value mismatch")
+            for doc in document_list:
+                key = doc["key"]
+                document = doc["doc"]
+                response = self.rest_dapi.get_doc(key, "_default", "_default")
+                self.assertTrue(response.status_code == 200,
+                                "Get failed for with key {} for database {}".format(key, bucket.name))
+                val = json.loads(response.content).values()[0]
+                self.assertTrue(val == document, "Value mismatch")
             # Upsert Doc
-            response = self.rest_dapi.upsert_doc("k", {"updated": True}, "_default", "_default")
-            self.assertTrue(response.status_code == 201,
-                            "DAPI is not healthy for database: {}".format(bucket.name))
+            self.randomize_value = (not self.randomize_value)
+            gen_obj = doc_generator("key", 0, self.number_of_docs, key_size=self.key_size,
+                                    doc_size=self.value_size, randomize_value=self.randomize_value)
+            document_list = []
+            for i in range(self.number_of_docs):
+                if gen_obj.has_next():
+                    key, doc = gen_obj.next()
+                    doc = doc.toMap()
+                    doc = dict(doc)
+                    key_document = {"key": key, "doc": doc}
+                    document_list.append(key_document)
+                    self.log.info(doc)
+                    self.log.info(key)
+                    response = self.rest_dapi.upsert_doc(key, doc, "_default", "_default")
+                    self.log.info("Response code for Updating doc: {}".format(response.status_code))
+
+                    self.assertTrue(response.status_code == 200,
+                                    "Document updation failed with doc size {} "
+                                    "and key size {} for database {}".format(
+                                        self.value_size, self.key_size, self.number_of_docs))
             # Read Doc
-            response = self.rest_dapi.get_doc("k", "_default", "_default")
-            self.assertTrue(response.status_code == 200,
-                            "Reading doc for database: {}".format(bucket.name))
-            val = json.loads(response.content).values()[0]
-            self.assertTrue(val == {"updated": True}, "Value mismatch")
+            for doc in document_list:
+                key = doc["key"]
+                document = doc["doc"]
+                response = self.rest_dapi.get_doc(key, "_default", "_default")
+                self.assertTrue(response.status_code == 200,
+                                "Get failed for with key {} for database {}".format(key, bucket.name))
+                val = json.loads(response.content).values()[0]
+                self.assertTrue(val == document, "Value mismatch")
+
+            # upsert a non existing document
+            gen_obj = doc_generator("monkey", 0, 1,
+                                    key_size=self.key_size, doc_size=self.value_size,
+                                    randomize_value=self.randomize_value)
+            if gen_obj.has_next():
+                key, doc = gen_obj.next()
+                doc = doc.toMap()
+                doc = dict(doc)
+                self.log.info(doc)
+                self.log.info(key)
+                # upsert for non existing document
+                response = self.rest_dapi.upsert_doc(key, doc, "_default", "_default")
+                self.log.info("Response code for updating a non existing document: {}".format(response.status_code))
+                self.assertTrue(response.status_code == 200,
+                                "Upsert failed for non existing document in database {}".format(bucket.name))
+                response = self.rest_dapi.get_doc(key, "_default", "_default")
+                self.assertTrue(response.status_code == 200,
+                                "Get failed for database {}".format(bucket.name))
+                # upsert with same key and value
+                response = self.rest_dapi.upsert_doc(key, doc, "_default", "_default")
+                self.log.info("Response code for updating doc with same key and value {}".format(response.status_code))
+                self.assertTrue(response.status_code == 200,
+                                "Updation failed with same key and value for database {}".format(bucket.name))
+                # upsert with parameters - lock time
+                response = self.rest_dapi.upsert_doc_with_lock_time(key, doc, "_default", "_default")
+                self.log.info("Response code for updation of doc with lock time: {}".format(response.status_code))
+                doc["temp"] = "temp value"
+                response = self.rest_dapi.get_doc(key, "_default", "_default")
+                self.log.info("Response code for get doc within lock time: {}".format(response.status_code))
+                self.assertTrue(response.status_code == 200,
+                                "Get doc failed within lock time for database {}".format(response.status_code))
+
+                # Updation with mixed key - combination of characters, digits and letter
+                if self.mixed_key:
+                    key = ''.join(random.choice(string.ascii_uppercase + string.digits +
+                                                string.punctuation + string.ascii_lowercase)
+                                  for length in range(self.key_size))
+                    doc = ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase + string.digits)
+                                  for length in range(self.value_size))
+                    self.log.info(key)
+                    self.log.info(doc)
+                    response = self.rest_dapi.insert_doc(key, doc, "_default", "_default")
+                    self.assertTrue(response.status_code == 201,
+                                    "Document insertion failed with mixed key {} for database {}".format(key,
+                                                                                                         bucket.name))
+                    # get doc
+                    response = self.rest_dapi.get_doc(key, "_default", "_default")
+                    self.assertTrue(response.status_code == 200,
+                                    "Get document failed with mixed key {} for database {}".format(key, bucket.name))
+                    # update doc
+                    doc = ''.join(random.choice(string.ascii_lowercase + string.digits)
+                                  for length in range(self.value_size))
+                    response = self.rest_dapi.upsert_doc(key, doc, "_default", "_default")
+                    self.assertTrue(response.status_code == 200,
+                                    "Document updation failed with mixed key {} for database {}".format(key, bucket.name))
 
     def test_dapi_delete(self):
         for bucket in self.buckets:
@@ -147,21 +299,43 @@ class RestfulDAPITest(BaseTestCase):
                                           "access_secret": bucket.serverless.nebula_endpoint.rest_password})
             self.log.info("Checking DAPI health for DB: {}".format(bucket.name))
             self.log.info(bucket.serverless.dapi)
-            # Insert Doc
-            response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
-            self.assertTrue(response.status_code == 201,
-                            "Insertion failed for database: {}".format(bucket.name))
+
+            # Insertion of documents
+            gen_obj = doc_generator("key", 0, self.number_of_docs, key_size=self.key_size,
+                                    doc_size=self.value_size, randomize_value=self.randomize_value)
+            document_list = []
+            for i in range(self.number_of_docs):
+                if gen_obj.has_next():
+                    key, doc = gen_obj.next()
+                    doc = doc.toMap()
+                    doc = dict(doc)
+                    key_document = {"key": key, "doc": doc}
+                    document_list.append(key_document)
+                    self.log.info(doc)
+                    response = self.rest_dapi.insert_doc(key, doc, "_default", "_default")
+                    self.log.info("Response code for inserting doc: {}".format(response.status_code))
+
+                    self.assertTrue(response.status_code == 201,
+                                    "Document insertion failed with doc size {} "
+                                    "and key size {} for database {}".format(
+                                        self.value_size, self.key_size, self.number_of_docs))
             # Delete Doc
-            response = self.rest_dapi.delete_doc("k", "_default", "_default")
-            self.assertTrue(response.status_code == 200,
-                            "Delete doc for database: {}".format(bucket.name))
-            #Read Doc
+            for doc in document_list:
+                key = doc["key"]
+                response = self.rest_dapi.delete_doc(key, "_default", "_default")
+                self.assertTrue(response.status_code == 200,
+                                "Delete doc failed with key {} for database {}".format(key, bucket.name))
+
+            # Read Documents
             response = self.rest_dapi.get_doc("k", "_default", "_default")
-            self.assertTrue(response.status_code == 404,
-                            "Reading doc for database: {}".format(bucket.name))
-            val = json.loads(response.content)["error"]["message"]
-            self.assertTrue(val == "The requested document was not found in the collection",
-                            "Wrong error msg for deleted doc: {}".format(val))
+            for doc in document_list:
+                key = doc["key"]
+                response = self.rest_dapi.get_doc(key, "_default", "_default")
+                self.assertTrue(response.status_code == 404,
+                                "Reading doc with key {} for database: {}".format(key, bucket.name))
+                val = json.loads(response.content)["error"]["message"]
+                self.assertTrue(val == "The requested document was not found in the collection",
+                                "Wrong error msg for deleted doc: {}".format(val))
 
     def test_get_scopes(self):
         for bucket in self.buckets:
@@ -172,9 +346,9 @@ class RestfulDAPITest(BaseTestCase):
             self.log.info("To get list of all scopes for DB: {}".format(bucket.name))
             self.log.info(bucket.serverless.dapi)
 
-            number_of_scopes, scope_name , scope_suffix = 10, "scope", 0
+            scope_name , scope_suffix = "scope", 0
             scope_name_list = ["_default", "_system"]
-            for i in range(number_of_scopes):
+            for i in range(self.number_of_scopes):
                 scope_suffix += 1
                 scope_name = "scope" + str(scope_suffix)
                 scope_name_list.append(scope_name)
@@ -215,9 +389,9 @@ class RestfulDAPITest(BaseTestCase):
             self.assertTrue(response.status_code == 200,
                             "Creation of scope failed for database {}".format(bucket.name))
 
-            number_of_collection, collection_name, collection_suffix = 10, "collection", 0
+            collection_name, collection_suffix = "collection", 0
             collection_name_list = []
-            for i in range(number_of_collection):
+            for i in range(self.number_of_collections):
                 collection_suffix += 1
                 collection_name = "collection" + str(collection_suffix)
                 collection_name_list.append(collection_name)
@@ -236,7 +410,7 @@ class RestfulDAPITest(BaseTestCase):
 
             collection_list = json.loads(response.content)
             collection_list = collection_list["collections"]
-            self.assertTrue(len(collection_list) == number_of_collection,
+            self.assertTrue(len(collection_list) == self.number_of_collections,
                             "Getting all collections failed for testscope for database {}".format(bucket.name))
 
             temp_collection_list = []
@@ -377,16 +551,33 @@ class RestfulDAPITest(BaseTestCase):
                                           "access_secret": bucket.serverless.nebula_endpoint.rest_password})
             self.log.info("Creation of scope for database {}".format(bucket.name))
 
-            scope_name = "testScope"
-            response = self.rest_dapi.create_scope({"scopeName": scope_name})
-            self.log.info(response.status_code)
-            self.assertTrue(response.status_code == 200,
-                            "Create scope failed for database {}".format(bucket.name))
+            scope_name, scope_suffix = "scope", 0
+            scope_name_list = ["_default", "_system"]
+            for i in range(self.number_of_scopes):
+                scope_suffix += 1
+                scope_name = "scope" + str(scope_suffix)
+                scope_name_list.append(scope_name)
+                response = self.rest_dapi.create_scope({"scopeName": scope_name})
+                self.log.info("response for creation of scope: {}".format(response.status_code))
+                self.assertTrue(response.status_code == 200,
+                                "Creation of scope failed for database {}".format(bucket.name))
 
-            response = self.rest_dapi.get_collection_list(scope_name)
-            self.log.info("Response code for getting scope {}".format(response.status_code))
+            response = self.rest_dapi.get_scope_list()
+            self.log.info("status code for getting list of scope: {}".format(response.status_code))
+            self.log.info(json.loads(response.content))
             self.assertTrue(response.status_code == 200,
-                            "Get test scope failed for database {}".format(bucket.name))
+                            "Getting list of scopes failed for database {}".format(bucket.name))
+
+            response_dict = json.loads(response.content)
+            response_list = response_dict["scopes"]
+            scope_list = []
+            for scope in response_list:
+                scope_list.append(scope["Name"])
+
+            scope_list.sort()
+            scope_name_list.sort()
+            self.assertTrue(scope_list == scope_name_list,
+                            "Wrong scopes received for database {}".format(bucket.name))
 
     def test_create_collection(self):
         for bucket in self.buckets:
@@ -395,16 +586,42 @@ class RestfulDAPITest(BaseTestCase):
                                           "access_secret": bucket.serverless.nebula_endpoint.rest_password})
             self.log.info("Creation of collection for database {}".format(bucket.name))
 
-            collection_name = "testCollection"
-            response = self.rest_dapi.create_collection("_default", {"name": collection_name})
+            scope = "testScope"
+            response = self.rest_dapi.create_scope({"scopeName": scope})
             self.log.info(response.status_code)
             self.assertTrue(response.status_code == 200,
-                            "Create collection for database {}".format(bucket.name))
+                            "Creation of scope failed for database {}".format(bucket.name))
 
-            response = self.rest_dapi.get_document_list("_default", collection_name)
-            self.log.info("Response code for getting collection {}".format(response.status_code))
+            collection_name, collection_suffix = "collection", 0
+            collection_name_list = []
+            for i in range(self.number_of_collections):
+                collection_suffix += 1
+                collection_name = "collection" + str(collection_suffix)
+                collection_name_list.append(collection_name)
+                response = self.rest_dapi.create_collection(scope, {"name": collection_name})
+                self.log.info("Response code for creation of collection: {}".format(response.status_code))
+                self.assertTrue(response.status_code == 200,
+                                "Creation of collection failed for database {}".format(bucket.name))
+
+            response = self.rest_dapi.get_collection_list(scope)
+
+            self.log.info(response.status_code)
+            self.log.info(json.loads(response.content))
+
             self.assertTrue(response.status_code == 200,
-                            "Getting test collection failed for database {}".format(bucket.name))
+                            "Getting list of collections failed for database {}".format(bucket.name))
+
+            collection_list = json.loads(response.content)
+            collection_list = collection_list["collections"]
+
+            temp_collection_list = []
+            for collection in collection_list:
+                temp_collection_list.append(collection["Name"])
+
+            temp_collection_list.sort()
+            collection_name_list.sort()
+            self.assertTrue(temp_collection_list == collection_name_list,
+                            "Wrong collection/s received for database {}".format(bucket.name))
 
     def test_delete_collection(self):
         for bucket in self.buckets:
@@ -467,3 +684,67 @@ class RestfulDAPITest(BaseTestCase):
             for scope in scope_name_list:
                 self.assertTrue(scope != scope_name,
                                 "Getting deleted scope: {} for database {}".format(scope_name, bucket.name))
+
+    def test_execute_query(self):
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Execute query for database {}".format(bucket.name))
+
+            gen_obj = doc_generator("key", 0, self.number_of_docs, key_size=self.key_size,
+                                    doc_size=self.value_size, randomize_value=self.randomize_value)
+            document_list = []
+            for i in range(self.number_of_docs):
+                if gen_obj.has_next():
+                    key, doc = gen_obj.next()
+                    doc = doc.toMap()
+                    doc = dict(doc)
+                    key_document = {"key": key, "doc": doc}
+                    document_list.append(key_document)
+                    self.log.info(doc)
+                    response = self.rest_dapi.insert_doc(key, doc, "_default", "_default")
+                    self.log.info("Response code for inserting doc: {}".format(response.status_code))
+
+                    self.assertTrue(response.status_code == 201,
+                                    "Document insertion failed with doc size {} "
+                                    "and key size {} for database {}".format(
+                                        self.value_size, self.key_size, self.number_of_docs))
+
+            for doc in document_list:
+                key = doc["key"]
+                document = doc["doc"]
+                response = self.rest_dapi.get_doc(key, "_default", "_default")
+                get_doc = json.loads(response.content)
+                get_doc = get_doc["doc"]
+                self.log.info(get_doc)
+                self.assertTrue(response.status_code == 200,
+                                "Reading doc failed with  {} for database: {}".format(key, bucket.name))
+                self.assertTrue(document == get_doc,
+                                "Wrong document received for database: {}".format(bucket.name))
+
+            # Executing simple query
+            query = {"query": "select * from `_default` limit 2;"}
+            response = self.rest_dapi.execute_query(query, "_default")
+            self.log.info(response.status_code)
+            self.log.info(response.content)
+            self.assertTrue(response.status_code == 200,
+                            "Query Execution failed for database {}".format(bucket.name))
+
+            # Execute query with Named parameters
+            query = {"query": "SELECT age, body FROM _default WHERE age=$age LIMIT 5",
+                     "parameters": {"age": 10}}
+            response = self.rest_dapi.execute_query(query, "_default")
+            self.log.info("Response status code for execute query: {}".format(response.status_code))
+            self.log.info(response.content)
+            self.assertTrue(response.status_code == 200, "Query execution failed for database {}".format(bucket.name))
+            # Invalid Query
+            query = {"query": "SLECT city, body FROM _default WHERE age=$age LIMIT 5",
+                     "parameters": {"age": 5}}
+            response = self.rest_dapi.execute_query(query, "_default")
+            self.log.info("Response code for execution of invalid query: {}".format(response.status_code))
+            self.log.info(response.content)
+            self.assertTrue(response.status_code == 400,
+                            "Query Execution passed with invalid query for database: {}".format(bucket.name))
+            val = json.loads(response.content)["error"]["message"]
+            self.log.info(val)
