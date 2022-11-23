@@ -21,6 +21,8 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         self.validate_bucket_creation = self.input.param("validate_bucket_creation", True)
         self.pick_zone_wise = self.input.param("pick_zone_wise", False)
         self.spec_name = self.input.param("bucket_spec", None)
+        self.stop_rebalance_case = self.input.param("stop_rebalance_case",
+                                                   False)
         self.data_spec_name = self.input.param("data_spec_name", None)
         self.failure_type = self.input.param("failure_type", "stop_memcached")
         self.current_fo_strategy = self.input.param("current_fo_strategy",
@@ -98,6 +100,29 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
                 self.sdk_client_pool,
                 self.sdk_compression)
 
+    def stop_rebalance(self):
+        counter = 0
+        expected_progress = [20, 40, 80]
+        for progress in expected_progress:
+            if self.rest.is_cluster_balanced():
+                break
+            counter += 1
+            reached = self.cluster_util.rebalance_reached(self.rest,
+                                                          progress)
+            self.assertTrue(reached,
+                            "Rebalance failed or did not reach "
+                            "{0}%".format(progress))
+            stopped = self.rest.stop_rebalance(wait_timeout=30)
+            self.assertTrue(stopped, msg="Unable to stop rebalance")
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets, timeout=1200)
+            self.task.async_rebalance(self.cluster, [], [],
+                                      retry_get_process_num=3000)
+            self.sleep(5, "Waiting before next iteration")
+        if counter < len(expected_progress):
+            self.log.info("Cluster balanced before stopping for "
+                          "progress{0}".format(expected_progress[counter]))
+
     def __update_server_obj(self):
         temp_data = self.servers_to_fail
         self.servers_to_fail = dict()
@@ -135,6 +160,8 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
                                                    retry_get_process_num=2000,
                                                    add_nodes_server_groups =
                                                    self.zone_affected)
+        if self.stop_rebalance_case:
+            self.stop_rebalance()
         self.task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance failed")
 
