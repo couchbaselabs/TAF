@@ -2,22 +2,39 @@
 
 ## Initial Setup
 
+### On Linux
+
 1. Install Java. sdkman is a very useful tool for this.  JDK 11 is preferred as Jython doesn't seem to like JDK8 on Ubuntu 18+.
 
 2. Install Jython and add submodule dependency. Download Jython Installer from [here](https://repo1.maven.org/maven2/org/python/jython-installer/2.7.2/jython-installer-2.7.2.jar)
 
 ```bash
-# jython_path=/opt/jython 
-mkdir <jython_path>
-java -jar jython-installer-2.7.2.jar -d <jython_path> -s
+jython_path=/opt/jython
+mkdir $jython_path
+java -jar jython-installer-2.7.2.jar -d $jython_path -s
 
 # Installing dependency packages
-cat requirements.txt | xargs | xargs <jython_path>/bin/easy_install
+cat requirements.txt | xargs | xargs $jython_path/bin/easy_install
 
 # Adding a submodule to the Git repository
 git submodule init
 git submodule update --init --force --remote
 ```
+
+### On Mac
+
+```bash
+# Installs Jython 2.7.3
+brew install jython
+
+# Installing dependency packages
+cat requirements.txt | xargs | xargs jython -m pip install
+
+# Adding a submodule to the Git repository
+git submodule init
+git submodule update --init --force --remote
+```
+
 
 ## Test Environment Requirement
 
