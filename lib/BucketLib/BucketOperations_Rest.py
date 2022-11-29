@@ -390,31 +390,16 @@ class BucketHelper(RestConnection):
                            % content)
         return status
 
-    def set_throttle_limit(self, bucket_name, throttle_limit, service="data"):
+    def set_throttle_limit(self, bucket_name, throttle_limit=5000, storage_limit=500, service="data"):
         key_throttle_limit = service + "ThrottleLimit"
+        key_storage_limit = service + "StorageLimit"
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                               urllib.quote_plus("%s" % bucket_name))
-        params_dict = {}
-        params_dict[key_throttle_limit] = throttle_limit
-        params = urllib.urlencode(params_dict)
+        params = urllib.urlencode({key_throttle_limit: throttle_limit, key_storage_limit: storage_limit})
         self.log.debug("%s with param: %s" % (api, params))
         status, content, _ = self._http_request(api, 'POST', params)
         if not status:
             self.log.error("Failed to update throttle limit: %s"
-                           % content)
-        return status, content
-
-    def set_storage_limit(self, bucket_name, storage_limit, service="data"):
-        key_storage_limit = service + "StorageLimit"
-        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
-                              urllib.quote_plus("%s" % bucket_name))
-        params_dict = {}
-        params_dict[key_storage_limit] = storage_limit
-        params = urllib.urlencode(params_dict)
-        self.log.debug("%s with param: %s" % (api, params))
-        status, content, _ = self._http_request(api, 'POST', params)
-        if not status:
-            self.log.error("Failed to update storage limit: %s"
                            % content)
         return status, content
 

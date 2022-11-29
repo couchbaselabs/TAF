@@ -1482,3 +1482,115 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.sleep(60, "60 second sleep before next iteration")
             iteration+=1
         self.assertTrue(storage_quota > storage_quota_init, "EBS scaling fails")
+
+    def test_storage_limit(self):
+        """
+        :return:
+        """
+        self.log.info("======= test_storage_limit starts=====")
+        loader_map = dict()
+        self.create_required_buckets()
+        self.get_servers_for_databases()
+        data_storage_limit = self.input.param("data_storage_limit", 1)
+        '''
+         Step 1: Set storage limit
+        '''
+        self.bucket_util.set_throttle_limit(self.cluster.buckets[0], throttling_limit=5000, storage_limit=data_storage_limit)
+        storage_limit = self.bucket_util.get_storage_limit(self.cluster.buckets[0])
+        self.log.info("Storage Limit  == {}".format(storage_limit))
+        '''
+          Step 2: Start data load
+        '''
+        self.create_start = 0
+        self.create_end = 10000
+        disk_used_in_bytes = float(int(self.bucket_util.get_disk_used(self.cluster.buckets[0])))
+        disk_used_in_gbs = disk_used_in_bytes/1024/1024/1024
+        self.log.debug("disk_used_in_GBs {}".format(disk_used_in_gbs))
+
+        while disk_used_in_gbs < storage_limit:
+            for bucket in self.cluster.buckets:
+                for scope in bucket.scopes.keys():
+                    for collection in bucket.scopes[scope].collections.keys():
+                        if scope == CbServer.system_scope:
+                            continue
+                    work_load_settings = DocLoaderUtils.get_workload_settings(
+                        key=self.key, key_size=self.key_size, doc_size=self.doc_size,
+                        create_perc=100, create_start=self.create_start, create_end=self.create_end,
+                        ops_rate=self.ops_rate)
+                    dg = DocumentGenerator(work_load_settings,
+                                           self.key_type, self.val_type)
+                    loader_map.update(
+                        {"%s:%s:%s" % (bucket.name, scope, collection): dg})
+            self.init_sdk_pool_object()
+            self.create_sdk_client_pool(buckets=self.cluster.buckets,
+                                    req_clients_per_bucket=1)
+
+            loading_tasks = DocLoaderUtils.perform_doc_loading(
+                self.doc_loading_tm, loader_map, self.cluster,
+                self.cluster.buckets, async_load=True, validate_results=False,
+                sdk_client_pool=self.sdk_client_pool)
+            disk_used_in_bytes = float(int(self.bucket_util.get_disk_used(self.cluster.buckets[0])))
+            disk_used_in_gbs = disk_used_in_bytes/1024/1024/1024
+            self.log.info("disk_used_during_data_load {}".format(disk_used_in_gbs))
+            self.doc_loading_tm.getAllTaskResult()
+            for task in loading_tasks:
+                for optype, failures in task.failedMutations.items():
+                    break_outer_loop = False
+                    for failure in failures:
+                        if failure is not None and failure.err().getClass().getSimpleName() == "CouchbaseException":
+                            self.sleep(180, "Sleep before next data load iteration")
+                            break_outer_loop = True
+                            break
+                    if break_outer_loop:
+                        break
+            disk_used_in_bytes = float(int(self.bucket_util.get_disk_used(self.cluster.buckets[0])))
+            disk_used_in_gbs = disk_used_in_bytes/1024/1024/1024
+            self.log.info("disk_used_after_wal_trim {}".format(disk_used_in_gbs))
+
+            self.create_start = self.create_end
+            self.create_end = self.create_start + 10000
+        '''
+         Step 3 : Data load for
+                  storage limit
+                  validation
+        '''
+        item_count = self.bucket_util.get_items_count(self.cluster.buckets[0])
+        self.log.info("Num_items_count== {}".format(item_count))
+        self.create_start = int(item_count)
+        self.create_end = self.create_start + 100
+        for bucket in self.cluster.buckets:
+            for scope in bucket.scopes.keys():
+                for collection in bucket.scopes[scope].collections.keys():
+                    if scope == CbServer.system_scope:
+                        continue
+                    work_load_settings = DocLoaderUtils.get_workload_settings(
+                        key=self.key, key_size=self.key_size, doc_size=self.doc_size,
+                        create_perc=100, create_start=self.create_start, create_end=self.create_end,
+                        ops_rate=self.ops_rate)
+                    dg = DocumentGenerator(work_load_settings,
+                                           self.key_type, self.val_type)
+                    loader_map.update(
+                        {"%s:%s:%s" % (bucket.name, scope, collection): dg})
+        self.init_sdk_pool_object()
+        self.create_sdk_client_pool(buckets=self.cluster.buckets,
+                                    req_clients_per_bucket=1)
+
+        loading_tasks = DocLoaderUtils.perform_doc_loading(
+                self.doc_loading_tm, loader_map, self.cluster,
+                self.cluster.buckets, async_load=True, validate_results=False,
+                sdk_client_pool=self.sdk_client_pool)
+        self.doc_loading_tm.getAllTaskResult()
+        new_item_count = self.bucket_util.get_items_count(self.cluster.buckets[0])
+        '''
+           Step 4: Storage Limit Validation
+        '''
+        if new_item_count != item_count:
+            disk_used_in_bytes = float(int(self.bucket_util.get_disk_used(self.cluster.buckets[0])))
+            disk_used_in_gbs = disk_used_in_bytes/1024/1024/1024
+            self.log.info("disk_used after final load {}".format(disk_used_in_gbs))
+            if disk_used_in_gbs < storage_limit:
+                self.log.info("new_item_count {} >  item_count{} since disk used < storage limit".format(new_item_count,item_count))
+            else:
+                self.assertTrue(new_item_count == item_count, "new_item_count {} >  item_count{}".format(new_item_count, item_count))
+        else:
+            self.log.info("New_item_count {} == item_count{}".format(new_item_count,item_count))

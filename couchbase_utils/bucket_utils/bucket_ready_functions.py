@@ -5857,19 +5857,13 @@ class BucketUtils(ScopeUtils):
         self.log.info("num_throttled %s, ru %s, wu %s" % (num_throttled, ru, wu))
         return num_throttled, ru, wu
 
-    def set_throttle_limit(self, bucket, throttling_limit=5000, service="data"):
+    def set_throttle_limit(self, bucket, throttling_limit=5000, storage_limit=500, service="data"):
         for server in bucket.servers:
             bucket_helper = BucketHelper(server)
             _, content = bucket_helper.set_throttle_limit(bucket_name=bucket.name,
                                                           throttle_limit=throttling_limit,
+                                                          storage_limit=storage_limit,
                                                           service=service)
-
-    def set_storage_limit(self, bucket, storage_limit=500, service="data"):
-        for server in bucket.servers:
-            bucket_helper = BucketHelper(server)
-            _, content = bucket_helper.set_storage_limit(bucket_name=bucket.name,
-                                                         storage_limit=storage_limit,
-                                                         serivce=service)
 
     def get_throttle_limit(self, bucket):
         bucket_helper = BucketHelper(bucket.servers[0])
@@ -5880,6 +5874,16 @@ class BucketUtils(ScopeUtils):
         bucket_helper = BucketHelper(bucket.servers[0])
         output = bucket_helper.get_bucket_json(bucket.name)
         return output["dataStorageLimit"]
+
+    def get_disk_used(self, bucket):
+        bucket_helper = BucketHelper(bucket.servers[0])
+        output = bucket_helper.get_bucket_json(bucket.name)
+        return output["basicStats"]["diskUsed"]
+
+    def get_items_count(self, bucket):
+        bucket_helper = BucketHelper(bucket.servers[0])
+        output = bucket_helper.get_bucket_json(bucket.name)
+        return output["basicStats"]["itemCount"]
 
     def get_storage_quota(self, bucket):
         output = RestConnection(bucket.servers[0]).get_pools_default()
