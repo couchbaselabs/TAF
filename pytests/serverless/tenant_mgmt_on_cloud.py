@@ -764,6 +764,9 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             over_ride = dict()
             if Bucket.width in s_dict and (bucket_obj.serverless.width
                                            != s_dict[Bucket.width]):
+                # TODO: Waiting for bucket_width decr support (AV-47047)
+                if bucket_obj.serverless.width > s_dict[Bucket.width]:
+                    continue
                 over_ride[Bucket.width] = s_dict[Bucket.width]
                 db_info["desired_width"] = s_dict[Bucket.width]
                 bucket_obj.serverless.width = s_dict[Bucket.width]
