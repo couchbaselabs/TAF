@@ -1576,7 +1576,6 @@ class RestConnection(newRC):
                 stat_dict[node_stat['hostname']] = dict()
                 stat_dict[node_stat['hostname']]['version'] = node_stat['version']
                 stat_dict[node_stat['hostname']]['services'] = node_stat['services']
-                stat_dict[node_stat['hostname']]['serverGroup'] = node_stat['serverGroup']
                 stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats'].get(
                     'cpu_utilization_rate')
                 stat_dict[node_stat['hostname']]['clusterMembership'] = node_stat['clusterMembership']
@@ -1587,6 +1586,9 @@ class RestConnection(newRC):
                 stat_dict[node_stat['hostname']]['swap_mem_total'] = node_stat['systemStats'].get('swap_total')
                 stat_dict[node_stat['hostname']]['active_item_count'] = 0
                 stat_dict[node_stat['hostname']]['replica_item_count'] = 0
+                if node_stat['version'][:5] >= '7.5.0':
+                    stat_dict[node_stat['hostname']]['serverGroup'] = \
+                        node_stat['serverGroup']
                 if 'curr_items' in node_stat['interestingStats']:
                     stat_dict[node_stat['hostname']]['active_item_count'] = node_stat['interestingStats']['curr_items']
                 if 'vb_replica_curr_items' in node_stat['interestingStats']:

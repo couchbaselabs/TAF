@@ -226,7 +226,11 @@ class ClusterUtils:
         for server in servers:
             rest = RestConnection(server)
             result = rest.get_pools_info()
-            profiles.append(result["configProfile"])
+            node_info = RestConnection(server).get_nodes_self(10)
+            if node_info.version[:5] < '7.5.0':
+                profiles.append("default")
+            else:
+                profiles.append(result["configProfile"])
         if len(list(set(profiles))) > 1:
             raise Exception("Profile type mismatch")
         return profiles[0]
@@ -1087,7 +1091,8 @@ class ClusterUtils:
         for cluster_node, node_stats in cluster_stat.items():
             row = list()
             row.append(cluster_node.split(':')[0])
-            row.append(node_stats["serverGroup"])
+            if "serverGroup" in node_stats:
+                row.append(node_stats["serverGroup"])
             row.append(", ".join(node_stats["services"]))
             row.append(str(node_stats["cpu_utilization"])[0:6])
             row.append(humanbytes(str(node_stats["mem_total"])))

@@ -418,7 +418,10 @@ class RebalanceTask(Task):
                     node_status = "--- OUT --->"
             elif node_ip in node_ips_to_remove:
                 node_status = "--- OUT --->"
-            self.table.add_row([node_ip, stat["serverGroup"],
+            server_group = ""
+            if "serverGroup" in stat:
+                server_group = stat["serverGroup"]
+            self.table.add_row([node_ip, server_group,
                                 ", ".join(stat["services"]),
                                 stat["version"] + " / " + CbServer.cluster_profile,
                                 stat["cpu_utilization"], node_status,
