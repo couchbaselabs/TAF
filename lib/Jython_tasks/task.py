@@ -4000,11 +4000,22 @@ class DatabaseCreateTask(Task):
             self.server.memcached_port = int(record.getPort())
             self.log.info("SRV {} is resolved to {}.".format(self.srv,
                                                              self.server.ip))
-            access, secret = self.serverless_util.generate_keys(
-                self.cluster.pod, self.cluster.tenant, self.bucket_obj.name)
-            self.serverless_util.allow_my_ip(self.cluster.pod,
-                                             self.cluster.tenant,
-                                             self.bucket_obj.name)
+            count = 20
+            while count > 0:
+                try:
+                    access, secret = self.serverless_util.generate_keys(
+                        self.cluster.pod, self.cluster.tenant,
+                        self.bucket_obj.name)
+                    self.serverless_util.allow_my_ip(self.cluster.pod,
+                                                     self.cluster.tenant,
+                                                     self.bucket_obj.name)
+                    break
+                except Exception as exp:
+                    self.sleep(5, "Will retry. Exception: %s" % exp)
+                count -= -1
+            else:
+                raise Exception("%s - RBAC role creation failed"
+                                % self.bucket_obj.name)
             self.server.rest_username = access
             self.server.rest_password = secret
             self.server.port = "18091"
