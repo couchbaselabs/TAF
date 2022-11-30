@@ -876,6 +876,16 @@ class RestConnection(object):
                                 "failed with error {1}".format(self.ip, content))
         return status, content, header
 
+    def enable_encryption(self):
+        api = self.baseUrl + "internalSettings"
+        params = urllib.urlencode({'canEnableStrictEncryption': "true"})
+        status, content, header = self._http_request(api, 'POST', params)
+        if status:
+            return content
+        else:
+            self.test_log.error("Turning encryption on failed")
+            raise Exception("Setting encryption failed")
+
     def set_encryption_level(self, level="control"):
         _ = self.update_autofailover_settings(False, 120, False)
         api = self.baseUrl + "settings/security"
@@ -1638,6 +1648,7 @@ class RestConnection(object):
             return json_parsed
         else:
             raise Exception("Unable to get jre path from ns-server")
+
 
     def node_statuses(self, timeout=120):
         nodes = []

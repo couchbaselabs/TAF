@@ -3,6 +3,8 @@ import zlib
 import json
 
 from cb_tools.cb_tools_base import CbCmdBase
+from BucketLib.bucket import Bucket
+from memcached.helper.data_helper import MemcachedClientHelper
 
 
 class Cbstats(CbCmdBase):

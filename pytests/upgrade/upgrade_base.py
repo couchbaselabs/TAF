@@ -1,7 +1,10 @@
 import re
 
-from Cb_constants import CbServer, DocLoading
+from Cb_constants import CbServer, DocLoading, ClusterRun
 from basetestcase import BaseTestCase
+from basetestcase import BaseTestCase
+import Jython_tasks.task as jython_tasks
+from pytests.ns_server.enforce_tls import EnforceTls
 from builds.build_query import BuildQuery
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
@@ -37,6 +40,8 @@ class UpgradeBase(BaseTestCase):
         self.prefer_master = self.input.param("prefer_master", False)
         self.update_nodes = self.input.param("update_nodes", "kv").split(";")
         self.is_downgrade = self.input.param('downgrade', False)
+        self.enable_tls = self.input.param('enable_tls', False)
+        self.tls_level = self.input.param('tls_level', "all")
         self.upgrade_with_data_load = \
             self.input.param("upgrade_with_data_load", True)
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
@@ -122,7 +127,6 @@ class UpgradeBase(BaseTestCase):
             bucket_durability=self.bucket_durability_level)
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket = self.cluster.buckets[0]
-
         if self.test_storage_upgrade:
             for i in range(3):
                 bucket_name = "testBucket" + str(i)
@@ -136,6 +140,12 @@ class UpgradeBase(BaseTestCase):
                     eviction_policy=self.bucket_eviction_policy,
                     bucket_durability=self.bucket_durability_level,
                     bucket_name=bucket_name)
+        if self.enable_tls:
+            self.enable_verify_tls(self.cluster.master)
+            if self.tls_level == "strict":
+                for node in self.cluster.servers:
+                    #node.memcached_port = CbServer.ssl_memcached_port (MB-47567)
+                    node.port = CbServer.ssl_port
         # Create clients in SDK client pool
         if self.sdk_client_pool is not None:
             clients_per_bucket = \
@@ -175,6 +185,7 @@ class UpgradeBase(BaseTestCase):
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
+
         self.sleep(30, "Wait for num_items to get reflected")
         current_items = self.bucket_util.get_bucket_current_item_count(
             self.cluster, self.bucket)
@@ -187,6 +198,33 @@ class UpgradeBase(BaseTestCase):
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
+
+    def enable_verify_tls(self, master_node, level=None):
+        if not level:
+            level = self.tls_level
+        rest = RestConnection(master_node)
+        node_info = rest.get_nodes_self(10)
+        if node_info.version[:5] < '7.0.0' and self.tls_level == "strict":
+            rest.enable_encryption()
+            task = jython_tasks.FunctionCallTask(
+                self.node_utils._enable_tls, [master_node, "control"])
+            self.task_manager.schedule(task)
+            self.task_manager.get_task_result(task)
+            rest.set_encryption_level(level)
+        else:
+            task = jython_tasks.FunctionCallTask(
+                self.node_utils._enable_tls, [master_node, level])
+            self.task_manager.schedule(task)
+            self.task_manager.get_task_result(task)
+
+        self.assertTrue(EnforceTls.get_encryption_level_on_node(
+            master_node) == level)
+        if level == "strict":
+            status = self.cluster_util.check_if_services_obey_tls(
+                self.cluster.nodes_in_cluster)
+            self.assertTrue(status, "Services did not honor enforce tls")
+            CbServer.use_https = True
+            CbServer.n2n_encryption = True
 
     def __validate_upgrade_type(self):
         """
@@ -210,7 +248,8 @@ class UpgradeBase(BaseTestCase):
             return False
 
         cluster_node = None
-        self.cluster.update_master_using_diag_eval()
+        if not (self.enable_tls or self.tls_level == "strict"):
+            self.cluster.update_master_using_diag_eval()
 
         if self.prefer_master:
             node_info = RestConnection(self.cluster.master).get_nodes_self(10)
@@ -382,8 +421,11 @@ class UpgradeBase(BaseTestCase):
         # Fetch active services on node_to_upgrade
         rest = self.__get_rest_node(node_to_upgrade)
         services = rest.get_nodes_services()
+        node_to_upgrade.port = CbServer.port
         services_on_target_node = services[(node_to_upgrade.ip + ":"
-                                            + node_to_upgrade.port)]
+                                            + str(node_to_upgrade.port))]
+        if self.enable_tls and self.tls_level == "strict":
+            node_to_upgrade.port = CbServer.ssl_port
 
         # Record vbuckets in swap_node
         if CbServer.Services.KV in services_on_target_node:
@@ -448,7 +490,7 @@ class UpgradeBase(BaseTestCase):
         rest = self.__get_rest_node(node_to_upgrade)
         services = rest.get_nodes_services()
         services_on_target_node = services[(node_to_upgrade.ip + ":"
-                                            + node_to_upgrade.port)]
+                                            + str(node_to_upgrade.port))]
 
         # Rebalance-out the target_node
         eject_otp_node = self.__get_otp_node(rest, node_to_upgrade)
@@ -498,7 +540,7 @@ class UpgradeBase(BaseTestCase):
         rest = self.__get_rest_node(node_to_upgrade)
         services = rest.get_nodes_services()
         services_on_target_node = services[(node_to_upgrade.ip + ":"
-                                            + node_to_upgrade.port)]
+                                            + str(node_to_upgrade.port))]
 
         if install_on_spare_node:
             # Install target version on spare node
@@ -544,7 +586,7 @@ class UpgradeBase(BaseTestCase):
         rest = self.__get_rest_node(node_to_upgrade)
         services = rest.get_nodes_services()
         services_on_target_node = services[(node_to_upgrade.ip + ":"
-                                            + node_to_upgrade.port)]
+                                            + str(node_to_upgrade.port))]
         # Rebalance-out the target_node
         rest = self.__get_rest_node(node_to_upgrade)
         eject_otp_node = self.__get_otp_node(rest, node_to_upgrade)

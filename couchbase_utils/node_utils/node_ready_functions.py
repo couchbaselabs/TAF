@@ -166,9 +166,8 @@ class NodeUtils(object):
         cb_cli.enable_dp()
         shell_conn.disconnect()
 
-    def _enable_tls(self, server):
-        RestConnection(server).update_autofailover_settings(
-            False, 120, False)
+    def _enable_tls(self, server, level="strict"):
+        RestConnection(server).update_autofailover_settings(False, 120)
         self.log.info(
             "Setting cluster encryption level to strict on cluster "
             "with node {0}".format(server))
@@ -176,7 +175,7 @@ class NodeUtils(object):
         cb_cli = CbCli(shell_conn)
         o = cb_cli.enable_n2n_encryption()
         self.log.info(o)
-        o = cb_cli.set_n2n_encryption_level(level="strict")
+        o = cb_cli.set_n2n_encryption_level(level=level)
         self.log.info(o)
         shell_conn.disconnect()
 

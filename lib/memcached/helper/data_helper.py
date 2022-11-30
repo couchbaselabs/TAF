@@ -257,7 +257,6 @@ class MemcachedClientHelper(object):
             for n in nodes:
                 if n.ip == server.ip and n.port == server.port:
                     node = n
-
         if isinstance(server, dict):
             log.info("dict:{0}".format(server))
             log.info("creating direct client {0}:{1} {2}"
@@ -276,7 +275,6 @@ class MemcachedClientHelper(object):
         else:
             client.vbucket_count = 0
         # todo raise exception for not bucket_info
-
         bucket_name = bucket.name.encode('ascii')
         client.sasl_auth_plain(admin_user, admin_pass)
         client.bucket_select(bucket_name)
