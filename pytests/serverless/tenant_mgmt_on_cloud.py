@@ -1495,7 +1495,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         '''
          Step 1: Set storage limit
         '''
-        self.bucket_util.set_throttle_limit(self.cluster.buckets[0], throttling_limit=5000, storage_limit=data_storage_limit)
+        self.bucket_util.set_throttle_n_storage_limit(self.cluster.buckets[0], throttling_limit=5000, storage_limit=data_storage_limit)
         storage_limit = self.bucket_util.get_storage_limit(self.cluster.buckets[0])
         self.log.info("Storage Limit  == {}".format(storage_limit))
         '''

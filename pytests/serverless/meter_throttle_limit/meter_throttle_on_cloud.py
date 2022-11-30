@@ -176,17 +176,17 @@ class MeteringOnCloud(TenantMgmtOnCloud):
 
             elif load == "change_throttling_limit":
                 throttling_limit = [-1, 100, 2000, 40000]
-                self.bucket_util.set_throttle_limit(write_bucket,
+                self.bucket_util.set_throttle_n_storage_limit(write_bucket,
                                                     throttling_limit= random.choice(throttling_limit))
                 self.doc_size = 500000
                 self.load_data(create_start=start, create_end=end, create_perc=100)
                 self.update_expected_stat(self.key_size, self.doc_size,
                                                       start, end, self.cluster.buckets)
-                self.bucket_util.set_throttle_limit(write_bucket,
+                self.bucket_util.set_throttle_n_storage_limit(write_bucket,
                                                     throttling_limit=random.choice(throttling_limit))
                 start = end
                 end = start + 100
-                self.bucket_util.set_throttle_limit(write_bucket,
+                self.bucket_util.set_throttle_n_storage_limit(write_bucket,
                                                     throttling_limit=random.choice(throttling_limit))
                 self.doc_size = 500000
                 self.load_data(create_start=start, create_end=end, create_perc=100)
@@ -248,7 +248,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
             bucket = self.cluster.buckets[0]
             start = 0
             for limit in self.throttling_limits:
-                self.bucket_util.set_throttle_limit(bucket, limit)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, limit)
                 self.log.info("testing throttling limit %s" % limit)
                 self.assertEqual(self.bucket_util.get_throttle_limit(bucket), limit)
                 # perform load and validate stats
@@ -257,7 +257,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         else:
             for bucket in self.cluster.buckets:
                 limit = random.choice(self.throttling_limits)
-                self.bucket_util.set_throttle_limit(bucket, limit)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, limit)
                 self.assertEqual(self.bucket_util.get_throttle_limit(bucket), limit)
             self.different_load(self.num_loop, self.num_write_bucket, self.num_read_bucket, self.load)
 
@@ -284,31 +284,31 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         for node in bucket.servers:
             rest_node = RestConnection(node)
             status, content = rest_node. \
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=-2)
             check_error_msg(status, content)
             status, content = rest_node. \
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=2147483648)
             check_error_msg(status, content)
 
             status, content = rest_node. \
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    storage_limit=-2)
             check_error_msg(status, content, True)
             status, content = rest_node. \
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    storage_limit=2147483648)
             check_error_msg(status, content, True)
 
             status, content = rest_node. \
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=-2,
                                    storage_limit=-2)
             check_error_msg(status, content)
             check_error_msg(status, content, True)
             status, content = rest_node. \
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=2147483648,
                                    storage_limit=2147483648)
             check_error_msg(status, content)
@@ -319,9 +319,9 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         end = 10
         for i in [1, 2]:
             if i == 1:
-                self.bucket_util.set_throttle_limit(bucket, throttling_limit=0)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, throttling_limit=0)
             else:
-                self.bucket_util.set_throttle_limit(bucket, storage_limit=0)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, storage_limit=0)
             self.load_data(create_start=0, create_end=end)
             num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
             if wu not in [0, 10]:

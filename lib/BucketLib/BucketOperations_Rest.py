@@ -390,7 +390,7 @@ class BucketHelper(RestConnection):
                            % content)
         return status
 
-    def set_throttle_limit(self, bucket_name, throttle_limit=5000, storage_limit=500, service="data"):
+    def set_throttle_n_storage_limit(self, bucket_name, throttle_limit=5000, storage_limit=500, service="data"):
         key_throttle_limit = service + "ThrottleLimit"
         key_storage_limit = service + "StorageLimit"
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',

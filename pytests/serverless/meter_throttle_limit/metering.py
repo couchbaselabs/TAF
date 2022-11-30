@@ -619,31 +619,31 @@ class ServerlessMetering(LMT):
         for node in bucket.servers:
             rest_node = RestConnection(node)
             status, content = rest_node.\
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=-2)
             check_error_msg(status, content)
             status, content = rest_node.\
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=2147483648)
             check_error_msg(status, content)
 
             status, content = rest_node.\
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    storage_limit=-2)
             check_error_msg(status, content, True)
             status, content = rest_node.\
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    storage_limit=2147483648)
             check_error_msg(status, content, True)
 
             status, content = rest_node.\
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=-2,
                                    storage_limit=-2)
             check_error_msg(status, content)
             check_error_msg(status, content, True)
             status, content = rest_node.\
-                set_throttle_limit(bucket=bucket.name,
+                set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=2147483648,
                                    storage_limit=2147483648)
             check_error_msg(status, content)
@@ -651,18 +651,18 @@ class ServerlessMetering(LMT):
 
     def thread_change_limit(self, bucket, throttling_limit, storage_limit):
         self.sleep(20)
-        self.bucket_util.set_throttle_limit(bucket, throttling_limit, storage_limit)
+        self.bucket_util.set_throttle_n_storage_limit(bucket, throttling_limit, storage_limit)
         self.assertEqual(self.bucket_util.get_throttle_limit(bucket), throttling_limit)
 
     def test_zero_limits(self):
         bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         for i in [1, 2]:
             if i == 1:
-                self.bucket_util.set_throttle_limit(bucket, throttling_limit=0)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, throttling_limit=0)
                 gen_add = doc_generator(self.key, 0, 100)
                 self.expected_wu = self.bucket_util.calculate_units(15, self.doc_size, num_items=100)
             else:
-                self.bucket_util.set_throttle_limit(bucket, storage_limit=0)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, storage_limit=0)
                 gen_add = doc_generator(self.key, 100, 200)
                 self.expected_wu += self.bucket_util.calculate_units(15, self.doc_size, num_items=100)
             thread = threading.Thread(target=self.thread_change_limit, args=(bucket, 5000, 10))

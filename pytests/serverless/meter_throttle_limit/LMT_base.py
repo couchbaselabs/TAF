@@ -149,7 +149,7 @@ class LMT(ServerlessOnPremBaseTest):
             for bucket in self.cluster.buckets:
                 for node in bucket.servers:
                     _, content = self.bucket_util.\
-                        set_throttle_limit(bucket=bucket.name,
+                        set_throttle_n_storage_limit(bucket=bucket.name,
                                            throttle_limit=self.bucket_throttling_limit)
 
         # Initialise doc loader/generator params

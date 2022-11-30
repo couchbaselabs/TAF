@@ -191,7 +191,7 @@ class ServerlessThrottling(LMT):
         else:
             throttle_limit = [5000]
         for bucket in self.buckets:
-            self.bucket_util.set_throttle_limit(bucket, random.choice(throttle_limit))
+            self.bucket_util.set_throttle_n_storage_limit(bucket, random.choice(throttle_limit))
         gen_docs = doc_generator("throttling", 0, self.num_items,
                                  doc_size=self.doc_size,
                                  mutation_type="create",
@@ -228,10 +228,10 @@ class ServerlessThrottling(LMT):
 
         for bucket in self.buckets:
             if self.num_non_throttled_bucket > 1:
-                self.bucket_util.set_throttle_limit(bucket, -1)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, -1)
                 self.num_non_throttled_bucket -=1
             else:
-                self.bucket_util.set_throttle_limit(bucket, self.bucket_throttling_limit)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, self.bucket_throttling_limit)
 
         for i in range(self.loop):
             tasks = []
@@ -379,10 +379,10 @@ class ServerlessThrottling(LMT):
 
         for bucket in self.buckets:
             if self.num_non_throttled_bucket > 1:
-                self.bucket_util.set_throttle_limit(bucket, -1)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, -1)
                 self.num_non_throttled_bucket -=1
             else:
-                self.bucket_util.set_throttle_limit(bucket, self.bucket_throttling_limit)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, self.bucket_throttling_limit)
         gen_docs = doc_generator("throttling", 0, self.num_items,
                                          doc_size=self.doc_size,
                                          mutation_type="create",
