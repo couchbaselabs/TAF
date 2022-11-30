@@ -148,7 +148,7 @@ class LMT(ServerlessOnPremBaseTest):
         if self.bucket_throttling_limit != 5000:
             for bucket in self.cluster.buckets:
                 for node in bucket.servers:
-                    _, content = RestConnection(node).\
+                    _, content = self.bucket_util.\
                         set_throttle_limit(bucket=bucket.name,
                                            throttle_limit=self.bucket_throttling_limit)
 

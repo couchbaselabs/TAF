@@ -264,7 +264,7 @@ class ServerlessThrottling(LMT):
 
             for load_task in tasks:
                 self.task_manager.get_task_result(load_task)
-            if self.loop == 1:
+            if self.loop == 0:
                 self.key_size, doc_size = self.get_size_of_doc(self.gen_docs)
                 self.units = self.bucket_util.calculate_units(self.key_size, doc_size,
                                                          durability=self.durability_level)
@@ -312,7 +312,7 @@ class ServerlessThrottling(LMT):
                 self.expected_stats[bucket.name]["ru"], self.wu = \
                 self.bucket_util.get_stat_from_metrics(bucket)
             self.expected_stats[bucket.name]["wu"] = \
-                self.bucket_util.calculate_units(self.key_size, doc_size) * \
+                self.bucket_util.calculate_units(self.key_size, doc_size, durability=self.durability_level) * \
                 self.expected_stats[bucket.name]["total_items"]
             self.assertEqual(self.wu, self.expected_stats[bucket.name]["wu"])
 

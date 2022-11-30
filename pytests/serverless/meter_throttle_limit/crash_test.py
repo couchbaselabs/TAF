@@ -83,12 +83,12 @@ class ServerlessMetering(LMT):
                     self.cluster, self.cluster.buckets, timeout=100)
                 thread.join()
 
-                items_loaded = self.check_actual_items(self.num_items, tmp_total_items, bucket)
-                self.expected_wu += self.bucket_util.calculate_units(self.doc_size, 0,
-                                            durability=self.durability_level) * items_loaded
                 num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
                 self.log.info("numthrottled:%s, ru:%s, wu:%s" % (num_throttled, ru, wu))
                 self.assertEqual(self.bucket_util.get_throttle_limit(bucket), self.kv_throttling_limit)
+                items_loaded = self.check_actual_items(self.num_items, tmp_total_items, bucket)
+                self.expected_wu += self.bucket_util.calculate_units(self.doc_size, 0,
+                                            durability=self.durability_level) * items_loaded
                 units = self.bucket_util.calculate_units(self.doc_size, 0) * items_loaded
                 if self.bucket_util.get_throttle_limit(bucket) == -1:
                     self.assertEqual(num_throttled, 0)
