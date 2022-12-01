@@ -41,7 +41,8 @@ class basic_ops(ClusterSetup):
     def setUp(self):
         super(basic_ops, self).setUp()
 
-        self.create_bucket(self.cluster)
+        if not self.skip_setup_cleanup:
+            self.create_bucket(self.cluster)
 
         self.doc_ops = self.input.param("doc_ops", "").split(";")
         self.observe_test = self.input.param("observe_test", False)
@@ -199,6 +200,7 @@ class basic_ops(ClusterSetup):
         Basic tests for document CRUD operations using JSON docs
         """
         doc_op = self.input.param("doc_op", None)
+        doc_ops_loop = self.input.param("doc_ops_loop", 1)
         def_bucket = self.cluster.buckets[0]
         ignore_exceptions = list()
         retry_exceptions = list()
@@ -321,12 +323,17 @@ class basic_ops(ClusterSetup):
                 check_persistence=self.check_persistence,
                 scope=self.scope_name,
                 collection=self.collection_name,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                iterations=doc_ops_loop)
+            if doc_ops_loop == -1:
+                self.sleep(60, "Wait before killing the cont. update load")
+                task.end_task()
             self.task.jython_task_manager.get_task_result(task)
-            verification_dict["ops_update"] += mutation_doc_count
+            total_updates = task.get_total_doc_ops()
+            verification_dict["ops_update"] += total_updates
             if self.durability_level in supported_d_levels:
                 verification_dict["sync_write_committed_count"] \
-                    += mutation_doc_count
+                    += total_updates
             if self.ryow:
                 check_durability_failures()
 
@@ -385,7 +392,7 @@ class basic_ops(ClusterSetup):
                 sdk_client_pool=self.sdk_client_pool)
             self.task.jython_task_manager.get_task_result(task)
 
-        else:
+        elif doc_op is not None:
             self.log.warning("Unsupported doc_operation")
 
         self.log.info("Wait for ep_all_items_remaining to become '0'")

@@ -485,7 +485,8 @@ class GenericLoadingTask(Task):
                  suppress_error_table=False, sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 preserve_expiry=None, sdk_retry_strategy=None):
+                 preserve_expiry=None, sdk_retry_strategy=None,
+                 iterations=1):
         super(GenericLoadingTask, self).__init__("Loadgen_task_%s_%s_%s_%s"
                                                  % (bucket, scope, collection,
                                                     time.time()))
@@ -505,16 +506,33 @@ class GenericLoadingTask(Task):
         self.docs_loaded = 0
         self.preserve_expiry = preserve_expiry
         self.sdk_retry_strategy = sdk_retry_strategy
+        self.req_iterations = iterations
+        self.generator = None
+        self.itr_count = 0
+        self.__stop_loading = False
+
+    def end_task(self):
+        self.log.debug("%s - Stopping load" % self.thread_name)
+        self.__stop_loading = True
 
     def call(self):
         self.start_task()
-        try:
-            while self.has_next():
-                self.next()
-        except Exception as e:
-            self.test_log.error(e)
-            self.set_exception(Exception(e.message))
-            return
+        self.log.debug("Total req iterations: %s" % self.req_iterations)
+        while not self.__stop_loading:
+            self.itr_count += 1
+            if self.req_iterations != -1 \
+                    and self.itr_count >= self.req_iterations:
+                self.__stop_loading = True
+            self.log.debug("%s - Iteration %s"
+                           % (self.thread_name, self.itr_count))
+            self.generator.reset()
+            try:
+                while self.has_next():
+                    self.next()
+            except Exception as e:
+                self.test_log.error(e)
+                self.set_exception(Exception(e.message))
+                break
         self.complete_task()
 
     def has_next(self):
@@ -883,7 +901,8 @@ class LoadDocumentsTask(GenericLoadingTask):
                  collection=CbServer.default_collection,
                  track_failures=True,
                  skip_read_success_results=False,
-                 preserve_expiry=None, sdk_retry_strategy=None):
+                 preserve_expiry=None, sdk_retry_strategy=None,
+                 iterations=1):
 
         super(LoadDocumentsTask, self).__init__(
             cluster, bucket, client, batch_size=batch_size,
@@ -894,7 +913,8 @@ class LoadDocumentsTask(GenericLoadingTask):
             sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            iterations=iterations)
         self.thread_name = "LoadDocs_%s_%s_%s_%s_%s_%s" \
                            % (task_identifier,
                               op_type,
@@ -1649,7 +1669,8 @@ class LoadDocumentsGeneratorsTask(Task):
                  monitor_stats=["doc_ops"],
                  track_failures=True,
                  preserve_expiry=None,
-                 sdk_retry_strategy=None):
+                 sdk_retry_strategy=None,
+                 iterations=1):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "LoadDocsGen_%s_%s_%s_%s_%s"
             % (bucket, scope, collection, task_identifier, time.time()))
@@ -1683,6 +1704,8 @@ class LoadDocumentsGeneratorsTask(Task):
         self.collection = collection
         self.preserve_expiry = preserve_expiry
         self.sdk_retry_strategy = sdk_retry_strategy
+        self.req_iterations = iterations
+        self.doc_op_iterations_done = 0
         if isinstance(op_type, list):
             self.op_types = op_type
         else:
@@ -1696,6 +1719,20 @@ class LoadDocumentsGeneratorsTask(Task):
         self.fail = dict()
         self.success = dict()
         self.print_ops_rate_tasks = list()
+        self.__tasks = list()
+
+    def end_task(self):
+        self.log.debug("%s - Stopping load" % self.thread_name)
+        for task in self.__tasks:
+            task.end_task()
+
+    def get_total_doc_ops(self):
+        total_ops = 0
+        for sub_task in self.__tasks:
+            total_ops += (sub_task.itr_count *
+                          (sub_task.generator._doc_gen.end
+                           - sub_task.generator._doc_gen.start))
+        return total_ops
 
     def call(self):
         self.start_task()
@@ -1711,13 +1748,12 @@ class LoadDocumentsGeneratorsTask(Task):
                     Exception("Not all generators have bucket specified!"))
                 self.complete_task()
         iterator = 0
-        tasks = list()
         for generator in self.generators:
             if self.op_types:
                 self.op_type = self.op_types[iterator]
             if self.buckets:
                 self.bucket = self.buckets[iterator]
-            tasks.extend(self.get_tasks(generator))
+            self.__tasks.extend(self.get_tasks(generator))
             iterator += 1
         if self.print_ops_rate:
             if self.buckets:
@@ -1732,13 +1768,14 @@ class LoadDocumentsGeneratorsTask(Task):
                     monitor_stats=self.monitor_stats,
                     sleep=1)
         try:
-            for task in tasks:
+            for task in self.__tasks:
                 self.task_manager.add_new_task(task)
-            for task in tasks:
+            for task in self.__tasks:
                 try:
                     self.task_manager.get_task_result(task)
-                    self.log.debug("Items loaded in task {} are {}"
-                                   .format(task.thread_name, task.docs_loaded))
+                    self.log.debug("%s - Items loaded %s. Itr count: %s"
+                                    % (task.thread_name, task.docs_loaded,
+                                       task.itr_count))
                     i = 0
                     while task.docs_loaded < (task.generator._doc_gen.end -
                                               task.generator._doc_gen.start) \
@@ -1772,7 +1809,7 @@ class LoadDocumentsGeneratorsTask(Task):
             self.log.debug("========= Tasks in loadgen pool=======")
             self.task_manager.print_tasks_in_pool()
             self.log.debug("======================================")
-            for task in tasks:
+            for task in self.__tasks:
                 self.task_manager.stop_task(task)
                 self.log.debug("Task '{0}' complete. Loaded {1} items"
                                .format(task.thread_name, task.docs_loaded))
@@ -1818,7 +1855,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 scope=self.scope, collection=self.collection,
                 track_failures=self.track_failures,
                 preserve_expiry=self.preserve_expiry,
-                sdk_retry_strategy=self.sdk_retry_strategy)
+                sdk_retry_strategy=self.sdk_retry_strategy,
+                iterations=self.req_iterations)
             tasks.append(task)
         return tasks
 
