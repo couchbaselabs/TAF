@@ -608,6 +608,9 @@ class BatchedDocumentGenerator(object):
         if self._batch_size <= 0:
             raise ValueError("Invalid Batch size {0}".format(self._batch_size))
 
+    def reset(self):
+        self._doc_gen.reset()
+
     def has_next(self):
         return self._doc_gen.has_next()
 

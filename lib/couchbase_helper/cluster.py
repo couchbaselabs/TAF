@@ -142,7 +142,8 @@ class ServerTasks(object):
                             monitor_stats=["doc_ops"],
                             track_failures=True,
                             preserve_expiry=None,
-                            sdk_retry_strategy=None):
+                            sdk_retry_strategy=None,
+                            iterations=1):
         clients = list()
         if active_resident_threshold == 100:
             if not task_identifier:
@@ -180,7 +181,8 @@ class ServerTasks(object):
                     monitor_stats=monitor_stats,
                     track_failures=track_failures,
                     preserve_expiry=preserve_expiry,
-                    sdk_retry_strategy=sdk_retry_strategy)
+                    sdk_retry_strategy=sdk_retry_strategy,
+                    iterations=iterations)
             else:
                 majority_value = (bucket.replicaNumber + 1) / 2 + 1
 
