@@ -44,6 +44,9 @@ spec = {
         MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
         MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 0,
         MetaCrudParams.DocCrud.TOUCH_PERCENTAGE_PER_COLLECTION: 0,
+        # Continuous doc_ops param, Value format: (percent, num_itr)
+        MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION: (0, 0),
+        MetaCrudParams.DocCrud.CONT_REPLACE_PERCENT_PER_COLLECTION: (0, 0),
 
         # Doc loading options supported (None as of now)
     },
