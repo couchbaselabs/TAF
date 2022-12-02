@@ -3935,32 +3935,58 @@ class MutateDocsFromSpecTask(Task):
         self.result = True
         self.load_gen_tasks = list()
         self.load_subdoc_gen_tasks = list()
+        self.cont_load_gen_tasks = list()
         self.print_ops_rate_tasks = list()
 
         self.sdk_client_pool = sdk_client_pool
         self.track_failures = track_failures
 
+    def stop_indefinite_doc_loading_tasks(self):
+        for task in self.cont_load_gen_tasks:
+            if task.req_iterations == -1:
+                task.end_task()
+
     def call(self):
         self.start_task()
         self.get_tasks()
-        self.execute_tasks(execute_tasks=self.load_gen_tasks)
-        self.execute_tasks(execute_tasks=self.load_subdoc_gen_tasks)
+        self.__print_ops_task("start")
+
+        # Start cont_load_tasks (if any)
+        self.__start_tasks(self.cont_load_gen_tasks)
+
+        # Start and wait for load_gen_tasks (if any)
+        self.__start_tasks(self.load_gen_tasks)
+        self.__wait_for_task_completion(self.load_gen_tasks)
+
+        # Start and wait for subdoc_load_gen_tasks (if any)
+        self.__start_tasks(self.load_subdoc_gen_tasks)
+        self.__wait_for_task_completion(self.load_subdoc_gen_tasks)
+
+        # Wait for cont_load_tasks (if any)
+        self.__wait_for_task_completion(self.cont_load_gen_tasks,
+                                        cont_load=True)
+        self.__print_ops_task("stop")
         self.complete_task()
         return self.result
 
-    def execute_tasks(self, execute_tasks):
+    def __print_ops_task(self, op_type):
         if self.print_ops_rate:
             for bucket in self.loader_spec.keys():
-                bucket.stats.manage_task(
-                    "start", self.task_manager,
-                    cluster=self.cluster,
-                    bucket=bucket,
-                    monitor_stats=["doc_ops"],
-                    sleep=1)
+                bucket.stats.manage_task(op_type, self.task_manager,
+                                         cluster=self.cluster,
+                                         bucket=bucket,
+                                         monitor_stats=["doc_ops"],
+                                         sleep=1)
+
+    def __start_tasks(self, tasks):
+        for task in tasks:
+            self.task_manager.add_new_task(task)
+
+    def __wait_for_task_completion(self, execute_tasks, cont_load=False):
         try:
             for task in execute_tasks:
-                self.task_manager.add_new_task(task)
-            for task in execute_tasks:
+                op_type = "cont_" + task.op_type \
+                    if cont_load else task.op_type
                 try:
                     self.task_manager.get_task_result(task)
                     self.log.debug("Items loaded in task %s are %s"
@@ -3981,12 +4007,12 @@ class MutateDocsFromSpecTask(Task):
                         task.bucket]["scopes"][
                         task.scope]["collections"][
                         task.collection][
-                        task.op_type]["success"].update(task.success)
+                        op_type]["success"].update(task.success)
                     self.loader_spec[
                         task.bucket]["scopes"][
                         task.scope]["collections"][
                         task.collection][
-                        task.op_type]["fail"].update(task.fail)
+                        op_type]["fail"].update(task.fail)
                     if task.fail.__len__() != 0:
                         target_log = self.test_log.error
                         self.result = False
@@ -4001,14 +4027,6 @@ class MutateDocsFromSpecTask(Task):
             self.test_log.error(e)
             self.set_exception(e)
         finally:
-            if self.print_ops_rate:
-                for bucket in self.loader_spec.keys():
-                    bucket.stats.manage_task(
-                        "stop", self.task_manager,
-                        cluster=self.cluster,
-                        bucket=bucket,
-                        monitor_stats=["doc_ops"],
-                        sleep=1)
             self.log.debug("========= Tasks in loadgen pool=======")
             self.task_manager.print_tasks_in_pool()
             self.log.debug("======================================")
@@ -4068,10 +4086,9 @@ class MutateDocsFromSpecTask(Task):
                     self.batch_size)
                 generators.append(batch_gen)
             for doc_gen in generators:
-                task_id = "%s_%s_%s_%s_ttl=%s" % (self.thread_name,
-                                                  bucket.name,
-                                                  scope_name, col_name,
-                                                  op_data["doc_ttl"])
+                task_id = "%s_%s_%s_%s_%s_ttl=%s" % (
+                    self.thread_name, bucket.name, scope_name,
+                    col_name, op_type, op_data["doc_ttl"])
                 if op_type in DocLoading.Bucket.DOC_OPS:
                     doc_load_task = LoadDocumentsTask(
                         self.cluster, bucket, None, doc_gen,
@@ -4087,7 +4104,8 @@ class MutateDocsFromSpecTask(Task):
                         suppress_error_table=op_data["suppress_error_table"],
                         track_failures=track_failures,
                         skip_read_success_results=op_data[
-                            "skip_read_success_results"])
+                            "skip_read_success_results"],
+                        iterations=op_data.get("iterations", 1))
                     self.load_gen_tasks.append(doc_load_task)
                 elif op_type in DocLoading.Bucket.SUB_DOC_OPS:
                     subdoc_load_task = LoadSubDocumentsTask(
@@ -4106,11 +4124,27 @@ class MutateDocsFromSpecTask(Task):
                         skip_read_success_results=op_data[
                             "skip_read_success_results"])
                     self.load_subdoc_gen_tasks.append(subdoc_load_task)
+                elif op_type in ["cont_update", "cont_replace"]:
+                    doc_load_task = LoadDocumentsTask(
+                        self.cluster, bucket, None, doc_gen,
+                        op_type.replace("cont_", ""), op_data["doc_ttl"],
+                        scope=scope_name, collection=col_name,
+                        task_identifier=task_id,
+                        sdk_client_pool=self.sdk_client_pool,
+                        batch_size=self.batch_size,
+                        durability=op_data["durability_level"],
+                        timeout_secs=op_data["sdk_timeout"],
+                        time_unit=op_data["sdk_timeout_unit"],
+                        skip_read_on_error=op_data["skip_read_on_error"],
+                        suppress_error_table=op_data["suppress_error_table"],
+                        track_failures=track_failures,
+                        skip_read_success_results=op_data[
+                            "skip_read_success_results"],
+                        iterations=op_data.get("iterations", 1))
+                    self.cont_load_gen_tasks.append(doc_load_task)
 
     def get_tasks(self):
-        tasks = list()
         load_gen_for_bucket_create_threads = list()
-
         for bucket, scope_dict in self.loader_spec.items():
             bucket_thread = threading.Thread(
                 target=self.create_tasks_for_bucket,
@@ -4120,7 +4154,6 @@ class MutateDocsFromSpecTask(Task):
 
         for bucket_thread in load_gen_for_bucket_create_threads:
             bucket_thread.join(timeout=180)
-        return tasks
 
 class CompareIndexKVData(Task):
     def __init__(self, cluster, server, task_manager,

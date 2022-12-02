@@ -114,6 +114,10 @@ class BaseTestCase(unittest.TestCase):
                                                       1)
         self.bucket_durability_level = \
             BucketDurability[self.bucket_durability_level]
+        self.bucket_dedup_retention_size = \
+            self.input.param("bucket_dedup_retention_size", None)
+        self.bucket_dedup_retention_time = \
+            self.input.param("bucket_dedup_retention_time", None)
         # End of bucket parameters
 
         # Doc specific params

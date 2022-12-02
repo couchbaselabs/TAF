@@ -339,7 +339,7 @@ class DocLoaderUtils(object):
                         c_crud_data = crud_spec[b_name]["scopes"][
                             s_name]["collections"][c_name]
                         collection = scope.collections[c_name]
-                        target_ops = DocLoading.Bucket.DOC_OPS
+                        target_ops = DocLoading.Bucket.DOC_OPS + ["cont_update", "cont_replace"]
                         if sub_doc_gen:
                             target_ops = DocLoading.Bucket.SUB_DOC_OPS
                         if collection_recreated:
@@ -357,7 +357,7 @@ class DocLoaderUtils(object):
                                     DocLoaderUtils \
                                         .__get_required_num_from_percentage(
                                         collection,
-                                        spec_percent_data[op_type],
+                                        spec_percent_data[op_type][0],
                                         op_type)
 
                             if num_items == 0:
@@ -366,6 +366,8 @@ class DocLoaderUtils(object):
                             c_crud_data[op_type] = dict()
                             c_crud_data[op_type]["doc_ttl"] = doc_ttl
                             c_crud_data[op_type]["target_items"] = num_items
+                            c_crud_data[op_type]["iterations"] = \
+                                spec_percent_data[op_type][1]
                             c_crud_data[op_type]["sdk_timeout"] = sdk_timeout
                             c_crud_data[op_type]["sdk_timeout_unit"] = \
                                 sdk_timeout_unit
@@ -478,6 +480,11 @@ class DocLoaderUtils(object):
         spec_percent_data["touch"] = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.TOUCH_PERCENTAGE_PER_COLLECTION, 0)
 
+        spec_percent_data["cont_update"] = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION, (0, 0))
+        spec_percent_data["cont_replace"] = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.CONT_REPLACE_PERCENT_PER_COLLECTION, (0, 0))
+
         # Fetch sub_doc CRUD percentage from given spec
         xattr_test = input_spec["subdoc_crud"].get(
             MetaCrudParams.SubDocCrud.XATTR_TEST, False)
@@ -489,6 +496,10 @@ class DocLoaderUtils(object):
             MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION, 0)
         spec_percent_data["lookup"] = input_spec["subdoc_crud"].get(
             MetaCrudParams.SubDocCrud.LOOKUP_PER_COLLECTION, 0)
+
+        for op_type in spec_percent_data.keys():
+            if isinstance(spec_percent_data[op_type], int):
+                spec_percent_data[op_type] = (spec_percent_data[op_type], 1)
 
         doc_crud_spec = BucketUtils.get_random_collections(
             buckets,

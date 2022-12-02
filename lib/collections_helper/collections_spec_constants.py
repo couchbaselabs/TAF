@@ -48,6 +48,10 @@ class MetaCrudParams(object):
         REPLACE_PERCENTAGE_PER_COLLECTION = "replace_percentage_per_collection"
         DELETE_PERCENTAGE_PER_COLLECTION = "delete_percentage_per_collection"
         TOUCH_PERCENTAGE_PER_COLLECTION = "touch_percentage_per_collection"
+        CONT_UPDATE_PERCENT_PER_COLLECTION = \
+            "cont_update_percent_per_collection"
+        CONT_REPLACE_PERCENT_PER_COLLECTION = \
+            "cont_replace_percent_per_collection"
 
         # Doc loading options supported
         COMMON_DOC_KEY = "doc_key"
