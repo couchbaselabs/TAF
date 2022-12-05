@@ -658,7 +658,7 @@ class ServerlessMetering(LMT):
         bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         for i in [1, 2]:
             if i == 1:
-                self.bucket_util.set_throttle_n_storage_limit(bucket, throttling_limit=0)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, throttle_limit=0)
                 gen_add = doc_generator(self.key, 0, 100)
                 self.expected_wu = self.bucket_util.calculate_units(15, self.doc_size, num_items=100)
             else:

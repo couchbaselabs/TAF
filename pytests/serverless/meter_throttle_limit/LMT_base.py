@@ -147,10 +147,9 @@ class LMT(ServerlessOnPremBaseTest):
 
         if self.bucket_throttling_limit != 5000:
             for bucket in self.cluster.buckets:
-                for node in bucket.servers:
-                    _, content = self.bucket_util.\
-                        set_throttle_n_storage_limit(bucket=bucket.name,
-                                           throttle_limit=self.bucket_throttling_limit)
+                # throttling limit will be set on each bucket node
+                self.bucket_util.set_throttle_n_storage_limit(bucket=bucket,
+                                                     throttle_limit=self.bucket_throttling_limit)
 
         # Initialise doc loader/generator params
         self.init_doc_params()
@@ -884,14 +883,3 @@ class LMT(ServerlessOnPremBaseTest):
         if exception:
             self.log.info("txn failed")
         self.sleep(1)
-
-    def check_actual_items(self, expected_items, previous_items, bucket):
-        iteration = 0
-        actual_items = expected_items
-        while iteration < 4:
-            actual_items = self.bucket_util.get_total_items_bucket(bucket) - previous_items
-            if expected_items == actual_items:
-                break
-            self.sleep(5)
-            iteration += 1
-        return actual_items

@@ -5880,11 +5880,11 @@ class BucketUtils(ScopeUtils):
         self.log.info("num_throttled %s, ru %s, wu %s" % (num_throttled, ru, wu))
         return num_throttled, ru, wu
 
-    def set_throttle_n_storage_limit(self, bucket, throttling_limit=5000, storage_limit=500, service="data"):
+    def set_throttle_n_storage_limit(self, bucket, throttle_limit=5000, storage_limit=500, service="data"):
         for server in bucket.servers:
             bucket_helper = BucketHelper(server)
             _, content = bucket_helper.set_throttle_n_storage_limit(bucket_name=bucket.name,
-                                                          throttle_limit=throttling_limit,
+                                                          throttle_limit=throttle_limit,
                                                           storage_limit=storage_limit,
                                                           service=service)
 

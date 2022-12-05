@@ -171,17 +171,17 @@ class MeteringOnCloud(TenantMgmtOnCloud):
             elif load == "change_throttling_limit":
                 throttling_limit = [-1, 100, 2000, 40000]
                 self.bucket_util.set_throttle_n_storage_limit(write_bucket,
-                                                    throttling_limit= random.choice(throttling_limit))
+                                                    throttle_limit= random.choice(throttling_limit))
                 self.doc_size = 500000
                 self.load_data(create_start=start, create_end=end, create_perc=100)
                 self.update_expected_stat(self.key_size, self.doc_size,
                                                       start, end, self.cluster.buckets)
                 self.bucket_util.set_throttle_n_storage_limit(write_bucket,
-                                                    throttling_limit=random.choice(throttling_limit))
+                                                    throttle_limit=random.choice(throttling_limit))
                 start = end
                 end = start + 100
                 self.bucket_util.set_throttle_n_storage_limit(write_bucket,
-                                                    throttling_limit=random.choice(throttling_limit))
+                                                    throttle_limit=random.choice(throttling_limit))
                 self.doc_size = 500000
                 self.load_data(create_start=start, create_end=end, create_perc=100)
                 self.update_expected_stat(self.key_size, self.doc_size,
@@ -313,7 +313,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         end = 10
         for i in [1, 2]:
             if i == 1:
-                self.bucket_util.set_throttle_n_storage_limit(bucket, throttling_limit=0)
+                self.bucket_util.set_throttle_n_storage_limit(bucket, throttle_limit=0)
             else:
                 self.bucket_util.set_throttle_n_storage_limit(bucket, storage_limit=0)
             self.load_data(create_start=0, create_end=end)

@@ -63,7 +63,7 @@ class ServerlessThrottling(LMT):
 
             self.sleep(10)
             num_throttled, ru, wu = self.get_stat(self.bucket)
-            expected_wu += (write_units * self.key_value.keys())
+            expected_wu += (write_units * len(self.key_value.keys()))
             self.compare_ru_wu_stat(ru, wu, 0, expected_wu)
             if num_throttled > 0:
                 if num_throttled < (expected_num_throttled - 10):
@@ -270,7 +270,7 @@ class ServerlessThrottling(LMT):
                                                          durability=self.durability_level)
 
             for bucket in self.cluster.buckets:
-                actual_items_loaded = self.check_actual_items(self.num_items,
+                actual_items_loaded = self.bucket_util.check_actual_items(self.num_items,
                                                        self.expected_stats[bucket.name]["total_items"],
                                                        bucket)
                 num_throttled, self.ru, self.wu = self.bucket_util.get_stat_from_metrics(bucket)
@@ -305,7 +305,7 @@ class ServerlessThrottling(LMT):
 
         for bucket in self.cluster.buckets:
             self.expected_stats[bucket.name]["total_items"] = \
-                self.check_actual_items(self.num_items,
+                self.bucket_util.check_actual_items(self.num_items,
                                         self.expected_stats[bucket.name]["total_items"],
                                         bucket)
             self.expected_stats[bucket.name]["num_throttled"], \
@@ -343,7 +343,7 @@ class ServerlessThrottling(LMT):
                 self.task_manager.get_task_result(task)
 
             for bucket in self.buckets:
-                actual_items_loaded = self.check_actual_items(self.num_items,
+                actual_items_loaded = self.bucket_util.check_actual_items(self.num_items,
                                                               self.expected_stats[bucket.name]["total_items"],
                                                               bucket)
                 self.expected_stats[bucket.name]["wu"] += \
@@ -395,7 +395,7 @@ class ServerlessThrottling(LMT):
 
         for bucket in self.cluster.buckets:
             self.expected_stats[bucket.name]["total_items"] = \
-                self.check_actual_items(self.num_items,
+                self.bucket_util.check_actual_items(self.num_items,
                                         self.expected_stats[bucket.name]["total_items"],
                                         bucket)
             self.expected_stats[bucket.name]["wu"] = \
