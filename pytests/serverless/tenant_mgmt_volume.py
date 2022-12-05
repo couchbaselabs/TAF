@@ -305,6 +305,9 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
                 params["delete_end"] = doc_end
                 start = doc_end
                 def_collection.num_items -= (doc_end - start)
+                if self.validate_stat:
+                    self.expected_stat[bucket.name]["wu"] += self.bucket_util.calculate_units(
+                        self.key_size, self.doc_size, num_items=doc_end - start)
             if "create" in load_pattern:
                 doc_end = end + 50000
                 params["create_perc"] = ops_perc + remaining_perc
@@ -313,21 +316,33 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
                 end = doc_end
                 remaining_perc = 0
                 def_collection.num_items -= (doc_end - start)
-
+                if self.validate_stat:
+                    self.expected_stat[bucket.name]["wu"] += self.bucket_util.calculate_units(
+                        self.key_size, self.doc_size, num_items=doc_end - start)
             if "update" in load_pattern:
                 params["update_perc"] = ops_perc + remaining_perc
                 remaining_perc = 0
                 params["update_start"] = int(end/2)
                 params["update_end"] = end
+                if self.validate_stat:
+                    self.expected_stat[bucket.name]["wu"] += self.bucket_util.calculate_units(
+                        self.key_size, self.doc_size, num_items=doc_end - start)
             if "read" in load_pattern:
                 params["read_perc"] = ops_perc + remaining_perc
                 params["read_start"] = int(end/2)
                 params["read_end"] = end
+                if self.validate_stat:
+                    self.expected_stat[bucket.name]["ru"] += self.bucket_util.calculate_units(
+                        self.key_size, self.doc_size, read=True,
+                        num_items=params["read_end"]-params["read_start"])
             if "expiry" in load_pattern:
                 params["expiry_perc"] = ops_perc
                 params["expiry_start"] = 0
                 params["expiry_end"] = 10000
                 params["key"] = "expiry_doc"
+                if self.validate_stat:
+                    self.expected_stat[bucket.name]["wu"] += self.bucket_util.calculate_units(
+                        self.key_size, self.doc_size, num_items=params["expiry_end"] - params["expiry_start"])
 
             def_collection.doc_index = (start, end)
 
@@ -380,10 +395,28 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         self.create_sdk_client_pool(self.buckets_eligible_for_data_load,
                                     req_clients_per_bucket=1)
 
+        # get initial stats
+        if self.validate_stat:
+            self.get_servers_for_databases()
+            self.expected_stat = self.bucket_util.get_initial_stats(
+                self.cluster.buckets)
+
         # Load initial docs
         loader_map, tasks = self.__load_initial_docs(
             self.buckets_eligible_for_data_load, self.num_items)
         self.__wait_for_doc_ops_and_validate(tasks, loader_map)
+
+        # validate meter stats
+        if self.validate_stat:
+            for bucket in self.buckets_eligible_for_data_load:
+                # items_loaded = self.bucket_util.get_actual_items_loaded_to_calculate_wu(
+                #     self.num_items, self.expected_stat[bucket.name]["total_items"], bucket)
+                items_loaded = self.num_items
+                units = self.bucket_util.calculate_units(self.key_size, self.doc_size,
+                                                         num_items=items_loaded)
+                self.bucket_util.update_stat_on_buckets([bucket], self.expected_stat, units)
+                self.bucket_util.validate_stats([bucket], self.expected_stat)
+                self.expected_stat[bucket.name]["total_items"] = items_loaded
 
         # self.bucket_util.validate_serverless_buckets(self.cluster,
         #                                              self.cluster.buckets)
@@ -532,6 +565,9 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
             buckets_to_load_docs = self.__get_req_buckets(
                 buckets_to_consider, limit=self.num_buckets_to_load,
                 exclude_buckets=buckets_to_del)
+            if self.validate_stat:
+                self.expected_stat.update(self.bucket_util.get_initial_stats(
+                    buckets_to_load_docs))
             loader_map, data_load_tasks = \
                 self.__subsequent_data_load(buckets_to_load_docs)
             self.log.info("Subsequent load into buckets: %s"
@@ -545,6 +581,8 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
 
             # Start initial load on new buckets
             new_buckets = self.cluster.buckets[-num_dbs:]
+            if self.validate_stat:
+                self.expected_stat.update(self.bucket_util.get_initial_stats(new_buckets))
             new_buckets_loader_map, new_bucket_loading_tasks = \
                 self.__load_initial_docs(new_buckets, self.num_items)
             self.log.info("Load into new buckets: %s"
@@ -669,6 +707,20 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
                                                  new_buckets_loader_map)
             self.__wait_for_doc_ops_and_validate(data_load_tasks, loader_map)
             self.bucket_util.print_bucket_stats(self.cluster)
+            if self.validate_stat:
+                for buckets in [new_buckets, buckets_to_load_docs]:
+                    for bucket in buckets:
+                        # items_loaded = self.bucket_util.get_actual_items_loaded_to_calculate_wu(
+                        #     self.num_items, self.expected_stat[bucket.name]["total_items"], bucket)
+                        items_loaded = self.num_items
+                        units = self.bucket_util.calculate_units(self.key_size, self.doc_size,
+                                                                 num_items=items_loaded)
+                        self.bucket_util.update_stat_on_buckets([bucket], self.expected_stat, units)
+                        self.bucket_util.validate_stats([bucket], self.expected_stat)
+                        self.expected_stat[bucket.name]["total_items"] = items_loaded
+                self.bucket_util.validate_stats(scale_width_weight_from_width_1, self.expected_stat)
+                self.bucket_util.validate_stats(scale_width_weight_from_width_2, self.expected_stat)
+                self.bucket_util.validate_stats(scale_width_weight_from_width_3, self.expected_stat)
 
     def __run_scenario(self):
         """
@@ -681,6 +733,8 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         loader_map, data_load_tasks = \
             self.__subsequent_data_load(buckets_to_load_docs)
         self.__wait_for_doc_ops_and_validate(data_load_tasks, loader_map)
+        if self.validate_stat:
+            self.bucket_util.validate_stats(self.num_buckets_to_load, self.expected_stat)
 
     def test_volume(self):
         """
