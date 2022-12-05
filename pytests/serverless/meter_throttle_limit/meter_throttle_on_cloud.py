@@ -38,8 +38,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
     def load_data(self, create_start=0, create_end=1000, create_perc=0,
                   read_start=0, read_end=0, read_perc=0,
                   update_start=0, update_end=0, update_perc=0, mutated=0,
-                  delete_start=0, delete_end=0, delete_perc=0,
-                  data_validation=False, buckets=[]):
+                  delete_start=0, delete_end=0, delete_perc=0, buckets=[]):
         loader_map = dict()
         if len(buckets) > 1:
             self.buckets = buckets
@@ -66,21 +65,17 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                     loader_map.update(
                         {"%s:%s:%s" % (bucket.name, scope, collection): dg})
 
-        _, doc_loading_tasks = DocLoaderUtils.perform_doc_loading(
+        DocLoaderUtils.perform_doc_loading(
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
-            durability_level=self.durability_level, async_load=False,
+            async_load=False, durability_level=self.durability_level,
             validate_results=False, sdk_client_pool=self.sdk_client_pool)
-        DocLoaderUtils.wait_for_doc_load_completion(self.doc_loading_tm,
-                                                    doc_loading_tasks)
-
-        if data_validation:
-            result = DocLoaderUtils.data_validation(
-                self.doc_loading_tm, loader_map, self.cluster,
-                buckets=self.cluster.buckets,
-                process_concurrency=self.process_concurrency,
-                ops_rate=self.ops_rate, sdk_client_pool=self.sdk_client_pool)
-            self.assertTrue(result, "Data validation failed")
+        result = DocLoaderUtils.data_validation(
+            self.doc_loading_tm, loader_map, self.cluster,
+            buckets=self.cluster.buckets,
+            process_concurrency=self.process_concurrency,
+            ops_rate=self.ops_rate, sdk_client_pool=self.sdk_client_pool)
+        self.assertTrue(result, "Data validation failed")
 
     def validate_stats(self):
         for bucket in self.cluster.buckets:
@@ -103,12 +98,11 @@ class MeteringOnCloud(TenantMgmtOnCloud):
 
     def update_expected_stat(self, key_size, doc_size, start, end,
                                          write_bucket=[], read_bucket=[]):
-        num_items = (end - start) * (self.num_scopes * self.num_collections)
+        num_items = (end - start) * self.num_scopes * self.num_collections
         for bucket in write_bucket:
             self.expected_stats[bucket.name]["wu"] += \
-                self.bucket_util.calculate_units(key_size,
-                                                        doc_size,
-                                                        durability=self.durability_level) * num_items
+                self.bucket_util.calculate_units(key_size, doc_size,
+                                                 durability=self.durability_level) * num_items
             self.update_expected_throttle_limit(bucket, num_items, doc_size)
 
         for bucket in read_bucket:
@@ -228,8 +222,8 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                                           0, self.num_items, self.cluster.buckets)
             if op_type == "delete":
                 self.load_data(delete_start=0, delete_end=self.num_items, delete_perc=100)
-                # self.update_expected_stat(self.key_size, self.doc_size,
-                #                           0, self.num_items, self.cluster.buckets)
+                self.update_expected_stat(self.key_size, self.doc_size,
+                                          0, self.num_items, self.cluster.buckets)
 
     def test_diff_throttling_limit(self):
         self.test_single_bucket = self.input.param("test_single_bucket", False)
