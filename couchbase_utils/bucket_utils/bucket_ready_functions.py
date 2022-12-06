@@ -5977,3 +5977,19 @@ class BucketUtils(ScopeUtils):
                               % (num_throttle, ru, wu, expected_stats[bucket.name]["num_throttled"],
                                  expected_stats[bucket.name]["ru"],
                                  expected_stats[bucket.name]["wu"]))
+
+    def get_actual_items_loaded_to_calculate_wu(self, expected_items, previous_items, bucket):
+        """
+        previous items - number of items bucket already had
+        expected_items - number of new items we try to load
+        actual items - number of items actually loaded
+        """
+        iteration = 0
+        actual_items = expected_items
+        while iteration < 4:
+            actual_items = self.get_total_items_bucket(bucket) - previous_items
+            if expected_items == actual_items:
+                break
+            sleep(5, "check the item count again")
+            iteration += 1
+        return actual_items
