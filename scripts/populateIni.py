@@ -12,7 +12,7 @@ def main():
     print('in main')
     usage = '%prog -i inifile -o outputfile -s servers'
     parser = OptionParser(usage)
-    parser.add_option('-s', '--servers', dest='servers')
+    parser.add_option('-s', '--servers', dest='servers', default=None)
     parser.add_option('-d', '--addPoolServerId', dest='addPoolServerId', default=None)
     parser.add_option('-a', '--addPoolServers', dest='addPoolServers', default=None)
     parser.add_option('-i', '--inifile', dest='inifile')
@@ -25,7 +25,7 @@ def main():
     print('the ini file is', options.inifile)
 
     servers = []
-    if options.servers:
+    if options.servers and len(servers) > 0:
         if not options.servers.startswith('['):
             options.servers='['+options.servers+']'
         servers = json.loads(options.servers)
