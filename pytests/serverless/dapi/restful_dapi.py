@@ -120,7 +120,7 @@ class RestfulDAPITest(BaseTestCase):
                 document = doc["doc"]
                 response = self.rest_dapi.insert_doc(key, document, "_default", "_default")
                 self.log.info("Response code for inserting duplicate docs {}".format(response.status_code))
-                self.assertTrue(response.status_code == 404,
+                self.assertTrue(response.status_code == 409,
                                 "Duplicate entry Insertion for database {}".format(bucket.name))
 
     def test_dapi_get(self):
