@@ -220,10 +220,10 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                 self.load_data(update_start=0, update_end=self.num_items, update_perc=100, mutated=1)
                 self.update_expected_stat(self.key_size, self.doc_size,
                                           0, self.num_items, self.cluster.buckets)
-            if op_type == "delete":
-                self.load_data(delete_start=0, delete_end=self.num_items, delete_perc=100)
-                self.update_expected_stat(self.key_size, self.doc_size,
-                                          0, self.num_items, self.cluster.buckets)
+            # if op_type == "delete":
+            #     self.load_data(delete_start=0, delete_end=self.num_items, delete_perc=100)
+            #     self.update_expected_stat(self.key_size, self.doc_size,
+            #                               0, self.num_items, self.cluster.buckets)
 
     def test_diff_throttling_limit(self):
         self.test_single_bucket = self.input.param("test_single_bucket", False)
