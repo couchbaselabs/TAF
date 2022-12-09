@@ -143,3 +143,23 @@ class RestfulDAPI:
     def delete_scope(self, scope):
         url = self.endpoint_v1 + "/scopes/" + scope
         return self._urllib_request(url, method="DELETE")
+
+    def get_bulk_document(self, scope, collection, document_ids=()):
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection + "/docs?ids="
+        url = url + ','.join(document_ids)
+        return self._urllib_request(url)
+
+    def insert_bulk_document(self, scope, collection, key_documents):
+        param = key_documents
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection + "/docs"
+        return self._urllib_request(url, method="POST", params=param)
+
+    def delete_bulk_document(self, scope, collection, document_ids=[]):
+        param = document_ids
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection + "/docs"
+        return self._urllib_request(url, method="DELETE", params=param)
+
+    def update_bulk_document(self, scope, collection, key_documents):
+        param = key_documents
+        url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection + "/docs"
+        return self._urllib_request(url, method="PUT", params=param)

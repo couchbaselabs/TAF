@@ -1,10 +1,11 @@
 from basetestcase import BaseTestCase
 from BucketLib.bucket import Bucket
 from ServerlessLib.dapi.dapi import RestfulDAPI
-from couchbase_helper.documentgenerator import doc_generator
+from couchbase_helper.documentgenerator import doc_generator, BatchedDocumentGenerator
 import json
 import string
 import random
+import threading
 
 
 class RestfulDAPITest(BaseTestCase):
@@ -21,6 +22,7 @@ class RestfulDAPITest(BaseTestCase):
         self.mixed_key = self.input.param("mixed_key", False)
         self.number_of_collections = self.input.param("number_of_collections", 10)
         self.number_of_scopes = self.input.param("number_of_scopes", 10)
+        self.number_of_threads = self.input.param("number_of_threads", 1)
 
     def tearDown(self):
         BaseTestCase.tearDown(self)
@@ -726,3 +728,285 @@ class RestfulDAPITest(BaseTestCase):
                             "Query Execution passed with invalid query for database: {}".format(bucket.name))
             val = json.loads(response.content)["error"]["message"]
             self.log.info(val)
+
+    def test_get_bulk_doc(self):
+        self.result = True
+
+        def bulk_get_thread(start_prefix, end_prefix, bucket_name):
+
+            # insertion of documents
+            gen_obj = doc_generator("key", start_prefix, end_prefix,
+                                    key_size=self.key_size,
+                                    doc_size=self.value_size,
+                                    randomize_value=self.randomize_value)
+            batched_gen_obj = BatchedDocumentGenerator(gen_obj,
+                                                       batch_size_int=10)
+
+            while batched_gen_obj.has_next():
+                kv_dapi = []
+                kv = {}
+                key_doc_list = batched_gen_obj.next_batch()
+                for key_doc in key_doc_list:
+                    key_doc = tuple(key_doc)
+                    key = key_doc[0]
+                    doc = dict(key_doc[1].toMap())
+                    kv[key] = doc
+                    kv_dapi.append({"id": key, "value": doc})
+
+                # insert bulk document
+                self.log.info("inserting keys: {}".format(kv.keys()))
+                response = self.rest_dapi.insert_bulk_document("_default",
+                                                               "_default",
+                                                               kv_dapi)
+                if response is None or response.status_code != 200:
+                    self.result = False
+                    self.log.critical(response)
+                    self.log.critical("Bulk insert failed for {}: Response: {}".format(
+                        bucket_name, response.status_code))
+                    return
+                # bulk keys get in response after insertion of bulk document
+                keys = json.loads(response.content).get("docs", [])
+                # compare both the list
+                if [key["id"] for key in keys].sort() != kv.keys().sort():
+                    self.log.critical("Ambiguous keys get inserted for database {}".format(bucket_name))
+                    self.log.critical("Response: ".format(response))
+                    self.result = False
+                    return
+
+                # Get bulk document
+                self.log.info("Fetching inserted keys: {}".format(kv.keys()))
+                response = self.rest_dapi.get_bulk_document("_default", "_default", tuple(kv.keys()))
+                if response is None or response.status_code != 200:
+                    self.result = False
+                    self.log.critical("Response: ".format(response))
+                    self.log.critical("Bulk get failed for {}: Response: ".format(
+                        bucket_name, response.status_code))
+                    return
+                # list of key document pair get from response
+                bulk_key_document = json.loads(response.content).get("docs", [])
+
+                for key_doc in bulk_key_document:
+                    if key_doc.get("doc") != kv.get(key_doc["id"]):
+                        self.log.critical("{}: Value mismatch for key: "
+                                          "{}. Actual {}, Expected {}".
+                                          format(bucket_name, key,
+                                                 key_doc.get("doc"),
+                                                 kv.get(key_doc["id"])))
+                        self.log.critical("Response: ".format(response))
+                        self.result = False
+                        return
+
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Insert bulk document for database {}".format(bucket.name))
+
+            document_per_thread = self.number_of_docs // self.number_of_threads
+
+            start, end, thread_list = 0, self.number_of_docs, []
+            for number in range(self.number_of_threads):
+                start_key, end_key = start, start + document_per_thread
+                start = start + document_per_thread
+                if end_key > end:
+                    end_key = end
+                thread = threading.Thread(target=bulk_get_thread,
+                                          args=(start_key, end_key, bucket.name))
+                thread_list.append(thread)
+
+            for thread in thread_list:
+                thread.start()
+
+            for thread in thread_list:
+                thread.join()
+
+            self.assertTrue(self.result, "Check the test logs...")
+
+    def test_delete_bulk_doc(self):
+        self.result = True
+
+        def bulk_delete_thread(start_prefix, end_prefix, bucket_name):
+
+            # insertion of documents
+            gen_obj = doc_generator("key", start_prefix, end_prefix,
+                                    key_size=self.key_size,
+                                    doc_size=self.value_size,
+                                    randomize_value=self.randomize_value)
+            batched_gen_obj = BatchedDocumentGenerator(gen_obj,
+                                                       batch_size_int=10)
+
+            while batched_gen_obj.has_next():
+                kv_dapi = []
+                kv = {}
+                key_doc_list = batched_gen_obj.next_batch()
+                for key_doc in key_doc_list:
+                    key_doc = tuple(key_doc)
+                    key = key_doc[0]
+                    doc = dict(key_doc[1].toMap())
+                    kv[key] = doc
+                    kv_dapi.append({"id": key, "value": doc})
+
+                # insert bulk document
+                self.log.info(kv_dapi)
+                self.log.info("inserting keys: {}".format(kv.keys()))
+                response = self.rest_dapi.insert_bulk_document("_default",
+                                                               "_default",
+                                                               kv_dapi)
+                if response is None or response.status_code != 200:
+                    self.result = False
+                    self.log.critical(response)
+                    self.log.critical("Bulk insert failed for {}: Response: {}".format(
+                        bucket_name, response.status_code))
+                    return
+                # bulk keys get in response after insertion of bulk document
+                keys = json.loads(response.content).get("docs", [])
+                # compare both the list
+                if [key["id"] for key in keys].sort() != kv.keys().sort():
+                    self.log.critical("Ambiguous keys get inserted for database {}".format(bucket_name))
+                    self.log.critical("Response: ".format(response))
+                    self.result = False
+                    return
+
+                # Delete bulk document
+                self.log.info("Deleting inserted keys: {}".format(kv.keys()))
+                response = self.rest_dapi.delete_bulk_document("_default",
+                                                               "_default",
+                                                               tuple(kv.keys()))
+
+                if response is None or response.status_code != 200:
+                    self.result = False
+                    self.log.critical(response)
+                    self.log.critical("Bulk deletion failed for {}: Response: {}".format(
+                        bucket_name, response.status_code))
+                    return
+
+                keys = json.loads(response.content).get("docs", [])
+
+                if [key["id"] for key in keys].sort() != kv.keys().sort():
+                    self.log.critical("Ambiguous keys get deleted for database {}".format(bucket_name))
+                    self.log.critical("Response: ".format(response))
+                    self.result = False
+                    return
+
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Delete bulk document for database {}".format(bucket.name))
+
+            document_per_thread = self.number_of_docs // self.number_of_threads
+
+            start, end, thread_list = 0, self.number_of_docs, []
+
+            for number in range(self.number_of_threads):
+                start_key, end_key = start, start + document_per_thread
+                start = start + document_per_thread
+                if end_key > end:
+                    end_key = end
+                thread = threading.Thread(target=bulk_delete_thread,
+                                          args=(start_key, end_key, bucket.name))
+                thread_list.append(thread)
+
+            for thread in thread_list:
+                thread.start()
+
+            for thread in thread_list:
+                thread.join()
+
+            self.assertTrue(self.result, "Check the test logs...")
+
+    def test_update_bulk_doc(self):
+        self.result = True
+
+        def bulk_upsert_thread(start_prefix, end_prefix, bucket_name):
+
+            # insertion of documents
+            gen_obj = doc_generator("key", start_prefix, end_prefix,
+                                    key_size=self.key_size,
+                                    doc_size=self.value_size,
+                                    randomize_value=self.randomize_value)
+            batched_gen_obj = BatchedDocumentGenerator(gen_obj,
+                                                       batch_size_int=10)
+
+            while batched_gen_obj.has_next():
+                kv_dapi = []
+                kv = {}
+                key_doc_list = batched_gen_obj.next_batch()
+                for key_doc in key_doc_list:
+                    key_doc = tuple(key_doc)
+                    key = key_doc[0]
+                    doc = dict(key_doc[1].toMap())
+                    kv[key] = doc
+                    kv_dapi.append({"id": key, "value": doc})
+
+                # insert bulk document
+                self.log.info("inserting keys: {}".format(kv.keys()))
+                response = self.rest_dapi.insert_bulk_document("_default",
+                                                               "_default",
+                                                               kv_dapi)
+                if response is None or response.status_code != 200:
+                    self.result = False
+                    self.log.critical(response)
+                    self.log.critical("Bulk insert failed for {}: Response: {}".format(
+                        bucket_name, response.status_code))
+                    return
+                # bulk keys get in response after insertion of bulk document
+                keys = json.loads(response.content).get("docs", [])
+                # compare both the list
+                if [key["id"] for key in keys].sort() != kv.keys().sort():
+                    self.log.critical("Ambiguous keys get inserted for database {}".format(bucket_name))
+                    self.log.critical("Response: ".format(response))
+                    self.result = False
+                    return
+
+                # updation of kv_dapi
+                for key_value in kv_dapi:
+                    key_value['value']['update'] = True
+
+                # update bulk document
+                self.log.info("Updating keys: {}".format(kv.keys()))
+                response = self.rest_dapi.update_bulk_document("_default",
+                                                               "_default",
+                                                               kv_dapi)
+                if response is None or response.status_code != 200:
+                    self.result = False
+                    self.log.critical(response)
+                    self.log.critical("Bulk update failed for {}: Response: {}".format(
+                        bucket_name, response.status_code))
+                    return
+
+                # bulk keys get in response after insertion of bulk document
+                keys = json.loads(response.content).get("docs", [])
+                # compare both the list
+                if [key["id"] for key in keys].sort() != kv.keys().sort():
+                    self.log.critical("Ambiguous keys get updated for database {}".format(bucket_name))
+                    self.log.critical("Response: ".format(response))
+                    self.result = False
+                    return
+
+        for bucket in self.buckets:
+            self.rest_dapi = RestfulDAPI({"dapi_endpoint": bucket.serverless.dapi,
+                                          "access_token": bucket.serverless.nebula_endpoint.rest_username,
+                                          "access_secret": bucket.serverless.nebula_endpoint.rest_password})
+            self.log.info("Insert bulk document for database {}".format(bucket.name))
+
+            document_per_thread = self.number_of_docs // self.number_of_threads
+
+            start, end, thread_list = 0, self.number_of_docs, []
+
+            for number in range(self.number_of_threads):
+                start_key, end_key = start, start + document_per_thread
+                start = start + document_per_thread
+                if end_key > end:
+                    end_key = end
+                thread = threading.Thread(target=bulk_upsert_thread,
+                                          args=(start_key, end_key, bucket.name))
+                thread_list.append(thread)
+
+            for thread in thread_list:
+                thread.start()
+
+            for thread in thread_list:
+                thread.join()
+
+            self.assertTrue(self.result, "Check the test logs...")
