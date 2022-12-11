@@ -256,8 +256,8 @@ class StorageBase(BaseTestCase):
 
         if CbServer.cluster_profile == "serverless":
             # Workaround to hitting throttling on serverless config
-            _, status = RestConnection(self.cluster.master).set_throttle_limit(
-                throttle_limit=self.kv_throttling_limit)
+            for bucket in self.cluster.buckets:
+                self.bucket_util.set_throttle_n_storage_limit(bucket, throttle_limit=self.kv_throttling_limit)
 
     def find_nodes_with_service(self, service_type, nodes_list):
         filter_list = list()
