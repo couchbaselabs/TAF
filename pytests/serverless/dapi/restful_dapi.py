@@ -347,7 +347,6 @@ class RestfulDAPITest(BaseTestCase):
 
             response = self.rest_dapi.get_scope_list()
             self.log.info("status code for getting list of scope: {}".format(response.status_code))
-            self.log.info(json.loads(response.content))
             self.assertTrue(response.status_code == 200,
                             "Getting list of scopes failed for database {}".format(bucket.name))
 
@@ -428,21 +427,17 @@ class RestfulDAPITest(BaseTestCase):
                 content = "content" + str(content_value)
                 document_name_list.append(key)
                 response = self.rest_dapi.insert_doc(key, {"content": content}, "_default", "_default")
-                if response.status_code == 201:
-                    self.assertTrue(response.status_code == 201,
-                                    "Insertion failed for database {}".format(bucket.name))
+                self.assertTrue(response.status_code == 201,
+                                "Insertion failed for database {}".format(bucket.name))
 
             response = self.rest_dapi.get_document_list("_default", "_default")
             self.assertTrue(response.status_code == 200,
-                            "Getting list of documents failed for databsase {}".format(bucket.name))
+                            "Getting list of documents failed for database {}".format(bucket.name))
 
             self.log.info("Response code for getting list of documents {}".format(response.status_code))
-            if response.status_code == 200:
-                self.log.info(json.loads(response.content))
 
             response_dict = json.loads(response.content)
             document_list = response_dict["docs"]
-            self.log.info(document_list)
             document_name_check_list = []
             for documents in document_list:
                 document_name_check_list.append(documents['meta_id'])
@@ -461,7 +456,7 @@ class RestfulDAPITest(BaseTestCase):
             self.log.info(bucket.serverless.dapi)
 
             response = self.rest_dapi.insert_doc("k", {"inserted": True}, "_default", "_default")
-            self.log.info("Response code for insertion of doc {}".fromat(response.status_code))
+            self.log.info("Response code for insertion of doc {}".format(response.status_code))
 
             self.assertTrue(response.status_code == 201,
                             "Insertion failed for database {}".format(bucket.name))
@@ -476,12 +471,11 @@ class RestfulDAPITest(BaseTestCase):
                                                     [{"type": "insert", "path": "counter3", "value": 4},
                                                      {"type": "insert", "path": "counter1", "value": 10}],
                                                     "_default", "_default")
-            self.log.info("Reponse code for insertion of subdocument {}".format(response.status_code))
+            self.log.info("Response code for insertion of subdocument {}".format(response.status_code))
 
             self.assertTrue(response.status_code == 200,
                             "Sub doc insertion failed for database {}".format(bucket.name))
 
-            response = self.rest_dapi.get_doc("k", "_default", "_default")
             response = self.rest_dapi.get_subdoc("k",
                                                  [{"type": "get", "path": "counter3"}],
                                                  "_default", "_default")
@@ -569,7 +563,7 @@ class RestfulDAPITest(BaseTestCase):
 
             scope = "testScope"
             response = self.rest_dapi.create_scope({"scopeName": scope})
-            self.log.info("Response code for creation of scope {}".fromat(response.status_code))
+            self.log.info("Response code for creation of scope {}".format(response.status_code))
             self.assertTrue(response.status_code == 200,
                             "Creation of scope failed for database {}".format(bucket.name))
 

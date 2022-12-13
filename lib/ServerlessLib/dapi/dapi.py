@@ -86,11 +86,11 @@ class RestfulDAPI:
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection + "/subdocs/" + doc_id
         return self._urllib_request(url, method="POST", params=params)
 
-    def insert_doc(self, doc_id, doc_content, scope, collection):
+    def insert_doc(self, doc_id, doc_content, scope, collection, timeout=300):
         params = doc_content
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \
             + collection + "/docs/" + doc_id
-        return self._urllib_request(url, method="POST", params=params)
+        return self._urllib_request(url, method="POST", params=params, timeout=timeout)
 
     def upsert_doc(self, existing_doc_id, doc_content, scope, collection):
         params = doc_content
