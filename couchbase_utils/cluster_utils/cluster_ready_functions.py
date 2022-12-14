@@ -226,8 +226,8 @@ class ClusterUtils:
         for server in servers:
             rest = RestConnection(server)
             result = rest.get_pools_info()
-            node_info = RestConnection(server).get_nodes_self(10)
-            if node_info.version[:5] < '7.5.0':
+            version = RestConnection(server).get_nodes_self(10).version[:5]
+            if not ClusterRun.is_enabled and version < '7.5.0':
                 profiles.append("default")
             else:
                 profiles.append(result["configProfile"])
