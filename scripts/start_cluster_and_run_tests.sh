@@ -120,6 +120,7 @@ else
    make
 fi
 
+echo "./cluster_run --dont-rename --nodes=$servers_count $serverless &> $wd/cluster_run.log &"
 ./cluster_run --dont-rename --nodes=$servers_count $serverless &> $wd/cluster_run.log &
 pid=$!
 popd
@@ -133,8 +134,19 @@ fi
 # Adding a submodule to the Git repository
 git submodule init
 git submodule update --init --force --remote
-
 git clone https://github.com/couchbaselabs/guides.git
+
+# Install Jdk 11 and exporting the PATH safely after cluster_run started
+echo "############ Installing OpenJdk-11 #################"
+sudo apt-get update
+sudo apt-get install -y openjdk-11-jdk
+
+export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+export PATH=$PATH:$JAVA_HOME
+echo "JAVA_HOME=$JAVA_HOME"
+echo "PATH=$PATH"
+echo "#####################################################"
+# End of Java installation
 
 # Start test execution
 echo "guides/gradlew --refresh-dependencies testrunner -P jython='${jython_path}/bin/jython' -P 'args=-i $ini $test_params $conf -m rest' 2>&1  | tee make_test.log"
