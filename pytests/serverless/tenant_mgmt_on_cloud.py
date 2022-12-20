@@ -1509,6 +1509,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
           and verifying num items
         4 verifying disk used is within 1 gb range of the limit
         """
+        # checking total disk usage of given buckets
         def get_total_disk_usage(bucket_array):
             total_disk_usage = 0
             for bucket in bucket_array:
@@ -1516,15 +1517,51 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 int(self.bucket_util.get_disk_used(bucket)))
             return total_disk_usage
 
+        # checking breaking conditions before next batch data loading
         def check_conditions():
             for buck in range(len(self.cluster.buckets)):
                 if not self.bucket_info[self.cluster.buckets[buck]][limit_reached]:
                     return True
             return False
 
-        self.log.info("======= test_storage_limit starts=====")
+        # method for doc generation and triggering data load
+        def start_data_load(buckets=None):
+            loader_map = dict()
+            for bucket in buckets:
+                for scope in bucket.scopes.keys():
+                    for collection in bucket.scopes[
+                        scope].collections.keys():
+                        if scope == CbServer.system_scope:
+                            continue
+                    work_load_settings = DocLoaderUtils.get_workload_settings(
+                        key=self.key, key_size=self.key_size,
+                        doc_size=self.doc_size,
+                        create_perc=100, create_start=self.bucket_info[
+                            bucket][create_start],
+                        create_end=self.bucket_info[
+                            bucket][create_end],
+                        ops_rate=self.ops_rate)
+                    dg = DocumentGenerator(work_load_settings,
+                                           self.key_type, self.val_type)
+                    loader_map.update(
+                        {"%s:%s:%s" % (
+                        bucket.name, scope, collection): dg})
+            self.init_sdk_pool_object()
+            self.create_sdk_client_pool(buckets=buckets,
+                                        req_clients_per_bucket=2)
+
+            result, loading_tasks = DocLoaderUtils.perform_doc_loading(
+                self.doc_loading_tm, loader_map, self.cluster,
+                buckets, async_load=True, validate_results=False,
+                sdk_client_pool=self.sdk_client_pool)
+            return loading_tasks
+
+        # test start
+        self.log.info("============== test_storage_limit starts=============")
         self.create_required_buckets()
         self.get_servers_for_databases()
+        self.data_load_during_rebalance = str(self.input.param(
+            "data_load_during_rebalance", False))
         data_storage_limit = str(self.input.param("data_storage_limit", 1))
         '''
          Step 1: Set storage limit
@@ -1567,47 +1604,13 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         Step 2: Start data load
         '''
         while check_conditions():
-            self.loader_map = dict()
             buckets_to_load_data = []
             for data_load_bucket in self.cluster.buckets:
                 if self.bucket_info[data_load_bucket][limit_reached]:
                     continue
                 buckets_to_load_data.append(data_load_bucket)
-                for scope in data_load_bucket.scopes.keys():
-                    for collection in data_load_bucket.scopes[
-                        scope].collections.keys():
-                        if scope == CbServer.system_scope:
-                            continue
-                    work_load_settings = DocLoaderUtils.get_workload_settings(
-                        key=self.key, key_size=self.key_size,
-                        doc_size=self.doc_size,
-                        create_perc=100, create_start=self.bucket_info[
-                            data_load_bucket][create_start],
-                        create_end=self.bucket_info[
-                            data_load_bucket][create_end],
-                        ops_rate=self.ops_rate)
-                    dg = DocumentGenerator(work_load_settings,
-                                           self.key_type, self.val_type)
-                    self.loader_map.update(
-                        {"%s:%s:%s" % (
-                        data_load_bucket, scope, collection): dg})
-            self.init_sdk_pool_object()
-            self.create_sdk_client_pool(buckets=buckets_to_load_data,
-                                        req_clients_per_bucket=2)
-            if len(buckets_to_load_data) == 0:
-                return
-
-            result, loading_tasks = DocLoaderUtils.perform_doc_loading(
-                self.doc_loading_tm, self.loader_map, self.cluster,
-                buckets_to_load_data, async_load=True, validate_results=False,
-                sdk_client_pool=self.sdk_client_pool)
-            disk_used_in_bytes = float(
-                int(self.bucket_util.get_disk_used(self.cluster.buckets[0])))
-            disk_used_in_gbs = disk_used_in_bytes / 1024 / 1024 / 1024
-            self.log.info(
-                "disk_used_during_data_load {}".format(disk_used_in_gbs))
+            loading_tasks = start_data_load(buckets_to_load_data)
             self.doc_loading_tm.getAllTaskResult()
-
             # marking bucket to leave for next iteration if num items not
             # changed
             for task in loading_tasks:
@@ -1653,9 +1656,27 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     self.bucket_info[bucket][create_start] + 10000
 
         '''
+        Case: test if storage limit honoured during/after re-balance 
+        '''
+        if self.data_load_during_rebalance:
+            scenario = dict()
+            for bucket in self.cluster.buckets:
+                scenario[bucket.name] = {Bucket.width: 2}
+            to_track = self.__trigger_bucket_param_updates(scenario)
+            self.sleep(5, "Wait for re-balance to start")
+            for bucket in self.cluster.buckets:
+                self.bucket_info[bucket][create_start] = \
+                    self.bucket_info[bucket][create_end]
+                self.bucket_info[bucket][create_end] = \
+                    self.bucket_info[bucket][create_start] + 500000
+            start_data_load(self.cluster.buckets)
+            monitor_task = self.bucket_util.async_monitor_database_scaling(
+                to_track, timeout=600)
+            self.task_manager.get_task_result(monitor_task)
+
+        '''
          Step 3 : Data load for storage limit validation
         '''
-        loader_map = dict()
         for bucket in self.cluster.buckets:
             item_count = self.bucket_util.get_items_count(bucket)
             self.bucket_info[bucket][prev_item_count] = item_count
@@ -1663,31 +1684,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 bucket.name, item_count))
             self.bucket_info[bucket][create_start] = int(item_count)
             self.bucket_info[bucket][create_end] = self.bucket_info[
-                bucket][create_start] + 100
-            for scope in bucket.scopes.keys():
-                for collection in bucket.scopes[scope].collections.keys():
-                    if scope == CbServer.system_scope:
-                        continue
-                    work_load_settings = DocLoaderUtils.get_workload_settings(
-                        key=self.key, key_size=self.key_size,
-                        doc_size=self.doc_size,
-                        create_perc=100, create_start=self.bucket_info[bucket][create_start],
-                        create_end=self.bucket_info[bucket][create_end],
-                        ops_rate=self.ops_rate)
-                    dg = DocumentGenerator(work_load_settings,
-                                           self.key_type, self.val_type)
-                    loader_map.update(
-                        {"%s:%s:%s" % (
-                            bucket.name, scope, collection): dg})
-
-        self.init_sdk_pool_object()
-        self.create_sdk_client_pool(buckets=self.cluster.buckets,
-                                    req_clients_per_bucket=1)
-
-        result, loading_tasks = DocLoaderUtils.perform_doc_loading(
-            self.doc_loading_tm, loader_map, self.cluster,
-            self.cluster.buckets, async_load=True, validate_results=False,
-            sdk_client_pool=self.sdk_client_pool)
+                bucket][create_start] + 10000
+        start_data_load(self.cluster.buckets)
         self.doc_loading_tm.getAllTaskResult()
 
         '''
