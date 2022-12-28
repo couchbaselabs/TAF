@@ -63,12 +63,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
     def validate_cluster_deployment(self, cluster, req_nodes_dict):
         req_kv_nodes = req_nodes_dict.get(CbServer.Services.KV)
-        req_index_nodes = req_kv_nodes.get(CbServer.Services.INDEX, 0)
-        req_n1ql_nodes = req_kv_nodes.get(CbServer.Services.N1QL, 0)
-        req_cbas_nodes = req_kv_nodes.get(CbServer.Services, 0)
-        req_eventing_nodes = req_kv_nodes.get(CbServer.Services, 0)
-        req_fts_nodes = req_kv_nodes.get(CbServer.Services, 0)
-        req_backup_nodes = req_kv_nodes.get(CbServer.Services, 0)
+        req_index_nodes = req_nodes_dict.get(CbServer.Services.INDEX, 0)
+        req_n1ql_nodes = req_nodes_dict.get(CbServer.Services.N1QL, 0)
+        req_cbas_nodes = req_nodes_dict.get(CbServer.Services.CBAS, 0)
+        req_eventing_nodes = req_nodes_dict.get(CbServer.Services.EVENTING, 0)
+        req_fts_nodes = req_nodes_dict.get(CbServer.Services.FTS, 0)
+        req_backup_nodes = req_nodes_dict.get(CbServer.Services.BACKUP, 0)
 
         total_nodes = sum([req_kv_nodes, req_index_nodes, req_index_nodes,
                            req_cbas_nodes, req_eventing_nodes, req_fts_nodes,
@@ -1241,10 +1241,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
     def test_cluster_scaling_wrt_db_count(self):
         """
         1. Make sure there is no other dataplane present
-        2. Create 25 DBs with default settings
+        2. Create 19 DBs with default settings
         3. Validate cluster sizing
-        4. Create 26th DB and make sure cluster scaling happens for KV
-        5. Continue to create 50 and 100 DBs and repeat step 3, 4
+        4. Create 20th DB and make sure cluster scaling happens for KV
+        5. Continue to create 40, 60, 80 DBs and repeat step 3, 4
+        6. Thn scale upto 100 dbs and make sure we are able to accommodate all
+           databases within the same cluster.
         :return:
         """
         self._assert_if_not_sandbox_run()
@@ -1252,7 +1254,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         self.bucket_width = 1
         self.bucket_weight = 30
-        num_buckets = 25
+        total_buckets = 0
+        num_buckets = 19
         cluster_deployment_spec = {
             CbServer.Services.KV: 3,
             CbServer.Services.INDEX: 2,
@@ -1266,6 +1269,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                     num_buckets=num_buckets)
         self.create_required_buckets(spec)
         self._assert_num_dataplane_deployed(1)
+        total_buckets += num_buckets
 
         dp_id = self.serverless_util.get_database_dataplane_id(
             self.pod, self.cluster.buckets[0].name)
@@ -1280,17 +1284,18 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             server.port = CbServer.ssl_port
 
         self.validate_cluster_deployment(self.cluster, cluster_deployment_spec)
-        self.bucket_util.validate_serverless_buckets(self.cluster)
+        self.bucket_util.validate_serverless_buckets(self.cluster, self.cluster.buckets)
 
         for itr in [2, 3, 4]:
             cluster_deployment_spec[CbServer.Services.KV] = \
                 itr * CbServer.Serverless.KV_SubCluster_Size
 
             b_num = (itr-1) * num_buckets + 1
-            self.log.info("Creating %sth bucket" % b_num)
+            self.log.info("Creating %sth bucket" % (b_num + 1))
             bucket = self.get_serverless_bucket_obj(
                 b_name_format % b_num, self.bucket_width, self.bucket_weight)
             self.create_database(bucket)
+            total_buckets += 1
 
             self._assert_num_dataplane_deployed(1)
             self.cluster.servers = \
@@ -1301,15 +1306,16 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 server.port = CbServer.ssl_port
             self.validate_cluster_deployment(self.cluster,
                                              cluster_deployment_spec)
-            self.bucket_util.validate_serverless_buckets(self.cluster)
+            self.bucket_util.validate_serverless_buckets(self.cluster, self.cluster.buckets)
 
             b_name_format = "tntmgmt-set-{0}-{1}".format(itr, "%s")
             self.log.info("Targeting %s databases in the dataplane"
                           % (itr*num_buckets))
             spec = self.get_bucket_spec(bucket_name_format=b_name_format,
-                                        num_buckets=num_buckets-1)
+                                        num_buckets=num_buckets)
             self.create_required_buckets(spec)
             self._assert_num_dataplane_deployed(1)
+            total_buckets += num_buckets
 
             curr_dp_id = self.serverless_util.get_database_dataplane_id(
                 self.pod, self.cluster.buckets[0].name)
@@ -1324,7 +1330,17 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.cluster.master = self.cluster.servers[0]
             self.validate_cluster_deployment(self.cluster,
                                              cluster_deployment_spec)
-            self.bucket_util.validate_serverless_buckets(self.cluster)
+            self.bucket_util.validate_serverless_buckets(self.cluster, self.cluster.buckets)
+            self.log.info("Total buckets in the cluster: %s" % total_buckets)
+
+        for b_num in range(total_buckets + 1, 100):
+            self.log.info("Creating %sth bucket" % (b_num + 1))
+            bucket = self.get_serverless_bucket_obj(
+                b_name_format % b_num, self.bucket_width, self.bucket_weight)
+            self.create_database(bucket)
+            self._assert_num_dataplane_deployed(1)
+            self.validate_cluster_deployment(self.cluster,
+                                             cluster_deployment_spec)
 
     def test_defrag_dbaas(self):
         """

@@ -2381,7 +2381,10 @@ class BucketUtils(ScopeUtils):
             buckets_spec[Bucket.ramQuotaMB] = 256
             buckets_spec = BucketUtils.expand_buckets_spec(None, buckets_spec)
 
+            sleep_time = min(15, len(buckets_spec.items()))
             for bucket_name, bucket_spec in buckets_spec.items():
+                # due to AV-49460 need to add some gap in bucket threads
+                sleep(sleep_time, "Adding gap between bucket threads creation")
                 b_obj = Bucket({
                     Bucket.name: bucket_name,
                     Bucket.bucketType: Bucket.Type.MEMBASE,
