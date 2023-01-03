@@ -167,12 +167,13 @@ class NodeUtils(object):
         shell_conn.disconnect()
 
     def _enable_tls(self, server, level="strict"):
-        RestConnection(server).update_autofailover_settings(False, 120)
+        shell_conn = RemoteMachineShellConnection(server)
+        cb_cli = CbCli(shell_conn)
+        o = cb_cli.auto_failover(enable_auto_fo=0)
+        self.log.info("%s: %s" % (server.ip, o))
         self.log.info(
             "Setting cluster encryption level to strict on cluster "
             "with node {0}".format(server))
-        shell_conn = RemoteMachineShellConnection(server)
-        cb_cli = CbCli(shell_conn)
         o = cb_cli.enable_n2n_encryption()
         self.log.info(o)
         o = cb_cli.set_n2n_encryption_level(level=level)
