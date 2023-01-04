@@ -1482,7 +1482,8 @@ class RestConnection(newRC):
         if status:
             if "nodes" in json_parsed:
                 for json_node in json_parsed["nodes"]:
-                    node = RestParser().parse_get_nodes_response(json_node)
+                    node = RestParser(self.type).parse_get_nodes_response(
+                        json_node)
                     node.rest_username = self.username
                     node.rest_password = self.password
                     if node.ip == "127.0.0.1":
@@ -3596,6 +3597,9 @@ class AutoReprovisionSettings(object):
 
 
 class RestParser(object):
+    def __init__(self, server_type="dedicated"):
+        self.server_type = server_type
+
     def parse_index_status_response(self, parsed):
         index_map = dict()
         for index_map in parsed["indexes"]:
@@ -3653,7 +3657,8 @@ class RestParser(object):
         if "hostname" in parsed:
             # should work for both: ipv4 and ipv6
             node.ip, node.port = parsed["hostname"].rsplit(":", 1)
-            if CbServer.use_https:
+            if CbServer.use_https and self.server_type != "serverless" \
+                    and self.server_type != "nebula":
                 node.port = int(node.port) + 10000
 
         # memoryQuota

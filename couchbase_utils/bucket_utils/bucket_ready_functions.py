@@ -5374,6 +5374,10 @@ class BucketUtils(ScopeUtils):
         for t_bucket in buckets:
             self.log.info("Validating serverless bucket %s" % t_bucket.name)
             # Validate bucket.width is matching as expected
+            if cluster.type == "serverless":
+                rest_endpoint = t_bucket.serverless.nebula_endpoint
+                helper = BucketHelper(rest_endpoint)
+                server_buckets = helper.get_buckets_json()
             width = t_bucket.serverless.width
             weight = t_bucket.serverless.weight
             server_bucket = get_server_bucket(t_bucket)
