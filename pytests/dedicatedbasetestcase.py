@@ -96,51 +96,56 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
         cluster_ids = TestInputSingleton.input.capella \
             .get("clusters", "")
-        if cluster_ids:
-            cluster_ids = cluster_ids.split(",")
-            self.__get_existing_cluster_details(cluster_ids)
-        else:
-            tasks = list()
-            for _ in range(self.num_clusters):
-                cluster_name = self.cluster_name_format % cluster_index
-                name = "clusterName" if self.capella_cluster_config.get("clusterName") else "name"
-                self.capella_cluster_config[name] = \
-                    "%s_%s_%s_%sGB_%s" % (
-                        self.tenant.user.split("@")[0].replace(".", "").replace("+", ""),
-                        self.input.param("provider", "aws"),
-                        self.input.param("compute", "m5.xlarge")
-                            .replace(".", ""),
-                        self.input.param("size", 50),
-                        cluster_name)
-                self.log.info(self.capella_cluster_config)
-                deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
-                                          self.capella_cluster_config,
-                                          timeout=self.wait_timeout)
-                self.task_manager.add_new_task(deploy_task)
-                tasks.append(deploy_task)
-                cluster_index += 1
-            self.generate_cluster_config()
-            for task in tasks:
-                self.task_manager.get_task_result(task)
-                self.assertTrue(task.result, "Cluster deployment failed!")
-                CapellaUtils.create_db_user(
-                    self.pod, self.tenant, task.cluster_id,
-                    self.rest_username, self.rest_password)
-                self.__populate_cluster_info(task.cluster_id, task.servers,
-                                             task.srv, task.name,
-                                             self.capella_cluster_config)
+        try:
+            if cluster_ids:
+                cluster_ids = cluster_ids.split(",")
+                self.__get_existing_cluster_details(cluster_ids)
+            else:
+                tasks = list()
+                for _ in range(self.num_clusters):
+                    cluster_name = self.cluster_name_format % cluster_index
+                    name = "clusterName" if self.capella_cluster_config.get("clusterName") else "name"
+                    self.capella_cluster_config[name] = \
+                        "%s_%s_%s_%sGB_%s" % (
+                            self.tenant.user.split("@")[0].replace(".", "").replace("+", ""),
+                            self.input.param("provider", "aws"),
+                            self.input.param("compute", "m5.xlarge")
+                                .replace(".", ""),
+                            self.input.param("size", 50),
+                            cluster_name)
+                    self.log.info(self.capella_cluster_config)
+                    deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
+                                              self.capella_cluster_config,
+                                              timeout=self.wait_timeout)
+                    self.task_manager.add_new_task(deploy_task)
+                    tasks.append(deploy_task)
+                    cluster_index += 1
+                self.generate_cluster_config()
+                for task in tasks:
+                    self.task_manager.get_task_result(task)
+                    self.assertTrue(task.result, "Cluster deployment failed!")
+                    CapellaUtils.create_db_user(
+                        self.pod, self.tenant, task.cluster_id,
+                        self.rest_username, self.rest_password)
+                    self.__populate_cluster_info(task.cluster_id, task.servers,
+                                                 task.srv, task.name,
+                                                 self.capella_cluster_config)
 
-        # Initialize self.cluster with first available cluster as default
-        self.cluster = self.cb_clusters[self.cluster_name_format
-                                        % default_cluster_index]
-        self.servers = self.cluster.servers
-        self.cluster_util = ClusterUtils(self.task_manager)
-        self.bucket_util = BucketUtils(self.cluster_util, self.task)
-        for _, cluster in self.cb_clusters.items():
-            self.cluster_util.print_cluster_stats(cluster)
+            # Initialize self.cluster with first available cluster as default
+            self.cluster = self.cb_clusters[self.cluster_name_format
+                                            % default_cluster_index]
+            self.servers = self.cluster.servers
+            self.cluster_util = ClusterUtils(self.task_manager)
+            self.bucket_util = BucketUtils(self.cluster_util, self.task)
+            for _, cluster in self.cb_clusters.items():
+                self.cluster_util.print_cluster_stats(cluster)
 
-        self.cluster.edition = "enterprise"
-        self.sleep(10)
+            self.cluster.edition = "enterprise"
+            self.sleep(10)
+        except Exception as e:
+            self.log.critical(e)
+            self.tearDown()
+            raise Exception("SetUp Failed - {}".format(e))
 
     def tearDown(self):
         self.shutdown_task_manager()
