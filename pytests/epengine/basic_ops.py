@@ -4,6 +4,7 @@ from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
+from SecurityLib.rbac import RbacUtil
 from Cb_constants import constants, CbServer, DocLoading
 from basetestcase import ClusterSetup
 from cb_tools.cbepctl import Cbepctl
@@ -18,9 +19,11 @@ from platform_constants.os_constants import Linux
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from sdk_utils.java_sdk import SDKOptions
 from table_view import TableView
 
 from java.lang import RuntimeException
+from com.couchbase.client.java.codec import RawJsonTranscoder
 
 from couchbase_utils.cluster_utils.cluster_ready_functions import CBCluster
 from membase.api.rest_client import RestConnection
@@ -1774,6 +1777,45 @@ class basic_ops(ClusterSetup):
         client.close()
 
         self.validate_test_failure()
+
+    def test_xattr_read_with_data_reader_permission(self):
+        """
+        Ref: MB-54776
+        """
+        user = "test_user"
+        rbac_util = RbacUtil()
+        testuser = [{'id': user, 'name': user, 'password': 'password'}]
+        rolelist = [{'id': user, 'name': user, 'roles': 'data_reader[*]'}]
+        try:
+            rbac_util.remove_user_role([user],
+                                       RestConnection(self.cluster.master))
+        except Exception as e:
+            if "User was not found." not in str(e):
+                raise e
+
+        self.log.info("Creating user '%s' with data_reader persmission" % user)
+        rbac_util.create_user_source(testuser, 'builtin', self.cluster.master)
+        status = rbac_util.add_user_role(
+            rolelist, RestConnection(self.cluster.master), 'builtin')
+        self.assertEqual(status[0]["id"], user, "User create failed")
+
+        key = "test"
+        bucket = self.cluster.buckets[0]
+        client = SDKClient([self.cluster.master], bucket)
+        insert_option = SDKOptions.get_insert_options()
+
+        client.collection.insert(key, "null", insert_option.transcoder(
+            RawJsonTranscoder.INSTANCE))
+        client.crud(DocLoading.Bucket.SubDocOps.INSERT, key,
+                    ["_xattr", "test_val"], xattr=True)
+        client.close()
+
+        client = SDKClient([self.cluster.master], bucket, username=user)
+        result = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP, key,
+                             "$XTOC", xattr=True)
+        client.close()
+        result = str(result[0][key]['value'])
+        self.assertEqual('[[]]', result, "Value mismatch: %s" % result)
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
