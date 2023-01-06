@@ -565,6 +565,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         task = self.bucket_util.async_create_database(
             self.cluster, bucket, dataplane_id=self.dataplane_id)
         self.task_manager.get_task_result(task)
+        self.assertTrue(task.result, "Database creation failed")
 
     def create_required_buckets(self, buckets_spec=None):
         if buckets_spec or self.spec_name:
@@ -681,7 +682,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         spl_chars = " -"
         char_set = string.ascii_letters + string.digits + spl_chars
         db_name = "tnt mgmt-max-name-size-"
-        while len(db_name) != 93:
+        while len(db_name) != 48:
             db_name += choice(char_set)
         bucket = self.get_serverless_bucket_obj(
             db_name, self.bucket_width, self.bucket_weight)
@@ -694,7 +695,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for itr in range(1, max_itr):
             self.log.info("Iteration :: %s" % itr)
             bucket_name = self.serverless_util.create_serverless_database(
-                self.cluster.pod, self.cluster.tenant, bucket.name,
+                self.cluster.pod, self.cluster.tenant, db_name,
                 "aws", "us-east-1",
                 bucket.serverless.width, bucket.serverless.weight)
             self.log.info("Bucket %s created" % bucket_name)
@@ -702,6 +703,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 self.pod, self.tenant, bucket_name)
             self.serverless_util.wait_for_database_deleted(
                 self.tenant, bucket_name)
+        bucket.name = db_name
         task = self.bucket_util.async_create_database(self.cluster, bucket)
         self.task_manager.get_task_result(task)
         self.assertTrue(task.result, "Database creation failed")
@@ -731,7 +733,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         name_to_err_map = {"123,": invalid_char_err,
                            "1": name_too_short_err,
-                           "a"*94: name_too_long_err}
+                           "a"*49: name_too_long_err}
         for name, expected_err in name_to_err_map.items():
             self.log.info("Trying to create database with name=%s" % name)
             bucket = self.get_serverless_bucket_obj(name, 1, 30)
