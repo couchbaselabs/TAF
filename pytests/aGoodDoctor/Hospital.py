@@ -234,6 +234,51 @@ class Murphy(BaseTestCase, OPD):
         self.stop_crash = True
         BaseTestCase.tearDown(self)
 
+    def testKvRangeScan(self):
+        self.create_perc = 100
+        self.PrintStep("Step 1: Create %s items: %s" % (self.num_items, self.key_type))
+        self.generate_docs(doc_ops=["create"],
+                           create_start=0,
+                           create_end=self.num_items)
+        self.perform_load(validate_data=False)
+        self.drN1QL = DoctorN1QL(self.cluster, self.bucket_util,
+                                      self.num_indexes, num_query=5, query_without_index=True)
+
+        th = threading.Thread(target=self.drN1QL.run_concurrent_queries,
+                              kwargs=dict(num_queries=5))
+        th.start()
+
+        self.doc_ops = self.input.param("doc_ops", "create").split(":")
+        perc = 100/len(self.doc_ops)
+        self.expiry_perc = perc
+        self.create_perc = perc
+        self.update_perc = perc
+        self.delete_perc = perc
+        self.read_perc = perc
+        self.generate_docs(doc_ops=self.doc_ops,
+                           read_start=0,
+                           read_end=self.num_items,
+                           create_start=self.num_items,
+                           create_end=self.num_items*10,
+                           update_start=0,
+                           update_end=self.num_items*10,
+                           delete_start=self.num_items//2,
+                           delete_end=self.num_items,
+                           expire_start=self.num_items,
+                           expire_end=self.num_items*10
+                           )
+        self.perform_load(wait_for_load=False, validate_data=False)
+        crash_th = threading.Thread(target=self.crash_memcached,
+                                  kwargs={"graceful": False})
+        crash_th.start()
+        self.doc_loading_tm.getAllTaskResult()
+
+        self.stop_crash = True
+        crash_th.join()
+        self.drN1QL.discharge_N1QL()
+        th.join()
+        self.PrintStep("testKvRangeScan ends")
+
     def SteadyStateVolume(self):
         self.loop = 1
         self.create_perc = 100

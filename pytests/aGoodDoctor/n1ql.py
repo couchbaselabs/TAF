@@ -43,7 +43,7 @@ class DoctorN1QL():
 
     def __init__(self, cluster, bucket_util, num_idx=10,
                  server_port=8095,
-                 querycount=100, batch_size=50):
+                 querycount=100, batch_size=50, num_query=10, query_without_index=False):
         self.port = server_port
         self.failed_count = 0
         self.success_count = 0
@@ -55,6 +55,8 @@ class DoctorN1QL():
         self.concurrent_batch_size = batch_size
         self.total_count = querycount
         self.num_indexes = num_idx
+        # num_query is used when queries are run without index creation
+        self.num_query = num_query
         self.bucket_util = bucket_util
         self.cluster = cluster
         self.sdkClients = dict()
@@ -63,9 +65,27 @@ class DoctorN1QL():
         self.sdkClient = SDKClient(cluster.query_nodes, None)
         self.cluster_conn = self.sdkClient.cluster
         self.stop_run = False
+        self.query_failure = False
         self.queries = list()
-        self.indexes = dict()
         i = 0
+        if query_without_index:
+            while i < self.num_query:
+                for b in self.cluster.buckets:
+                    for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                        if b.name+s not in self.sdkClients.keys():
+                            self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
+                        for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
+                            if c == "_default":
+                                continue
+                            self.queries.append((queries[i % len(queries)].format(c), self.sdkClients[b.name+s]))
+                            i+=1
+                            if i >= self.num_query:
+                                break
+                        if i >= self.num_query:
+                            break
+                    if i >= self.num_query:
+                        break
+        self.indexes = dict()
         while i < self.num_indexes:
             for b in self.cluster.buckets:
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
@@ -85,6 +105,8 @@ class DoctorN1QL():
 
     def discharge_N1QL(self):
         self.stop_run = True
+    def query_result(self):
+        return self.query_failure
 
     def create_indexes(self):
         for details in self.indexes.values():
@@ -156,7 +178,7 @@ class DoctorN1QL():
         i = 0
         while not self.stop_run:
             threads = []
-            new_queries_to_run = num_queries - self.total_count
+            new_queries_to_run = self.total_count - num_queries
             for i in range(0, new_queries_to_run):
                 query = random.choice(self.queries)
                 self.total_query_count += 1
@@ -174,6 +196,36 @@ class DoctorN1QL():
         if self.failed_count + self.error_count != 0:
             raise Exception("Queries Failed:%s , Queries Error Out:%s" %
                             (self.failed_count, self.error_count))
+
+    def run_concurrent_queries(self, num_queries):
+        self.query_failure = False
+        while not self.stop_run:
+            threads = []
+            self.total_query_count = 0
+            self.failed_count = 0
+            self.error_count = 0
+
+            for i in range(0, num_queries):
+                self.total_query_count += 1
+                query = random.choice(self.queries)
+                threads.append(Thread(
+                    target=self._run_query,
+                    name="query_thread_{0}".format(self.total_query_count),
+                    args=(query[1], query[0], False, 0)))
+            i = 0
+            for thread in threads:
+                i += 1
+                if i % self.concurrent_batch_size == 0:
+                    time.sleep(5)
+                thread.start()
+
+            time.sleep(2)
+            if self.failed_count + self.error_count != 0:
+                self.stop_run = True
+                self.query_failure = True
+                msg = "Queries Failed:{} , Queries Error Out:{}".format
+                (self.failed_count, self.error_count)
+                self.log.critical(msg)
 
     def _run_query(self, client, query, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
