@@ -677,48 +677,66 @@ class RestfulDAPITest(BaseTestCase):
                                           "access_secret": bucket.serverless.nebula_endpoint.rest_password})
             self.log.info("Execute query for database {}".format(bucket.name))
 
-            gen_obj = doc_generator("key", 0, self.number_of_docs, key_size=self.key_size,
-                                    doc_size=self.value_size, randomize_value=self.randomize_value)
-            document_list = []
-            for i in range(self.number_of_docs):
-                if gen_obj.has_next():
-                    key, doc = gen_obj.next()
-                    doc = doc.toMap()
-                    doc = dict(doc)
-                    key_document = {"key": key, "doc": doc}
-                    document_list.append(key_document)
-                    response = self.rest_dapi.insert_doc(key, doc, "_default", "_default")
-                    self.log.info("Response code for inserting doc: {}".format(response.status_code))
-
-                    self.assertTrue(response.status_code == 201,
-                                    "Document insertion failed with doc size {} "
-                                    "and key size {} for database {}".format(
-                                        self.value_size, self.key_size, self.number_of_docs))
-
-            for doc in document_list:
-                key = doc["key"]
-                document = doc["doc"]
-                response = self.rest_dapi.get_doc(key, "_default", "_default")
-                get_doc = json.loads(response.content)
-                get_doc = get_doc["doc"]
-                self.assertTrue(response.status_code == 200,
-                                "Reading doc failed with  {} for database: {}".format(key, bucket.name))
-                self.assertTrue(document == get_doc,
-                                "Wrong document received for database: {}".format(bucket.name))
-
-            # Executing simple query
-            query = {"query": "select * from `_default` limit 2;"}
+            # create collection query
+            query = {"query": "CREATE COLLECTION country"}
+            response = self.rest_dapi.execute_query(query, "_default")
+            self.log.info("Response code for create collection query: {}".format(response.status_code))
+            self.assertTrue(response.status_code == 200,
+                            "Create collection query failed for database {}".format(bucket.name))
+            response = self.rest_dapi.get_collection_list("_default")
+            self.assertTrue(response.status_code == 200,
+                            "Get list of collection failed for database {}".format(bucket.name))
+            if "country" not in [collection["Name"] for collection in
+                                    (json.loads(response.content)["collections"])]:
+                self.log.critical("Collection does not get created with query")
+            # Insert query
+            query = {"query": 'INSERT INTO _default '
+                              '(KEY, VALUE) VALUES ("key1", { "type" : "hotel", "name" : "new hotel" });'}
             response = self.rest_dapi.execute_query(query, "_default")
             self.log.info("Response code for execution of query {}".format(response.status_code))
             self.assertTrue(response.status_code == 200,
                             "Query Execution failed for database {}".format(bucket.name))
+            response = self.rest_dapi.get_doc("key1", "_default", "_default",)
+            self.assertTrue(response.status_code == 200,
+                            "Get document failed for database {}".format(bucket.name))
 
-            # Execute query with Named parameters
-            query = {"query": "SELECT age, body FROM _default WHERE age=$age LIMIT 5",
-                     "parameters": {"age": 10}}
+            # select query
+            query = {"query": "SELECT type, name FROM _default"}
             response = self.rest_dapi.execute_query(query, "_default")
             self.log.info("Response status code for execute query: {}".format(response.status_code))
             self.assertTrue(response.status_code == 200, "Query execution failed for database {}".format(bucket.name))
+            # create primary index
+            query = {"query": "CREATE PRIMARY INDEX idx_default_primary ON `_default` USING GSI"}
+            response = self.rest_dapi.execute_query(query, "_default")
+            self.log.info("Response code for creation of primary index: {}".format(response.status_code))
+            # update query
+            query = {"query": "UPDATE _default SET type = 'hostel' where name = 'new hostel'"}
+            response = self.rest_dapi.execute_query(query, "_default")
+            self.log.info("Response code for update query: {}".format(response.status_code))
+            self.assertTrue(response.status_code == 200,
+                            "Update query failed for database {}".format(bucket.name))
+            # delete query
+            query = {"query": "DELETE from _default"}
+            response = self.rest_dapi.execute_query(query, "_default")
+            self.log.info("Response code for delete doc query: {}".format(response.status_code))
+            self.assertTrue(response.status_code == 200,
+                            "Delete query failed for database {}".format(bucket.name))
+            response = self.rest_dapi.get_doc("key1", "_default", "_default")
+            self.log.info("Response code to get deleted doc: {}".format(response.status_code))
+            self.assertTrue(response.status_code == 404,
+                            "Getting deleted document for database {}".format(bucket.name))
+            # drop collection query
+            query = {"query": "DROP COLLECTION country"}
+            response = self.rest_dapi.execute_query(query, "_default")
+            self.log.info("Response code for drop of collection: {}".format(response.status_code))
+            self.assertTrue(response.status_code == 200,
+                            "Drop collection query failed for database {}".format(bucket.name))
+            response = self.rest_dapi.get_collection_list("_default")
+            self.assertTrue(response.status_code == 200,
+                            "Get list of collection failed for database {}".format(bucket.name))
+            if "country" in [collection["Name"] for collection in
+                                    (json.loads(response.content)["collections"])]:
+                self.log.critical("Drop collection query failed for database {}".format(bucket.name))
             # Invalid Query
             query = {"query": "SLECT city, body FROM _default WHERE age=$age LIMIT 5",
                      "parameters": {"age": 5}}
@@ -754,7 +772,6 @@ class RestfulDAPITest(BaseTestCase):
                     kv_dapi.append({"id": key, "value": doc})
 
                 # insert bulk document
-                self.log.info("inserting keys: {}".format(kv.keys()))
                 response = self.rest_dapi.insert_bulk_document("_default",
                                                                "_default",
                                                                kv_dapi)
@@ -774,7 +791,6 @@ class RestfulDAPITest(BaseTestCase):
                     return
 
                 # Get bulk document
-                self.log.info("Fetching inserted keys: {}".format(kv.keys()))
                 response = self.rest_dapi.get_bulk_document("_default", "_default", tuple(kv.keys()))
                 if response is None or response.status_code != 200:
                     self.result = False
@@ -847,8 +863,6 @@ class RestfulDAPITest(BaseTestCase):
                     kv_dapi.append({"id": key, "value": doc})
 
                 # insert bulk document
-                self.log.info(kv_dapi)
-                self.log.info("inserting keys: {}".format(kv.keys()))
                 response = self.rest_dapi.insert_bulk_document("_default",
                                                                "_default",
                                                                kv_dapi)
@@ -868,7 +882,6 @@ class RestfulDAPITest(BaseTestCase):
                     return
 
                 # Delete bulk document
-                self.log.info("Deleting inserted keys: {}".format(kv.keys()))
                 response = self.rest_dapi.delete_bulk_document("_default",
                                                                "_default",
                                                                tuple(kv.keys()))
@@ -940,7 +953,6 @@ class RestfulDAPITest(BaseTestCase):
                     kv_dapi.append({"id": key, "value": doc})
 
                 # insert bulk document
-                self.log.info("inserting keys: {}".format(kv.keys()))
                 response = self.rest_dapi.insert_bulk_document("_default",
                                                                "_default",
                                                                kv_dapi)
@@ -964,7 +976,6 @@ class RestfulDAPITest(BaseTestCase):
                     key_value['value']['update'] = True
 
                 # update bulk document
-                self.log.info("Updating keys: {}".format(kv.keys()))
                 response = self.rest_dapi.update_bulk_document("_default",
                                                                "_default",
                                                                kv_dapi)
