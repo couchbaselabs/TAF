@@ -399,7 +399,7 @@ class ServerlessThrottling(LMT):
                                         self.expected_stats[bucket.name]["total_items"],
                                         bucket)
             self.expected_stats[bucket.name]["wu"] = \
-                self.bucket_util.calculate_units(self.key_size, doc_size) * \
+                self.bucket_util.calculate_units(self.key_size, doc_size, durability=self.durability_level) * \
                 self.expected_stats[bucket.name]["total_items"]
             num_throttled, self.expected_stats[bucket.name]["ru"], self.wu = \
                 self.bucket_util.get_stat_from_metrics(bucket)

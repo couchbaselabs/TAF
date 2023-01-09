@@ -13,7 +13,6 @@ from security_utils.audit_ready_functions import audit
 from couchbase_helper.documentgenerator import doc_generator
 from cb_tools.cbstats import Cbstats
 from cb_tools.cbepctl import Cbepctl
-from membase.api.rest_client import RestConnection
 
 
 class ServerlessMetering(LMT):
@@ -500,8 +499,8 @@ class ServerlessMetering(LMT):
         self.expected_num_throttled = 0
         self.throttling = self.input.param("throttling", False)
         write_units = self.bucket_util.calculate_units(15, self.doc_size,
-                                                       durability=self.durability_level) * 2
-        read_units = self.bucket_util.calculate_units(15, self.doc_size, read=True) * 2
+                                                       durability=self.durability_level) * 3
+        read_units = self.bucket_util.calculate_units(15, self.doc_size, read=True) * 3
         self.sdk_timeout = (write_units / self.bucket_throttling_limit) + 10
         gen_create = doc_generator("throttling", 0, self.num_items,
                                    doc_size=self.doc_size,
@@ -617,32 +616,31 @@ class ServerlessMetering(LMT):
 
         bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         for node in bucket.servers:
-            rest_node = RestConnection(node)
-            status, content = rest_node.\
+            status, content = self.bucket_util.\
                 set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=-2)
             check_error_msg(status, content)
-            status, content = rest_node.\
+            status, content = self.bucket_util.\
                 set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=2147483648)
             check_error_msg(status, content)
 
-            status, content = rest_node.\
+            status, content = self.bucket_util.\
                 set_throttle_n_storage_limit(bucket=bucket.name,
                                    storage_limit=-2)
             check_error_msg(status, content, True)
-            status, content = rest_node.\
+            status, content = self.bucket_util.\
                 set_throttle_n_storage_limit(bucket=bucket.name,
                                    storage_limit=2147483648)
             check_error_msg(status, content, True)
 
-            status, content = rest_node.\
+            status, content = self.bucket_util.\
                 set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=-2,
                                    storage_limit=-2)
             check_error_msg(status, content)
             check_error_msg(status, content, True)
-            status, content = rest_node.\
+            status, content = self.bucket_util.\
                 set_throttle_n_storage_limit(bucket=bucket.name,
                                    throttle_limit=2147483648,
                                    storage_limit=2147483648)
