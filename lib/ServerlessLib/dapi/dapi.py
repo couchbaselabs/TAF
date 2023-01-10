@@ -54,6 +54,8 @@ class RestfulDAPI:
             self._log.error("Timeout Error: {0}".format(errt))
         except requests.exceptions.RequestException as err:
             self._log.error("Something else: {0}".format(err))
+        except Exception as err:
+            self._log.error("Something else: {0}".format(err))
 
     def check_dapi_health(self):
         url = self.endpoint + "/health"
