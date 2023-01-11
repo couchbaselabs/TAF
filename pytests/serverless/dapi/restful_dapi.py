@@ -23,6 +23,7 @@ class RestfulDAPITest(BaseTestCase):
         self.number_of_collections = self.input.param("number_of_collections", 10)
         self.number_of_scopes = self.input.param("number_of_scopes", 10)
         self.number_of_threads = self.input.param("number_of_threads", 1)
+        self.error_message = self.input.param("error_msg", None)
 
     def tearDown(self):
         BaseTestCase.tearDown(self)
@@ -101,14 +102,23 @@ class RestfulDAPITest(BaseTestCase):
                     key, doc = gen_obj.next()
                     doc = doc.toMap()
                     doc = dict(doc)
-                    document_list.append({"key": key, "doc": doc})
                     response = self.rest_dapi.insert_doc(key, doc, "_default", "_default", 1200)
-                    self.log.info("Response code for inserting doc: {}".format(response.status_code))
+                    # negative test case - key or value is too large
+                    if self.error_message is not None:
+                        self.assertTrue(response.status_code == 409,
+                                        "Negative test failed with unsupported "
+                                        "keys for database: {}".format(bucket.name))
+                        error_msg = json.loads(response.content)["error"]["message"]
+                        self.assertTrue(error_msg == self.error_message,
+                                        "Wrong error msg for unsupported key/value doc: {}".format(error_msg))
+                    else:
+                        document_list.append({"key": key, "doc": doc})
+                        self.log.info("Response code for inserting doc: {}".format(response.status_code))
 
-                    self.assertTrue(response.status_code == 201,
-                                    "Document insertion failed with doc {} "
-                                    "and key {} for database {}".format(
-                                        doc, key, bucket.name))
+                        self.assertTrue(response.status_code == 201,
+                                        "Document insertion failed with doc {} "
+                                        "and key {} for database {}".format(
+                                            doc, key, bucket.name))
 
             for doc in document_list:
                 key = doc["key"]
