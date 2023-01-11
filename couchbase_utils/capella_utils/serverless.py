@@ -232,8 +232,18 @@ class CapellaUtils:
             data = json.loads(resp.content)["couchbaseCreds"]
             data["srv"] = json.loads(resp.content)["srv"]
 
-            records = Lookup("_couchbases._tcp.%s" % data["srv"], Type.SRV).run()
-            return data["srv"], str(records[0].getTarget()), data["username"], data["password"]
+            import subprocess
+            import shlex
+
+            cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(data["srv"])
+            proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
+            out, _ = proc.communicate()
+            records = list()
+            for line in out.split("\n"):
+                if "11207" in line:
+                    records.append(line.split("11207")[-1].rstrip(".").lstrip(" "))
+
+            return data["srv"], str(records[0]), data["username"], data["password"]
         except Exception as e:
             self.log.critical("{}: Bypassing datapane failed!!! Retrying...".format(e))
             time.sleep(10)

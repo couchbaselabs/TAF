@@ -130,8 +130,8 @@ class Murphy(BaseTestCase, OPD):
                 "collections": 1,
                 "num_items": 20000000,
                 "start": 0,
-                "end": 2000000,
-                "ops": 4000,
+                "end": 20000000,
+                "ops": 1000,
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
@@ -289,7 +289,7 @@ class Murphy(BaseTestCase, OPD):
                             str(nebula.memcached_port))
             self.sdk_client_pool.create_clients(
                 bucket.name, server, req_clients_per_bucket)
-        self.sleep(5, "Wait for SDK client pool to warmup")
+        self.sleep(2, "Wait for SDK client pool to warmup")
 
     def create_databases(self, count=1, dataplane_ids=[], load_defn=None):
         dataplane_ids = dataplane_ids or self.dataplanes
@@ -511,7 +511,7 @@ class Murphy(BaseTestCase, OPD):
         self.PrintStep("Step 1: Create required buckets and collections.")
         self.log.info("Create CB buckets")
         # Create Buckets
-        self.create_databases(self.num_buckets, load_defn=self.loadDefn100)
+        self.create_databases(self.num_buckets)
         self.create_required_collections(self.cluster, self.cluster.buckets)
         # self.create_gsi_indexes(self.cluster.buckets)
         # self.build_gsi_index(self.cluster.buckets)

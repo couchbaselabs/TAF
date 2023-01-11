@@ -3952,7 +3952,7 @@ class DatabaseCreateTask(Task):
                  provider=AWS.__str__,
                  region=AWS.Region.US_EAST_1,
                  dataplane_id="",
-                 timeout=600):
+                 timeout=1200):
         Task.__init__(self, "CreateServerlessDatabaseTask_{}_{}".format(bucket_obj.name, time.time()))
         self.cluster = cluster
         self.bucket_obj = bucket_obj
