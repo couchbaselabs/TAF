@@ -30,6 +30,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.doc_loading_tm = TaskManager(self.thread_to_use)
         self.db_name = "TAF-TenantMgmtOnCloud"
         self.token = self.input.capella.get("token")
+        self.sandbox_cleanup = self.input.param("sandbox_cleanup", False)
         self.with_data_load = self.input.param("with_data_load", False)
         self.capella_api =  self.serverless_util.capella_api
         self.validate_stat = self.input.param("validate_stat", False)
@@ -38,6 +39,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.weight_start = {1: 30, 2: 210, 3: 270, 4: 300}
 
     def tearDown(self):
+        self.clean_sandbox()
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
         super(TenantMgmtOnCloud, self).tearDown()
@@ -125,6 +127,25 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             Bucket.maxTTL: 0,
             "buckets": buckets
         }
+
+    def clean_sandbox(self):
+        if self.sandbox_cleanup:
+            dataplanes_details = self.serverless_util.get_all_dataplanes()
+            if dataplanes_details != {'errorType': 'NotFound', 'message': 'Not Found.'}:
+                for dataplane in dataplanes_details:
+                    dataplane_id = dataplane["id"]
+                    databases_list = self.serverless_util.list_all_databases(
+                        pod=None, tenant=self.tenant)
+                    for data_base in databases_list:
+                        self.log.info("Tagging Bucket :: %s, for deletion "
+                                      % (data_base["data"]["id"]))
+                        self.serverless_util.delete_database(
+                            self.pod, self.tenant, data_base["data"]["id"])
+                    for data_base in databases_list:
+                        self.serverless_util.wait_for_database_deleted(
+                            self.tenant, data_base["data"]["id"])
+                    resp = self.serverless_util.delete_dataplane(dataplane_id)
+                    self.serverless_util.wait_for_dataplane_deleted(dataplane_id)
 
     def get_servers_for_databases(self):
         dataplanes = dict()
@@ -1018,7 +1039,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for scenario in scenarios:
             to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=600)
+                to_track, timeout=1500)
             self.task_manager.get_task_result(monitor_task)
 
         if self.validate_stat:
@@ -1202,6 +1223,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
     def test_initial_cluster_deployment_state(self):
         self._assert_if_not_sandbox_run()
+        self.clean_sandbox()
         self._assert_num_dataplane_deployed(0)
 
         self.bucket_width = 1
@@ -1252,6 +1274,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         :return:
         """
         self._assert_if_not_sandbox_run()
+        self.clean_sandbox()
         self._assert_num_dataplane_deployed(0)
 
         self.bucket_width = 1
@@ -1356,6 +1379,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.log.info("test_defrag_dbaas case skipped as sandbox env not "
                           "detected in pod url")
             return
+        self.clean_sandbox()
         delete_scenario = self.input.param("delete_scenario", False)
         weight_limit = self.input.param("weight_limit", 10000)
 
@@ -1465,7 +1489,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         """
         :return:
         """
-
+        self.clean_sandbox()
         loader_map = dict()
         self.create_required_buckets()
         self.get_servers_for_databases()
@@ -1512,6 +1536,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         4 verifying disk used is within 1 gb range of the limit
         """
         # checking total disk usage of given buckets
+        self.clean_sandbox()
         def get_total_disk_usage(bucket_array):
             total_disk_usage = 0
             for bucket in bucket_array:

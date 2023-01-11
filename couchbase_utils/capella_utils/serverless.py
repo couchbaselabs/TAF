@@ -107,6 +107,26 @@ class CapellaUtils:
                             database_id, override)
                             )
 
+    def wait_for_dataplane_deleted(self, dataplane_id, timeout=1800):
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            resp = self.capella_api.get_serverless_dataplane_info(dataplane_id)
+            if resp.status_code == 404 or resp.status_code==500:
+                msg = {
+                    "dataplane_id": dataplane_id,
+                    "state": "Nuked!!"
+                }
+                self.log.info("Database deleted {}".format(msg))
+                return
+            msg = {
+                "dataplane_id": dataplane_id,
+                "state": json.loads(resp.content).get("state")
+            }
+            self.log.info("waiting for dataplane to be deleted {}".format(msg))
+            time.sleep(20)
+        raise Exception("timeout waiting for dataplane to be deleted {}".format(
+            {"dataplane": dataplane_id}))
+
     def wait_for_database_deleted(self, tenant, database_id, timeout=1800):
         end_time = time.time() + timeout
         while time.time() < end_time:
