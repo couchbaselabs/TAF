@@ -223,7 +223,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         provider = self.input.param("provider", AWS.__str__).lower()
         region = self.input.param("region", AWS.Region.US_EAST_1)
 
-        cb_version = cb_image.split("-")[3]
+        cb_version = cb_image.split("-")[3] if cb_image else ""
         services_type = self.input.param("services", ["kv", "n1ql", "fts", "index"])
         disk_type = self.input.param("disk_type", "gp3")
         kv_disk_size = self.input.param("kv_disk_size", 100)
