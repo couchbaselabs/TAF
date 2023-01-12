@@ -511,12 +511,12 @@ class Murphy(BaseTestCase, OPD):
         self.PrintStep("Step 1: Create required buckets and collections.")
         self.log.info("Create CB buckets")
         # Create Buckets
-        self.create_databases(self.num_buckets)
+        self.create_databases(self.num_buckets, load_defn=self.defaultLoadDefn)
         self.create_required_collections(self.cluster, self.cluster.buckets)
-        # self.create_gsi_indexes(self.cluster.buckets)
-        # self.build_gsi_index(self.cluster.buckets)
-        #
-        # self.create_fts_indexes(self.cluster.buckets, wait=True)
+        self.create_gsi_indexes(self.cluster.buckets)
+        self.build_gsi_index(self.cluster.buckets)
+
+        self.create_fts_indexes(self.cluster.buckets, wait=True)
 
         self.loop = 1
         self.create_perc = 100
