@@ -86,8 +86,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.delete_dataplanes = list()
 
         tasks = list()
-        self.generate_dataplane_config()
         for _ in range(num_dataplanes):
+            self.generate_dataplane_config()
             self.log.info(self.dataplane_config)
             deploy_task = DeployDataplane(self.cluster,
                                           self.dataplane_config,
