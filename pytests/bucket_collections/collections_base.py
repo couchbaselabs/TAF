@@ -23,8 +23,6 @@ class CollectionBase(ClusterSetup):
         self.simulate_error = self.input.param("simulate_error", None)
         self.error_type = self.input.param("error_type", "memory")
         self.doc_ops = self.input.param("doc_ops", None)
-        # If True, creates bucket/scope/collections with simpler names
-        self.use_simple_names = self.input.param("use_simple_names", True)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
         self.data_spec_name = self.input.param("data_spec_name",
@@ -124,74 +122,6 @@ class CollectionBase(ClusterSetup):
                 compression_settings=sdk_compression)
 
     def collection_setup(self):
-        self.bucket_util.add_rbac_user(self.cluster.master)
-
-        # Create bucket(s) and add rbac user
-        if self.bucket_storage == Bucket.StorageBackend.magma:
-            # get the TTL value
-            buckets_spec_from_conf = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
-            bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
-            # Blindly override the bucket spec if the backend storage is magma.
-            # So, Bucket spec in conf file will not take any effect.
-            self.spec_name = "single_bucket.bucket_for_magma_collections"
-            magma_bucket_spec = \
-                self.bucket_util.get_bucket_template_from_package(
-                    self.spec_name)
-            magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
-            buckets_spec = magma_bucket_spec
-        else:
-            buckets_spec = self.bucket_util.get_bucket_template_from_package(
-                self.spec_name)
-        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
-
-        doc_loading_spec = \
-            self.bucket_util.get_crud_template_from_package(
-                self.data_spec_name)
-
-        # Process params to over_ride values if required
-        self.over_ride_bucket_template_params(buckets_spec)
-        self.over_ride_doc_loading_template_params(doc_loading_spec)
-        self.set_retry_exceptions_for_initial_data_load(doc_loading_spec)
-        self.bucket_util.create_buckets_using_json_data(self.cluster,
-                                                        buckets_spec)
-        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
-
-        # Prints bucket stats before doc_ops
-        self.bucket_util.print_bucket_stats(self.cluster)
-
-        # Change magma quota only for bloom filter testing
-        if self.change_magma_quota:
-            bucket_helper = BucketHelper(self.cluster.master)
-            bucket_helper.set_magma_quota_percentage()
-            self.sleep(30, "Sleep while magma storage quota setting is taking effect")
-
-        # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
-
-        self.log.info("Creating required SDK clients for client_pool")
-        self.create_sdk_clients(self.task_manager.number_of_threads,
-                                self.cluster.master,
-                                self.cluster.buckets,
-                                self.sdk_client_pool,
-                                self.sdk_compression)
-
-        doc_loading_task = \
-            self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.cluster.buckets,
-                doc_loading_spec,
-                mutation_num=0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
-        if doc_loading_task.result is False:
-            self.fail("Initial doc_loading failed")
-
-        self.cluster_util.print_cluster_stats(self.cluster)
-
         ttl_buckets = [
             "multi_bucket.buckets_for_rebalance_tests_with_ttl",
             "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl",
@@ -210,57 +140,152 @@ class CollectionBase(ClusterSetup):
             "magma_dgm.40_percent_dgm.5_node_2_replica_magma_ttl_512",
             "magma_dgm.80_percent_dgm.5_node_2_replica_magma_ttl_512",
         ]
+        validate_docs = False if self.spec_name in ttl_buckets else True
+
+        self.bucket_util.add_rbac_user(self.cluster.master)
+        CollectionBase.deploy_buckets_from_spec_file(self)
+
+        # Change magma quota only for bloom filter testing
+        if self.change_magma_quota:
+            bucket_helper = BucketHelper(self.cluster.master)
+            bucket_helper.set_magma_quota_percentage()
+            self.sleep(30, "Wait for magma storage setting to apply")
+
+        CollectionBase.create_clients_for_sdk_pool(self)
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name,
+                                                validate_docs)
+
+    @staticmethod
+    def deploy_buckets_from_spec_file(test_obj):
+        # If True, creates bucket/scope/collections with simpler names
+        use_simple_names = test_obj.input.param("use_simple_names", True)
+        # Create bucket(s) and add rbac user
+        if test_obj.bucket_storage == Bucket.StorageBackend.magma:
+            # get the TTL value
+            buckets_spec_from_conf = \
+                test_obj.bucket_util.get_bucket_template_from_package(
+                    test_obj.spec_name)
+            bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
+            # Blindly override the bucket spec if the backend storage is magma.
+            # So, Bucket spec in conf file will not take any effect.
+            test_obj.spec_name = "single_bucket.bucket_for_magma_collections"
+            magma_bucket_spec = \
+                test_obj.bucket_util.get_bucket_template_from_package(
+                    test_obj.spec_name)
+            magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
+            buckets_spec = magma_bucket_spec
+        else:
+            buckets_spec = \
+                test_obj.bucket_util.get_bucket_template_from_package(
+                    test_obj.spec_name)
+        buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = use_simple_names
+
+        test_obj.log.info("Creating bucket from spec: %s" % test_obj.spec_name)
+        # Process params to over_ride values if required
+        CollectionBase.over_ride_bucket_template_params(
+            test_obj, buckets_spec)
+        test_obj.bucket_util.create_buckets_using_json_data(
+            test_obj.cluster, buckets_spec)
+        test_obj.bucket_util.wait_for_collection_creation_to_complete(
+            test_obj.cluster)
+
+        # Prints bucket stats before doc_ops
+        test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
+        test_obj.bucket_util.print_bucket_stats(test_obj.cluster)
+
+    @staticmethod
+    def create_clients_for_sdk_pool(test_obj):
+        # Init sdk_client_pool if not initialized before
+        if test_obj.sdk_client_pool is None:
+            test_obj.init_sdk_pool_object()
+
+        test_obj.log.info("Creating required SDK clients for client_pool")
+        test_obj.create_sdk_clients(test_obj.task_manager.number_of_threads,
+                                    test_obj.cluster.master,
+                                    test_obj.cluster.buckets,
+                                    test_obj.sdk_client_pool,
+                                    test_obj.sdk_compression)
+
+    @staticmethod
+    def load_data_from_spec_file(test_obj, data_spec_name, validate_docs=True):
+        doc_loading_spec = \
+            test_obj.bucket_util.get_crud_template_from_package(data_spec_name)
+
+        # Process params to over_ride values if required
+        CollectionBase.over_ride_doc_loading_template_params(
+            test_obj, doc_loading_spec)
+        CollectionBase.set_retry_exceptions_for_initial_data_load(
+            test_obj, doc_loading_spec)
+
+        doc_loading_task = \
+            test_obj.bucket_util.run_scenario_from_spec(
+                test_obj.task,
+                test_obj.cluster,
+                test_obj.cluster.buckets,
+                doc_loading_spec,
+                mutation_num=0,
+                batch_size=test_obj.batch_size,
+                process_concurrency=test_obj.process_concurrency)
+        if doc_loading_task.result is False:
+            test_obj.fail("Initial doc_loading failed")
+
+        test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets,
-                                                     timeout=1200)
-        if self.spec_name not in ttl_buckets:
-            self.bucket_util.validate_docs_per_collections_all_buckets(
-                self.cluster, timeout=2400)
+        test_obj.bucket_util._wait_for_stats_all_buckets(
+            test_obj.cluster, test_obj.cluster.buckets, timeout=1200)
+        if validate_docs:
+            test_obj.bucket_util.validate_docs_per_collections_all_buckets(
+                test_obj.cluster, timeout=2400)
 
-        # Prints bucket stats after doc_ops
-        self.bucket_util.print_bucket_stats(self.cluster)
+        # Prints cluster / bucket stats after doc_ops
+        test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
+        test_obj.bucket_util.print_bucket_stats(test_obj.cluster)
 
-    def over_ride_bucket_template_params(self, bucket_spec):
-        if self.bucket_storage == Bucket.StorageBackend.magma:
+    @staticmethod
+    def over_ride_bucket_template_params(test_obj, bucket_spec):
+        if test_obj.bucket_storage == Bucket.StorageBackend.magma:
             # Blindly override the following params
             bucket_spec[Bucket.evictionPolicy] = \
                 Bucket.EvictionPolicy.FULL_EVICTION
         else:
-            for key, val in self.input.test_params.items():
+            for key, val in test_obj.input.test_params.items():
                 if key == "replicas":
-                    bucket_spec[Bucket.replicaNumber] = self.num_replicas
+                    bucket_spec[Bucket.replicaNumber] = test_obj.num_replicas
                 elif key == "bucket_size":
-                    bucket_spec[Bucket.ramQuotaMB] = self.bucket_size
+                    bucket_spec[Bucket.ramQuotaMB] = test_obj.bucket_size
                 elif key == "num_items":
                     bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
-                        self.num_items
+                        test_obj.num_items
                 elif key == "remove_default_collection":
                     bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
-                        self.input.param(key)
+                        test_obj.input.param(key)
                 elif key == "bucket_storage":
-                    bucket_spec[Bucket.storageBackend] = self.bucket_storage
+                    bucket_spec[Bucket.storageBackend] \
+                        = test_obj.bucket_storage
                 elif key == "compression_mode":
-                    bucket_spec[Bucket.compressionMode] = self.compression_mode
+                    bucket_spec[Bucket.compressionMode] \
+                        = test_obj.compression_mode
                 elif key == "flushEnabled":
-                    bucket_spec[Bucket.flushEnabled] = int(self.flush_enabled)
+                    bucket_spec[Bucket.flushEnabled] \
+                        = int(test_obj.flush_enabled)
                 elif key == "bucket_type":
-                    bucket_spec[Bucket.bucketType] = self.bucket_type
+                    bucket_spec[Bucket.bucketType] = test_obj.bucket_type
 
-    def over_ride_doc_loading_template_params(self, target_spec):
-        for key, value in self.input.test_params.items():
+    @staticmethod
+    def over_ride_doc_loading_template_params(test_obj, target_spec):
+        for key, value in test_obj.input.test_params.items():
             if key == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
-                    self.durability_level
+                    test_obj.durability_level
             elif key == "sdk_timeout":
-                target_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
+                target_spec[MetaCrudParams.SDK_TIMEOUT] = test_obj.sdk_timeout
             elif key == "doc_size":
                 target_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_SIZE] \
-                    = self.doc_size
+                    = test_obj.doc_size
             elif key == "randomize_value":
                 target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
-                    = self.randomize_value
+                    = test_obj.randomize_value
 
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
@@ -336,14 +361,15 @@ class CollectionBase(ClusterSetup):
                             is_sub_doc=is_sub_doc)
                         self.task_manager.get_task_result(task)
 
-    def set_retry_exceptions_for_initial_data_load(self, doc_loading_spec):
+    @staticmethod
+    def set_retry_exceptions_for_initial_data_load(test_obj, doc_loading_spec):
         retry_exceptions = list()
         retry_exceptions.append(SDKException.AmbiguousTimeoutException)
         retry_exceptions.append(SDKException.TimeoutException)
         retry_exceptions.append(SDKException.RequestCanceledException)
         retry_exceptions.append(SDKException.DocumentNotFoundException)
         retry_exceptions.append(SDKException.ServerOutOfMemoryException)
-        if self.durability_level:
+        if test_obj.durability_level:
             retry_exceptions.append(SDKException.DurabilityAmbiguousException)
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
