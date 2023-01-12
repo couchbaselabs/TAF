@@ -30,6 +30,14 @@ queries = ['select name from {} where age between 30 and 50 limit 100;',
            'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" and animal is not null limit 100;',
            'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 100;',
            'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 100;']
+
+auto_scale_queries = ['select age from {} where age between 30 and 50;',
+                      'select body from {} where body is not null and age between 0 and 50;',
+                      'select age, count(*) from {} where marital = "M" group by age;',
+                      'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" and animal is not null;',
+                      'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END;',
+                      'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING;']
+
 indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "defer_build": true}};',
            'create index {}{} on {}(body) where age between 0 and 50 WITH {{ "defer_build": true}};',
            'create index {}{} on {}(marital,age) WITH {{ "defer_build": true}};',
@@ -153,7 +161,10 @@ class DoctorN1QL():
                             i += 1
                             print "Index: {}".format(self.idx_q)
                         if q < b.loadDefn.get("2i")[1]:
-                            b.queries.append((queries[q % len(indexes)].format(c), self.sdkClients[b.name+s]))
+                            if b.loadDefn.get("type") == "gsi_auto_scale":
+                                b.queries.append((auto_scale_queries[q % len(indexes)].format(c), self.sdkClients[b.name+s]))
+                            else:
+                                b.queries.append((queries[q % len(indexes)].format(c), self.sdkClients[b.name+s]))
                             print "Query: {}".format(queries[q % len(indexes)].format(c))
                             q += 1
 

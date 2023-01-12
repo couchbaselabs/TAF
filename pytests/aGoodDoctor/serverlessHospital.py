@@ -101,7 +101,7 @@ class Murphy(BaseTestCase, OPD):
             self.load_defn = list()
             self.defaultLoadDefn = {
                 "scopes": 1,
-                "collections": 10,
+                "collections": 1,
                 "num_items": 200000,
                 "start": 0,
                 "end": 200000,
@@ -113,6 +113,7 @@ class Murphy(BaseTestCase, OPD):
                 "FTS": (2, 2)
                 }
             self.gsiAutoScaleLoadDefn = {
+                "type": "gsi_auto_scale",
                 "scopes": 1,
                 "collections": 10,
                 "num_items": 200000,
@@ -122,7 +123,7 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (100, 0),
+                "2i": (100, 20),
                 "FTS": (0, 0)
                 }
             self.loadDefn100 = {
@@ -606,12 +607,13 @@ class Murphy(BaseTestCase, OPD):
 
         # Reset cluster specs to default
         self.log.info("Reset cluster specs to default to proceed further")
+        self.generate_dataplane_config()
         config = self.dataplane_config["overRide"]["couchbase"]["specs"]
         self.serverless_util.change_dataplane_cluster_specs(self.dataplane_id, config)
         self.check_cluster_scaling()
 
-        # self.create_databases(19, load_defn=self.gsiAutoScaleLoadDefn)
-        self.create_databases(19)
+        self.create_databases(19, load_defn=self.gsiAutoScaleLoadDefn)
+        # self.create_databases(19)
         self.create_required_collections(self.cluster,
                                          self.cluster.buckets[0:20])
         self.start_initial_load(self.cluster.buckets[0:20])
