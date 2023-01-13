@@ -798,7 +798,7 @@ class CollectionsRebalance(CollectionBase):
         if data_load_spec is None:
             data_load_spec = self.data_load_spec
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
-        self.over_ride_doc_loading_template_params(doc_loading_spec)
+        self.over_ride_doc_loading_template_params(self, doc_loading_spec)
         self.set_retry_exceptions(doc_loading_spec)
         if self.dgm < 100:
             # No new items are created during dgm + rebalance/failover tests
