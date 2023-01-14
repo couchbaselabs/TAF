@@ -69,9 +69,12 @@ class RestfulDAPI:
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections"
         return self._urllib_request(url)
 
-    def get_document_list(self, scope="_default", collection = "_default"):
+    def get_document_list(self, scope="_default", collection="_default"):
+        authorization = base64.b64encode('{}:{}'.format(self.username, self.password).encode()).decode()
+        header = {'Authorization': 'Basic %s' % authorization,
+                  'Accept': '*/*'}
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" + collection + "/docs"
-        return self._urllib_request(url)
+        return self._urllib_request(url, headers=header)
 
     def get_doc(self, doc_id, scope, collection):
         url = self.endpoint_v1 + "/scopes/" + scope + "/collections/" \

@@ -430,7 +430,7 @@ class RestfulDAPITest(BaseTestCase):
             self.log.info(bucket.serverless.dapi)
 
             length_of_list, key, content = 10, "key", "content"
-            document_name_list = []
+            keys_inserted = list()
             key_value, content_value = 0, 0
 
             for i in range(length_of_list):
@@ -438,7 +438,7 @@ class RestfulDAPITest(BaseTestCase):
                 content_value += 1
                 key = "key" + str(key_value)
                 content = "content" + str(content_value)
-                document_name_list.append(key)
+                keys_inserted.append(key)
                 response = self.rest_dapi.insert_doc(key, {"content": content}, "_default", "_default")
                 self.assertTrue(response.status_code == 201,
                                 "Insertion failed for database {}".format(bucket.name))
@@ -451,12 +451,12 @@ class RestfulDAPITest(BaseTestCase):
 
             response_dict = json.loads(response.content)
             document_list = response_dict["docs"]
-            document_name_check_list = []
-            for documents in document_list:
-                document_name_check_list.append(documents['meta_id'])
-            document_name_list.sort()
-            document_name_check_list.sort()
-            self.assertTrue(document_name_list == document_name_check_list,
+            keys_retreived = []
+            for document in document_list:
+                keys_retreived.append(document['id'])
+            keys_retreived.sort()
+            keys_inserted.sort()
+            self.assertTrue(keys_inserted == keys_retreived,
                             "Wrong document received for database {}".format(bucket.name))
 
     def test_get_subdocument(self):
