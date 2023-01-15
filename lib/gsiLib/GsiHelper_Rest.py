@@ -415,14 +415,26 @@ class GsiHelper(RestConnection):
         return result
 
     def execute_query(self, query,  contentType='application/x-www-form-urlencoded',
-                      connection='keep-alive', isIndexerQuery=False):
-        url = "%squery" % self.queryUrl
-        if isIndexerQuery:
-            params = {'statement': query}
-            params = urllib.urlencode(params)
-        else:
-            params = urllib.urlencode({'scan_consistency': 'request_plus', 'statement': query})
-        status, content, header = self._http_request(url, 'POST', params,
-                                                     headers=self._create_capi_headers(contentType=contentType,
-                                                                                       connection=connection))
+                      connection='keep-alive', isIndexerQuery=False, retry=10, is_scan_consistency=True):
+        status = None
+        content = None
+        header = None
+        for x in range(retry):
+            try:
+                url = "%squery" % self.queryUrl
+                if isIndexerQuery:
+                    params = {'statement': query}
+                    params = urllib.urlencode(params)
+                else:
+                    if is_scan_consistency:
+                        params = urllib.urlencode({'scan_consistency': 'request_plus', 'statement': query})
+                    else:
+                        params = urllib.urlencode({'statement': query})
+                status, content, header = self._http_request(url, 'POST', params,
+                                                             headers=self._create_capi_headers(contentType=contentType,
+                                                                              connection=connection))
+                break
+            except Exception as e:
+                self.log.info("Got exception:{0} with index name".format(str(e)))
+                sleep(10, "wait after exception")
         return status, content, header

@@ -53,7 +53,7 @@ class IndexUtils:
 
     def create_gsi_on_each_collection(self, cluster, buckets=None, gsi_base_name=None,
                                       replica=0, defer=True, number_of_indexes_per_coll=1, count=0,
-                                      field='key', sync=False, timeout=600):
+                                      field='key', sync=False, timeout=600, retry=3):
         """
         Create gsi indexes on collections - according to number_of_indexes_per_coll
         """
@@ -73,7 +73,7 @@ class IndexUtils:
             if bucket.name not in indexes_to_build:
                 indexes_to_build[bucket.name] = dict()
             for _, scope in bucket.scopes.items():
-                if scope.name == CbServer.system_scope:
+                if scope.name == CbServer.system_scope or scope.name == CbServer.default_scope:
                     continue
                 if scope.name not in indexes_to_build[bucket.name]:
                     indexes_to_build[bucket.name][scope.name] = dict()
@@ -85,12 +85,21 @@ class IndexUtils:
                         else:
                             gsi_index_name = gsi_base_name + str(counter)
                             counter += 1
-                        create_index_query = "CREATE INDEX `%s` " \
+
+                        if replica > 0:
+                            create_index_query = "CREATE INDEX `%s` " \
                                              "ON `%s`.`%s`.`%s`(`%s`) " \
                                              "WITH { 'defer_build': %s, 'num_replica': %s }" \
                                              % (gsi_index_name, bucket.name,
                                                 scope.name, collection.name, field,
                                                 defer, replica)
+                        else:
+                            create_index_query = "CREATE INDEX `%s` " \
+                                                 "ON `%s`.`%s`.`%s`(`%s`) " \
+                                                 "WITH { 'defer_build': %s}" \
+                                                 % (gsi_index_name, bucket.name,
+                                                    scope.name, collection.name, field,
+                                                    defer)
                         query_node_instance = x % query_nodes_count
                         x = x + 1
                         self.log.debug("sending query:"+create_index_query)
@@ -98,7 +107,7 @@ class IndexUtils:
                         task = self.task.async_execute_query(server=query_node_list[query_node_instance],
                                                              query=create_index_query,
                                                              isIndexerQuery=not defer, bucket=bucket,
-                                                             indexName=gsi_index_name, timeout= timeout)
+                                                             indexName=gsi_index_name, timeout= timeout, retry=retry)
                         if sync:
                             self.task_manager.get_task_result(task)
                         else:
@@ -109,7 +118,7 @@ class IndexUtils:
 
         return indexes_to_build, createIndexTasklist
 
-    def recreate_dropped_indexes(self, cluster, indexes_dropped, field='body', defer=True, replica=0, timeout=600):
+    def recreate_dropped_indexes(self, cluster, indexes_dropped, field='body', defer=True, replica=0, timeout=600, retry=3):
         """
         Recreate dropped indexes given indexes_dropped dict
         """
@@ -122,21 +131,33 @@ class IndexUtils:
                              if bucket.bucketType == "couchbase"]
         for bucket in couchbase_buckets:
             for _, scope in bucket.scopes.items():
+                if scope.name == CbServer.system_scope or scope.name == CbServer.default_scope:
+                    continue
                 for _, collection in scope.collections.items():
                     gsi_index_names = indexes_dropped[bucket.name][scope.name][collection.name]
                     for gsi_index_name in list(gsi_index_names):
-                        create_index_query = "CREATE INDEX `%s` " \
+                        if replica > 0:
+                            create_index_query = "CREATE INDEX `%s` " \
                                              "ON `%s`.`%s`.`%s`(`%s`) " \
                                              "WITH { 'defer_build': %s, 'num_replica': %s }" \
                                              % (gsi_index_name, bucket.name,
                                                 scope.name, collection.name, field,
                                                 defer, replica)
+                        else:
+                            create_index_query = "CREATE INDEX `%s` " \
+                                                 "ON `%s`.`%s`.`%s`(`%s`) " \
+                                                 "WITH { 'defer_build': %s}" \
+                                                 % (gsi_index_name, bucket.name,
+                                                    scope.name, collection.name, field,
+                                                    defer)
                         query_node_instance = x % query_nodes_count
+                        self.log.debug("sending query for recreate:" + create_index_query)
+                        self.log.debug("Sending index name for recreate:" + gsi_index_name)
                         x = x + 1
                         task = self.task.async_execute_query(server=query_node_list[query_node_instance],
                                                              query=create_index_query,
                                                              isIndexerQuery=not defer, bucket=bucket,
-                                                             indexName=gsi_index_name, timeout=timeout)
+                                                             indexName=gsi_index_name, timeout=timeout, retry=retry)
                         self.task_manager.get_task_result(task)
 
     def async_drop_indexes(self, cluster, indexList, buckets=None):
@@ -155,7 +176,9 @@ class IndexUtils:
         dropIndexTaskList = list()
         for bucket in couchbase_buckets:
             indexes_dropped[bucket.name] = dict()
-            for _, scope in bucket.scopes.items():
+            for scope_name, scope in bucket.scopes.items():
+                if scope_name == '_default' or scope_name == '_system':
+                    continue
                 indexes_dropped[bucket.name][scope.name] = dict()
                 for _, collection in scope.collections.items():
                     gsi_index_names = indexList[bucket.name][scope.name][collection.name]
@@ -249,16 +272,31 @@ class IndexUtils:
     def randStr(self, Num=10):
         return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(Num))
 
-    def run_full_scan(self, cluster, indexesDict, key, totalCount, limit=1000000, is_sync=True):
+    def filter_buckets(self, bucket_list, indexMap):
+        newIndexMap = dict()
+        for bucket in bucket_list:
+            newIndexMap[bucket.name] = indexMap[bucket.name]
+        return newIndexMap
+
+
+    def run_full_scan(self, cluster, indexesDict, key, totalCount, bucket_list=None, limit=1000000, is_sync=True, offSetBound=0):
+        reference_dict = dict()
+        if bucket_list is None:
+            self.log.info("bucket list is None")
+            reference_dict = indexesDict
+        else:
+            self.log.info("bucket list is not None")
+            reference_dict = self.filter_buckets(bucket_list, indexesDict)
+
         query_tasks_info = list()
         x = 0
         query_len = len(cluster.query_nodes)
         self.log.debug("Limit is {} and total Count is {}".format(limit, totalCount))
-        for bucket, bucket_data in indexesDict.items():
+        for bucket, bucket_data in reference_dict.items():
             for scope, collection_data in bucket_data.items():
                 for collection, gsi_index_names in collection_data.items():
                     for gsi_index_name in gsi_index_names:
-                        offset = 0
+                        offset = offSetBound
                         while True:
                             query_node_index = x % query_len
                             query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s is not missing order by meta().id limit %s offset %s" % (

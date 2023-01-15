@@ -23,15 +23,10 @@ class PlasmaStatsUtil(IndexUtils):
         self.index_stat = index_stat
 
 
-    def get_index_baseURL(self, node=None):
-        if node is None:
-            node = self.index_node
-        generic_url = "http://%s:%s/"
-        ip = node.ip
-        port = constants.index_port
-        baseURL = generic_url % (ip, port)
-        self.log.debug("Index URL is {}".format(baseURL))
-        return baseURL
+    def get_index_baseURL(self, index_node=None):
+        rest_client = RestConnection(self.index_node)
+        api = rest_client.indexUrl
+        return api
 
     def get_index_storage_stats(self, index_node=None, timeout=120):
         rest_client = RestConnection(self.index_node)
@@ -45,9 +40,13 @@ class PlasmaStatsUtil(IndexUtils):
             rest_client = RestConnection(index_node)
             status, content, header = rest_client._http_request(api, timeout=timeout)
             if not status:
+                self.log.debug("Status not true {}".format(status))
+                counter += 1
                 raise Exception(content)
-            counter += 1
-            if counter > 10:
+            elif content.find("Indexer In Warmup") != -1:
+                content = None
+                continue
+            else:
                 break
         json_parsed = json.loads(content)
         index_storage_stats = {}
@@ -56,15 +55,20 @@ class PlasmaStatsUtil(IndexUtils):
             index_name = index_stats["Index"].split(":")[-1]
             if bucket not in list(index_storage_stats.keys()):
                 index_storage_stats[bucket] = {}
-            index_storage_stats[bucket][index_name] = index_stats["Stats"]
+            if index_name is not '#primary':
+                index_storage_stats[bucket][index_name] = index_stats["Stats"]
         return index_storage_stats
 
-    def get_all_index_stat_map(self, index_node=None, timeout=120):
+    def get_index_stats(self, index_node=None, timeout=120):
         if index_node is None:
             index_node = self.index_node
         rest_client = RestConnection(index_node)
         api = self.get_index_baseURL() + 'stats'
         status, content, header = rest_client._http_request(api, timeout=timeout)
+        return status, content, header
+
+    def get_all_index_stat_map(self, index_node=None, timeout=120):
+        status, content, header = self.get_index_stats(index_node,timeout)
         if status:
             json_parsed = json.loads(content)
             index_map = self.get_bucket_index_stats(json_parsed)

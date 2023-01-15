@@ -7493,7 +7493,7 @@ class DropDataversesTask(Task):
 
 
 class ExecuteQueryTask(Task):
-    def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600, retry=10):
+    def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600, retry=3):
         super(ExecuteQueryTask, self).__init__("ExecuteQueriesTask_%sstarted%s"
                                                % (query, time.time()))
         self.server = server
@@ -7503,7 +7503,6 @@ class ExecuteQueryTask(Task):
         self.rest = RestConnection(server)
         self.bucket = bucket
         self.index_name = indexName
-        self.timeout = timeout
         self.isIndexerQuery = isIndexerQuery
         self.retry = retry
 
@@ -7511,10 +7510,11 @@ class ExecuteQueryTask(Task):
         self.start_task()
         indexer_rest = GsiHelper(self.server, self.log)
         isException = False
+        json_parsed = None
         for x in range(self.retry):
             isException = False
             try:
-                self.log.info("starting call")
+                self.log.info("starting call for {} times".format(x))
                 contentType = 'application/x-www-form-urlencoded'
                 connection = 'keep-alive'
                 status, content, header = indexer_rest.execute_query(query=self.query,
@@ -7522,19 +7522,26 @@ class ExecuteQueryTask(Task):
                                                                      connection=connection,
                                                                      isIndexerQuery=self.isIndexerQuery)
                 self.log.debug("Status of the query {}".format(status))
-                self.log.debug("Content of the query {}".format(json.loads(content)))
+                #self.log.debug("Content of the query is {}".format(content))
                 self.set_result(status)
-                self.log.info("check isIndexQuery status"+str(self.isIndexerQuery))
+                self.log.debug("check isIndexQuery status"+str(self.isIndexerQuery))
+                json_parsed = json.loads(content)
+                if json_parsed["status"] == 'errors':
+                    self.log.debug("parsed error body {}".format(json_parsed))
+                    self.sleep(10, "wait for next retry")
+                    continue
                 break
             except Exception as e:
                 self.log.info("Got exception:{0} with index name {1}".format(str(e), self.index_name))
                 isException = True
 
         if self.isIndexerQuery:
+            self.log.debug("json parsed is {}".format(json_parsed))
             self.log.info("Waiting for polling status:" + self.index_name)
             result = indexer_rest.polling_create_index_status(self.bucket,
                                                               index=self.index_name,
                                                               timeout=self.timeout)
+            self.log.debug("Sending polling status for index:{0} as:{1}".format(self.index_name,result))
             self.set_result(result)
         if isException:
             self.log.info("Got exception, marking task status as fail")
