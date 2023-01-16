@@ -5882,10 +5882,15 @@ class BucketUtils(ScopeUtils):
             for line in output:
                 if wu_pattern.match(line):
                     wu += int(wu_pattern.findall(line)[0])
-                elif ru_pattern.match(line):
+                    break
+            for line in output:
+                if ru_pattern.match(line):
                     ru += int(ru_pattern.findall(line)[0])
-                elif num_throttled_pattern.match(line):
+                    break
+            for line in output:
+                if num_throttled_pattern.match(line):
                     num_throttled += int(num_throttled_pattern.findall(line)[0])
+                    break
         self.log.info("num_throttled %s, ru %s, wu %s" % (num_throttled, ru, wu))
         return num_throttled, ru, wu
 
