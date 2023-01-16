@@ -13,6 +13,7 @@ from security_utils.audit_ready_functions import audit
 from couchbase_helper.documentgenerator import doc_generator
 from cb_tools.cbstats import Cbstats
 from cb_tools.cbepctl import Cbepctl
+from BucketLib.BucketOperations import BucketHelper
 
 
 class ServerlessMetering(LMT):
@@ -615,37 +616,32 @@ class ServerlessMetering(LMT):
                 self.fail("expected to fail but passsed")
 
         bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
-        for node in bucket.servers:
-            status, content = self.bucket_util.\
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   throttle_limit=-2)
-            check_error_msg(status, content)
-            status, content = self.bucket_util.\
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   throttle_limit=2147483648)
-            check_error_msg(status, content)
+        server = random.choice(bucket.servers)
+        bucket_helper = BucketHelper(server)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     throttle_limit=-2)
+        check_error_msg(status, content)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     throttle_limit=2147483648)
+        check_error_msg(status, content)
 
-            status, content = self.bucket_util.\
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   storage_limit=-2)
-            check_error_msg(status, content, True)
-            status, content = self.bucket_util.\
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   storage_limit=2147483648)
-            check_error_msg(status, content, True)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     storage_limit=-2)
+        check_error_msg(status, content, True)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     storage_limit=2147483648)
+        check_error_msg(status, content, True)
 
-            status, content = self.bucket_util.\
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   throttle_limit=-2,
-                                   storage_limit=-2)
-            check_error_msg(status, content)
-            check_error_msg(status, content, True)
-            status, content = self.bucket_util.\
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   throttle_limit=2147483648,
-                                   storage_limit=2147483648)
-            check_error_msg(status, content)
-            check_error_msg(status, content, True)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     throttle_limit=-2,
+                                                                     storage_limit=-2)
+        check_error_msg(status, content)
+        check_error_msg(status, content, True)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     throttle_limit=2147483648,
+                                                                     storage_limit=2147483648)
+        check_error_msg(status, content)
+        check_error_msg(status, content, True)
 
     def thread_change_limit(self, bucket, throttling_limit, storage_limit):
         self.sleep(20)
