@@ -16,6 +16,7 @@ file_name_patterns:
           - 'status:ReadOnly: Rollback unsupported in read only mode'
           - 'Unable to open file err=No space left on device'
           - 'Invalid packet header detected'
+          - 'Error occured during memtable flush'
       - string: ' ERROR '
         exclude_patterns:
           - 'XERROR'
