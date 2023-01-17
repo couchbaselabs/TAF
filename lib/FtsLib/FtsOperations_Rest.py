@@ -25,3 +25,9 @@ class FtsHelper(RestConnection):
         status, content, _ = self._http_request(api, "GET",
                                                 timeout=60)
         return status, content
+
+    def capture_memory_profile(self):
+        api = self.ftsUrl + "runtime/profile/memory"
+        status, content, _ = self._http_request(api, "POST",
+                                                timeout=60)
+        return status, content

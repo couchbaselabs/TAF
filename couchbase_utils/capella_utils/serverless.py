@@ -285,7 +285,6 @@ class CapellaUtils:
                                       format(resp.status_code))
             raise Exception("Modifying Dataplane specs failed: {}".
                             format(resp.content))
-        return json.loads(resp.content)
 
     def get_scaling_records(self, dataplane_id, page=1, perPage=100):
         resp = self.capella_api.get_all_scaling_records(dataplane_id, page, perPage)

@@ -186,10 +186,12 @@ class DoctorFTS:
         self.scale_down = False
         self.scale_up = False
         self.fts_auto_rebl = False
+        mem_prof = True
         while not self.stop_run:
             self.scale_down_count = 0
             self.scale_up_count = 0
             self.hwm_count = 0
+            collect_logs = False
             if st_time + print_duration < time.time():
                 self.table = TableView(self.log.info)
                 self.table.set_headers(["Dataplane",
@@ -202,8 +204,13 @@ class DoctorFTS:
                     try:
                         rest = RestConnection(node)
                         content = rest.get_fts_stats()
-                        mem_used = content["utilization:memoryBytes"]/content["limits:memoryBytes"]
+                        mem_used = content["utilization:memoryBytes"]*1.0/content["limits:memoryBytes"]
                         cpu_used = content["utilization:cpuPercent"]
+                        if mem_used > 1.0 and mem_prof:
+                            self.log.critical("This should trigger FTS memory profile capture")
+                            FtsHelper(node).capture_memory_profile()
+                            collect_logs = True
+                            mem_prof = False
                         if self.scale_down is False and self.scale_up is False:
                             if mem_used < 0.3 and cpu_used < 30:
                                 self.scale_down_count += 1
@@ -218,7 +225,9 @@ class DoctorFTS:
                                     and len(dataplane.fts_nodes) > 2:
                                 self.scale_down = True
                                 self.log.info("FTS - Scale DOWN should trigger in a while")
-                            if self.scale_up_count == len(dataplane.fts_nodes) and self.scale_up is False:
+                            if len(dataplane.fts_nodes) < 10\
+                               and self.scale_up_count == len(dataplane.fts_nodes)\
+                               and self.scale_up is False:
                                 self.scale_up = True
                                 self.log.info("FTS - Scale UP should trigger in a while")
                             if self.hwm_count > 0 and self.fts_auto_rebl is False:
@@ -239,6 +248,9 @@ class DoctorFTS:
                         self.log.critical(e)
                 self.table.display("FTS Statistics")
                 st_time = time.time()
+            if collect_logs:
+                self.log.critical("Please collect logs immediately!!!")
+                pass
 
 
 class FTSQueryLoad:

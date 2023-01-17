@@ -2985,8 +2985,10 @@ class BucketUtils(ScopeUtils):
             self.log.error("Unable to get expected stats from the "
                            "selected node")
 
-    def verify_stats_all_buckets(self, cluster, items, timeout=1200, num_zone=1):
-        for bucket in cluster.buckets:
+    def verify_stats_all_buckets(self, cluster, items, timeout=1200,
+                                 num_zone=1, buckets=None):
+        buckets = buckets or cluster.buckets
+        for bucket in buckets:
             vbucket_stats = self.get_vbucket_seqnos(
                 self.cluster_util.get_bucket_kv_nodes(cluster, bucket),
                 [bucket],

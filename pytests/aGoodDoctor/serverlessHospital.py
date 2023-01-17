@@ -416,8 +416,24 @@ class Murphy(BaseTestCase, OPD):
 
     def get_cluster_balanced_state(self, dataplane):
         rest = RestConnection(dataplane.master)
-        content = rest.get_pools_default()
-        return content["balanced"]
+        try:
+            content = rest.get_pools_default()
+            return content["balanced"]
+        except:
+            self.log.critical("{} /pools/default has failed!!".format(dataplane.master))
+            pass
+
+    def check_cluster_state(self):
+        def start_check():
+            for dataplane in self.dataplane_objs.values():
+                state = self.get_cluster_balanced_state(dataplane)
+                if not state:
+                    self.log.critical("Dataplane State {}: {}".format(
+                        dataplane.id, state))
+                time.sleep(5)
+
+        monitor_state = threading.Thread(target=start_check)
+        monitor_state.start()
 
     def check_ebs_scaling(self):
         '''
@@ -547,11 +563,13 @@ class Murphy(BaseTestCase, OPD):
         #######################################################################
         self.PrintStep("Step: Create Serverless Databases")
 
-        # self.drFTS.index_stats(self.dataplane_objs)
+        self.drFTS.index_stats(self.dataplane_objs)
         self.drIndex.index_stats(self.dataplane_objs)
         self.check_ebs_scaling()
         self.check_memory_management()
-        # self.check_fts_scaling()
+        self.check_cluster_state()
+        self.check_fts_scaling()
+
         for i in range(0, 5):
             kv_nodes = self.get_num_nodes_in_cluster(service="kv")
             self.create_databases(20, load_defn=self.defaultLoadDefn)
@@ -609,6 +627,8 @@ class Murphy(BaseTestCase, OPD):
         self.log.info("Reset cluster specs to default to proceed further")
         self.generate_dataplane_config()
         config = self.dataplane_config["overRide"]["couchbase"]["specs"]
+        self.log.info("Changing cluster specs to default.")
+        self.log.info(config)
         self.serverless_util.change_dataplane_cluster_specs(self.dataplane_id, config)
         self.check_cluster_scaling()
 
@@ -654,7 +674,7 @@ class Murphy(BaseTestCase, OPD):
             # state = self.get_cluster_balanced_state(self.dataplane_objs[bucket_obj.serverless.dataplane_id])
             # self.assertTrue(state, "Balanced state of the cluster: {}".format(state))
             self.log.info("Buckets are rebalanced after change in their width")
-
+        
             for bucket in self.cluster.buckets:
                 self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
                 while len(self.cluster.bucketDNNodes[bucket]) < bucket.serverless.width*3:
@@ -663,7 +683,7 @@ class Murphy(BaseTestCase, OPD):
                 self.assertEqual(len(self.cluster.bucketDNNodes[bucket]),
                                  bucket.serverless.width*3,
                                  "Bucket width and number of nodes mismatch")
-
+        
         self.doc_loading_tm.abort_all_tasks()
         for task in load_tasks:
             try:
