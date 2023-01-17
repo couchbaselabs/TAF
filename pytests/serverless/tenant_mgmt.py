@@ -610,7 +610,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                                       "progress{0}".format(
                             expected_progress[counter]))
             except Exception as e:
-                self.log(e)
+                self.log.info(e)
                 self.thread_fail = True
 
         def data_load(doc_loading_spec_name=None, async_load=False):
@@ -735,7 +735,6 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                 zone_group = dict()
                 for zone in rest.get_zone_names():
                     zone_group[zone] = 1
-
         rebalance_task = self.task.async_rebalance(self.cluster, nodes_in,
                                                    nodes_out,
                                                    add_nodes_server_groups=zone_group,
