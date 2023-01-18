@@ -304,7 +304,7 @@ class OPD:
             if read_end is not None:
                 bucket.read_end = read_end
             else:
-                bucket.read_end = bucket.loadDefn.get("num_items") * self.mutation_perc/100
+                bucket.read_end = bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
 
         if "update" in doc_ops:
             if update_start is not None:
@@ -314,7 +314,7 @@ class OPD:
             if update_end is not None:
                 bucket.update_end = update_end
             else:
-                bucket.update_end = bucket.loadDefn.get("num_items") * self.mutation_perc/100
+                bucket.update_end = bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
             self.mutate += 1
 
         if "delete" in doc_ops:
@@ -325,7 +325,7 @@ class OPD:
             if delete_end is not None:
                 bucket.delete_end = delete_end
             else:
-                bucket.delete_end = bucket.start + bucket.loadDefn.get("num_items") * self.mutation_perc/100
+                bucket.delete_end = bucket.start + bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
             bucket.final_items -= (bucket.delete_end - bucket.delete_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
 
         if "expiry" in doc_ops:
@@ -338,7 +338,7 @@ class OPD:
             if expire_end is not None:
                 bucket.expire_end = expire_end
             else:
-                bucket.expire_end = bucket.expire_start + bucket.loadDefn.get("num_items") * self.mutation_perc/100
+                bucket.expire_end = bucket.expire_start + bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
             bucket.final_items -= (bucket.expire_end - bucket.expire_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
 
         if "create" in doc_ops:
@@ -543,7 +543,7 @@ class OPD:
                             # client = NewSDKClient(master, bucket.name, scope, collection)
                             # client.initialiseSDK()
                             self.sleep(1)
-                            taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
+                            taskName = "Validate_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, time.time())
                             task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
                                                     self.sdk_client_pool, "NONE",
                                                     self.maxttl, self.time_unit,
