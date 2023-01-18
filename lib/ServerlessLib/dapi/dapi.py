@@ -59,7 +59,7 @@ class RestfulDAPI:
 
     def check_dapi_health(self):
         url = self.endpoint + "/health"
-        return self._urllib_request(url)
+        return self._urllib_request(url, params="")
 
     def get_scope_list(self):
         url = self.endpoint_v1 + "/scopes"
