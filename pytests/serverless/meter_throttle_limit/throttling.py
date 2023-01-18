@@ -63,7 +63,8 @@ class ServerlessThrottling(LMT):
 
             self.sleep(10)
             num_throttled, ru, wu = self.get_stat(self.bucket)
-            expected_wu += (write_units * len(self.key_value.keys()))
+            if self.bucket_throttling_limit != 0:
+                expected_wu += (write_units * len(self.key_value.keys()))
             self.compare_ru_wu_stat(ru, wu, 0, expected_wu)
             if num_throttled > 0:
                 if num_throttled < (expected_num_throttled - 10):
@@ -153,9 +154,9 @@ class ServerlessThrottling(LMT):
                     sdk_client_pool=self.sdk_client_pool,
                     print_ops_rate=False)
                 self.task_manager.get_task_result(load_task)
-                self.key_size, doc_size = self.get_size_of_doc(gen_docs)
+
                 self.sleep(30)
-                write_units = self.bucket_util.calculate_units(self.key_size, doc_size,
+                write_units = self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                     durability=self.durability_level) * batch_size
                 throttle_limit, expected_num_throttled = self.calculate_expected_num_throttled(
                                                         node, self.bucket, throttle_limit,
@@ -164,14 +165,14 @@ class ServerlessThrottling(LMT):
                                                              self.cluster.buckets)
                 num_throttled, ru, wu = self.get_stat(bucket)
                 items = self.bucket_util.get_total_items_bucket(bucket) - total_items
-                self.expected_wu += self.bucket_util.calculate_units(self.key_size, doc_size,
+                self.expected_wu += self.bucket_util.calculate_units(self.key_size, self.doc_size,
                                         durability=self.durability_level) * items
                 self.assertEqual(wu, self.expected_wu)
                 if 0 < num_throttled < expected_num_throttled:
                     self.fail("num_throlled value %s expected_num_throttled %s"
                                   %(num_throttled, expected_num_throttled))
                 expected_num_throttled = num_throttled
-                total_items = items
+                total_items += items
 
     def test_throttling_steady_state(self):
         """
