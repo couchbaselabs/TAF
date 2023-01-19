@@ -465,8 +465,6 @@ class OPD:
             gdb_shell.disconnect()
 
     def data_validation(self):
-        doc_ops = self.mutations_to_validate
-        pc = min(self.process_concurrency, 20)
         if self._data_validation:
             self.log.info("Validating Active/Replica Docs")
             cmd = dict()
@@ -477,13 +475,14 @@ class OPD:
             #                     str(self.cluster.master.memcached_port))
             self.loader_map = dict()
             for bucket in self.cluster.buckets:
+                pc = min(bucket.loadDefn.get("scopes") * bucket.loadDefn.get("collections"), 5)
                 for scope in bucket.scopes.keys():
                     if scope == CbServer.system_scope:
                             continue
                     for collection in bucket.scopes[scope].collections.keys():
                         if collection == "_default" and scope == "_default":
                             continue
-                        for op_type in doc_ops:
+                        for op_type in bucket.loadDefn.get("load_type"):
                             cmd.update({"deleted": False})
                             hm = HashMap()
                             if op_type == "create":
@@ -508,7 +507,7 @@ class OPD:
                                                   cmd.get("dl", 0),
                                                   cmd.get("ex", 0),
                                                   cmd.get("workers", pc),
-                                                  cmd.get("ops", self.ops_rate),
+                                                  cmd.get("ops", bucket.loadDefn.get("ops")),
                                                   cmd.get("loadType", None),
                                                   cmd.get("keyType", None),
                                                   cmd.get("valueType", None),
@@ -537,7 +536,7 @@ class OPD:
                     for collection in bucket.scopes[scope].collections.keys():
                         if collection == "_default" and scope == "_default":
                             continue
-                        for op_type in doc_ops:
+                        for op_type in bucket.loadDefn.get("load_type"):
                             if op_type not in ["create", "update", "delete"]:
                                 continue
                             # client = NewSDKClient(master, bucket.name, scope, collection)
@@ -548,6 +547,7 @@ class OPD:
                                                     self.sdk_client_pool, "NONE",
                                                     self.maxttl, self.time_unit,
                                                     self.track_failures, 0)
+                            task.set_collection_for_load(bucket.name, scope, collection)
                             tasks.append(task)
                             self.doc_loading_tm.submit(task)
                             # i -= 1
