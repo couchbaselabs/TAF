@@ -57,6 +57,7 @@ file_name_patterns:
           - 'WriteDocs cannot be invoked in read only mode'
           - 'status:ReadOnly: Rollback unsupported in read only mode'
           - 'Unable to open file err=No space left on device'
+          - 'Error occured during memtable flush'
 
   - file: 'indexer.log*'
     grep_for:
