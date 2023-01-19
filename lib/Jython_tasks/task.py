@@ -204,7 +204,7 @@ class TimerTask(Task):
 
 
 class DeployDataplane(Task):
-    def __init__(self, cluster, config, timeout=600):
+    def __init__(self, cluster, config, timeout=900):
         Task.__init__(self, "Deploy_dataplne_{}".format(time.time()))
         self.config = config
         self.pod = cluster.pod

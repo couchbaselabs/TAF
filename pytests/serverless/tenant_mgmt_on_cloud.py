@@ -132,20 +132,28 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         if self.sandbox_cleanup:
             dataplanes_details = self.serverless_util.get_all_dataplanes()
             if dataplanes_details != {'errorType': 'NotFound', 'message': 'Not Found.'}:
+                databases = self.serverless_util.get_all_serverless_databases()
+                databases_list = []
+                for db in databases:
+                    if "id" in db:
+                        resp = self.serverless_util. \
+                            delete_serverless_database(db["id"])
+                        self.assertTrue(resp == 202, "Database Delete request "
+                                                     "failed")
+                        databases_list.append(db["id"])
+                        self.log.info("Tagging Bucket :: %s, for deletion " % (
+                            db["id"]))
+                for data_base in databases_list:
+                    self.serverless_util.wait_for_database_deleted(
+                        self.tenant, data_base)
                 for dataplane in dataplanes_details:
                     dataplane_id = dataplane["id"]
-                    databases_list = self.serverless_util.list_all_databases(
-                        pod=None, tenant=self.tenant)
-                    for data_base in databases_list:
-                        self.log.info("Tagging Bucket :: %s, for deletion "
-                                      % (data_base["data"]["id"]))
-                        self.serverless_util.delete_database(
-                            self.pod, self.tenant, data_base["data"]["id"])
-                    for data_base in databases_list:
-                        self.serverless_util.wait_for_database_deleted(
-                            self.tenant, data_base["data"]["id"])
                     resp = self.serverless_util.delete_dataplane(dataplane_id)
+                    self.assertTrue(resp.status_code == 202, "Dataplane "
+                                                             "Delete "
+                                                             "request failed")
                     self.serverless_util.wait_for_dataplane_deleted(dataplane_id)
+            self.sleep(10, "Waiting for deleted dataplane to get reflected")
 
     def get_servers_for_databases(self, buckets=None):
         dataplanes = dict()
@@ -583,12 +591,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         return bucket_obj
 
-    def create_database(self, bucket=None):
+    def create_database(self, bucket=None, timeout=600):
         if not bucket:
             bucket = self.get_serverless_bucket_obj(
                 self.db_name, self.bucket_width, self.bucket_weight)
         task = self.bucket_util.async_create_database(
-            self.cluster, bucket, dataplane_id=self.dataplane_id)
+            self.cluster, bucket, dataplane_id=self.dataplane_id, timeout=timeout)
         self.task_manager.get_task_result(task)
         self.assertTrue(task.result, "Database creation failed")
 
@@ -861,7 +869,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for scenario in scenarios:
             to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=600)
+                to_track, timeout=1800)
             self.task_manager.get_task_result(monitor_task)
 
         if self.with_data_load:
@@ -907,7 +915,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                      Bucket.weight: 300}
         to_track = self.__trigger_bucket_param_updates(scenario)
         monitor_task = self.bucket_util.async_monitor_database_scaling(
-            to_track, timeout=600)
+            to_track, timeout=1800)
         self.task_manager.get_task_result(monitor_task)
 
         # Perform scaling and perform new DB create/delete
@@ -924,7 +932,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                         Bucket.weight: 300}}
         to_track = self.__trigger_bucket_param_updates(scenario)
         monitor_task = self.bucket_util.async_monitor_database_scaling(
-            to_track, timeout=600)
+            to_track, timeout=1800)
         # Create DB
         db_to_create = self.get_serverless_bucket_obj(
             db_name="tntMgmtCreateDeleteDB-%s" % b_index, width=1, weight=30)
@@ -954,7 +962,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                         Bucket.weight: 390}}
         to_track = self.__trigger_bucket_param_updates(scenario)
         monitor_task = self.bucket_util.async_monitor_database_scaling(
-            to_track, timeout=600)
+            to_track, timeout=1800)
         # Drop the DB which was created earlier
         target_db = db_to_create
         self.log.info("Dropping DB: %s" % target_db.name)
@@ -1043,7 +1051,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for scenario in scenarios:
             to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=1500)
+                to_track, timeout=1800)
             self.task_manager.get_task_result(monitor_task)
 
         if self.validate_stat:
@@ -1228,12 +1236,14 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
     def test_initial_cluster_deployment_state(self):
         self._assert_if_not_sandbox_run()
         self.clean_sandbox()
+
         self._assert_num_dataplane_deployed(0)
 
         self.bucket_width = 1
         self.bucket_weight = 30
         self.db_name = "tntMgmt-initial-db"
-        self.create_database()
+        self.dataplane_id = None
+        self.create_database(timeout=1400)
         bucket = self.cluster.buckets[0]
 
         self._assert_num_dataplane_deployed(1)
@@ -1256,7 +1266,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 CbServer.Services.FTS: 2
             }
             self.validate_cluster_deployment(self.cluster, validation_dict)
-            self.bucket_util.validate_serverless_buckets(self.cluster)
+            self.bucket_util.validate_serverless_buckets(self.cluster,
+                                                         self.cluster.buckets)
         finally:
             self.log.info("Cleaning up database and dataplane")
             self.serverless_util.delete_database(

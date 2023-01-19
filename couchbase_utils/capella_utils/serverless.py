@@ -278,6 +278,14 @@ class CapellaUtils:
                             format(resp.content))
         return json.loads(resp.content)
 
+    def get_all_serverless_databases(self):
+        resp = self.capella_api.get_all_serverless_databases()
+        return json.loads(resp.content)
+
+    def delete_serverless_database(self, database_id):
+        resp = self.capella_api.delete_serverless_database(database_id)
+        return resp.status_code
+
     def change_dataplane_cluster_specs(self, dataplane_id, specs):
         resp = self.capella_api.modify_cluster_specs(dataplane_id, specs)
         if resp.status_code != 202:
