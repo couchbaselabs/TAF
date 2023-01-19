@@ -5,6 +5,7 @@ from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from Cb_constants import CbServer
 from com.couchbase.test.docgen import DocumentGenerator
+from BucketLib.BucketOperations import BucketHelper
 
 
 class MeteringOnCloud(TenantMgmtOnCloud):
@@ -203,6 +204,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         4. Delete the newly created database while intial load is still running
         :return:
         """
+        self.with_deletion = self.input.param("delete", False)
         self.db_name = "%s-testmetering" % self.db_name
         # validate initial throughput is 5000/3 = 1666
         for bucket in self.cluster.buckets:
@@ -211,7 +213,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                              self.bucket_throttling_limit)
 
         # validate create, update, delete stat
-        for op_type in ["create", "update", "delete"]:
+        for op_type in ["create", "update"]:
             if op_type == "create":
                 self.load_data(create_start=0, create_end=self.num_items, create_perc=100)
                 self.update_expected_stat(self.key_size, self.doc_size,
@@ -220,10 +222,10 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                 self.load_data(update_start=0, update_end=self.num_items, update_perc=100, mutated=1)
                 self.update_expected_stat(self.key_size, self.doc_size,
                                           0, self.num_items, self.cluster.buckets)
-            # if op_type == "delete":
-            #     self.load_data(delete_start=0, delete_end=self.num_items, delete_perc=100)
-            #     self.update_expected_stat(self.key_size, self.doc_size,
-            #                               0, self.num_items, self.cluster.buckets)
+        if self.with_deletion:
+            self.load_data(delete_start=0, delete_end=self.num_items, delete_perc=100)
+            self.update_expected_stat(self.key_size, self.doc_size,
+                                      0, self.num_items, self.cluster.buckets)
 
     def test_diff_throttling_limit(self):
         self.test_single_bucket = self.input.param("test_single_bucket", False)
@@ -275,38 +277,32 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                 self.fail("expected to fail but passsed")
 
         bucket = self.cluster.buckets[0]
-        for node in bucket.servers:
-            rest_node = RestConnection(node)
-            status, content = rest_node. \
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   throttle_limit=-2)
-            check_error_msg(status, content)
-            status, content = rest_node. \
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   throttle_limit=2147483648)
-            check_error_msg(status, content)
+        server = random.choice(bucket.servers)
+        bucket_helper = BucketHelper(server)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     throttle_limit=-2)
+        check_error_msg(status, content)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     throttle_limit=2147483648)
+        check_error_msg(status, content)
 
-            status, content = rest_node. \
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   storage_limit=-2)
-            check_error_msg(status, content, True)
-            status, content = rest_node. \
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   storage_limit=2147483648)
-            check_error_msg(status, content, True)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     storage_limit=-2)
+        check_error_msg(status, content, True)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     storage_limit=2147483648)
+        check_error_msg(status, content, True)
 
-            status, content = rest_node. \
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   throttle_limit=-2,
-                                   storage_limit=-2)
-            check_error_msg(status, content)
-            check_error_msg(status, content, True)
-            status, content = rest_node. \
-                set_throttle_n_storage_limit(bucket=bucket.name,
-                                   throttle_limit=2147483648,
-                                   storage_limit=2147483648)
-            check_error_msg(status, content)
-            check_error_msg(status, content, True)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     throttle_limit=-2,
+                                                                     storage_limit=-2)
+        check_error_msg(status, content)
+        check_error_msg(status, content, True)
+        status, content = bucket_helper.set_throttle_n_storage_limit(bucket.name,
+                                                                     throttle_limit=2147483648,
+                                                                     storage_limit=2147483648)
+        check_error_msg(status, content)
+        check_error_msg(status, content, True)
 
     def test_zero_limits(self):
         bucket = self.cluster.buckets[0]
