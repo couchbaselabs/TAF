@@ -589,12 +589,10 @@ class UpgradeTests(UpgradeBase):
             for bucket in self.bucket_util.get_all_buckets(self.cluster):
                 tombstone_doc_supported = \
                     "tombstonedUserXAttrs" in bucket.bucketCapabilities
-                if node_to_upgrade is None and not tombstone_doc_supported:
-                    self.log_failure("Tombstone docs not added to %s "
-                                     "capabilities" % bucket.name)
-                elif node_to_upgrade is not None and tombstone_doc_supported:
-                    self.log_failure("Tombstone docs supported for %s before "
-                                     "cluster upgrade" % bucket.name)
+                # This check is req. since the min. initial version is 6.6.X
+                if not tombstone_doc_supported:
+                    self.log_failure("Tombstone doc support missing for %s"
+                                     % bucket.name)
 
         self.validate_test_failure()
 
