@@ -22,7 +22,7 @@ repositories {
 
 dependencies {
     def trans_version = "1.2.3"
-    def java_client = "3.2.2"
+    def java_client = "3.4.2"
 
     if (project.hasProperty("transaction_version")) {
         trans_version = project.property("transaction_version")

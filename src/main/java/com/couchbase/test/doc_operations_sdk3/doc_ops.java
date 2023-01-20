@@ -39,7 +39,7 @@ public static List<ConcurrentHashMap<String, Object>> bulkInsert_new(Collection 
                 // Divide the work into numberOfThreads chunks
                 .parallel(numberOfThreads)
                 // Run on an unlimited thread pool
-                .runOn(Schedulers.elastic())
+                .runOn(Schedulers.newBoundedElastic(numberOfThreads, Integer.MAX_VALUE, "bulkInsert"))
                 .concatMap(documentToInsert -> {
                     String id = documentToInsert.getT1();
                     Object content = documentToInsert.getT2();
