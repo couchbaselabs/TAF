@@ -118,7 +118,13 @@ class StorageBase(BaseTestCase):
                 ram_quota=self.bucket_ram_quota,
                 fragmentation_percentage=self.fragmentation,
                 flush_enabled=self.flush_enabled,
-                weight=self.bucket_weight, width=self.bucket_width)
+                weight=self.bucket_weight, width=self.bucket_width,
+                autoCompactionDefined=self.autoCompactionDefined,
+                fragmentation_percentage=self.fragmentation,
+                flush_enabled=self.flush_enabled,
+                history_retention_collection_default=self.bucket_collection_history_retention_default,
+                history_retention_seconds=self.bucket_dedup_retention_seconds,
+                history_retention_bytes=self.bucket_dedup_retention_bytes)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
         if self.change_magma_quota:
             bucket_helper = BucketHelper(self.cluster.master)
@@ -167,8 +173,13 @@ class StorageBase(BaseTestCase):
                         self.cluster.master, bucket,
                         scope_name, {"name": collection_name})
                     self.sleep(2)
+                    if self.bucket_dedup_retention_seconds or self.bucket_dedup_retention_bytes:
+                        self.bucket_util.set_history_retention_for_collection(self.cluster.master,
+                                                                              bucket, scope_name,
+                                                                              collection_name,
+                                                                              "true")
         self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
-        self.log.debug("Collections list == {}".format(self.collections))
+        self.log.info("Collections list == {}".format(self.collections))
 
         if self.dcp_services and self.num_collections == 1:
             self.initial_idx = "initial_idx"
@@ -426,7 +437,7 @@ class StorageBase(BaseTestCase):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
                 if self.track_failures:
-                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items_per_collection*self.num_scopes*(self.num_collections-1))
+                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items_per_collection*self.num_scopes*(self.num_collections-1), timeout=300)
             except Exception as e:
                 raise e
 
@@ -1224,3 +1235,12 @@ class StorageBase(BaseTestCase):
             num_writer_threads=self.num_writer_threads,
             num_reader_threads=self.num_reader_threads,
             num_storage_threads=self.num_storage_threads)
+
+    def PrintStep(self, msg=None):
+        print "\n"
+        print "\t", "#"*60
+        print "\t", "#"
+        print "\t", "#  %s" % msg
+        print "\t", "#"
+        print "\t", "#"*60
+        print "\n"

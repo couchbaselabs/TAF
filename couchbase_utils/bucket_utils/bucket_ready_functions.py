@@ -2737,7 +2737,10 @@ class BucketUtils(ScopeUtils):
             autoCompactionDefined="false",
             fragmentation_percentage=50,
             vbuckets=None,
-            weight=None, width=None):
+            weight=None, width=None,
+            history_retention_collection_default="true",
+            history_retention_bytes=0,
+            history_retention_seconds=0):
         success = True
         rest = RestConnection(cluster.master)
         info = rest.get_nodes_self()
@@ -2779,7 +2782,10 @@ class BucketUtils(ScopeUtils):
                         Bucket.fragmentationPercentage: fragmentation_percentage,
                         Bucket.numVBuckets: vbuckets,
                         Bucket.weight: weight,
-                        Bucket.width: width})
+                        Bucket.width: width,
+                        Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
+                        Bucket.historyRetentionSeconds: history_retention_seconds,
+                        Bucket.historyRetentionBytes: history_retention_bytes})
                     tasks[bucket] = self.async_create_bucket(cluster, bucket)
                     count += 1
 
