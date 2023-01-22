@@ -79,6 +79,101 @@ class MagmaCrashTests(MagmaBaseTest):
             sleep = random.randint(30, 60)
             self.sleep(sleep, "Wait for next drop/create collection iteration")
 
+    def reset_doc_params(self, doc_ops=None):
+        self.create_perc = 0
+        self.delete_perc = 0
+        self.update_perc = 0
+        self.expiry_perc = 0
+        self.read_perc = 0
+        self.create_end = 0
+        self.create_start = 0
+        self.update_end = 0
+        self.update_start = 0
+        self.delete_end = 0
+        self.delete_start = 0
+        self.expire_end = 0
+        self.expire_start = 0
+        doc_ops = doc_ops or self.doc_ops
+        doc_ops = doc_ops.split(":")
+        perc = 100//len(doc_ops)
+        if "update" in doc_ops:
+            self.update_perc = perc
+        if "create" in doc_ops:
+            self.create_perc = perc
+        if "read" in doc_ops:
+            self.read_perc = perc
+        if "expiry" in doc_ops:
+            self.expiry_perc = perc
+        if "delete" in doc_ops:
+            self.delete_perc = perc
+
+    def test_magma_failures_with_CDC(self):
+        self.induce_failures = self.input.param("induce_failures", True)
+        self.enable_disable_history = self.input.param("enable_disable_history", False)
+        self.change_bucket_history_params = self.input.param("change_bucket_history_params", False)
+
+        self.create_start = 0
+        self.create_end = self.init_items_per_collection
+        self.process_concurrency = self.standard_buckets * self.num_collections * self.num_scopes
+        self.new_loader(wait=True)
+        self.track_failure = False
+
+        count = 1
+        while count < self.test_itr+1:
+            self.log.info("Iteration == {}".format(count))
+            self.reset_doc_params()
+            self.compute_docs_ranges()
+            temp_tasks = self.new_loader(wait=False)
+            self.graceful = self.input.param("graceful", False)
+            wait_warmup = self.input.param("wait_warmup", True)
+
+            if self.change_bucket_history_params:
+                self.change_history_param_th = threading.Thread(target=self.change_history_retention_values)
+                self.change_history_param_th.start()
+
+            if self.induce_failures:
+                self.crash_th = threading.Thread(target=self.crash,
+                                                 kwargs=dict(graceful=self.graceful,
+                                                             wait=wait_warmup))
+                self.crash_th.start()
+
+            if self.enable_disable_history:
+                self.enable_disable_history_th = threading.Thread(target=self.start_stop_history_retention_for_collections)
+                self.enable_disable_history_th.start()
+
+            self.doc_loading_tm.getAllTaskResult()
+
+            if self.induce_failures:
+                self.stop_crash = True
+                self.crash_th.join()
+
+            if self.enable_disable_history:
+                self.stop_enable_disable_history = True
+                self.enable_disable_history_th.join()
+
+            if self.change_bucket_history_params:
+                self.change_history = True
+                self.change_history_param_th.join()
+
+            if "delete" in self.doc_ops:
+                create_start = self.delete_start
+                create_end = self.delete_end
+                self.reset_doc_params(doc_ops="create")
+                self.create_start = create_start
+                self.create_end = create_end
+                self.num_items_per_collection += self.create_end - self.create_start
+                self.new_loader(wait=True)
+            if "expiry" in self.doc_ops:
+                create_start = self.expiry_start
+                create_end = self.expiry_end
+                self.reset_doc_params(doc_ops="create")
+                self.create_start = create_start
+                self.create_end = create_end
+                self.num_items_per_collection += self.create_end - self.create_start
+                self.new_loader(wait=True)
+
+            count += 1
+
     def test_crash_during_ops_new(self):
         self.graceful = self.input.param("graceful", False)
         self.ops_rate = self.input.param("ops_rate", 10000)

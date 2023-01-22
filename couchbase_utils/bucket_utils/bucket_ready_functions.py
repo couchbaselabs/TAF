@@ -2203,7 +2203,10 @@ class BucketUtils(ScopeUtils):
             bucket_name=None,
             purge_interval=1,
             autoCompactionDefined="false",
-            fragmentation_percentage=50):
+            fragmentation_percentage=50,
+            history_retention_collection_default="true",
+            history_retention_bytes=0,
+            history_retention_seconds=0):
         success = True
         rest = RestConnection(cluster.master)
         info = rest.get_nodes_self()
@@ -2242,7 +2245,10 @@ class BucketUtils(ScopeUtils):
                         Bucket.durabilityMinLevel: bucket_durability,
                         Bucket.purge_interval: purge_interval,
                         Bucket.autoCompactionDefined: autoCompactionDefined,
-                        Bucket.fragmentationPercentage: fragmentation_percentage})
+                        Bucket.fragmentationPercentage: fragmentation_percentage,
+                        Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
+                        Bucket.historyRetentionSeconds: history_retention_seconds,
+                        Bucket.historyRetentionBytes: history_retention_bytes})
                     tasks[bucket] = self.async_create_bucket(cluster, bucket)
                     count += 1
 

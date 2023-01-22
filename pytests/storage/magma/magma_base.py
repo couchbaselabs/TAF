@@ -96,6 +96,7 @@ class MagmaBaseTest(StorageBase):
                     "For bucket {} disk usage after initial creation is {}MB\
                     ".format(bucket.name,
                              self.disk_usage[bucket.name]))
+
         self.log.info("==========Finished magma base setup========")
 
     def tearDown(self):
@@ -476,3 +477,139 @@ class MagmaBaseTest(StorageBase):
         shell = RemoteMachineShellConnection(server)
         result = shell.execute_command(cmd)[0]
         return result
+
+    def start_stop_history_retention_for_collections(self):
+        if self.bucket_dedup_retention_seconds or self.bucket_dedup_retention_bytes:
+            self.crash_during_enable_disable_history = self.input.param("crash_during_enable_disable_history", False)
+            self.stop_enable_disable_history = False
+            self.loop_itr = 0
+
+            def induce_crash():
+                kill_count = 5
+                count = kill_count
+                nodes = self.cluster.nodes_in_cluster
+                connections = dict()
+                for node in nodes:
+                    shell = RemoteMachineShellConnection(node)
+                    connections.update({node: shell})
+                for node, shell in connections.items():
+                    if "kv" in node.services:
+                        if self.graceful:
+                            while count > 0:
+                                shell.restart_couchbase()
+                                self.sleep(3, "Sleep before restarting memcached on same node again.")
+                                count -= 1
+                        else:
+                            while count > 0:
+                                shell.kill_memcached()
+                                self.sleep(3, "Sleep before killing memcached on same node again.")
+                                count -= 1
+                        count = kill_count
+                for _, shell in connections.items():
+                    shell.disconnect()
+
+            while not self.stop_enable_disable_history:
+                self.loop_itr += 1
+                sleep = random.randint(90, 120)
+                self.sleep(sleep,
+                           "Iteration:{} waiting for {} sec to disable history retention".
+                           format(self.loop_itr, sleep))
+                for bucket in self.cluster.buckets:
+                    for scope_name in self.scopes:
+                        for collection_name in self.collections:
+                            if collection_name == "_default" and scope_name == "_default":
+                                continue
+                            self.bucket_util.set_history_retention_for_collection(self.cluster.master,
+                                                                                  bucket, scope_name,
+                                                                                  collection_name,
+                                                                                  "false")
+                if self.crash_during_enable_disable_history:
+                    induce_crash()
+
+                sleep = random.randint(30, 60)
+                self.sleep(sleep,
+                           "Iteration:{} waiting for {} sec to enable history retention".
+                           format(self.loop_itr, sleep))
+                for bucket in self.cluster.buckets:
+                    for scope_name in self.scopes:
+                        for collection_name in self.collections:
+                            if collection_name == "_default" and scope_name == "_default":
+                                continue
+                            self.bucket_util.set_history_retention_for_collection(self.cluster.master,
+                                                                                  bucket, scope_name,
+                                                                                  collection_name,
+                                                                                  "true")
+                if self.crash_during_enable_disable_history:
+                    induce_crash()
+
+    def change_history_retention_values(self, buckets=None):
+        buckets = buckets or self.cluster.buckets
+        self.change_history = False
+        loop_itr = 0
+        if type(buckets) is not list:
+            buckets = [buckets]
+        self.change_history_size_values = self.input.param("change_history_size_values", True)
+        self.change_history_time_values = self.input.param("change_history_time_values", False)
+        self.change_both_history_values = self.input.param("change_both_history_values", False)
+        history_size_values = self.input.param("history_size_values", "5000").split(":")
+        history_time_values = self.input.param("histoy_time_values", "1000").split(":")
+        while not self.change_history:
+            loop_itr += 1
+            for bucket in buckets:
+                if self.change_history_size_values:
+                    print("type {} and val {}".format(type(history_size_values), history_size_values ))
+                    for value in history_size_values:
+                        sleep = random.randint(90, 120)
+                        self.sleep(sleep, "Iteration:{} waiting for {} sec before setting history size values".
+                                   format(loop_itr, sleep))
+                        self.bucket_util.update_bucket_property(
+                            self.cluster.master, bucket,
+                            history_retention_seconds=self.bucket_dedup_retention_seconds,
+                            history_retention_bytes=value)
+                if self.change_history_time_values:
+                    for value in history_time_values:
+                        sleep = random.randint(90, 120)
+                        self.sleep(sleep, "Iteration:{} waiting for {} sec before setting history time values".
+                                   format(loop_itr, sleep))
+                        self.bucket_util.update_bucket_property(
+                            self.cluster.master, bucket,
+                            history_retention_seconds=value,
+                            history_retention_bytes=self.bucket_dedup_retention_bytes)
+                if self.change_both_history_values:
+                    for size in history_size_values:
+                        for time in history_time_values:
+                            sleep = random.randint(60, 90)
+                            self.sleep(sleep, "Iteration:{} waiting for {} sec before setting history time and size values".
+                                   format(loop_itr, sleep))
+                            self.bucket_util.update_bucket_property(
+                                self.cluster.master, bucket,
+                                history_retention_seconds=time,
+                                history_retention_bytes=size)
+
+    def get_seqnumber_count(self, bucket=None):
+        result = dict()
+        bucket = bucket or self.cluster.buckets[0]
+        magma_path = os.path.join(self.data_path, bucket.name, "magma.{}")
+        for node in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(node)
+            shards = shell.execute_command(
+                "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
+                )[0][0].split('\n')[0]
+            self.log.debug("machine: {} - core(s): {}".format(node.ip, shards))
+            for shard in range(min(int(shards), 64)):
+                magma = magma_path.format(shard)
+                kvstores, _ = shell.execute_command("ls {} | grep kvstore".format(magma))
+                cmd = '/opt/couchbase/bin/magma_dump {}'.format(magma)
+                self.log.info("kvstores {}".format(kvstores))
+                for kvstore in kvstores:
+                    dump = cmd
+                    kvstore_num = kvstore.split("-")[1].strip()
+                    dump += ' --kvstore {} --tree seq --treedata | grep  bySeqno | wc -l'.format(kvstore_num)
+                    seqnumber_count = shell.execute_command(dump)[0][0].strip()
+                    result[kvstore] = seqnumber_count
+        self.log.info("seqnumber_count/kvstore {}".format(result))
+        seqnumber_count = 0
+        for count in result.values():
+            seqnumber_count += int(count)
+        self.log.info("seqnumber_count {}".format(seqnumber_count))
+        return seqnumber_count
