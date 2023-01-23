@@ -142,6 +142,7 @@ class AutoFailoverBaseTest(ClusterSetup):
 
     def tearDown(self):
         self.log.info("============AutoFailoverBaseTest teardown============")
+        self.bucket_util.print_bucket_stats(self.cluster)
         self._get_params()
         self.server_to_fail = self._servers_to_fail()
         self.start_couchbase_server()
@@ -900,6 +901,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
     def tearDown(self):
         self.log.info("=========Starting Diskautofailover teardown ==========")
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.targetMaster = True
         if hasattr(self, "original_data_path"):
             self.bring_back_failed_nodes_up()
