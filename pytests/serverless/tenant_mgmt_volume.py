@@ -265,7 +265,8 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         result, tasks = self.bucket_util.perform_doc_loading(
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
-            async_load=True, sdk_client_pool=self.sdk_client_pool)
+            async_load=True, sdk_client_pool=self.sdk_client_pool,
+            track_failures=False)
         self.assertTrue(result, "Failed to start doc_ops")
         return loader_map, tasks
 
@@ -326,7 +327,7 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
                 params["update_end"] = end
                 if self.validate_stat:
                     self.expected_stat[bucket.name]["wu"] += self.bucket_util.calculate_units(
-                        self.key_size, self.doc_size, num_items=doc_end - start)
+                        self.key_size, self.doc_size, num_items=params["update_end"] - params["update_start"])
             if "read" in load_pattern:
                 params["read_perc"] = ops_perc + remaining_perc
                 params["read_start"] = int(end/2)
@@ -355,7 +356,8 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
 
         result, loading_tasks = self.bucket_util.perform_doc_loading(
             self.doc_loading_tm, loader_map, self.cluster, buckets,
-            async_load=True, sdk_client_pool=self.sdk_client_pool)
+            async_load=True, sdk_client_pool=self.sdk_client_pool,
+            track_failures=False)
         self.assertTrue(result, "Starting doc_ops failed")
         return loader_map, loading_tasks
 
@@ -397,7 +399,7 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
 
         # get initial stats
         if self.validate_stat:
-            self.get_servers_for_databases()
+            self.get_servers_for_databases(self.buckets_eligible_for_data_load)
             self.expected_stat = self.bucket_util.get_initial_stats(
                 self.cluster.buckets)
 
@@ -438,7 +440,8 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         _, self.cont_update_tasks = self.bucket_util.perform_doc_loading(
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
-            async_load=True, sdk_client_pool=self.sdk_client_pool)
+            async_load=True, sdk_client_pool=self.sdk_client_pool,
+            track_failures=False)
         for task in self.cont_update_tasks:
             self.__add_task_to_bucket_map(task)
 
@@ -461,105 +464,139 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
             exclude_buckets = list()
             scaling_to_track = list()
             buckets_to_consider = self.cluster.buckets[self.num_buckets:]
+            self.log.info("bucket considered %s"% buckets_to_consider)
 
             # Pick buckets to delete
-            buckets_to_del = self.__get_req_buckets(
-                buckets_to_consider, width=1,
-                limit=self.dbs_delete_with_width_1[step_index])
-            buckets_to_del.extend(self.__get_req_buckets(
-                buckets_to_consider, width=2,
-                limit=self.dbs_delete_with_width_2[step_index]))
-            buckets_to_del.extend(self.__get_req_buckets(
-                buckets_to_consider, width=3,
-                limit=self.dbs_delete_with_width_3[step_index]))
-            buckets_to_del.extend(self.__get_req_buckets(
-                buckets_to_consider, width=4,
-                limit=self.dbs_delete_with_width_4[step_index]))
-            exclude_buckets.extend(buckets_to_del)
-            self.log.info("Buckets to del: %s" % buckets_to_del)
+            try:
+                buckets_to_del = self.__get_req_buckets(
+                    buckets_to_consider, width=1,
+                    limit=self.dbs_delete_with_width_1[step_index])
+                buckets_to_del.extend(self.__get_req_buckets(
+                    buckets_to_consider, width=2,
+                    limit=self.dbs_delete_with_width_2[step_index]))
+                buckets_to_del.extend(self.__get_req_buckets(
+                    buckets_to_consider, width=3,
+                    limit=self.dbs_delete_with_width_3[step_index]))
+                buckets_to_del.extend(self.__get_req_buckets(
+                    buckets_to_consider, width=4,
+                    limit=self.dbs_delete_with_width_4[step_index]))
+                exclude_buckets.extend(buckets_to_del)
+                self.log.info("Buckets to del: %s" % buckets_to_del)
+            except:
+                buckets_to_del = []
 
             # Pick buckets to perform width scaling (incr by 1)
-            scale_from_width_1 = self.__get_req_buckets(
-                buckets_to_consider, width=1,
-                limit=self.dbs_update_width_from_1[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_from_width_1)
-            self.log.info("Width scale with width=1 %s"
-                          % get_b_names(scale_from_width_1))
+            try:
+                scale_from_width_1 = self.__get_req_buckets(
+                    buckets_to_consider, width=1,
+                    limit=self.dbs_update_width_from_1[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_from_width_1)
+                self.log.info("Width scale with width=1 %s"
+                              % get_b_names(scale_from_width_1))
+            except:
+                scale_from_width_1 = []
 
-            scale_from_width_2 = self.__get_req_buckets(
-                buckets_to_consider, width=2,
-                limit=self.dbs_update_width_from_2[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_from_width_2)
-            self.log.info("Width scale with width=2 %s"
-                          % get_b_names(scale_from_width_2))
+            try:
+                scale_from_width_2 = self.__get_req_buckets(
+                    buckets_to_consider, width=2,
+                    limit=self.dbs_update_width_from_2[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_from_width_2)
+                self.log.info("Width scale with width=2 %s"
+                              % get_b_names(scale_from_width_2))
+            except:
+                scale_from_width_2 = []
 
-            scale_from_width_3 = self.__get_req_buckets(
-                buckets_to_consider, width=3,
-                limit=self.dbs_update_width_from_3[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_from_width_3)
-            self.log.info("Width scale with width=3 %s"
-                          % get_b_names(scale_from_width_3))
+            try:
+                scale_from_width_3 = self.__get_req_buckets(
+                    buckets_to_consider, width=3,
+                    limit=self.dbs_update_width_from_3[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_from_width_3)
+                self.log.info("Width scale with width=3 %s"
+                              % get_b_names(scale_from_width_3))
+            except:
+                scale_from_width_3 = []
 
             # Pick buckets to perform width/weight scaling (incr by 1)
-            scale_width_weight_from_width_1 = self.__get_req_buckets(
-                buckets_to_consider, width=1,
-                limit=self.dbs_update_both_with_width_1[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_width_weight_from_width_1)
-            self.log.info("Both scaling with width=1 %s"
-                          % get_b_names(scale_width_weight_from_width_1))
+            try:
+                scale_width_weight_from_width_1 = self.__get_req_buckets(
+                    buckets_to_consider, width=1,
+                    limit=self.dbs_update_both_with_width_1[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_width_weight_from_width_1)
+                self.log.info("Both scaling with width=1 %s"
+                              % get_b_names(scale_width_weight_from_width_1))
+            except:
+                scale_width_weight_from_width_1 = []
 
-            scale_width_weight_from_width_2 = self.__get_req_buckets(
-                buckets_to_consider, width=2,
-                limit=self.dbs_update_both_with_width_2[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_width_weight_from_width_2)
-            self.log.info("Both scaling with width=2 %s"
-                          % get_b_names(scale_width_weight_from_width_2))
+            try:
+                scale_width_weight_from_width_2 = self.__get_req_buckets(
+                    buckets_to_consider, width=2,
+                    limit=self.dbs_update_both_with_width_2[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_width_weight_from_width_2)
+                self.log.info("Both scaling with width=2 %s"
+                              % get_b_names(scale_width_weight_from_width_2))
+            except:
+                scale_width_weight_from_width_2 = []
 
-            scale_width_weight_from_width_3 = self.__get_req_buckets(
-                buckets_to_consider, width=3,
-                limit=self.dbs_update_both_with_width_3[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_width_weight_from_width_3)
-            self.log.info("Both scaling with width=3 %s"
-                          % get_b_names(scale_width_weight_from_width_3))
+            try:
+                scale_width_weight_from_width_3 = self.__get_req_buckets(
+                    buckets_to_consider, width=3,
+                    limit=self.dbs_update_both_with_width_3[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_width_weight_from_width_3)
+                self.log.info("Both scaling with width=3 %s"
+                              % get_b_names(scale_width_weight_from_width_3))
+            except:
+                scale_width_weight_from_width_3 = []
 
             # Pick buckets to perform weight scaling
-            scale_weight_in_width_1 = self.__get_req_buckets(
-                buckets_to_consider, width=1,
-                limit=self.dbs_update_weight_with_width_1[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_weight_in_width_1)
-            self.log.info("Weight scaling with width=1 %s"
-                          % get_b_names(scale_weight_in_width_1))
+            try:
+                scale_weight_in_width_1 = self.__get_req_buckets(
+                    buckets_to_consider, width=1,
+                    limit=self.dbs_update_weight_with_width_1[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_weight_in_width_1)
+                self.log.info("Weight scaling with width=1 %s"
+                              % get_b_names(scale_weight_in_width_1))
+            except:
+                scale_weight_in_width_1 = []
 
-            scale_weight_in_width_2 = self.__get_req_buckets(
-                buckets_to_consider, width=2,
-                limit=self.dbs_update_weight_with_width_2[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_weight_in_width_2)
-            self.log.info("Weight scaling with width=2 %s"
-                          % get_b_names(scale_weight_in_width_2))
+            try:
+                scale_weight_in_width_2 = self.__get_req_buckets(
+                    buckets_to_consider, width=2,
+                    limit=self.dbs_update_weight_with_width_2[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_weight_in_width_2)
+                self.log.info("Weight scaling with width=2 %s"
+                              % get_b_names(scale_weight_in_width_2))
+            except:
+                scale_weight_in_width_2 = []
 
-            scale_weight_in_width_3 = self.__get_req_buckets(
-                buckets_to_consider, width=3,
-                limit=self.dbs_update_weight_with_width_3[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_weight_in_width_3)
-            self.log.info("Weight scaling with width=3 %s"
-                          % get_b_names(scale_weight_in_width_3))
+            try:
+                scale_weight_in_width_3 = self.__get_req_buckets(
+                    buckets_to_consider, width=3,
+                    limit=self.dbs_update_weight_with_width_3[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_weight_in_width_3)
+                self.log.info("Weight scaling with width=3 %s"
+                              % get_b_names(scale_weight_in_width_3))
+            except:
+                scale_weight_in_width_3 = []
 
-            scale_weight_in_width_4 = self.__get_req_buckets(
-                buckets_to_consider, width=4,
-                limit=self.dbs_update_weight_with_width_4[step_index],
-                exclude_buckets=exclude_buckets)
-            exclude_buckets.extend(scale_weight_in_width_4)
-            self.log.info("Weight scaling with width=4 %s"
-                          % get_b_names(scale_weight_in_width_4))
+            try:
+                scale_weight_in_width_4 = self.__get_req_buckets(
+                    buckets_to_consider, width=4,
+                    limit=self.dbs_update_weight_with_width_4[step_index],
+                    exclude_buckets=exclude_buckets)
+                exclude_buckets.extend(scale_weight_in_width_4)
+                self.log.info("Weight scaling with width=4 %s"
+                              % get_b_names(scale_weight_in_width_4))
+            except:
+                scale_weight_in_width_4 = []
 
             # Pick buckets to load docs
             buckets_to_load_docs = self.__get_req_buckets(
@@ -708,6 +745,9 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
             self.__wait_for_doc_ops_and_validate(data_load_tasks, loader_map)
             self.bucket_util.print_bucket_stats(self.cluster)
             if self.validate_stat:
+                for buckets in [new_buckets, buckets_to_load_docs, scale_width_weight_from_width_1,
+                                scale_width_weight_from_width_2, scale_width_weight_from_width_3]:
+                    self.get_servers_for_databases(buckets)
                 for buckets in [new_buckets, buckets_to_load_docs]:
                     for bucket in buckets:
                         # items_loaded = self.bucket_util.get_actual_items_loaded_to_calculate_wu(
@@ -734,7 +774,7 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
             self.__subsequent_data_load(buckets_to_load_docs)
         self.__wait_for_doc_ops_and_validate(data_load_tasks, loader_map)
         if self.validate_stat:
-            self.bucket_util.validate_stats(self.num_buckets_to_load, self.expected_stat)
+            self.bucket_util.validate_stats(buckets_to_load_docs, self.expected_stat)
 
     def test_volume(self):
         """

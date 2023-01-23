@@ -147,9 +147,13 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     resp = self.serverless_util.delete_dataplane(dataplane_id)
                     self.serverless_util.wait_for_dataplane_deleted(dataplane_id)
 
-    def get_servers_for_databases(self):
+    def get_servers_for_databases(self, buckets=None):
         dataplanes = dict()
-        for bucket in self.cluster.buckets:
+        if buckets:
+            buckets_to_consider = buckets
+        else:
+            buckets_to_consider = self.cluster.buckets
+        for bucket in buckets_to_consider:
             dataplane_id = self.serverless_util.get_database_dataplane_id(
                 self.pod, bucket.name)
             self.log.info("dataplane_id is %s" % dataplane_id)

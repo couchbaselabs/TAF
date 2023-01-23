@@ -5993,6 +5993,11 @@ class BucketUtils(ScopeUtils):
                               % (num_throttle, ru, wu, expected_stats[bucket.name]["num_throttled"],
                                  expected_stats[bucket.name]["ru"],
                                  expected_stats[bucket.name]["wu"]))
+            else:
+                self.log.info("stats matched,actual stats %s %s %s, expected stats %s %s %s"
+                              % (num_throttle, ru, wu, expected_stats[bucket.name]["num_throttled"],
+                                 expected_stats[bucket.name]["ru"],
+                                 expected_stats[bucket.name]["wu"]))
 
     def get_actual_items_loaded_to_calculate_wu(self, expected_items, previous_items, bucket):
         """
