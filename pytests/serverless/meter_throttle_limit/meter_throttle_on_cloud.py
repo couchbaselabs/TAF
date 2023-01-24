@@ -236,7 +236,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         self.num_loop = self.input.param("num_loop", 1)
         # set different throtlle limits for the bucket
         if self.different_throttle:
-            self.throttling_limits = [1000, -1, 10000, 2147483647, 100]
+            self.throttling_limits = [1000, -1, 10000, 2147483647]
         else:
             self.throttling_limits = [self.bucket_throttling_limit]
 
