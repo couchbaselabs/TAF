@@ -234,7 +234,7 @@ class CapellaUtils:
                               format(resp))
         return resp
 
-    def bypass_dataplane(self, dataplane_id):
+    def bypass_dataplane(self, dataplane_id, retries=20):
         """
         :param dataplane_id:
         :return node_endpoint, username, password:
@@ -244,7 +244,7 @@ class CapellaUtils:
                 dataplane_id)
             if resp is None:
                 self.log.critical("Bypassing datapane failed!!!")
-                self.bypass_dataplane(dataplane_id)
+                return self.bypass_dataplane(dataplane_id, retries-1)
             if resp.status_code != 200:
                 raise Exception("Bypass DN failed: %s" % resp.content)
             self.log.info("Response code: {}".format(resp.status_code))
@@ -266,8 +266,10 @@ class CapellaUtils:
             return data["srv"], str(records[0]), data["username"], data["password"]
         except Exception as e:
             self.log.critical("{}: Bypassing datapane failed!!! Retrying...".format(e))
+            if retries <= 0:
+                return "","","",""
             time.sleep(10)
-            self.bypass_dataplane(dataplane_id)
+            return self.bypass_dataplane(dataplane_id, retries-1)
 
     def get_dataplane_info(self, dataplane_id):
         resp = self.capella_api.get_serverless_dataplane_info(dataplane_id)

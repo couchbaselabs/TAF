@@ -102,7 +102,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             self.delete_dataplanes.append(deploy_task.dataplane_id)
 
         if self.dataplanes:
-            self.dataplane_id = self.dataplanes[0]
+            self.dataplane_id = self.dataplanes[-1]
 
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
@@ -119,6 +119,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                                     "Nodes"])
             self.log.info("Bypassing dataplane: {}".format(dataplane_id))
             srv, ip, user, pwd = self.serverless_util.bypass_dataplane(dataplane_id)
+            if "" in [ip,user,pwd]:
+                continue
             dataplane = Dataplane(dataplane_id, srv, user, pwd)
             servers = RestConnection({"ip": ip,
                                       "username": user,
@@ -224,7 +226,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         region = self.input.param("region", AWS.Region.US_EAST_1)
 
         cb_version = cb_image.split("-")[3] if cb_image else ""
-        services_type = self.input.param("services", ["kv", "n1ql", "fts", "index"])
+        services_type = self.input.param("services", "kv:n1ql:fts:index")
+        services_type = services_type.split(":")
         disk_type = self.input.param("disk_type", "gp3")
         kv_disk_size = self.input.param("kv_disk_size", 100)
         index_disk_size = self.input.param("index_disk_size", 100)
