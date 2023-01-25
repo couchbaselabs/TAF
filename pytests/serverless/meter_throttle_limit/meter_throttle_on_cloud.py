@@ -1,11 +1,12 @@
 import random
+import threading
 from serverless.tenant_mgmt_on_cloud import TenantMgmtOnCloud
-from membase.api.rest_client import RestConnection
 
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from Cb_constants import CbServer
 from com.couchbase.test.docgen import DocumentGenerator
 from BucketLib.BucketOperations import BucketHelper
+from couchbase_helper.documentgenerator import doc_generator
 
 
 class MeteringOnCloud(TenantMgmtOnCloud):
@@ -268,7 +269,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                 content = json.loads(output)["errors"]
                 if storagelimit:
                     actual_error = content["dataStorageLimit"]
-                    expected_error = '"dataStorageLimit" must be an integer between -1 and 2147483647'
+                    expected_error = '"dataStorageLimit" must be an integer between -1 and 100000'
                 else:
                     actual_error = content["dataThrottleLimit"]
                     expected_error = '"dataThrottleLimit" must be an integer between -1 and 2147483647'
@@ -304,15 +305,32 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         check_error_msg(status, content)
         check_error_msg(status, content, True)
 
+    def thread_change_limit(self, bucket, throttling_limit, storage_limit):
+        self.sleep(20)
+        self.bucket_util.set_throttle_n_storage_limit(bucket, throttling_limit, storage_limit)
+        self.assertEqual(self.bucket_util.get_throttle_limit(bucket), throttling_limit)
+
     def test_zero_limits(self):
         bucket = self.cluster.buckets[0]
-        end = 10
         for i in [1, 2]:
             if i == 1:
                 self.bucket_util.set_throttle_n_storage_limit(bucket, throttle_limit=0)
+                gen_add = doc_generator(self.key, 0, 100)
+                self.expected_wu = self.bucket_util.calculate_units(15, self.doc_size, num_items=100)
             else:
                 self.bucket_util.set_throttle_n_storage_limit(bucket, storage_limit=0)
-            self.load_data(create_start=0, create_end=end)
+                gen_add = doc_generator(self.key, 100, 200)
+                self.expected_wu += self.bucket_util.calculate_units(15, self.doc_size, num_items=100)
+            thread = threading.Thread(target=self.thread_change_limit, args=(bucket, 5000, 10))
+            thread.start()
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, gen_add, "create", 0,
+                batch_size=10, process_concurrency=8,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                durability=self.durability_level,
+                compression=self.sdk_compression,
+                timeout_secs=self.sdk_timeout)
+            thread.join()
+            self.task_manager.get_task_result(task)
             num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
-            if wu not in [0, 10]:
-                self.fail("expected wu either as 0 or as %s but got %s" % (end, wu))
+            self.assertEqual(self.expected_wu, wu)
