@@ -154,7 +154,8 @@ class DoctorN1QL():
                                 try:
                                     execute_statement_on_n1ql(self.sdkClients[b.name+s], self.idx_q)
                                     break
-                                except PlanningFailureException as e:
+                                except PlanningFailureException or CouchbaseException or UnambiguousTimeoutException or TimeoutException or AmbiguousTimeoutException or RequestCanceledException as e:
+                                    print(e)
                                     retry -= 1
                                     time.sleep(10)
                                     continue

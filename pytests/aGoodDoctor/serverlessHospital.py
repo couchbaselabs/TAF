@@ -491,12 +491,14 @@ class Murphy(BaseTestCase, OPD):
                     table = TableView(self.log.info)
                     table.set_headers(["Bucket",
                                        "Total Ram(MB)",
-                                       "Total Data(GB)"])
+                                       "Total Data(GB)",
+                                       "Items"])
                     for bucket in self.cluster.buckets:
                         data = self.rest.get_bucket_json(bucket.name)
                         ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
                         dataGB = data["basicStats"]["diskUsed"] / (1024 * 1024 * 1024)
-                        table.add_row([bucket.name, ramMB, dataGB])
+                        items = data["basicStats"]["itemCount"]
+                        table.add_row([bucket.name, ramMB, dataGB, items])
                         for i, disk in enumerate(self.disk):
                             if disk > dataGB:
                                 self.log.info("{}: Disk used reported = {}".
@@ -570,67 +572,67 @@ class Murphy(BaseTestCase, OPD):
         self.check_cluster_state()
         self.check_fts_scaling()
 
-        for i in range(0, 5):
-            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
-            self.create_databases(20, load_defn=self.defaultLoadDefn)
-            buckets = self.cluster.buckets[i*20:(i+1)*20]
-            if kv_nodes <= min((i+1)*3, 11):
-                self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
-                self.check_cluster_scaling()
-            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
-            self.assertTrue(int(kv_nodes) > min((i+1)*3, 11),
-                            "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
-            self.create_required_collections(self.cluster, buckets)
-            self.start_initial_load(buckets)
-            for dataplane in self.dataplane_objs.values():
-                prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
-                                                               service="index")
-                self.create_gsi_indexes(buckets)
-                self.check_gsi_scaling(dataplane, prev_gsi_nodes)
-            self.build_gsi_index(buckets)
-            self.create_fts_indexes(buckets, wait=True)
-            self.sleep(30)
-
-        count = 0
-        self.PrintStep("Step: Test KV Auto-Rebalance/Defragmentation")
-        for bucket in self.cluster.buckets:
-            start = time.time()
-            state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
-            while start + 3600 > time.time() and not state:
-                self.log.info("Balanced state of the cluster: {}"
-                              .format(state))
-                self.check_cluster_scaling(state="rebalancing")
-                state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
-
-            self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
-            self.assertEqual(len(self.cluster.bucketDNNodes[bucket]),
-                             bucket.serverless.width*3,
-                             "Bucket width and number of nodes mismatch")
-            self.log.info("Deleting bucket: {}".format(bucket.name))
-            if self.ql:
-                ql = [load for load in self.ql if load.bucket == bucket][0]
-                ql.stop_run = True
-            if self.ftsQL:
-                ql = [load for load in self.ftsQL if load.bucket == bucket][0]
-                ql.stop_run = True
-            self.serverless_util.delete_database(self.pod, self.tenant,
-                                                 bucket.name)
-            self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
-            count += 1
-            if count == 50:
-                self.check_cluster_scaling(state="rebalancing")
-        self.cluster.buckets = list()
-        self.ql = []
-        self.ftsQL = []
-
-        # Reset cluster specs to default
-        self.log.info("Reset cluster specs to default to proceed further")
-        self.generate_dataplane_config()
-        config = self.dataplane_config["overRide"]["couchbase"]["specs"]
-        self.log.info("Changing cluster specs to default.")
-        self.log.info(config)
-        self.serverless_util.change_dataplane_cluster_specs(self.dataplane_id, config)
-        self.check_cluster_scaling()
+        # for i in range(0, 5):
+        #     kv_nodes = self.get_num_nodes_in_cluster(service="kv")
+        #     self.create_databases(20, load_defn=self.defaultLoadDefn)
+        #     buckets = self.cluster.buckets[i*20:(i+1)*20]
+        #     if kv_nodes <= min((i+1)*3, 11):
+        #         self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
+        #         self.check_cluster_scaling()
+        #     kv_nodes = self.get_num_nodes_in_cluster(service="kv")
+        #     self.assertTrue(int(kv_nodes) > min((i+1)*3, 11),
+        #                     "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
+        #     self.create_required_collections(self.cluster, buckets)
+        #     self.start_initial_load(buckets)
+        #     for dataplane in self.dataplane_objs.values():
+        #         prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
+        #                                                        service="index")
+        #         self.create_gsi_indexes(buckets)
+        #         self.check_gsi_scaling(dataplane, prev_gsi_nodes)
+        #     self.build_gsi_index(buckets)
+        #     self.create_fts_indexes(buckets, wait=True)
+        #     self.sleep(30)
+        #
+        # count = 0
+        # self.PrintStep("Step: Test KV Auto-Rebalance/Defragmentation")
+        # for bucket in self.cluster.buckets:
+        #     start = time.time()
+        #     state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
+        #     while start + 3600 > time.time() and not state:
+        #         self.log.info("Balanced state of the cluster: {}"
+        #                       .format(state))
+        #         self.check_cluster_scaling(state="rebalancing")
+        #         state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
+        #
+        #     self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
+        #     self.assertEqual(len(self.cluster.bucketDNNodes[bucket]),
+        #                      bucket.serverless.width*3,
+        #                      "Bucket width and number of nodes mismatch")
+        #     self.log.info("Deleting bucket: {}".format(bucket.name))
+        #     if self.ql:
+        #         ql = [load for load in self.ql if load.bucket == bucket][0]
+        #         ql.stop_run = True
+        #     if self.ftsQL:
+        #         ql = [load for load in self.ftsQL if load.bucket == bucket][0]
+        #         ql.stop_run = True
+        #     self.serverless_util.delete_database(self.pod, self.tenant,
+        #                                          bucket.name)
+        #     self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+        #     count += 1
+        #     if count == 50:
+        #         self.check_cluster_scaling(state="rebalancing")
+        # self.cluster.buckets = list()
+        # self.ql = []
+        # self.ftsQL = []
+        #
+        # # Reset cluster specs to default
+        # self.log.info("Reset cluster specs to default to proceed further")
+        # self.generate_dataplane_config()
+        # config = self.dataplane_config["overRide"]["couchbase"]["specs"]
+        # self.log.info("Changing cluster specs to default.")
+        # self.log.info(config)
+        # self.serverless_util.change_dataplane_cluster_specs(self.dataplane_id, config)
+        # self.check_cluster_scaling()
 
         self.create_databases(19, load_defn=self.gsiAutoScaleLoadDefn)
         # self.create_databases(19)

@@ -290,8 +290,11 @@ class OPD:
         bucket.delete_start = 0
         bucket.expire_end = 0
         bucket.expire_start = 0
-        bucket.final_items = 0
-        bucket.initial_items = self.final_items
+        try:
+            bucket.final_items
+        except:
+            bucket.final_items = 0
+        bucket.initial_items = bucket.final_items
 
         doc_ops = doc_ops or self.doc_ops or bucket.loadDefn.get("load_type")
         self.mutations_to_validate = doc_ops
@@ -449,10 +452,11 @@ class OPD:
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, buckets, timeout=14400)
                 if self.track_failures:
-                    self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                              self.final_items,
-                                                              timeout=14400,
-                                                              buckets=buckets)
+                    for bucket in buckets:
+                        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                                  bucket.final_items,
+                                                                  timeout=14400,
+                                                                  buckets=[bucket])
             except Exception as e:
                 if not self.cluster.type == "default":
                     self.get_gdb()
