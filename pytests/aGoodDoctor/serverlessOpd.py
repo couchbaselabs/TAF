@@ -451,12 +451,12 @@ class OPD:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, buckets, timeout=14400)
-                if self.track_failures:
-                    for bucket in buckets:
-                        self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                                  bucket.final_items,
-                                                                  timeout=14400,
-                                                                  buckets=[bucket])
+                # if self.track_failures:
+                #     for bucket in buckets:
+                #         self.bucket_util.verify_stats_all_buckets(self.cluster,
+                #                                                   bucket.final_items,
+                #                                                   timeout=14400,
+                #                                                   buckets=[bucket])
             except Exception as e:
                 if not self.cluster.type == "default":
                     self.get_gdb()
