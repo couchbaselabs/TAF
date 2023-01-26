@@ -23,7 +23,8 @@ from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
 from couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import DocumentExistsException,\
-    TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
+    TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException,\
+    RequestCanceledException
 import time
 from custom_exceptions.exception import RebalanceFailedException
 from Cb_constants.CBServer import CbServer
@@ -430,18 +431,24 @@ class OPD:
                 for failure in failures:
                     if failure is not None:
                         print("Test Retrying {}: {}{} -> {}".format(optype, unique_str, failure.id(), failure.err().getClass().getSimpleName()))
-                        try:
-                            if optype == "create":
-                                task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions)
-                            if optype == "update":
-                                task.docops.upsert(failure.id(), failure.document(), task.sdk.connection, task.upsertOptions)
-                            if optype == "delete":
-                                task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions)
-                        except (ServerOutOfMemoryException, TimeoutException) as e:
-                            print("Retry {} failed for key: {} - {}".format(optype, failure.id(), e))
-                            task.result = False
-                        except (DocumentNotFoundException, DocumentExistsException) as e:
-                            pass
+                        retry = 5
+                        while retry > 0:
+                            retry -= 1
+                            try:
+                                if optype == "create":
+                                    task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions)
+                                if optype == "update":
+                                    task.docops.upsert(failure.id(), failure.document(), task.sdk.connection, task.upsertOptions)
+                                if optype == "delete":
+                                    task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions)
+                                break
+                            except (ServerOutOfMemoryException, TimeoutException, RequestCanceledException) as e:
+                                print("Retry {} failed for key: {} - {}".format(optype, failure.id(), e))
+                                time.sleep(2)
+                            except (DocumentNotFoundException, DocumentExistsException) as e:
+                                break
+                            if retry == 0:
+                                task.result = False
             # try:
             #     task.sdk.disconnectCluster()
             # except Exception as e:

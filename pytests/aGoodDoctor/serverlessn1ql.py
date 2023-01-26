@@ -31,7 +31,7 @@ queries = ['select name from {} where age between 30 and 50 limit 100;',
            'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 100;',
            'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 100;']
 
-auto_scale_queries = ['select age from {} where age between 30 and 50;',
+auto_scale_queries = ['select AVG(age) from {} where age between 30 and 50;',
                       'select body from {} where body is not null and age between 0 and 50;',
                       'select age, count(*) from {} where marital = "M" group by age;',
                       'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" and animal is not null;',
@@ -143,6 +143,7 @@ class DoctorN1QL():
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
                     if b.name+s not in self.sdkClients.keys():
                         self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
+                        time.sleep(5)
                     for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
                         if c == "_default":
                             continue
@@ -160,13 +161,11 @@ class DoctorN1QL():
                                     time.sleep(10)
                                     continue
                             i += 1
-                            print "Index: {}".format(self.idx_q)
                         if q < b.loadDefn.get("2i")[1]:
                             if b.loadDefn.get("type") == "gsi_auto_scale":
                                 b.queries.append((auto_scale_queries[q % len(indexes)].format(c), self.sdkClients[b.name+s]))
                             else:
                                 b.queries.append((queries[q % len(indexes)].format(c), self.sdkClients[b.name+s]))
-                            print "Query: {}".format(queries[q % len(indexes)].format(c))
                             q += 1
 
     def wait_for_indexes_online(self, logger, dataplane_objs, buckets, timeout=86400):
@@ -208,7 +207,6 @@ class DoctorN1QL():
                         build = True
                         build_query = "BUILD INDEX on `%s`(%s) USING GSI" % (
                             collection, ",".join(sorted(d.get(collection))))
-                        print build_query
                         time.sleep(1)
                         start = time.time()
                         while time.time() < start + 600:
@@ -302,6 +300,7 @@ class QueryLoad:
         self.total_query_count = 0
         self.stop_run = False
         self.log = logger.get("infra")
+        self.cluster_conn = None
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries,
@@ -311,6 +310,14 @@ class QueryLoad:
         monitor = threading.Thread(target=self.monitor_query_status,
                                    kwargs=dict(print_duration=600))
         monitor.start()
+
+    def stop_query_load(self):
+        self.stop_run = True
+        try:
+            if self.cluster_conn:
+                self.cluster_conn.close()
+        except:
+            pass
 
     def _run_concurrent_queries(self, bucket):
         threads = []
@@ -322,6 +329,7 @@ class QueryLoad:
             self.total_query_count += 1
             self.currently_running += 1
             query = random.choice(self.queries)
+            self.cluster_conn = query[1]
             threads.append(Thread(
                 target=self._run_query,
                 name="query_thread_{0}".format(self.total_query_count),

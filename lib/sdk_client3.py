@@ -248,7 +248,8 @@ class SDKClient(object):
         SDKClient.sdk_connections += 1
 
     def __create_conn(self):
-        self.log.debug("Creating SDK connection for '%s'" % self.bucket)
+        if self.bucket:
+            self.log.debug("Creating SDK connection for '%s'" % self.bucket)
         # Having 'None' will enable us to test without sending any
         # compression settings and explicitly setting to 'False' as well
         cluster_env = None

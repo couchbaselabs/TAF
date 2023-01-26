@@ -276,6 +276,14 @@ class FTSQueryLoad:
                                    kwargs=dict(print_duration=600))
         monitor.start()
 
+    def stop_query_load(self):
+        self.stop_run = True
+        try:
+            if self.cluster_conn:
+                self.cluster_conn.close()
+        except:
+            pass
+
     def _run_concurrent_queries(self, bucket):
         threads = []
         self.total_query_count = 0

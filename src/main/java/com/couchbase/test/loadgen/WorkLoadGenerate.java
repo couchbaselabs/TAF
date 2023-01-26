@@ -39,7 +39,6 @@ public class WorkLoadGenerate extends Task{
     public SDKClient sdk;
     public DocOps docops;
     public String durability;
-    public HashMap<String, List<Result>> failedMutations = new HashMap<String, List<Result>>();
     public boolean trackFailures = true;
     public int retryTimes = 0;
     public int exp;
@@ -55,6 +54,7 @@ public class WorkLoadGenerate extends Task{
     public String scope = "_default";
     public String collection = "_default";
     public boolean stop_loading = false;
+    public HashMap<String, List<Result>> failedMutations;
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability) {
         super(taskName);
@@ -62,6 +62,7 @@ public class WorkLoadGenerate extends Task{
         this.docops = new DocOps();
         this.sdk = client;
         this.durability = durability;
+        this.failedMutations = new HashMap<String, List<Result>>();
     }
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClientPool client_pool, String durability) {
@@ -70,6 +71,7 @@ public class WorkLoadGenerate extends Task{
         this.docops = new DocOps();
         this.sdkClientPool = client_pool;
         this.durability = durability;
+        this.failedMutations = new HashMap<String, List<Result>>();
     }
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability,
@@ -83,6 +85,7 @@ public class WorkLoadGenerate extends Task{
         this.retryTimes = retryTimes;
         this.exp = exp;
         this.exp_unit = exp_unit;
+        this.failedMutations = new HashMap<String, List<Result>>();
     }
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClientPool client_pool, String durability,
@@ -96,6 +99,7 @@ public class WorkLoadGenerate extends Task{
         this.retryTimes = retryTimes;
         this.exp = exp;
         this.exp_unit = exp_unit;
+        this.failedMutations = new HashMap<String, List<Result>>();
     }
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability,
@@ -110,6 +114,7 @@ public class WorkLoadGenerate extends Task{
         this.exp = exp;
         this.exp_unit = exp_unit;
         this.retryStrategy = retryStrategy;
+        this.failedMutations = new HashMap<String, List<Result>>();
     }
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClientPool client_pool, String durability,
@@ -124,6 +129,7 @@ public class WorkLoadGenerate extends Task{
         this.exp = exp;
         this.exp_unit = exp_unit;
         this.retryStrategy = retryStrategy;
+        this.failedMutations = new HashMap<String, List<Result>>();
     }
 
     public void stop_work_load() {
@@ -170,12 +176,12 @@ public class WorkLoadGenerate extends Task{
 
         Instant trackFailureTime_start = Instant.now();
         while(! this.stop_loading) {
-        	if (this.sdkClientPool != null)
+            if (this.sdkClientPool != null)
                 this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
             Instant trackFailureTime_end = Instant.now();
             Duration timeElapsed = Duration.between(trackFailureTime_start, trackFailureTime_end);
             if(timeElapsed.toMinutes() > 5) {
-                for (Entry<String, List<Result>> optype: failedMutations.entrySet())
+                for (Entry<String, List<Result>> optype: this.failedMutations.entrySet())
                     System.out.println("Failed mutations count so far: " + optype.getKey() + " == " + optype.getValue().size());
                 trackFailureTime_start = Instant.now();
             }
@@ -188,9 +194,9 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.creates/100;
                     if(trackFailures && result.size()>0)
                         try {
-                            failedMutations.get("create").addAll(result);
+                            this.failedMutations.get("create").addAll(result);
                         } catch (Exception e) {
-                            failedMutations.put("create", result);
+                            this.failedMutations.put("create", result);
                         }
                 }
             }
@@ -202,9 +208,9 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.updates/100;
                     if(trackFailures && result.size()>0)
                         try {
-                            failedMutations.get("update").addAll(result);
+                            this.failedMutations.get("update").addAll(result);
                         } catch (Exception e) {
-                            failedMutations.put("update", result);
+                            this.failedMutations.put("update", result);
                         }
                 }
             }
@@ -216,9 +222,9 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.expiry/100;
                     if(trackFailures && result.size()>0)
                         try {
-                            failedMutations.get("expiry").addAll(result);
+                            this.failedMutations.get("expiry").addAll(result);
                         } catch (Exception e) {
-                            failedMutations.put("expiry", result);
+                            this.failedMutations.put("expiry", result);
                         }
                 }
             }
@@ -230,9 +236,9 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.deletes/100;
                     if(trackFailures && result.size()>0)
                         try {
-                            failedMutations.get("delete").addAll(result);
+                            this.failedMutations.get("delete").addAll(result);
                         } catch (Exception e) {
-                            failedMutations.put("delete", result);
+                            this.failedMutations.put("delete", result);
                         }
                 }
             }
@@ -298,17 +304,20 @@ public class WorkLoadGenerate extends Task{
         }
         System.out.println(this.taskName + " is completed!");
         this.result = true;
-        if (retryTimes > 0 && failedMutations.size() > 0)
-        	if (this.sdkClientPool != null)
+        if (this.retryTimes > 0 && this.failedMutations.size() > 0) {
+            System.out.println(this.retryTimes);
+            System.out.println(this.failedMutations.size());
+            this.retryTimes -= 1;
+            if (this.sdkClientPool != null)
                 this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
-            for (Entry<String, List<Result>> optype: failedMutations.entrySet()) {
+            for (Entry<String, List<Result>> optype: this.failedMutations.entrySet()) {
                 for (Result r: optype.getValue()) {
                     System.out.println("Loader Retrying: " + r.id() + " -> " + r.err().getClass().getSimpleName());
                     switch(optype.getKey()) {
                     case "create":
                         try {
                             docops.insert(r.id(), r.document(), this.sdk.connection, setOptions);
-                            failedMutations.get(optype.getKey()).remove(r);
+                            this.failedMutations.get(optype.getKey()).remove(r);
                         } catch (TimeoutException|ServerOutOfMemoryException e) {
                             System.out.println("Retry Create failed for key: " + r.id());
                             this.result = false;
@@ -318,7 +327,7 @@ public class WorkLoadGenerate extends Task{
                     case "update":
                         try {
                             docops.upsert(r.id(), r.document(), this.sdk.connection, upsertOptions);
-                            failedMutations.get(optype.getKey()).remove(r);
+                            this.failedMutations.get(optype.getKey()).remove(r);
                         } catch (TimeoutException|ServerOutOfMemoryException e) {
                             System.out.println("Retry update failed for key: " + r.id());
                             this.result = false;
@@ -328,7 +337,7 @@ public class WorkLoadGenerate extends Task{
                     case "delete":
                         try {
                             docops.delete(r.id(), this.sdk.connection, removeOptions);
-                            failedMutations.get(optype.getKey()).remove(r);
+                            this.failedMutations.get(optype.getKey()).remove(r);
                         } catch (TimeoutException|ServerOutOfMemoryException e) {
                             System.out.println("Retry delete failed for key: " + r.id());
                             this.result = false;
@@ -340,5 +349,6 @@ public class WorkLoadGenerate extends Task{
                 if(this.sdkClientPool != null)
                     this.sdkClientPool.release_client(this.sdk);
             }
+        }
     }
 }
