@@ -87,6 +87,7 @@ class Murphy(BaseTestCase, OPD):
         self.key_type = self.input.param("key_type", "SimpleKey")
         self.val_type = self.input.param("val_type", "SimpleValue")
         self.ops_rate = self.input.param("ops_rate", 10000)
+        self.gtm = self.input.param("gtm", False)
         self.cursor_dropping_checkpoint = self.input.param(
             "cursor_dropping_checkpoint", None)
         self.index_timeout = self.input.param("index_timeout", 3600)
