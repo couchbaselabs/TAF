@@ -224,6 +224,7 @@ class MeteringOnCloud(TenantMgmtOnCloud):
                 self.update_expected_stat(self.key_size, self.doc_size,
                                           0, self.num_items, self.cluster.buckets)
         if self.with_deletion:
+            self.log.info("performing delete operation")
             self.load_data(delete_start=0, delete_end=self.num_items, delete_perc=100)
             self.update_expected_stat(self.key_size, self.doc_size,
                                       0, self.num_items, self.cluster.buckets)
@@ -315,22 +316,15 @@ class MeteringOnCloud(TenantMgmtOnCloud):
         for i in [1, 2]:
             if i == 1:
                 self.bucket_util.set_throttle_n_storage_limit(bucket, throttle_limit=0)
-                gen_add = doc_generator(self.key, 0, 100)
-                self.expected_wu = self.bucket_util.calculate_units(15, self.doc_size, num_items=100)
+                create_start, create_end = 0, 100
+                self.expected_wu = self.bucket_util.calculate_units(self.key_size, self.doc_size, num_items=100)
             else:
                 self.bucket_util.set_throttle_n_storage_limit(bucket, storage_limit=0)
-                gen_add = doc_generator(self.key, 100, 200)
-                self.expected_wu += self.bucket_util.calculate_units(15, self.doc_size, num_items=100)
+                create_start, create_end = 100, 200
+                self.expected_wu += self.bucket_util.calculate_units(self.key_size, self.doc_size, num_items=100)
             thread = threading.Thread(target=self.thread_change_limit, args=(bucket, 5000, 10))
             thread.start()
-            task = self.task.async_load_gen_docs(
-                self.cluster, bucket, gen_add, "create", 0,
-                batch_size=10, process_concurrency=8,
-                replicate_to=self.replicate_to, persist_to=self.persist_to,
-                durability=self.durability_level,
-                compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout)
+            self.load_data(create_start=create_start, create_end=create_end, create_perc=100)
             thread.join()
-            self.task_manager.get_task_result(task)
             num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
             self.assertEqual(self.expected_wu, wu)
