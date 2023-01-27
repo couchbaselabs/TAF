@@ -37,6 +37,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # Cluster level info settings
         self.log_info = self.input.param("log_info", None)
+        self.disable_max_fo_count = self.input.param("disable_max_fo_count",
+                                                     'false')
         self.log_location = self.input.param("log_location", None)
         self.stat_info = self.input.param("stat_info", None)
         self.port = self.input.param("port", None)
