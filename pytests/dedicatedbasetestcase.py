@@ -83,7 +83,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.cluster_name_format = "C%s"
         default_cluster_index = cluster_index = 1
 
-        if self.input.capella.get("image"):
+        if self.input.capella.get("image") or self.input.capella.get("server_version"):
             self.generate_cluster_config_internal()
         else:
             self.generate_cluster_config()
@@ -256,6 +256,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             region=self.input.param("region", AWS.Region.US_WEST_2),
             timezone=Cluster.Timezone.PT,
             plan=Cluster.Plan.DEV_PRO,
+            version=self.input.capella.get("server_version", None),
             cluster_name="taf_cluster")
 
         services = self.input.param("services", "data")
@@ -346,7 +347,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "package": "developerPro",
             "projectId": None,
             "description": "",
-            "server": None
+            "server": self.input.capella["server_version"]
         }
 
         if self.input.capella.get("image"):

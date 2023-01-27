@@ -19,21 +19,25 @@ class CapellaUtils(object):
                            plan=Cluster.Plan.DEV_PRO,
                            timezone=Cluster.Timezone.PT,
                            cluster_name="taf_cluster",
+                           version=None,
                            description=""):
-        return {"environment": environment,
-                "clusterName": cluster_name,
-                "projectId": "",
-                "description": description,
-                "place": {"singleAZ": single_az,
-                          "hosted": {"provider": provider,
-                                     "region": region,
-                                     "CIDR": None
-                                     }
-                          },
-                "servers": list(),
-                "supportPackage": {"timezone": timezone,
-                                   "type": plan}
-                }
+        config = {"environment": environment,
+                  "clusterName": cluster_name,
+                  "projectId": "",
+                  "description": description,
+                  "place": {"singleAZ": single_az,
+                            "hosted": {"provider": provider,
+                                       "region": region,
+                                       "CIDR": None
+                                       }
+                            },
+                  "servers": list(),
+                  "supportPackage": {"timezone": timezone,
+                                     "type": plan},
+                  }
+        if version:
+            config.update({"server": version})
+        return config
 
     @staticmethod
     def get_cluster_config_spec(services, count,
@@ -97,7 +101,7 @@ class CapellaUtils(object):
                                      tenant.api_access_key,
                                      tenant.user,
                                      tenant.pwd)
-            if cluster_details.get("overRide"):
+            if cluster_details.get("overRide") or cluster_details.get("server"):
                 cluster_details.update({"cidr": subnet})
                 cluster_details.update({"projectId": tenant.project_id})
                 capella_api_resp = capella_api.create_cluster_customAMI(tenant.id, cluster_details)
