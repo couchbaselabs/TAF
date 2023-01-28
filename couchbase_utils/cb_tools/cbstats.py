@@ -162,7 +162,7 @@ class Cbstats(CbCmdBase):
         col_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):name:" \
                            "[ \t]+([a-zA-Z_0-9%-]+)"
         collection_stat_pattern = \
-            "[ \t]*%s:%s:([0-9A-Za-z_]+):[ \t]+([0-9]+)"
+            "[ \t]*%s:%s:([0-9A-Za-z_]+):[ \t]+([a-z0-9]+)"
 
         manifest_uid_pattern = re.compile(manifest_uid_pattern)
         scope_name_pattern = re.compile(scope_name_pattern)

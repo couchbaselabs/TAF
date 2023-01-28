@@ -905,11 +905,24 @@ class CollectionUtils(DocLoaderUtils):
         collection = CollectionUtils.get_collection_obj(scope, collection_name)
 
         # If collection already dropped with same name use it or create one
+        if "history" not in collection_spec.keys():
+            collection_spec["history"] = \
+                BucketUtils.get_expected_default_retention_for_collections(
+                    bucket)
         if collection:
             Collection.recreated(collection, collection_spec)
         else:
             collection = Collection(collection_spec)
             scope.collections[collection_name] = collection
+
+    @staticmethod
+    def set_history_retention_for_collection(cluster_node, bucket,
+                                             scope, collection, history):
+        status, content = BucketHelper(cluster_node).set_collection_history(
+            bucket.name, scope, collection, history=history)
+        if status:
+            bucket.scopes[scope].collections[collection].history = history
+        return status, content
 
     @staticmethod
     def mark_collection_as_dropped(bucket, scope_name, collection_name):
@@ -1709,7 +1722,10 @@ class BucketUtils(ScopeUtils):
             purge_interval=1,
             autoCompactionDefined="false",
             fragmentation_percentage=50,
-            bucket_name="default"):
+            bucket_name="default",
+            history_retention_collection_default="true",
+            history_retention_bytes=0,
+            history_retention_seconds=0):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -1737,7 +1753,10 @@ class BucketUtils(ScopeUtils):
              Bucket.durabilityMinLevel: bucket_durability,
              Bucket.purge_interval: purge_interval,
              Bucket.autoCompactionDefined: autoCompactionDefined,
-             Bucket.fragmentationPercentage: fragmentation_percentage})
+             Bucket.fragmentationPercentage: fragmentation_percentage,
+             Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
+             Bucket.historyRetentionSeconds: history_retention_seconds,
+             Bucket.historyRetentionBytes: history_retention_bytes})
         self.create_bucket(cluster, bucket_obj, wait_for_warmup)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets(cluster, [bucket_obj.name])
@@ -1944,6 +1963,8 @@ class BucketUtils(ScopeUtils):
                 cluster.buckets.append(task.bucket_obj)
 
         for bucket in cluster.buckets:
+            def_hist = self.get_expected_default_retention_for_collections(
+                bucket)
             if not buckets_spec.get(bucket.name):
                 continue
             for scope_name, scope_spec \
@@ -1961,6 +1982,8 @@ class BucketUtils(ScopeUtils):
                     self.create_collection_object(bucket,
                                                   scope_name,
                                                   c_spec)
+                    if "history" not in c_spec:
+                        bucket.scopes[scope_name].collections[c_name].history = def_hist
 
         if load_data_from_existing_tar:
             for bucket_name, bucket_spec in buckets_spec.items():
@@ -2076,6 +2099,14 @@ class BucketUtils(ScopeUtils):
                 bucket_obj = bucket
                 break
         return bucket_obj
+
+    @staticmethod
+    def get_expected_default_retention_for_collections(bucket):
+        if bucket.historyRetentionCollectionDefault == "true" \
+                and (bucket.historyRetentionBytes > 0
+                     or bucket.historyRetentionSeconds > 0):
+            return "true"
+        return "false"
 
     def print_bucket_stats(self, cluster):
         table = TableView(self.log.info)
@@ -2276,13 +2307,19 @@ class BucketUtils(ScopeUtils):
                                replica_number=None, replica_index=None,
                                flush_enabled=None, time_synchronization=None,
                                max_ttl=None, compression_mode=None,
-                               bucket_durability=None):
-        BucketHelper(cluster_node).change_bucket_props(
+                               bucket_durability=None,
+                               history_retention_collection_default=None,
+                               history_retention_bytes=None,
+                               history_retention_seconds=None):
+        return BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
             timeSynchronization=time_synchronization, maxTTL=max_ttl,
             compressionMode=compression_mode,
-            bucket_durability=bucket_durability)
+            bucket_durability=bucket_durability,
+            history_retention_collection_default=history_retention_collection_default,
+            history_retention_seconds=history_retention_seconds,
+            history_retention_bytes=history_retention_bytes)
 
     def update_all_bucket_maxTTL(self, cluster, maxttl=0):
         for bucket in cluster.buckets:
@@ -2583,6 +2620,43 @@ class BucketUtils(ScopeUtils):
                                                     stat[key_pair[1]]))
 
         return validation_passed
+
+    def validate_history_retention_settings(self, kv_node, buckets):
+        result = True
+        shell = RemoteMachineShellConnection(kv_node)
+        cb_stat = Cbstats(shell)
+        if not isinstance(buckets, list):
+            buckets = [buckets]
+        for bucket in buckets:
+            stat = cb_stat.all_stats(bucket.name)
+            if stat["ep_history_retention_bytes"] \
+                    != bucket.historyRetentionBytes:
+                result = False
+                self.log.critical("Hist retention bytes mismatch. "
+                                  "Expected: %s, Actual: %s"
+                                  % (bucket.historyRetentionBytes,
+                                     stat["ep_history_retention_bytes"]))
+            if stat["ep_history_retention_seconds"] \
+                    != bucket.historyRetentionSeconds:
+                result = False
+                self.log.critical("Hist retention seconds mismatch. "
+                                  "Expected: %s, Actual: %s"
+                                  % (bucket.historyRetentionSeconds,
+                                     stat["ep_history_retention_seconds"]))
+
+            stat = cb_stat.get_collections(bucket)
+            for s_name, scope in bucket.scopes.items():
+                for c_name, col in scope.collections.items():
+                    val_as_per_test = col.history
+                    val_as_per_stat = stat[s_name][c_name]["history"]
+                    if val_as_per_test != val_as_per_stat:
+                        result = False
+                        self.log.critical(
+                            "%s - %s:%s:%s - Expected %s. Actual: %s"
+                            % (kv_node.ip, bucket.name, s_name, c_name,
+                               val_as_per_test, val_as_per_stat))
+        shell.disconnect()
+        return result
 
     def wait_for_collection_creation_to_complete(self, cluster, timeout=60):
         self.log.info("Waiting for all collections to be created")

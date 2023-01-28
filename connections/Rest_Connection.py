@@ -214,6 +214,9 @@ class RestConnection(object):
                 elif method == "PUT":
                     response = session.put(api, data=params, headers=headers,
                                            timeout=timeout, verify=verify)
+                elif method == "PATCH":
+                    response = session.patch(api, data=params, headers=headers,
+                                             timeout=timeout, verify=verify)
                 status = response.status_code
                 content = response.content
                 if status in [200, 201, 202, 204]:

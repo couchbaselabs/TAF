@@ -323,9 +323,22 @@ class BucketHelper(RestConnection):
             init_params["viewFragmentationThreshold%5Bpercentage%5D"] = 50
             init_params["indexCompactionMode"] = "circular"
             init_params["purgeInterval"] = 3
-        if bucket_params.get("fragmentationPercentage") and \
-           bucket_params.get('storageBackend') == Bucket.StorageBackend.magma:
-            init_params["magmaFragmentationPercentage"] = bucket_params.get("fragmentationPercentage")
+
+        if bucket_params.get('storageBackend') == Bucket.StorageBackend.magma:
+            if bucket_params.get("fragmentationPercentage"):
+                init_params["magmaFragmentationPercentage"] \
+                    = bucket_params.get("fragmentationPercentage")
+
+            # CDC params (Only valid for magma)
+            val = bucket_params.get(Bucket.historyRetentionCollectionDefault,
+                                    None)
+            if val is not None:
+                init_params[Bucket.historyRetentionCollectionDefault] = val
+            for target_key in [Bucket.historyRetentionBytes,
+                               Bucket.historyRetentionSeconds]:
+                if target_key in bucket_params:
+                    init_params[target_key] = bucket_params.get(target_key)
+
         if init_params[Bucket.priority] == "high":
             init_params[Bucket.threadsNumber] = 8
         init_params.pop(Bucket.priority)
@@ -398,7 +411,10 @@ class BucketHelper(RestConnection):
                             replicaNumber=None ,proxyPort=None,
                             replicaIndex=None, flushEnabled=None,
                             timeSynchronization=None, maxTTL=None,
-                            compressionMode=None, bucket_durability=None):
+                            compressionMode=None, bucket_durability=None,
+                            history_retention_collection_default=None,
+                            history_retention_bytes=None,
+                            history_retention_seconds=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
@@ -421,6 +437,16 @@ class BucketHelper(RestConnection):
             params_dict["compressionMode"] = compressionMode
         if bucket_durability:
             params_dict[Bucket.durabilityMinLevel] = bucket_durability
+
+        if history_retention_collection_default is not None:
+            params_dict[Bucket.historyRetentionCollectionDefault] \
+                = history_retention_collection_default
+        if history_retention_bytes is not None:
+            params_dict[Bucket.historyRetentionBytes] \
+                = history_retention_bytes
+        if history_retention_seconds is not None:
+            params_dict[Bucket.historyRetentionSeconds] \
+                = history_retention_seconds
         params = urllib.urlencode(params_dict)
 
         self.log.info("Updating bucket properties for %s" % bucket)
@@ -436,6 +462,16 @@ class BucketHelper(RestConnection):
         self.log.debug("Bucket %s updated" % bucket)
         bucket.__dict__.update(params_dict)
         return status
+
+    def set_collection_history(self, bucket_name, scope, collection,
+                               history=False):
+        api = self.baseUrl \
+            + "/pools/default/buckets/%s/scopes/%s/collections/%s" \
+            % (bucket_name, scope, collection)
+        params = {"history": 'true' if history else 'false'}
+        params = urllib.urlencode(params)
+        status, content, _ = self._http_request(api, "PATCH", params)
+        return status, content
 
     def get_auto_compaction_settings(self):
         api = self.baseUrl + "settings/autoCompaction"
@@ -636,7 +672,7 @@ class BucketHelper(RestConnection):
               % (urllib.quote_plus("%s" % bucket), urllib.quote_plus(scope))
         params = dict()
         for key, value in collection_spec.items():
-            if key in ['name', 'maxTTL']:
+            if key in ['name', 'maxTTL', 'history']:
                 params[key] = value
         params = urllib.urlencode(params)
         headers = self._create_headers()

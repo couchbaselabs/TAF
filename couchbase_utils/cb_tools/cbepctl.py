@@ -25,9 +25,10 @@ class Cbepctl(CbCmdBase):
         cmd = "%s localhost:%s -u %s -p %s -b %s set %s %s %s" \
               % (self.cbstatCmd, self.mc_port, self.username, self.password,
                  bucket_name, set_type, key, value)
-        _, error = self._execute_cmd(cmd)
+        output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception("\n".join(error))
+        return output
 
     def persistence(self, bucket_name, action):
         """

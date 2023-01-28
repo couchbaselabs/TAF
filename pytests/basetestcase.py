@@ -114,10 +114,12 @@ class BaseTestCase(unittest.TestCase):
                                                       1)
         self.bucket_durability_level = \
             BucketDurability[self.bucket_durability_level]
-        self.bucket_dedup_retention_size = \
-            self.input.param("bucket_dedup_retention_size", None)
-        self.bucket_dedup_retention_time = \
-            self.input.param("bucket_dedup_retention_time", None)
+        self.bucket_collection_history_retention_default = \
+            self.input.param("default_history_retention_for_collections", None)
+        self.bucket_dedup_retention_seconds = \
+            self.input.param("bucket_history_retention_seconds", None)
+        self.bucket_dedup_retention_bytes = \
+            self.input.param("bucket_history_retention_bytes", None)
         # End of bucket parameters
 
         # Doc specific params
@@ -1109,7 +1111,10 @@ class ClusterSetup(BaseTestCase):
             purge_interval=self.bucket_purge_interval,
             autoCompactionDefined="false",
             fragmentation_percentage=50,
-            bucket_name=bucket_name)
+            bucket_name=bucket_name,
+            history_retention_collection_default=self.bucket_collection_history_retention_default,
+            history_retention_seconds=self.bucket_dedup_retention_seconds,
+            history_retention_bytes=self.bucket_dedup_retention_bytes)
 
         # Add bucket create event in system event log
         if self.system_events.test_start_time is not None:
