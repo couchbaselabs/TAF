@@ -81,6 +81,7 @@ class Collection(object):
         self.name = collection_spec.get("name")
         self.num_items = collection_spec.get("num_items", 0)
         self.maxTTL = collection_spec.get("maxTTL", 0)
+        self.history = collection_spec.get("history", "false")
 
         # Meta data for test case validation
         self.is_dropped = False
@@ -93,7 +94,8 @@ class Collection(object):
         return self.name
 
     def get_dict_object(self):
-        return {"name": self.name, "maxTTL": self.maxTTL}
+        return {"name": self.name, "maxTTL": self.maxTTL,
+                "history": self.history}
 
     @staticmethod
     def flushed(collection_obj, skip_resetting_num_items=False):
@@ -112,6 +114,7 @@ class Collection(object):
     def recreated(collection_obj, collection_spec):
         collection_obj.num_items = collection_spec.get("num_items", 0)
         collection_obj.maxTTL = collection_spec.get("maxTTL", 0)
+        collection_obj.history = collection_spec.get("history", "false")
 
         # Update meta fields
         collection_obj.is_dropped = False
@@ -151,6 +154,9 @@ class Bucket(object):
     numVBuckets = "numVBuckets"
     width = "width"
     weight = "weight"
+    historyRetentionCollectionDefault = "historyRetentionCollectionDefault"
+    historyRetentionSeconds = "historyRetentionSeconds"
+    historyRetentionBytes = "historyRetentionBytes"
 
     # Tracks the last bucket/scope/collection counter created in the cluster
     bucket_counter = Counter()
@@ -244,6 +250,12 @@ class Bucket(object):
             Bucket.autoCompactionDefined, "false")
         self.fragmentationPercentage = new_params.get(
             Bucket.fragmentationPercentage, False)
+        self.historyRetentionCollectionDefault = new_params.get(
+            Bucket.historyRetentionCollectionDefault, "true")
+        self.historyRetentionBytes = new_params.get(
+            Bucket.historyRetentionBytes, 0)
+        self.historyRetentionSeconds = new_params.get(
+            Bucket.historyRetentionSeconds, 0)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
@@ -279,7 +291,8 @@ class Bucket(object):
 
         # Create default scope-collection association
         scope = Scope({"name": CbServer.default_scope})
-        collection = Collection({"name": CbServer.default_collection})
+        collection = Collection({"name": CbServer.default_collection,
+                                 "history": "false"})
         scope.collections[CbServer.default_collection] = collection
         self.scopes[CbServer.default_scope] = scope
 

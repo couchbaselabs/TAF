@@ -1215,11 +1215,22 @@ class CollectionUtils(DocLoaderUtils):
         collection = CollectionUtils.get_collection_obj(scope, collection_name)
 
         # If collection already dropped with same name use it or create one
+        if "history" not in collection_spec.keys():
+            collection_spec["history"] = bucket.historyRetentionCollectionDefault
         if collection:
             Collection.recreated(collection, collection_spec)
         else:
             collection = Collection(collection_spec)
             scope.collections[collection_name] = collection
+
+    @staticmethod
+    def set_history_retention_for_collection(cluster_node, bucket,
+                                             scope, collection, history):
+        status, content = BucketHelper(cluster_node).set_collection_history(
+            bucket.name, scope, collection, history=history)
+        if status:
+            bucket.scopes[scope].collections[collection].history = history
+        return status, content
 
     @staticmethod
     def mark_collection_as_dropped(bucket, scope_name, collection_name):
@@ -2034,7 +2045,10 @@ class BucketUtils(ScopeUtils):
             autoCompactionDefined="false",
             fragmentation_percentage=50,
             bucket_name="default",
-            vbuckets=None, weight=None, width=None):
+            vbuckets=None, weight=None, width=None,
+            history_retention_collection_default="true",
+            history_retention_bytes=0,
+            history_retention_seconds=0):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2065,7 +2079,10 @@ class BucketUtils(ScopeUtils):
              Bucket.fragmentationPercentage: fragmentation_percentage,
              Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
-             Bucket.weight: weight})
+             Bucket.weight: weight,
+             Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
+             Bucket.historyRetentionSeconds: history_retention_seconds,
+             Bucket.historyRetentionBytes: history_retention_bytes})
         if cluster.type == "dedicated":
             bucket_params = {
                 CloudCluster.Bucket.name: bucket_obj.name,
@@ -2463,6 +2480,10 @@ class BucketUtils(ScopeUtils):
                     if type(c_spec) is not dict:
                         continue
                     c_spec["name"] = c_name
+                    if "history" not in c_spec:
+                        c_spec["history"] = "false"
+                        if c_name != CbServer.default_collection:
+                            c_spec["history"] = bucket.historyRetentionCollectionDefault
                     if cluster.type == "serverless" \
                             and c_name != CbServer.default_collection:
                         self.create_collection(bucket.servers[0], bucket,
@@ -2820,14 +2841,20 @@ class BucketUtils(ScopeUtils):
                                flush_enabled=None, time_synchronization=None,
                                max_ttl=None, compression_mode=None,
                                bucket_durability=None, bucket_width=None,
-                               bucket_weight=None):
-        BucketHelper(cluster_node).change_bucket_props(
+                               bucket_weight=None,
+                               history_retention_collection_default=None,
+                               history_retention_bytes=None,
+                               history_retention_seconds=None):
+        return BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
             timeSynchronization=time_synchronization, maxTTL=max_ttl,
             compressionMode=compression_mode,
             bucket_durability=bucket_durability, bucketWidth=bucket_width,
-            bucketWeight=bucket_weight)
+            bucketWeight=bucket_weight,
+            history_retention_collection_default=history_retention_collection_default,
+            history_retention_seconds=history_retention_seconds,
+            history_retention_bytes=history_retention_bytes)
 
     def update_memcached_num_threads_settings(self, cluster_node,
                                               num_writer_threads=None,
@@ -3129,6 +3156,41 @@ class BucketUtils(ScopeUtils):
                                                     stat[key_pair[1]]))
 
         return validation_passed
+
+    def validate_history_retention_settings(self, kv_node, buckets):
+        result = True
+        cb_stat = Cbstats(kv_node)
+        if not isinstance(buckets, list):
+            buckets = [buckets]
+        for bucket in buckets:
+            stat = cb_stat.all_stats(bucket.name)
+            if stat["ep_history_retention_bytes"] \
+                    != bucket.historyRetentionBytes:
+                result = False
+                self.log.critical("Hist retention bytes mismatch. "
+                                  "Expected: %s, Actual: %s"
+                                  % (bucket.historyRetentionBytes,
+                                     stat["ep_history_retention_bytes"]))
+            if stat["ep_history_retention_seconds"] \
+                    != bucket.historyRetentionSeconds:
+                result = False
+                self.log.critical("Hist retention seconds mismatch. "
+                                  "Expected: %s, Actual: %s"
+                                  % (bucket.historyRetentionSeconds,
+                                     stat["ep_history_retention_seconds"]))
+
+            stat = cb_stat.get_collections(bucket)
+            for s_name, scope in bucket.scopes.items():
+                for c_name, col in scope.collections.items():
+                    val_as_per_test = col.history
+                    val_as_per_stat = stat[s_name][c_name]["history"]
+                    if val_as_per_test != val_as_per_stat:
+                        result = False
+                        self.log.critical(
+                            "%s - %s:%s:%s - Expected %s. Actual: %s"
+                            % (kv_node.ip, bucket.name, s_name, c_name,
+                               val_as_per_test, val_as_per_stat))
+        return result
 
     def wait_for_collection_creation_to_complete(self, cluster, timeout=60):
         self.log.info("Waiting for all collections to be created")

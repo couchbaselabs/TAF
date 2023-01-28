@@ -73,6 +73,12 @@ class CouchbaseBaseTest(unittest.TestCase):
                                                       1)
         self.bucket_durability_level = \
             BucketDurability[self.bucket_durability_level]
+        self.bucket_collection_history_retention_default = \
+            self.input.param("default_history_retention_for_collections", None)
+        self.bucket_dedup_retention_seconds = \
+            self.input.param("bucket_history_retention_seconds", None)
+        self.bucket_dedup_retention_bytes = \
+            self.input.param("bucket_history_retention_bytes", None)
         # End of bucket params
 
         # Doc specific params

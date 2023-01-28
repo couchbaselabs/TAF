@@ -1099,7 +1099,10 @@ class ClusterSetup(OnPremBaseTest):
             "fragmentation_percentage": 50,
             "bucket_name": bucket_name,
             "width": self.bucket_width,
-            "weight": self.bucket_weight
+            "weight": self.bucket_weight,
+            "history_retention_collection_default": self.bucket_collection_history_retention_default,
+            "history_retention_seconds": self.bucket_dedup_retention_seconds,
+            "history_retention_bytes": self.bucket_dedup_retention_bytes
         }
 
         # This is needed because server will throw the error saying,
