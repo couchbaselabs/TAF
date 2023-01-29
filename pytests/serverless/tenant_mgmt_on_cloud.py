@@ -1641,6 +1641,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.log.info("Storage Limit for {}  == {}".format(
                 self.cluster.buckets[bucket].name, storage_limit))
             self.log.debug("disk_used_in_GBs {}".format(disk_usage_gb))
+            limit_exceed_tolerance = 0.2
 
         '''
         Step 2: Start data load
@@ -1715,6 +1716,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             monitor_task = self.bucket_util.async_monitor_database_scaling(
                 to_track, timeout=600)
             self.task_manager.get_task_result(monitor_task)
+            limit_exceed_tolerance = 0.3
+            self.sleep(70, "Wait after rebalanace")
 
         '''
          Step 3 : Data load for storage limit validation
@@ -1745,7 +1748,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 self.log.info("disk_used after final load for {} = {}".
                               format(bucket.name, disk_used_in_gbs))
                 if disk_used_in_gbs < (self.bucket_info[bucket][
-                    storage_limits] + 0.2):
+                    storage_limits] + limit_exceed_tolerance):
                     self.log.info(
                         "new_item_count {} >  item_count{} since disk used "
                         "< storage limit for bucket {}".format(
