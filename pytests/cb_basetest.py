@@ -142,8 +142,8 @@ class CouchbaseBaseTest(unittest.TestCase):
         # initial number of items in the cluster
         self.services_init = self.input.param("services_init", None)
         self.nodes_init = self.input.param("nodes_init", 1)
-        self.nodes_in = self.input.param("nodes_in", 1)
-        self.nodes_out = self.input.param("nodes_out", 1)
+        self.nodes_in = self.input.param("nodes_in", 0)
+        self.nodes_out = self.input.param("nodes_out", 0)
 
         # variable for log collection using cbCollect
         self.get_cbcollect_info = self.input.param("get-cbcollect-info", False)
