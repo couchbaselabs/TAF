@@ -188,8 +188,8 @@ class BaseTestCase(unittest.TestCase):
         # initial number of items in the cluster
         self.services_init = self.input.param("services_init", None)
         self.nodes_init = self.input.param("nodes_init", 1)
-        self.nodes_in = self.input.param("nodes_in", 1)
-        self.nodes_out = self.input.param("nodes_out", 1)
+        self.nodes_in = self.input.param("nodes_in", 0)
+        self.nodes_out = self.input.param("nodes_out", 0)
         self.services_in = self.input.param("services_in", None)
         self.forceEject = self.input.param("forceEject", False)
         self.wait_timeout = self.input.param("wait_timeout", 120)
