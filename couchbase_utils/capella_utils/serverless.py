@@ -145,8 +145,9 @@ class CapellaUtils:
             }
             self.log.info(
                 "waiting for database to be deleted {}".format(msg))
-        raise Exception("timeout waiting for database to be deleted {}".format(
+        self.log.critical("timeout waiting for database to be deleted {}".format(
             {"database_id": database_id}))
+        return False
 
     def get_database_details(self, pod, tenant, database_id):
         resp = self.capella_api.get_serverless_db_info(tenant.id, tenant.project_id,
