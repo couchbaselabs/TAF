@@ -906,9 +906,7 @@ class CollectionUtils(DocLoaderUtils):
 
         # If collection already dropped with same name use it or create one
         if "history" not in collection_spec.keys():
-            collection_spec["history"] = \
-                BucketUtils.get_expected_default_retention_for_collections(
-                    bucket)
+            collection_spec["history"] = bucket.historyRetentionCollectionDefault
         if collection:
             Collection.recreated(collection, collection_spec)
         else:
@@ -1963,8 +1961,6 @@ class BucketUtils(ScopeUtils):
                 cluster.buckets.append(task.bucket_obj)
 
         for bucket in cluster.buckets:
-            def_hist = self.get_expected_default_retention_for_collections(
-                bucket)
             if not buckets_spec.get(bucket.name):
                 continue
             for scope_name, scope_spec \
@@ -1982,8 +1978,6 @@ class BucketUtils(ScopeUtils):
                     self.create_collection_object(bucket,
                                                   scope_name,
                                                   c_spec)
-                    if "history" not in c_spec:
-                        bucket.scopes[scope_name].collections[c_name].history = def_hist
 
         if load_data_from_existing_tar:
             for bucket_name, bucket_spec in buckets_spec.items():
@@ -2099,14 +2093,6 @@ class BucketUtils(ScopeUtils):
                 bucket_obj = bucket
                 break
         return bucket_obj
-
-    @staticmethod
-    def get_expected_default_retention_for_collections(bucket):
-        if bucket.historyRetentionCollectionDefault == "true" \
-                and (bucket.historyRetentionBytes > 0
-                     or bucket.historyRetentionSeconds > 0):
-            return "true"
-        return "false"
 
     def print_bucket_stats(self, cluster):
         table = TableView(self.log.info)
