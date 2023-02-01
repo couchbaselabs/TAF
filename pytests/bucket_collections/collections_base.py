@@ -118,6 +118,7 @@ class CollectionBase(ClusterSetup):
             "magma_dgm.20_percent_dgm.5_node_2_replica_magma_ttl_1024",
             "magma_dgm.40_percent_dgm.5_node_2_replica_magma_ttl_512",
             "magma_dgm.80_percent_dgm.5_node_2_replica_magma_ttl_512",
+            "magma_dgm.1_percent_dgm.5_node_3_replica_magma_ttl_768_single_bucket"
         ]
 
         self.bucket_util.add_rbac_user(self.cluster.master)
