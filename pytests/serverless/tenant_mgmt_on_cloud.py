@@ -944,7 +944,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.log.info("Dropping DB: %s" % db_to_drop.name)
         self.serverless_util.delete_database(self.pod, self.tenant, db_to_drop)
         # Wait for create DB to complete
-        self.log.info("Wait for %s creation to complete: %s" % db_to_drop.name)
+        self.log.info("Wait for database creation to complete: %s" %
+                      db_to_drop.name)
         self.task_manager.get_task_result(task)
         self.task_manager.get_task_result(monitor_task)
 
