@@ -1975,6 +1975,10 @@ class BucketUtils(ScopeUtils):
                     if type(c_spec) is not dict:
                         continue
                     c_spec["name"] = c_name
+                    c_spec["history"] = "false"
+                    if c_name != CbServer.default_collection:
+                        c_spec["history"] = bucket.historyRetentionCollectionDefault
+
                     self.create_collection_object(bucket,
                                                   scope_name,
                                                   c_spec)
