@@ -6,7 +6,7 @@ class Cbepctl(CbCmdBase):
                  password="password"):
         CbCmdBase.__init__(self, shell_conn, "cbepctl",
                            username=username, password=password)
-        if CbServer.cluster_profile == "serverless":
+        if CbServer.cluster_profile == "serverless" or CbServer.use_https:
             # https://issues.couchbase.com/browse/MB-47567
             self.mc_port = 11210
 

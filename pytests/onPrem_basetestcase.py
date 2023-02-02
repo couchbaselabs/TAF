@@ -512,10 +512,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     cluster, False, self.ipv4_only, self.ipv6_only)
 
         # Disable n2n encryption on nodes of all clusters
-        if self.use_https and self.enforce_tls:
-            for _, cluster in self.cb_clusters.items():
-                task = self.node_utils.async_disable_tls(cluster.master)
-                self.task_manager.get_task_result(task)
+        if self.use_https:
+            if self.enforce_tls:
+                for _, cluster in self.cb_clusters.items():
+                    task = self.node_utils.async_disable_tls(cluster.master)
+                    self.task_manager.get_task_result(task)
             # Set CbServer.use_https to False when
             # n2n encryption level is not strict
             CbServer.use_https = False
