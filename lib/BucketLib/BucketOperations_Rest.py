@@ -464,11 +464,11 @@ class BucketHelper(RestConnection):
         return status
 
     def set_collection_history(self, bucket_name, scope, collection,
-                               history=False):
+                               history="false"):
         api = self.baseUrl \
             + "/pools/default/buckets/%s/scopes/%s/collections/%s" \
             % (bucket_name, scope, collection)
-        params = {"history": 'true' if history else 'false'}
+        params = {"history": history}
         params = urllib.urlencode(params)
         status, content, _ = self._http_request(api, "PATCH", params)
         return status, content
