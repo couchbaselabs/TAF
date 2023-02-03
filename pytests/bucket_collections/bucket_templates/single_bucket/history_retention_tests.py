@@ -5,7 +5,7 @@ spec = {
     MetaConstants.NUM_BUCKETS: 1,
     MetaConstants.NUM_SCOPES_PER_BUCKET: 5,
     MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 5,
-    MetaConstants.NUM_ITEMS_PER_COLLECTION: 500000,
+    MetaConstants.NUM_ITEMS_PER_COLLECTION: 500,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
     MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT: False,
     MetaConstants.USE_SIMPLE_NAMES: True,

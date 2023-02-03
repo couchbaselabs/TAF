@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import DiskAutoFailoverBasetest
@@ -111,6 +112,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def test_disk_failure_for_read_and_writes(self):
         task = None
         self.enable_disk_autofailover_and_validate()
+        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
         else:
@@ -125,6 +127,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.validate_loadgen_tasks()
         else:
             self.wait_for_async_data_load_to_complete(task)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -186,6 +189,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         task = None
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
+        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket._async_load_all_buckets(
@@ -205,6 +209,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.validate_loadgen_tasks()
         else:
             self.wait_for_async_data_load_to_complete(task)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -223,6 +228,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         self.failover_actions[self.failover_action]()
+        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
@@ -256,6 +262,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.validate_loadgen_tasks()
         else:
             self.wait_for_async_data_load_to_complete(task)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -276,6 +283,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         self.failover_actions[self.failover_action]()
+        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket._async_load_all_buckets(
@@ -307,6 +315,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.validate_loadgen_tasks()
         else:
             self.wait_for_async_data_load_to_complete(task)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()
 
@@ -327,6 +336,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.enable_disk_autofailover_and_validate()
         self.sleep(5)
         self.failover_actions[self.failover_action]()
+        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
@@ -352,5 +362,6 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.validate_loadgen_tasks()
         else:
             self.wait_for_async_data_load_to_complete(task)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.disable_disk_autofailover_and_validate()
         self.disable_autofailover_and_validate()

@@ -1,7 +1,7 @@
 from math import ceil
 from random import sample
 
-from Cb_constants import CbServer, DocLoading
+from Cb_constants import DocLoading, CbServer
 from basetestcase import ClusterSetup
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
@@ -67,6 +67,7 @@ class CollectionBase(ClusterSetup):
                 num_reader_threads="disk_io_optimized")
         try:
             self.collection_setup()
+            CollectionBase.setup_collection_history_settings(self)
         except Java_base_exception as exception:
             self.handle_setup_exception(exception)
         except Exception as exception:
@@ -165,6 +166,133 @@ class CollectionBase(ClusterSetup):
                 bucket=bucket, servers=[master],
                 req_clients=req_clients,
                 compression_settings=sdk_compression)
+
+    @staticmethod
+    def setup_collection_history_settings(test_obj):
+        if test_obj.bucket_dedup_retention_bytes is None \
+                and test_obj.bucket_dedup_retention_seconds is None:
+            return
+        test_obj.log.info("Loading initial historical dedupe data")
+        for bucket in test_obj.cluster.buckets:
+            if bucket.storageBackend != Bucket.StorageBackend.magma:
+                continue
+            num_cols = 0
+            cols = list()
+            for s_name, scope in bucket.scopes.items():
+                for c_name, col in scope.collections.items():
+                    if c_name == CbServer.default_collection:
+                        continue
+                    cols.append([s_name, c_name])
+                    num_cols += 1
+
+            num_cols = int(num_cols * .9)
+            cols = sample(cols, num_cols)
+            test_obj.log.debug("{0} - Enabling history on collections: {1}"
+                               .format(bucket.name, cols))
+            for col in cols:
+                test_obj.bucket_util.set_history_retention_for_collection(
+                    test_obj.cluster.master, bucket, col[0], col[1], "true")
+
+            # Setting default_collection_history_policy=true
+            # This will make new collections to be created with history=on
+            test_obj.bucket_util.update_bucket_property(
+                test_obj.cluster.master, bucket,
+                history_retention_collection_default="true")
+        # Validate bucket/collection's history retention settings
+        result = test_obj.bucket_util.validate_history_retention_settings(
+            test_obj.cluster.master, test_obj.cluster.buckets)
+        test_obj.assertTrue(result, "History setting validation failed")
+        # Create history docs on disks
+        test_obj.mutate_history_retention_data(
+            test_obj, doc_key="test_collections", update_percent=1,
+            update_itrs=10000)
+
+    @staticmethod
+    def get_history_retention_load_spec(test_obj, doc_key="test_collections",
+                                        update_percent=1, update_itrs=1000,
+                                        doc_ttl=0):
+        return {
+            "doc_crud": {
+                MetaCrudParams.DocCrud.DOC_SIZE: test_obj.doc_size,
+                MetaCrudParams.DocCrud.RANDOMIZE_VALUE: True,
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: doc_key,
+
+                MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION:
+                    (update_percent, update_itrs),
+            },
+            MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all",
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: 5,
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: 5,
+            MetaCrudParams.DOC_TTL: doc_ttl,
+            MetaCrudParams.SKIP_READ_ON_ERROR: True,
+            MetaCrudParams.SUPPRESS_ERROR_TABLE: True,
+        }
+
+    @staticmethod
+    def start_history_retention_data_load(test_obj, async_load=True):
+        cont_doc_load = None
+        if test_obj.bucket_dedup_retention_seconds is not None \
+                or test_obj.bucket_dedup_retention_bytes is not None:
+            update_percent, update_itr = 2, 10000
+            if async_load:
+                update_itr = -1
+            test_obj.log.info("Starting dedupe updates load ({0}, {1})"
+                              .format(update_percent, update_itr))
+            load_spec = CollectionBase.get_history_retention_load_spec(
+                test_obj, doc_key="hist_retention_docs",
+                update_percent=update_percent, update_itrs=update_itr)
+            CollectionBase.over_ride_doc_loading_template_params(test_obj, load_spec)
+            test_obj.set_retry_exceptions(load_spec)
+
+            cont_doc_load = test_obj.bucket_util.run_scenario_from_spec(
+                test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
+                load_spec, mutation_num=0, async_load=async_load,
+                print_ops_rate=False, batch_size=500, process_concurrency=1,
+                validate_task=(not test_obj.skip_validations))
+        return cont_doc_load
+
+    @staticmethod
+    def wait_for_cont_doc_load_to_complete(test_obj, load_task):
+        if load_task is not None:
+            load_task.stop_indefinite_doc_loading_tasks()
+            test_obj.task_manager.get_task_result(load_task)
+            CollectionBase.remove_docs_created_for_dedupe_load(
+                test_obj, load_task)
+
+    @staticmethod
+    def remove_docs_created_for_dedupe_load(test_obj, spec_load_task):
+        # Remove all docs created by dedupe data loader
+        for bucket, scope_dict in spec_load_task.loader_spec.items():
+            for s_name, collection_dict in scope_dict["scopes"].items():
+                for c_name, crud_spec in collection_dict["collections"].items():
+                    for crud_name, crud_info in crud_spec.items():
+                        crud_spec[DocLoading.Bucket.DocOps.DELETE] = crud_info
+                        crud_info["iterations"] = 1
+                        crud_spec.pop(crud_name)
+        task = test_obj.task.async_load_gen_docs_from_spec(
+            test_obj.cluster, test_obj.task_manager,
+            spec_load_task.loader_spec, test_obj.sdk_client_pool,
+            batch_size=1000, process_concurrency=1, track_failures=False,
+            print_ops_rate=False, start_task=True)
+        test_obj.task_manager.get_task_result(task)
+        test_obj.bucket_util._wait_for_stats_all_buckets(
+            test_obj.cluster, test_obj.cluster.buckets)
+
+    @staticmethod
+    def mutate_history_retention_data(test_obj, doc_key="test_collections",
+                                      update_percent=1, update_itrs=1000,
+                                      doc_ttl=0):
+        test_obj.log.info("Loading docs for history_retention testing")
+        load_spec = CollectionBase.get_history_retention_load_spec(
+            test_obj, doc_key=doc_key, update_percent=update_percent,
+            update_itrs=update_itrs, doc_ttl=doc_ttl)
+        test_obj.over_ride_doc_loading_template_params(test_obj, load_spec)
+
+        cont_doc_load = test_obj.bucket_util.run_scenario_from_spec(
+            test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
+            load_spec, mutation_num=0, async_load=False,
+            batch_size=500, process_concurrency=1, validate_task=True)
+        test_obj.assertTrue(cont_doc_load.result, "Hist retention load failed")
 
     @staticmethod
     def deploy_buckets_from_spec_file(test_obj):
@@ -302,6 +430,9 @@ class CollectionBase(ClusterSetup):
                 elif key == "magma_seq_tree_data_block_size":
                     bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
                         = int(test_obj.magma_seq_tree_data_block_size)
+                elif key == "remove_default_collection":
+                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
+                        test_obj.input.param(key)
         else:
             for key, val in test_obj.input.test_params.items():
                 if key == "replicas":
@@ -359,6 +490,19 @@ class CollectionBase(ClusterSetup):
                 target_spec["doc_crud"][
                     MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
                     = test_obj.randomize_value
+
+    @staticmethod
+    def set_retry_exceptions(test_obj, doc_loading_spec):
+        retry_exceptions = list()
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        retry_exceptions.append(SDKException.DocumentNotFoundException)
+        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        if test_obj.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \

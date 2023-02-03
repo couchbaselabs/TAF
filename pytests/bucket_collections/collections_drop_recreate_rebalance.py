@@ -158,6 +158,13 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS: "all",
             MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_OPS: "all",
         }
+        if self.bucket_dedup_retention_seconds \
+                or self.bucket_dedup_retention_bytes:
+            spec["doc_crud"] = {
+                MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION:
+                    (1, 100)
+            }
+
         return spec
 
     def print_spec_details(self, spec, cycles, elapsed_time):
@@ -193,12 +200,15 @@ class CollectionsDropRecreateRebalance(CollectionBase):
     def load_collections_with_rebalance(self, rebalance_operation):
         self.pick_nodes_for_rebalance()
 
+        cont_load_task = None
         if self.N1qltxn:
             self.N1ql_load_task = self.task.async_n1qlTxn_query( self.stmts,
                  n1ql_helper=self.n1ql_helper,
                  commit=True,
                  scan_consistency="REQUEST_PLUS")
         else:
+            cont_load_task = \
+                CollectionBase.start_history_retention_data_load(self)
             self.data_load_flag = True
             self.data_loading_thread = threading.Thread(target=self.data_load)
             self.data_loading_thread.start()
@@ -230,6 +240,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.data_load_flag = False
         if not self.N1qltxn:
             self.data_loading_thread.join()
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_loading_thread = None
         if self.data_load_exception:
             self.log.error("Caught exception from data load thread")
@@ -237,12 +248,15 @@ class CollectionsDropRecreateRebalance(CollectionBase):
 
     def load_collections_with_failover(self, rebalance_operation):
         self.pick_nodes_for_failover(rebalance_operation)
+        cont_load_task = None
         if self.N1qltxn:
-            self.N1ql_load_task = self.task.async_n1qlTxn_query( self.stmts,
+            self.N1ql_load_task = self.task.async_n1qlTxn_query(self.stmts,
                  n1ql_helper=self.n1ql_helper,
                  commit=True,
                  scan_consistency="REQUEST_PLUS")
         else:
+            cont_load_task = \
+                CollectionBase.start_history_retention_data_load(self)
             self.data_load_flag = True
             self.data_loading_thread = threading.Thread(target=self.data_load)
             self.data_loading_thread.start()
@@ -272,6 +286,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         if not self.N1qltxn:
             self.data_loading_thread.join()
         self.data_loading_thread = None
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         if self.data_load_exception:
             self.log.error("Caught exception from data load thread")
             self.fail(self.data_load_exception)
