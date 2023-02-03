@@ -70,8 +70,6 @@ from testconstants import MAX_COMPACTION_THRESHOLD, \
 from sdk_client3 import SDKClient
 from couchbase_helper.tuq_generators import JsonGenerator
 from StatsLib.StatsOperations import StatsHelper
-from cluster_utils.cluster_ready_functions import Nebula
-import global_vars
 
 from com.couchbase.client.core.error import DocumentExistsException, \
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
@@ -3164,14 +3162,14 @@ class BucketUtils(ScopeUtils):
             buckets = [buckets]
         for bucket in buckets:
             stat = cb_stat.all_stats(bucket.name)
-            if stat["ep_history_retention_bytes"] \
+            if int(stat["ep_history_retention_bytes"]) \
                     != bucket.historyRetentionBytes:
                 result = False
                 self.log.critical("Hist retention bytes mismatch. "
                                   "Expected: %s, Actual: %s"
                                   % (bucket.historyRetentionBytes,
                                      stat["ep_history_retention_bytes"]))
-            if stat["ep_history_retention_seconds"] \
+            if int(stat["ep_history_retention_seconds"]) \
                     != bucket.historyRetentionSeconds:
                 result = False
                 self.log.critical("Hist retention seconds mismatch. "
@@ -3184,12 +3182,13 @@ class BucketUtils(ScopeUtils):
                 for c_name, col in scope.collections.items():
                     val_as_per_test = col.history
                     val_as_per_stat = stat[s_name][c_name]["history"]
+                    log_msg = "%s - %s:%s:%s - Expected %s. Actual: %s" \
+                              % (kv_node.ip, bucket.name, s_name, c_name,
+                                 val_as_per_test, val_as_per_stat)
+                    self.log.debug(log_msg)
                     if val_as_per_test != val_as_per_stat:
                         result = False
-                        self.log.critical(
-                            "%s - %s:%s:%s - Expected %s. Actual: %s"
-                            % (kv_node.ip, bucket.name, s_name, c_name,
-                               val_as_per_test, val_as_per_stat))
+                        self.log.critical(log_msg)
         return result
 
     def wait_for_collection_creation_to_complete(self, cluster, timeout=60):
