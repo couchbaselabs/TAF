@@ -284,6 +284,9 @@ class CollectionBase(ClusterSetup):
                 elif key == "magma_seq_tree_data_block_size":
                     bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
                         = int(test_obj.magma_seq_tree_data_block_size)
+                elif key == "remove_default_collection":
+                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
+                        test_obj.input.param(key)
         else:
             for key, val in test_obj.input.test_params.items():
                 if key == "replicas":

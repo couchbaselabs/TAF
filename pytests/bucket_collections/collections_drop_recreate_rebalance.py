@@ -156,6 +156,13 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS: "all",
             MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_OPS: "all",
         }
+        if self.bucket_dedup_retention_seconds \
+                or self.bucket_dedup_retention_bytes:
+            spec["doc_crud"] = {
+                MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION:
+                    (1, 100)
+            }
+
         return spec
 
     def print_spec_details(self, spec, cycles, elapsed_time):

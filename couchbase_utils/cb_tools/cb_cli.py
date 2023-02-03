@@ -83,6 +83,29 @@ class CbCli(CbCmdBase):
             raise Exception(str(error))
         return output
 
+    def edit_bucket(self, bucket_name, **params):
+        cmd = "%s bucket-edit -c %s:%s -u %s -p %s --bucket %s" \
+              % (self.cbstatCmd, "localhost", self.port,
+                 self.username, self.password, bucket_name)
+
+        for key, value in params.items():
+            if key == Bucket.ramQuotaMB:
+                cmd += " --bucket-ramsize " + str(value)
+            if key == Bucket.evictionPolicy:
+                cmd += " --bucket-eviction-policy " + value
+            if key == Bucket.replicaNumber:
+                cmd += " --bucket-replica " + str(value)
+            if key == Bucket.priority:
+                cmd += " --bucket-priority " + value
+            if key == Bucket.flushEnabled:
+                cmd += " --enable-flush " + str(value)
+
+        cmd += self.cli_flags
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception(str(error))
+        return output
+
     def enable_dp(self):
         """
         Method to enable developer-preview

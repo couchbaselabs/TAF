@@ -2636,8 +2636,13 @@ class BucketUtils(ScopeUtils):
         cb_stat = Cbstats(shell)
         if not isinstance(buckets, list):
             buckets = [buckets]
+        self.log.debug("Validating history retention settings on node %s"
+                       % kv_node.ip)
         for bucket in buckets:
             stat = cb_stat.all_stats(bucket.name)
+            self.log.debug("Hist. retention bytes=%s, seconds=%s"
+                           % (stat["ep_history_retention_bytes"],
+                              stat["ep_history_retention_seconds"]))
             if int(stat["ep_history_retention_bytes"]) \
                     != bucket.historyRetentionBytes:
                 result = False

@@ -24,14 +24,22 @@ class DocHistoryRetention(ClusterSetup):
         self.spec_name = self.input.param("bucket_spec", None)
         self.data_spec_name = self.input.param("data_spec_name",
                                                "initial_load")
+
+        # Overriding values from basetest to load
         if self.spec_name:
             self.bucket_util.add_rbac_user(self.cluster.master)
             CollectionBase.deploy_buckets_from_spec_file(self)
             CollectionBase.create_clients_for_sdk_pool(self)
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            self.validate_retention_settings_on_all_nodes()
 
         # Prints bucket stats
         self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Set max_ttl value for testing
+        self.maxttl = self.input.param("doc_ttl", 0)
+        self.durability_level = self.input.param("doc_durability",
+                                                 "NONE").upper()
 
         self.log.info("Opening shell connections")
         for node in self.cluster.nodes_in_cluster:
@@ -43,6 +51,12 @@ class DocHistoryRetention(ClusterSetup):
             shell.disconnect()
 
         super(DocHistoryRetention, self).tearDown()
+
+    def validate_retention_settings_on_all_nodes(self):
+        for node in self.cluster.nodes_in_cluster:
+            result = self.bucket_util.validate_history_retention_settings(
+                node, self.cluster.buckets)
+            self.assertTrue(result, "History retention validation failed")
 
     def __create_bucket(self, params):
         bucket_helper = BucketHelper(self.cluster.master)
@@ -139,18 +153,26 @@ class DocHistoryRetention(ClusterSetup):
                 == expected_dcp_items_to_send + num_mutations,
                 "Stat mismatch")
 
-    @staticmethod
-    def get_loader_spec(update_percent=0, update_itr=-1,
-                        replace_percent=0, replace_itr=-1):
+    def get_loader_spec(self, update_percent=0, update_itr=-1,
+                        replace_percent=0, replace_itr=-1,
+                        buckets_to_consider="all", scopes_to_consider="all",
+                        cols_to_consider="all"):
         return {
             "doc_crud": {
+                MetaCrudParams.DocCrud.DOC_SIZE: self.doc_size,
                 MetaCrudParams.DocCrud.RANDOMIZE_VALUE: False,
                 MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+
                 MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION:
                     (update_percent, update_itr),
                 MetaCrudParams.DocCrud.CONT_REPLACE_PERCENT_PER_COLLECTION:
                     (replace_percent, replace_itr),
-            }
+            },
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: cols_to_consider,
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: scopes_to_consider,
+            MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD:buckets_to_consider,
+            MetaCrudParams.DOC_TTL: self.maxttl,
+            MetaCrudParams.DURABILITY_LEVEL: self.durability_level,
         }
 
     def run_data_ops_on_individual_collection(self, bucket):
@@ -592,12 +614,6 @@ class DocHistoryRetention(ClusterSetup):
 
             self.bucket_util.print_bucket_stats(self.cluster)
 
-        def validate_retention_settings():
-            for node in self.cluster.nodes_in_cluster:
-                result = self.bucket_util.validate_history_retention_settings(
-                    node, self.cluster.buckets)
-                self.assertTrue(result, "History retention validation failed")
-
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
                 "multi_bucket.history_retention_tests")
         # Process params to over_ride values if required
@@ -606,7 +622,7 @@ class DocHistoryRetention(ClusterSetup):
                                                         buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
-        validate_retention_settings()
+        self.validate_retention_settings_on_all_nodes()
 
         CollectionBase.create_clients_for_sdk_pool(self)
         CollectionBase.load_data_from_spec_file(self, "initial_load")
@@ -621,7 +637,7 @@ class DocHistoryRetention(ClusterSetup):
                 history_retention_bytes=0, history_retention_seconds=0)
             self.assertTrue(status, "Updating history settings failed")
 
-        validate_retention_settings()
+        self.validate_retention_settings_on_all_nodes()
         # Consecutive data load
         data_spec = self.get_loader_spec(update_percent=1, update_itr=200)
         consecutive_data_load(data_spec)
@@ -634,7 +650,7 @@ class DocHistoryRetention(ClusterSetup):
                 history_retention_seconds=self.bucket_dedup_retention_seconds)
             self.assertTrue(status, "Updating history settings failed")
 
-        validate_retention_settings()
+        self.validate_retention_settings_on_all_nodes()
         data_spec = self.get_loader_spec(update_percent=1, update_itr=200)
         consecutive_data_load(data_spec)
         self.fail("Validate stats")
@@ -795,6 +811,48 @@ class DocHistoryRetention(ClusterSetup):
         load_task.end_task()
         self.fail("Validate stats")
 
+    def test_steady_state_compactions(self):
+        """
+        - Under Steady state conditions, test compactions with dedupe load
+        - Will also update new CDC retention values during compaction
+          and validate
+        """
+        bucket = self.cluster.buckets[0]
+        num_collections = self.bucket_util.get_total_collections_in_bucket()
+        num_items = self.bucket_util.get_expected_total_num_items(bucket)
+        items_per_collection = num_items / num_collections
+        num_compactions = self.input.param("num_compactions", 1)
+
+        self.log.info("Loading dedupe data for testing")
+        loader_spec = self.get_loader_spec(1, 1000)
+        doc_loading_task = \
+            self.bucket_util.run_scenario_from_spec(
+                self.task, self.cluster, self.cluster.buckets, loader_spec,
+                mutation_num=1, batch_size=500, process_concurrency=1,
+                async_load=False)
+        self.assertTrue(doc_loading_task.result, "Dedupe load failed")
+
+        loader_spec = self.get_loader_spec(1, -1)
+        doc_loading_task = \
+            self.bucket_util.run_scenario_from_spec(
+                self.task, self.cluster, self.cluster.buckets, loader_spec,
+                mutation_num=1, batch_size=500, process_concurrency=1,
+                async_load=True)
+        while num_compactions > 0:
+            self.sleep(60, "Wait before performing compaction")
+            compaction_tasks = list()
+            for bucket in self.cluster.buckets:
+                compaction_tasks[bucket.name] = self.task.async_compact_bucket(
+                    self.cluster.master, bucket)
+            for task in compaction_tasks:
+                self.task_manager.get_task_result(task)
+                self.assertTrue(task.result, "Compaction failed")
+            num_compactions -= 1
+
+        self.log.info("Waiting for doc_loading to complete")
+        doc_loading_task.stop_indefinite_doc_loading_tasks()
+        self.task_manager.get_task_result(doc_loading_task)
+
     def test_rebalance_with_dedupe(self):
         """
         - Create bucket and load initial data
@@ -803,18 +861,47 @@ class DocHistoryRetention(ClusterSetup):
         - Validate rebalance succeeds + no unwanted loading errors
         """
         target_vbs = list()
-        bucket = self.cluster.buckets[0]
+        doc_ttl = self.input.param("doc_ttl", 0)
+        num_compactions = self.input.param("num_compactions", 0)
+        num_cols_to_drop = self.input.param("num_collections_to_drop", 0)
+        num_itrs = 3000 + (500 * num_compactions)
         load_on_particular_node = \
             self.input.param("target_load_on_single_node", False)
         validate_high_retention_warn = self.input.param(
             "validate_high_retention_warn", False)
         nodes_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
         nodes_out = self.cluster.nodes_in_cluster[
-                    -(self.nodes_init-self.nodes_out):]
-        s_name = choice(bucket.scopes.keys())
-        c_name = choice(bucket.scopes[s_name].collections.keys())
+                    (self.nodes_init-self.nodes_out):]
 
-        self.log.info("Starting doc_loading")
+        self.log.info("Performing dedupe operations")
+        loader_spec = self.get_loader_spec(1, 2000)
+        bucket = self.cluster.buckets[0]
+        doc_loading_task = \
+            self.bucket_util.run_scenario_from_spec(
+                self.task, self.cluster, self.cluster.buckets, loader_spec,
+                mutation_num=1, batch_size=500, process_concurrency=1,
+                async_load=False, validate_task=True, print_ops_rate=False)
+        self.assertTrue(doc_loading_task.result, "Dedupe load failed")
+
+        if num_cols_to_drop > 0:
+            scope_list = bucket.scopes.keys()
+            collection_list = list()
+            for s_name in scope_list:
+                active_cols = self.bucket_util.get_active_collections(
+                    bucket, s_name, only_names=True)
+                collection_list += [[s_name, c_name] for c_name in active_cols]
+            selected_cols = sample(collection_list, 2)
+
+            self.log.info("Dropping collections: %s" %  selected_cols)
+            for s_name, c_name in selected_cols:
+                self.bucket_util.drop_collection(self.cluster.master, bucket,
+                                                 s_name, c_name)
+
+
+        self.log.info("Starting doc_loading with "
+                      "doc_ttl=%s, itrs=%s" % (doc_ttl, num_itrs))
+        loader_spec = self.get_loader_spec(1, num_itrs, cols_to_consider=5)
+        loader_spec[MetaCrudParams.DOC_TTL] = doc_ttl
         if load_on_particular_node:
             nodes = list()
             if nodes_in:
@@ -827,36 +914,38 @@ class DocHistoryRetention(ClusterSetup):
                     target_vbs.extend(
                         cb_stats.vbucket_list(bucket.name, vb_type))
             target_vbs = list(set(target_vbs))
-
-            load_gen = doc_generator(self.key, 0, 10000,
-                                     target_vbucket=target_vbs)
-            doc_loading_task = self.task.async_load_gen_docs(
-                self.cluster, bucket, load_gen,
-                DocLoading.Bucket.DocOps.UPDATE, exp=self.maxttl,
-                durability=self.durability_level, iterations=-1,
-                batch_size=500, process_concurrency=8,
-                scope=s_name, collection=c_name)
+            loader_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbs
+            self.log.info("Targeting vbs: %s" % target_vbs)
         elif validate_high_retention_warn:
             self.fail("Validate warning")
-        else:
-            loader_spec = self.get_loader_spec(1, 100000)
-            doc_loading_task = \
-                self.bucket_util.run_scenario_from_spec(
-                    self.task, self.cluster, self.cluster.buckets, loader_spec,
-                    mutation_num=1, batch_size=500, process_concurrency=1,
-                    async_load=True)
 
+        doc_loading_task = \
+            self.bucket_util.run_scenario_from_spec(
+                self.task, self.cluster, self.cluster.buckets, loader_spec,
+                mutation_num=1, batch_size=500, process_concurrency=1,
+                async_load=True)
+
+        self.sleep(60, "Wait before starting rebalance")
         self.log.info("Performing rebalance")
-        reb_task = self.task.rebalance(
+        reb_task = self.task.async_rebalance(
             self.cluster.nodes_in_cluster,
             to_add=nodes_in, to_remove=nodes_out)
+
+        while num_compactions > 0:
+            self.sleep(120, "Wait before performing compaction")
+            compaction_tasks = list()
+            for bucket in self.cluster.buckets:
+                compaction_tasks.append(self.task.async_compact_bucket(
+                    self.cluster.master, bucket))
+            for task in compaction_tasks:
+                self.task_manager.get_task_result(task)
+                self.assertTrue(task.result, "Compaction failed")
+            num_compactions -= 1
+
         self.task_manager.get_task_result(reb_task)
 
         self.log.info("Waiting for doc_loading to complete")
-        if load_on_particular_node:
-            doc_loading_task.end_task()
-        else:
-            doc_loading_task.stop_indefinite_doc_loading_tasks()
+        doc_loading_task.stop_indefinite_doc_loading_tasks()
         self.task_manager.get_task_result(doc_loading_task)
 
         self.assertTrue(reb_task.result, "Rebalance failed")
