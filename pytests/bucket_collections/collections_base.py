@@ -1,6 +1,7 @@
 from math import ceil
+from random import sample
 
-from Cb_constants import CbServer, DocLoading
+from Cb_constants import DocLoading
 from basetestcase import ClusterSetup
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
@@ -190,6 +191,22 @@ class CollectionBase(ClusterSetup):
         test_obj.bucket_util.wait_for_collection_creation_to_complete(
             test_obj.cluster)
 
+        # CDC handling
+        if test_obj.bucket_storage == Bucket.StorageBackend.magma:
+            num_buckets_with_cdc = \
+                test_obj.input.param("num_buckets_to_enable_cdc", 0)
+            num_scopes_with_cdc = \
+                test_obj.input.param("num_scopes_per_bucket_with_cdc", 1)
+            set_hist_retention = \
+                test_obj.bucket_util.set_history_retention_for_collection
+            for bucket in test_obj.cluster.buckets[:num_buckets_with_cdc]:
+                scopes = sample(bucket.scopes.keys(), num_scopes_with_cdc)
+                for s_name in scopes:
+                    for c_name, col in bucket.scopes[
+                            s_name].collections.items():
+                        set_hist_retention(test_obj.cluster.master, bucket,
+                                           s_name, c_name, "true")
+
         # Prints bucket stats before doc_ops
         test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
         test_obj.bucket_util.print_bucket_stats(test_obj.cluster)
@@ -201,14 +218,16 @@ class CollectionBase(ClusterSetup):
             test_obj.init_sdk_pool_object()
 
         test_obj.log.info("Creating required SDK clients for client_pool")
-        test_obj.create_sdk_clients(test_obj.task_manager.number_of_threads,
-                                    test_obj.cluster.master,
-                                    test_obj.cluster.buckets,
-                                    test_obj.sdk_client_pool,
-                                    test_obj.sdk_compression)
+        CollectionBase.create_sdk_clients(
+            test_obj.task_manager.number_of_threads,
+            test_obj.cluster.master,
+            test_obj.cluster.buckets,
+            test_obj.sdk_client_pool,
+            test_obj.sdk_compression)
 
     @staticmethod
     def load_data_from_spec_file(test_obj, data_spec_name, validate_docs=True):
+        test_obj.log.info("Loading data using spec: %s" % data_spec_name)
         doc_loading_spec = \
             test_obj.bucket_util.get_crud_template_from_package(data_spec_name)
 
@@ -249,6 +268,16 @@ class CollectionBase(ClusterSetup):
             # Blindly override the following params
             bucket_spec[Bucket.evictionPolicy] = \
                 Bucket.EvictionPolicy.FULL_EVICTION
+            for key, val in test_obj.input.test_params.items():
+                if key == "default_history_retention_for_collections":
+                    bucket_spec[Bucket.historyRetentionCollectionDefault] \
+                        = str(test_obj.bucket_collection_history_retention_default).lower()
+                elif key == "bucket_dedup_retention_seconds":
+                    bucket_spec[Bucket.historyRetentionSeconds] \
+                        = int(test_obj.bucket_dedup_retention_seconds)
+                elif key == "bucket_dedup_retention_bytes":
+                    bucket_spec[Bucket.historyRetentionBytes] \
+                        = int(test_obj.bucket_dedup_retention_bytes)
         else:
             for key, val in test_obj.input.test_params.items():
                 if key == "replicas":
@@ -264,6 +293,9 @@ class CollectionBase(ClusterSetup):
                 elif key == "bucket_storage":
                     bucket_spec[Bucket.storageBackend] \
                         = test_obj.bucket_storage
+                elif key == "bucket_eviction_policy":
+                    bucket_spec[Bucket.evictionPolicy] \
+                        = test_obj.bucket_eviction_policy
                 elif key == "compression_mode":
                     bucket_spec[Bucket.compressionMode] \
                         = test_obj.compression_mode
@@ -272,6 +304,15 @@ class CollectionBase(ClusterSetup):
                         = int(test_obj.flush_enabled)
                 elif key == "bucket_type":
                     bucket_spec[Bucket.bucketType] = test_obj.bucket_type
+                elif key == "default_history_retention_for_collections":
+                    bucket_spec[Bucket.historyRetentionCollectionDefault] \
+                        = str(test_obj.bucket_collection_history_retention_default).lower()
+                elif key == "bucket_dedup_retention_seconds":
+                    bucket_spec[Bucket.historyRetentionSeconds] \
+                        = int(test_obj.bucket_dedup_retention_seconds)
+                elif key == "bucket_dedup_retention_bytes":
+                    bucket_spec[Bucket.historyRetentionBytes] \
+                        = int(test_obj.bucket_dedup_retention_bytes)
 
     @staticmethod
     def over_ride_doc_loading_template_params(test_obj, target_spec):

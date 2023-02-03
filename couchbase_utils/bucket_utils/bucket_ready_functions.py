@@ -2619,14 +2619,14 @@ class BucketUtils(ScopeUtils):
             buckets = [buckets]
         for bucket in buckets:
             stat = cb_stat.all_stats(bucket.name)
-            if stat["ep_history_retention_bytes"] \
+            if int(stat["ep_history_retention_bytes"]) \
                     != bucket.historyRetentionBytes:
                 result = False
                 self.log.critical("Hist retention bytes mismatch. "
                                   "Expected: %s, Actual: %s"
                                   % (bucket.historyRetentionBytes,
                                      stat["ep_history_retention_bytes"]))
-            if stat["ep_history_retention_seconds"] \
+            if int(stat["ep_history_retention_seconds"]) \
                     != bucket.historyRetentionSeconds:
                 result = False
                 self.log.critical("Hist retention seconds mismatch. "
@@ -2639,12 +2639,13 @@ class BucketUtils(ScopeUtils):
                 for c_name, col in scope.collections.items():
                     val_as_per_test = col.history
                     val_as_per_stat = stat[s_name][c_name]["history"]
+                    log_msg = "%s - %s:%s:%s - Expected %s. Actual: %s" \
+                              % (kv_node.ip, bucket.name, s_name, c_name,
+                                 val_as_per_test, val_as_per_stat)
+                    self.log.debug(log_msg)
                     if val_as_per_test != val_as_per_stat:
                         result = False
-                        self.log.critical(
-                            "%s - %s:%s:%s - Expected %s. Actual: %s"
-                            % (kv_node.ip, bucket.name, s_name, c_name,
-                               val_as_per_test, val_as_per_stat))
+                        self.log.critical(log_msg)
         shell.disconnect()
         return result
 
