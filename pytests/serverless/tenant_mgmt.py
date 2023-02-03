@@ -75,6 +75,17 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         }
         return spec
 
+    def get_zone_map(self, rest):
+        zone_map = dict()
+        for zones in rest.get_zone_names():
+            servers = []
+            nodes = rest.get_nodes_in_zone(zones)
+            for server in self.cluster.servers:
+                if server.ip in nodes:
+                    servers.append(server)
+            zone_map[zones] = servers
+        return zone_map
+
     def __get_bucket_params(self, b_name, ram_quota=256, width=1, weight=1,
                             replica=Bucket.ReplicaNum.TWO):
         self.log.debug("Creating bucket param")
@@ -453,6 +464,22 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             if async_load:
                 task = data_load()
         if update_during_rebalance:
+            rest = RestConnection(self.cluster.master)
+            zone_map = self.get_zone_map(rest)
+            nodes_out = []
+            track_zones = dict()
+            zone_value = list(zone_map.keys())
+            for iter in range(self.nodes_out):
+                nodes = zone_map[zone_value[iter % 3]]
+                if zone_value[iter % 3] not in track_zones:
+                    track_zones[zone_value[iter % 3]] = 0
+                else:
+                    track_zones[zone_value[iter % 3]] += 1
+                if nodes[track_zones[zone_value[iter % 3]]].ip == \
+                        self.cluster.master.ip:
+                    track_zones[zone_value[iter % 3]] += 1
+                nodes_out.append(nodes[track_zones[zone_value[iter % 3]]])
+
             rebalance_task_during_update = self.task.async_rebalance(
                 self.cluster, nodes_in, nodes_out,
                 retry_get_process_num=3000)
@@ -871,7 +898,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                                                        node_to_replace,
                                                        retry_get_process_num=3000,
                                                        add_nodes_server_groups=
-                                                       add_to_nodes)
+                                                       add_to_nodes,
+                                                       check_vbucket_shuffling=False)
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Re-balance Failed")
 
