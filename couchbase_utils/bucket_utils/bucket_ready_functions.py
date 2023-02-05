@@ -2120,12 +2120,13 @@ class BucketUtils(ScopeUtils):
             autoCompactionDefined="false",
             fragmentation_percentage=50,
             bucket_name="default",
+            history_retention_collection_default="true",
+            history_retention_bytes=0,
+            history_retention_seconds=0,
+            magma_key_tree_data_block_size=4096,
+            magma_seq_tree_data_block_size=4096,
             vbuckets=None, weight=None, width=None,
-            history_retention_collection_default=None,
-            history_retention_bytes=None,
-            history_retention_seconds=None,
-            magma_key_tree_data_block_size=None,
-            magma_seq_tree_data_block_size=None):
+            ):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2157,6 +2158,11 @@ class BucketUtils(ScopeUtils):
              Bucket.purge_interval: purge_interval,
              Bucket.autoCompactionDefined: autoCompactionDefined,
              Bucket.fragmentationPercentage: fragmentation_percentage,
+             Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
+             Bucket.historyRetentionSeconds: history_retention_seconds,
+             Bucket.historyRetentionBytes: history_retention_bytes,
+             Bucket.magmaKeyTreeDataBlockSize: magma_key_tree_data_block_size,
+             Bucket.magmaSeqTreeDataBlockSize: magma_seq_tree_data_block_size,
              Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
              Bucket.weight: weight})
@@ -2933,7 +2939,9 @@ class BucketUtils(ScopeUtils):
                                bucket_weight=None,
                                history_retention_collection_default=None,
                                history_retention_bytes=None,
-                               history_retention_seconds=None):
+                               history_retention_seconds=None,
+                               magma_key_tree_data_block_size=None,
+                               magma_seq_tree_data_block_size=None):
         return BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
@@ -2943,7 +2951,9 @@ class BucketUtils(ScopeUtils):
             bucketWeight=bucket_weight,
             history_retention_collection_default=history_retention_collection_default,
             history_retention_seconds=history_retention_seconds,
-            history_retention_bytes=history_retention_bytes)
+            history_retention_bytes=history_retention_bytes,
+            magma_key_tree_data_block_size=magma_key_tree_data_block_size,
+            magma_seq_tree_data_block_size=magma_seq_tree_data_block_size)
 
     def update_memcached_num_threads_settings(self, cluster_node,
                                               num_writer_threads=None,
@@ -3527,7 +3537,8 @@ class BucketUtils(ScopeUtils):
                           monitor_stats=["doc_ops"],
                           track_failures=True,
                           sdk_client_pool=None,
-                          sdk_retry_strategy=None):
+                          sdk_retry_strategy=None,
+                          iterations=1):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type,
             exp=exp, random_exp=random_exp,
@@ -3545,7 +3556,8 @@ class BucketUtils(ScopeUtils):
             monitor_stats=monitor_stats,
             track_failures=track_failures,
             sdk_client_pool=sdk_client_pool,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            iterations=iterations)
 
     def load_docs_to_all_collections(self, start, end, cluster,
                                      key="test_docs",
@@ -3602,7 +3614,8 @@ class BucketUtils(ScopeUtils):
                                 monitor_stats=["doc_ops"],
                                 track_failures=True,
                                 sdk_client_pool=None,
-                                sdk_retry_strategy=None):
+                                sdk_retry_strategy=None,
+                                iterations=1):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -3633,7 +3646,8 @@ class BucketUtils(ScopeUtils):
                 monitor_stats=monitor_stats,
                 track_failures=track_failures,
                 sdk_client_pool=sdk_client_pool,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                iterations=iterations)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,

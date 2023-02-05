@@ -155,6 +155,36 @@ class MagmaBaseTest(StorageBase):
         if "expiry" in doc_ops:
             self.num_items_per_collection -= (self.expiry_end - self.expiry_start)
 
+    def reset_doc_params(self, doc_ops=None):
+        self.create_perc = 0
+        self.delete_perc = 0
+        self.update_perc = 0
+        self.expiry_perc = 0
+        self.read_perc = 0
+        self.create_end = 0
+        self.create_start = 0
+        self.update_end = 0
+        self.update_start = 0
+        self.delete_end = 0
+        self.delete_start = 0
+        self.expire_end = 0
+        self.expire_start = 0
+        doc_ops = doc_ops or self.doc_ops
+        doc_ops = doc_ops.split(":")
+        perc = 100//len(doc_ops)
+        if "update" in doc_ops:
+            self.update_perc = perc
+        if "create" in doc_ops:
+            self.create_perc = perc
+        if "read" in doc_ops:
+            self.read_perc = perc
+        if "expiry" in doc_ops:
+            self.expiry_perc = perc
+            self.maxttl = random.randint(5, 10)
+            self.bucket_util._expiry_pager(self.cluster, 10000000000)
+        if "delete" in doc_ops:
+            self.delete_perc = perc
+
     def validate_seq_itr(self):
         if self.dcp_services and self.num_collections == 1:
             index_build_q = "SELECT state FROM system:indexes WHERE name='{}';"
@@ -505,7 +535,7 @@ class MagmaBaseTest(StorageBase):
 
             while not self.stop_enable_disable_history:
                 self.loop_itr += 1
-                sleep = random.randint(90, 120)
+                sleep = random.randint(10, 20)
                 self.sleep(sleep,
                            "Iteration:{} waiting for {} sec to disable history retention".
                            format(self.loop_itr, sleep))
@@ -521,7 +551,7 @@ class MagmaBaseTest(StorageBase):
                 if self.crash_during_enable_disable_history:
                     induce_crash()
 
-                sleep = random.randint(30, 60)
+                sleep = random.randint(5, 10)
                 self.sleep(sleep,
                            "Iteration:{} waiting for {} sec to enable history retention".
                            format(self.loop_itr, sleep))
@@ -583,6 +613,8 @@ class MagmaBaseTest(StorageBase):
 
     def get_seqnumber_count(self, bucket=None):
         result = dict()
+        for node in self.cluster.nodes_in_cluster:
+            result["_".join(node.ip.split("."))] = dict()
         bucket = bucket or self.cluster.buckets[0]
         magma_path = os.path.join(self.data_path, bucket.name, "magma.{}")
         for node in self.cluster.nodes_in_cluster:
@@ -595,16 +627,24 @@ class MagmaBaseTest(StorageBase):
                 magma = magma_path.format(shard)
                 kvstores, _ = shell.execute_command("ls {} | grep kvstore".format(magma))
                 cmd = '/opt/couchbase/bin/magma_dump {}'.format(magma)
-                self.log.info("kvstores {}".format(kvstores))
                 for kvstore in kvstores:
                     dump = cmd
                     kvstore_num = kvstore.split("-")[1].strip()
-                    dump += ' --kvstore {} --tree seq --treedata | grep  bySeqno | wc -l'.format(kvstore_num)
+                    #dump += ' --kvstore {} --tree seq --treedata | grep  bySeqno | wc -l'.format(kvstore_num)
+                    dump += ' --kvstore {} --docs-by-seq --history | wc -l'.format(kvstore_num)
                     seqnumber_count = shell.execute_command(dump)[0][0].strip()
-                    result[kvstore] = seqnumber_count
+                    result["_".join(node.ip.split("."))][kvstore] = seqnumber_count
         self.log.info("seqnumber_count/kvstore {}".format(result))
         seqnumber_count = 0
-        for count in result.values():
-            seqnumber_count += int(count)
+        for node in self.cluster.nodes_in_cluster:
+            for count in result["_".join(node.ip.split("."))].values():
+                seqnumber_count += int(count)
         self.log.info("seqnumber_count {}".format(seqnumber_count))
         return seqnumber_count
+
+    def get_history_start_seq_for_each_vb(self):
+        seq_stats = dict()
+        for bucket in self.cluster.buckets:
+            seq_stats[bucket] = self.bucket_util.get_vb_details_for_bucket(bucket,
+                                                                           self.cluster.nodes_in_cluster)
+        return seq_stats

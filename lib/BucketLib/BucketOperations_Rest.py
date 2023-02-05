@@ -396,6 +396,12 @@ class BucketHelper(RestConnection):
             if bucket_params.get("fragmentationPercentage"):
                 init_params["magmaFragmentationPercentage"] \
                     = bucket_params.get("fragmentationPercentage")
+            if bucket_params.get("magmaKeyTreeDataBlockSize"):
+                init_params["magmaKeyTreeDataBlockSize"] \
+                    = bucket_params.get("magmaKeyTreeDataBlockSize")
+            if bucket_params.get("magmaSeqTreeDataBlockSize"):
+                init_params["magmaSeqTreeDataBlockSize"] \
+                    = bucket_params.get("magmaSeqTreeDataBlockSize")
 
             # Set the following only if not 'None'
             for b_param in [Bucket.historyRetentionCollectionDefault,
@@ -495,7 +501,9 @@ class BucketHelper(RestConnection):
                             bucketWidth=None, bucketWeight=None,
                             history_retention_collection_default=None,
                             history_retention_bytes=None,
-                            history_retention_seconds=None):
+                            history_retention_seconds=None,
+                            magma_key_tree_data_block_size=None,
+                            magma_seq_tree_data_block_size=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
@@ -531,6 +539,12 @@ class BucketHelper(RestConnection):
         if history_retention_seconds is not None:
             params_dict[Bucket.historyRetentionSeconds] \
                 = history_retention_seconds
+        if magma_key_tree_data_block_size is not None:
+            params_dict[Bucket.magmaKeyTreeDataBlockSize] \
+                = magma_key_tree_data_block_size
+        if magma_seq_tree_data_block_size is not None:
+            params_dict[Bucket.magmaSeqTreeDataBlockSize] \
+                = magma_seq_tree_data_block_size
         params = urllib.urlencode(params_dict)
 
         self.log.info("Updating bucket properties for %s" % bucket)

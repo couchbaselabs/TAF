@@ -259,9 +259,9 @@ class Bucket(object):
         self.historyRetentionSeconds = new_params.get(
             Bucket.historyRetentionSeconds, 0)
         self.magmaKeyTreeDataBlockSize = new_params.get(
-            Bucket.magmaKeyTreeDataBlockSize, None)
+            Bucket.magmaKeyTreeDataBlockSize, 4096)
         self.magmaSeqTreeDataBlockSize = new_params.get(
-            Bucket.magmaSeqTreeDataBlockSize, None)
+            Bucket.magmaSeqTreeDataBlockSize, 4096)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(

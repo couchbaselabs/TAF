@@ -104,6 +104,11 @@ class StorageBase(BaseTestCase):
                 autoCompactionDefined=self.autoCompactionDefined,
                 fragmentation_percentage=self.fragmentation,
                 flush_enabled=self.flush_enabled,
+                magma_key_tree_data_block_size=self.magma_key_tree_data_block_size,
+                magma_seq_tree_data_block_size=self.magma_seq_tree_data_block_size,
+                history_retention_collection_default=self.bucket_collection_history_retention_default,
+                history_retention_seconds=self.bucket_dedup_retention_seconds,
+                history_retention_bytes=self.bucket_dedup_retention_bytes,
                 weight=self.bucket_weight, width=self.bucket_width)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
@@ -144,6 +149,7 @@ class StorageBase(BaseTestCase):
                                                    SDKConstants.RetryStrategy.BEST_EFFORT)
 
         # Creation of scopes of num_scopes is > 1
+
         scope_prefix = "Scope"
         for bucket in self.cluster.buckets:
             for i in range(1, self.num_scopes):
@@ -172,6 +178,8 @@ class StorageBase(BaseTestCase):
                         scope_name, {"name": collection_name})
                     self.sleep(2)
                     if self.bucket_dedup_retention_seconds or self.bucket_dedup_retention_bytes:
+                        if collection_name == "_default":
+                            continue
                         self.bucket_util.set_history_retention_for_collection(self.cluster.master,
                                                                               bucket, scope_name,
                                                                               collection_name,
@@ -820,7 +828,8 @@ class StorageBase(BaseTestCase):
                      _sync=True,
                      track_failures=True,
                      doc_ops=None,
-                     sdk_retry_strategy=None):
+                     sdk_retry_strategy=None,
+                     iterations=1):
         doc_ops = doc_ops or self.doc_ops
 
         tasks_info = dict()
@@ -848,7 +857,8 @@ class StorageBase(BaseTestCase):
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
                 sdk_client_pool=self.sdk_client_pool,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                iterations=iterations)
             tasks_info.update(tem_tasks_info.items())
         if "create" in doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
