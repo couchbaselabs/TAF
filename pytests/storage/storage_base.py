@@ -105,7 +105,9 @@ class StorageBase(BaseTestCase):
                 eviction_policy=self.bucket_eviction_policy,
                 autoCompactionDefined=self.autoCompactionDefined,
                 fragmentation_percentage=self.fragmentation,
-                flush_enabled=self.flush_enabled)
+                flush_enabled=self.flush_enabled,
+                magma_key_tree_data_block_size=self.magma_key_tree_data_block_size,
+                magma_seq_tree_data_block_size=self.magma_seq_tree_data_block_size)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,

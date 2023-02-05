@@ -1723,7 +1723,10 @@ class BucketUtils(ScopeUtils):
             bucket_name="default",
             history_retention_collection_default="true",
             history_retention_bytes=0,
-            history_retention_seconds=0):
+            history_retention_seconds=0,
+            magma_key_tree_data_block_size=4096,
+            magma_seq_tree_data_block_size=4096
+            ):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -1754,7 +1757,9 @@ class BucketUtils(ScopeUtils):
              Bucket.fragmentationPercentage: fragmentation_percentage,
              Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
              Bucket.historyRetentionSeconds: history_retention_seconds,
-             Bucket.historyRetentionBytes: history_retention_bytes})
+             Bucket.historyRetentionBytes: history_retention_bytes,
+             Bucket.magmaKeyTreeDataBlockSize: magma_key_tree_data_block_size,
+             Bucket.magmaSeqTreeDataBlockSize: magma_seq_tree_data_block_size})
         self.create_bucket(cluster, bucket_obj, wait_for_warmup)
         if self.enable_time_sync:
             self._set_time_sync_on_buckets(cluster, [bucket_obj.name])
@@ -2300,7 +2305,9 @@ class BucketUtils(ScopeUtils):
                                bucket_durability=None,
                                history_retention_collection_default=None,
                                history_retention_bytes=None,
-                               history_retention_seconds=None):
+                               history_retention_seconds=None,
+                               magma_key_tree_data_block_size=None,
+                               magma_seq_tree_data_block_size=None):
         return BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
@@ -2309,7 +2316,9 @@ class BucketUtils(ScopeUtils):
             bucket_durability=bucket_durability,
             history_retention_collection_default=history_retention_collection_default,
             history_retention_seconds=history_retention_seconds,
-            history_retention_bytes=history_retention_bytes)
+            history_retention_bytes=history_retention_bytes,
+            magma_key_tree_data_block_size=magma_key_tree_data_block_size,
+            magma_seq_tree_data_block_size=magma_seq_tree_data_block_size)
 
     def update_all_bucket_maxTTL(self, cluster, maxttl=0):
         for bucket in cluster.buckets:

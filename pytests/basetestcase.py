@@ -120,6 +120,10 @@ class BaseTestCase(unittest.TestCase):
             self.input.param("bucket_history_retention_seconds", None)
         self.bucket_dedup_retention_bytes = \
             self.input.param("bucket_history_retention_bytes", None)
+        self.magma_key_tree_data_block_size = \
+        self.input.param("magma_key_tree_data_block_size", 4096)
+        self.magma_seq_tree_data_block_size = \
+        self.input.param("magma_seq_tree_data_block_size", 4096)
         # End of bucket parameters
 
         # Doc specific params
@@ -1114,7 +1118,9 @@ class ClusterSetup(BaseTestCase):
             bucket_name=bucket_name,
             history_retention_collection_default=self.bucket_collection_history_retention_default,
             history_retention_seconds=self.bucket_dedup_retention_seconds,
-            history_retention_bytes=self.bucket_dedup_retention_bytes)
+            history_retention_bytes=self.bucket_dedup_retention_bytes,
+            magma_key_tree_data_block_size=self.magma_key_tree_data_block_size,
+            magma_seq_tree_data_block_size=self.magma_seq_tree_data_block_size)
 
         # Add bucket create event in system event log
         if self.system_events.test_start_time is not None:

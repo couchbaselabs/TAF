@@ -145,6 +145,8 @@ class Bucket(object):
     historyRetentionCollectionDefault = "historyRetentionCollectionDefault"
     historyRetentionSeconds = "historyRetentionSeconds"
     historyRetentionBytes = "historyRetentionBytes"
+    magmaKeyTreeDataBlockSize = "magmaKeyTreeDataBlockSize"
+    magmaSeqTreeDataBlockSize = "magmaSeqTreeDataBlockSize"
 
     # Tracks the last bucket/scope/collection counter created in the cluster
     bucket_counter = Counter()
@@ -243,6 +245,10 @@ class Bucket(object):
             Bucket.historyRetentionBytes, 0)
         self.historyRetentionSeconds = new_params.get(
             Bucket.historyRetentionSeconds, 0)
+        self.magmaKeyTreeDataBlockSize = new_params.get(
+            Bucket.magmaKeyTreeDataBlockSize, 4096)
+        self.magmaSeqTreeDataBlockSize = new_params.get(
+            Bucket.magmaSeqTreeDataBlockSize, 4096)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
