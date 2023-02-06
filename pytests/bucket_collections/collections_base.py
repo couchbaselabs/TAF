@@ -1,7 +1,7 @@
 from math import ceil
 from random import sample
 
-from Cb_constants import DocLoading
+from Cb_constants import CbServer, DocLoading
 from basetestcase import ClusterSetup
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
