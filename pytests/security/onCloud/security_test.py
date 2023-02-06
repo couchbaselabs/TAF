@@ -105,8 +105,10 @@ class SecurityTest(BaseTestCase):
                                      self.test_users[user]["password"])
             resp = capella_api.delete_project(self.tenant_id, project_id)
             self.assertEqual(expected_response_code[self.test_users[user]["role"]],
-                             resp.status_code // 100, msg="FAIL, Outcome: {0}, Expected: {1}".format(
-                    resp.status_code // 100, expected_response_code[self.test_users[user]["role"]]))
+                             resp.status_code // 100,
+                             msg="FAIL, Outcome: {0}, Expected: {1}".format(
+                                 resp.status_code // 100,
+                                 expected_response_code[self.test_users[user]["role"]]))
 
     def test_retrieve_cluster_details(self):
         self.log.info("Verifying status code for retrieving cluster details")
@@ -259,7 +261,7 @@ class SecurityTest(BaseTestCase):
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
                                  self.user, self.passwd)
         resp = capella_api.get_nodes(self.tenant_id, self.project_id, self.cluster_id)
-        node = json.loads(resp.content)["data"][0]["data"]["hostname"]
+        node = json.loads(resp.content)["data"][3]["data"]["hostname"]
         api = "https://" + node + ':18091/pools/default'
         self.log.info("Connecting to {0}".format(api))
         usernames = [self.rest_username, self.rest_username + random.choice(string.ascii_letters)]
@@ -283,43 +285,31 @@ class SecurityTest(BaseTestCase):
         expected_response_code = {"organizationOwner": 200, "projectCreator": 403,
                                   "cloudManager": 403, "organizationMember": 403}
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
-                                 self.user,
-                                 self.passwd)
+                                 self.user, self.passwd)
         capella_api.load_sample_bucket(self.tenant_id, self.project_id,
                                        self.cluster_id, "travel-sample")
-        capella_api.backup_now(self.tenant_id, self.project_id, self.cluster_id, "travel-sample")
-        url = "{}/v2/organizations/{}/projects/{}/clusters/{}/backups".format("https://" +
-                                                                              self.url.replace(
-                                                                                  "cloud",
-                                                                                  "", 1),
-                                                                              self.tenant_id,
-                                                                              self.project_id,
-                                                                              self.cluster_id)
+        self.sleep(50, message="Waiting for buckets to load")
+        capella_api.backup_now(self.tenant_id, self.project_id, self.cluster_id,
+                               "travel-sample")
+        self.sleep(300, message="Waiting for backup")
+        self.log.info("Retrieving backup details")
+        url = "{0}/v2/organizations/{1}/projects/{2}/clusters/{3}/backups".format("https://" +
+                                                                                  self.url.replace(
+                                                                                      "cloud",
+                                                                                      "", 1),
+                                                                                  self.tenant_id,
+                                                                                  self.project_id,
+                                                                                  self.cluster_id)
         resp = capella_api.do_internal_request(url, method="GET", params='')
-        bucketID = json.loads(resp.content)["data"][0]["data"]["bucketId"]
-        backupID = json.loads(resp.content)["data"][0]["data"]["id"]
+
+        bucket_id = json.loads(resp.content)["data"][0]["data"]["bucketId"]
+        backup_id = json.loads(resp.content)["data"][0]["data"]["id"]
         for user in self.test_users:
             self.log.info("Verifying status code for role : {0}"
                           .format(self.test_users[user]["role"]))
             capella_api_user = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
                                           self.test_users[user]["mailid"],
                                           self.test_users[user]["password"])
-            self.log.info("Verifying status code for deleting backup data")
-            url = "{}/v2/organizations/{}/projects/{}/clusters/{}/backups/{}/cycle".format(
-                "https://" +
-                self.url.replace(
-                    "cloud", "",
-                    1),
-                self.tenant_id,
-                self.project_id,
-                self.cluster_id,
-                backupID)
-            result = capella_api_user.do_internal_request(url, method="DELETE", params='')
-            self.assertEqual(expected_response_code[self.test_users[user]["role"]] // 100,
-                             result.status_code // 100,
-                             msg="FAIL, Outcome: {0}, Expected: {1}"
-                             .format(result.status_code,
-                                     expected_response_code[self.test_users[user]["role"]]))
             self.log.info("Verifying status code for restoring backup data")
             payload = {"sourceClusterId": self.cluster_id,
                        "targetClusterId": self.cluster_id,
@@ -331,13 +321,25 @@ class SecurityTest(BaseTestCase):
                                    "autoRemoveCollections": True, "forceUpdates": True}}
             url = r"{}/v2/organizations/{}/projects/{}/clusters/{}/buckets/{}/restore" \
                 .format("https://" + self.url.replace("cloud", "", 1), self.tenant_id,
-                        self.project_id, self.cluster_id, bucketID)
+                        self.project_id, self.cluster_id, bucket_id)
             resp = capella_api_user.do_internal_request(url, method="POST",
                                                         params=json.dumps(payload))
+            self.sleep(100, message="Waiting for backups to restore")
             self.assertEqual(expected_response_code[self.test_users[user]["role"]] // 100,
                              resp.status_code // 100,
                              msg="FAIL, Outcome: {0}, Expected: {1}"
                              .format(resp.status_code,
+                                     expected_response_code[self.test_users[user]["role"]]))
+
+            self.log.info("Verifying status code for deleting backup data")
+            url = "{}/v2/organizations/{}/projects/{}/clusters/{}/backups/{}/cycle".format(
+                "https://" + self.url.replace("cloud", "", 1), self.tenant_id, self.project_id,
+                self.cluster_id, backup_id)
+            result = capella_api_user.do_internal_request(url, method="DELETE", params='')
+            self.assertEqual(expected_response_code[self.test_users[user]["role"]] // 100,
+                             result.status_code // 100,
+                             msg="FAIL, Outcome: {0}, Expected: {1}"
+                             .format(result.status_code,
                                      expected_response_code[self.test_users[user]["role"]]))
 
     def test_jump_tenant_boundary(self):
