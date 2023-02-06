@@ -226,7 +226,7 @@ class SecurityTest(BaseTestCase):
                 self.connect_node_port(node, valid_ports, expect_to_connect=True)
 
                 invalid_ports = ["22", "3389"]
-                random_ports = random.sample(range(0, 100000), 5)
+                random_ports = random.sample(range(0, 65536), 5)
                 s = set(valid_ports)
                 invalid_ports.extend([str(x) for x in random_ports if str(x) not in s])
                 self.connect_node_port(node, invalid_ports, expect_to_connect=False)
