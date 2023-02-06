@@ -278,6 +278,12 @@ class CollectionBase(ClusterSetup):
                 elif key == "bucket_dedup_retention_bytes":
                     bucket_spec[Bucket.historyRetentionBytes] \
                         = int(test_obj.bucket_dedup_retention_bytes)
+                elif key == "magma_key_tree_data_block_size":
+                    bucket_spec[Bucket.magmaKeyTreeDataBlockSize] \
+                        = int(test_obj.magma_key_tree_data_block_size)
+                elif key == "magma_seq_tree_data_block_size":
+                    bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
+                        = int(test_obj.magma_seq_tree_data_block_size)
         else:
             for key, val in test_obj.input.test_params.items():
                 if key == "replicas":
@@ -313,6 +319,12 @@ class CollectionBase(ClusterSetup):
                 elif key == "bucket_dedup_retention_bytes":
                     bucket_spec[Bucket.historyRetentionBytes] \
                         = int(test_obj.bucket_dedup_retention_bytes)
+                elif key == "magma_key_tree_data_block_size":
+                    bucket_spec[Bucket.magmaKeyTreeDataBlockSize] \
+                        = int(test_obj.magma_key_tree_data_block_size)
+                elif key == "magma_seq_tree_data_block_size":
+                    bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
+                        = int(test_obj.magma_seq_tree_data_block_size)
 
     @staticmethod
     def over_ride_doc_loading_template_params(test_obj, target_spec):
