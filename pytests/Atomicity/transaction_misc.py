@@ -99,12 +99,12 @@ class basic_ops(ClusterSetup):
 
         if self.rebalance_in:
             servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
-            rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], servs_in, [])
+            rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
             self.task.jython_task_manager.get_task_result(rebalance)
             self.sleep(60)
 
         if not self.rebalance_in:
             servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
-            rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], servs_out)
+            rebalance = self.task.async_rebalance(self.cluster, [], servs_out)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.sleep(60)

@@ -282,7 +282,7 @@ class MagmaRebalance(MagmaBaseTest):
                                            node.ip, self.cluster.servers[self.nodes_init].port)
                     node = known_nodes[-1]
                     self.warmup_node(node)
-                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                           check_vbucket_shuffling=False,
                                                           retry_get_process_num=120)
                     self.task.jython_task_manager.get_task_result(operation)
@@ -293,7 +293,7 @@ class MagmaRebalance(MagmaBaseTest):
                                 bucket, servers=[node]))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                        operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                               retry_get_process_num=120)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
@@ -306,7 +306,7 @@ class MagmaRebalance(MagmaBaseTest):
                     for node in add_nodes:
                         self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                            node.ip, self.cluster.servers[self.nodes_init].port)
-                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                           check_vbucket_shuffling=False,
                                                           retry_get_process_num=120)
                     if self.compaction:
@@ -345,7 +345,7 @@ class MagmaRebalance(MagmaBaseTest):
                                        node.ip, self.cluster.servers[self.nodes_init].port)
                 node = known_nodes[-1]
                 self.warmup_node(node)
-                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                       retry_get_process_num=120)
                 self.task.jython_task_manager.get_task_result(operation)
                 if not operation.result:
@@ -355,7 +355,7 @@ class MagmaRebalance(MagmaBaseTest):
                             bucket, servers=[node]))
                     self.log.info("second attempt to rebalance")
                     self.sleep(60, "wait before starting rebalance after warmup")
-                    operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                           retry_get_process_num=120)
                     self.wait_for_rebalance_to_complete(operation)
                 self.sleep(60)
@@ -368,7 +368,7 @@ class MagmaRebalance(MagmaBaseTest):
                 for node in add_nodes:
                     self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
                                        node.ip, self.cluster.servers[self.nodes_init].port)
-                operation = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], remove_nodes,
+                operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
                                                       retry_get_process_num=120)
                 if self.compaction:
                     self.compact_all_buckets()

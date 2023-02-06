@@ -89,8 +89,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         servs_out = [self.cluster.servers[self.nodes_init - i - 1]
                      for i in range(self.nodes_out)]
         tasks = list()
-        rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], [], servs_out)
+        rebalance_task = self.task.async_rebalance(self.cluster, [], servs_out)
         tasks_info = self.loadgen_docs()
         self.sleep(15, "Wait for rebalance to start")
 
@@ -375,8 +374,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.gen_create = self.get_doc_generator(self.num_items,
                                                  self.num_items + self.items / 2)
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
-        rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:1], [], servs_out)
+        rebalance_task = self.task.async_rebalance(self.cluster, [], servs_out)
         compaction_task = list()
         for bucket in self.cluster.buckets:
             compaction_task.append(self.task.async_compact_bucket(self.cluster.master, bucket))
@@ -428,7 +426,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
         # get random keys for new added nodes
         rest_cons = [RestConnection(self.cluster.servers[i]) for i in xrange(self.nodes_init - self.nodes_out)]
-        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], servs_out)
+        rebalance = self.task.async_rebalance(self.cluster, [], servs_out)
         self.sleep(2)
         result = []
         num_iter = 0
@@ -480,7 +478,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                                                      create_from+items)
             delete_from += items
             create_from += items
-            rebalance_task = self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])
+            rebalance_task = self.task.async_rebalance(self.cluster, [], self.cluster.servers[i:i + 2])
             tasks_info = self.loadgen_docs()
             self.task.jython_task_manager.get_task_result(rebalance_task)
             if not rebalance_task.result:
@@ -595,7 +593,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                 bucket=bucket, wait_time=timeout)
 
         servs_out = self.cluster.servers[-self.nodes_out:]
-        rebalance = self.task.async_rebalance([self.cluster.master], [], servs_out)
+        rebalance = self.task.async_rebalance(self.cluster, [], servs_out)
         self.sleep(self.wait_timeout / 5)
         # see that the result of view queries are the same as expected during the test
         for bucket in self.cluster.buckets:
@@ -671,7 +669,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                 wait_time=timeout)
         query["stale"] = "update_after"
         for i in reversed(range(1, self.nodes_init, 2)):
-            rebalance = self.task.async_rebalance(self.cluster.servers[:i], [], self.cluster.servers[i:i + 2])
+            rebalance = self.task.async_rebalance(self.cluster, [], self.cluster.servers[i:i + 2])
             self.sleep(self.wait_timeout / 5)
             # see that the result of view queries are the same as expected during the test
             self.bucket_util.perform_verify_queries(
@@ -739,7 +737,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             self.sleep(15, "Wait for couchbase server to start")
 
         rebalance = self.task.async_rebalance(
-            self.cluster.servers, [], servs_out)
+            self.cluster, [], servs_out)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
@@ -752,7 +750,7 @@ class RebalanceOutTests(RebalanceBaseTest):
 
             self.log.info("Second attempt to rebalance")
             rebalance = self.task.async_rebalance(
-                self.cluster.servers, [], servs_out)
+                self.cluster, [], servs_out)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, "Rebalance attempt failed again")
             self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
@@ -778,7 +776,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         for i in reversed(range(self.nodes_init)[1:]):
             # don't use batch for rebalance out 2-1 nodes
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[:i], [], [self.cluster.servers[i]])
+                self.cluster, [], [self.cluster.servers[i]])
             self.sleep(5, "Wait for rebalance to start")
             tasks_info = dict()
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -823,7 +821,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         batch_size = 1000
         for i in reversed(range(self.nodes_init)[2:]):
             # don't use batch for rebalance out 2-1 nodes
-            rebalance = self.task.async_rebalance(self.cluster.servers[:i], [], [self.cluster.servers[i]])
+            rebalance = self.task.async_rebalance(self.cluster, [], [self.cluster.servers[i]])
             self.sleep(5, "Wait for rebalance to start")
             self._load_all_buckets(self.cluster, self.gen_update, "update", 0, batch_size=batch_size, timeout_secs=60)
             self._load_all_buckets(self.cluster, gen_2, "update", 5, batch_size=batch_size, timeout_secs=60)
