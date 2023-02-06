@@ -1102,7 +1102,9 @@ class ClusterSetup(OnPremBaseTest):
             "weight": self.bucket_weight,
             "history_retention_collection_default": self.bucket_collection_history_retention_default,
             "history_retention_seconds": self.bucket_dedup_retention_seconds,
-            "history_retention_bytes": self.bucket_dedup_retention_bytes
+            "history_retention_bytes": self.bucket_dedup_retention_bytes,
+            "magma_key_tree_data_block_size": self.magma_key_tree_data_block_size,
+            "magma_seq_tree_data_block_size": self.magma_seq_tree_data_block_size
         }
 
         # This is needed because server will throw the error saying,

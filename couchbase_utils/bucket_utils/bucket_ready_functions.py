@@ -2044,9 +2044,11 @@ class BucketUtils(ScopeUtils):
             fragmentation_percentage=50,
             bucket_name="default",
             vbuckets=None, weight=None, width=None,
-            history_retention_collection_default="true",
-            history_retention_bytes=0,
-            history_retention_seconds=0):
+            history_retention_collection_default=None,
+            history_retention_bytes=None,
+            history_retention_seconds=None,
+            magma_key_tree_data_block_size=None,
+            magma_seq_tree_data_block_size=None):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2077,10 +2079,7 @@ class BucketUtils(ScopeUtils):
              Bucket.fragmentationPercentage: fragmentation_percentage,
              Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
-             Bucket.weight: weight,
-             Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
-             Bucket.historyRetentionSeconds: history_retention_seconds,
-             Bucket.historyRetentionBytes: history_retention_bytes})
+             Bucket.weight: weight})
         if cluster.type == "dedicated":
             bucket_params = {
                 CloudCluster.Bucket.name: bucket_obj.name,
@@ -2101,6 +2100,11 @@ class BucketUtils(ScopeUtils):
             task = self.async_create_database(cluster, bucket_obj)
             self.task_manager.get_task_result(task)
         else:
+            bucket_obj.historyRetentionCollectionDefault = history_retention_collection_default
+            bucket_obj.historyRetentionSeconds = history_retention_seconds
+            bucket_obj.historyRetentionBytes = history_retention_bytes
+            bucket_obj.magmaKeyTreeDataBlockSize = magma_key_tree_data_block_size
+            bucket_obj.magmaSeqTreeDataBlockSize = magma_seq_tree_data_block_size
             self.create_bucket(cluster, bucket_obj, wait_for_warmup)
             if self.enable_time_sync:
                 self._set_time_sync_on_buckets(cluster, [bucket_obj.name])

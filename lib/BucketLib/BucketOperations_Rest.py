@@ -339,15 +339,15 @@ class BucketHelper(RestConnection):
                 init_params["magmaFragmentationPercentage"] \
                     = bucket_params.get("fragmentationPercentage")
 
-            # CDC params (Only valid for magma)
-            val = bucket_params.get(Bucket.historyRetentionCollectionDefault,
-                                    None)
-            if val is not None:
-                init_params[Bucket.historyRetentionCollectionDefault] = val
-            for target_key in [Bucket.historyRetentionBytes,
-                               Bucket.historyRetentionSeconds]:
-                if target_key in bucket_params:
-                    init_params[target_key] = bucket_params.get(target_key)
+            # Set the following only if not 'None'
+            for b_param in [Bucket.historyRetentionCollectionDefault,
+                            Bucket.historyRetentionBytes,
+                            Bucket.historyRetentionSeconds,
+                            Bucket.magmaKeyTreeDataBlockSize,
+                            Bucket.magmaSeqTreeDataBlockSize]:
+                val = bucket_params.get(b_param, None)
+                if val is not None:
+                    init_params[b_param] = val
 
         if init_params[Bucket.priority] == "high":
             init_params[Bucket.threadsNumber] = 8

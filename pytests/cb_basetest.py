@@ -79,6 +79,10 @@ class CouchbaseBaseTest(unittest.TestCase):
             self.input.param("bucket_history_retention_seconds", None)
         self.bucket_dedup_retention_bytes = \
             self.input.param("bucket_history_retention_bytes", None)
+        self.magma_key_tree_data_block_size = \
+            self.input.param("magma_key_tree_data_block_size", None)
+        self.magma_seq_tree_data_block_size = \
+            self.input.param("magma_seq_tree_data_block_size", None)
         # End of bucket params
 
         # Doc specific params
