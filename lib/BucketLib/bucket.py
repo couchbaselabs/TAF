@@ -81,7 +81,7 @@ class Collection(object):
         self.name = collection_spec.get("name")
         self.num_items = collection_spec.get("num_items", 0)
         self.maxTTL = collection_spec.get("maxTTL", 0)
-        self.history = collection_spec.get("history", "false")
+        self.history = collection_spec.get("history", "true")
 
         # Meta data for test case validation
         self.is_dropped = False
@@ -114,7 +114,7 @@ class Collection(object):
     def recreated(collection_obj, collection_spec):
         collection_obj.num_items = collection_spec.get("num_items", 0)
         collection_obj.maxTTL = collection_spec.get("maxTTL", 0)
-        collection_obj.history = collection_spec.get("history", "false")
+        collection_obj.history = collection_spec.get("history", "true")
 
         # Update meta fields
         collection_obj.is_dropped = False
@@ -246,9 +246,9 @@ class Bucket(object):
         self.historyRetentionSeconds = new_params.get(
             Bucket.historyRetentionSeconds, 0)
         self.magmaKeyTreeDataBlockSize = new_params.get(
-            Bucket.magmaKeyTreeDataBlockSize, 4096)
+            Bucket.magmaKeyTreeDataBlockSize, None)
         self.magmaSeqTreeDataBlockSize = new_params.get(
-            Bucket.magmaSeqTreeDataBlockSize, 4096)
+            Bucket.magmaSeqTreeDataBlockSize, None)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
@@ -289,6 +289,19 @@ class Bucket(object):
                 param_list.append(param)
         return param_list
 
+    @staticmethod
+    def set_defaults(bucket):
+        if bucket.storageBackend == Bucket.StorageBackend.magma:
+            if bucket.historyRetentionCollectionDefault is None:
+                bucket.historyRetentionCollectionDefault = True
+            elif bucket.historyRetentionSeconds is None:
+                bucket.historyRetentionSeconds = 0
+            elif bucket.historyRetentionBytes is None:
+                bucket.historyRetentionBytes = 0
+            elif bucket.magmaSeqTreeDataBlockSize is None:
+                bucket.magmaSeqTreeDataBlockSize = 4096
+            elif bucket.magmaSeqTreeDataBlockSize is None:
+                bucket.magmaKeyTreeDataBlockSize = 4096
 
 class TravelSample(Bucket):
     def __init__(self):

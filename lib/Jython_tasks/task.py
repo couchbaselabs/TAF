@@ -3742,6 +3742,7 @@ class BucketCreateTask(Task):
         except Exception as e:
             self.result = False
             self.test_log.error(str(e))
+        Bucket.set_defaults(self.bucket)
         self.complete_task()
 
     def check(self):
@@ -3796,6 +3797,7 @@ class BucketCreateFromSpecTask(Task):
                 setattr(self.bucket_obj, key, value)
 
         self.create_bucket()
+        Bucket.set_defaults(self.bucket_obj)
         if CbServer.default_collection not in \
                 self.bucket_spec[
                     "scopes"][CbServer.default_scope][

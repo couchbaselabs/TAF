@@ -121,9 +121,9 @@ class BaseTestCase(unittest.TestCase):
         self.bucket_dedup_retention_bytes = \
             self.input.param("bucket_history_retention_bytes", None)
         self.magma_key_tree_data_block_size = \
-        self.input.param("magma_key_tree_data_block_size", 4096)
+        self.input.param("magma_key_tree_data_block_size", None)
         self.magma_seq_tree_data_block_size = \
-        self.input.param("magma_seq_tree_data_block_size", 4096)
+        self.input.param("magma_seq_tree_data_block_size", None)
         # End of bucket parameters
 
         # Doc specific params

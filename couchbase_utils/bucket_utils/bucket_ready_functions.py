@@ -1721,12 +1721,11 @@ class BucketUtils(ScopeUtils):
             autoCompactionDefined="false",
             fragmentation_percentage=50,
             bucket_name="default",
-            history_retention_collection_default="true",
-            history_retention_bytes=0,
-            history_retention_seconds=0,
-            magma_key_tree_data_block_size=4096,
-            magma_seq_tree_data_block_size=4096
-            ):
+            history_retention_collection_default=None,
+            history_retention_bytes=None,
+            history_retention_seconds=None,
+            magma_key_tree_data_block_size=None,
+            magma_seq_tree_data_block_size=None):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
