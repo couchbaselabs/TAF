@@ -107,7 +107,10 @@ class StorageBase(BaseTestCase):
                 fragmentation_percentage=self.fragmentation,
                 flush_enabled=self.flush_enabled,
                 magma_key_tree_data_block_size=self.magma_key_tree_data_block_size,
-                magma_seq_tree_data_block_size=self.magma_seq_tree_data_block_size)
+                magma_seq_tree_data_block_size=self.magma_seq_tree_data_block_size,
+                history_retention_collection_default=self.bucket_collection_history_retention_default,
+                history_retention_seconds=self.bucket_dedup_retention_seconds,
+                history_retention_bytes=self.bucket_dedup_retention_bytes)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,
