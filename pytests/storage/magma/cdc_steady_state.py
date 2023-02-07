@@ -1,8 +1,8 @@
-from magma_basic_crud import BasicCrudTests
+from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 
 
-class SteadyStateTests(BasicCrudTests):
+class SteadyStateTests(MagmaBaseTest):
     def test_history_retention_for_n_update_iterations(self):
         self.PrintStep("test_history_retention_after_n_times_update starts")
         self.create_start = 0

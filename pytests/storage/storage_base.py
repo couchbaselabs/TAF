@@ -175,6 +175,8 @@ class StorageBase(BaseTestCase):
                         scope_name, {"name": collection_name})
                     self.sleep(2)
                     if self.bucket_dedup_retention_seconds or self.bucket_dedup_retention_bytes:
+                        if collection_name == "_default":
+                            continue
                         self.bucket_util.set_history_retention_for_collection(self.cluster.master,
                                                                               bucket, scope_name,
                                                                               collection_name,

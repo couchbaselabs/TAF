@@ -116,7 +116,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.process_concurrency = self.standard_buckets * self.num_collections * self.num_scopes
         self.new_loader(wait=True)
-        self.track_failure = False
+        self.track_failures = False
 
         count = 1
         while count < self.test_itr+1:
@@ -171,7 +171,6 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.create_end = create_end
                 self.num_items_per_collection += self.create_end - self.create_start
                 self.new_loader(wait=True)
-
             count += 1
 
     def test_crash_during_ops_new(self):
