@@ -286,7 +286,8 @@ class DocLoaderUtils(object):
                                      crud_spec,
                                      batch_size=200,
                                      async_load=False,
-                                     process_concurrency=1):
+                                     process_concurrency=1,
+                                     print_ops_rate=True):
         """
         Will load(only Creates) all given collections under all bucket objects.
         :param task_manager: TaskManager object used for task management
@@ -299,6 +300,7 @@ class DocLoaderUtils(object):
         :param batch_size: Batch size to use during doc_loading tasks
         :param async_load: (Boolean) To wait for doc_loading to finish or not
         :param process_concurrency: process_concurrency to use during doc_loading
+        :param print_ops_rate: Bool value to enable/disable ops_rate printing
         :return: List of doc_loading tasks
         """
         loader_spec = dict()
@@ -310,7 +312,7 @@ class DocLoaderUtils(object):
             DocLoaderUtils.sdk_client_pool,
             batch_size=batch_size,
             process_concurrency=process_concurrency,
-            print_ops_rate=True,
+            print_ops_rate=print_ops_rate,
             start_task=True)
         if not async_load:
             task_manager.jython_task_manager.get_task_result(task)
@@ -836,7 +838,8 @@ class DocLoaderUtils(object):
                                mutation_num=1,
                                async_load=False,
                                validate_task=True,
-                               process_concurrency=1):
+                               process_concurrency=1,
+                               print_ops_rate=True):
         """
         :param task_manager: TaskManager object used for task management
         :param cluster: Cluster object to fetch master node
@@ -848,6 +851,7 @@ class DocLoaderUtils(object):
         :param async_load: (Bool) To wait for doc_loading to finish or not
         :param validate_task: (Bool) To validate doc_loading results or not
         :param process_concurrency: process_concurrency to use during doc_loading
+        :param print_ops_rate: Bool value to enable/disable ops_rate printing
         :return doc_loading_task: Task object returned from
                                   DocLoaderUtils.perform_doc_loading_for_spec
         """
@@ -865,7 +869,8 @@ class DocLoaderUtils(object):
             crud_spec,
             batch_size=batch_size,
             async_load=async_load,
-            process_concurrency=process_concurrency)
+            process_concurrency=process_concurrency,
+            print_ops_rate=print_ops_rate)
         if not async_load and validate_task:
             DocLoaderUtils.validate_doc_loading_results(doc_loading_task)
         return doc_loading_task
