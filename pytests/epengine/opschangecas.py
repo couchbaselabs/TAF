@@ -23,10 +23,10 @@ class OpsChangeCasTests(CasBaseTest):
             self.node_data[node.ip] = dict()
             self.node_data[node.ip]["cb_stat"] = cb_stat
             self.node_data[node.ip]["active"] = cb_stat.vbucket_list(
-                self.bucket,
+                self.bucket.name,
                 "active")
             self.node_data[node.ip]["replica"] = cb_stat.vbucket_list(
-                self.bucket,
+                self.bucket.name,
                 "replica")
         if self.sdk_client_pool:
             self.client = self.sdk_client_pool.get_client_for_bucket(
