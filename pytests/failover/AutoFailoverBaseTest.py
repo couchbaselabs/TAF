@@ -185,6 +185,22 @@ class AutoFailoverBaseTest(ClusterSetup):
             # Blindly override the following params
             bucket_spec[Bucket.evictionPolicy] = \
                 Bucket.EvictionPolicy.FULL_EVICTION
+            for key, val in self.input.test_params.items():
+                if key == "default_history_retention_for_collections":
+                    bucket_spec[Bucket.historyRetentionCollectionDefault] \
+                        = str(self.bucket_collection_history_retention_default).lower()
+                elif key == "bucket_dedup_retention_seconds":
+                    bucket_spec[Bucket.historyRetentionSeconds] \
+                        = int(self.bucket_dedup_retention_seconds)
+                elif key == "bucket_dedup_retention_bytes":
+                    bucket_spec[Bucket.historyRetentionBytes] \
+                        = int(self.bucket_dedup_retention_bytes)
+                elif key == "magma_key_tree_data_block_size":
+                    bucket_spec[Bucket.magmaKeyTreeDataBlockSize] \
+                        = int(self.magma_key_tree_data_block_size)
+                elif key == "magma_seq_tree_data_block_size":
+                    bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
+                        = int(self.magma_seq_tree_data_block_size)
         else:
             for key, val in self.input.test_params.items():
                 if key == "replicas":
