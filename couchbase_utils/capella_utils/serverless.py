@@ -281,6 +281,15 @@ class CapellaUtils:
                             format(resp.content))
         return json.loads(resp.content)
 
+    def get_dataplane_clusterid(self, dataplane_id):
+        resp = self.capella_api.get_serverless_dataplane_info(dataplane_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Fetch Dataplane info response:{}".
+                                      format(resp.status_code))
+            raise Exception("Fetch Dataplane info failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)["couchbase"]["id"]
+
     def get_all_serverless_databases(self):
         resp = self.capella_api.get_all_serverless_databases()
         return json.loads(resp.content)
@@ -303,5 +312,25 @@ class CapellaUtils:
             CapellaUtils.log.critical("Fetch scaling records failed:{}".
                                       format(resp.status_code))
             raise Exception("Fetch scaling records failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
+    def trigger_log_collection(self, cluster_id, log_id={}):
+        if log_id:
+            log_id = {"ticketId": log_id}
+        resp = self.capella_api.trigger_log_collection(cluster_id,
+                                                       log_id=log_id)
+        if resp.status_code != 201:
+            CapellaUtils.log.critical("Logs collection failed:{}".
+                                      format(resp.status_code))
+            raise Exception("Logs collection failed: {}".
+                            format(resp.content))
+
+    def get_cluster_tasks(self, cluster_id):
+        resp = self.capella_api.get_cluster_tasks(cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Logs collection failed:{}".
+                                      format(resp.status_code))
+            raise Exception("Logs collection failed: {}".
                             format(resp.content))
         return json.loads(resp.content)

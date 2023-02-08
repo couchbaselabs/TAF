@@ -21,6 +21,7 @@ from BucketLib.BucketOperations import BucketHelper
 from com.couchbase.test.sdk import Server
 from com.couchbase.client.core.error import TimeoutException
 
+
 class Murphy(BaseTestCase, OPD):
 
     def init_doc_params(self):
@@ -215,7 +216,7 @@ class Murphy(BaseTestCase, OPD):
         BaseTestCase.tearDown(self)
 
     def create_gsi_indexes(self, buckets):
-        self.drIndex.create_indexes(buckets)
+        return self.drIndex.create_indexes(buckets)
 
     def build_gsi_index(self, buckets):
         self.drIndex.build_indexes(buckets, self.dataplane_objs, wait=True)
@@ -563,7 +564,8 @@ class Murphy(BaseTestCase, OPD):
             for dataplane in self.dataplane_objs.values():
                 prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
                                                                service="index")
-                self.create_gsi_indexes(buckets)
+                status = self.create_gsi_indexes(buckets)
+                self.assertTrue(status, "GSI index creation failed")
                 if prev_gsi_nodes < 10:
                     self.check_gsi_scaling(dataplane, prev_gsi_nodes)
             self.build_gsi_index(buckets)

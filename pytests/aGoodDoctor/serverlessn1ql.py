@@ -11,7 +11,7 @@ from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutExcep
 from com.couchbase.client.core.error import RequestCanceledException,\
     CouchbaseException, InternalServerFailureException,\
     AmbiguousTimeoutException, UnambiguousTimeoutException,\
-    PlanningFailureException
+    PlanningFailureException, IndexNotFoundException
 from string import ascii_uppercase, ascii_lowercase
 from encodings.punycode import digits
 from gsiLib.gsiHelper import GsiHelper
@@ -160,6 +160,9 @@ class DoctorN1QL():
                                     retry -= 1
                                     time.sleep(10)
                                     continue
+                                except IndexNotFoundException as e:
+                                    print(e)
+                                    return False
                             i += 1
                         if q < b.loadDefn.get("2i")[1]:
                             if b.loadDefn.get("type") == "gsi_auto_scale":
@@ -167,6 +170,7 @@ class DoctorN1QL():
                             else:
                                 b.queries.append((queries[q % len(indexes)].format(c), self.sdkClients[b.name+s]))
                             q += 1
+        return True
 
     def wait_for_indexes_online(self, logger, dataplane_objs, buckets, timeout=86400):
         # current_dp = None

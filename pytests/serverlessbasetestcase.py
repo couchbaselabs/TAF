@@ -122,6 +122,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             if "" in [ip,user,pwd]:
                 continue
             dataplane = Dataplane(dataplane_id, srv, user, pwd)
+            dataplane.cluster_id = self.serverless_util.get_dataplane_clusterid(dataplane_id)
             servers = RestConnection({"ip": ip,
                                       "username": user,
                                       "password": pwd,
@@ -189,6 +190,25 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.shutdown_task_manager()
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
+
+        if self.is_test_failed() and self.get_cbcollect_info:
+            for dataplane in self.dataplane_objs.values():
+                self.serverless_util.trigger_log_collection(dataplane.cluster_id)
+            for dataplane in self.dataplane_objs.values():
+                table = TableView(self.log.info)
+                table.add_row(["Node", "URL"])
+                while True:
+                    tasks = self.serverless_util.get_cluster_tasks(dataplane.cluster_id)
+                    task = [task for task in tasks if task["type"] == "clusterLogsCollection"][0]
+                    self.log.info("Logs on Dataplane {}: Status {} - Progress {}%".
+                                  format(dataplane.id, task["status"], task["progress"]))
+                    if task["status"] == "completed":
+                        for node, logInfo in sorted(task["perNode"].items()):
+                            print node, logInfo["url"]
+                            table.add_row([node, logInfo["url"]])
+                        table.display("Dataplane: {}".format(dataplane.id))
+                        break
+                    self.sleep(10)
 
         if self.skip_teardown_cleanup:
             return
