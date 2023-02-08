@@ -329,10 +329,10 @@ class CollectionBase(ClusterSetup):
                 elif key == "default_history_retention_for_collections":
                     bucket_spec[Bucket.historyRetentionCollectionDefault] \
                         = str(test_obj.bucket_collection_history_retention_default).lower()
-                elif key == "bucket_dedup_retention_seconds":
+                elif key == "bucket_history_retention_seconds":
                     bucket_spec[Bucket.historyRetentionSeconds] \
                         = int(test_obj.bucket_dedup_retention_seconds)
-                elif key == "bucket_dedup_retention_bytes":
+                elif key == "bucket_history_retention_bytes":
                     bucket_spec[Bucket.historyRetentionBytes] \
                         = int(test_obj.bucket_dedup_retention_bytes)
                 elif key == "magma_key_tree_data_block_size":
