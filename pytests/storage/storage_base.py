@@ -120,8 +120,6 @@ class StorageBase(BaseTestCase):
                 flush_enabled=self.flush_enabled,
                 weight=self.bucket_weight, width=self.bucket_width,
                 autoCompactionDefined=self.autoCompactionDefined,
-                fragmentation_percentage=self.fragmentation,
-                flush_enabled=self.flush_enabled,
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
                 history_retention_bytes=self.bucket_dedup_retention_bytes)
