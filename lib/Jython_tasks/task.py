@@ -4087,7 +4087,7 @@ class DatabaseCreateTask(Task):
 
 
 class MonitorServerlessDatabaseScaling(Task):
-    def __init__(self, tracking_list, timeout=60):
+    def __init__(self, tracking_list, timeout=60, ignore_undesired_updates=False):
         """
         :param tracking_list: List of dict()
              Each dict is of format:
@@ -4104,6 +4104,7 @@ class MonitorServerlessDatabaseScaling(Task):
         self.timeout = timeout
         self.scaling_tasks = tracking_list
         self.serverless_util = global_vars.serverless_util
+        self.ignore_undesired_updates = ignore_undesired_updates
 
         # Populate default 'None' if not given by the caller
         for sub_task in self.scaling_tasks:
@@ -4313,6 +4314,16 @@ class MonitorServerlessDatabaseScaling(Task):
         for sub_task in self.scaling_tasks:
             bucket = sub_task["bucket"]
             self.update_bucket_nebula_and_kv_nodes(sub_task["cluster"], bucket)
+            validate_weight_update = True
+            validate_ram_update = True
+            validate_width_update = True
+            if self.ignore_undesired_updates:
+                if sub_task["desired_weight"] is None:
+                    validate_weight_update = False
+                if sub_task["desired_ram_quota"] is None:
+                    validate_ram_update = False
+                if sub_task["desired_width"] is None:
+                    validate_width_update = False
 
             sizing_info = self.get_db_debug_json(bucket.name)[
                 "database"]["config"]["sizing"]
@@ -4321,9 +4332,12 @@ class MonitorServerlessDatabaseScaling(Task):
                 % (bucket.name, sizing_info["width"],
                    sizing_info["weight"],
                    sizing_info["memoryQuota"]))
-            if sizing_info["width"] != bucket.serverless.width \
-                    or sizing_info["weight"] != bucket.serverless.weight \
-                    or sizing_info["memoryQuota"] != bucket.ramQuotaMB:
+            if (validate_width_update and
+                sizing_info["width"] != bucket.serverless.width) \
+                    or (validate_weight_update and
+                        sizing_info["weight"] != bucket.serverless.weight) \
+                    or (validate_ram_update and
+                        sizing_info["memoryQuota"] != bucket.ramQuotaMB):
                 self.test_log.warning("Bucket %s sizing mismatch"
                                       % bucket.name)
                 self.result = False
