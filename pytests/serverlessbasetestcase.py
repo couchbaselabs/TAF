@@ -204,7 +204,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                                   format(dataplane.id, task["status"], task["progress"]))
                     if task["status"] == "completed":
                         for node, logInfo in sorted(task["perNode"].items()):
-                            print node, logInfo["url"]
                             table.add_row([node, logInfo["url"]])
                         table.display("Dataplane: {}".format(dataplane.id))
                         break

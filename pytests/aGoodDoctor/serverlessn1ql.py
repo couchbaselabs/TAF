@@ -161,6 +161,7 @@ class DoctorN1QL():
                                     time.sleep(10)
                                     continue
                                 except IndexNotFoundException as e:
+                                    print "Returning from here as we get IndexNotFoundException"
                                     print(e)
                                     return False
                             i += 1
@@ -255,7 +256,7 @@ class DoctorN1QL():
 
     def index_stats(self, dataplanes):
         for dataplane in dataplanes.values():
-            stat_monitor = threading.Thread(target=self.log_index_stats,
+            stat_monitor = threading.Thread(target=self.log_index_stats_new,
                                             kwargs=dict(dataplane=dataplane,
                                                         print_duration=60))
             stat_monitor.start()
@@ -288,6 +289,108 @@ class DoctorN1QL():
                     except Exception as e:
                         self.log.critical(e)
                 self.table.display("Index Statistics")
+                st_time = time.time()
+
+    def log_index_stats_new(self, dataplane, print_duration=600):
+        st_time = time.time()
+        self.scale_down = False
+        self.scale_up = False
+        self.gsi_auto_rebl = False
+        while not self.stop_run:
+            self.nodes_below_LWM = 0
+            self.nodes_above_HWM = 0
+            self.scale_down_nodes = 0
+            if st_time + print_duration < time.time():
+                rest = RestConnection(dataplane.master)
+
+                self.table = TableView(self.log.info)
+                self.table.set_headers(["Node",
+                                        "num_tenants",
+                                        "num_indexes",
+                                        "memory_used_actual",
+                                        "units_used_actual/units_quota"])
+                for node in dataplane.index_nodes:
+                    try:
+                        rest = RestConnection(node)
+                        resp = rest.urllib_request(rest.indexUrl + "stats")
+                        content = json.loads(resp.content)
+                        mem_q = content["memory_quota"]
+                        units_q = content["units_quota"]
+                        mem_used = content["memory_used_actual"]/mem_q * 100
+                        units_used = content["units_used_actual"]/units_q * 100
+                        if mem_used < 40 or units_used < 32:
+                            self.nodes_below_LWM += 1
+                        elif mem_used > 70 or units_used > 50:
+                            self.nodes_above_HWM += 1
+
+                        self.log.info("GSI - Nodes below LWM: {}".format(self.nodes_below_LWM))
+                        self.log.info("GSI - Nodes above HWM: {}".format(self.nodes_above_HWM))
+
+                        self.table.add_row([
+                            node.ip,
+                            str(content["num_tenants"]),
+                            str(content["num_indexes"]),
+                            str(content["memory_used_actual"]),
+                            "{}/{}".format(str(content["units_used_actual"]),
+                                           str(content["units_quota"])),
+                            ])
+                    except Exception as e:
+                        self.log.critical(e)
+                self.table.display("Index Statistics")
+
+                if self.scale_down is False and self.scale_up is False and self.gsi_auto_rebl is False:
+                    # Check for GSI Auto-rebalance
+                    defrag = rest.urllib_request(rest.baseUrl + "pools/default/services/index/defragmented")
+                    defrag = json.loads(defrag.content)
+                    defrag_table = TableView(self.log.info)
+                    defrag_table.set_headers(["Node",
+                                              "num_tenants",
+                                              "num_index_repaired",
+                                              "memory_used_actual",
+                                              "units_used_actual"])
+                    for node, gsi_stat in defrag.items():
+                        defrag_table.add_row([node,
+                                              gsi_stat["num_tenants"],
+                                              gsi_stat["num_index_repaired"],
+                                              gsi_stat["memory_used_actual"],
+                                              gsi_stat["units_used_actual"]
+                                              ])
+                    defrag_table.display("Index Defrag Stats")
+                    num_tenant_0 = 0
+                    nodes_below_15_tenants = 0
+                    nodes_below_LWM_defrag = 0
+                    for node, gsi_stat in defrag.items():
+                        if gsi_stat["num_tenants"] == 0:
+                            self.log.info("{} can have 0 tenants post rebalance".format(node))
+                            num_tenant_0 += 1
+                        elif gsi_stat["num_tenants"] <= 15\
+                            and gsi_stat["memory_used_actual"]/mem_q < 40\
+                                and gsi_stat["units_used_actual"]/units_q < 32:
+                            self.log.info("{} can have <=15 tenants post rebalance".format(node))
+                            nodes_below_15_tenants += 1
+                        if gsi_stat["memory_used_actual"]/mem_q < 40\
+                            and gsi_stat["units_used_actual"]/units_q < 32:
+                            nodes_below_LWM_defrag += 1
+                        if gsi_stat["num_index_repaired"] > 0:
+                            self.log.info("{} have indexes to be repaired".format(node))
+                            self.gsi_auto_rebl = True
+                            self.log.info("GSI - Auto-Rebalance should trigger in a while")
+                            self.log.info(defrag)
+                            continue
+                    if num_tenant_0 > 0\
+                        and nodes_below_15_tenants == len(dataplane.index_nodes) - num_tenant_0\
+                            and len(dataplane.index_nodes) - num_tenant_0 >= 2:
+                        self.scale_down = True
+                        self.scale_down_nodes = num_tenant_0
+                        self.log.info("GSI - Scale DOWN should trigger in a while")
+                    if self.nodes_above_HWM > 1 and self.nodes_below_LWM > 1:
+                        if nodes_below_LWM_defrag == dataplane.index_nodes:
+                            self.gsi_auto_rebl = True
+                            self.log.info("GSI - Auto-Rebalance should trigger in a while")
+                        else:
+                            self.scale_up = True
+                            self.log.info("GSI - Scale UP should trigger in a while")
+
                 st_time = time.time()
 
 

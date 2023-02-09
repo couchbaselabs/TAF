@@ -191,65 +191,66 @@ class DoctorFTS:
             self.scale_up_count = 0
             self.hwm_count = 0
             collect_logs = False
-            if st_time + print_duration < time.time():
-                self.table = TableView(self.log.info)
-                self.table.set_headers(["Dataplane",
-                                        "Node",
-                                        "memoryBytes",
-                                        "diskBytes",
-                                        "billableUnitsRate",
-                                        "cpuPercent"])
-                for node in dataplane.fts_nodes:
-                    try:
-                        rest = RestConnection(node)
-                        content = rest.get_fts_stats()
-                        mem_used = content["utilization:memoryBytes"]*1.0/content["limits:memoryBytes"]
-                        cpu_used = content["utilization:cpuPercent"]
-                        if mem_used > 1.0 and mem_prof:
-                            self.log.critical("This should trigger FTS memory profile capture")
-                            FtsHelper(node).capture_memory_profile()
-                            collect_logs = True
-                            mem_prof = False
-                        if self.scale_down is False and self.scale_up is False:
-                            if mem_used < 0.3 and cpu_used < 30:
-                                self.scale_down_count += 1
-                                self.log.info("FTS - Nodes below UWM: {}".format(self.scale_down_count))
-                            elif mem_used > 0.5 or cpu_used > 50:
-                                self.scale_up_count += 1
-                                self.log.info("FTS - Nodes above LWM: {}".format(self.scale_up_count))
-                            elif mem_used > 0.8 or cpu_used > 80:
-                                self.hwm_count += 1
-                            if self.scale_down_count == len(dataplane.fts_nodes)\
-                                    and self.scale_down is False\
-                                    and len(dataplane.fts_nodes) > 2:
-                                self.scale_down = True
-                                self.log.info("FTS - Scale DOWN should trigger in a while")
-                            if len(dataplane.fts_nodes) < 10\
-                               and self.scale_up_count == len(dataplane.fts_nodes)\
-                               and self.scale_up is False:
-                                self.scale_up = True
-                                self.log.info("FTS - Scale UP should trigger in a while")
-                            if self.hwm_count > 0 and self.fts_auto_rebl is False:
-                                self.fts_auto_rebl = True
-                                self.log.info("FTS - Auto-Rebalance should trigger in a while")
-                        self.table.add_row([
-                            dataplane.id,
-                            node.ip,
-                            "{}/{}".format(str(content["utilization:memoryBytes"]/1024/1024),
-                                           str(content["limits:memoryBytes"]/1024/1024)),
-                            "{}/{}".format(str(content["utilization:diskBytes"]/1024/1024),
-                                           str(content["limits:diskBytes"]/1024/1024)),
-                            "{}/{}".format(str(content["utilization:billableUnitsRate"]),
-                                           str(content["limits:billableUnitsRate"])),
-                            "{}".format(str(content["utilization:cpuPercent"]))
-                            ])
-                    except Exception as e:
-                        self.log.critical(e)
+            self.table = TableView(self.log.info)
+            self.table.set_headers(["Dataplane",
+                                    "Node",
+                                    "memoryBytes",
+                                    "diskBytes",
+                                    "billableUnitsRate",
+                                    "cpuPercent"])
+            for node in dataplane.fts_nodes:
+                try:
+                    rest = RestConnection(node)
+                    content = rest.get_fts_stats()
+                    mem_used = content["utilization:memoryBytes"]*1.0/content["limits:memoryBytes"]
+                    cpu_used = content["utilization:cpuPercent"]
+                    if mem_used > 1.0 and mem_prof:
+                        self.log.critical("This should trigger FTS memory profile capture")
+                        FtsHelper(node).capture_memory_profile()
+                        collect_logs = True
+                        mem_prof = False
+                    if self.scale_down is False and self.scale_up is False:
+                        if mem_used < 0.3 and cpu_used < 30:
+                            self.scale_down_count += 1
+                        elif mem_used > 0.5 or cpu_used > 50:
+                            self.scale_up_count += 1
+                        elif mem_used > 0.8 or cpu_used > 80:
+                            self.hwm_count += 1
+                        if self.scale_down_count == len(dataplane.fts_nodes)\
+                                and self.scale_down is False\
+                                and len(dataplane.fts_nodes) > 2:
+                            self.scale_down = True
+                            self.log.info("FTS - Scale DOWN should trigger in a while")
+                        if len(dataplane.fts_nodes) < 10\
+                           and self.scale_up_count == len(dataplane.fts_nodes)\
+                           and self.scale_up is False:
+                            self.scale_up = True
+                            self.log.info("FTS - Scale UP should trigger in a while")
+                        if self.hwm_count > 0 and self.fts_auto_rebl is False:
+                            self.fts_auto_rebl = True
+                            self.log.info("FTS - Auto-Rebalance should trigger in a while")
+                    self.table.add_row([
+                        dataplane.id,
+                        node.ip,
+                        "{}/{}".format(str(content["utilization:memoryBytes"]/1024/1024),
+                                       str(content["limits:memoryBytes"]/1024/1024)),
+                        "{}/{}".format(str(content["utilization:diskBytes"]/1024/1024),
+                                       str(content["limits:diskBytes"]/1024/1024)),
+                        "{}/{}".format(str(content["utilization:billableUnitsRate"]),
+                                       str(content["limits:billableUnitsRate"])),
+                        "{}".format(str(content["utilization:cpuPercent"]))
+                        ])
+                except Exception as e:
+                    self.log.critical(e)
+            if st_time + print_duration < time.time() or self.scale_down and self.scale_up or self.fts_auto_rebl:
+                self.log.info("FTS - Nodes below UWM: {}".format(self.scale_down_count))
+                self.log.info("FTS - Nodes above LWM: {}".format(self.scale_up_count))
                 self.table.display("FTS Statistics")
                 st_time = time.time()
             if collect_logs:
                 self.log.critical("Please collect logs immediately!!!")
                 pass
+            time.sleep(5)
 
 
 class FTSQueryLoad:

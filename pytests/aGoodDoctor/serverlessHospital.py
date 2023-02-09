@@ -20,6 +20,7 @@ from table_view import TableView
 from BucketLib.BucketOperations import BucketHelper
 from com.couchbase.test.sdk import Server
 from com.couchbase.client.core.error import TimeoutException
+from threading import Lock
 
 
 class Murphy(BaseTestCase, OPD):
@@ -55,7 +56,6 @@ class Murphy(BaseTestCase, OPD):
             self.num_collections_bkrs = self.input.param("num_collections_bkrs", self.num_collections)
             self.num_scopes = self.input.param("num_scopes", 1)
             self.xdcr_scopes = self.input.param("xdcr_scopes", self.num_scopes)
-            self.num_buckets = self.input.param("num_buckets", 1)
             self.kv_nodes = self.nodes_init
             self.cbas_nodes = self.input.param("cbas_nodes", 0)
             self.fts_nodes = self.input.param("fts_nodes", 0)
@@ -71,7 +71,6 @@ class Murphy(BaseTestCase, OPD):
             self.threads_calculation()
             self.op_type = self.input.param("op_type", "create")
             self.dgm = self.input.param("dgm", None)
-            self.num_buckets = self.input.param("num_buckets", 1)
             self.mutate = 0
             self.iterations = self.input.param("iterations", 10)
             self.step_iterations = self.input.param("step_iterations", 1)
@@ -103,9 +102,9 @@ class Murphy(BaseTestCase, OPD):
             self.defaultLoadDefn = {
                 "scopes": 1,
                 "collections": 1,
-                "num_items": 200000,
+                "num_items": 2000000,
                 "start": 0,
-                "end": 200000,
+                "end": 2000000,
                 "ops": 5000,
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
@@ -200,6 +199,7 @@ class Murphy(BaseTestCase, OPD):
             self.drFTS = DoctorFTS(self.cluster, self.bucket_util)
             self.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
             self.stop_run = False
+            self.lock = Lock()
         except Exception as e:
             self.log.critical(e)
             self.tearDown()
@@ -213,6 +213,8 @@ class Murphy(BaseTestCase, OPD):
         for ql in self.ftsQL:
             ql.stop_run = True
 
+        self.drFTS.stop_run = True
+        self.drIndex.stop_run = True
         BaseTestCase.tearDown(self)
 
     def create_gsi_indexes(self, buckets):
@@ -248,13 +250,29 @@ class Murphy(BaseTestCase, OPD):
                 self.check_cluster_scaling(service="gsi")
                 curr_gsi_nodes = self.get_num_nodes_in_cluster(
                                     dataplane.id, service="index")
-                # self.assertTrue(int(gsi_nodes) > min((i+1)*2, 9),
-                #                 "GSI nodes - Actual: {}, Expected: {}".
-                #                 format(gsi_nodes, gsi_nodes+2))
-                self.log.critical("GSI nodes - Actual: {}, Expected: {}".
-                                  format(curr_gsi_nodes, prev_gsi_nodes+2))
+                self.log.info("GSI nodes - Actual: {}, Expected: {}".
+                              format(curr_gsi_nodes, prev_gsi_nodes+2))
+                self.assertTrue(curr_gsi_nodes == prev_gsi_nodes+2,
+                                "GSI nodes - Actual: {}, Expected: {}".
+                                format(curr_gsi_nodes, prev_gsi_nodes+2))
                 break
             count -= 1
+
+    def check_index_auto_scaling_rebl(self):
+        def check():
+            while not self.stop_run:
+                self.log.info("Index - Check for LWM/HWM scale/defrag operation.")
+                if self.drIndex.scale_down or self.drIndex.scale_up:
+                    self.log.info("Index - Scale operation should trigger in a while.")
+                    self.check_cluster_scaling(service="Index", state="scaling")
+                    self.drIndex.scale_down, self.drIndex.scale_up = False, False
+                elif self.drIndex.gsi_auto_rebl:
+                    self.log.info("Index - Scale operation should trigger in a while.")
+                    self.check_cluster_scaling(service="Index", state="rebalancing")
+                    self.drIndex.gsi_auto_rebl = False
+                time.sleep(60)
+        gsi_scaling_monitor = threading.Thread(target=check)
+        gsi_scaling_monitor.start()
 
     def create_fts_indexes(self, buckets, wait=True):
         self.drFTS.create_fts_indexes(buckets)
@@ -271,13 +289,17 @@ class Murphy(BaseTestCase, OPD):
         def check():
             while not self.stop_run:
                 self.log.info("FTS - Check for scale operation.")
-                if self.drFTS.scale_down or self.drFTS.scale_up:
+                if self.drFTS.scale_down or self.drFTS.scale_up or self.drFTS.fts_auto_rebl:
                     self.log.info("FTS - Scale operation should trigger in a while.")
-                    self.check_cluster_scaling(service="FTS", state="scaling")
-                    self.drFTS.scale_down, self.drFTS.scale_up = False, False
+                    if self.drFTS.fts_auto_rebl:
+                        self.check_cluster_scaling(service="FTS", state="rebalancing")
+                        self.drFTS.fts_auto_rebl = False
+                    else:
+                        self.check_cluster_scaling(service="FTS", state="scaling")
+                        self.drFTS.scale_down, self.drFTS.scale_up = False, False
                     self.drFTS.scale_down_count = 0
                     self.drFTS.scale_up_count = 0
-                time.sleep(60)
+                self.sleep(60)
         fts_scaling_monitor = threading.Thread(target=check)
         fts_scaling_monitor.start()
 
@@ -325,10 +347,12 @@ class Murphy(BaseTestCase, OPD):
                         self.log.info("Balanced state of the cluster: {}"
                                       .format(state))
                         self.check_cluster_scaling(state="rebalancing")
+                    self.lock.acquire()
                     task = self.bucket_util.async_create_database(self.cluster, bucket,
                                                                   tenant,
                                                                   dataplane_id)
                     temp.append((task, bucket))
+                    self.lock.release()
                     if load_defn:
                         bucket.loadDefn = load_defn
                     else:
@@ -347,6 +371,7 @@ class Murphy(BaseTestCase, OPD):
                                         num_clients)
 
     def check_cluster_scaling(self, dataplane_id=None, service="kv", state="scaling"):
+        self.lock.acquire()
         dataplane_id = dataplane_id or self.dataplane_id
         pprint.pprint(self.serverless_util.get_scaling_records(dataplane_id))
         dataplane_state = self.serverless_util.get_dataplane_info(
@@ -379,6 +404,7 @@ class Murphy(BaseTestCase, OPD):
                              "Cluster scaling started but did not completed in {} seconds.\
                              Actual: {} Expected: {}".format(
                                  scaling_timeout, dataplane_state, "healthy"))
+        self.sleep(10, "Wait before dataplane cluster nodes refresh")
         if state == "scaling":
             dp = self.dataplane_objs[dataplane_id]
             records = Lookup("_couchbases._tcp.%s" % dp.srv, Type.SRV).run()
@@ -388,6 +414,7 @@ class Murphy(BaseTestCase, OPD):
                                       "password": dp.pwd,
                                       "port": 18091}).get_nodes()
             dp.refresh_object(servers)
+        self.lock.release()
 
     def get_num_nodes_in_cluster(self, dataplane_id=None, service="kv"):
         dataplane_id = dataplane_id or self.dataplane_id
@@ -593,6 +620,7 @@ class Murphy(BaseTestCase, OPD):
                 prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
                                                                service="index")
                 status = self.create_gsi_indexes(buckets)
+                print "GSI Status: {}".format(status)
                 self.assertTrue(status, "GSI index creation failed")
                 if prev_gsi_nodes < 10:
                     self.check_gsi_scaling(dataplane, prev_gsi_nodes)
@@ -631,8 +659,8 @@ class Murphy(BaseTestCase, OPD):
         self.check_fts_scaling()
 
         for i in range(0, 5):
-            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
             self.create_databases(20, load_defn=self.defaultLoadDefn)
+            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
             buckets = self.cluster.buckets[i*20:(i+1)*20]
             if kv_nodes <= min((i+1)*3, 11):
                 self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
@@ -653,13 +681,14 @@ class Murphy(BaseTestCase, OPD):
             for dataplane in self.dataplane_objs.values():
                 prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
                                                                service="index")
-                self.create_gsi_indexes(buckets)
+                status = self.create_gsi_indexes(buckets)
+                print "GSI Status: {}".format(status)
+                self.assertTrue(status, "GSI index creation failed")
                 if prev_gsi_nodes < 10:
                     self.check_gsi_scaling(dataplane, prev_gsi_nodes)
             self.build_gsi_index(buckets)
             self.create_fts_indexes(buckets, wait=True)
             self.sleep(30)
-
         count = 0
         self.PrintStep("Step: Test KV Auto-Rebalance/Defragmentation")
         buckets = self.cluster.buckets
@@ -671,7 +700,6 @@ class Murphy(BaseTestCase, OPD):
                               .format(state))
                 self.check_cluster_scaling(state="rebalancing")
                 state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
-
             self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
             self.assertEqual(len(self.cluster.bucketDNNodes[bucket]),
                              bucket.serverless.width*3,
@@ -693,7 +721,6 @@ class Murphy(BaseTestCase, OPD):
         self.cluster.buckets = list()
         self.ql = []
         self.ftsQL = []
-
         # Reset cluster specs to default
         self.log.info("Reset cluster specs to default to proceed further")
         self.generate_dataplane_config()
