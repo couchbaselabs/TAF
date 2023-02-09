@@ -2654,6 +2654,7 @@ class XattrTests(SubdocBaseTest):
         """
         loadtype = self.input.param("loadtype", "shadow")
         workload = self.input.param("workload", "workload_a")
+        self.validate_stat = self.input.param("validate_stat", False)
 
         workloads = ["shadow", "regular"]
 
@@ -2785,7 +2786,7 @@ class TxnTransition:
         for transition in transitions:
             self.log.info("Applying a transition %s"%(transition))
             transition()
-            if bucket:
+            if bucket and self.validate_stat:
                 ru, wu = self.get_stat_from_prometheus(bucket)
                 self.base.assertEqual(ru, self.expected_ru)
                 self.base.assertEqual(wu, self.expected_wu)

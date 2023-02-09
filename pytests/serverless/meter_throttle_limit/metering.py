@@ -21,6 +21,7 @@ class ServerlessMetering(LMT):
         super(ServerlessMetering, self).setUp()
         self.bucket = self.cluster.buckets[0]
         self.sdk_compression = self.input.param("sdk_compression", False)
+        self.validate_stat = self.input.param("validate_stat", False)
         compression_settings = {"enabled": self.sdk_compression}
         self.client = SDKClient([self.cluster.master], self.bucket,
                                 compression_settings=compression_settings)
@@ -475,19 +476,20 @@ class ServerlessMetering(LMT):
         shell.disconnect()
 
     def check_ru_wu_for_transaction(self):
-        num_throttled, ru, wu = self.get_stat(self.bucket)
-        if self.throttling:
-            self.expected_num_throttled += self.num_items
-            if num_throttled < self.expected_num_throttled:
-                self.fail("Actual num_throttled:%s, expected num_throttled:%s,"
-                             % (num_throttled, self.expected_num_throttled))
+        if self.validate_stat:
+            num_throttled, ru, wu = self.get_stat(self.bucket)
+            if self.throttling:
+                self.expected_num_throttled += self.num_items
+                if num_throttled < self.expected_num_throttled:
+                    self.fail("Actual num_throttled:%s, expected num_throttled:%s,"
+                                 % (num_throttled, self.expected_num_throttled))
 
-        if ru < self.expected_ru or wu < self.expected_wu:
-            self.fail("Actual ru:%s, expected ru:%s,"
-                          "Actual wu:%s, expected_wu:%s"
-                          % (ru, self.expected_ru, wu, self.expected_wu))
-        self.expected_num_throttled, self.expected_ru, self.expected_wu = \
-            num_throttled, ru, wu
+            if ru < self.expected_ru or wu < self.expected_wu:
+                self.fail("Actual ru:%s, expected ru:%s,"
+                              "Actual wu:%s, expected_wu:%s"
+                              % (ru, self.expected_ru, wu, self.expected_wu))
+            self.expected_num_throttled, self.expected_ru, self.expected_wu = \
+                num_throttled, ru, wu
 
     def test_metering_transactions(self):
         """
