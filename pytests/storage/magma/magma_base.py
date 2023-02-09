@@ -588,6 +588,8 @@ class MagmaBaseTest(StorageBase):
 
     def get_seqnumber_count(self, bucket=None):
         result = dict()
+        for node in self.cluster.nodes_in_cluster:
+            result["_".join(node.ip.split("."))] = dict()
         bucket = bucket or self.cluster.buckets[0]
         magma_path = os.path.join(self.data_path, bucket.name, "magma.{}")
         for node in self.cluster.nodes_in_cluster:
@@ -604,12 +606,21 @@ class MagmaBaseTest(StorageBase):
                 for kvstore in kvstores:
                     dump = cmd
                     kvstore_num = kvstore.split("-")[1].strip()
-                    dump += ' --kvstore {} --tree seq --treedata | grep  bySeqno | wc -l'.format(kvstore_num)
+                    #dump += ' --kvstore {} --tree seq --treedata | grep  bySeqno | wc -l'.format(kvstore_num)
+                    dump += ' --kvstore {} --docs-by-seq --history | wc -l'.format(kvstore_num)
                     seqnumber_count = shell.execute_command(dump)[0][0].strip()
-                    result[kvstore] = seqnumber_count
+                    result["_".join(node.ip.split("."))][kvstore] = seqnumber_count
         self.log.info("seqnumber_count/kvstore {}".format(result))
         seqnumber_count = 0
-        for count in result.values():
-            seqnumber_count += int(count)
+        for node in self.cluster.nodes_in_cluster:
+            for count in result["_".join(node.ip.split("."))].values():
+                seqnumber_count += int(count)
         self.log.info("seqnumber_count {}".format(seqnumber_count))
         return seqnumber_count
+
+    def get_history_start_seq_for_each_vb(self):
+        seq_stats = dict()
+        for bucket in self.cluster.buckets:
+            seq_stats[bucket] = self.bucket_util.get_vb_details_for_bucket(bucket,
+                                                                           self.cluster.nodes_in_cluster)
+        return seq_stats

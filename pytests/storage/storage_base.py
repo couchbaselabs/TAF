@@ -149,6 +149,7 @@ class StorageBase(BaseTestCase):
                                                    SDKConstants.RetryStrategy.BEST_EFFORT)
 
         # Creation of scopes of num_scopes is > 1
+
         scope_prefix = "Scope"
         for bucket in self.cluster.buckets:
             for i in range(1, self.num_scopes):
@@ -804,7 +805,8 @@ class StorageBase(BaseTestCase):
                      _sync=True,
                      track_failures=True,
                      doc_ops=None,
-                     sdk_retry_strategy=None):
+                     sdk_retry_strategy=None,
+                     iterations=1):
         doc_ops = doc_ops or self.doc_ops
 
         tasks_info = dict()
@@ -832,7 +834,8 @@ class StorageBase(BaseTestCase):
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
                 sdk_client_pool=self.sdk_client_pool,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                iterations=iterations)
             tasks_info.update(tem_tasks_info.items())
         if "create" in doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(

@@ -2895,7 +2895,8 @@ class BucketUtils(ScopeUtils):
                           monitor_stats=["doc_ops"],
                           track_failures=True,
                           sdk_client_pool=None,
-                          sdk_retry_strategy=None):
+                          sdk_retry_strategy=None,
+                          iterations=1):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type,
             exp=exp, random_exp=random_exp,
@@ -2913,7 +2914,8 @@ class BucketUtils(ScopeUtils):
             monitor_stats=monitor_stats,
             track_failures=track_failures,
             sdk_client_pool=sdk_client_pool,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            iterations=iterations)
 
     def load_docs_to_all_collections(self, start, end, cluster,
                                      key="test_docs",
@@ -2970,7 +2972,8 @@ class BucketUtils(ScopeUtils):
                                 monitor_stats=["doc_ops"],
                                 track_failures=True,
                                 sdk_client_pool=None,
-                                sdk_retry_strategy=None):
+                                sdk_retry_strategy=None,
+                                iterations=1):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -3001,7 +3004,8 @@ class BucketUtils(ScopeUtils):
                 monitor_stats=monitor_stats,
                 track_failures=track_failures,
                 sdk_client_pool=sdk_client_pool,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                iterations=iterations)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,

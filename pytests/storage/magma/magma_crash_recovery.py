@@ -74,9 +74,9 @@ class MagmaCrashTests(MagmaBaseTest):
                                                    self.buckets[0],
                                                    CbServer.default_scope,
                                                    {"name": collection})
-                self.sleep(2, "sleep before recreating collection")
+                self.sleep(2, "sleep before next collection creation")
+            sleep = random.randint(600, 900)
 
-            sleep = random.randint(30, 60)
             self.sleep(sleep, "Wait for next drop/create collection iteration")
 
     def reset_doc_params(self, doc_ops=None):
@@ -104,6 +104,8 @@ class MagmaCrashTests(MagmaBaseTest):
             self.read_perc = perc
         if "expiry" in doc_ops:
             self.expiry_perc = perc
+            self.maxttl = random.randint(5, 10)
+            self.bucket_util._expiry_pager(self.cluster, 10000000000)
         if "delete" in doc_ops:
             self.delete_perc = perc
 
@@ -111,11 +113,18 @@ class MagmaCrashTests(MagmaBaseTest):
         self.induce_failures = self.input.param("induce_failures", True)
         self.enable_disable_history = self.input.param("enable_disable_history", False)
         self.change_bucket_history_params = self.input.param("change_bucket_history_params", False)
+        self.exp_pager_stime = self.input.param("exp_pager_stime", 10)
 
         self.create_start = 0
         self.create_end = self.init_items_per_collection
         self.process_concurrency = self.standard_buckets * self.num_collections * self.num_scopes
         self.new_loader(wait=True)
+        if self.bucket_dedup_retention_seconds == 0 and self.bucket_dedup_retention_bytes == 0:
+            for bucket in self.cluster.buckets:
+                self.bucket_util.update_bucket_property(
+                    self.cluster.master, bucket,
+                    history_retention_seconds=86400, history_retention_bytes=96000000000)
+        self.sleep(30, "sleep after updating history settings")
         self.track_failures = False
 
         count = 1
@@ -123,6 +132,7 @@ class MagmaCrashTests(MagmaBaseTest):
             self.log.info("Iteration == {}".format(count))
             self.reset_doc_params()
             self.compute_docs_ranges()
+
             temp_tasks = self.new_loader(wait=False)
             self.graceful = self.input.param("graceful", False)
             wait_warmup = self.input.param("wait_warmup", True)
@@ -164,6 +174,12 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.num_items_per_collection += self.create_end - self.create_start
                 self.new_loader(wait=True)
             if "expiry" in self.doc_ops:
+                self.sleep(self.maxttl, "Wait for docs to expire")
+                self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
+                self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
+             to kickoff")
+                self.sleep(self.exp_pager_stime*20, "Wait for KV purger to scan expired docs and add \
+            tombstones.")
                 create_start = self.expiry_start
                 create_end = self.expiry_end
                 self.reset_doc_params(doc_ops="create")
@@ -172,6 +188,60 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.num_items_per_collection += self.create_end - self.create_start
                 self.new_loader(wait=True)
             count += 1
+
+    def test_crash_during_dedupe(self):
+        self.graceful = self.input.param("graceful", False)
+        self.drop_collections = self.input.param("drop_collections", False)
+        self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
+        wait_warmup = self.input.param("wait_warmup", True)
+        self.log.info("====test_crash_during_dedupe starts====")
+
+        self.compute_docs_ranges()
+        self.batch_size=500
+        self.process_concurrency=1
+
+        tasks_info = dict()
+        for collection in self.collections:
+            if collection == "_default":
+                continue
+            self.generate_docs(doc_ops="update", update_end=10000, update_start=0,
+                               target_vbucket=None)
+            self.batch_size=500
+            self.process_concurrency=1
+            tem_tasks_info = self.loadgen_docs(
+                self.retry_exceptions,
+                self.ignore_exceptions,
+                scope=CbServer.default_scope,
+                collection=collection,
+                suppress_error_table=True,
+                skip_read_on_error=True,
+                _sync=False,
+                doc_ops="update",
+                track_failures=False,
+                sdk_retry_strategy=self.sdk_retry_strategy,
+                iterations=5000)
+            tasks_info.update(tem_tasks_info.items())
+
+        self.crash_th = threading.Thread(target=self.crash,
+                                         kwargs=dict(graceful=self.graceful,
+                                                     wait=wait_warmup))
+        self.crash_th.start()
+        if self.drop_collections:
+            self.drop_collection_th = threading.Thread(target=self.drop_recreate_collections)
+            self.drop_collection_th.start()
+        for task in tasks_info:
+            self.task_manager.get_task_result(task)
+
+        self.stop_crash = True
+        if self.drop_collections:
+            self.drop_collection_th.join()
+        self.crash_th.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
+        for node in self.cluster.nodes_in_cluster:
+            if "kv" in node.services:
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    [node], self.cluster.buckets[0],
+                    wait_time=self.wait_timeout * 5))
 
     def test_crash_during_ops_new(self):
         self.graceful = self.input.param("graceful", False)
