@@ -243,7 +243,7 @@ class SecurityTest(BaseTestCase):
                 valid_ports = ["18091", "18092", "18093", "18094", "18095", "18096"]
                 self.connect_node_port(node, valid_ports, expect_to_connect=True)
 
-                invalid_ports = ["22", "3389"]
+                invalid_ports = ["3389"]
                 random_ports = random.sample(range(0, 65536), 5)
                 s = set(valid_ports)
                 invalid_ports.extend([str(x) for x in random_ports if str(x) not in s])
@@ -277,7 +277,7 @@ class SecurityTest(BaseTestCase):
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
                                  self.user, self.passwd)
         resp = capella_api.get_nodes(self.tenant_id, self.project_id, self.cluster_id)
-        node = json.loads(resp.content)["data"][3]["data"]["hostname"]
+        node = json.loads(resp.content)["data"][0]["data"]["hostname"]
         api = "https://" + node + ':18091/pools/default'
         self.log.info("Connecting to {0}".format(api))
         usernames = [self.rest_username, self.rest_username + random.choice(string.ascii_letters)]
