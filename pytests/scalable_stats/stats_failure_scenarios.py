@@ -27,19 +27,20 @@ class StatsFailureScenarios(CollectionBase):
         Run all metrics before and after failure scenarios and validate
         both ns_server and prometheus stats
         """
-        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        bucket = TravelSample()
+        self.bucket_util.load_sample_bucket(self.cluster, bucket)
         target_node = self.servers[0]
         remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log, remote)
+        error_sim = CouchbaseError(self.log, remote, target_node)
         self.log.info("Before failure")
         self.get_all_metrics(self.components, self.parse, self.metric_name)
         try:
             # Induce the error condition
-            error_sim.create(self.simulate_error)
+            error_sim.create(self.simulate_error, bucket_name=bucket.name)
             self.sleep(20, "Wait before reverting the error condition")
         finally:
             # Revert the simulated error condition and close the ssh session
-            error_sim.revert(self.simulate_error)
+            error_sim.revert(self.simulate_error, bucket_name=bucket.name)
             remote.disconnect()
         self.log.info("After failure")
         self.get_all_metrics(self.components, self.parse, self.metric_name)

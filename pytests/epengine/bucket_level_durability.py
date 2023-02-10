@@ -66,10 +66,11 @@ class CreateBucketTests(BucketDurabilityBase):
                 while not self.bucket_util.is_warmup_complete([bucket_obj]):
                     pass
 
-            self.get_vbucket_type_mapping(bucket_obj.name)
-            self.cluster.buckets = [bucket_obj]
-            self.bucket_util.print_bucket_stats(self.cluster)
-            self.summary.add_step(test_step)
+            if not create_failed:
+                self.get_vbucket_type_mapping(bucket_obj.name)
+                self.cluster.buckets = [bucket_obj]
+                self.bucket_util.print_bucket_stats(self.cluster)
+                self.summary.add_step(test_step)
 
             # Perform CRUDs to validate bucket_creation with durability
             if not create_failed:
