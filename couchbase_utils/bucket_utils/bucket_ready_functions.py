@@ -6101,3 +6101,102 @@ class BucketUtils(ScopeUtils):
             sleep(5, "check the item count again")
             iteration += 1
         return actual_items
+
+    # History retention methods
+    def get_vb_details_for_bucket(self, bucket, kv_nodes):
+        """
+        Populates the stat_dict with the required stats for further validation
+        :return stat_dict: Dict of required values
+        stat_dict = {
+            # vbucket-details stats
+            "vb-details": {
+                1: { "active": {"high_seqno": ..,
+                                "history_start_seqno": ..},
+                     "replica": [ {"high_seqno": ..,
+                                   "history_start_seqno": ..},..]
+                }
+            }
+        }
+        """
+        vb_details_fields = ["high_seqno", "history_start_seqno"]
+        active = Bucket.vBucket.ACTIVE
+        replica = Bucket.vBucket.REPLICA
+        stat_dict = dict()
+        for node in kv_nodes:
+            self.log.debug("Fetching vb-details from %s" % node.ip)
+            shell = RemoteMachineShellConnection(node)
+            cb_stat = Cbstats(shell)
+            vb_details = cb_stat.vbucket_details(bucket_name=bucket.name)
+            # Populate active stats
+            for vb in cb_stat.vbucket_list(bucket.name, active):
+                if vb not in stat_dict:
+                    stat_dict[vb] = dict()
+                    stat_dict[vb][active] = dict()
+                    stat_dict[vb][replica] = list()
+                for field in vb_details_fields:
+                    stat_dict[vb][active][field] = vb_details[str(vb)][field]
+            # Populate replica stats
+            for vb in cb_stat.vbucket_list(bucket.name, replica):
+                if vb not in stat_dict:
+                    stat_dict[vb] = dict()
+                    stat_dict[vb][active] = dict()
+                    stat_dict[vb][replica] = list()
+                replica_stat = dict()
+                for field in vb_details_fields:
+                    replica_stat[field] = vb_details[str(vb)][field]
+                stat_dict[vb][replica].append(replica_stat)
+            shell.disconnect()
+        return stat_dict
+
+    def validate_history_start_seqno_stat(
+            self, prev_stat, curr_stats,
+            comparison="==", bucket_flushed=False):
+        """
+        - bucket_flushed is True, expected curr::hist_start_seqno == 0
+        - comparison '==', vb_hist_start_seqno :: prev == curr
+        - comparison '>', vb_hist_start_seqno :: prev > curr
+        """
+        result = True
+        active = Bucket.vBucket.ACTIVE
+        replica = Bucket.vBucket.REPLICA
+        high_seqno = "high_seqno"
+        hist_start_seqno = "history_start_seqno"
+        prev_stat = prev_stat["vb-details"]
+        curr_stats = curr_stats["vb-details"]
+        # Check if active/replica stats matches
+        for stat in [prev_stat, curr_stats]:
+            for vb_num, stats in stat.items():
+                for r_stat in stats[replica]:
+                    if r_stat[high_seqno] != stats[active][high_seqno]:
+                        result = False
+                        self.log.critical("vb_%s, replica high_seqno mismatch"
+                                          % vb_num)
+                    if r_stat[hist_start_seqno] != stats[active][hist_start_seqno]:
+                        result = False
+                        self.log.critical(
+                            "vb_%s, replica hist_start_seqno mismatch"
+                            % vb_num)
+        if bucket_flushed:
+            for vb_num, stats in curr_stats.items():
+                active_stats = stats[active]
+                if active_stats[hist_start_seqno] != 0:
+                    result = False
+                    self.log.critical("vb_%s history_start_seqno != 0"
+                                      % vb_num)
+        elif comparison == "==":
+            for vb_num, stats in prev_stat.items():
+                active_stats = stats[active]
+                if active_stats[hist_start_seqno] \
+                        != curr_stats[vb_num][active][hist_start_seqno]:
+                    result = False
+                    self.log.critical("vb_%s history_start_seqno mismatch"
+                                      % vb_num)
+        elif comparison == ">=":
+            for vb_num, stats in prev_stat.items():
+                active_stats = stats[active]
+                if active_stats[hist_start_seqno] \
+                        <= curr_stats[vb_num][active][hist_start_seqno]:
+                    result = False
+                    self.log.critical("vb_%s history_start_seqno <= prev_stat"
+                                      % vb_num)
+        return result
