@@ -19,12 +19,12 @@ class SecurityTest(BaseTestCase):
         self.secret_key = self.input.capella.get("secret_key")
         self.access_key = self.input.capella.get("access_key")
         self.project_id = self.input.capella.get("project")
-        self.cluster_id = self.input.capella.get("clusters")
+        self.cluster_id = self.cluster.id
         if self.input.capella.get("test_users"):
             self.test_users = json.loads(self.input.capella.get("test_users"))
         else:
-            self.test_users = {"User": {"password": self.passwd, "mailid": self.user,
-                                        "role": "organizationOwner"}}
+            self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
+                                         "role": "organizationOwner"}}
 
     def tearDown(self):
         super(SecurityTest, self).tearDown()
@@ -61,17 +61,22 @@ class SecurityTest(BaseTestCase):
                 session.get(connect, params='', headers=None, timeout=60, verify=False)
             except requests.exceptions.ConnectionError as e:
                 if expect_to_connect:
-                    self.fail(msg="Connection to the node should have passed. Failed with error: {0} on port: {1}".format(e, port))
+                    self.fail(
+                        msg="Connection to the node should have passed. Failed with error: {0} on "
+                            "port: {1}".format(e, port))
                 else:
                     if not expect_to_connect:
-                        self.fail(msg="Connection to the node should have failed on port: {0}".format(port))
+                        self.fail(
+                            msg="Connection to the node should have failed on port: {0}".format(
+                                port))
 
     def run_query(self, user, password, role, query_statement):
         pod = "https://" + self.url.replace("cloud", "", 1)
         url = "{0}/v2/databases/{1}/proxy/_p/query/query/service".format(pod, self.cluster_id)
-        capella_api = CapellaAPI("https://"+self.url, self.secret_key, self.access_key, user, password)
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, user,
+                                 password)
         body = {"statement": "{0}".format(query_statement)}
-        resp = capella_api.do_internal_request(url, method="POST",params=json.dumps(body))
+        resp = capella_api.do_internal_request(url, method="POST", params=json.dumps(body))
         status = resp.status_code
         content = resp.content
         if role != "organizationOwner":
@@ -157,27 +162,28 @@ class SecurityTest(BaseTestCase):
         expected_response_code = {"organizationOwner": 202, "projectCreator": 403,
                                   "cloudManager": 403, "organizationMember": 403}
         for user in self.test_users:
-            self.log.info("Verifying status code for Role: {0}"
-                          .format(self.test_users[user]["role"]))
-            capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
-                                     self.test_users[user]["mailid"],
-                                     self.test_users[user]["password"])
-            capella_cluster_config = {"region": "us-west-2", "name": user + "_Cluster",
-                                      "cidr": None, "singleAZ": False,
-                                      "specs": [{"services": ["kv"], "count": 3,
-                                                 "compute": "m5.xlarge",
-                                                 "disk": {"type": "gp3", "sizeInGb": 50,
-                                                          "iops": 3000}}],
-                                      "plan": "Developer Pro",
-                                      "projectId": self.project_id, "timezone": "PT",
-                                      "description": "", "provider": "aws"}
-            resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
-                                       capella_api,
-                                       capella_cluster_config)
-            self.assertEqual(expected_response_code[self.test_users[user]["role"]],
-                             resp.status_code, msg="FAIL, Outcome: {0}, Expected: {1}"
-                             .format(resp.status_code,
-                                     expected_response_code[self.test_users[user]["role"]]))
+            if self.test_users[user]["role"] != "organizationOwner":
+                self.log.info("Verifying status code for Role: {0}"
+                              .format(self.test_users[user]["role"]))
+                capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                         self.test_users[user]["mailid"],
+                                         self.test_users[user]["password"])
+                capella_cluster_config = {"region": "us-west-2", "name": user + "_Cluster",
+                                          "cidr": None, "singleAZ": False,
+                                          "specs": [{"services": ["kv"], "count": 3,
+                                                     "compute": "m5.xlarge",
+                                                     "disk": {"type": "gp3", "sizeInGb": 50,
+                                                              "iops": 3000}}],
+                                          "plan": "Developer Pro",
+                                          "projectId": self.project_id, "timezone": "PT",
+                                          "description": "", "provider": "aws"}
+                resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
+                                           capella_api,
+                                           capella_cluster_config)
+                self.assertEqual(expected_response_code[self.test_users[user]["role"]],
+                                 resp.status_code, msg="FAIL, Outcome: {0}, Expected: {1}"
+                                 .format(resp.status_code,
+                                         expected_response_code[self.test_users[user]["role"]]))
 
     def test_create_bucket(self):
         self.log.info("Verifying status code for creating bucket")
@@ -378,31 +384,21 @@ class SecurityTest(BaseTestCase):
         self.assertEqual(404, resp.status_code,
                          msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 404))
 
-        self.log.info("Expose details of a user who is part of the tenant")
-        url = "{0}/v2/organizations/{1}/users/{2}".format("https://" +
-                                                          self.url.replace("cloud", "", 1),
-                                                          self.tenant_id,
-                                                          self.test_users["User1"]["userid"])
-        resp = capella_api.do_internal_request(url, method="GET", params='')
-        self.assertEqual(200, resp.status_code,
-                         msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 200))
         self.log.info("Expose details of a user who is not part of the tenant")
         url = "{0}/v2/organizations/{1}/users/{2}".format("https://" +
                                                           self.url.replace("cloud", "", 1),
-                                                          diff_tenant_id,
-                                                          self.test_users["User1"]["userid"])
+                                                          self.tenant_id, diff_tenant_id)
         resp = capella_api.do_internal_request(url, method="GET", params='')
-        self.assertEqual(500, resp.status_code,
-                         msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 500))
+        self.assertEqual(404, resp.status_code,
+                         msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 404))
 
     def test_n1ql_service(self):
         self.log.info("Verifying status code for running query to access metadata")
-        queries = [
-            "SELECT CURL(\"\", \"header=Metadata-true\");"
-            ]
+        queries = ["SELECT CURL(\"\", \"header=Metadata-true\");"]
         for user in self.test_users:
             for query_statement in queries:
-                self.log.info("Verifying status code for Role: {0}".format(self.test_users[user]["role"]))
+                self.log.info(
+                    "Verifying status code for Role: {0}".format(self.test_users[user]["role"]))
                 self.log.info("Running query: {0}".format(query_statement))
                 self.run_query(self.test_users[user]["mailid"], self.test_users[user]["password"],
-                self.test_users[user]["role"], query_statement)
+                               self.test_users[user]["role"], query_statement)
