@@ -514,7 +514,10 @@ class Cbstats(CbCmdBase):
             if vb_num not in stats:
                 stats[vb_num] = dict()
             # Populate the values to the stats dictionary
-            stats[vb_num][stat_name] = stat_value
+            try:
+                stats[vb_num][stat_name] = int(stat_value)
+            except ValueError:
+                stats[vb_num][stat_name] = stat_value
 
         return stats
 
