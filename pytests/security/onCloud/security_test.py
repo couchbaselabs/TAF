@@ -402,3 +402,23 @@ class SecurityTest(BaseTestCase):
                 self.log.info("Running query: {0}".format(query_statement))
                 self.run_query(self.test_users[user]["mailid"], self.test_users[user]["password"],
                                self.test_users[user]["role"], query_statement)
+
+    def test_invalid_cpu_and_memory_parameters(self):
+        self.log.info("Verifying status code for deploying cluster with invalid cpu and parameters")
+        invalid_compute = ["Standard_D2s_v4", "Standard_D3s_v4"]
+        for compute in invalid_compute:
+            capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                        self.user, self.passwd)
+            capella_cluster_config = {"region": "eastus", "name": "_Cluster",
+                                        "cidr": "10.64.118.0/23", "singleAZ": False,
+                                        "specs": [{"services": ["kv"], "count": 3,
+                                                    "compute": compute,
+                                                    "disk": {"type": "P6", "sizeInGb": 64,
+                                                            "iops": 240}}],
+                                        "plan": "Developer Pro",
+                                        "projectId": self.project_id, "timezone": "PT",
+                                        "description": "", "provider": "hostedAzure"}
+            resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
+                                        capella_api, capella_cluster_config, timeout=100)
+            self.assertEqual(422, resp.status_code, msg="FAIL, Outcome: {0}, Expected: {1}"
+                             .format(resp.status_code, 422))
