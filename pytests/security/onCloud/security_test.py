@@ -422,3 +422,33 @@ class SecurityTest(BaseTestCase):
                                         capella_api, capella_cluster_config, timeout=100)
             self.assertEqual(422, resp.status_code, msg="FAIL, Outcome: {0}, Expected: {1}"
                              .format(resp.status_code, 422))
+
+    def test_deploy_cluster_with_invalid_node_configuration(self):
+        self.log.info("Verifying status code for deploying various cluster configurations")
+        invalid_config = [[["kv", "index"], ["index", "fts"]],
+                      [["index"], ["fts"]],
+                      [["kv", "n1ql"], ["n1ql", "index"]]]
+        for config in invalid_config:
+            self.log.info("Verifying status code for cluster configuration: {0}".format(config))
+            capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                    self.user, self.passwd)
+            capella_cluster_config = {"region": "eastus", "name": "Test", "cidr": "10.0.70.0/23",
+                                    "singleAZ": True, "specs": [{"services": config[0],
+                                                                "count": 3,
+                                                                "compute": "Standard_D4s_v5",
+                                                                "disk": {"type": "P6",
+                                                                            "sizeInGb": 64,
+                                                                            "iops": 240}},
+                                                                {"services": config[1],
+                                                                "count": 3,
+                                                                "compute": "Standard_D4s_v5",
+                                                                "disk": {"type": "P6",
+                                                                            "sizeInGb": 64,
+                                                                            "iops": 240}}],
+                                    "plan": "Developer Pro", "projectId": self.project_id,
+                                    "timezone": "PT", "description": "",
+                                    "provider": "hostedAzure"}
+            resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
+                                    capella_api, capella_cluster_config, timeout=100)
+            self.assertEqual(422, resp.status_code,
+                            msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 422))
