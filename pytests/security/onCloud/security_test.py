@@ -7,9 +7,27 @@ import requests
 from pytests.basetestcase import BaseTestCase
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
+class ServerInfo:
+    def __init__(self,
+                 ip,
+                 port,
+                 ssh_username,
+                 ssh_password,
+                 memcached_port,
+                 ssh_key=''):
+        self.ip = ip
+        self.ssh_username = ssh_username
+        self.ssh_password = ssh_password
+        self.port = port
+        self.ssh_key = ssh_key
+        self.memcached_port = memcached_port
+        self.type = None
+        self.remote_info = None
 
 class SecurityTest(BaseTestCase):
+    SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase', 18091)
     def setUp(self):
         BaseTestCase.setUp(self)
         self.url = self.input.capella.get("pod")
@@ -452,3 +470,21 @@ class SecurityTest(BaseTestCase):
                                     capella_api, capella_cluster_config, timeout=100)
             self.assertEqual(422, resp.status_code,
                             msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 422))
+
+    def test_zone_transfer(self):
+        self.log.info("Verifying if zone tranfer is possible or not")
+        pod = "https://" + self.url.replace("cloud", "", 1)
+        url = "{0}/v2/organizations/{1}/projects/{2}/clusters/{3}".format(pod, self.tenant_id, self.project_id, self.cluster_id)
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                    self.user, self.passwd)
+        resp = capella_api.do_internal_request(url, method="GET")
+        shell = RemoteMachineShellConnection(SecurityTest.SLAVE_HOST)
+        connection_string = json.loads(resp.content.decode('utf-8'))["data"]["connect"]["srv"]
+        cmd = "dig {0} AXFR".format(connection_string)
+        output, error = shell.execute_command(cmd)
+        sz = len(output)
+        if output[sz - 1] == "; Transfer failed.":
+            self.log.info("Zone transfer failed as expected")
+        else:
+            self.fail("Test failed. Zone transfer should have failed")
+        shell.disconnect()
