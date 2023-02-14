@@ -146,12 +146,11 @@ class DoctorFTS:
         for bucket in buckets:
             self.fts_helper = FtsHelper(bucket.serverless.nebula_endpoint)
             for index_name, details in bucket.ftsIndexes.items():
-                b, s = details[1], details[2]
                 status = False
                 stop_time = time.time() + timeout
                 while time.time() < stop_time:
                     _status, content = self.fts_helper.fts_index_item_count(
-                        "%s.%s.%s" % (b, s, index_name))
+                        "%s" % (index_name))
                     self.log.debug("index: {}, status: {}, count: {}"
                                    .format(index_name, _status,
                                            json.loads(content)["count"]))
