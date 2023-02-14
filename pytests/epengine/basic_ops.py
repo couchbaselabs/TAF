@@ -1729,6 +1729,69 @@ class basic_ops(ClusterSetup):
             rest.remove_all_replications()
             rest.remove_all_remote_clusters()
 
+    def test_stats_with_warmup(self):
+        """
+        Ref: MB-53829
+        """
+        bucket = self.cluster.buckets[0]
+        doc_create = doc_generator(
+            self.key, 0, self.num_items, key_size=self.key_size,
+            doc_size=self.doc_size, doc_type=self.doc_type)
+        self.log.info("Loading {0} docs into the bucket: {1}"
+                      .format(self.num_items, bucket))
+        task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_create,
+            DocLoading.Bucket.DocOps.CREATE, 0,
+            batch_size=self.batch_size,
+            process_concurrency=10,
+            compression=self.sdk_compression,
+            timeout_secs=self.sdk_timeout,
+            scope=self.scope_name,
+            collection=self.collection_name,
+            sdk_client_pool=self.sdk_client_pool,
+            print_ops_rate=False)
+        self.task.jython_task_manager.get_task_result(task)
+        task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_create,
+            DocLoading.Bucket.DocOps.UPDATE, 0,
+            batch_size=self.batch_size,
+            process_concurrency=10,
+            durability=Bucket.DurabilityLevel.MAJORITY,
+            timeout_secs=self.sdk_timeout,
+            scope=self.scope_name,
+            collection=self.collection_name,
+            sdk_client_pool=self.sdk_client_pool,
+            print_ops_rate=False)
+        self.task.jython_task_manager.get_task_result(task)
+
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cb_err = CouchbaseError(self.log, shell)
+        cb_stats = Cbstats(shell)
+
+        self.log.info("Collection stats before executing the scenario")
+        stats = cb_stats.all_stats(bucket.name)
+
+        cb_err.create(CouchbaseError.STOP_SERVER)
+        cb_err.revert(CouchbaseError.STOP_SERVER)
+        self.cluster_util.wait_for_ns_servers_or_assert([self.cluster.master])
+
+        curr_stats =  cb_stats.all_stats(bucket.name)
+        for field in ["ep_db_file_size", "ep_db_data_size"]:
+            self.assertTrue(int(curr_stats[field]) != 0,
+                            "%s stat is zero" % field)
+
+        cb_err.create(CouchbaseError.KILL_MEMCACHED)
+        self.sleep(10, "Wait for memcached to recover")
+        curr_stats =  cb_stats.all_stats(bucket.name)
+        for field in ["ep_db_file_size", "ep_db_data_size"]:
+            self.assertTrue(int(curr_stats[field]) != 0,
+                            "%s stat is zero" % field)
+        shell.disconnect()
+
+
     def test_warmup_scan_reset(self):
         """
         1. Create couchstore value eviction bucket
