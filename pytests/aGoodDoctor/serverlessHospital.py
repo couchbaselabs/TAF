@@ -194,7 +194,27 @@ class Murphy(BaseTestCase, OPD):
                 "2i": (0, 2),
                 "FTS": (0, 0)
                 }
+            self.kv_memmgmt = {
+                "scopes": 1,
+                "collections": 1,
+                "num_items": 200000000,
+                "start": 0,
+                "end": 200000000,
+                "ops": 6000,
+                "doc_size": 1024,
+                "pattern": [10, 80, 0, 10, 0], # CRUDE
+                "load_type": ["create", "read", "delete"],
+                "2i": (0, 0),
+                "FTS": (0, 0)
+                }
             self.load_defn.append(self.loadDefn4)
+            self.workload = self.input.param("workload", self.defaultLoadDefn)
+
+            if self.workload == "kv_memmgmt":
+                self.workload = self.kv_memmgmt
+            elif self.workload == "gsi_auto_scaling":
+                self.workload = self.gsiAutoScaleLoadDefn
+
             self.drIndex = DoctorN1QL(self.cluster, self.bucket_util)
             self.drFTS = DoctorFTS(self.cluster, self.bucket_util)
             self.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
@@ -565,7 +585,7 @@ class Murphy(BaseTestCase, OPD):
         self.PrintStep("Step 1: Create required buckets and collections.")
         self.log.info("Create CB buckets")
         # Create Buckets
-        self.create_databases(self.num_buckets, load_defn=self.defaultLoadDefn)
+        self.create_databases(self.num_buckets, load_defn=self.workload)
         self.create_required_collections(self.cluster, self.cluster.buckets)
         self.create_gsi_indexes(self.cluster.buckets)
         self.build_gsi_index(self.cluster.buckets)
@@ -600,7 +620,7 @@ class Murphy(BaseTestCase, OPD):
         self.check_fts_scaling()
 
         for i in range(0, 5):
-            self.create_databases(20, load_defn=self.defaultLoadDefn)
+            self.create_databases(20, load_defn=self.workload)
             self.refresh_dp_obj(self.dataplane_id)
             kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
             buckets = self.cluster.buckets[i*20:(i+1)*20]
@@ -661,79 +681,79 @@ class Murphy(BaseTestCase, OPD):
         self.check_memory_management()
         self.check_cluster_state()
         self.check_fts_scaling()
-
-        for i in range(0, 5):
-            self.create_databases(20, load_defn=self.defaultLoadDefn)
-            self.refresh_dp_obj(self.dataplane_id)
-            kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
-            buckets = self.cluster.buckets[i*20:(i+1)*20]
-            if kv_nodes <= min((i+1)*3, 11):
-                self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
-                self.check_cluster_scaling()
-            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
-            self.assertTrue(int(kv_nodes) > min((i+1)*3, 11),
-                            "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
-            self.create_required_collections(self.cluster, buckets)
-            self.start_initial_load(buckets)
+        if self.workload != self.gsiAutoScaleLoadDefn:
+            for i in range(0, 5):
+                self.create_databases(20, load_defn=self.workload)
+                self.refresh_dp_obj(self.dataplane_id)
+                kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
+                buckets = self.cluster.buckets[i*20:(i+1)*20]
+                if kv_nodes <= min((i+1)*3, 11):
+                    self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
+                    self.check_cluster_scaling()
+                kv_nodes = self.get_num_nodes_in_cluster(service="kv")
+                self.assertTrue(int(kv_nodes) > min((i+1)*3, 11),
+                                "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
+                self.create_required_collections(self.cluster, buckets)
+                self.start_initial_load(buckets)
+                for bucket in buckets:
+                    try:
+                        self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                        self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
+                    except TimeoutException as e:
+                        print e
+                    except:
+                        pass
+                for dataplane in self.dataplane_objs.values():
+                    prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
+                                                                   service="index")
+                    status = self.create_gsi_indexes(buckets)
+                    print "GSI Status: {}".format(status)
+                    self.assertTrue(status, "GSI index creation failed")
+                    if prev_gsi_nodes < 10:
+                        self.check_gsi_scaling(dataplane, prev_gsi_nodes)
+                self.build_gsi_index(buckets)
+                self.create_fts_indexes(buckets, wait=True)
+                self.sleep(30)
+            count = 0
+            self.PrintStep("Step: Test KV Auto-Rebalance/Defragmentation")
+            buckets = self.cluster.buckets
             for bucket in buckets:
-                try:
-                    self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
-                    self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
-                except TimeoutException as e:
-                    print e
-                except:
-                    pass
-            for dataplane in self.dataplane_objs.values():
-                prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
-                                                               service="index")
-                status = self.create_gsi_indexes(buckets)
-                print "GSI Status: {}".format(status)
-                self.assertTrue(status, "GSI index creation failed")
-                if prev_gsi_nodes < 10:
-                    self.check_gsi_scaling(dataplane, prev_gsi_nodes)
-            self.build_gsi_index(buckets)
-            self.create_fts_indexes(buckets, wait=True)
-            self.sleep(30)
-        count = 0
-        self.PrintStep("Step: Test KV Auto-Rebalance/Defragmentation")
-        buckets = self.cluster.buckets
-        for bucket in buckets:
-            start = time.time()
-            state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
-            while start + 3600 > time.time() and state is False:
-                self.log.info("Balanced state of the cluster: {}"
-                              .format(state))
-                self.check_cluster_scaling(state="rebalancing")
+                start = time.time()
                 state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
-            self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
-            self.assertEqual(len(self.cluster.bucketDNNodes[bucket]),
-                             bucket.serverless.width*3,
-                             "Bucket width and number of nodes mismatch")
-            self.log.info("Deleting bucket: {}".format(bucket.name))
-            if self.ql:
-                ql = [load for load in self.ql if load.bucket == bucket][0]
-                ql.stop_query_load()
-            if self.ftsQL:
-                ql = [load for load in self.ftsQL if load.bucket == bucket][0]
-                ql.stop_query_load()
-            self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
-            self.cluster.buckets.remove(bucket)
-            self.serverless_util.delete_database(self.pod, self.tenant,
-                                                 bucket.name)
-            count += 1
-            if count == 50:
-                self.check_cluster_scaling(state="rebalancing")
-        self.cluster.buckets = list()
-        self.ql = []
-        self.ftsQL = []
-        # Reset cluster specs to default
-        self.log.info("Reset cluster specs to default to proceed further")
-        self.generate_dataplane_config()
-        config = self.dataplane_config["overRide"]["couchbase"]["specs"]
-        self.log.info("Changing cluster specs to default.")
-        self.log.info(config)
-        self.serverless_util.change_dataplane_cluster_specs(self.dataplane_id, config)
-        self.check_cluster_scaling()
+                while start + 3600 > time.time() and state is False:
+                    self.log.info("Balanced state of the cluster: {}"
+                                  .format(state))
+                    self.check_cluster_scaling(state="rebalancing")
+                    state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
+                self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
+                self.assertEqual(len(self.cluster.bucketDNNodes[bucket]),
+                                 bucket.serverless.width*3,
+                                 "Bucket width and number of nodes mismatch")
+                self.log.info("Deleting bucket: {}".format(bucket.name))
+                if self.ql:
+                    ql = [load for load in self.ql if load.bucket == bucket][0]
+                    ql.stop_query_load()
+                if self.ftsQL:
+                    ql = [load for load in self.ftsQL if load.bucket == bucket][0]
+                    ql.stop_query_load()
+                self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
+                self.cluster.buckets.remove(bucket)
+                self.serverless_util.delete_database(self.pod, self.tenant,
+                                                     bucket.name)
+                count += 1
+                if count == 50:
+                    self.check_cluster_scaling(state="rebalancing")
+            self.cluster.buckets = list()
+            self.ql = []
+            self.ftsQL = []
+            # Reset cluster specs to default
+            self.log.info("Reset cluster specs to default to proceed further")
+            self.generate_dataplane_config()
+            config = self.dataplane_config["overRide"]["couchbase"]["specs"]
+            self.log.info("Changing cluster specs to default.")
+            self.log.info(config)
+            self.serverless_util.change_dataplane_cluster_specs(self.dataplane_id, config)
+            self.check_cluster_scaling()
 
         self.create_databases(19, load_defn=self.gsiAutoScaleLoadDefn)
         # self.create_databases(19)
