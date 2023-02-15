@@ -298,6 +298,7 @@ class DoctorN1QL():
         self.gsi_auto_rebl = False
         while not self.stop_run:
             self.nodes_below_LWM = 0
+            self.nodes_above_LWM = 0
             self.nodes_above_HWM = 0
             self.scale_down_nodes = 0
             if st_time + print_duration < time.time():
@@ -320,6 +321,8 @@ class DoctorN1QL():
                         units_used = content["units_used_actual"]/units_q * 100
                         if mem_used < 40 or units_used < 32:
                             self.nodes_below_LWM += 1
+                        elif mem_used > 45 or units_used > 36:
+                            self.nodes_above_LWM += 1
                         elif mem_used > 70 or units_used > 50:
                             self.nodes_above_HWM += 1
 
@@ -390,6 +393,9 @@ class DoctorN1QL():
                         else:
                             self.scale_up = True
                             self.log.info("GSI - Scale UP should trigger in a while")
+                    if self.nodes_above_LWM == len(dataplane.index_nodes):
+                        self.scale_up = True
+                        self.log.info("GSI - Scale UP should trigger in a while")
 
                 st_time = time.time()
 
