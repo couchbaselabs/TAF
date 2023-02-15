@@ -15,6 +15,7 @@ from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Dataplane
 from constants.cloud_constants.capella_constants import AWS
 from security_config import trust_all_certs
+from threading import Thread
 import global_vars
 from uuid import uuid4
 from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
@@ -215,8 +216,18 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             self.log.info("Deleting database: {}".format(bucket.name))
             self.serverless_util.delete_database(self.pod, self.tenant, bucket.name)
 
+        db_delete_wait_thread = []
         for bucket in self.cluster.buckets:
-            self.serverless_util.wait_for_database_deleted(self.tenant, bucket.name)
+            wait_thread = Thread(
+                target=self.serverless_util.wait_for_database_deleted,
+                name="waiting_thread_{0}".format(
+                    bucket.name),
+                args=(self.tenant, bucket.name, 600))
+            db_delete_wait_thread.append(wait_thread)
+            wait_thread.start()
+
+        for wait_thread in db_delete_wait_thread:
+            wait_thread.join()
 
         for dataplane_id in self.delete_dataplanes:
             self.log.info("Destroying dataplane: {}".format(dataplane_id))
