@@ -635,7 +635,7 @@ class Murphy(BaseTestCase, OPD):
         for bucket in self.cluster.buckets:
             start = time.time()
             state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
-            while start + 3600 > time.time() and not state:
+            while start + 3600 > time.time() and state is False:
                 self.log.info("Balanced state of the cluster: {}"
                               .format(state))
                 self.check_cluster_scaling(state="rebalancing")
@@ -700,7 +700,7 @@ class Murphy(BaseTestCase, OPD):
         for bucket in buckets:
             start = time.time()
             state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
-            while start + 3600 > time.time() and not state:
+            while start + 3600 > time.time() and state is False:
                 self.log.info("Balanced state of the cluster: {}"
                               .format(state))
                 self.check_cluster_scaling(state="rebalancing")
