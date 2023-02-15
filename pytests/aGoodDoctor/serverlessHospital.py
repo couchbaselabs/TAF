@@ -406,15 +406,18 @@ class Murphy(BaseTestCase, OPD):
                                  scaling_timeout, dataplane_state, "healthy"))
         self.sleep(10, "Wait before dataplane cluster nodes refresh")
         if state == "scaling":
-            dp = self.dataplane_objs[dataplane_id]
-            records = Lookup("_couchbases._tcp.%s" % dp.srv, Type.SRV).run()
-            ip = str(records[0].getTarget())
-            servers = RestConnection({"ip": ip,
-                                      "username": dp.user,
-                                      "password": dp.pwd,
-                                      "port": 18091}).get_nodes()
-            dp.refresh_object(servers)
+            self.refresh_dp_obj(dataplane_id)
         self.lock.release()
+
+    def refresh_dp_obj(self, dataplane_id):
+        dp = self.dataplane_objs[dataplane_id]
+        records = Lookup("_couchbases._tcp.%s" % dp.srv, Type.SRV).run()
+        ip = str(records[0].getTarget())
+        servers = RestConnection({"ip": ip,
+                                  "username": dp.user,
+                                  "password": dp.pwd,
+                                  "port": 18091}).get_nodes()
+        dp.refresh_object(servers)
 
     def get_num_nodes_in_cluster(self, dataplane_id=None, service="kv"):
         dataplane_id = dataplane_id or self.dataplane_id
@@ -597,8 +600,9 @@ class Murphy(BaseTestCase, OPD):
         self.check_fts_scaling()
 
         for i in range(0, 5):
-            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
             self.create_databases(20, load_defn=self.defaultLoadDefn)
+            self.refresh_dp_obj(self.dataplane_id)
+            kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
             buckets = self.cluster.buckets[i*20:(i+1)*20]
             if kv_nodes <= min((i+1)*3, 11):
                 self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
@@ -660,7 +664,8 @@ class Murphy(BaseTestCase, OPD):
 
         for i in range(0, 5):
             self.create_databases(20, load_defn=self.defaultLoadDefn)
-            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
+            self.refresh_dp_obj(self.dataplane_id)
+            kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
             buckets = self.cluster.buckets[i*20:(i+1)*20]
             if kv_nodes <= min((i+1)*3, 11):
                 self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
