@@ -182,7 +182,7 @@ class BasicOps(CollectionBase):
                                  % (node.ip,
                                     expected_collection_count,
                                     c_data["count"]))
-            if "_default" in c_data:
+            if "_default" in c_data["_default"]:
                 self.log_failure("%s: _default collection exists in cbstats"
                                  % node.ip)
 
