@@ -48,7 +48,7 @@ class RebalanceDurability(RebalanceBaseTest):
                     for i in range(self.nodes_in)]
         tasks_info = self.__load_docs_in_all_buckets()
         rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, [])
+            self.cluster, servs_in, [])
         self.task.jython_task_manager.get_task_result(rebalance)
 
         for task in tasks_info:
