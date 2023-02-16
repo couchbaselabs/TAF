@@ -592,7 +592,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             random_node = choice(self.vbs_in_node.keys())
             error_sim = CouchbaseError(
                 self.log,
-                self.vbs_in_node[random_node]["shell"])
+                self.vbs_in_node[random_node]["shell"],
+                node=random_node)
 
             target_vbs = self.vbs_in_node[random_node][target_vb_type]
             doc_gen = doc_generator(self.key, 0, 1,
@@ -745,7 +746,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             # Perform specified action
             for node in target_nodes:
                 error_sim = CouchbaseError(self.log,
-                                           self.vbs_in_node[node]["shell"])
+                                           self.vbs_in_node[node]["shell"],
+                                           node=node)
                 error_sim.create(simulate_error,
                                  bucket_name=bucket.name)
             self.sleep(5, "Wait for error simulation to take effect")
@@ -808,7 +810,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             # Revert the introduced error condition
             for node in target_nodes:
                 error_sim = CouchbaseError(self.log,
-                                           self.vbs_in_node[node]["shell"])
+                                           self.vbs_in_node[node]["shell"],
+                                           node=node)
                 error_sim.revert(simulate_error,
                                  bucket_name=bucket.name)
 
