@@ -522,12 +522,12 @@ class RebalanceBaseTest(BaseTestCase):
                        .format(rebalance_operation))
         if rebalance_operation == "rebalance_out":
             task = self.task.async_rebalance(
-                self.servers[:self.nodes_init], [],
+                self.cluster, [],
                 [self.servers[self.nodes_init - 1]],
                 retry_get_process_num=self.retry_get_process_num)
         elif rebalance_operation == "rebalance_in":
             task = self.task.async_rebalance(
-                self.servers[:self.nodes_init],
+                self.cluster,
                 [self.servers[self.nodes_init]], [],
                 retry_get_process_num=self.retry_get_process_num)
         elif rebalance_operation == "swap_rebalance":
@@ -536,7 +536,7 @@ class RebalanceBaseTest(BaseTestCase):
                                self.servers[self.nodes_init].ip,
                                self.servers[self.nodes_init].port)
             task = self.task.async_rebalance(
-                self.servers[:self.nodes_init], [],
+                self.cluster, [],
                 [self.servers[self.nodes_init - 1]],
                 retry_get_process_num=self.retry_get_process_num)
         elif rebalance_operation == "graceful_failover":
