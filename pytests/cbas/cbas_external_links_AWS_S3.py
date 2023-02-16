@@ -92,11 +92,54 @@ class CBASExternalLinks(CBASBaseTest):
                        create_dataset_objs=True, same_dv_for_link_and_dataset=True,
                        create_datasets=False, initialize_helper_objs=True,
                        rebalance_util=False):
+
+        # First creating aws buckets, links will be created in the same region as buckets.
+        link_regions = []
+        if create_aws_buckets:
+            for _ in range(self.input.param("no_of_aws_bucket", 1)):
+                retry = 0
+                bucket_created = False
+                aws_bucket_name = self.input.param(
+                    "aws_bucket_name", "cbas-regression-{0}".format(
+                        random.randint(1, 10000)))
+
+                while (not bucket_created) and retry < 10:
+                    try:
+                        region = random.choice(self.aws_region_list)
+                        self.log.info("Creating AWS bucket - {0} in region {1}".format(
+                            aws_bucket_name, region))
+                        if not perform_S3_operation(
+                                aws_access_key=self.aws_access_key,
+                                aws_secret_key=self.aws_secret_key,
+                                aws_session_token=self.aws_session_token,
+                                create_bucket=True, bucket_name=aws_bucket_name,
+                                region=region):
+                            self.fail("Creating S3 bucket - {0} in region {1}. Failed.".format(
+                                aws_bucket_name, region))
+                        bucket_created = True
+                        self.aws_buckets[aws_bucket_name] = region
+                        link_regions.append(region)
+                        self.sleep(60, "Sleeping for 60 seconds to ensure that AWS bucket is created")
+                    except Exception as err:
+                        self.log.error(str(err))
+                        if "InvalidLocationConstraint" in str(err):
+                            self.aws_region_list.remove(region)
+                        aws_bucket_name = self.input.param(
+                            "aws_bucket_name", "cbas-regression-{0}".format(
+                                random.randint(1, 10000)))
+                    finally:
+                        retry += 1
+                if not bucket_created:
+                    self.fail("Creating S3 bucket - {0} in region {1}. Failed.".format(
+                        aws_bucket_name, region))
+
+        if not link_regions:
+            link_regions = self.aws_region_list
+
         self.cbas_util.create_link_obj(
             self.cluster, "s3", link_cardinality=self.link_cardinality,
             accessKeyId=self.aws_access_key, secretAccessKey=self.aws_secret_key,
-            regions=self.aws_region_list,
-            no_of_objs=self.input.param("no_of_links", 1))
+            regions=link_regions, no_of_objs=self.input.param("no_of_links", 1))
 
         if create_links:
 
@@ -107,48 +150,6 @@ class CBASExternalLinks(CBASBaseTest):
                         self.cluster, link_obj.properties,
                         username=self.analytics_username):
                     self.fail("link creation failed")
-
-        if create_aws_buckets:
-            link_regions = [link.properties["region"] for link in link_objs]
-            for _ in range(self.input.param("no_of_aws_bucket", 1)):
-                retry = 0
-                bucket_created = False
-                aws_bucket_name = self.input.param(
-                    "aws_bucket_name", "cbas-regression-{0}".format(
-                        random.randint(1, 10000)))
-
-                while (not bucket_created) and retry < 10:
-                    try:
-                        self.log.info("Creating AWS bucket - {0}".format(
-                            aws_bucket_name))
-                        region = random.choice(link_regions)
-                        if not perform_S3_operation(
-                                aws_access_key=self.aws_access_key,
-                                aws_secret_key=self.aws_secret_key,
-                                aws_session_token=self.aws_session_token,
-                                create_bucket=True, bucket_name=aws_bucket_name,
-                                region=region):
-                            self.fail("Creating S3 bucket - {0}. Failed.".format(
-                                aws_bucket_name))
-                        bucket_created = True
-                        self.aws_buckets[aws_bucket_name] = region
-                        self.sleep(60, "Sleeping for 60 seconds to ensure that AWS bucket is created")
-                    except Exception as err:
-                        self.log.error(str(err))
-                        if "InvalidLocationConstraint" in str(err):
-                            link_regions.remove(region)
-                            if not link_regions:
-                                region = random.choice(self.aws_region_list)
-                            else:
-                                region = random.choice(link_regions)
-                        aws_bucket_name = self.input.param(
-                            "aws_bucket_name", "cbas-regression-{0}".format(
-                                random.randint(1, 10000)))
-                    finally:
-                        retry += 1
-                if not bucket_created:
-                    self.fail("Creating S3 bucket - {0}. Failed.".format(
-                        aws_bucket_name))
 
         if create_dataset_objs:
             self.cbas_util.create_external_dataset_obj(

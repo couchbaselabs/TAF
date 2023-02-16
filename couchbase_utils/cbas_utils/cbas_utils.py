@@ -765,8 +765,8 @@ class Link_Util(Dataverse_Util):
         """
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
         self.log.info(
-            "Creating link - {0}.{1}".format(
-                link_properties["dataverse"], link_properties["name"]))
+            "Creating link - {0}.{1} in region {2}".format(
+                link_properties["dataverse"], link_properties["name"],link_properties["region"]))
         exists = False
         if create_if_not_exists:
             exists = self.validate_link_in_metadata(
