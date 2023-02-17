@@ -56,11 +56,13 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         #######################################################################
 
         self.load_during_fo = self.input.param("load_during_fo", False)
-
+        self.preserve_durability_during_auto_fo = self.input.param(
+            "preserve_durability_during_auto_fo", False)
         self.log.info("Updating Auto-failover settings")
         self.rest.update_autofailover_settings(
             enabled=True, timeout=self.timeout, maxCount=self.max_count,
-            canAbortRebalance=self.can_abort_rebalance)
+            canAbortRebalance=self.can_abort_rebalance,
+            preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
 
         # Find the bucket with least replica to check the Auto-FO possibility
         self.min_bucket_replica = Bucket.ReplicaNum.THREE
@@ -169,6 +171,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
     def num_nodes_to_be_failover(self):
         def is_safe_to_fo(service):
             is_safe = False
+            # Reference ticket
+            # MB-51791
+            if self.preserve_durability_during_auto_fo and \
+                    self.min_bucket_replica >= 2:
+                self.min_bucket_replica -= 1
 
             # Reference doc:
             # https://docs.couchbase.com/server/7.0/learn/clusters-and-availability/automatic-failover.html#failover-policy
@@ -486,7 +493,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         """
         self.current_fo_strategy = None
         load_data_after_fo = self.input.param("post_failover_data_load", True)
+        pre_fo_data_load = self.input.param("pre_fo_data_load", False)
         exception = None
+        if pre_fo_data_load:
+            self.__perform_doc_ops(durability=self.durability_level,
+                                   validate_num_items=False)
         for index, services_to_fo in enumerate(self.failover_order):
             self.current_fo_strategy = self.failover_type[index]
             # servers_to_fail -> kv:index / kv:index_kv / index:n1ql
@@ -535,7 +546,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         # Perform collection crud + doc_ops
         if load_data_after_fo:
-            durability_val = None
+            durability_val = self.durability_level
             for bucket in self.cluster.buckets:
                 # If we have bucket_replica=3, force use level=NONE
                 if bucket.replicaNumber == Bucket.ReplicaNum.THREE:

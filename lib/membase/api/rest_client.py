@@ -1951,6 +1951,7 @@ class RestConnection(object):
     def update_autofailover_settings(self, enabled, timeout,
                                      canAbortRebalance=False,
                                      enable_disk_failure=False,
+                                     preserve_durability_during_auto_fo=False,
                                      disk_timeout=120, maxCount=1):
         params_dict = {}
         params_dict['timeout'] = timeout
@@ -1968,6 +1969,8 @@ class RestConnection(object):
             params_dict['failoverOnDataDiskIssues[timePeriod]'] = disk_timeout
         else:
             params_dict['failoverOnDataDiskIssues[enabled]'] = 'false'
+        if preserve_durability_during_auto_fo:
+            params_dict['failoverPreserveDurabilityMajority'] = 'true'
         params_dict['maxCount'] = maxCount
         params = urllib.urlencode(params_dict)
         api = self.baseUrl + 'settings/autoFailover'
