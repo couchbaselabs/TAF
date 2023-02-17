@@ -424,19 +424,20 @@ class FailoverTests(FailoverBaseTest):
             tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
 
         if rebalance_type == "in":
-            _ = self.task.rebalance(
+            rebalance, _ = self.task.rebalance(
                 self.cluster, [self.servers[self.nodes_init]], [])
+            self.assertTrue(rebalance.result)
+
         if rebalance_type == "out":
-            _ = self.task.rebalance(
+            rebalance, _ = self.task.rebalance(
                 self.cluster, [], [self.servers[self.nodes_init - 1]])
+            self.assertTrue(rebalance.result)
+        
         if rebalance_type == "swap":
-            self.rest.add_node(self.master.rest_username,
-                               self.master.rest_password,
-                               self.servers[self.nodes_init].ip,
-                               self.servers[self.nodes_init].port,
-                               services=["kv"])
-            _ = self.task.rebalance(
-                self.cluster, [], [self.servers[self.nodes_init - 1]])
+            rebalance, _ = self.task.rebalance(
+                self.cluster, [self.servers[self.nodes_init]], 
+                [self.servers[self.nodes_init-1]])
+            self.assertTrue(rebalance.result)
 
         if not self.atomicity:
             for task in tasks_info:
