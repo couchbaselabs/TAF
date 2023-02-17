@@ -107,6 +107,19 @@ class SecurityTest(BaseTestCase):
         else:
             self.fail("FAIL. CURL access shouldn't be allowed")
 
+    def find_buckets(self, name):
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, self.user,
+                                self.passwd)
+        totalBuckets = capella_api.get_buckets(self.tenant_id, self.project_id, self.cluster_id)
+        if totalBuckets.status_code == 422:
+            self.fail("Not able to fetch the buckets in the cluster")
+        totalBuckets = json.loads(totalBuckets.content)
+        for bucket in totalBuckets["buckets"]["data"]:
+            if bucket["data"]["name"] == name:
+                self.log.info("Got the bucket - ", name)
+                return True
+        return False
+
     def test_create_project(self):
         self.log.info("Verifying status code for creating project")
         expected_response_code = {"organizationOwner": 201, "projectCreator": 201,
@@ -488,3 +501,33 @@ class SecurityTest(BaseTestCase):
         else:
             self.fail("Test failed. Zone transfer should have failed")
         shell.disconnect()
+
+    def test_eventing_curl(self):
+        self.log.info("Verifying that executing curl command to access metadata in eventing is not allowed")
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                    self.user, self.passwd)
+        bucket_present = self.find_buckets("beer-sample")
+        if bucket_present == False:
+            capella_api.load_sample_bucket(self.tenant_id, self.project_id, self.cluster_id, "beer-sample")
+        body = {"appcode":"function curlIMDS() {\n  try {  \n    var result = curl(\"GET\", azureApi, {\n        headers: {\n            \"Metadata\":\"true\"   \n        }\n    });\n    log(result);\n} \ncatch(e) \n{\n    log(e);\n}\n}\n\nfunction OnUpdate(doc, meta) {\n    log(\"Doc created/updated\", meta.id);\n    curlIMDS();\n}\n\nfunction OnDelete(meta, options) {\n    log(\"Doc deleted/expired\", meta.id);\n}","depcfg":{"curl":[{"hostname":"http://169.254.169.254/metadata/instance?api-version=2021-02-01","value":"azureApi","auth_type":"no-auth","username":"","password":"*****","bearer_key":"*****","allow_cookies":False,"validate_ssl_certificate":False}],"source_bucket":"beer-sample","source_scope":"_default","source_collection":"_default","metadata_bucket":"metadata","metadata_scope":"_default","metadata_collection":"_default"},"version":"","enforce_schema":False,"handleruuid":651380377,"function_instance_id":"R6mcj","appname":"curl_command","settings":{"dcp_stream_boundary":"from_now","deadline_timeout":62,"deployment_status":True,"description":"Testing for curl command","execution_timeout":60,"language_compatibility":"6.6.2","log_level":"INFO","n1ql_consistency":"request","processing_status":True,"timer_context_size":1024,"user_prefix":"eventing","worker_count":1},"function_scope":{"bucket":"*","scope":"*"}
+        }
+        resp = capella_api.create_eventing_function(self.cluster_id, body["appname"], body, body["function_scope"])
+        if resp.status_code == 422:
+            self.log.info("Eventing function is already created")
+        time.sleep(10)
+        query = "INSERT INTO `beer-sample`._default._default (KEY, VALUE) VALUES (\"airline_test-2222\", {\"id\":\"007\",\"type\":\"airline\",\"name\":\"couchbase-airlines\",\"iata\":\"Q5\",\"icao\":\"MLA\",\"callsign\":\"MILE-AIR\",\"country\":\"India\"});"
+        pod = "https://" + self.url.replace("cloud", "", 1)
+        url = "{0}/v2/databases/{1}/proxy/_p/query/query/service".format(pod, self.cluster_id)
+        query_body = {"statement": "{0}".format(query)}
+        resp = capella_api.do_internal_request(url, method="POST", params=json.dumps(query_body))
+        logs_url = "{0}/v2/databases/{1}/proxy/_p/event/getAppLog?aggregate=true&name={2}".format(pod, self.cluster_id,
+        body["appname"])
+        time.sleep(80)
+        resp = capella_api.do_internal_request(logs_url, method="GET")
+        compareString = "Unable to perform the request: Timeout was reached"
+        logs = resp.content.decode('utf-8').split("\n")
+        one_log = logs[0].split(" [INFO] ")
+        if json.loads(one_log[1].decode('utf-8'))["message"] == compareString:
+            self.log.info("Timeout was reached. As expected, curl in eventing cannot access metadata")
+        else:
+            self.fail("Curl access to metadata is allowed")
