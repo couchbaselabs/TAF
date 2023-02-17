@@ -529,7 +529,7 @@ class SystemEventLogs(ClusterSetup):
         self.log.info("Testing event with invalid component")
         expected_error = "The value must be one of the following: " \
                          "[ns_server,query,indexing,search,eventing," \
-                         "analytics,backup,xdcr,data,security,views]"
+                         "analytics,backup,xdcr,data,security,views,regulator]"
         invalid_event = deepcopy(valid_event)
         invalid_event[Event.Fields.COMPONENT] = "invalid"
         status, content = self.event_rest_helper.create_event(invalid_event)
