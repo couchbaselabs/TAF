@@ -7,8 +7,8 @@ class SteadyStateTests(MagmaBaseTest):
     def setUp(self):
         super(SteadyStateTests, self).setUp()
         self.wipe_history = self.input.param("wipe_history", False)
-        self.retention_seconds_to_wipe_history = self.input.param("retention_seconds_to_wipe_history", 20)
-        self.retention_bytes_to_wipe_history = self.input.param("retention_seconds_to_wipe_history", 10000000000)
+        self.retention_seconds_to_wipe_history = self.input.param("retention_seconds_to_wipe_history", 86400)
+        self.retention_bytes_to_wipe_history = self.input.param("retention_bytes_to_wipe_history", 1000000000000)
         self.set_history_in_test = self.input.param("set_history_in_test", False)
         self.meta_purge_interval = self.input.param("meta_purge_interval", 180)
 
@@ -50,7 +50,7 @@ class SteadyStateTests(MagmaBaseTest):
                 self.PrintStep("Step 2.%s.2: Setting history params after first upsert iteration"% (count))
                 self.bucket_util.update_bucket_property(
                     self.cluster.master, self.cluster.buckets[0],
-                    history_retention_seconds=86400, history_retention_bytes=96000000000)
+                    history_retention_seconds=86400, history_retention_bytes=1000000000000)
                 self.sleep(30, "sleep after updating history settings")
                 init_history_start_seq = self.get_history_start_seq_for_each_vb()
             count += 1
@@ -146,7 +146,7 @@ class SteadyStateTests(MagmaBaseTest):
                 self.PrintStep("Step 2.%s.2: Setting history params after first expiry iteration"% (count))
                 self.bucket_util.update_bucket_property(
                     self.cluster.master, self.cluster.buckets[0],
-                    history_retention_seconds=86400, history_retention_bytes=96000000000)
+                    history_retention_seconds=86400, history_retention_bytes=1000000000000)
                 self.sleep(30, "sleep after updating history settings")
                 init_history_start_seq = self.get_history_start_seq_for_each_vb()
             count += 1
@@ -218,6 +218,100 @@ class SteadyStateTests(MagmaBaseTest):
                 for key in history_start_seq_stats[bucket].keys():
                     msg = "init_history_start_seq {} > curr_history_start_seq {} for  bucket {} and vbucket {} ".format(init_history_start_seq[bucket][key]["active"]["history_start_seqno"],
                                                                                                                     history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], 
+                                                                                                                    bucket.name, key)
+                    self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] < history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
+            seq_count = self.get_seqnumber_count()
+
+    def test_history_retention_for_multiple_CRUD_iterations(self):
+        self.PrintStep("test_history_retention_for_multiple_CRUD_iterations starts")
+        self.create_start = 0
+        self.create_end = self.init_items_per_collection
+        self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
+                                                                   self.key_type))
+        self.new_loader(wait=True)
+        init_history_start_seq = self.get_history_start_seq_for_each_vb()
+
+        count = 0
+        while count < self.test_itr:
+            self.PrintStep("Step 2.%s: Update %s items/collection: %s" % (count, self.init_items_per_collection,
+                                                                   self.key_type))
+            self.reset_doc_params(doc_ops="update:read")
+            self.update_start = self.read_start = 0
+            self.update_end = self.read_end = self.init_items_per_collection
+            self.new_loader(wait=True)
+            self.reset_doc_params(doc_ops="delete")
+            self.delete_start = 0
+            self.delete_end = self.init_items_per_collection
+            self.num_items_per_collection -= self.delete_end - self.delete_start
+            self.new_loader(wait=True)
+            self.num_items_per_collection += self.delete_end - self.delete_start
+
+            self.PrintStep("Step 2.%s.1: Comparing history start seq number"% (count+1))
+            history_start_seq_stats = dict()
+            history_start_seq_stats = self.get_history_start_seq_for_each_vb()
+            for bucket in self.cluster.buckets:
+                self.log.info("history_start_seq_stats {}".format(history_start_seq_stats[bucket]))
+                for key in history_start_seq_stats[bucket].keys():
+                    msg = "{} vbucket {} has start seq number {}".format(bucket.name, key,
+                                                                         history_start_seq_stats[bucket][key]["active"]["history_start_seqno"])
+                    self.assertEqual(init_history_start_seq[bucket][key]["active"]["history_start_seqno"],
+                                     history_start_seq_stats[bucket][key]["active"]["history_start_seqno"],
+                                     msg)
+            if count == 0 and self.set_history_in_test:
+                self.PrintStep("Step 2.%s.2: Setting history params after first iteration"% (count+1))
+                self.bucket_util.update_bucket_property(
+                    self.cluster.master, self.cluster.buckets[0],
+                    history_retention_seconds=86400, history_retention_bytes=1000000000000)
+                self.sleep(30, "sleep after updating history settings")
+                init_history_start_seq = self.get_history_start_seq_for_each_vb()
+            count += 1
+        self.PrintStep("Step 3: Restart CouchBase Server on all Nodes")
+
+        for node in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(node)
+            shell.restart_couchbase()
+            shell.disconnect()
+        self.sleep(60, "sleep before seq number count")
+
+        self.PrintStep("Step 4: Sequence number count check")
+
+        expected_count = (( 1+ (count * 2)) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections -1) * (self.vbuckets*(self.num_replicas+1)))
+        seq_count = self.get_seqnumber_count()
+        self.log.info("expected_count = {}".format(expected_count))
+        self.assertEqual(seq_count, expected_count, "Not all sequence numbers are present")
+
+        if self.wipe_history:
+            self.bucket_util.update_bucket_property(
+                    self.cluster.master, self.cluster.buckets[0],
+                    history_retention_seconds=self.retention_seconds_to_wipe_history,
+                    history_retention_bytes=self.retention_seconds_to_wipe_history)
+            self.sleep(10, "sleep after updating history params")
+            history_start_seq_stats = self.get_history_start_seq_for_each_vb()
+            for bucket in self.cluster.buckets:
+                self.log.info("history_start_seq_stats after wiping history {}".format(history_start_seq_stats[bucket]))
+                for key in history_start_seq_stats[bucket].keys():
+                    msg = "curr_history_start_seq {} for  bucket {} and vbucket {} is non zero ".format(history_start_seq_stats[bucket][key]["active"]["history_start_seqno"],
+                                                                                                        bucket.name, key)
+                    self.assertEqual(0 , history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
+            self.bucket_util.update_bucket_property(
+                    self.cluster.master, self.cluster.buckets[0],
+                    history_retention_seconds=86400,
+                    history_retention_bytes=1000000000000)
+            self.update_start = 0
+            self.update_end = 2000
+            self.new_loader(wait=True)
+            for node in self.cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(node)
+                shell.restart_couchbase()
+                shell.disconnect()
+            self.sleep(60, "Sleep after restarting couchbase server")
+
+            history_start_seq_stats = self.get_history_start_seq_for_each_vb()
+            for bucket in self.cluster.buckets:
+                self.log.info(" New history_start_seq_stats {}".format(history_start_seq_stats[bucket]))
+                for key in history_start_seq_stats[bucket].keys():
+                    msg = "init_history_start_seq {} > curr_history_start_seq {} for  bucket {} and vbucket {} ".format(init_history_start_seq[bucket][key]["active"]["history_start_seqno"],
+                                                                                                                    history_start_seq_stats[bucket][key]["active"]["history_start_seqno"],
                                                                                                                     bucket.name, key)
                     self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] < history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
             seq_count = self.get_seqnumber_count()

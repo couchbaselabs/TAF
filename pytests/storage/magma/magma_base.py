@@ -154,6 +154,36 @@ class MagmaBaseTest(StorageBase):
         if "expiry" in doc_ops:
             self.num_items_per_collection -= (self.expiry_end - self.expiry_start)
 
+    def reset_doc_params(self, doc_ops=None):
+        self.create_perc = 0
+        self.delete_perc = 0
+        self.update_perc = 0
+        self.expiry_perc = 0
+        self.read_perc = 0
+        self.create_end = 0
+        self.create_start = 0
+        self.update_end = 0
+        self.update_start = 0
+        self.delete_end = 0
+        self.delete_start = 0
+        self.expire_end = 0
+        self.expire_start = 0
+        doc_ops = doc_ops or self.doc_ops
+        doc_ops = doc_ops.split(":")
+        perc = 100//len(doc_ops)
+        if "update" in doc_ops:
+            self.update_perc = perc
+        if "create" in doc_ops:
+            self.create_perc = perc
+        if "read" in doc_ops:
+            self.read_perc = perc
+        if "expiry" in doc_ops:
+            self.expiry_perc = perc
+            self.maxttl = random.randint(5, 10)
+            self.bucket_util._expiry_pager(self.cluster, 10000000000)
+        if "delete" in doc_ops:
+            self.delete_perc = perc
+
     def validate_seq_itr(self):
         if self.dcp_services and self.num_collections == 1:
             index_build_q = "SELECT state FROM system:indexes WHERE name='{}';"

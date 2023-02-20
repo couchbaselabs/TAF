@@ -150,6 +150,148 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.update_start = (2 * start) // 3
             self.update_end = mem_only_items
 
+    def test_magma_rollback_with_CDC(self):
+        '''
+         -- Multiple upsert ops so that some historical data
+             is present
+         -- Stop persistence on master node
+         -- Start dedupe load on master node(say Node A)
+         -- Kill MemCached on master node(Node A)
+         -- Trigger roll back on other/replica nodes
+         -- ReStart persistence on master node
+         -- Repeat all the above steps for num_rollback times
+        '''
+
+        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+                        "AutoFailover disabling failed")
+        self.set_history_in_test = self.input.param("set_history_in_test", False)
+        self.wipe_history = self.input.param("wipe_history", False)
+        self.retention_seconds_to_wipe_history = self.input.param("retention_seconds_to_wipe_history", 86400)
+        self.retention_bytes_to_wipe_history = self.input.param("retention_bytes_to_wipe_history", 100000000000)
+
+        if self.nodes_init < 2 or self.num_replicas < 1:
+            self.fail("Not enough nodes/replicas in the cluster/bucket \
+            to test rollback")
+
+        mem_only_items = self.input.param("rollback_items", 500)
+        num_collections_for_rollback = self.input.param("num_collections_for_rollback", 2)
+        init_history_start_seq = self.get_history_start_seq_for_each_vb()
+
+        count = 1
+        while count < self.test_itr + 1:
+            self.PrintStep("Step 2.{} ==> Updata {} items/collections".format(count, self.init_items_per_collection))
+            self.generate_docs(doc_ops="update", update_start=0,
+                               update_end=self.init_items_per_collection)
+            for collection in self.collections:
+                self.loadgen_docs(_sync=True, doc_ops="update",
+                                  retry_exceptions=self.retry_exceptions,
+                                  collection=collection)
+            if count == 1 and self.set_history_in_test:
+                self.PrintStep("Step 2.{}.1: Setting history params after first upsert iteration"% (count))
+                self.bucket_util.update_bucket_property(
+                    self.cluster.master, self.cluster.buckets[0],
+                    history_retention_seconds=86400, history_retention_bytes=96000000000)
+                self.sleep(30, "sleep after updating history settings")
+                init_history_start_seq = self.get_history_start_seq_for_each_vb()
+            count += 1
+
+        self.num_rollbacks = self.input.param("num_rollbacks", 10)
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstats = Cbstats(shell)
+        self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
+        self.log.info("Node=={} targt_vbuckets=={}".format(self.cluster.master.ip, self.target_vbucket))
+
+        '''
+        STEP - 2,  Stop persistence on master node
+        '''
+        for i in range(1, self.num_rollbacks+1):
+            self.PrintStep("Roll back Iteration == {}".format(i))
+
+            # Stopping persistence on NodeA
+            self.log.debug("Iteration == {}, stopping persistence".format(i))
+            Cbepctl(shell).persistence(self.cluster.buckets[0].name, "stop")
+
+            ###################################################################
+            '''
+            STEP - 3
+              -- Doc ops on master node for  self.duration * 60 seconds
+              -- This step ensures new state files (number equal to self.duration)
+            '''
+
+            self.generate_docs(doc_ops="update", update_start=0,
+                               update_end=mem_only_items,
+                               target_vbucket=self.target_vbucket)
+            self.batch_size = 500
+            self.process_concurrency = 1
+            task_info = dict()
+            self.collections.remove("_default")
+            collections_for_rollback = random.sample(self.collections, int(num_collections_for_rollback))
+            self.collections.append("_default")
+            for collection in collections_for_rollback:
+                temp_task_info = self.loadgen_docs(_sync=False, doc_ops="update",
+                              retry_exceptions=self.retry_exceptions,
+                              collection=collection,
+                              track_failures=False,
+                              iterations=5)
+                task_info.update(temp_task_info.items())
+
+            for task in task_info:
+                self.task_manager.get_task_result(task)
+
+            shell_conns = []
+            for node in self.cluster.nodes_in_cluster:
+                if node == self.cluster.master:
+                    continue
+                shell_conns.append(RemoteMachineShellConnection(node))
+            self.target_vbs = []
+            task_info = dict()
+            for shell_conn in shell_conns:
+                cbstats = Cbstats(shell_conn)
+                self.target_vbs.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
+                shell_conn.disconnect()
+
+            self.target_vbs = [vb for vb_lst in self.target_vbs for vb in vb_lst]
+            self.log.info("Target vbs on non master nodes".format(self.target_vbs))
+            self.generate_docs(doc_ops="update", update_start=mem_only_items,
+                               update_end=mem_only_items*5,
+                               target_vbucket=self.target_vbs)
+            for collection in self.collections:
+                temp_task_info = self.loadgen_docs(_sync=False, doc_ops="update",
+                                  retry_exceptions=self.retry_exceptions,
+                                  collection=collection,
+                                  track_failures=False,
+                                  iterations=3)
+                task_info.update(temp_task_info.items())
+            for task in task_info:
+                self.task_manager.get_task_result(task)
+            if i == self.num_rollbacks and self.wipe_history:
+                self.bucket_util.update_bucket_property(
+                    self.cluster.master, self.cluster.buckets[0],
+                    history_retention_seconds=self.retention_seconds_to_wipe_history,
+                    history_retention_bytes=self.retention_seconds_to_wipe_history)
+
+            self.sleep(10, "sleep after updating history params")
+
+            shell.kill_memcached()
+
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                [self.cluster.master],
+                self.cluster.buckets[0],
+                wait_time=self.wait_timeout * 10))
+
+            '''
+            STEP -5
+              -- Restarting persistence on master node(Node A)
+            '''
+
+            self.log.debug("Iteration=={}, Re-Starting persistence".format(i))
+            Cbepctl(shell).persistence(self.cluster.buckets[0].name, "start")
+            self.sleep(5, "Iteration=={}, sleep after restarting persistence".format(i))
+            ###################################################################
+
+        shell.disconnect()
+
     def test_magma_rollback_basic(self):
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 100000)
