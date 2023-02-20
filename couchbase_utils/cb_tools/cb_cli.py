@@ -58,6 +58,12 @@ class CbCli(CbCmdBase):
                 option = "--enable-index-replica"
             elif key == Bucket.conflictResolutionType:
                 option = "--conflict-resolution"
+            elif key == Bucket.historyRetentionCollectionDefault:
+                option = "--enable-history-retention-by-default"
+            elif key == Bucket.historyRetentionBytes:
+                option = "--history-retention-bytes"
+            elif key == Bucket.historyRetentionSeconds:
+                option = "--history-retention-seconds"
 
             if option:
                 cmd += " %s %s " % (option, value)
@@ -148,4 +154,3 @@ class CbCli(CbCmdBase):
             return security_dict["clusterEncryptionLevel"]
         else:
             return None
-

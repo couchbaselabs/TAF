@@ -197,10 +197,7 @@ class DocHistoryRetention(ClusterSetup):
                 else:
                     self.fail("Validation failed")
 
-
-        bucket_created = False
         create_by = self.input.param("create_by", "rest")
-
         expected_result = {
             Bucket.Type.EPHEMERAL: {
                 Bucket.StorageBackend.couchstore: False
@@ -239,13 +236,23 @@ class DocHistoryRetention(ClusterSetup):
                     status, output = self.__create_bucket(params)
                     bucket_created = status
                 elif create_by == "cbcli":
-                    cb_cli = CbCli(self.shells[self.cluster.master.ip])
-                    output = cb_cli.create_bucket(bucket, wait=True)
-                    if exp_outcome is True:
-                        exp_err = "Need to check"
+                    bucket_created = False
+                    params.pop(Bucket.conflictResolutionType)
+                    if bucket.bucketType != Bucket.Type.MEMBASE:
+                        params.pop(Bucket.storageBackend)
+                        exp_err = \
+                            "ERROR: --history-retention-bytes cannot be " \
+                            "specified for a ephemeral bucket"
                     else:
-                        exp_err = "Need to check"
-                    self.assertEqual(output, exp_err,
+                        exp_err = \
+                            "ERROR: --history-retention-bytes cannot be " \
+                            "specified for a bucket with couchstore backend"
+                    cb_cli = CbCli(self.shells[self.cluster.master.ip])
+                    output = cb_cli.create_bucket(params, wait=True)
+                    if exp_outcome is True:
+                        exp_err = "SUCCESS: Bucket created"
+                        bucket_created = True
+                    self.assertEqual(output[0].strip(), exp_err,
                                      "Unexpected cmd outcome: %s" % output)
                 else:
                     self.fail("Invalid create_by '%s'" % create_by)
