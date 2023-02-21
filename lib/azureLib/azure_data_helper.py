@@ -282,7 +282,8 @@ class AzureDataHelper():
         self.log.info("Creating file {0} and uploading to Azure".format(filename))
         query = "select * from `{0}` where folder='{1}' and filename='{2}';".format(
             bucket_name, folder, filename)
-        retry = 0
+        upload_success = False
+	retry = 0
         while retry < 5:
             try:
                 n1ql_result = self.n1ql_helper.run_cbq_query(query)["results"]
