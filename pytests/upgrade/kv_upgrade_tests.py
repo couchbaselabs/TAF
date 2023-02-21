@@ -3,6 +3,7 @@ from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from cluster_utils.cluster_ready_functions import CBCluster
 from couchbase_helper.documentgenerator import doc_generator
+from BucketLib.bucket import BeerSample, GamesimSample, TravelSample
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
@@ -13,13 +14,64 @@ class KVUpgradeTests(UpgradeBase):
     def setUp(self):
         super(KVUpgradeTests, self).setUp()
 
-        # Install Couchbase server on target_nodes
-        self.install_version_on_node(
-            self.cluster.servers[self.nodes_init:],
-            self.upgrade_version)
+        self.log_setup_status("KVUpgradeTests", "started", "setup")
+        self.nodes_upgrade = self.input.param("nodes_upgrade", 1)
+        self.graceful = self.input.param("graceful", True)
+        self.recovery_type = self.input.param("recovery_type", "delta")
+        self.log_setup_status("KVUpgradeTests", "completed", "setup")
 
     def tearDown(self):
         super(KVUpgradeTests, self).tearDown()
+
+    def test_multiple_sample_bucket_failover_upgrade(self):
+        '''
+            1.Formed the cluster using the 3 nodes.
+            2.Loaded all 3 sample buckets.
+            3.Failed over node.
+            4.Stopped Couchbase Service on node.
+            5.Upgraded node to upgrade_version.
+            6.Tried to perform recovery
+            Ref - MB-53493
+
+        '''
+        self.assertTrue(len(self.cluster.nodes_in_cluster) > 1,
+                        msg="Not enough nodes to failover and upgrade")
+
+        self.assertTrue(self.nodes_upgrade <= len(self.cluster.nodes_in_cluster),
+                       msg="The number of nodes specified for upgrade are more than number of nodes in cluster")
+
+        #Loading Travel Sample Bucket
+        travelSampleBucket=TravelSample()
+        if float(self.initial_version[:3]) < 7.0:
+            travelSampleBucket.stats.expected_item_count = 31591
+        load_success=self.bucket_util.load_sample_bucket(self.cluster, travelSampleBucket)
+        self.assertTrue(load_success,
+                        msg = "Travel Sample Bucket could not be loaded")
+        self.log.info("Travel Sample Bucket Loaded")
+
+        #Loading Beer Sample Bucket
+        load_success=self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
+        self.assertTrue(load_success,
+                        msg = "Beer Sample Bucket could not be loaded")
+        self.log.info("Beer Sample Bucket Loaded")
+
+        #Loading Gamesim Sample Bucket
+        load_success=self.bucket_util.load_sample_bucket(self.cluster, GamesimSample())
+        self.assertTrue(load_success,
+                        msg = "Gamesim Sample Bucket could not be loaded")
+        self.log.info("Gamesim Sample Bucket Loaded")
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        node_to_upgrades = self.cluster.nodes_in_cluster[len(self.servers) - self.nodes_upgrade:]
+
+        for node_to_upgrade in node_to_upgrades:
+            self.failover_recovery(node_to_upgrade=node_to_upgrade,
+                                   recovery_type=self.recovery_type,
+                                   graceful=self.graceful)
+            self.cluster_util.print_cluster_stats(self.cluster)
+            self.bucket_util.print_bucket_stats(self.cluster)
 
     def test_db_dump_with_empty_body_and_empty_xattr(self):
         """
@@ -29,6 +81,11 @@ class KVUpgradeTests(UpgradeBase):
 
         Ref: MB-51373
         """
+        # Install Couchbase server on target_nodes
+        self.install_version_on_node(
+            self.cluster.servers[self.nodes_init:],
+            self.upgrade_version)
+
         upgrade_cluster = self.input.param("upgrade_cluster", "source")
         key, val = "test_key", {"f": "value"}
         sub_doc = ["_key", "value"]
@@ -37,8 +94,7 @@ class KVUpgradeTests(UpgradeBase):
         in_node = self.cluster.servers[1]
         num_items = 0
 
-        # Install the initial version on the 2nd node as well
-        # (This is not done in the upgrade base part)
+         # Install the initial version on the 2nd node as well
         self.install_version_on_node(self.cluster.servers[1:2],
                                      self.initial_version)
 

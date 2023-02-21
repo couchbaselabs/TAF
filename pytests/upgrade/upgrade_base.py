@@ -368,8 +368,9 @@ class UpgradeBase(BaseTestCase):
     def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True):
         rest = self.__get_rest_node(node_to_upgrade)
         otp_node = self.__get_otp_node(rest, node_to_upgrade)
-        self.log.info("Failing over the node %s" % otp_node.id)
-        success = rest.fail_over(otp_node.id, graceful=graceful)
+        self.log.info("Failing over the node {}".format(otp_node.id))
+        success = rest.fail_over(otp_node.id,
+                                 graceful=graceful)
         if not success:
             self.log_failure("Failover unsuccessful")
             return
@@ -384,7 +385,7 @@ class UpgradeBase(BaseTestCase):
         appropriate_build = self.__get_build(self.upgrade_version,
                                              shell)
         self.assertTrue(appropriate_build.url,
-                        msg="Unable to find build %s" % self.upgrade_version)
+                        msg="Unable to find build {}".format(self.upgrade_version))
         self.assertTrue(shell.download_build(appropriate_build),
                         "Failed while downloading the build!")
 
@@ -397,13 +398,14 @@ class UpgradeBase(BaseTestCase):
             self.log_failure("Upgrade failed")
             return
 
-        rest.add_back_node("ns_1@" + otp_node.ip)
+        rest.add_back_node("ns_1@{}".format(otp_node.ip))
         self.sleep(5, "Wait after add_back_node")
-        rest.set_recovery_type(otp_node.id, recoveryType=recovery_type)
+        rest.set_recovery_type(otp_node.id,
+                               recoveryType=recovery_type)
 
         delta_recovery_buckets = list()
         if recovery_type == "delta":
-            delta_recovery_buckets.append(self.bucket.name)
+            delta_recovery_buckets=[bucket.name for bucket in self.cluster.buckets]
 
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        deltaRecoveryBuckets=delta_recovery_buckets)
