@@ -282,6 +282,7 @@ class AzureDataHelper():
         self.log.info("Creating file {0} and uploading to Azure".format(filename))
         query = "select * from `{0}` where folder='{1}' and filename='{2}';".format(
             bucket_name, folder, filename)
+	upload_success = False
         retry = 0
         while retry < 5:
             try:

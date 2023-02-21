@@ -56,7 +56,7 @@ dependencies {
 	compile group: 'commons-cli', name: 'commons-cli', version: '1.4'
 	
 	// https://mvnrepository.com/artifact/com.azure/azure-storage-blob - Azure blob
-	compile group: 'com.azure', name: 'azure-storage-blob', version: '12.14.0'
+	compile group: 'com.azure', name: 'azure-storage-blob', version: '12.20.3'
 }
 
 task copyDeps(type: Copy) {
