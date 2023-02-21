@@ -67,7 +67,6 @@ class DocHistoryRetention(ClusterSetup):
             for ip, t_shell in self.shells.items():
                 if ip not in stat_dict:
                     stat_dict[ip] = dict()
-                stat_dict = stat_dict[ip]
                 cbstats = Cbstats(t_shell)
                 all_stats = cbstats.all_stats(b_obj.name)
                 dcp_stats = cbstats.dcp_stats(b_obj.name)
@@ -75,8 +74,8 @@ class DocHistoryRetention(ClusterSetup):
                               "ep_total_deduplicated"]
                 items_sent = "ep_dcp_items_sent"
                 for field in all_fields:
-                    stat_dict[field] = all_stats[field]
-                stat_dict[items_sent] = dcp_stats[items_sent]
+                    stat_dict[ip][field] = all_stats[field]
+                stat_dict[ip][items_sent] = dcp_stats[items_sent]
 
         if bucket.bucketType == Bucket.Type.EPHEMERAL:
             return
@@ -110,7 +109,7 @@ class DocHistoryRetention(ClusterSetup):
         total_enqueued = 0
         total_persisted = 0
         for t_ip, _ in self.shells.items():
-            self.log.critical("%s: %s" % (t_ip, stat_data))
+            self.log.debug("%s: %s" % (t_ip, stat_data))
             key = "ep_total_deduplicated"
             dedupe_before = int(stat_data["before_ops"][t_ip][key])
             dedupe_after = int(stat_data["after_ops"][t_ip][key])
@@ -131,14 +130,13 @@ class DocHistoryRetention(ClusterSetup):
                                     "%s: No Dedupe" % t_ip)
 
         if history:
-            self.log.critical("----> %s : %s : %s" % (total_enqueued, total_persisted, num_mutations))
-            self.log.critical("----> %s : %s" % (expected_dcp_items_to_send, total_dcp_items_sent))
             self.assertEqual(
                 expected_dcp_items_to_send, total_dcp_items_sent,
                 "Dcp sent stat mismatch, Actual: %s, expected: %s"
                 % (total_dcp_items_sent, expected_dcp_items_to_send))
             self.assertTrue(
-                total_enqueued == total_persisted == num_mutations,
+                total_enqueued == total_persisted \
+                == expected_dcp_items_to_send + num_mutations,
                 "Stat mismatch")
 
     @staticmethod
