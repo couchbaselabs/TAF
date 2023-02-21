@@ -491,6 +491,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.sleep(10, "Retrying enforcing TLS on servers")
             else:
                 self.fail("Services did not honor enforce tls")
+            self.sleep(120, "waiting after enabling TLS")
 
     def tearDown(self):
         for container in self.docker_containers:
