@@ -13,6 +13,8 @@ from remote.remote_util import RemoteMachineShellConnection
 from scripts.old_install import InstallerJob
 from testconstants import CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \
     COUCHBASE_MP_VERSION, MV_LATESTBUILD_REPO
+from bucket_collections.collections_base import CollectionBase
+from BucketLib.BucketOperations import BucketHelper
 
 
 class UpgradeBase(BaseTestCase):
@@ -48,6 +50,14 @@ class UpgradeBase(BaseTestCase):
                                                     False)
         self.sync_write_abort_pattern = \
             self.input.param("sync_write_abort_pattern", "all_aborts")
+
+        #### Spec File Parameters ####
+
+        self.spec_name = self.input.param("bucket_spec_file","single_bucket.bucket_for_magma_collections")
+        self.initial_data_spec = self.input.param("initial_data_spec","initial_load")
+        self.sub_data_spec = self.input.param("sub_data_spec","subsequent_load_magma")
+
+        ####
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
@@ -116,17 +126,16 @@ class UpgradeBase(BaseTestCase):
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        # Create default bucket and add rbac user
-        self.bucket_util.create_default_bucket(
-            self.cluster,
-            replica=self.num_replicas,
-            compression_mode=self.compression_mode,
-            ram_quota=self.bucket_size,
-            bucket_type=self.bucket_type, storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy,
-            bucket_durability=self.bucket_durability_level)
+        RestConnection(self.cluster.master).set_internalSetting(
+            "magmaMinMemoryQuota", 256)
+
+        # Creating buckets from spec file
+        CollectionBase.deploy_buckets_from_spec_file(self)
+
+        # Adding RBAC user
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket = self.cluster.buckets[0]
+
         if self.test_storage_upgrade:
             for i in range(3):
                 bucket_name = "testBucket" + str(i)
@@ -146,52 +155,23 @@ class UpgradeBase(BaseTestCase):
                 for node in self.cluster.servers:
                     #node.memcached_port = CbServer.ssl_memcached_port (MB-47567)
                     node.port = CbServer.ssl_port
+
         # Create clients in SDK client pool
         if self.sdk_client_pool is not None:
-            clients_per_bucket = \
-                int(self.thread_to_use / len(self.cluster.buckets))
-            self.log.info("Creating %s SDK clients / bucket for client_pool")
-            for bucket in self.cluster.buckets:
-                self.sdk_client_pool.create_clients(
-                    bucket, [self.cluster.master], clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+            CollectionBase.create_clients_for_sdk_pool(self)
 
         # Load initial async_write docs into the cluster
-        self.gen_load = doc_generator(self.key, 0, self.num_items,
-                                      randomize_doc_size=True,
-                                      randomize_value=True,
-                                      randomize=True)
+        self.log.info("Initial doc generation process starting...")
 
-        async_load_task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, self.gen_load,
-            DocLoading.Bucket.DocOps.CREATE,
-            active_resident_threshold=self.active_resident_threshold,
-            timeout_secs=self.sdk_timeout,
-            process_concurrency=8,
-            batch_size=500,
-            sdk_client_pool=self.sdk_client_pool)
-        self.task_manager.get_task_result(async_load_task)
+        CollectionBase.load_data_from_spec_file(self,self.initial_data_spec,validate_docs=True)
 
-        # Update num_items in case of DGM run
-        if self.active_resident_threshold != 100:
-            self.num_items = async_load_task.doc_index
-
-        self.bucket.scopes[CbServer.default_scope].collections[
-            CbServer.default_collection].doc_index = (0, self.num_items)
-
-        self.bucket.scopes[CbServer.default_scope].collections[
-            CbServer.default_collection].num_items = self.num_items
+        self.log.info("Intial doc generation completed")
 
         # Verify initial doc load count
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
+        self.bucket_util.validate_docs_per_collections_all_buckets(self.cluster)
+        self.log.info("Initial doc count verified")
 
         self.sleep(30, "Wait for num_items to get reflected")
-        current_items = self.bucket_util.get_bucket_current_item_count(
-            self.cluster, self.bucket)
-        self.assertTrue(current_items == self.num_items,
-                        "Mismatch in doc_count. Actual: %s, Expected: %s"
-                        % (current_items, self.num_items))
 
         self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]
@@ -623,7 +603,7 @@ class UpgradeBase(BaseTestCase):
     def failover_full_recovery(self, node_to_upgrade, graceful=True):
         self.failover_recovery(node_to_upgrade, "full", graceful)
 
-    def offline(self, node_to_upgrade, version, rebalance_required=False):
+    def offline(self, node_to_upgrade, version, rebalance_required=True):
         rest = RestConnection(node_to_upgrade)
         shell = RemoteMachineShellConnection(node_to_upgrade)
         appropriate_build = self.__get_build(version, shell)

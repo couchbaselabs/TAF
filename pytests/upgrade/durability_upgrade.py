@@ -6,15 +6,19 @@ from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading, CbServer
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from BucketLib.BucketOperations import BucketHelper
+from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper, \
     BucketDurability
 from membase.api.rest_client import RestConnection
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from StatsLib.StatsOperations import StatsHelper
 from upgrade.upgrade_base import UpgradeBase
+from bucket_collections.collections_base import CollectionBase
+from bucket_collections.collections_rebalance import CollectionsRebalance
 
 
 class UpgradeTests(UpgradeBase):
@@ -175,6 +179,7 @@ class UpgradeTests(UpgradeBase):
                         rest.get_bucket_details(bucket.name, False)
                 except Exception:
                     continue
+
         self.test_user = None
         iter = 0
         if self.test_storage_upgrade:
@@ -183,7 +188,7 @@ class UpgradeTests(UpgradeBase):
             permissions = 'data_writer[*],data_reader[*]'
             self.role_list = [{"id": user_name,
                          "name": user_name,
-                         "roles": "%s" % permissions}]
+                         "roles": "{0}".format(permissions)}]
             self.test_user = [{'id': user_name, 'name': user_name,
                          'password': user_pass}]
             self.bucket_util.add_rbac_user(self.cluster.master,
@@ -195,18 +200,25 @@ class UpgradeTests(UpgradeBase):
         if self.cluster_supports_sync_write:
             t_durability_level = Bucket.DurabilityLevel.MAJORITY
 
+
+        ### Subsequent data load with spec file ###
         if self.upgrade_with_data_load:
             self.log.info("Starting async doc updates")
-            update_task = self.task.async_continuous_doc_ops(
-                self.cluster, self.bucket, self.gen_load,
-                op_type=DocLoading.Bucket.DocOps.UPDATE,
-                process_concurrency=1,
-                persist_to=1,
-                replicate_to=1,
-                durability=t_durability_level,
-                timeout_secs=30)
-        create_gen = doc_generator(self.key, self.num_items,
-                                   self.num_items+create_batch_size)
+
+            sub_load_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
+            CollectionBase.over_ride_doc_loading_template_params(self,sub_load_spec)
+            CollectionBase.set_retry_exceptions_for_initial_data_load(self,sub_load_spec)
+            update_task = self.bucket_util.run_scenario_from_spec(
+               self.task,
+               self.cluster,
+               self.cluster.buckets,
+               sub_load_spec,
+               mutation_num=0,
+               async_load=True,
+               batch_size=self.batch_size,
+               process_concurrency=self.process_concurrency,
+               validate_task=True)
+
         self.log.info("Upgrading cluster nodes to target version")
         node_to_upgrade = self.fetch_node_to_upgrade()
         while node_to_upgrade is not None:
@@ -248,7 +260,19 @@ class UpgradeTests(UpgradeBase):
             for node in self.thread_keeper.keys():
                 if node not in self.cluster.nodes_in_cluster:
                     self.thread_keeper[node] = None
+
+            sync_write_spec={
+                    "doc_crud": {
+                        MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                        MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 10
+                    },
+                    MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: "all",
+                    MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",
+                    MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all"
+                }
+
             # Validate sync_write results after upgrade
+            self.log.info("Sync Write task starting...")
             if self.atomicity:
                 create_batch_size = 10
                 create_gen = doc_generator(
@@ -262,20 +286,27 @@ class UpgradeTests(UpgradeBase):
                     transaction_timeout=self.transaction_timeout,
                     record_fail=True)
             else:
-                sync_write_task = self.task.async_load_gen_docs(
-                    self.cluster, self.bucket, create_gen,
-                    DocLoading.Bucket.DocOps.CREATE,
-                    durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout,
-                    sdk_client_pool=self.sdk_client_pool,
-                    process_concurrency=4,
-                    skip_read_on_error=True,
-                    suppress_error_table=True)
+                sync_write_task = self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    self.cluster.buckets,
+                    sync_write_spec,
+                    mutation_num=0,
+                    async_load=True,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    validate_task=True)
+
+
             self.task_manager.get_task_result(sync_write_task)
+
             if self.test_storage_upgrade and iter >= self.nodes_init:
                 node_to_upgrade = None
             else:
                 node_to_upgrade = self.fetch_node_to_upgrade()
+
+            self.log.info("Sync Write Result : {0}".format(sync_write_task.result))
+
             if self.atomicity:
                 self.sleep(10)
                 current_items = self.bucket_util.get_bucket_current_item_count(
@@ -290,43 +321,24 @@ class UpgradeTests(UpgradeBase):
                     self.log_failure(
                         "SyncWrite succeeded with mixed mode cluster")
             else:
-                if node_to_upgrade is None:
-                    if sync_write_task.fail.keys():
-                        self.log_failure("Failures after cluster upgrade")
-                    else:
-                        self.num_items += create_batch_size
-                        self.bucket.scopes[
-                            CbServer.default_scope].collections[
-                            CbServer.default_collection] \
-                            .num_items += create_batch_size
-                elif self.cluster_supports_sync_write:
-                    if sync_write_task.fail:
-                        self.log.error("SyncWrite failed: %s"
-                                       % sync_write_task.fail)
+                if self.cluster_supports_sync_write:
+                    if(sync_write_task.result is False):
                         self.log_failure("SyncWrite failed during upgrade")
-                    else:
-                        self.num_items += create_batch_size
-                        self.bucket.scopes[
-                            CbServer.default_scope].collections[
-                            CbServer.default_collection] \
-                            .num_items += create_batch_size
-                        create_gen = doc_generator(
-                            self.key,
-                            self.num_items,
-                            self.num_items + create_batch_size)
-                elif len(sync_write_task.fail.keys()) != create_batch_size:
-                    self.log_failure(
-                        "SyncWrite succeeded with mixed mode cluster")
+
                 else:
-                    for doc_id, doc_result in sync_write_task.fail.items():
-                        if SDKException.FeatureNotAvailableException \
-                                not in str(doc_result["error"]):
-                            self.log_failure("Invalid exception for %s: %s"
-                                             % (doc_id, doc_result))
+                    for task_bucket in sync_write_task.loader_spec:
+                        for scope in task_bucket["scopes"]:
+                            for collections in scope["collections"]:
+                                for op_type in collections:
+                                    for doc_id, doc_result in op_type["fail"].items():
+                                        if SDKException.FeatureNotAvailableException not in str(doc_result["error"]):
+                                            self.log_failure("Invalid exception for {0}:{1}".format(doc_id, doc_result))
 
             # Halt further upgrade if test has failed during current upgrade
             if self.test_failure is not None:
                 break
+
+        self.cluster_util.print_cluster_stats(self.cluster)
         if self.test_storage_upgrade:
             self.sleep(30, "waiting to try cause storage upgrade failure")
             node_to_check = None
@@ -360,7 +372,7 @@ class UpgradeTests(UpgradeBase):
 
         if self.upgrade_with_data_load:
             # Wait for update_task to complete
-            update_task.end_task()
+            update_task.stop_indefinite_doc_loading_tasks()
             self.task_manager.get_task_result(update_task)
 
         # Perform final collection/doc_count validation
