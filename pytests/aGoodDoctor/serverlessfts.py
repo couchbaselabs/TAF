@@ -204,17 +204,20 @@ class DoctorFTS:
                     content = rest.get_fts_stats()
                     mem_used = content["utilization:memoryBytes"]*1.0/content["limits:memoryBytes"]
                     cpu_used = content["utilization:cpuPercent"]
+                    uwm = content["resourceUnderUtilizationWaterMark"]
+                    lwm = content["resourceUtilizationLowWaterMark"]
+                    hwm = content["resourceUtilizationHighWaterMark"]
                     if mem_used > 1.0 and mem_prof:
                         self.log.critical("This should trigger FTS memory profile capture")
                         FtsHelper(node).capture_memory_profile()
                         collect_logs = True
                         mem_prof = False
                     if self.scale_down is False and self.scale_up is False:
-                        if mem_used < 0.3 and cpu_used < 30:
+                        if mem_used < uwm and cpu_used < uwm*100:
                             self.scale_down_count += 1
-                        elif mem_used > 0.5 or cpu_used > 50:
+                        elif mem_used > lwm or cpu_used > lwm*100:
                             self.scale_up_count += 1
-                        elif mem_used > 0.8 or cpu_used > 80:
+                        elif mem_used > hwm or cpu_used > hwm*100:
                             self.hwm_count += 1
                         if self.scale_down_count == len(dataplane.fts_nodes)\
                                 and self.scale_down is False\
