@@ -21,6 +21,7 @@ file_name_patterns:
         exclude_patterns:
           - 'XERROR'
           - 'compaction failed for vb'
+          - 'Invalid packet header detected'
             # TODo: Remove the below after MB-45330
           - 'failed - Already exists'
       #- string: 'WARN'
