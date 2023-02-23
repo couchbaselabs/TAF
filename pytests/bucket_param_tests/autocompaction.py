@@ -252,7 +252,7 @@ class AutoCompactionTests(CollectionBase):
         self._monitor_DB_fragmentation(self.bucket)
         servs_in = self.servers[self.nodes_init:self.nodes_in + 1]
         rebalance = self.task.async_rebalance(
-                                [self.cluster.master], servs_in, [])
+                                self.cluster, servs_in, [])
         self.sleep(5)
         compaction_task = self.task.async_compact_bucket(
                                 self.cluster.master, self.bucket)
@@ -292,7 +292,7 @@ class AutoCompactionTests(CollectionBase):
             sdk_client_pool=self.sdk_client_pool)
         servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
         rebalance = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init],
+            self.cluster,
             servs_in, [])
         self.task_manager.get_task_result(compaction_task)
         self.task_manager.get_task_result(rebalance)
@@ -312,7 +312,7 @@ class AutoCompactionTests(CollectionBase):
 
     def rebalance_out_with_DB_compaction(self):
         self.log.info("create a cluster of all the available servers")
-        self.cluster.rebalance(self.servers[:self.num_servers],
+        self.cluster.rebalance(self.servers,
                                self.servers[1:self.num_servers], [])
         self.bucket_util.disable_compaction(self.cluster,
                                             bucket=self.bucket.name)
@@ -320,7 +320,7 @@ class AutoCompactionTests(CollectionBase):
         self._monitor_DB_fragmentation(self.bucket)
         servs_out = [self.servers[self.num_servers - i - 1]
                      for i in range(self.nodes_out)]
-        rebalance = self.task.async_rebalance([self.cluster.master], [],
+        rebalance = self.task.async_rebalance(self.cluster, [],
                                               servs_out)
         compaction_task = self.task.async_compact_bucket(
             self.cluster.master, self.bucket.name)
@@ -339,7 +339,7 @@ class AutoCompactionTests(CollectionBase):
         remote_client = RemoteMachineShellConnection(self.cluster.master)
         rest = RestConnection(self.cluster.master)
         self.log.info("create a cluster of all the available servers")
-        self.cluster.rebalance(self.servers[:self.num_servers],
+        self.cluster.rebalance(self.cluster,
                                self.servers[1:self.num_servers], [])
         self.bucket_util.set_auto_compaction(
             rest,
@@ -349,7 +349,7 @@ class AutoCompactionTests(CollectionBase):
         self._monitor_DB_fragmentation(self.bucket)
         servs_out = [self.servers[self.num_servers - i - 1]
                      for i in range(self.nodes_out)]
-        rebalance = self.task.async_rebalance([self.cluster.master],
+        rebalance = self.task.async_rebalance(self.cluster,
                                               [], servs_out)
         compact_run = remote_client.wait_till_compaction_end(
             rest,
@@ -385,7 +385,7 @@ class AutoCompactionTests(CollectionBase):
         self.bucket_util.disable_compaction(self.cluster,
                                             bucket=self.bucket.name)
         self._load_all_buckets(self.gen_load, "create", items=self.num_items)
-        rebalance = self.task.async_rebalance(servs_init, servs_in, servs_out)
+        rebalance = self.task.async_rebalance(self.cluster, servs_in, servs_out)
         while rebalance.state != "FINISHED":
             self._monitor_DB_fragmentation(self.bucket)
             compaction_task = self.cluster.async_compact_bucket(
@@ -433,7 +433,7 @@ class AutoCompactionTests(CollectionBase):
             scope=scope_name,
             collection=collection_name,
             sdk_client_pool=self.sdk_client_pool)
-        rebalance = self.task.async_rebalance(servs_init,
+        rebalance = self.task.async_rebalance(self.cluster,
                                               servs_in, servs_out,
                                               check_vbucket_shuffling=False)
         self.task_manager.get_task_result(compaction_task)
@@ -535,7 +535,7 @@ class AutoCompactionTests(CollectionBase):
             allowedTimePeriodToMin=new_time.minute,
             allowedTimePeriodAbort="false")
         servs_in = self.servers[self.nodes_init:self.nodes_in + 1]
-        rebalance = self.task.async_rebalance([self.cluster.master],
+        rebalance = self.task.async_rebalance(self.cluster,
                                               servs_in, [])
         compact_run = remote_client.wait_till_compaction_end(
             rest,
@@ -576,7 +576,7 @@ class AutoCompactionTests(CollectionBase):
                     result = active_task.result()
                     self.assertTrue(result)
                     self.sleep(2)
-            except Exception, ex:
+            except Exception as ex:
                 self.log.error("Load cannot be performed: %s" % str(ex))
                 self.fail(ex)
         monitor_fragm.result()
@@ -701,7 +701,7 @@ class AutoCompactionTests(CollectionBase):
             remote_client.wait_till_compaction_end(rest,
                                                    self.bucket.name,
                                                    self.wait_timeout)
-        except Exception, ex:
+        except Exception as ex:
             self.is_crashed.set()
             self.log.error("Failed to cancel compaction: %s" % str(ex))
         remote_client.disconnect()
@@ -732,7 +732,7 @@ class AutoCompactionTests(CollectionBase):
                               % self.wait_timeout * 30)
                 try:
                     self._load_all_buckets(self.gen_update, "update")
-                except Exception, ex:
+                except Exception as ex:
                     self.log.error("Load cannot be performed: %s" % str(ex))
                     self.fail(ex)
             self.task.jython_task_manager.get_task_result(monitor_fragm)

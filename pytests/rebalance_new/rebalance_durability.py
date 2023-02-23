@@ -74,7 +74,7 @@ class RebalanceDurability(RebalanceBaseTest):
             self.bucket_util.update_all_bucket_replicas(self.cluster,
                                                         replicas=replicas)
             rebalance_result = self.task.rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+                self.cluster, [], [])
             self.assertTrue(rebalance_result)
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
@@ -94,7 +94,7 @@ class RebalanceDurability(RebalanceBaseTest):
             self.bucket_util.update_all_bucket_replicas(self.cluster,
                                                         replicas=replicas)
             rebalance_result = self.task.rebalance(
-                self.cluster.servers[:self.nodes_init], [], [])
+                self.cluster, [], [])
             self.assertTrue(rebalance_result)
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
@@ -190,7 +190,7 @@ class RebalanceDurability(RebalanceBaseTest):
             self.bucket_util.update_all_bucket_replicas(self.cluster,
                                                         replicas=replicas)
             rebalance_result = self.task.rebalance(
-                self.cluster.servers[:self.nodes_init], [],
+                self.cluster, [],
                 [self.cluster.servers[replicas+1]])
             self.assertTrue(rebalance_result)
             # Wait for all doc_load tasks to complete and validate
