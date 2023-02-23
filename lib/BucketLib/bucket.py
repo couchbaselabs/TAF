@@ -294,13 +294,13 @@ class Bucket(object):
         if bucket.storageBackend == Bucket.StorageBackend.magma:
             if bucket.historyRetentionCollectionDefault is None:
                 bucket.historyRetentionCollectionDefault = True
-            elif bucket.historyRetentionSeconds is None:
+            if bucket.historyRetentionSeconds is None:
                 bucket.historyRetentionSeconds = 0
-            elif bucket.historyRetentionBytes is None:
+            if bucket.historyRetentionBytes is None:
                 bucket.historyRetentionBytes = 0
-            elif bucket.magmaSeqTreeDataBlockSize is None:
+            if bucket.magmaSeqTreeDataBlockSize is None:
                 bucket.magmaSeqTreeDataBlockSize = 4096
-            elif bucket.magmaSeqTreeDataBlockSize is None:
+            if bucket.magmaSeqTreeDataBlockSize is None:
                 bucket.magmaKeyTreeDataBlockSize = 4096
 
 class TravelSample(Bucket):

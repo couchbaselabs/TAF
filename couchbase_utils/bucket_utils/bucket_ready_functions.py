@@ -2640,23 +2640,31 @@ class BucketUtils(ScopeUtils):
                        % kv_node.ip)
         for bucket in buckets:
             stat = cb_stat.all_stats(bucket.name)
-            self.log.debug("Hist. retention bytes=%s, seconds=%s"
-                           % (stat["ep_history_retention_bytes"],
-                              stat["ep_history_retention_seconds"]))
-            if int(stat["ep_history_retention_bytes"]) \
-                    != bucket.historyRetentionBytes:
-                result = False
-                self.log.critical("Hist retention bytes mismatch. "
-                                  "Expected: %s, Actual: %s"
-                                  % (bucket.historyRetentionBytes,
-                                     stat["ep_history_retention_bytes"]))
-            if int(stat["ep_history_retention_seconds"]) \
-                    != bucket.historyRetentionSeconds:
-                result = False
-                self.log.critical("Hist retention seconds mismatch. "
-                                  "Expected: %s, Actual: %s"
-                                  % (bucket.historyRetentionSeconds,
-                                     stat["ep_history_retention_seconds"]))
+            if bucket.storageBackend != Bucket.StorageBackend.magma:
+                for s_field in ["ep_history_retention_bytes",
+                                "ep_history_retention_seconds"]:
+                    if s_field in stat:
+                        result = False
+                        self.log.critical("Field {0} present in all_stats"
+                                          .format(s_field))
+            else:
+                self.log.debug("Hist. retention bytes=%s, seconds=%s"
+                               % (stat["ep_history_retention_bytes"],
+                                  stat["ep_history_retention_seconds"]))
+                if int(stat["ep_history_retention_bytes"]) \
+                        != bucket.historyRetentionBytes:
+                    result = False
+                    self.log.critical("Hist retention bytes mismatch. "
+                                      "Expected: %s, Actual: %s"
+                                      % (bucket.historyRetentionBytes,
+                                         stat["ep_history_retention_bytes"]))
+                if int(stat["ep_history_retention_seconds"]) \
+                        != bucket.historyRetentionSeconds:
+                    result = False
+                    self.log.critical("Hist retention seconds mismatch. "
+                                      "Expected: %s, Actual: %s"
+                                      % (bucket.historyRetentionSeconds,
+                                         stat["ep_history_retention_seconds"]))
 
             stat = cb_stat.get_collections(bucket)
             for s_name, scope in bucket.scopes.items():
@@ -5310,21 +5318,19 @@ class BucketUtils(ScopeUtils):
 
     def validate_history_start_seqno_stat(
             self, prev_stat, curr_stats,
-            comparison="==", bucket_flushed=False):
+            comparison="==", no_history_preserved=False):
         """
-        - bucket_flushed is True, expected curr::hist_start_seqno == 0
-        - comparison '==', vb_hist_start_seqno :: prev == curr
-        - comparison '>', vb_hist_start_seqno :: prev > curr
+        - no_history_preserved is True, expected curr::hist_start_seqno == 0
+        - comparison '==', Fail if vb_hist_start_seqno :: prev != curr
+        - comparison '>', Fail if vb_hist_start_seqno :: prev <= curr
         """
         result = True
         active = Bucket.vBucket.ACTIVE
         replica = Bucket.vBucket.REPLICA
         high_seqno = "high_seqno"
         hist_start_seqno = "history_start_seqno"
-        prev_stat = prev_stat["vb-details"]
-        curr_stats = curr_stats["vb-details"]
         # Check if active/replica stats matches
-        for stat in [prev_stat, curr_stats]:
+        for index, stat in enumerate([prev_stat, curr_stats]):
             for vb_num, stats in stat.items():
                 for r_stat in stats[replica]:
                     if r_stat[high_seqno] != stats[active][high_seqno]:
@@ -5336,7 +5342,9 @@ class BucketUtils(ScopeUtils):
                         self.log.critical(
                             "vb_%s, replica hist_start_seqno mismatch"
                             % vb_num)
-        if bucket_flushed:
+            if result is False:
+                self.log.critical("Loop Index: {0} - {1}".format(index, stat))
+        if no_history_preserved:
             for vb_num, stats in curr_stats.items():
                 active_stats = stats[active]
                 if active_stats[hist_start_seqno] != 0:
@@ -5351,7 +5359,7 @@ class BucketUtils(ScopeUtils):
                     result = False
                     self.log.critical("vb_%s history_start_seqno mismatch"
                                       % vb_num)
-        elif comparison == ">=":
+        elif comparison == ">":
             for vb_num, stats in prev_stat.items():
                 active_stats = stats[active]
                 if active_stats[hist_start_seqno] \
