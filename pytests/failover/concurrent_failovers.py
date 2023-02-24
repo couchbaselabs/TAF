@@ -64,11 +64,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             preserve_durability_during_auto_fo=
             self.preserve_durability_during_auto_fo)
         # Find the bucket with least replica to check the Auto-FO possibility
-        self.min_bucket_replica = Bucket.ReplicaNum.THREE
-        for bucket in self.cluster.buckets:
-            if bucket.replicaNumber < self.min_bucket_replica:
-                self.min_bucket_replica = bucket.replicaNumber
-
+        self.find_minimum_bucket_replica()
         # Hold the dict of {node_obj_to_fail: failover_type, ...}
         self.nodes_to_fail = None
 
@@ -111,6 +107,12 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                               self.tearDown.__name__)
 
         super(ConcurrentFailoverTests, self).tearDown()
+
+    def find_minimum_bucket_replica(self):
+        self.min_bucket_replica = Bucket.ReplicaNum.THREE
+        for bucket in self.cluster.buckets:
+            if bucket.replicaNumber < self.min_bucket_replica:
+                self.min_bucket_replica = bucket.replicaNumber
 
     def __get_collection_load_spec(self, doc_ttl=0):
         """
@@ -490,10 +492,28 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.current_fo_strategy = None
         load_data_after_fo = self.input.param("post_failover_data_load", True)
         pre_fo_data_load = self.input.param("pre_fo_data_load", False)
+        update_replica = self.input.param("update_replica", 0)
+        update_replica_number_to = self.input.param(
+            "update_replica_number_to", self.num_replicas)
         exception = None
         if pre_fo_data_load:
             self.__perform_doc_ops(durability=self.durability_level,
-                                   validate_num_items=False)
+                                   validate_num_items=True)
+        if update_replica > 0:
+            buckets = random.sample(self.cluster.buckets, update_replica)
+            for bucket in buckets:
+                self.bucket_util.update_bucket_property(
+                    self.cluster.master, bucket,
+                    replica_number=update_replica_number_to)
+
+            rebalance_task = self.task.async_rebalance(self.cluster.servers[
+                                                   :self.nodes_init], [], [],
+                                                   retry_get_process_num=3000)
+            self.task_manager.get_task_result(rebalance_task)
+            self.find_minimum_bucket_replica()
+            self.__perform_doc_ops(durability=self.durability_level,
+                                   validate_num_items=True)
+
         for index, services_to_fo in enumerate(self.failover_order):
             self.current_fo_strategy = self.failover_type[index]
             # servers_to_fail -> kv:index / kv:index_kv / index:n1ql
