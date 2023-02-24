@@ -529,8 +529,9 @@ class BucketDurabilityTests(BucketDurabilityBase):
                     bucket_obj,
                     bucket_durability=new_d_level)
 
-                buckets = self.bucket_util.get_all_buckets(self.cluster)
-                if buckets[0].durability_level != new_d_level:
+                self.cluster.buckets = list()
+                self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
+                if self.cluster.buckets[0].durability_level != new_d_level:
                     self.log_failure("Failed to update bucket_d_level to %s"
                                      % new_d_level)
                 self.summary.add_step("Set bucket-durability=%s"
