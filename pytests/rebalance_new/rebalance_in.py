@@ -78,8 +78,7 @@ class RebalanceInTests(RebalanceBaseTest):
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
-            self.cluster, servs_in, [],
-            cluster=self.cluster)
+            self.cluster, servs_in, [])
 
         self.sleep(10, "wait for rebalance to start")
 
