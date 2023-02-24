@@ -179,7 +179,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         count = 1
         while count < self.test_itr + 1:
-            self.PrintStep("Step 2.{} ==> Updata {} items/collections".format(count, self.init_items_per_collection))
+            self.PrintStep("Step 2.{} ==> Update {} items/collections".format(count, self.init_items_per_collection))
             self.generate_docs(doc_ops="update", update_start=0,
                                update_end=self.init_items_per_collection)
             for collection in self.collections:

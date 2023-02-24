@@ -55,9 +55,15 @@ class MagmaCrashTests(MagmaBaseTest):
 #             self.bucket_util._wait_warmup_completed()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
-    def drop_recreate_collections(self):
+    def drop_recreate_collections(self, num_collections_to_drop=None):
         self._itr = 0
         drop_lst = [collection for collection in self.collections[::2] if collection != "_default"]
+
+        if num_collections_to_drop:
+            self.collections.remove("_default")
+            drop_lst = random.sample(self.collections, int(num_collections_to_drop))
+            self.collections.append("_default")
+
         self.log.info("drop collection list:: {}".format(drop_lst))
         while not self.stop_crash:
             self._itr += 1
@@ -75,7 +81,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                                    CbServer.default_scope,
                                                    {"name": collection})
                 self.sleep(2, "sleep before next collection creation")
-            sleep = random.randint(600, 900)
+            sleep = random.randint(90, 120)
 
             self.sleep(sleep, "Wait for next drop/create collection iteration")
 
@@ -191,10 +197,21 @@ class MagmaCrashTests(MagmaBaseTest):
 
     def test_crash_during_dedupe(self):
         self.graceful = self.input.param("graceful", False)
-        self.drop_collections = self.input.param("drop_collections", False)
+        self.num_collections_to_drop = self.input.param("num_collections_to_drop", None)
+        self.dedupe_iterations = self.input.param("dedupe_iterations", 5000)
         self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
         wait_warmup = self.input.param("wait_warmup", True)
         self.log.info("====test_crash_during_dedupe starts====")
+        count = 1
+        while count < self.test_itr + 1:
+            self.PrintStep("Step 2.{} ==> Update {} items/collections".format(count, self.init_items_per_collection))
+            self.generate_docs(doc_ops="update", update_start=0,
+                               update_end=self.init_items_per_collection)
+            for collection in self.collections:
+                self.loadgen_docs(_sync=True, doc_ops="update",
+                                  retry_exceptions=self.retry_exceptions,
+                                  collection=collection)
+            count += 1
 
         self.compute_docs_ranges()
         self.batch_size=500
@@ -219,21 +236,22 @@ class MagmaCrashTests(MagmaBaseTest):
                 doc_ops="update",
                 track_failures=False,
                 sdk_retry_strategy=self.sdk_retry_strategy,
-                iterations=5000)
+                iterations=self.dedupe_iterations)
             tasks_info.update(tem_tasks_info.items())
 
         self.crash_th = threading.Thread(target=self.crash,
                                          kwargs=dict(graceful=self.graceful,
                                                      wait=wait_warmup))
         self.crash_th.start()
-        if self.drop_collections:
-            self.drop_collection_th = threading.Thread(target=self.drop_recreate_collections)
+        if self.num_collections_to_drop:
+            self.drop_collection_th = threading.Thread(target=self.drop_recreate_collections,
+                                                       kwargs=dict(num_collections_to_drop=self.num_collections_to_drop))
             self.drop_collection_th.start()
         for task in tasks_info:
             self.task_manager.get_task_result(task)
 
         self.stop_crash = True
-        if self.drop_collections:
+        if self.num_collections_to_drop:
             self.drop_collection_th.join()
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
