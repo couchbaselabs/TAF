@@ -1,7 +1,7 @@
 from math import ceil
 from random import sample
 
-from Cb_constants import DocLoading
+from Cb_constants import DocLoading, CbServer
 from basetestcase import ClusterSetup
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
@@ -66,6 +66,7 @@ class CollectionBase(ClusterSetup):
 
         try:
             self.collection_setup()
+            CollectionBase.setup_collection_history_settings(self)
         except Java_base_exception as exception:
             self.handle_setup_exception(exception)
         except Exception as exception:
@@ -121,6 +122,80 @@ class CollectionBase(ClusterSetup):
                 req_clients=min(cols_in_bucket[bucket.name],
                                 clients_per_bucket),
                 compression_settings=sdk_compression)
+
+    @staticmethod
+    def setup_collection_history_settings(test_obj):
+        if test_obj.bucket_dedup_retention_bytes is None \
+                and test_obj.bucket_dedup_retention_seconds is None:
+            return
+        test_obj.log.info("Loading initial historical dedupe data")
+        for bucket in test_obj.cluster.buckets:
+            if bucket.storageBackend != Bucket.StorageBackend.magma:
+                continue
+            num_cols = 0
+            cols = list()
+            for s_name, scope in bucket.scopes.items():
+                for c_name, col in scope.collections.items():
+                    if c_name == CbServer.default_collection:
+                        continue
+                    cols.append([s_name, c_name])
+                    num_cols += 1
+
+            num_cols = int(num_cols * .9)
+            cols = sample(cols, num_cols)
+            test_obj.log.debug("%s - Enabling history on collections: %s"
+                               % (bucket.name, cols))
+            for col in cols:
+                test_obj.bucket_util.set_history_retention_for_collection(
+                    test_obj.cluster.master, bucket, col[0], col[1], "true")
+
+            # Setting default_collection_history_policy=true
+            # This will make new collections to be created with history=on
+            test_obj.bucket_util.update_bucket_property(
+                test_obj.cluster.master, bucket,
+                history_retention_collection_default="true")
+        # Validate bucket/collection's history retention settings
+        result = test_obj.bucket_util.validate_history_retention_settings(
+            test_obj.cluster.master, test_obj.cluster.buckets)
+        test_obj.assertTrue(result, "History setting validation failed")
+        # Create history docs on disks
+        test_obj.mutate_history_retention_data(
+            doc_key="test_collections", update_percent=1, update_itrs=10000)
+
+    @staticmethod
+    def get_history_retention_load_spec(test_obj, doc_key="test_collections",
+                                        update_percent=1, update_itrs=1000,
+                                        doc_ttl=0):
+        return {
+            "doc_crud": {
+                MetaCrudParams.DocCrud.DOC_SIZE: test_obj.doc_size,
+                MetaCrudParams.DocCrud.RANDOMIZE_VALUE: True,
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: doc_key,
+
+                MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION:
+                    (update_percent, update_itrs),
+            },
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: 5,
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: 3,
+            MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all",
+            MetaCrudParams.DOC_TTL: doc_ttl,
+        }
+
+    @staticmethod
+    def mutate_history_retention_data(test_obj, doc_key="test_collections",
+                                      update_percent=1, update_itrs=1000,
+                                      doc_ttl=0):
+        test_obj.log.info("Loading docs for history_retention testing")
+        load_spec = CollectionBase.get_history_retention_load_spec(
+            test_obj, doc_key=doc_key, update_percent=update_percent,
+            update_itrs=update_itrs, doc_ttl=doc_ttl)
+        test_obj.over_ride_doc_loading_template_params(test_obj, load_spec)
+
+        cont_doc_load = test_obj.bucket_util.run_scenario_from_spec(
+            test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
+            load_spec, mutation_num=0, async_load=False,
+            batch_size=500, process_concurrency=1, validate_task=True)
+        test_obj.assertTrue(cont_doc_load.result, "Hist retention load failed")
 
     def collection_setup(self):
         ttl_buckets = [

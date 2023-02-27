@@ -1014,6 +1014,7 @@ class DocHistoryRetention(ClusterSetup):
         doc_ttl = self.input.param("doc_ttl", 0)
         num_compactions = self.input.param("num_compactions", 0)
         num_cols_to_drop = self.input.param("num_collections_to_drop", 0)
+        new_replica = self.input.param("new_replica", None)
         num_itrs = 3000 + (500 * num_compactions)
         load_on_particular_node = \
             self.input.param("target_load_on_single_node", False)
@@ -1022,10 +1023,19 @@ class DocHistoryRetention(ClusterSetup):
         nodes_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
         nodes_out = self.cluster.nodes_in_cluster[
                     (self.nodes_init-self.nodes_out):]
+        bucket = self.cluster.buckets[0]
+
+        prev_stats = self.bucket_util.get_vb_details_for_bucket(
+            bucket, self.cluster.nodes_in_cluster)
+
+        if new_replica is not None:
+            self.log.info("{0}: Update replica={1}"
+                          .format(bucket.name, new_replica))
+            self.bucket_util.update_bucket_property(
+                self.cluster.master, bucket, replica_number=new_replica)
 
         self.log.info("Performing dedupe operations")
-        loader_spec = self.get_loader_spec(1, 2000)
-        bucket = self.cluster.buckets[0]
+        loader_spec = self.get_loader_spec(2, 1000)
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, loader_spec,
@@ -1046,7 +1056,6 @@ class DocHistoryRetention(ClusterSetup):
             for s_name, c_name in selected_cols:
                 self.bucket_util.drop_collection(self.cluster.master, bucket,
                                                  s_name, c_name)
-
 
         self.log.info("Starting doc_loading with "
                       "doc_ttl=%s, itrs=%s" % (doc_ttl, num_itrs))
@@ -1081,16 +1090,17 @@ class DocHistoryRetention(ClusterSetup):
             self.cluster.nodes_in_cluster,
             to_add=nodes_in, to_remove=nodes_out)
 
-        while num_compactions > 0:
-            self.sleep(120, "Wait before performing compaction")
-            compaction_tasks = list()
-            for bucket in self.cluster.buckets:
-                compaction_tasks.append(self.task.async_compact_bucket(
-                    self.cluster.master, bucket))
-            for task in compaction_tasks:
-                self.task_manager.get_task_result(task)
-                self.assertTrue(task.result, "Compaction failed")
-            num_compactions -= 1
+        if num_compactions > 0:
+            self.sleep(30, "Wait before performing compaction")
+            while num_compactions > 0:
+                compaction_tasks = list()
+                for bucket in self.cluster.buckets:
+                    compaction_tasks.append(self.task.async_compact_bucket(
+                        self.cluster.master, bucket))
+                for task in compaction_tasks:
+                    self.task_manager.get_task_result(task)
+                    self.assertTrue(task.result, "Compaction failed")
+                num_compactions -= 1
 
         self.task_manager.get_task_result(reb_task)
 
@@ -1100,6 +1110,13 @@ class DocHistoryRetention(ClusterSetup):
 
         self.assertTrue(reb_task.result, "Rebalance failed")
         self.assertTrue(doc_loading_task.result, "Loading failed")
+        self.validate_retention_settings_on_all_nodes()
+        curr_stats = self.bucket_util.get_vb_details_for_bucket(
+            bucket, self.cluster.nodes_in_cluster)
+        if self.bucket_dedup_retention_seconds == 86400:
+            comparison = "=="
+        self.bucket_util.validate_history_start_seqno_stat(
+            prev_stats, curr_stats, comparison)
 
     def test_intra_cluster_xdcr(self):
         """
