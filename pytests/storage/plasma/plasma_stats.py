@@ -1,5 +1,6 @@
 import threading
 import time
+import random
 
 from Cb_constants import DocLoading
 from couchbase_helper.documentgenerator import doc_generator
@@ -1415,3 +1416,143 @@ class PlasmaStatsTest(PlasmaBaseTest):
         self.log.info("latest Avg_latency_value is {}".format(avg_latency_value))
         for taskInstance in query_tasks_info:
             self.task.jython_task_manager.get_task_result(taskInstance)
+
+
+    """
+    1. Create n buckets (n >= 1)
+    2. Create 5 indexes per bucket.
+    3. Set initial LSSFragMinFileSize to 50mb.
+    4. Update indexes to increase fragmentation, while keeping file size < 50mb
+    5. Check that index size does not decrease / log cleaner is not triggered.
+    6. Set lssMinFileSize as 8mb.
+    7. Wait for log cleaner to be triggered.
+    8. Check that file sizes have reduced.
+    """
+    def test_LSSFragMinFileSize_multi_bucket(self):
+        def data_validation():
+            count= []
+            docs= []
+            for buck_ind in range(num_buckets):
+                count_query = "SELECT COUNT(*) FROM `{}`".format(self.cluster.buckets[buck_ind].name)
+                result = self.query_client.query_tool(count_query)
+                self.assertTrue(result["status"] == "success", "Count query failed!")
+                count.append(result["results"][0])
+                select_query = "SELECT meta().id, * FROM `{}` ORDER BY meta().id LIMIT 10".format(self.cluster.buckets[buck_ind].name)
+                result = self.query_client.query_tool(select_query)
+                self.assertTrue(result["status"] == "success", "Select query failed!")
+                docs.append(result["results"])
+            return (count, docs)
+        
+        def get_file_sizes(indexer_rest, num_buckets, idx_list):
+            interPlasmaStats = indexer_rest.get_plasma_stats(nodes_list=self.indexer_nodes_list)
+            file_sizes = {}
+            for buck_ind in range(num_buckets):
+                file_sizes[buck_ind] = []
+                for i in idx_list:
+                    bucket_Index_key = self.cluster.buckets[buck_ind].name + ":" + i
+                    self.log.info(i)
+                    self.log.info("Fragmentation: {}".format(interPlasmaStats[bucket_Index_key + '_lss_stats']['lss_fragmentation']))
+                    self.log.info("Used space: {}".format(interPlasmaStats[bucket_Index_key + '_lss_stats']['lss_used_space']))
+                    self.log.info("GC Num reads: {}".format(interPlasmaStats[bucket_Index_key + '_lss_stats']['lss_gc_num_reads']))
+                    file_sizes[buck_ind].append(interPlasmaStats[bucket_Index_key + '_lss_stats']['lss_used_space'])
+            return file_sizes
+    
+        self.index_count = self.input.param("index_count", 5)
+        num_buckets = len(self.cluster.buckets)
+        init_size = 50
+        self.query_nodes_list = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="n1ql",
+                                                                         get_all_nodes=True)
+        self.indexer_nodes_list = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="index",
+                                                                           get_all_nodes=True)
+        self.query_client = RestConnection(self.query_nodes_list[0])
+        indexer_rest = GsiHelper(self.indexer_nodes_list[0], self.log)
+
+        # Setting LSSFragMinFileSize to 50mb
+        indexer_rest.set_index_settings({"indexer.plasma.mainIndex.LSSFragMinFileSize": init_size*1024*1024})
+
+        settings = indexer_rest.get_indexer_internal_stats()
+        self.log.info("LSSFragMinFileSize set to: {}".format(settings["indexer.plasma.mainIndex.LSSFragMinFileSize"]))
+        self.assertTrue(settings["indexer.plasma.mainIndex.LSSFragMinFileSize"] == init_size * 1024 * 1024, "Unable to set initial LSSFragMinFileSize")
+
+        # Creating primary index
+        for buck_ind in range(num_buckets):
+            prim_idx_query = "CREATE PRIMARY INDEX `#primary` ON `{}`".format(self.cluster.buckets[buck_ind].name)
+            result = self.query_client.query_tool(prim_idx_query)
+            self.assertTrue(result["status"] == "success", "Prim Index query failed!")
+
+        # Creating secondary indexes
+        idx_list = ["Index0" + str(i) for i in range(self.index_count)]
+        self.log.info("Creating secondary indexes")
+        for buck_ind in range(num_buckets):
+            for i in range(self.index_count):
+                indexName = "Index0" + str(i)
+                index_query = "CREATE INDEX `{0}` ON `{1}`(`{2}`)".format(indexName,
+                                                                        self.cluster.buckets[buck_ind].name,
+                                                                        'body')
+                result = self.query_client.query_tool(index_query)
+                self.assertTrue(result["status"] == "success", "Index query failed!")
+            self.sleep(10, "Indexes created, waiting for stabilization")
+
+        # Updates
+        names = ['john', 'arnav', 'rakesh', 'mohit', 'ram']
+        update_query = "UPDATE `{0}` SET `body` = 'random_body{1}' where age=5;"
+        self.log.info("Updating documents to increase index fragmentation")
+        for buck_ind in range(num_buckets):
+            for i in range(10):
+                final_update_query = update_query.format(self.cluster.buckets[buck_ind].name, random.choice(names))
+                result = self.query_client.query_tool(final_update_query)
+                self.assertTrue(result["status"] == "success", "Update Query failed!")
+                self.sleep(10, "Waiting for fragmentation stabilisation after updation")
+
+        self.sleep(150, "Waiting for fragmentation stabilisation")
+
+        # Get initial data for validation
+        count_before, docs_before = data_validation()
+
+        # Getting initial stats
+        initial_file_sizes = get_file_sizes(indexer_rest, num_buckets, idx_list)
+        for buck_ind in range(num_buckets):
+            for i in range(len(idx_list)):
+                self.assertTrue(initial_file_sizes[buck_ind][i] < init_size * 1024 * 1024, "File size greater than initial min file size, invalid test criteria")
+
+        self.sleep(90, "Waiting to ensure that file sizes do not reduce")
+
+        # Getting intermediate stats for comparison
+        inter_file_sizes = get_file_sizes(indexer_rest, num_buckets, idx_list)
+        for buck_ind in range(num_buckets):
+            for i in range(len(idx_list)):
+                self.assertTrue(initial_file_sizes[buck_ind][i] <= inter_file_sizes[buck_ind][i], "File sizes reduce without reducing LSSFragMinFileSize")
+
+        # Reducing LSSFragMinFileSize to 8mb
+        indexer_rest.set_index_settings({"indexer.plasma.mainIndex.LSSFragMinFileSize": 8*1024*1024})
+        self.log.info("LSSFragMinFileSize set to 8mb")
+
+        # Waiting for log cleaner to work
+        loop_break = 10
+        while loop_break > 0:
+            interPlasmaStats = indexer_rest.get_plasma_stats(nodes_list=self.indexer_nodes_list)
+            flag = False
+            for buck_ind in range(num_buckets):
+                for i in idx_list:
+                    bucket_Index_key = self.cluster.buckets[buck_ind].name + ":" + i
+                    if interPlasmaStats[bucket_Index_key + '_lss_stats']['lss_gc_num_reads'] == 0:
+                        flag = True
+            if flag:
+                self.sleep(10, "Waiting for log cleaner")
+            else:
+                break
+            loop_break -= 1
+
+        # Asserting that file sizes have reduced
+        final_file_sizes = get_file_sizes(indexer_rest, num_buckets, idx_list)
+        for buck_ind in range(num_buckets):
+            for ind_count in range(self.index_count):
+                self.assertTrue(inter_file_sizes[buck_ind][ind_count] > final_file_sizes[buck_ind][ind_count], \
+                                "File size not reduced for bucket {} index {}".format(buck_ind, ind_count+1))
+
+        # Get final data for validation
+        count_after, docs_after = data_validation()
+
+        self.assertTrue(count_after == count_before, "Data corrupted")
+        self.assertTrue(docs_after == docs_before, "Data corrupted")
+
