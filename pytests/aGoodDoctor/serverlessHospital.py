@@ -78,7 +78,8 @@ class Murphy(BaseTestCase, OPD):
             self.rollback = self.input.param("rollback", True)
             self.vbucket_check = self.input.param("vbucket_check", True)
             self.end_step = self.input.param("end_step", None)
-            self.key_prefix = "Users"
+            self.keyType = self.input.param("keyType", "SimpleKey")
+            self.valueType = self.input.param("valueType", "SimpleValue")
             self.crashes = self.input.param("crashes", 20)
             self.check_dump_thread = True
             self.skip_read_on_error = False
@@ -693,8 +694,6 @@ class Murphy(BaseTestCase, OPD):
         self.check_cluster_state()
         self.check_fts_scaling()
 
-        print self.workload
-        print self.gsiAutoScaleLoadDefn
         if self.workload != self.gsiAutoScaleLoadDefn:
             for i in range(0, 5):
                 self.create_databases(20, load_defn=self.workload)
@@ -708,7 +707,6 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(int(kv_nodes) > min((i+1)*3, 11),
                                 "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
                 self.create_required_collections(self.cluster, buckets)
-                self.start_initial_load(buckets)
                 for bucket in buckets:
                     try:
                         self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
@@ -726,6 +724,7 @@ class Murphy(BaseTestCase, OPD):
                     if prev_gsi_nodes < 10:
                         self.check_gsi_scaling(dataplane, prev_gsi_nodes)
                 self.build_gsi_index(buckets)
+                self.start_initial_load(buckets)
                 self.create_fts_indexes(buckets, wait=True)
                 self.sleep(30)
             count = 0
@@ -773,9 +772,9 @@ class Murphy(BaseTestCase, OPD):
         # self.create_databases(19)
         self.create_required_collections(self.cluster,
                                          self.cluster.buckets[0:20])
-        self.start_initial_load(self.cluster.buckets[0:20])
         self.create_gsi_indexes(self.cluster.buckets[0:20])
         self.build_gsi_index(self.cluster.buckets[0:20])
+        self.start_initial_load(self.cluster.buckets[0:20])
         self.check_cluster_scaling(service="gsi")
         self.create_fts_indexes(self.cluster.buckets, wait=True)
         for bucket in self.cluster.buckets:

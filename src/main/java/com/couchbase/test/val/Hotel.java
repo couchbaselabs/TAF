@@ -18,7 +18,7 @@ import java.time.format.DateTimeFormatter;
 import com.couchbase.client.java.json.JsonObject;
 import com.github.javafaker.Faker;
 
-import couchbase.test.docgen.WorkLoadSettings;
+import com.couchbase.test.docgen.WorkLoadSettings;
 
 public class Hotel {
     Faker faker;
@@ -49,7 +49,7 @@ public class Hotel {
             country.add(faker.address().country());
 
             ArrayList<String> temp = new ArrayList<String>();
-            int numLikes = this.random.nextInt(0, 10);
+            int numLikes = this.random.nextInt(10);
             for (int n = 0; n <= numLikes; n++) {
                 temp.add(faker.name().fullName());
             }
@@ -60,7 +60,7 @@ public class Hotel {
     }
 
     public void setReviewsArray() {
-        int numReviews = this.random.nextInt(0, 10);
+        int numReviews = this.random.nextInt(10);
         LocalDateTime now = LocalDateTime.now();
         ArrayList<JsonObject> temp = new ArrayList<JsonObject>();
         for (int n = 0; n <= numReviews; n++) {
@@ -68,11 +68,11 @@ public class Hotel {
             review.put("author", faker.name().fullName());
             review.put("date", now.plus(n, ChronoUnit.WEEKS).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
             JsonObject ratings = JsonObject.create();
-            ratings.put("Check in / front desk", this.random.nextInt(1, 5));
-            ratings.put("Cleanliness", this.random.nextInt(1, 5));
-            ratings.put("Overall", this.random.nextInt(1, 5));
-            ratings.put("Rooms", this.random.nextInt(1, 5));
-            ratings.put("Value", this.random.nextInt(1, 5));
+            ratings.put("Check in / front desk", this.random.nextInt(5));
+            ratings.put("Cleanliness", this.random.nextInt(5));
+            ratings.put("Overall", this.random.nextInt(5));
+            ratings.put("Rooms", this.random.nextInt(5));
+            ratings.put("Value", this.random.nextInt(5));
             review.put("ratings", ratings);
             temp.add(review);
         }
@@ -92,8 +92,8 @@ public class Hotel {
         jsonObject.put("free_parking", this.random.nextBoolean());
         jsonObject.put("phone", faker.phoneNumber().phoneNumber());
         jsonObject.put("name", this.names.get(index));
-        jsonObject.put("price", this.random.nextFloat(500, 2000));
-        jsonObject.put("avg_rating", this.random.nextFloat(1, 5));
+        jsonObject.put("price", 500 + this.random.nextInt(1500));
+        jsonObject.put("avg_rating", this.random.nextFloat()*5);
         jsonObject.put("public_likes", this.likes.get(index));
         jsonObject.put("reviews", this.reviews.get(index));
         jsonObject.put("type", this.htypes.get(0));

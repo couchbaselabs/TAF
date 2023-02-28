@@ -45,6 +45,28 @@ indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "de
            'CREATE INDEX {}{} ON {}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true}};',
            'create index {}{} on {}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true}};']
 
+auto_scale_indexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) USING GSI WITH {{ "defer_build": true}};',
+                      'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) USING GSI WITH {{ "defer_build": true}};',
+                      'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`) USING GSI WITH {{ "defer_build": true}};',
+                      'CREATE INDEX {}{} ON {}(`price`,`city`,`name`) USING GSI WITH {{ "defer_build": true}};',
+                      'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`) USING GSI WITH {{ "defer_build": true}};',
+                      'CREATE INDEX {}{} ON {}(`city`) USING GSI WITH {{ "defer_build": true}};',
+                      'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) USING GSI WITH {{ "defer_build": true}};',
+                      'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) USING GSI WITH {{ "defer_build": true}};',
+                      'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) USING GSI WITH {{ "defer_build": true}};',
+                      'CREATE INDEX {}{} ON {}(DISTINCT ARRAY FLATTEN_KEYS(`r`.`author`,`r`.`ratings`.`Cleanliness`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `country`, `email`, `free_parking`) USING GSI WITH {{ "defer_build": true}};']
+
+auto_scale_queries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end)",
+                      "select avg(price) as AvgPrice, min(price) as MinPrice, max(price) as MaxPrice from {} where free_breakfast=True and free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' group by country",
+                      "select city,country,count(*) from {} where free_breakfast=True and free_parking=True group by country,city order by country,city",
+                      "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE price IS NOT NULL GROUP BY city) SELECT h.name, h.price FROM {0} h JOIN city_avg ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.price IS NOT NULL",
+                      "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms < 2 AND h.avg_rating >= 3 ORDER BY r.author DESC",
+                      "SELECT COUNT(*) FILTER (WHERE free_breakfast = TRUE) AS count_free_breakfast, COUNT(*) FILTER (WHERE free_parking = TRUE) AS count_free_parking, COUNT(*) FILTER (WHERE free_breakfast = TRUE AND free_parking = TRUE) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' ORDER BY count_free_parking_and_breakfast DESC ",
+                      "SELECT h.name,h.country,h.city,h.price,DENSE_RANK() OVER (window1) AS `rank` FROM {} AS h WHERE h.price IS NOT NULL WINDOW window1 AS ( PARTITION BY h.country ORDER BY h.price NULLS LAST)",
+                      "SELECT * from {} where `type` is not null",
+                      "SELECT * from {} where phone like \"4%\"",
+                      "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country IS NOT NULL"]
+
 
 def execute_statement_on_n1ql(client, statement, client_context_id=None):
     """
@@ -148,7 +170,10 @@ class DoctorN1QL():
                         if c == "_default":
                             continue
                         if i < b.loadDefn.get("2i")[0]:
-                            self.idx_q = indexes[i % len(indexes)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
+                            indexType = indexes
+                            if b.loadDefn.get("type") == "gsi_auto_scale":
+                                indexType = auto_scale_indexes
+                            self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
                             b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
                             retry = 5
                             while retry > 0:
@@ -167,9 +192,9 @@ class DoctorN1QL():
                             i += 1
                         if q < b.loadDefn.get("2i")[1]:
                             if b.loadDefn.get("type") == "gsi_auto_scale":
-                                b.queries.append((auto_scale_queries[q % len(indexes)].format(c), self.sdkClients[b.name+s]))
+                                b.queries.append((auto_scale_queries[q % len(indexType)].format(c), self.sdkClients[b.name+s]))
                             else:
-                                b.queries.append((queries[q % len(indexes)].format(c), self.sdkClients[b.name+s]))
+                                b.queries.append((queries[q % len(indexType)].format(c), self.sdkClients[b.name+s]))
                             q += 1
         return True
 
