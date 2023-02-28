@@ -21,6 +21,7 @@ from BucketLib.BucketOperations import BucketHelper
 from com.couchbase.test.sdk import Server
 from com.couchbase.client.core.error import TimeoutException
 from threading import Lock
+from _collections import defaultdict
 
 
 class Murphy(BaseTestCase, OPD):
@@ -123,7 +124,7 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (100, 50),
+                "2i": (20, 50),
                 "FTS": (0, 0)
                 }
             self.loadDefn100 = {
@@ -550,15 +551,25 @@ class Murphy(BaseTestCase, OPD):
                     table.set_headers(["Bucket",
                                        "Total Ram(MB)",
                                        "Total Data(GB)",
+                                       "Logical Data",
                                        "Items"])
+                    logical_data = defaultdict(int)
+                    for node in dataplane.kv_nodes:
+                        _, stats = RestConnection(node).query_prometheus("kv_logical_data_size_bytes")
+                        if stats["status"] == "success":
+                            stats = [stat for stat in stats["data"]["result"] if stat["metric"]["state"] == "active"]
+                            for stat in stats:
+                                logical_data[stat["metric"]["bucket"]] += int(stat["value"][1])
+                    print logical_data
                     for bucket in self.cluster.buckets:
                         data = self.rest.get_bucket_json(bucket.name)
                         ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
                         dataGB = data["basicStats"]["diskUsed"] / (1024 * 1024 * 1024)
                         items = data["basicStats"]["itemCount"]
-                        table.add_row([bucket.name, ramMB, dataGB, items])
+                        logicalDdataGB = logical_data[bucket.name] / (1024 * 1024 * 1024)
+                        table.add_row([bucket.name, ramMB, dataGB, logicalDdataGB, items])
                         for i, disk in enumerate(self.disk):
-                            if disk > dataGB:
+                            if disk > logicalDdataGB:
                                 start = time.time()
                                 while time.time() < start + 1200 and ramMB != self.memory[i-1]:
                                     self.log.info("Wait for bucket: {}, Expected: {}, Actual: {}".
@@ -681,6 +692,9 @@ class Murphy(BaseTestCase, OPD):
         self.check_memory_management()
         self.check_cluster_state()
         self.check_fts_scaling()
+
+        print self.workload
+        print self.gsiAutoScaleLoadDefn
         if self.workload != self.gsiAutoScaleLoadDefn:
             for i in range(0, 5):
                 self.create_databases(20, load_defn=self.workload)
