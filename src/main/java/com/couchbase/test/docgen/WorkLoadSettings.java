@@ -65,6 +65,8 @@ public class WorkLoadSettings extends WorkLoadBase {
         this.expectDeleted = deleted;
         this.validate = validate;
         this.mutated = mutated;
+        this.valueType = valueType;
+        this.keyType = keyType;
     };
 
     public WorkLoadSettings(

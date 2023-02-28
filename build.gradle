@@ -61,6 +61,8 @@ dependencies {
 	// https://mvnrepository.com/artifact/com.spotify/docker-client
 	compile group: 'com.spotify', name: 'docker-client', version: '8.16.0'
 	
+	compile group: 'com.github.javafaker', name: 'javafaker', version: '0.15'
+	
 	implementation 'dnsjava:dnsjava:3.5.1'
 }
 

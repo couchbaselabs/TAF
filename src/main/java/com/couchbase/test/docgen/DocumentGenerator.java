@@ -13,6 +13,8 @@ import com.couchbase.test.key.SimpleKey;
 import com.couchbase.test.key.CircularKey;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
+
+import com.couchbase.test.val.Hotel;
 import com.couchbase.test.val.SimpleValue;
 import com.couchbase.test.val.anySizeValue;
 import com.couchbase.test.docgen.DocRange;
@@ -48,6 +50,8 @@ abstract class KVGenerator{
 
         if(valClass.equals(anySizeValue.class.getSimpleName()))
             this.valInstance = anySizeValue.class;
+        else if (valClass.equals(Hotel.class.getSimpleName()))
+            this.valInstance = Hotel.class;
         else
             this.valInstance = SimpleValue.class;
 
