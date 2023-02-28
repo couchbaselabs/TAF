@@ -261,6 +261,20 @@ class DoctorN1QL():
                                                         print_duration=60))
             stat_monitor.start()
 
+    def index_ru_wu_stats(self, dataplanes):
+        for dataplane in dataplanes.values():
+            stat_monitor = threading.Thread(target=self.log_index_ru_wu_stats,
+                                            kwargs=dict(dataplane=dataplane,
+                                                        print_duration=60))
+            stat_monitor.start()
+
+    def query_stats(self, dataplanes):
+        for dataplane in dataplanes.values():
+            stat_monitor = threading.Thread(target=self.log_query_stats,
+                                            kwargs=dict(dataplane=dataplane,
+                                                        print_duration=60))
+            stat_monitor.start()
+
     def log_index_stats(self, dataplane, print_duration=600):
         st_time = time.time()
         while not self.stop_run:
@@ -289,6 +303,46 @@ class DoctorN1QL():
                     except Exception as e:
                         self.log.critical(e)
                 self.table.display("Index Statistics")
+                st_time = time.time()
+
+    def log_index_ru_wu_stats(self, dataplane, print_duration=600):
+        st_time = time.time()
+        while not self.stop_run:
+            if st_time + print_duration < time.time():
+                self.table = TableView(self.log.info)
+                for node in dataplane.index_nodes:
+                    try:
+                        rest = RestConnection(node)
+                        resp = rest.urllib_request(rest.indexUrl + "_metering")
+                        print("################## Index Node RU/WU Stats for node {} , Dataplane: {} ##################".format(node, dataplane.id))
+                        content = resp.text
+                        print(content)
+                    except Exception as e:
+                        self.log.critical(e)
+                # self.table.display("Index RU - WU Statistics")
+                st_time = time.time()
+
+    def log_query_stats(self, dataplane, print_duration=600):
+        st_time = time.time()
+        while not self.stop_run:
+            if st_time + print_duration < time.time():
+                self.table = TableView(self.log.info)
+                self.table.set_headers(["Dataplane",
+                                        "Node",
+                                        "load_factor"])
+                for node in dataplane.query_nodes:
+                    try:
+                        rest = RestConnection(node)
+                        resp = rest.urllib_request(rest.queryUrl + "admin/stats")
+                        content = json.loads(resp.content)
+                        self.table.add_row([
+                            dataplane.id,
+                            node.ip,
+                            str(content["load_factor.value"]),
+                        ])
+                    except Exception as e:
+                        self.log.critical(e)
+                self.table.display("Query Statistics")
                 st_time = time.time()
 
     def log_index_stats_new(self, dataplane, print_duration=600):
