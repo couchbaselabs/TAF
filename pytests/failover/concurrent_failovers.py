@@ -833,6 +833,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             return nodes
 
         self.nodes_in = self.input.param("nodes_in", 0)
+        pre_fo_data_load = self.input.param("pre_fo_data_load", False)
+        if pre_fo_data_load:
+            self.__perform_doc_ops(durability=self.durability_level,
+                                   validate_num_items=True)
 
         add_nodes = list()
         remove_nodes = list()
