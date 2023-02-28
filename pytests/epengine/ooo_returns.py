@@ -207,7 +207,8 @@ class OutOfOrderReturns(ClusterSetup):
                                   "expected_thread_val": 0})
 
         cb_err = CouchbaseError(self.log,
-                                self.node_data[cluster_node]["shell"])
+                                self.node_data[cluster_node]["shell"],
+                                node=cluster_node)
         cb_err.create(simulate_error, self.bucket.name)
 
         # Start doc_ops
