@@ -1101,6 +1101,8 @@ class ClusterUtils:
             row.append(cluster_node.split(':')[0])
             if "serverGroup" in node_stats:
                 row.append(node_stats["serverGroup"])
+            else:
+                row.append("None")
             row.append(", ".join(node_stats["services"]))
             row.append(str(node_stats["cpu_utilization"])[0:6])
             row.append(humanbytes(str(node_stats["mem_total"])))
