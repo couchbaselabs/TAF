@@ -942,3 +942,65 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         # Perform collection crud + doc_ops after rebalance operation
         self.__perform_doc_ops()
+
+    def test_autofailover_preserve_durability(self):
+        """
+        with single v-bucket
+        positive and negative afo test with combination picked from
+        once with active/replica nodes and once without v-buckets
+        """
+
+        def add_node_to_failover(ip):
+            for index, node in enumerate(nodes_in_cluster):
+                if str(node.ip) in str(ip):
+                    nodes_to_fo[node] = self.failover_method
+        update_minimum_replica_number = self.input.\
+            param("update_minimum_replica", None)
+        update_afo_nodes_with_vbucket_number = \
+            self.input.param("update_afo_nodes", None)
+        nodes_in_cluster = self.rest.get_nodes()
+        nodes_to_fo = dict()
+        iterator = 0
+        # dividing all nodes in 2 node per zone
+        while iterator < len(self.cluster.servers):
+            iterator += 2
+            group = "Group " + str(iterator)
+            self.rest.add_zone(group)
+            nodes = [server.ip for server in self.cluster.servers[
+                                             iterator:iterator + 2]]
+            self.rest.shuffle_nodes_in_zones(nodes, "Group 1", group)
+
+        cluster_details = self.rest.get_cluster_stats()
+        num_nodes_with_vbuckets_to_afo = 0
+        if self.min_bucket_replica == 1:
+            num_nodes_with_vbuckets_to_afo = 1
+        elif self.min_bucket_replica >= 2:
+            num_nodes_with_vbuckets_to_afo = self.min_bucket_replica - 1
+        if update_afo_nodes_with_vbucket_number is not None:
+            num_nodes_with_vbuckets_to_afo = update_afo_nodes_with_vbucket_number
+        total_afo_nodes_without_vbuckets = len(
+            self.failover_order[0].split(":")) - num_nodes_with_vbuckets_to_afo
+        for node in cluster_details:
+            if str(self.cluster.master.ip) in str(node):
+                continue
+            if cluster_details[node]["active_item_count"] > 0 or \
+                    cluster_details[node]["replica_item_count"] > 0:
+                if num_nodes_with_vbuckets_to_afo > 0:
+                    add_node_to_failover(node)
+                    num_nodes_with_vbuckets_to_afo -= 1
+            elif total_afo_nodes_without_vbuckets > 0:
+                add_node_to_failover(node)
+                total_afo_nodes_without_vbuckets -= 1
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
+        self.nodes_to_fail = nodes_to_fo
+        self.current_fo_strategy = CbServer.Failover.Type.AUTO
+        self.preserve_durability_during_auto_fo = False
+        if update_minimum_replica_number is not None:
+            self.min_bucket_replica = update_minimum_replica_number
+        try:
+            self.__run_test()
+        except Exception as e:
+            # Making sure to remove failed nodes before failing the test
+            self.cluster_util.rebalance(self.cluster)
+            self.fail("Exception occurred: %s" % str(e))
+        self.cluster_util.rebalance(self.cluster)
