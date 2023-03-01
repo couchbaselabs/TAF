@@ -394,19 +394,19 @@ class DoctorN1QL():
                         rest = RestConnection(node)
                         resp = rest.urllib_request(rest.indexUrl + "stats")
                         content = json.loads(resp.content)
-                        mem_q = content["memory_quota"]
-                        units_q = content["units_quota"]
+                        mem_q = content["memory_quota"]*1.0
+                        units_q = content["units_quota"]*1.0
                         mem_used = content["memory_used_actual"]/mem_q * 100
                         units_used = content["units_used_actual"]/units_q * 100
-                        if mem_used < 40 or units_used < 32:
-                            self.nodes_below_LWM += 1
+                        self.log.info("Indexer quotes - mem: {}, units: {}".format(mem_q, units_q))
+                        self.log.info("Indexer Actuals - mem: {}, units: {}".format(content["memory_used_actual"], content["units_used_actual"]))
+                        self.log.info("Indexer % - mem: {}, units: {}".format(mem_used, units_used))
+                        if mem_used > 70 or units_used > 50:
+                            self.nodes_above_HWM += 1
                         elif mem_used > 45 or units_used > 36:
                             self.nodes_above_LWM += 1
-                        elif mem_used > 70 or units_used > 50:
-                            self.nodes_above_HWM += 1
-
-                        self.log.info("GSI - Nodes below LWM: {}".format(self.nodes_below_LWM))
-                        self.log.info("GSI - Nodes above HWM: {}".format(self.nodes_above_HWM))
+                        elif mem_used < 40 or units_used < 32:
+                            self.nodes_below_LWM += 1
 
                         self.table.add_row([
                             node.ip,
@@ -418,6 +418,9 @@ class DoctorN1QL():
                             ])
                     except Exception as e:
                         self.log.critical(e)
+                self.log.info("GSI - Nodes below LWM: {}".format(self.nodes_below_LWM))
+                self.log.info("GSI - Nodes above LWM: {}".format(self.nodes_above_LWM))
+                self.log.info("GSI - Nodes above HWM: {}".format(self.nodes_above_HWM))
                 self.table.display("Index Statistics")
 
                 if self.scale_down is False and self.scale_up is False and self.gsi_auto_rebl is False:
@@ -456,7 +459,7 @@ class DoctorN1QL():
                         if gsi_stat["num_index_repaired"] > 0:
                             self.log.info("{} have indexes to be repaired".format(node))
                             self.gsi_auto_rebl = True
-                            self.log.info("GSI - Auto-Rebalance should trigger in a while")
+                            self.log.info("GSI - Auto-Rebalance should trigger in a while as num_index_repaired > 0")
                             self.log.info(defrag)
                             continue
                     if num_tenant_0 > 0\
@@ -471,10 +474,10 @@ class DoctorN1QL():
                             self.log.info("GSI - Auto-Rebalance should trigger in a while")
                         else:
                             self.scale_up = True
-                            self.log.info("GSI - Scale UP should trigger in a while")
-                    if self.nodes_above_LWM == len(dataplane.index_nodes):
+                            self.log.info("(RULE2) GSI - Scale UP should trigger in a while")
+                    if self.nodes_above_LWM == len(dataplane.index_nodes) or self.nodes_above_HWM == len(dataplane.index_nodes):
                         self.scale_up = True
-                        self.log.info("GSI - Scale UP should trigger in a while")
+                        self.log.info("(RULE1) GSI - Scale UP should trigger in a while")
 
                 st_time = time.time()
 

@@ -187,9 +187,9 @@ class DoctorFTS:
         self.fts_auto_rebl = False
         mem_prof = True
         while not self.stop_run:
-            self.scale_down_count = 0
-            self.scale_up_count = 0
-            self.hwm_count = 0
+            self.nodes_under_uwm = 0
+            self.nodes_above_lwm = 0
+            self.nodes_above_hwm = 0
             collect_logs = False
             self.table = TableView(self.log.info)
             self.table.set_headers(["Dataplane",
@@ -212,24 +212,25 @@ class DoctorFTS:
                         FtsHelper(node).capture_memory_profile()
                         collect_logs = True
                         mem_prof = False
-                    if self.scale_down is False and self.scale_up is False:
                         if mem_used < uwm and cpu_used < uwm*100:
-                            self.scale_down_count += 1
-                        elif mem_used > lwm or cpu_used > lwm*100:
-                            self.scale_up_count += 1
-                        elif mem_used > hwm or cpu_used > hwm*100:
-                            self.hwm_count += 1
-                        if self.scale_down_count == len(dataplane.fts_nodes)\
+                            self.nodes_under_uwm += 1
+                        if mem_used > hwm or cpu_used > hwm*100:
+                            self.nodes_above_hwm += 1
+                        if mem_used > lwm or cpu_used > lwm*100:
+                            self.nodes_above_lwm += 1
+
+                    if self.scale_down is False and self.scale_up is False and self.fts_auto_rebl is False:
+                        if self.nodes_under_uwm == len(dataplane.fts_nodes)\
                                 and self.scale_down is False\
                                 and len(dataplane.fts_nodes) > 2:
                             self.scale_down = True
                             self.log.info("FTS - Scale DOWN should trigger in a while")
-                        if len(dataplane.fts_nodes) < 10\
-                           and self.scale_up_count == len(dataplane.fts_nodes)\
-                           and self.scale_up is False:
+                        elif len(dataplane.fts_nodes) < 10\
+                            and self.nodes_above_lwm == len(dataplane.fts_nodes)\
+                                and self.scale_up is False:
                             self.scale_up = True
                             self.log.info("FTS - Scale UP should trigger in a while")
-                        if self.hwm_count > 0 and self.fts_auto_rebl is False:
+                        elif self.nodes_above_hwm > 0 and self.fts_auto_rebl is False:
                             self.fts_auto_rebl = True
                             self.log.info("FTS - Auto-Rebalance should trigger in a while")
                     self.table.add_row([
@@ -245,11 +246,12 @@ class DoctorFTS:
                         ])
                 except Exception as e:
                     self.log.critical(e)
-            if st_time + print_duration < time.time() or self.scale_down and self.scale_up or self.fts_auto_rebl:
-                self.log.info("FTS - Nodes below UWM: {}".format(self.scale_down_count))
-                self.log.info("FTS - Nodes above LWM: {}".format(self.scale_up_count))
-                self.table.display("FTS Statistics")
-                st_time = time.time()
+                if st_time + print_duration < time.time() or self.scale_down and self.scale_up or self.fts_auto_rebl:
+                    self.log.info("FTS - Nodes below UWM: {}".format(self.nodes_under_uwm))
+                    self.log.info("FTS - Nodes above LWM: {}".format(self.nodes_above_lwm))
+                    self.log.info("FTS - Nodes above HWM: {}".format(self.nodes_above_hwm))
+                    self.table.display("FTS Statistics")
+                    st_time = time.time()
             if collect_logs:
                 self.log.critical("Please collect logs immediately!!!")
                 pass

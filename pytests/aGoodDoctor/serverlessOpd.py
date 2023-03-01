@@ -24,7 +24,7 @@ from java.util import HashMap
 from couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException,\
-    RequestCanceledException
+    RequestCanceledException, CouchbaseException
 import time
 from custom_exceptions.exception import RebalanceFailedException
 from Cb_constants.CBServer import CbServer
@@ -442,8 +442,8 @@ class OPD:
                                 if optype == "delete":
                                     task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions)
                                 break
-                            except (ServerOutOfMemoryException, TimeoutException, RequestCanceledException) as e:
-                                print("Retry {} failed for key: {} - {}".format(optype, failure.id(), e))
+                            except (ServerOutOfMemoryException, TimeoutException, RequestCanceledException, CouchbaseException) as e:
+                                print("{} failed for key: {} - {}. Retrying in 2s".format(optype, failure.id(), e))
                                 time.sleep(2)
                             except (DocumentNotFoundException, DocumentExistsException) as e:
                                 break
