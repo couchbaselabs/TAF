@@ -1971,6 +1971,8 @@ class RestConnection(object):
             params_dict['failoverOnDataDiskIssues[enabled]'] = 'false'
         if preserve_durability_during_auto_fo:
             params_dict['failoverPreserveDurabilityMajority'] = 'true'
+        else:
+            params_dict['failoverPreserveDurabilityMajority'] = 'false'
         params_dict['maxCount'] = maxCount
         params = urllib.urlencode(params_dict)
         api = self.baseUrl + 'settings/autoFailover'
