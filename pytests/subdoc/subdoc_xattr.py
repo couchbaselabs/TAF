@@ -2674,7 +2674,8 @@ class XattrTests(SubdocBaseTest):
                       .format(workload, loadtype))
 
         self.txn.apply_transitions(workloads[workload],
-                                   self.cluster.buckets[0])
+                                   validate_stat=self.validate_stat,
+                                   bucket=self.cluster.buckets[0])
 
     def test_shadow_fragmentation(self):
         """ Test disk usage does not exceed sensible amounts at 50%
@@ -2781,12 +2782,12 @@ class TxnTransition:
         self.log.info("ru:%s, wu:%s" %(ru_from_prometheus, wu_from_prometheus))
         return ru_from_prometheus, wu_from_prometheus
 
-    def apply_transitions(self, transitions, bucket=None):
+    def apply_transitions(self, transitions, validate_stat, bucket=None):
         """ Applies transitions in sequence. """
         for transition in transitions:
             self.log.info("Applying a transition %s"%(transition))
             transition()
-            if bucket and self.validate_stat:
+            if bucket and validate_stat:
                 ru, wu = self.get_stat_from_prometheus(bucket)
                 self.base.assertEqual(ru, self.expected_ru)
                 self.base.assertEqual(wu, self.expected_wu)
