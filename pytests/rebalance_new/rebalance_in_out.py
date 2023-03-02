@@ -634,8 +634,9 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             master = servs_in[0]
 
         self.log.info("IN/OUT REBALANCE PHASE")
-        rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, toBeEjectedNodes)
+        rebalance_task = self.task.async_rebalance(self.cluster,
+                                                   servs_in, 
+                                                   toBeEjectedNodes)
 
         # CRUDs while rebalance is running in parallel
         self.gen_create = self.get_doc_generator(create_from,
