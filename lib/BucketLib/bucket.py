@@ -81,7 +81,7 @@ class Collection(object):
         self.name = collection_spec.get("name")
         self.num_items = collection_spec.get("num_items", 0)
         self.maxTTL = collection_spec.get("maxTTL", 0)
-        self.history = collection_spec.get("history", "true")
+        self.history = collection_spec.get("history", "false")
 
         # Meta data for test case validation
         self.is_dropped = False
@@ -114,7 +114,7 @@ class Collection(object):
     def recreated(collection_obj, collection_spec):
         collection_obj.num_items = collection_spec.get("num_items", 0)
         collection_obj.maxTTL = collection_spec.get("maxTTL", 0)
-        collection_obj.history = collection_spec.get("history", "true")
+        collection_obj.history = collection_spec.get("history", "false")
 
         # Update meta fields
         collection_obj.is_dropped = False
@@ -271,9 +271,11 @@ class Bucket(object):
         self.scopes = dict()
 
         # Create default scope-collection association
+        hist_for_def_col = "true" \
+            if self.storageBackend == Bucket.StorageBackend.magma else "false"
         scope = Scope({"name": CbServer.default_scope})
         collection = Collection({"name": CbServer.default_collection,
-                                 "history": "false"})
+                                 "history": hist_for_def_col})
         scope.collections[CbServer.default_collection] = collection
         self.scopes[CbServer.default_scope] = scope
 

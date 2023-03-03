@@ -5061,8 +5061,11 @@ class BucketUtils(ScopeUtils):
                             futures = []
                             with requests.Session() as session:
                                 for _, collection in scope_obj.collections.items():
+                                    c_dict = collection.get_dict_object()
+                                    if bucket.storageBackend != Bucket.StorageBackend.magma:
+                                        c_dict.pop("history", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
-                                                                   bucket, scope_name, collection.get_dict_object(),
+                                                                   bucket, scope_name, c_dict,
                                                                    session))
                             for future in concurrent.futures.as_completed(futures):
                                 if future.exception() is not None:
@@ -5139,8 +5142,11 @@ class BucketUtils(ScopeUtils):
                                 for col_name in scope_data["collections"].keys():
                                     collection = bucket.scopes[scope_name] \
                                         .collections[col_name]
+                                    c_dict = collection.get_dict_object()
+                                    if bucket.storageBackend != Bucket.StorageBackend.magma:
+                                        c_dict.pop("history", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
-                                                                   bucket, scope_name, collection.get_dict_object(),
+                                                                   bucket, scope_name, c_dict,
                                                                    session=session))
                     for future in concurrent.futures.as_completed(futures):
                         if future.exception() is not None:
