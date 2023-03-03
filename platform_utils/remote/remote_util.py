@@ -548,7 +548,7 @@ class RemoteMachineShellConnection:
             self.log.debug("{0} - Process info before sending signal: {1}"
                            .format(self.ip,
                                    self.execute_command("pgrep -l %s" % process_name)))
-            o, r = self.execute_command("kill -%s $(pgrep %s)" % (signum, service_name))
+            o, r = self.execute_command("kill -%s $(pgrep %s)" % (signum, process_name))
             self.log_command_output(o, r)
             self.log.debug("{0} - Process info after sending signal: {1}"
                            .format(self.ip,
@@ -570,7 +570,19 @@ class RemoteMachineShellConnection:
         return o, r
 
     def kill_memcached(self):
-        return self.kill_process("memcached", "memcached", signum=9)
+        if self.remote:
+            proc_name="memcached"
+        else:
+            # For cluster_run case, there could be multiple memcached
+            # processes with the same name (>1 nodes running on same
+            # machine). Attempt to distinguish the one for the
+            # specified 'node' by matching the one with the given node
+            # number in the argument list - e.g.
+            #    install/bin/memcached -C ns_server/data/n_1/config/memcached.json
+            # Assumes that the memcached port starts from 9000 and the
+            # nodes are numbered consecutively (as per cluster_run).
+            proc_name="-f 'bin/memcached -C .*/n_{}/'".format(int(self.port) - 9000)
+        return self.kill_process(proc_name, "memcached", signum=9)
 
     def stop_memcached(self):
         return self.kill_process("memcached", "memcached", signum=19)
