@@ -20,6 +20,7 @@ from _threading import Lock
 from com.couchbase.client.java.json import JsonObject
 from java.lang import Thread
 from java.util.concurrent import Callable
+from java.util.concurrent.atomic import AtomicInteger
 from reactor.util.function import Tuples
 
 from BucketLib.BucketOperations import BucketHelper
@@ -54,6 +55,11 @@ from gsiLib.GsiHelper_Rest import GsiHelper
 
 
 class Task(Callable):
+    serial_number = AtomicInteger(0)
+
+    def nextSerial(self):
+        return Task.serial_number.incrementAndGet()
+
     def __init__(self, thread_name):
         self.thread_name = thread_name
         self.exception = None
@@ -206,7 +212,7 @@ class RebalanceTask(Task):
             "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
                 .format(",".join([node.ip for node in to_add]),
                         ",".join([node.ip for node in to_remove]),
-                        str(time.time())))
+                        self.nextSerial()))
         self.servers = servers
         self.to_add = to_add
         self.to_remove = to_remove
@@ -489,7 +495,7 @@ class GenericLoadingTask(Task):
                  iterations=1):
         super(GenericLoadingTask, self).__init__("Loadgen_task_%s_%s_%s_%s"
                                                  % (bucket, scope, collection,
-                                                    time.time()))
+                                                    self.nextSerial()))
         self.batch_size = batch_size
         self.timeout = timeout_secs
         self.time_unit = time_unit
@@ -921,7 +927,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                               durability,
                               generator._doc_gen.start,
                               generator._doc_gen.end,
-                              time.time())
+                              self.nextSerial())
         self.generator = generator
         self.skip_doc_gen_value = False
         self.op_type = op_type
@@ -1173,7 +1179,7 @@ class Durability(Task):
                  sdk_retry_strategy=None):
 
         super(Durability, self).__init__("DurabilityDocumentsMainTask_%s_%s"
-                                         % (bucket, time.time()))
+                                         % (bucket, self.nextSerial()))
         self.majority_value = majority_value
         self.fail = dict()
         # self.success = dict()
@@ -1673,7 +1679,7 @@ class LoadDocumentsGeneratorsTask(Task):
                  iterations=1):
         super(LoadDocumentsGeneratorsTask, self).__init__(
             "LoadDocsGen_%s_%s_%s_%s_%s"
-            % (bucket, scope, collection, task_identifier, time.time()))
+            % (bucket, scope, collection, task_identifier, self.nextSerial()))
         self.cluster = cluster
         self.exp = exp
         self.random_exp = random_exp
@@ -1884,7 +1890,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
                          bucket.name,
                          op_type,
                          durability,
-                         time.time())
+                         self.nextSerial())
         super(LoadSubDocumentsGeneratorsTask, self).__init__(thread_name)
         self.cluster = cluster
         self.exp = exp
@@ -2061,7 +2067,7 @@ class ContinuousDocOpsTask(Task):
                  sdk_client_pool=None, sdk_retry_strategy=None):
         super(ContinuousDocOpsTask, self).__init__(
             "ContDocOps_%s_%s_%s_%s"
-            % (bucket.name, scope, collection, time.time()))
+            % (bucket.name, scope, collection, self.nextSerial()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -2175,7 +2181,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
             self, cluster, task_manager, bucket, clients, None,
             "create", exp,
             task_identifier="DGM_%s_%s_%s_%s" % (bucket.name, scope,
-                                                 collection, time.time()))
+                                                 collection, self.nextSerial()))
 
         self.cluster = cluster
         self.exp = exp
@@ -2329,7 +2335,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
             self.collection,
             generator._doc_gen.start,
             generator._doc_gen.end,
-            op_type, time.time())
+            op_type, self.nextSerial())
 
         self.generator = generator
         self.skip_doc_gen_value = False
@@ -2548,7 +2554,7 @@ class DocumentsValidatorTask(Task):
                  suppress_error_table=False):
         super(DocumentsValidatorTask, self).__init__(
             "DocumentsValidatorTask_%s_%s_%s" % (
-                bucket.name, op_type, time.time()))
+                bucket.name, op_type, self.nextSerial()))
         self.cluster = cluster
         self.exp = exp
         self.flag = flag
@@ -2681,7 +2687,7 @@ class StatsWaitTask(Task):
         super(StatsWaitTask, self).__init__("StatsWaitTask_%s_%s_%s"
                                             % (bucket.name,
                                                stat,
-                                               str(time.time())))
+                                               str(self.nextSerial())))
         self.shellConnList = shell_conn_list
         self.bucket = bucket
         self.statCmd = stat_cmd
@@ -2814,7 +2820,7 @@ class ViewCreateTask(Task):
                  bucket="default", with_query=True,
                  check_replication=False, ddoc_options=None):
         super(ViewCreateTask, self).__init__("ViewCreateTask_%s_%s_%s"
-                                             % (bucket, view, time.time()))
+                                             % (bucket, view, self.nextSerial()))
         self.server = server
         self.bucket = bucket
         self.view = view
@@ -3021,7 +3027,7 @@ class ViewCreateTask(Task):
 class ViewDeleteTask(Task):
     def __init__(self, server, design_doc_name, view, bucket="default"):
         Task.__init__(self, "Delete_view_task_%s_%s_%s"
-                      % (bucket, view, time.time()))
+                      % (bucket, view, self.nextSerial()))
         self.server = server
         self.bucket = bucket
         self.view = view
@@ -3203,7 +3209,7 @@ class N1QLQueryTask(Task):
                  is_explain_query=False, index_name=None, retry_time=2,
                  scan_consistency=None, scan_vector=None, timeout=900):
         super(N1QLQueryTask, self).__init__("query_n1ql_task_%s_%s_%s"
-                                            % (bucket, query, time.time()))
+                                            % (bucket, query, self.nextSerial()))
         self.server = server
         self.bucket = bucket
         self.query = query
@@ -3305,7 +3311,7 @@ class RunQueriesTask(Task):
                  run_infinitely=False, parallelism=1, is_prepared=True,
                  record_results=True):
         super(RunQueriesTask, self).__init__("RunQueriesTask_started_%s"
-                                             % (time.time()))
+                                             % (self.nextSerial()))
         self.cluster = cluster
         self.queries = queries
         self.query_type = query_type
@@ -3403,7 +3409,7 @@ class N1QLTxnQueryTask(Task):
                  commit=True,
                  scan_consistency='REQUEST_PLUS'):
         super(N1QLTxnQueryTask, self).__init__("query_n1ql_task_%s"
-                                               % (time.time()))
+                                               % (self.nextSerial()))
         self.stmt = stmts
         self.scan_consistency = scan_consistency
         self.commit = commit
@@ -3626,7 +3632,7 @@ class DropIndexTask(Task):
 class PrintBucketStats(Task):
     def __init__(self, cluster, bucket, monitor_stats=list(), sleep=1):
         super(PrintBucketStats, self).__init__("PrintBucketStats_%s_%s"
-                                               % (bucket.name, time.time()))
+                                               % (bucket.name, self.nextSerial()))
         self.cluster = cluster
         self.bucket = bucket
         self.bucket_helper = BucketHelper(self.cluster.master)
@@ -3926,7 +3932,7 @@ class MutateDocsFromSpecTask(Task):
                  print_ops_rate=True,
                  track_failures=True):
         super(MutateDocsFromSpecTask, self).__init__(
-            "MutateDocsFromSpecTask_%s" % time.time())
+            "MutateDocsFromSpecTask_%s" % self.nextSerial())
         self.cluster = cluster
         self.task_manager = task_manager
         self.loader_spec = loader_spec
@@ -4162,7 +4168,7 @@ class CompareIndexKVData(Task):
                  sdk_client_pool, query, bucket, scope, collection, index_name, offset, field='body',
                  track_failures=True):
         super(CompareIndexKVData, self).__init__(
-            "CompareIndexKVData_%s_%s_%s" % (index_name, offset, time.time()))
+            "CompareIndexKVData_%s_%s_%s" % (index_name, offset, self.nextSerial()))
         self.cluster = cluster
         self.task_manager = task_manager
         self.result = True
@@ -4236,7 +4242,7 @@ class ValidateDocsFromSpecTask(Task):
                  batch_size=500,
                  process_concurrency=1):
         super(ValidateDocsFromSpecTask, self).__init__(
-            "ValidateDocsFromSpecTask_%s" % time.time())
+            "ValidateDocsFromSpecTask_%s" % self.nextSerial())
         self.cluster = cluster
         self.task_manager = task_manager
         self.loader_spec = loader_spec
@@ -4494,7 +4500,7 @@ class MonitorDBFragmentationTask(Task):
     def __init__(self, server, fragmentation_value=10, bucket_name="default",
                  get_view_frag=False):
         Task.__init__(self, "monitor_frag_db_task_%s_%s"
-                      % (bucket_name, time.time()))
+                      % (bucket_name, self.nextSerial()))
         self.server = server
         self.bucket_name = bucket_name
         self.fragmentation_value = fragmentation_value
@@ -5308,7 +5314,7 @@ class Atomicity(Task):
                  record_fail=False, defer=False):
         super(Atomicity, self).__init__("AtomicityDocLoadTask_%s_%s_%s_%s"
                                         % (op_type, generator[0].start,
-                                           generator[0].end, time.time()))
+                                           generator[0].end, self.nextSerial()))
 
         self.generators = generator
         self.cluster = cluster
@@ -5464,7 +5470,7 @@ class Atomicity(Task):
                                % (op_type, bucket,
                                   generator._doc_gen.start,
                                   generator._doc_gen.end,
-                                  time.time())
+                                  self.nextSerial())
             self.exp = exp
             self.flag = flag
             self.persist_to = persist_to
@@ -6906,8 +6912,8 @@ class DropDataversesTask(Task):
 
 class ExecuteQueryTask(Task):
     def __init__(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600, retry=10):
-        super(ExecuteQueryTask, self).__init__("ExecuteQueriesTask_%sstarted%s"
-                                               % (query, time.time()))
+        super(ExecuteQueryTask, self).__init__("ExecuteQueriesTask_%s_%s"
+                                               % (query, self.nextSerial()))
         self.server = server
         self.query = query
         self.timeout = timeout
