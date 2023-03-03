@@ -59,6 +59,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         if self.spec_name is not None:
             try:
                 self.collectionSetUp()
+                CollectionBase.setup_collection_history_settings(self)
             except Java_base_exception as exception:
                 self.handle_setup_exception(exception)
             except Exception as exception:

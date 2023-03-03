@@ -1,7 +1,7 @@
 import time
 
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
@@ -367,7 +367,10 @@ class CollectionsRebalance(CollectionBase):
         return operation
 
     def rebalance_operation(self, rebalance_operation, known_nodes=None, add_nodes=None, remove_nodes=None,
-                            failover_nodes=None, wait_for_pending=300, tasks=None):
+                            failover_nodes=None, wait_for_pending=300, tasks=(None, None)):
+        def wait_for_doc_load_complete():
+            self.wait_for_async_data_load_to_complete(tasks[0])
+            CollectionBase.wait_for_cont_doc_load_to_complete(self, tasks[1])
         self.log.info("Starting rebalance operation of type : {0}".format(rebalance_operation))
         step_count = self.step_count
         if rebalance_operation == "rebalance_out":
@@ -594,8 +597,7 @@ class CollectionsRebalance(CollectionBase):
                                                 graceful=True, wait_for_pending=wait_for_pending)
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
-                if tasks is not None:
-                    self.wait_for_async_data_load_to_complete(tasks)
+                wait_for_doc_load_complete()
                 if self.compaction:
                     self.compact_all_buckets()
                 self.data_load_after_failover()
@@ -623,9 +625,7 @@ class CollectionsRebalance(CollectionBase):
                                                     graceful=True, wait_for_pending=wait_for_pending)
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
-                    if tasks is not None:
-                        self.wait_for_async_data_load_to_complete(tasks)
-                        tasks = None
+                    wait_for_doc_load_complete()
                     self.data_load_after_failover()
                     operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
@@ -642,8 +642,7 @@ class CollectionsRebalance(CollectionBase):
                                                 graceful=False, wait_for_pending=wait_for_pending)
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
-                if tasks is not None:
-                    self.wait_for_async_data_load_to_complete(tasks)
+                wait_for_doc_load_complete()
                 if self.compaction:
                     self.compact_all_buckets()
                 self.data_load_after_failover()
@@ -670,9 +669,7 @@ class CollectionsRebalance(CollectionBase):
                                                     graceful=False, wait_for_pending=wait_for_pending)
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
-                    if tasks is not None:
-                        self.wait_for_async_data_load_to_complete(tasks)
-                        tasks = None
+                    wait_for_doc_load_complete()
                     self.data_load_after_failover()
                     operation = self.task.async_rebalance(known_nodes, [], new_failover_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
@@ -691,8 +688,7 @@ class CollectionsRebalance(CollectionBase):
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
                     self.execute_N1qltxn(failover_node)
-                if tasks is not None:
-                    self.wait_for_async_data_load_to_complete(tasks)
+                wait_for_doc_load_complete()
                 self.data_load_after_failover()
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
@@ -722,9 +718,7 @@ class CollectionsRebalance(CollectionBase):
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
                         self.execute_N1qltxn(failover_node)
-                    if tasks is not None:
-                        self.wait_for_async_data_load_to_complete(tasks)
-                        tasks = None
+                    wait_for_doc_load_complete()
                     self.data_load_after_failover()
                     # Mark the failover nodes for recovery
                     for failover_node in new_failover_nodes:
@@ -745,8 +739,7 @@ class CollectionsRebalance(CollectionBase):
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
                     self.execute_N1qltxn(failover_node)
-                if tasks is not None:
-                    self.wait_for_async_data_load_to_complete(tasks)
+                wait_for_doc_load_complete()
                 self.data_load_after_failover()
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
@@ -776,9 +769,7 @@ class CollectionsRebalance(CollectionBase):
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
                         self.execute_N1qltxn(failover_node)
-                    if tasks is not None:
-                        self.wait_for_async_data_load_to_complete(tasks)
-                        tasks = None
+                    wait_for_doc_load_complete()
                     self.data_load_after_failover()
                     # Mark the failover nodes for recovery
                     for failover_node in new_failover_nodes:
@@ -795,6 +786,10 @@ class CollectionsRebalance(CollectionBase):
         return operation
 
     def subsequent_data_load(self, async_load=False, data_load_spec=None):
+        # History retention doc_loading. Returns 'None' in non-dedupe runs
+        cont_doc_load = CollectionBase.start_history_retention_data_load(
+            self, async_load)
+
         if data_load_spec is None:
             data_load_spec = self.data_load_spec
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
@@ -816,7 +811,11 @@ class CollectionsRebalance(CollectionBase):
                                                         batch_size=self.batch_size,
                                                         process_concurrency=self.process_concurrency,
                                                         validate_task=(not self.skip_validations))
-        return tasks
+
+        if cont_doc_load and not async_load:
+            CollectionBase.remove_docs_created_for_dedupe_load(
+                self, cont_doc_load)
+        return [tasks, cont_doc_load]
 
     def async_data_load(self):
         tasks = self.subsequent_data_load(async_load=True)
@@ -868,6 +867,8 @@ class CollectionsRebalance(CollectionBase):
         delete_collections_using_manifest_import()
 
     def wait_for_async_data_load_to_complete(self, task):
+        if task is None:
+            return
         self.task.jython_task_manager.get_task_result(task)
         if not self.skip_validations:
             self.bucket_util.validate_doc_loading_results(task)
@@ -919,6 +920,15 @@ class CollectionsRebalance(CollectionBase):
             elif self.forced_hard_failover:
                 pass
             else:
+                # Compaction required, since for CDC we are loading ttl_doc
+                # for testing history retention
+                if self.bucket_dedup_retention_seconds is not None \
+                        or self.bucket_dedup_retention_bytes is not None:
+                    self.bucket_util._expiry_pager(self.cluster)
+                    self.sleep(10, "Wait for exp_pager to run")
+                    self.compact_all_buckets()
+                    self.wait_for_compaction_to_complete()
+                    self.sleep(60, "wait after compaction")
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
@@ -1041,7 +1051,7 @@ class CollectionsRebalance(CollectionBase):
         return failover_nodes
 
     def load_collections_with_rebalance(self, rebalance_operation):
-        tasks = None
+        tasks = None, None
         rebalance = None
         self.log.info("Doing collection data load {0} {1}".format(self.data_load_stage, rebalance_operation))
         if self.data_load_stage == "before":
@@ -1123,7 +1133,9 @@ class CollectionsRebalance(CollectionBase):
                 if self.data_load_stage == "before" and rebalance_operation in self.failover_ops:
                     pass
                 else:
-                    self.wait_for_async_data_load_to_complete(tasks)
+                    self.wait_for_async_data_load_to_complete(tasks[0])
+                    CollectionBase.wait_for_cont_doc_load_to_complete(
+                        self, tasks[1])
             self.data_validation_collection()
         if self.num_zone > 1:
             self.check_balanced_attribute()
@@ -1193,7 +1205,8 @@ class CollectionsRebalance(CollectionBase):
             if self.bulk_api_crud:
                 self.bulk_api_load(self.bucket.name)
             self.wait_for_rebalance_to_complete(operation)
-            self.wait_for_async_data_load_to_complete(tasks)
+            self.wait_for_async_data_load_to_complete(tasks[0])
+            CollectionBase.wait_for_cont_doc_load_to_complete(self, tasks[1])
             self.data_validation_collection()
 
             known_nodes = self.cluster.servers[:self.nodes_init + self.nodes_in]
@@ -1204,7 +1217,8 @@ class CollectionsRebalance(CollectionBase):
             if self.bulk_api_crud:
                 self.bulk_api_load(self.bucket.name)
             self.wait_for_rebalance_to_complete(operation)
-            self.wait_for_async_data_load_to_complete(tasks)
+            self.wait_for_async_data_load_to_complete(tasks[0])
+            CollectionBase.wait_for_cont_doc_load_to_complete(self, tasks[1])
             self.data_validation_collection()
 
     def test_swap_rebalance_cycles(self):
@@ -1232,7 +1246,8 @@ class CollectionsRebalance(CollectionBase):
             if self.bulk_api_crud:
                 self.bulk_api_load(self.bucket.name)
             self.wait_for_rebalance_to_complete(operation)
-            self.wait_for_async_data_load_to_complete(tasks)
+            self.wait_for_async_data_load_to_complete(tasks[0])
+            CollectionBase.wait_for_cont_doc_load_to_complete(self, tasks[1])
             self.data_validation_collection()
 
     def test_Orchestrator_Node_failover(self):

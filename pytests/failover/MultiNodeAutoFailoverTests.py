@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from custom_exceptions.exception import RebalanceFailedException, \
@@ -47,13 +48,14 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         """
         self.enable_autofailover_and_validate()
         self.sleep(5)
-        tasks = self.subsequent_load_gen()
+        tasks, cont_load_task = self.subsequent_load_gen()
         self._multi_node_failover()
         if self.spec_name is None:
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.disable_autofailover_and_validate()
 
     def _get_server_group_nodes(self, server_group):
@@ -70,7 +72,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(30,"waiting")
         self.server_to_fail = self._get_server_group_nodes("Group 2")
         self.failover_expected = True
-        tasks = self.subsequent_load_gen()
+        tasks, cont_load_task = self.subsequent_load_gen()
         try:
             self.failover_actions[self.failover_action](self)
         except:
@@ -85,6 +87,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                     self.task.jython_task_manager.get_task_result(task)
             else:
                 self.wait_for_async_data_load_to_complete(tasks)
+            CollectionBase.wait_for_cont_doc_load_to_complete(
+                self, cont_load_task)
 
     def test_autofailover_during_rebalance(self):
         """
@@ -106,7 +110,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                                                    retry_get_process_num=self.retry_get_process_num)
         self.sleep(2)
         self._multi_node_failover()
-        tasks = self.subsequent_load_gen()
+        tasks, cont_load_task = self.subsequent_load_gen()
         try:
             rebalance_task.result()
         except RebalanceFailedException:
@@ -123,6 +127,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                     self.task.jython_task_manager.get_task_result(task)
             else:
                 self.wait_for_async_data_load_to_complete(tasks)
+            CollectionBase.wait_for_cont_doc_load_to_complete(
+                self, cont_load_task)
             self.disable_autofailover_and_validate()
 
     def test_autofailover_after_rebalance(self):
@@ -147,13 +153,14 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         if not rebalance_success:
             self.disable_firewall()
             self.fail("Rebalance failed. Check logs")
-        tasks = self.subsequent_load_gen()
+        tasks, cont_load_task = self.subsequent_load_gen()
         self._multi_node_failover()
         if self.spec_name is None:
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.disable_autofailover_and_validate()
 
     def test_rebalance_after_autofailover(self):
@@ -171,7 +178,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         """
         self.enable_autofailover_and_validate()
         self.sleep(5)
-        tasks = self.subsequent_load_gen()
+        tasks, cont_load_task = self.subsequent_load_gen()
         self._multi_node_failover()
         for node in self.servers_to_add:
             self.rest.add_node(user=self.orchestrator.rest_username,
@@ -194,6 +201,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                 self.task.jython_task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
 
     def test_autofailover_and_addback_of_node(self):
         """
@@ -210,7 +218,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             return
         self.enable_autofailover_and_validate()
         self.sleep(5)
-        tasks = self.subsequent_load_gen()
+        tasks, cont_load_task = self.subsequent_load_gen()
         self._multi_node_failover()
         self.server_to_fail = self._servers_to_fail()
         self.bring_back_failed_nodes_up()
@@ -229,6 +237,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                 self.task.jython_task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
 
     def test_autofailover_and_remove_failover_node(self):
         """
@@ -244,7 +253,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
             return
-        tasks = self.subsequent_load_gen()
+        tasks, cont_load_task = self.subsequent_load_gen()
         self.enable_autofailover_and_validate()
         self.sleep(5)
         self._multi_node_failover()
@@ -260,6 +269,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                 self.task.jython_task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
 
     def _check_for_autofailover_initiation_for_server_group_failover(
             self, failed_over_nodes):
@@ -276,6 +286,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         return False, None
 
     def subsequent_load_gen(self, async_load=True):
+        cont_doc_load = CollectionBase.start_history_retention_data_load(
+            self, async_load)
         if self.spec_name is None:
             subsequent_load_gen = doc_generator(self.key,
                                                 self.num_items,
@@ -285,7 +297,6 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                                                 doc_type=self.doc_type)
             tasks = self.async_load_all_buckets(
                 subsequent_load_gen, "create", 0)
-            return tasks
         else:
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
                 self.data_load_spec)
@@ -298,7 +309,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                 async_load=async_load,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency)
-            return tasks
+        return [tasks, cont_doc_load]
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)

@@ -99,6 +99,9 @@ class CollectionsQuorumLoss(CollectionBase):
             self.cluster)
 
     def data_load(self, async_load=True):
+        cont_doc_load = CollectionBase.start_history_retention_data_load(
+            self, async_load=async_load)
+
         doc_loading_spec = self.get_common_spec()
         self.set_retry_exceptions(doc_loading_spec)
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
@@ -109,7 +112,7 @@ class CollectionsQuorumLoss(CollectionBase):
                                                         batch_size=self.batch_size,
                                                         process_concurrency=self.process_concurrency,
                                                         async_load=async_load)
-        return tasks
+        return [tasks, cont_doc_load]
 
     def servers_to_fail(self):
         """
@@ -299,12 +302,13 @@ class CollectionsQuorumLoss(CollectionBase):
         post_qf_ids = self.populate_uids(base_name="post_qf")
         self.validate_uids(pre_qf_ids, post_qf_ids)
 
-        tasks = self.data_load(async_load=True)
+        tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
                                                    retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
@@ -312,13 +316,14 @@ class CollectionsQuorumLoss(CollectionBase):
 
         self.wipe_config_on_removed_nodes()
 
-        tasks = self.data_load(async_load=True)
+        tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
                                                    retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
 
     def test_quorum_loss_failover_with_already_failed_over_node(self):
@@ -365,25 +370,27 @@ class CollectionsQuorumLoss(CollectionBase):
         post_qf_ids = self.populate_uids(base_name="post_qf")
         self.validate_uids(pre_qf_ids, post_qf_ids)
 
-        tasks = self.data_load(async_load=True)
+        tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
                                                    retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
             self.sleep(20, "wait after removing failure")
         self.wipe_config_on_removed_nodes()
 
-        tasks = self.data_load(async_load=True)
+        tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and rebalanced out".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
                                                    retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
 
     def test_quorum_loss_failover_more_than_failed_nodes(self):
@@ -419,12 +426,13 @@ class CollectionsQuorumLoss(CollectionBase):
         post_qf_ids = self.populate_uids(base_name="post_qf")
         self.validate_uids(pre_qf_ids, post_qf_ids)
 
-        tasks = self.data_load(async_load=True)
+        tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
                                                    retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
@@ -433,13 +441,15 @@ class CollectionsQuorumLoss(CollectionBase):
         removed_nodes = failover_nodes
         self.wipe_config_on_removed_nodes(removed_nodes)
 
-        tasks = self.data_load(async_load=True)
-        self.log.info("Adding back nodes which were failed and rebalanced out".
-                      format(self.server_to_fail))
+        tasks, cont_load_task = self.data_load(async_load=True)
+        self.log.info("Add back nodes which were failed and rebalanced out {0}"
+                      .format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
                                                    retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(
+            self, cont_load_task)
         self.data_validation_collection()
 
     def test_multiple_quorum_failovers(self):
@@ -474,12 +484,14 @@ class CollectionsQuorumLoss(CollectionBase):
             post_qf_ids = self.populate_uids(base_name="post_qf-" + str(i))
             self.validate_uids(pre_qf_ids, post_qf_ids)
 
-            tasks = self.data_load(async_load=True)
+            tasks, cont_load_task = self.data_load(async_load=True)
             self.log.info("Rebalancing the cluster")
             rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, [], [],
                                                        retry_get_process_num=self.retry_get_process_num * 3)
             self.wait_for_rebalance_to_complete(rebalance_task)
             self.wait_for_async_data_load_to_complete(tasks)
+            CollectionBase.wait_for_cont_doc_load_to_complete(
+                self, cont_load_task)
             self.data_validation_collection()
 
             # update the nodes in cluster
@@ -493,13 +505,14 @@ class CollectionsQuorumLoss(CollectionBase):
         self.sleep(20, "wait after removing failure")
         self.wipe_config_on_removed_nodes()
 
-        tasks = self.data_load(async_load=True)
+        tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
         rebalance_task = self.task.async_rebalance(self.nodes_in_cluster, self.server_to_fail, [],
                                                    retry_get_process_num=self.retry_get_process_num * 3)
         self.wait_for_rebalance_to_complete(rebalance_task)
         self.wait_for_async_data_load_to_complete(tasks)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
 
     def test_negative_unsafe_failover_orchestrator(self):

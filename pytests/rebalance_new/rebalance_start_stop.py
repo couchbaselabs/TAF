@@ -1,4 +1,5 @@
 from Cb_constants import DocLoading
+from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
@@ -160,6 +161,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             if self.withMutationOps:
                 task = self.load_all_buckets(DocLoading.Bucket.DocOps.UPDATE,
                                              50)
+                cont_load_task = \
+                    CollectionBase.start_history_retention_data_load(self)
             if i == 1:
                 rebalance = self.task.async_rebalance(
                     self.servs_init[:self.nodes_init],
@@ -185,6 +188,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 self.cbcollect_info(trigger=True, validate=True)
                 if self.withMutationOps:
                     self.tasks_result(task)
+                    CollectionBase.wait_for_cont_doc_load_to_complete(
+                        self, cont_load_task)
                 self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
             if self.cluster_util.is_cluster_rebalanced(rest):
@@ -252,9 +257,13 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
                 self.assertTrue(stopped, msg="Unable to stop rebalance")
                 if self.withMutationOps:
+                    cont_load_task = \
+                        CollectionBase.start_history_retention_data_load(self)
                     task = self.load_all_buckets(
                         DocLoading.Bucket.DocOps.UPDATE, 50)
                     self.tasks_result(task)
+                    CollectionBase.wait_for_cont_doc_load_to_complete(
+                        self, cont_load_task)
                 self.sleep(5)
             self.task.jython_task_manager.get_task_result(rebalance)
             if self.cluster_util.is_cluster_rebalanced(rest):
@@ -285,8 +294,10 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             validate rebalance was completed successfully.
             """
         fail_over = self.input.param("fail_over", False)
+        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         task = self.load_all_buckets(DocLoading.Bucket.DocOps.UPDATE, 50)
         self.tasks_result(task)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.validate_docs()
         self.sleep(20)
 
@@ -311,10 +322,12 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.rest.fail_over(chosen[0].id, graceful=fail_over)
 
         # Doc_mutation after failing over the nodes
+        cont_load_task = CollectionBase.start_history_retention_data_load(self)
         create_percent = 100
         task = self.load_all_buckets(DocLoading.Bucket.DocOps.CREATE,
                                      create_percent)
         self.tasks_result(task)
+        CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.task.async_rebalance(
             self.servers[:self.nodes_init], self.servs_in, self.servs_out)
         expected_progress = 50

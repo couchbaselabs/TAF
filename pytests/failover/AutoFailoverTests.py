@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
@@ -49,6 +50,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def data_load_from_spec(self, async_load=False):
+        # History retention doc_loading. Returns 'None' in non-dedupe runs
+        cont_doc_load = CollectionBase.start_history_retention_data_load(
+            self, async_load)
+
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(
             self.data_load_spec)
         if self.durability_level:
@@ -65,7 +70,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             process_concurrency=self.process_concurrency,
             async_load=async_load,
             validate_task=self.skip_validations)
-        return tasks
+        return [tasks, cont_doc_load]
 
     def data_validation_collection(self):
         if not self.skip_validations:
@@ -107,7 +112,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         3. Rebalance-out the failed-over-nodes
         4. Disable AF/Auto-reprovision
         """
-        task = None
+        task = cont_load_task = None
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
@@ -116,7 +121,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 self.loadgen_tasks = self._loadgen()
         else:
             # this is for collections, so load from spec
-            task = self.data_load_from_spec(async_load=True)
+            task, cont_load_task = self.data_load_from_spec(async_load=True)
 
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
@@ -128,6 +133,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
+            CollectionBase.wait_for_cont_doc_load_to_complete(
+                self, cont_load_task)
 
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
                                               retry_get_process_num=self.retry_get_process_num)
@@ -154,7 +161,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Do another rebalance in order to remove the failed-over nodes
         5. Disable AF/Auto-reprovision
         """
-        task = None
+        task = cont_load_task = None
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
@@ -163,7 +170,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 self.loadgen_tasks = self._loadgen()
         else:
             # this is for collections, so load from spec
-            task = self.data_load_from_spec(async_load=True)
+            task, cont_load_task = self.data_load_from_spec(async_load=True)
 
         rebalance_task = self.task.async_rebalance(self.servers,
                                                    self.servers_to_add,
@@ -180,6 +187,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
+            CollectionBase.wait_for_cont_doc_load_to_complete(
+                self, cont_load_task)
 
         self.sleep(60, "Wait before starting another rebalance")
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
@@ -208,7 +217,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Rebalance the cluster
         5. Disable AF/Auto-reprovision
         """
-        task = None
+        task = cont_load_task = None
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
@@ -216,7 +225,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             if self.durability_level or self.atomicity:
                 self.loadgen_tasks = self._loadgen()
         else:
-            task = self.data_load_from_spec(async_load=True)
+            task, cont_load_task = self.data_load_from_spec(async_load=True)
 
         rebalance_task = self.task.async_rebalance(
             self.servers,
@@ -238,6 +247,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
+            CollectionBase.wait_for_cont_doc_load_to_complete(
+                self, cont_load_task)
         self.sleep(60, "Wait before starting another rebalance")
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
                                               retry_get_process_num=self.retry_get_process_num)
@@ -266,7 +277,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Start another rebalance
         5. Disable AF/Auto-reprovision
         """
-        task = None
+        task = cont_load_task = None
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
         if self.spec_name is None:
@@ -274,7 +285,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             if self.durability_level or self.atomicity:
                 self.loadgen_tasks = self._loadgen()
         else:
-            task = self.data_load_from_spec(async_load=True)
+            task, cont_load_task = self.data_load_from_spec(async_load=True)
 
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
@@ -320,6 +331,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
+            CollectionBase.wait_for_cont_doc_load_to_complete(
+                self, cont_load_task)
         init_nodes = self.cluster.servers[:self.nodes_init]
         if self.failover_orchestrator:
             init_nodes = self.cluster.servers[1:self.nodes_init]
@@ -423,7 +436,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         2. Fail a node and validate if node is failed over if required
         3. Rebalance of node if failover was successful and validate.
         """
-        task = None
+        task = cont_load_task = None
         if not self.failover_expected:
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
@@ -435,7 +448,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             if self.durability_level or self.atomicity:
                 self.loadgen_tasks = self._loadgen()
         else:
-            task = self.data_load_from_spec(async_load=True)
+            task, cont_load_task = \
+                self.data_load_from_spec(async_load=True)
 
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
@@ -469,6 +483,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
+            CollectionBase.wait_for_cont_doc_load_to_complete(
+                self, cont_load_task)
         rebalance = self.task.async_rebalance(
             self.cluster.servers[:self.nodes_init], [], [], retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)

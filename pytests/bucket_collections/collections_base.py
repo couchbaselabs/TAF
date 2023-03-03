@@ -160,7 +160,8 @@ class CollectionBase(ClusterSetup):
         test_obj.assertTrue(result, "History setting validation failed")
         # Create history docs on disks
         test_obj.mutate_history_retention_data(
-            doc_key="test_collections", update_percent=1, update_itrs=10000)
+            test_obj, doc_key="test_collections", update_percent=1,
+            update_itrs=10000)
 
     @staticmethod
     def get_history_retention_load_spec(test_obj, doc_key="test_collections",
@@ -175,11 +176,63 @@ class CollectionBase(ClusterSetup):
                 MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION:
                     (update_percent, update_itrs),
             },
-            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: 5,
-            MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: 3,
             MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all",
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: 5,
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: 5,
             MetaCrudParams.DOC_TTL: doc_ttl,
+            MetaCrudParams.SKIP_READ_ON_ERROR: True,
+            MetaCrudParams.SUPPRESS_ERROR_TABLE: True,
         }
+
+    @staticmethod
+    def start_history_retention_data_load(test_obj, async_load=True):
+        cont_doc_load = None
+        if test_obj.bucket_dedup_retention_seconds is not None \
+                or test_obj.bucket_dedup_retention_bytes is not None:
+            update_percent, update_itr = 2, 10000
+            if async_load:
+                update_itr = -1
+            test_obj.log.info("Starting dedupe updates load ({0}, {1})"
+                              .format(update_percent, update_itr))
+            load_spec = CollectionBase.get_history_retention_load_spec(
+                test_obj, doc_key="hist_retention_docs",
+                update_percent=update_percent, update_itrs=update_itr)
+            CollectionBase.over_ride_doc_loading_template_params(test_obj, load_spec)
+            test_obj.set_retry_exceptions(load_spec)
+
+            cont_doc_load = test_obj.bucket_util.run_scenario_from_spec(
+                test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
+                load_spec, mutation_num=0, async_load=async_load,
+                print_ops_rate=False, batch_size=500, process_concurrency=1,
+                validate_task=(not test_obj.skip_validations))
+        return cont_doc_load
+
+    @staticmethod
+    def wait_for_cont_doc_load_to_complete(test_obj, load_task):
+        if load_task is not None:
+            load_task.stop_indefinite_doc_loading_tasks()
+            test_obj.task_manager.get_task_result(load_task)
+            CollectionBase.remove_docs_created_for_dedupe_load(
+                test_obj, load_task)
+
+    @staticmethod
+    def remove_docs_created_for_dedupe_load(test_obj, spec_load_task):
+        # Remove all docs created by dedupe data loader
+        for bucket, scope_dict in spec_load_task.loader_spec.items():
+            for s_name, collection_dict in scope_dict["scopes"].items():
+                for c_name, crud_spec in collection_dict["collections"].items():
+                    for crud_name, crud_info in crud_spec.items():
+                        crud_spec[DocLoading.Bucket.DocOps.DELETE] = crud_info
+                        crud_info["iterations"] = 1
+                        crud_spec.pop(crud_name)
+        task = test_obj.task.async_load_gen_docs_from_spec(
+            test_obj.cluster, test_obj.task_manager,
+            spec_load_task.loader_spec, test_obj.sdk_client_pool,
+            batch_size=1000, process_concurrency=1, track_failures=False,
+            print_ops_rate=False, start_task=True)
+        test_obj.task_manager.get_task_result(task)
+        test_obj.bucket_util._wait_for_stats_all_buckets(
+            test_obj.cluster, test_obj.cluster.buckets)
 
     @staticmethod
     def mutate_history_retention_data(test_obj, doc_key="test_collections",
@@ -419,6 +472,18 @@ class CollectionBase(ClusterSetup):
                 target_spec["doc_crud"][MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
                     = test_obj.randomize_value
 
+    @staticmethod
+    def set_retry_exceptions(test_obj, doc_loading_spec):
+        retry_exceptions = list()
+        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.append(SDKException.TimeoutException)
+        retry_exceptions.append(SDKException.RequestCanceledException)
+        retry_exceptions.append(SDKException.DocumentNotFoundException)
+        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        if test_obj.durability_level:
+            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
             self.bucket_util.get_crud_template_from_package("initial_load")

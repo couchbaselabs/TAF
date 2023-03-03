@@ -1,6 +1,7 @@
 import json
 import random
 
+from bucket_collections.collections_base import CollectionBase
 from rebalance_base import RebalanceBaseTest
 
 from collections_helper.collections_spec_constants import MetaCrudParams
@@ -67,6 +68,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def async_data_load(self):
+        cont_load_task = CollectionBase.start_history_retention_data_load(
+            self, async_load=True)
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(
             "volume_test_load")
         self.set_retry_exceptions(doc_loading_spec)
@@ -79,7 +82,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             async_load=True,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency)
-        return tasks
+        return [tasks, cont_load_task]
 
     def data_validation(self, tasks):
         self.task.jython_task_manager.get_task_result(tasks)
@@ -121,7 +124,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.cbcollect_info(trigger=False, validate=True,
                                 known_failures=self.cb_collect_failure_nodes)
             if self.data_load:
-                self.data_validation(tasks)
+                CollectionBase.wait_for_cont_doc_load_to_complete(self,
+                                                                  tasks[1])
+                self.data_validation(tasks[0])
         else:
             self.fail("Rebalance did not fail as expected. "
                       "Hence could not validate auto-retry feature..")
@@ -151,7 +156,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 tasks = self.async_data_load()
             self.check_retry_rebalance_succeeded()
             if self.data_load:
-                self.data_validation(tasks)
+                CollectionBase.wait_for_cont_doc_load_to_complete(self,
+                                                                  tasks[1])
+                self.data_validation(tasks[0])
         else:
             # This is added as the failover task is not throwing exception
             if self.rebalance_operation == "graceful_failover":
@@ -161,7 +168,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                     tasks = self.async_data_load()
                 self.check_retry_rebalance_succeeded()
                 if self.data_load:
-                    self.data_validation(tasks)
+                    CollectionBase.wait_for_cont_doc_load_to_complete(
+                        self, tasks[1])
+                    self.data_validation(tasks[0])
             else:
                 self.fail("Rebalance did not fail as expected. "
                           "Hence could not validate auto-retry feature..")
@@ -208,6 +217,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             #     tasks = self.async_data_load()
             result = json.loads(self.rest.get_pending_rebalance_info())
             # if self.data_load:
+            #     CollectionBase.wait_for_cont_doc_load_to_complete(self,
+            #                                                       tasks[1])
             #     self.data_validation(tasks)
             self.log.info(result)
             retry_rebalance = result["retry_rebalance"]
@@ -346,7 +357,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 tasks = self.async_data_load()
             self.check_retry_rebalance_succeeded()
             if self.data_load:
-                self.data_validation(tasks)
+                CollectionBase.wait_for_cont_doc_load_to_complete(self,
+                                                                  tasks[1])
+                self.data_validation(tasks[0])
         else:
             self.fail("Rebalance did not fail as expected. "
                       "Hence could not validate auto-retry feature..")
