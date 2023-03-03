@@ -380,7 +380,7 @@ class FailoverTests(FailoverBaseTest):
         self.sleep(30, "After rebalance completes")
         for task in tasks_info:
             self.task_manager.get_task_result(task)
-        self.assertTrue(rebalance.result)
+        self.assertTrue(rebalance)
 
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
@@ -424,20 +424,22 @@ class FailoverTests(FailoverBaseTest):
             tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
 
         if rebalance_type == "in":
-            rebalance, _ = self.task.rebalance(
-                self.cluster, [self.servers[self.nodes_init]], [])
-            self.assertTrue(rebalance.result)
+            rebalance = self.task.rebalance(self.cluster,
+                                            [self.servers[self.nodes_init]],
+                                            [])
+            self.assertTrue(rebalance)
 
         if rebalance_type == "out":
-            rebalance, _ = self.task.rebalance(
-                self.cluster, [], [self.servers[self.nodes_init - 1]])
-            self.assertTrue(rebalance.result)
-        
+            rebalance= self.task.rebalance(self.cluster,
+                                           [],
+                                           [self.servers[self.nodes_init - 1]])
+            self.assertTrue(rebalance)
+
         if rebalance_type == "swap":
-            rebalance, _ = self.task.rebalance(
-                self.cluster, [self.servers[self.nodes_init]], 
-                [self.servers[self.nodes_init-1]])
-            self.assertTrue(rebalance.result)
+            rebalance = self.task.rebalance(self.cluster,
+                                            [self.servers[self.nodes_init]],
+                                            [self.servers[self.nodes_init-1]])
+            self.assertTrue(rebalance)
 
         if not self.atomicity:
             for task in tasks_info:
