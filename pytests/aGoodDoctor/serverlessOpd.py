@@ -442,11 +442,11 @@ class OPD:
                                 if optype == "delete":
                                     task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions)
                                 break
+                            except (DocumentNotFoundException, DocumentExistsException) as e:
+                                break
                             except (ServerOutOfMemoryException, TimeoutException, RequestCanceledException, CouchbaseException) as e:
                                 print("{} failed for key: {} - {}. Retrying in 2s".format(optype, failure.id(), e))
                                 time.sleep(2)
-                            except (DocumentNotFoundException, DocumentExistsException) as e:
-                                break
                             if retry == 0:
                                 task.result = False
             # try:
