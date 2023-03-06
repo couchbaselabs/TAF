@@ -4,6 +4,8 @@ Created on 15-Apr-2021
 @author: riteshagarwal
 '''
 from basetestcase import BaseTestCase
+from collections_helper.collections_spec_constants import MetaCrudParams
+from pytests.bucket_collections.collections_base import CollectionBase
 from remote.remote_util import RemoteMachineShellConnection
 from Cb_constants.CBServer import CbServer
 from membase.api.rest_client import RestConnection
@@ -92,6 +94,12 @@ class Murphy(BaseTestCase, OPD):
             "cursor_dropping_checkpoint", None)
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
                                                        True)
+        ###CDC params
+        self.bucket_history_retention_bytes = int(self.input.param("bucket_history_retention_bytes",0))
+        self.bucket_history_retention_seconds = int(self.input.param("bucket_history_retention_seconds",0))
+        self.dedupe_items = int(self.input.param("dedupe_items",1000))
+        self.is_cdc_test = self.input.param("is_cdc_test",False)
+        self.dedupe_durability = self.input.param("dedupe_durability",None)
         #######################################################################
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
         if self.nodes_init > 1:
@@ -430,7 +438,7 @@ class Murphy(BaseTestCase, OPD):
             self.wait_for_doc_load_completion(tasks)
             if self.track_failures:
                 self.data_validation()
-
+    
     def SystemTestMagma(self):
         #######################################################################
         self.loop = 1
@@ -818,6 +826,34 @@ class Murphy(BaseTestCase, OPD):
         self.log.info("Volume Test Run Complete")
         self.doc_loading_tm.abortAllTasks()
 
+    def set_num_items_for_collection(self):
+        for bucket in self.cluster.buckets:
+            for scope in bucket.scopes.keys():
+                for collection in bucket.scopes[scope].collections.keys():
+                    if collection == "_default" and scope == "_default":
+                        continue
+                    bucket.scopes[scope].collections[collection].num_items = self.dedupe_items
+
+    def get_dedupe_doc_loader_spec(self,update_percent=0,update_itr=-1,delete_percent=0,durablity_level=None,doc_ttl=0):
+        return {
+            "doc_crud": {
+                MetaCrudParams.DocCrud.DOC_SIZE: 256,
+                MetaCrudParams.DocCrud.RANDOMIZE_VALUE: True,
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: 'testcollections',
+
+                MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION:
+                    (update_percent, update_itr),
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: delete_percent,
+            },
+            MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD: "all",
+            MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD: "all",
+            MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD: 5,
+            MetaCrudParams.SKIP_READ_ON_ERROR: True,
+            MetaCrudParams.SUPPRESS_ERROR_TABLE: True,
+            MetaCrudParams.DOC_TTL: doc_ttl,
+            MetaCrudParams.DURABILITY_LEVEL: durablity_level,
+        }
+    
     def ClusterOpsVolume(self):
         self.loop = 1
         self.skip_read_on_error = True
@@ -825,6 +861,35 @@ class Murphy(BaseTestCase, OPD):
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
+
+        def consecutive_data_load(data_load_spec, async_load=True):
+            CollectionBase.over_ride_doc_loading_template_params(
+                self, data_load_spec)
+            CollectionBase.set_retry_exceptions_for_initial_data_load(
+                self, data_load_spec)
+
+            doc_loading_task = self.bucket_util.run_scenario_from_spec(
+                self.task, self.cluster, self.cluster.buckets, data_load_spec,
+                mutation_num=1, batch_size=500, process_concurrency=1, async_load=async_load)
+            if doc_loading_task.result is False:
+                self.fail("Doc_loading failed")
+
+            self.bucket_util.print_bucket_stats(self.cluster)
+
+            return doc_loading_task
+        
+        def validate_hist_retention_settings():
+            self.log.info("KV nodes in cluster: {0}".format(self.cluster.kv_nodes))
+            for node in self.cluster.kv_nodes:
+                max_retry = 5
+                while max_retry:
+                    if self.bucket_util.validate_history_retention_settings(
+                            node, self.cluster.buckets[0]) is True:
+                        break
+                    max_retry -= 1
+                    self.sleep(1, "Will retry to wait for history settings")
+                else:
+                    self.fail("Validation failed")
 
         def end_step_checks():
             self.print_stats()
@@ -837,32 +902,37 @@ class Murphy(BaseTestCase, OPD):
                     "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         self.loop = 0
+        if self.is_cdc_test:
+            self.log.info("Creating required sdk clients for dedupe docs")
+            CollectionBase.create_clients_for_sdk_pool(self)
+            validate_hist_retention_settings()
+
         while self.loop < self.iterations:
             self.create_perc = 100
             self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
             self.generate_docs(doc_ops=["create"],
-                               create_start=0,
-                               create_end=self.num_items)
+                            create_start=0,
+                            create_end=self.num_items)
             self.perform_load(validate_data=False)
 
             self.PrintStep("Step 2: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
             self.update_perc = 100
             self.generate_docs(doc_ops=["update"],
-                               update_start=self.start,
-                               update_end=self.end)
+                            update_start=self.start,
+                            update_end=self.end)
             self.perform_load(validate_data=False)
 
             self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
             self.generate_docs(doc_ops=["create"],
-                               create_start=self.num_items,
-                               create_end=self.num_items*2)
+                            create_start=self.num_items,
+                            create_end=self.num_items*2)
             self.perform_load(validate_data=False)
 
             self.PrintStep("Step 4: Update %s RandonKey keys to create 50 percent fragmentation" % str(self.num_items))
             self.update_perc = 100
             self.generate_docs(doc_ops=["update"],
-                               update_start=self.start,
-                               update_end=self.end)
+                            update_start=self.start,
+                            update_end=self.end)
             self.perform_load(validate_data=False)
             self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
             ###################################################################
@@ -902,8 +972,16 @@ class Murphy(BaseTestCase, OPD):
             tasks = self.perform_load(wait_for_load=False)
             self.rebl_services = self.input.param("rebl_services", ["kv"])
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
-
+            self.sleep(30,"Wait for docs load")
             ###################################################################
+            doc_load_task = None
+            if self.is_cdc_test:
+                self.set_num_items_for_collection()
+                data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability,doc_ttl=1)
+                doc_load_task = consecutive_data_load(data_spec)
+                self.sleep(20,'Wait for docs to load')
+
+
             self.PrintStep("Step 5: Rebalance in with Loading of docs")
 
             rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
@@ -912,6 +990,13 @@ class Murphy(BaseTestCase, OPD):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks()
+
+            if self.is_cdc_test:
+                doc_load_task.stop_indefinite_doc_loading_tasks()
+                self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=300)
             ###################################################################
             '''
             Existing:
@@ -927,6 +1012,13 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 30-40M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
+            doc_load_task = None
+            if self.is_cdc_test:
+                self.set_num_items_for_collection()
+                data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability)
+                doc_load_task = consecutive_data_load(data_spec)
+                self.sleep(20,'Wait for docs to load')
+
             self.PrintStep("Step 6: Rebalance Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=0, nodes_out=self.rebl_nodes)
 
@@ -936,6 +1028,13 @@ class Murphy(BaseTestCase, OPD):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks()
+
+            if self.is_cdc_test:
+                doc_load_task.stop_indefinite_doc_loading_tasks()
+                self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=300)
 
             ###################################################################
             '''
@@ -952,6 +1051,13 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 40-50M, Sequential: 0-10M)
             Nodes In Cluster = 4
             '''
+            doc_load_task = None
+            if self.is_cdc_test:
+                self.set_num_items_for_collection()
+                data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability)
+                doc_load_task = consecutive_data_load(data_spec)
+                self.sleep(20,'Wait for docs to load')
+
             self.PrintStep("Step 7: Rebalance In_Out with Loading of docs")
             rebalance_task = self.rebalance(nodes_in=self.rebl_nodes+1, nodes_out=self.rebl_nodes,
                                             services=self.rebl_services*(self.rebl_nodes+1))
@@ -962,6 +1068,13 @@ class Murphy(BaseTestCase, OPD):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks()
+
+            if self.is_cdc_test:
+                doc_load_task.stop_indefinite_doc_loading_tasks()
+                self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=300)
 
             ###################################################################
             '''
@@ -978,6 +1091,13 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 50-60M, Sequential: 0-10M)
             Nodes In Cluster = 4
             '''
+            doc_load_task = None
+            if self.is_cdc_test:
+                self.set_num_items_for_collection()
+                data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability)
+                doc_load_task = consecutive_data_load(data_spec)
+                self.sleep(20,'Wait for docs to load')
+
             self.PrintStep("Step 8: Swap with Loading of docs")
 
             rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=self.rebl_nodes,
@@ -989,6 +1109,13 @@ class Murphy(BaseTestCase, OPD):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks()
+
+            if self.is_cdc_test:
+                doc_load_task.stop_indefinite_doc_loading_tasks()
+                self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=300)
 
             ###################################################################
             '''
@@ -1024,6 +1151,13 @@ class Murphy(BaseTestCase, OPD):
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
 
+            doc_load_task = None
+            if self.is_cdc_test:
+                self.set_num_items_for_collection()
+                data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability)
+                doc_load_task = consecutive_data_load(data_spec)
+                self.sleep(20,'Wait for docs to load')
+
             # Mark Node for failover
             self.success_failed_over = True
             for node in self.chosen:
@@ -1057,6 +1191,13 @@ class Murphy(BaseTestCase, OPD):
             print "AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers]
             end_step_checks()
 
+            if self.is_cdc_test:
+                doc_load_task.stop_indefinite_doc_loading_tasks()
+                self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=300)
+                
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
                 prev_failover_stats,
@@ -1077,6 +1218,13 @@ class Murphy(BaseTestCase, OPD):
             ###################################################################
             extra_node_gone = self.num_replicas - 1
             if extra_node_gone > 0:
+                doc_load_task = None
+                if self.is_cdc_test:
+                    self.set_num_items_for_collection()
+                    data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability)
+                    doc_load_task = consecutive_data_load(data_spec)
+                    self.sleep(20,'Wait for docs to load')
+
                 self.PrintStep("Step 10: Rebalance in with Loading of docs")
 
                 rebalance_task = self.rebalance(nodes_in=extra_node_gone,
@@ -1086,6 +1234,13 @@ class Murphy(BaseTestCase, OPD):
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 end_step_checks()
+
+                if self.is_cdc_test:
+                    doc_load_task.stop_indefinite_doc_loading_tasks()
+                    self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                    CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                    self.bucket_util._wait_for_stats_all_buckets(
+                            self.cluster, self.cluster.buckets, timeout=300)
             ###################################################################
             '''
             Existing:
@@ -1122,6 +1277,13 @@ class Murphy(BaseTestCase, OPD):
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
 
+            doc_load_task = None
+            if self.is_cdc_test:
+                self.set_num_items_for_collection()
+                data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability)
+                doc_load_task = consecutive_data_load(data_spec)
+                self.sleep(20,'Wait for docs to load')
+
             # Mark Node for failover
             self.success_failed_over = True
             for node in self.chosen:
@@ -1148,6 +1310,13 @@ class Murphy(BaseTestCase, OPD):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks()
+
+            if self.is_cdc_test:
+                doc_load_task.stop_indefinite_doc_loading_tasks()
+                self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=300)
 
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
@@ -1202,6 +1371,12 @@ class Murphy(BaseTestCase, OPD):
 
 #             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
 #             tasks = self.perform_load(wait_for_load=False)
+            doc_load_task = None
+            if self.is_cdc_test:
+                self.set_num_items_for_collection()
+                data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability)
+                doc_load_task = consecutive_data_load(data_spec)
+                self.sleep(20,'Wait for docs to load')
             # Mark Node for failover
             self.success_failed_over = True
             for node in self.chosen:
@@ -1228,6 +1403,13 @@ class Murphy(BaseTestCase, OPD):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks()
+
+            if self.is_cdc_test:
+                doc_load_task.stop_indefinite_doc_loading_tasks()
+                self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=300)
 
             self.bucket_util.compare_failovers_logs(
                 self.cluster,
@@ -1261,6 +1443,13 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
+            doc_load_task = None
+            if self.is_cdc_test:
+                self.set_num_items_for_collection()
+                data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability)
+                doc_load_task = consecutive_data_load(data_spec)
+                self.sleep(20,'Wait for docs to load')
+
             self.PrintStep("Step 13: Updating the bucket replica to %s" %
                            (self.num_replicas+1))
 
@@ -1278,6 +1467,13 @@ class Murphy(BaseTestCase, OPD):
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks()
 
+            if self.is_cdc_test:
+                doc_load_task.stop_indefinite_doc_loading_tasks()
+                self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=300)
+
             ####################################################################
             '''
             Existing:
@@ -1293,6 +1489,13 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 100-110M, Sequential: 0-10M)
             Nodes In Cluster = 3
             '''
+            doc_load_task = None
+            if self.is_cdc_test:
+                self.set_num_items_for_collection()
+                data_spec = self.get_dedupe_doc_loader_spec(update_percent=100,update_itr=-1,durablity_level=self.dedupe_durability)
+                doc_load_task = consecutive_data_load(data_spec)
+                self.sleep(20,'Wait for docs to load')
+
             self.PrintStep("Step 14: Updating the bucket replica to %s" %
                            self.num_replicas)
             bucket_helper = BucketHelper(self.cluster.master)
@@ -1306,6 +1509,13 @@ class Murphy(BaseTestCase, OPD):
             self.task.jython_task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             end_step_checks()
+
+            if self.is_cdc_test:
+                doc_load_task.stop_indefinite_doc_loading_tasks()
+                self.sleep(10, 'Sleep 10 seconds before deleting docs')
+                CollectionBase.remove_docs_created_for_dedupe_load(self,doc_load_task)
+                self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets, timeout=300)
 
         #######################################################################
             self.PrintStep("Step 15: Flush the bucket and \
@@ -1326,3 +1536,5 @@ class Murphy(BaseTestCase, OPD):
             else:
                 self.log.info("Volume Test Run Complete")
             self.init_doc_params()
+            if self.is_cdc_test:
+                validate_hist_retention_settings()

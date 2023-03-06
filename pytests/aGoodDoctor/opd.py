@@ -69,7 +69,9 @@ class OPD:
                  Bucket.bucketType: bucket_type[i],
                  Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
                  Bucket.compressionMode: compression_mode[i],
-                 Bucket.fragmentationPercentage: self.fragmentation})
+                 Bucket.fragmentationPercentage: self.fragmentation,
+                 Bucket.historyRetentionBytes: self.bucket_history_retention_bytes,
+                 Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds})
             self.bucket_util.create_bucket(cluster, bucket)
 
         # rebalance the new buckets across all nodes.
@@ -564,6 +566,7 @@ class OPD:
                         str(self.cluster.master.memcached_port))
         tasks = list()
         i = self.process_concurrency
+        self.log.critical("Process concurrency : {0}".format(i))
         while i > 0:
             for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
