@@ -154,6 +154,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
                                           server.port)
             msg = "Unable to add node %s to the cluster"
             self.assertTrue(otp_node, msg % server.ip)
+            self.cluster.nodes_in_cluster.append(server)
+            self.cluster.kv_nodes.append(server)
 
         if self.swap_orchestrator:
             self.rest = RestConnection(new_swap_servers[0])
