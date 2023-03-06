@@ -491,6 +491,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         """
         self.current_fo_strategy = None
         load_data_after_fo = self.input.param("post_failover_data_load", True)
+        pause_rebalance_test = self.input.param("pause_rebalance_test", False)
         pre_fo_data_load = self.input.param("pre_fo_data_load", False)
         update_replica = self.input.param("update_replica", 0)
         update_replica_number_to = self.input.param(
@@ -547,10 +548,20 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.rest.add_back_node(node.id)
                     if CbServer.Services.KV in node.services:
                         self.rest.set_recovery_type(node.id, "delta")
-            result = self.cluster_util.rebalance(self.cluster)
+            result = self.cluster_util.rebalance(self.cluster,
+                                                 wait_for_completion=
+                                                 (not pause_rebalance_test))
         else:
             # Eject nodes and rebalance
             self.log.info("Ejecting all failed nodes from the cluster")
+            result = self.cluster_util.rebalance(self.cluster,
+                                                 wait_for_completion=
+                                                 (not pause_rebalance_test))
+
+        if pause_rebalance_test:
+            stopped = self.rest.stop_rebalance(
+                wait_timeout=self.wait_timeout / 3)
+            self.assertTrue(stopped, msg="Unable to stop rebalance")
             result = self.cluster_util.rebalance(self.cluster)
 
         if exception:
