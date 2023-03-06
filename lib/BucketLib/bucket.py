@@ -271,7 +271,7 @@ class Bucket(object):
         self.scopes = dict()
 
         # Create default scope-collection association
-        hist_for_def_col = "true" \
+        hist_for_def_col = self.historyRetentionCollectionDefault \
             if self.storageBackend == Bucket.StorageBackend.magma else "false"
         scope = Scope({"name": CbServer.default_scope})
         collection = Collection({"name": CbServer.default_collection,

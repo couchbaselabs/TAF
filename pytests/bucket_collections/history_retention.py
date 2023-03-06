@@ -152,7 +152,10 @@ class DocHistoryRetention(ClusterSetup):
             self.assertTrue(
                 total_enqueued == total_persisted \
                 == expected_dcp_items_to_send + num_mutations,
-                "Stat mismatch")
+                "Stat mismatch. "
+                "Total enqueued: %s, Tot_persisted: %s, exp_dcp_items: %s"
+                % (total_enqueued, total_persisted,
+                   expected_dcp_items_to_send+num_mutations))
 
     def get_loader_spec(self, update_percent=0, update_itr=-1,
                         replace_percent=0, replace_itr=-1,
