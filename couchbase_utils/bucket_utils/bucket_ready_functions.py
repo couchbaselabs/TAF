@@ -2560,20 +2560,19 @@ class BucketUtils(ScopeUtils):
                         self.create_scope_object(bucket, scope_spec)
 
                 for c_name, c_spec in scope_spec["collections"].items():
-                    if type(c_spec) is not dict:
+                    if type(c_spec) is not dict or \
+                            c_name == CbServer.default_collection:
                         continue
                     c_spec["name"] = c_name
-                    if "history" not in c_spec:
-                        c_spec["history"] = "false"
-                        if c_name != CbServer.default_collection:
-                            c_spec["history"] = bucket.historyRetentionCollectionDefault
+                    c_spec["history"] = "false"
+                    if bucket.storageBackend == Bucket.StorageBackend.magma:
+                        c_spec["history"] = bucket.historyRetentionCollectionDefault
                     if cluster.type == "serverless" \
                             and c_name != CbServer.default_collection:
                         self.create_collection(bucket.servers[0], bucket,
                                                scope_name, c_spec)
                     else:
-                        self.create_collection_object(
-                            bucket, scope_name, c_spec)
+                        self.create_collection_object(bucket, scope_name, c_spec)
 
         if load_data_from_existing_tar:
             for bucket_name, bucket_spec in buckets_spec.items():
@@ -6259,36 +6258,41 @@ class BucketUtils(ScopeUtils):
                 for r_stat in stats[replica]:
                     if r_stat[high_seqno] != stats[active][high_seqno]:
                         result = False
-                        self.log.critical("vb_%s, replica high_seqno mismatch"
-                                          % vb_num)
+                        self.log.critical(
+                            "{0} - vb_{1}, replica high_seqno mismatch, "
+                            "Replica::{2} != Active::{3}"
+                            .format(index, vb_num, r_stat[high_seqno],
+                                    stats[active][high_seqno]))
                     if r_stat[hist_start_seqno] != stats[active][hist_start_seqno]:
                         result = False
                         self.log.critical(
-                            "vb_%s, replica hist_start_seqno mismatch"
-                            % vb_num)
-            if result is False:
-                self.log.critical("Loop Index: {0} - {1}".format(index, stat))
+                            "{0} - vb_{1}, replica hist_start_seqno mismatch, "
+                            "Replica::{2} != Active::{3}"
+                            .format(index, vb_num, r_stat[hist_start_seqno],
+                                    stats[active][hist_start_seqno]))
         if no_history_preserved:
             for vb_num, stats in curr_stats.items():
                 active_stats = stats[active]
                 if active_stats[hist_start_seqno] != 0:
                     result = False
-                    self.log.critical("vb_%s history_start_seqno != 0"
-                                      % vb_num)
+                    self.log.critical("vb_{0} history_start_seqno != 0"
+                                      .format(vb_num))
         elif comparison == "==":
             for vb_num, stats in prev_stat.items():
                 active_stats = stats[active]
                 if active_stats[hist_start_seqno] \
                         != curr_stats[vb_num][active][hist_start_seqno]:
                     result = False
-                    self.log.critical("vb_%s history_start_seqno mismatch"
-                                      % vb_num)
+                    self.log.critical("vb_{0} history_start_seqno mismatch"
+                                      .format(vb_num))
         elif comparison == ">":
             for vb_num, stats in prev_stat.items():
-                active_stats = stats[active]
-                if active_stats[hist_start_seqno] \
-                        <= curr_stats[vb_num][active][hist_start_seqno]:
+                prev_active_stats = stats[active]
+                if prev_active_stats[hist_start_seqno] \
+                        > curr_stats[vb_num][active][hist_start_seqno]:
                     result = False
-                    self.log.critical("vb_%s history_start_seqno <= prev_stat"
-                                      % vb_num)
+                    self.log.critical(
+                        "vb_{0} hist_start_seqno, prev::{1} <= curr::{2}"
+                        .format(vb_num, prev_active_stats[hist_start_seqno],
+                                curr_stats[vb_num][active][hist_start_seqno]))
         return result

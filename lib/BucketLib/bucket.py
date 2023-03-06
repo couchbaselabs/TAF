@@ -296,7 +296,7 @@ class Bucket(object):
             self.serverless.weight = b_weight
 
         # Create default scope-collection association
-        hist_for_def_col = "true" \
+        hist_for_def_col = self.historyRetentionCollectionDefault \
             if self.storageBackend == Bucket.StorageBackend.magma else "false"
         scope = Scope({"name": CbServer.default_scope})
         collection = Collection({"name": CbServer.default_collection,
@@ -331,7 +331,7 @@ class Bucket(object):
     def set_defaults(bucket):
         if bucket.storageBackend == Bucket.StorageBackend.magma:
             if bucket.historyRetentionCollectionDefault is None:
-                bucket.historyRetentionCollectionDefault = True
+                bucket.historyRetentionCollectionDefault = "true"
             if bucket.historyRetentionSeconds is None:
                 bucket.historyRetentionSeconds = 0
             if bucket.historyRetentionBytes is None:
@@ -340,6 +340,7 @@ class Bucket(object):
                 bucket.magmaSeqTreeDataBlockSize = 4096
             if bucket.magmaSeqTreeDataBlockSize is None:
                 bucket.magmaKeyTreeDataBlockSize = 4096
+            bucket.scopes[CbServer.default_scope].collections[CbServer.default_collection].history = bucket.historyRetentionCollectionDefault
 
 class TravelSample(Bucket):
     def __init__(self):
