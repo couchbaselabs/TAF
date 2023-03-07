@@ -1981,16 +1981,14 @@ class BucketUtils(ScopeUtils):
                     self.create_scope_object(bucket, scope_spec)
 
                 for c_name, c_spec in scope_spec["collections"].items():
-                    if type(c_spec) is not dict:
+                    if type(c_spec) is not dict or \
+                            c_name == CbServer.default_collection:
                         continue
                     c_spec["name"] = c_name
                     c_spec["history"] = "false"
-                    if c_name != CbServer.default_collection:
+                    if bucket.storageBackend == Bucket.StorageBackend.magma:
                         c_spec["history"] = bucket.historyRetentionCollectionDefault
-
-                    self.create_collection_object(bucket,
-                                                  scope_name,
-                                                  c_spec)
+                    self.create_collection_object(bucket, scope_name, c_spec)
 
         if load_data_from_existing_tar:
             for bucket_name, bucket_spec in buckets_spec.items():
