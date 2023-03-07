@@ -315,6 +315,15 @@ class CapellaUtils:
                             format(resp.content))
         return json.loads(resp.content)
 
+    def get_dataplane_jobs(self, dataplane_id):
+        resp = self.capella_api.get_dataplane_job_info(dataplane_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Fetch dataplane jobs failed:{}".
+                                      format(resp.status_code))
+            raise Exception("Fetch dataplane jobs failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
     def trigger_log_collection(self, cluster_id, log_id={}):
         if log_id:
             log_id = {"ticketId": log_id}

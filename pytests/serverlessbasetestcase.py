@@ -21,6 +21,7 @@ from uuid import uuid4
 from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from membase.api.rest_client import RestConnection
 from table_view import TableView
+import urllib
 
 
 class OnCloudBaseTest(CouchbaseBaseTest):
@@ -124,10 +125,11 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 continue
             dataplane = Dataplane(dataplane_id, srv, user, pwd)
             dataplane.cluster_id = self.serverless_util.get_dataplane_clusterid(dataplane_id)
-            servers = RestConnection({"ip": ip,
-                                      "username": user,
-                                      "password": pwd,
-                                      "port": 18091}).get_nodes()
+            rest = RestConnection({"ip": ip,
+                                   "username": user,
+                                   "password": pwd,
+                                   "port": 18091})
+            servers = rest.get_nodes()
             dataplane.refresh_object(servers)
             self.dataplane_objs.update({dataplane.id: dataplane})
             text = "\n\nDataplane - {}:".format(dataplane_id)
@@ -143,6 +145,17 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 str(user),
                 str(pwd),
                 ])
+            throttling_off = self.input.param("throttling_off", False)
+            if throttling_off:
+                api = rest.baseUrl + "internalSettings"
+                params = urllib.urlencode({'dataThrottleLimit': -1,
+                                           'indexThrottleLimit': -1,
+                                           'searchThrottleLimit': -1})
+                status, content, _ = rest._http_request(
+                    api, "POST", params=params,
+                    headers=rest.get_headers_for_content_type_json())
+                self.log.info("Throttling Off: {}, {}".format(status, content))
+                self.assertTrue(status, "Turning throttling off failed: {}".format(status))
         if self.dataplanes:
             self.table.display("Dataplanes")
         # Setting global_vars for future reference

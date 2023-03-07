@@ -30,6 +30,12 @@ ftsQueries = [
             SearchQuery.prefix("Cari")
             ]
 
+HotelQueries = [
+            SearchQuery.queryString("United Kingdom"),
+            SearchQuery.match("Algeria"),
+            SearchQuery.prefix("Serbi"),
+    ]
+
 
 class DoctorFTS:
 
@@ -149,16 +155,19 @@ class DoctorFTS:
                 status = False
                 stop_time = time.time() + timeout
                 while time.time() < stop_time:
-                    _status, content = self.fts_helper.fts_index_item_count(
-                        "%s" % (index_name))
-                    self.log.debug("index: {}, status: {}, count: {}"
-                                   .format(index_name, _status,
-                                           json.loads(content)["count"]))
-                    if overRideCount is not None and overRideCount == json.loads(content)["count"] or\
-                       json.loads(content)["count"] == bucket.loadDefn.get("num_items"):
-                        self.log.info("FTS index is ready: {}".format(index_name))
-                        status = True
-                        break
+                    try:
+                        _status, content = self.fts_helper.fts_index_item_count(
+                            "%s" % (index_name))
+                        self.log.debug("index: {}, status: {}, count: {}"
+                                       .format(index_name, _status,
+                                               json.loads(content)["count"]))
+                        if overRideCount is not None and overRideCount == json.loads(content)["count"] or\
+                           json.loads(content)["count"] == bucket.loadDefn.get("num_items"):
+                            self.log.info("FTS index is ready: {}".format(index_name))
+                            status = True
+                            break
+                    except:
+                        pass
                     time.sleep(5)
                 if status is False:
                     return status
@@ -190,7 +199,9 @@ class DoctorFTS:
             self.nodes_under_uwm = 0
             self.nodes_above_lwm = 0
             self.nodes_above_hwm = 0
+            self.hwm_nodes_can_defragmented = 0
             collect_logs = False
+            defrag_data = dict()
             self.table = TableView(self.log.info)
             self.table.set_headers(["Dataplane",
                                     "Node",
@@ -198,6 +209,27 @@ class DoctorFTS:
                                     "diskBytes",
                                     "billableUnitsRate",
                                     "cpuPercent"])
+            rest = RestConnection(dataplane.master)
+            defrag = rest.urllib_request(rest.baseUrl + "pools/default/services/fts/defragmented")
+            defrag = json.loads(defrag.content)
+            self.defrag_table = TableView(self.log.info)
+            self.defrag_table.set_headers(["Node",
+                                           "memoryBytes",
+                                           "diskBytes",
+                                           "billableUnitsRate",
+                                           "cpuPercent"
+                                           ])
+            for node, fts_stat in defrag.items():
+                self.defrag_table.add_row([node,
+                                           fts_stat["memoryBytes"],
+                                           fts_stat["diskBytes"],
+                                           fts_stat["billableUnitsRate"],
+                                           fts_stat["cpuPercent"]
+                                           ])
+                defrag_data.update({node.split(":")[0]: (fts_stat["memoryBytes"],
+                                                         fts_stat["diskBytes"],
+                                                         fts_stat["billableUnitsRate"],
+                                                         fts_stat["cpuPercent"])})
             for node in dataplane.fts_nodes:
                 try:
                     rest = RestConnection(node)
@@ -212,27 +244,16 @@ class DoctorFTS:
                         FtsHelper(node).capture_memory_profile()
                         collect_logs = True
                         mem_prof = False
-                        if mem_used < uwm and cpu_used < uwm*100:
-                            self.nodes_under_uwm += 1
-                        if mem_used > hwm or cpu_used > hwm*100:
-                            self.nodes_above_hwm += 1
-                        if mem_used > lwm or cpu_used > lwm*100:
-                            self.nodes_above_lwm += 1
+                    if mem_used < uwm and cpu_used < uwm*100:
+                        self.nodes_under_uwm += 1
+                    if mem_used > hwm or cpu_used > hwm*100:
+                        self.nodes_above_hwm += 1
+                        if defrag_data[node.ip][0]*1.0/content["limits:memoryBytes"] < hwm or\
+                                defrag_data[node.ip][3]*1.0/100 < hwm:
+                                self.hwm_nodes_can_defragmented += 1
+                    if mem_used > lwm or cpu_used > lwm*100:
+                        self.nodes_above_lwm += 1
 
-                    if self.scale_down is False and self.scale_up is False and self.fts_auto_rebl is False:
-                        if self.nodes_under_uwm == len(dataplane.fts_nodes)\
-                                and self.scale_down is False\
-                                and len(dataplane.fts_nodes) > 2:
-                            self.scale_down = True
-                            self.log.info("FTS - Scale DOWN should trigger in a while")
-                        elif len(dataplane.fts_nodes) < 10\
-                            and self.nodes_above_lwm == len(dataplane.fts_nodes)\
-                                and self.scale_up is False:
-                            self.scale_up = True
-                            self.log.info("FTS - Scale UP should trigger in a while")
-                        elif self.nodes_above_hwm > 0 and self.fts_auto_rebl is False:
-                            self.fts_auto_rebl = True
-                            self.log.info("FTS - Auto-Rebalance should trigger in a while")
                     self.table.add_row([
                         dataplane.id,
                         node.ip,
@@ -246,15 +267,34 @@ class DoctorFTS:
                         ])
                 except Exception as e:
                     self.log.critical(e)
-                if st_time + print_duration < time.time() or self.scale_down and self.scale_up or self.fts_auto_rebl:
-                    self.log.info("FTS - Nodes below UWM: {}".format(self.nodes_under_uwm))
-                    self.log.info("FTS - Nodes above LWM: {}".format(self.nodes_above_lwm))
-                    self.log.info("FTS - Nodes above HWM: {}".format(self.nodes_above_hwm))
-                    self.table.display("FTS Statistics")
-                    st_time = time.time()
+
+            if st_time + print_duration < time.time() or self.scale_down and self.scale_up or self.fts_auto_rebl:
+                self.log.info("FTS - Nodes below UWM: {}".format(self.nodes_under_uwm))
+                self.log.info("FTS - Nodes above LWM: {}".format(self.nodes_above_lwm))
+                self.log.info("FTS - Nodes above HWM: {}".format(self.nodes_above_hwm))
+                self.log.info("FTS - Nodes at HWM and can be defragmented: {}".format(self.hwm_nodes_can_defragmented))
+                self.table.display("FTS Statistics")
+                self.defrag_table.display("FTS Defrag Stats")
+                st_time = time.time()
+
             if collect_logs:
                 self.log.critical("Please collect logs immediately!!!")
                 pass
+
+            if self.scale_down is False and self.scale_up is False and self.fts_auto_rebl is False:
+                if self.nodes_under_uwm == len(dataplane.fts_nodes)\
+                        and self.scale_down is False\
+                        and len(dataplane.fts_nodes) > 2:
+                    self.scale_down = True
+                    self.log.info("FTS - Scale DOWN should trigger in a while")
+                elif len(dataplane.fts_nodes) < 10\
+                    and self.nodes_above_lwm == len(dataplane.fts_nodes)\
+                        and self.scale_up is False:
+                    self.scale_up = True
+                    self.log.info("FTS - Scale UP should trigger in a while")
+                elif self.nodes_above_hwm > 0 and self.hwm_nodes_can_defragmented > 0 and self.fts_auto_rebl is False:
+                    self.fts_auto_rebl = True
+                    self.log.info("FTS - Auto-Rebalance should trigger in a while")
             time.sleep(5)
 
 
@@ -276,10 +316,6 @@ class FTSQueryLoad:
         th = threading.Thread(target=self._run_concurrent_queries,
                               kwargs=dict(bucket=self.bucket))
         th.start()
-
-        monitor = threading.Thread(target=self.monitor_query_status,
-                                   kwargs=dict(print_duration=600))
-        monitor.start()
 
     def stop_query_load(self):
         self.stop_run = True
@@ -318,6 +354,8 @@ class FTSQueryLoad:
             new_queries_to_run = self.concurrent_queries_to_run - self.currently_running
             for i in range(0, new_queries_to_run):
                 query = random.choice(ftsQueries)
+                if bucket.loadDefn.get("valType") == "Hotel":
+                    query = random.choice(HotelQueries)
                 index, details = random.choice(bucket.ftsIndexes.items())
                 _, b, s, _ = details
                 self.total_query_count += 1
@@ -339,7 +377,7 @@ class FTSQueryLoad:
     def _run_query(self, index, query, b, s, validate_item_count=False, expected_count=0):
         start = time.time()
         try:
-            result = self.execute_fts_query("{}.{}.{}".format(b, s, index), query)
+            result = self.execute_fts_query("{}".format(index), query)
             if validate_item_count:
                 if result.metaData().metrics().totalRows() != expected_count:
                     self.failed_count.next()
@@ -350,9 +388,10 @@ class FTSQueryLoad:
         except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
             self.timeout_count.next()
         except RequestCanceledException as e:
-                self.cancel_count.next()
+            self.cancel_count.next()
         except CouchbaseException as e:
-                self.rejected_count.next()
+            print(e)
+            self.rejected_count.next()
         except Exception as e:
             print(e)
             self.error_count.next()

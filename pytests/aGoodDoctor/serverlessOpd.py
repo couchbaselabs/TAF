@@ -297,7 +297,7 @@ class OPD:
             bucket.final_items = 0
         bucket.initial_items = bucket.final_items
 
-        doc_ops = doc_ops or self.doc_ops or bucket.loadDefn.get("load_type")
+        doc_ops = doc_ops or bucket.loadDefn.get("load_type")
         self.mutations_to_validate = doc_ops
 
         if "read" in doc_ops:
@@ -399,7 +399,7 @@ class OPD:
                                           cmd.get("ops", bucket.loadDefn.get("ops")),
                                           cmd.get("loadType", None),
                                           cmd.get("keyType", self.key_type),
-                                          cmd.get("valueType", self.val_type),
+                                          cmd.get("valueType", bucket.loadDefn.get("valType")),
                                           cmd.get("validate", False),
                                           cmd.get("gtm", False),
                                           cmd.get("deleted", False),
@@ -418,7 +418,7 @@ class OPD:
                                DRConstants.read_e: bucket.read_end})
                     dr = DocRange(hm)
                     ws.dr = dr
-                    dg = DocumentGenerator(ws, self.key_type, self.val_type)
+                    dg = DocumentGenerator(ws, self.key_type, bucket.loadDefn.get("valType"))
                     self.loader_map.update({bucket.name+scope+collection: dg})
 
     def wait_for_doc_load_completion(self, tasks, buckets, wait_for_stats=True):
@@ -523,13 +523,13 @@ class OPD:
                                                   cmd.get("ops", bucket.loadDefn.get("ops")),
                                                   cmd.get("loadType", None),
                                                   cmd.get("keyType", self.key_type),
-                                                  cmd.get("valueType", self.val_type),
+                                                  cmd.get("valueType", bucket.loadDefn.get("valType")),
                                                   cmd.get("validate", True),
                                                   cmd.get("gtm", False),
                                                   cmd.get("deleted", False),
                                                   cmd.get("mutated", 0))
                             ws.dr = dr
-                            dg = DocumentGenerator(ws, self.key_type, self.val_type)
+                            dg = DocumentGenerator(ws, self.key_type, bucket.loadDefn.get("valType"))
                             self.loader_map.update({bucket.name+scope+collection+op_type: dg})
 
             tasks = list()

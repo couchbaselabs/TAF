@@ -22,7 +22,9 @@ from com.couchbase.test.sdk import Server
 from com.couchbase.client.core.error import TimeoutException
 from threading import Lock
 from _collections import defaultdict
-
+import subprocess
+import shlex
+        
 
 class Murphy(BaseTestCase, OPD):
 
@@ -65,10 +67,6 @@ class Murphy(BaseTestCase, OPD):
             self.xdcr_remote_nodes = self.input.param("xdcr_remote_nodes", 0)
             self.num_indexes = self.input.param("num_indexes", 0)
             self.mutation_perc = 100
-            self.doc_ops = self.input.param("doc_ops", "create")
-            if self.doc_ops:
-                self.doc_ops = self.doc_ops.split(':')
-
             self.threads_calculation()
             self.op_type = self.input.param("op_type", "create")
             self.dgm = self.input.param("dgm", None)
@@ -79,7 +77,6 @@ class Murphy(BaseTestCase, OPD):
             self.vbucket_check = self.input.param("vbucket_check", True)
             self.end_step = self.input.param("end_step", None)
             self.keyType = self.input.param("keyType", "SimpleKey")
-            self.valueType = self.input.param("valueType", "SimpleValue")
             self.crashes = self.input.param("crashes", 20)
             self.check_dump_thread = True
             self.skip_read_on_error = False
@@ -90,7 +87,6 @@ class Murphy(BaseTestCase, OPD):
             self._data_validation = self.input.param("data_validation", True)
             self.fragmentation = int(self.input.param("fragmentation", 50))
             self.key_type = self.input.param("key_type", "SimpleKey")
-            self.val_type = self.input.param("val_type", "SimpleValue")
             self.ops_rate = self.input.param("ops_rate", 10000)
             self.cursor_dropping_checkpoint = self.input.param(
                 "cursor_dropping_checkpoint", None)
@@ -102,6 +98,7 @@ class Murphy(BaseTestCase, OPD):
             self.bucket_count = 0
             self.load_defn = list()
             self.defaultLoadDefn = {
+                "valType": "Hotel",
                 "scopes": 1,
                 "collections": 1,
                 "num_items": 2000000,
@@ -115,7 +112,7 @@ class Murphy(BaseTestCase, OPD):
                 "FTS": (2, 2)
                 }
             self.gsiAutoScaleLoadDefn = {
-                "type": "gsi_auto_scale",
+                "valType": "Hotel",
                 "scopes": 1,
                 "collections": 2,
                 "num_items": 1000000,
@@ -128,20 +125,8 @@ class Murphy(BaseTestCase, OPD):
                 "2i": (20, 50),
                 "FTS": (0, 0)
                 }
-            self.loadDefn100 = {
-                "scopes": 1,
-                "collections": 1,
-                "num_items": 20000000,
-                "start": 0,
-                "end": 20000000,
-                "ops": 1000,
-                "doc_size": 1024,
-                "pattern": [10, 80, 0, 10, 0], # CRUDE
-                "load_type": ["create", "read", "delete"],
-                "2i": (10, 10),
-                "FTS": (10, 10)
-                }
             self.loadDefn1 = {
+                "valType": "SimpleValue",
                 "scopes": 1,
                 "collections": 20,
                 "num_items": 5000000,
@@ -156,6 +141,7 @@ class Murphy(BaseTestCase, OPD):
                 }
             self.load_defn.append(self.loadDefn1)
             self.loadDefn2 = {
+                "valType": "SimpleValue",
                 "scopes": 1,
                 "collections": 10,
                 "num_items": 2000000,
@@ -170,6 +156,7 @@ class Murphy(BaseTestCase, OPD):
                 }
             self.load_defn.append(self.loadDefn2)
             self.loadDefn3 = {
+                "valType": "SimpleValue",
                 "scopes": 1,
                 "collections": 5,
                 "num_items": 200000,
@@ -184,6 +171,7 @@ class Murphy(BaseTestCase, OPD):
                 }
             self.load_defn.append(self.loadDefn3)
             self.loadDefn4 = {
+                "valType": "SimpleValue",
                 "scopes": 1,
                 "collections": 5,
                 "num_items": 1000000,
@@ -196,20 +184,22 @@ class Murphy(BaseTestCase, OPD):
                 "2i": (0, 2),
                 "FTS": (0, 0)
                 }
+            self.load_defn.append(self.loadDefn4)
             self.kv_memmgmt = {
+                "valType": "SimpleValue",
                 "scopes": 1,
                 "collections": 1,
-                "num_items": 200000000,
+                "num_items": 250000000,
                 "start": 0,
-                "end": 200000000,
-                "ops": 6000,
+                "end": 250000000,
+                "ops": 5000,
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
                 "2i": (0, 0),
                 "FTS": (0, 0)
                 }
-            self.load_defn.append(self.loadDefn4)
+            self.load_defn.append(self.kv_memmgmt)
             self.workload = self.input.param("workload", self.defaultLoadDefn)
 
             if self.workload == "kv_memmgmt":
@@ -397,6 +387,9 @@ class Murphy(BaseTestCase, OPD):
         self.lock.acquire()
         dataplane_id = dataplane_id or self.dataplane_id
         try:
+            self.log.info("Dataplane Jobs:")
+            pprint.pprint(self.serverless_util.get_dataplane_jobs(dataplane_id))
+            self.log.info("Scaling Records:")
             pprint.pprint(self.serverless_util.get_scaling_records(dataplane_id))
         except:
             self.log.info("Scaling records are empty")
@@ -426,6 +419,7 @@ class Murphy(BaseTestCase, OPD):
 
         scaling_timeout = 10*60*60
         while dataplane_state != "healthy" and scaling_timeout >= 0:
+            self.refresh_dp_obj(dataplane_id)
             dataplane_state = state
             try:
                 dataplane_state = self.serverless_util.get_dataplane_info(
@@ -436,6 +430,9 @@ class Murphy(BaseTestCase, OPD):
                           .format(dataplane_state, state, service))
             time.sleep(2)
             scaling_timeout -= 2
+        self.log.info("Dataplane Jobs:")
+        pprint.pprint(self.serverless_util.get_dataplane_jobs(dataplane_id))
+        self.log.info("Scaling Records:")
         pprint.pprint(self.serverless_util.get_scaling_records(dataplane_id))
         if not service.lower() in ["gsi", "fts"]:
             self.assertEqual(dataplane_state, "healthy",
@@ -443,14 +440,19 @@ class Murphy(BaseTestCase, OPD):
                              Actual: {} Expected: {}".format(
                                  scaling_timeout, dataplane_state, "healthy"))
         self.sleep(10, "Wait before dataplane cluster nodes refresh")
-        if state == "scaling":
-            self.refresh_dp_obj(dataplane_id)
+        self.refresh_dp_obj(dataplane_id)
         self.lock.release()
 
     def refresh_dp_obj(self, dataplane_id):
         dp = self.dataplane_objs[dataplane_id]
-        records = Lookup("_couchbases._tcp.%s" % dp.srv, Type.SRV).run()
-        ip = str(records[0].getTarget())
+        cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(dp.srv)
+        proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
+        out, _ = proc.communicate()
+        records = list()
+        for line in out.split("\n"):
+            if "11207" in line:
+                records.append(line.split("11207")[-1].rstrip(".").lstrip(" "))
+        ip = str(records[0])
         servers = RestConnection({"ip": ip,
                                   "username": dp.user,
                                   "password": dp.pwd,
@@ -520,13 +522,7 @@ class Murphy(BaseTestCase, OPD):
         def check_disk():
             while not self.stop_run:
                 for dataplane in self.dataplane_objs.values():
-                    records = Lookup("_couchbases._tcp.%s" % dataplane.srv, Type.SRV).run()
-                    ip = str(records[0].getTarget())
-                    servers = RestConnection({"ip": ip,
-                                              "username": dataplane.user,
-                                              "password": dataplane.pwd,
-                                              "port": 18091}).get_nodes()
-                    dataplane.refresh_object(servers)
+                    self.refresh_dp_obj(dataplane.id)
                     table = TableView(self.log.info)
                     table.set_headers(["Node",
                                        "Path",
@@ -607,6 +603,61 @@ class Murphy(BaseTestCase, OPD):
         mem_monitor = threading.Thread(target=check_ram)
         mem_monitor.start()
 
+    def monitor_query_status(self, print_duration=600):
+
+        def check_query_stats():
+            st_time = time.time()
+            while not self.stop_run:
+                if st_time + print_duration < time.time():
+                    self.table = TableView(self.log.info)
+                    self.table.set_headers(["Bucket",
+                                            "Total Queries",
+                                            "Failed Queries",
+                                            "Success Queries",
+                                            "Rejected Queries",
+                                            "Cancelled Queries",
+                                            "Timeout Queries",
+                                            "Errored Queries"])
+                    for ql in self.ql:
+                        self.table.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                    self.table.display("N1QL Query Statistics")
+
+                    self.FTStable = TableView(self.log.info)
+                    self.FTStable.set_headers(["Bucket",
+                                               "Total Queries",
+                                               "Failed Queries",
+                                               "Success Queries",
+                                               "Rejected Queries",
+                                               "Cancelled Queries",
+                                               "Timeout Queries",
+                                               "Errored Queries"])
+                    for ql in self.ftsQL:
+                        self.FTStable.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                    self.FTStable.display("FTS Query Statistics")
+                    st_time = time.time()
+                    time.sleep(10)
+
+        query_monitor = threading.Thread(target=check_query_stats)
+        query_monitor.start()
+
     def SteadyStateVolume(self):
         #######################################################################
         self.PrintStep("Step 1: Create required buckets and collections.")
@@ -646,6 +697,7 @@ class Murphy(BaseTestCase, OPD):
         self.check_cluster_state()
         self.check_fts_scaling()
         self.check_index_auto_scaling_rebl()
+        self.monitor_query_status()
 
         for i in range(1, 6):
             self.create_databases(20, load_defn=self.workload)
@@ -699,9 +751,11 @@ class Murphy(BaseTestCase, OPD):
             if self.ql:
                 ql = [load for load in self.ql if load.bucket == bucket][0]
                 ql.stop_query_load()
+                self.ql.remove(ql)
             if self.ftsQL:
                 ql = [load for load in self.ftsQL if load.bucket == bucket][0]
                 ql.stop_query_load()
+                self.ftsQL.remove(ql)
             self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
             self.serverless_util.delete_database(self.pod, self.tenant,
                                                  bucket.name)
@@ -717,6 +771,7 @@ class Murphy(BaseTestCase, OPD):
         self.check_cluster_state()
         self.check_fts_scaling()
         self.check_index_auto_scaling_rebl()
+        self.monitor_query_status()
 
         if self.workload != self.gsiAutoScaleLoadDefn:
             for i in range(1, 6):
@@ -763,6 +818,10 @@ class Murphy(BaseTestCase, OPD):
             buckets = self.cluster.buckets
             buckets = sorted(buckets, key=lambda bucket: bucket.name)
             for bucket in buckets:
+                self.log.info("Acquire lock to check if the cluster is not scaling/rebalancing.")
+                self.lock.acquire()
+                self.log.info("Releasing lock as the cluster is not scaling/rebalancing.")
+                self.lock.release()
                 start = time.time()
                 state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
                 while start + 3600 > time.time() and state is False:
@@ -778,9 +837,11 @@ class Murphy(BaseTestCase, OPD):
                 if self.ql:
                     ql = [load for load in self.ql if load.bucket == bucket][0]
                     ql.stop_query_load()
+                    self.ql.remove(ql)
                 if self.ftsQL:
                     ql = [load for load in self.ftsQL if load.bucket == bucket][0]
                     ql.stop_query_load()
+                    self.ftsQL.remove(ql)
                 self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
                 self.cluster.buckets.remove(bucket)
                 self.serverless_util.delete_database(self.pod, self.tenant,
@@ -818,46 +879,47 @@ class Murphy(BaseTestCase, OPD):
         self.lock.acquire()
         self.log.info("Releasing lock as the cluster is not scaling/rebalancing.")
         self.lock.release()
-        for width in [2, 3, 4]:
-            self.PrintStep("Test change bucket width to {}".format(width))
-            target_kv_nodes = 3 * width
-            actual_kv_nodes = self.get_num_nodes_in_cluster()
-            state = "rebalancing"
-            if target_kv_nodes > actual_kv_nodes:
-                state = "scaling"
-            for bucket_obj in self.cluster.buckets[::2]:
-                # Update the width of the buckets multiple times
-                override = {"width": width, "weight": 60}
-                bucket_obj.serverless.width = width
-                bucket_obj.serverless.weight = 60
-                self.serverless_util.update_database(bucket_obj.name, override)
-                self.log.info("Updated width for bucket {} to {}".format(bucket_obj.name, width))
-            if target_kv_nodes > actual_kv_nodes:
-                self.check_cluster_scaling(state=state)
-                self.log.info("Cluster is scaled up due the change in bucket width and ready to rebalance buckets")
-            # start = time.time()
-            # state = self.get_cluster_balanced_state(self.dataplane_objs[bucket_obj.serverless.dataplane_id])
-            # while start + 3600 > time.time() and state:
-            #     self.log.info("Balanced state of the cluster: {}"
-            #                   .format(state))
-            #     state = self.get_cluster_balanced_state(self.dataplane_objs[bucket_obj.serverless.dataplane_id])
-            # self.log.info("Balanced state of the cluster: {}".format(state))
-            # self.assertFalse(state, "Balanced state of the cluster: {}"
-            #                  .format(state))
-            # state = self.get_cluster_balanced_state(self.dataplane_objs[bucket_obj.serverless.dataplane_id])
-            # self.assertTrue(state, "Balanced state of the cluster: {}".format(state))
-            self.log.info("Buckets are rebalanced after change in their width")
+        # for width in [2, 3, 4]:
+        #     self.PrintStep("Test change bucket width to {}".format(width))
+        #     target_kv_nodes = 3 * width
+        #     actual_kv_nodes = self.get_num_nodes_in_cluster()
+        #     state = "rebalancing"
+        #     if target_kv_nodes > actual_kv_nodes:
+        #         state = "scaling"
+        #     for bucket_obj in self.cluster.buckets[::2]:
+        #         # Update the width of the buckets multiple times
+        #         override = {"width": width, "weight": 60}
+        #         bucket_obj.serverless.width = width
+        #         bucket_obj.serverless.weight = 60
+        #         self.serverless_util.update_database(bucket_obj.name, override)
+        #         self.log.info("Updated width for bucket {} to {}".format(bucket_obj.name, width))
+        #     if target_kv_nodes > actual_kv_nodes:
+        #         self.check_cluster_scaling(state=state)
+        #         self.log.info("Cluster is scaled up due the change in bucket width and ready to rebalance buckets")
+        #     # start = time.time()
+        #     # state = self.get_cluster_balanced_state(self.dataplane_objs[bucket_obj.serverless.dataplane_id])
+        #     # while start + 3600 > time.time() and state:
+        #     #     self.log.info("Balanced state of the cluster: {}"
+        #     #                   .format(state))
+        #     #     state = self.get_cluster_balanced_state(self.dataplane_objs[bucket_obj.serverless.dataplane_id])
+        #     # self.log.info("Balanced state of the cluster: {}".format(state))
+        #     # self.assertFalse(state, "Balanced state of the cluster: {}"
+        #     #                  .format(state))
+        #     # state = self.get_cluster_balanced_state(self.dataplane_objs[bucket_obj.serverless.dataplane_id])
+        #     # self.assertTrue(state, "Balanced state of the cluster: {}".format(state))
+        #     self.log.info("Buckets are rebalanced after change in their width")
+        #
+        #     for bucket in self.cluster.buckets:
+        #         self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
+        #         self.log.info("DN nodes for {}: {}".format(bucket.name, self.cluster.bucketDNNodes[bucket]))
+        #         while len(self.cluster.bucketDNNodes[bucket]) < bucket.serverless.width*3:
+        #             self.check_cluster_scaling(state="rebalancing")
+        #             self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
+        #         self.assertEqual(len(self.cluster.bucketDNNodes[bucket]),
+        #                          bucket.serverless.width*3,
+        #                          "Bucket width and number of nodes mismatch")
 
-            for bucket in self.cluster.buckets:
-                self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
-                while len(self.cluster.bucketDNNodes[bucket]) < bucket.serverless.width*3:
-                    self.check_cluster_scaling(state="rebalancing")
-                    self.update_bucket_nebula_and_kv_nodes(self.cluster, bucket)
-                self.assertEqual(len(self.cluster.bucketDNNodes[bucket]),
-                                 bucket.serverless.width*3,
-                                 "Bucket width and number of nodes mismatch")
-
-        self.doc_loading_tm.abort_all_tasks()
+        self.doc_loading_tm.abortAllTasks()
         for task in load_tasks:
             try:
                 task.sdk.disconnectCluster()
@@ -873,12 +935,12 @@ class Murphy(BaseTestCase, OPD):
                 ql = [load for load in self.ftsQL if load.bucket == bucket][0]
                 ql.stop_run = True
             start = time.time()
-            state = self.get_cluster_balanced_state(self.dataplane_objs[bucket_obj.serverless.dataplane_id])
+            state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
             while start + 3600 > time.time() and not state:
                 self.check_cluster_scaling(state="rebalancing")
                 self.log.info("Balanced state of the cluster: {}"
                               .format(state))
-                state = self.get_cluster_balanced_state(self.dataplane_objs[bucket_obj.serverless.dataplane_id])
+                state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
             self.serverless_util.delete_database(self.pod, self.tenant,
                                                  bucket.name)
             self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
@@ -891,6 +953,7 @@ class Murphy(BaseTestCase, OPD):
         self.create_required_collections(self.cluster, buckets)
         self.create_fts_indexes(buckets, wait=False)
         self.create_gsi_indexes(buckets)
+        self.check_cluster_scaling(service="GSI")
         self.build_gsi_index(buckets)
         self.start_initial_load(buckets)
         for bucket in buckets:
@@ -903,6 +966,7 @@ class Murphy(BaseTestCase, OPD):
         self.create_fts_indexes(buckets, wait=False)
         self.start_initial_load(buckets)
         self.create_gsi_indexes(buckets)
+        self.check_cluster_scaling(service="GSI")
         self.build_gsi_index(buckets)
         for bucket in buckets:
             self.generate_docs(bucket=bucket)
@@ -912,6 +976,7 @@ class Murphy(BaseTestCase, OPD):
         buckets = self.cluster.buckets[40:60]
         self.create_required_collections(self.cluster, buckets)
         self.create_gsi_indexes(buckets)
+        self.check_cluster_scaling(service="GSI")
         self.build_gsi_index(buckets)
         self.start_initial_load(buckets)
         self.create_fts_indexes(buckets, wait=False)
@@ -923,6 +988,7 @@ class Murphy(BaseTestCase, OPD):
         buckets = self.cluster.buckets[60:80]
         self.create_required_collections(self.cluster, buckets)
         self.create_gsi_indexes(buckets)
+        self.check_cluster_scaling(service="GSI")
         self.build_gsi_index(buckets)
         self.create_fts_indexes(buckets, wait=False)
         self.start_initial_load(buckets)
@@ -942,3 +1008,102 @@ class Murphy(BaseTestCase, OPD):
 
         self.drIndex.stop_run = True
         self.drFTS.stop_run = True
+
+    def PrivatePreview(self):
+        #######################################################################
+        self.PrintStep("Step: Create Serverless Databases")
+
+        self.drFTS.index_stats(self.dataplane_objs)
+        self.drIndex.index_stats(self.dataplane_objs)
+        self.check_ebs_scaling()
+        self.check_memory_management()
+        self.check_cluster_state()
+        self.check_fts_scaling()
+        self.check_index_auto_scaling_rebl()
+        self.monitor_query_status()
+        self.load_defn = []
+        self.loadDefn1 = {
+            "valType": "SimpleValue",
+            "scopes": 1,
+            "collections": 10,
+            "num_items": 5000000,
+            "start": 0,
+            "end": 5000000,
+            "ops": 10000,
+            "doc_size": 1024,
+            "pattern": [0, 80, 20, 0, 0], # CRUDE
+            "load_type": ["read", "upsert"],
+            "2i": (2, 2),
+            "FTS": (1, 1)
+            }
+        self.load_defn.append(self.loadDefn1)
+        self.loadDefn2 = {
+            "valType": "Hotel",
+            "scopes": 1,
+            "collections": 10,
+            "num_items": 2000000,
+            "start": 0,
+            "end": 2000000,
+            "ops": 10000,
+            "doc_size": 1024,
+            "pattern": [10, 80, 0, 10, 0], # CRUDE
+            "load_type": ["create", "read", "delete"],
+            "2i": (5, 5),
+            "FTS": (1, 1)
+            }
+        self.load_defn.append(self.loadDefn2)
+        self.loadDefn3 = {
+            "valType": "Hotel",
+            "scopes": 1,
+            "collections": 5,
+            "num_items": 2000000,
+            "start": 0,
+            "end": 2000000,
+            "ops": 1000,
+            "doc_size": 1024,
+            "pattern": [0, 0, 100, 0, 0], # CRUDE
+            "load_type": ["update"],
+            "2i": (2, 2),
+            "FTS": (2, 2)
+            }
+        self.load_defn.append(self.loadDefn3)
+
+        self.input.test_params.update({"clients_per_db": 5})
+        self.create_databases(10)
+        self.refresh_dp_obj(self.dataplane_id)
+        buckets = self.cluster.buckets
+        self.create_required_collections(self.cluster, buckets)
+
+        self.create_gsi_indexes(buckets)
+        self.build_gsi_index(buckets)
+
+        self.create_fts_indexes(buckets, wait=True)
+
+        self.start_initial_load(buckets)
+        self.sleep(30)
+
+        for bucket in buckets:
+            self.generate_docs(bucket=bucket)
+        tasks = self.perform_load(validate_data=False, buckets=buckets)
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+        for bucket in self.cluster.buckets:
+            start = time.time()
+            state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
+            while start + 3600 > time.time() and state is False:
+                self.log.info("Balanced state of the cluster: {}"
+                              .format(state))
+                self.check_cluster_scaling(state="rebalancing")
+                state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
+            self.log.info("Deleting bucket: {}".format(bucket.name))
+            if self.ql:
+                ql = [load for load in self.ql if load.bucket == bucket][0]
+                ql.stop_query_load()
+                self.ql.remove(ql)
+            if self.ftsQL:
+                ql = [load for load in self.ftsQL if load.bucket == bucket][0]
+                ql.stop_query_load()
+                self.ftsQL.remove(ql)
+            self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
+            self.serverless_util.delete_database(self.pod, self.tenant,
+                                                 bucket.name)

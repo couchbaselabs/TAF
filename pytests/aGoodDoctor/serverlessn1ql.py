@@ -31,13 +31,6 @@ queries = ['select name from {} where age between 30 and 50 limit 100;',
            'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 100;',
            'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 100;']
 
-auto_scale_queries = ['select AVG(age) from {} where age between 30 and 50;',
-                      'select body from {} where body is not null and age between 0 and 50;',
-                      'select age, count(*) from {} where marital = "M" group by age;',
-                      'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" and animal is not null;',
-                      'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END;',
-                      'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING;']
-
 indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "defer_build": true}};',
            'create index {}{} on {}(body) where age between 0 and 50 WITH {{ "defer_build": true}};',
            'create index {}{} on {}(marital,age) WITH {{ "defer_build": true}};',
@@ -45,7 +38,7 @@ indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "de
            'CREATE INDEX {}{} ON {}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true}};',
            'create index {}{} on {}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true}};']
 
-auto_scale_indexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) USING GSI WITH {{ "defer_build": true}};',
+HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) USING GSI WITH {{ "defer_build": true}};',
                       'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) USING GSI WITH {{ "defer_build": true}};',
                       'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`) USING GSI WITH {{ "defer_build": true}};',
                       'CREATE INDEX {}{} ON {}(`price`,`city`,`name`) USING GSI WITH {{ "defer_build": true}};',
@@ -56,7 +49,7 @@ auto_scale_indexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`rati
                       'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) USING GSI WITH {{ "defer_build": true}};',
                       'CREATE INDEX {}{} ON {}(DISTINCT ARRAY FLATTEN_KEYS(`r`.`author`,`r`.`ratings`.`Cleanliness`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `country`, `email`, `free_parking`) USING GSI WITH {{ "defer_build": true}};']
 
-auto_scale_queries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end)",
+HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end)",
                       "select avg(price) as AvgPrice, min(price) as MinPrice, max(price) as MaxPrice from {} where free_breakfast=True and free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' group by country",
                       "select city,country,count(*) from {} where free_breakfast=True and free_parking=True group by country,city order by country,city",
                       "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE price IS NOT NULL GROUP BY city) SELECT h.name, h.price FROM {0} h JOIN city_avg ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.price IS NOT NULL",
@@ -171,8 +164,8 @@ class DoctorN1QL():
                             continue
                         if i < b.loadDefn.get("2i")[0]:
                             indexType = indexes
-                            if b.loadDefn.get("type") == "gsi_auto_scale":
-                                indexType = auto_scale_indexes
+                            if b.loadDefn.get("valType") == "Hotel":
+                                indexType = HotelIndexes
                             self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
                             b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
                             retry = 5
@@ -191,8 +184,8 @@ class DoctorN1QL():
                                     return False
                             i += 1
                         if q < b.loadDefn.get("2i")[1]:
-                            if b.loadDefn.get("type") == "gsi_auto_scale":
-                                b.queries.append((auto_scale_queries[q % len(indexType)].format(c), self.sdkClients[b.name+s]))
+                            if b.loadDefn.get("valType") == "Hotel":
+                                b.queries.append((HotelQueries[q % len(indexType)].format(c), self.sdkClients[b.name+s]))
                             else:
                                 b.queries.append((queries[q % len(indexType)].format(c), self.sdkClients[b.name+s]))
                             q += 1
@@ -501,10 +494,6 @@ class QueryLoad:
         th = threading.Thread(target=self._run_concurrent_queries,
                               kwargs=dict(bucket=self.bucket))
         th.start()
-
-        monitor = threading.Thread(target=self.monitor_query_status,
-                                   kwargs=dict(print_duration=600))
-        monitor.start()
 
     def stop_query_load(self):
         self.stop_run = True
