@@ -26,6 +26,79 @@ class StatsBasicOps(CollectionBase):
         server_services = services_map[key]
         return server_services
 
+    def get_warmup_stat_dict(self, content):
+        warmup_stat_dict = dict()
+
+        for line in content:
+            line = line.strip("\n")
+
+            if line.startswith('kv_ep_warmup_status') :
+                substr_list = line.split(" ")
+                bucket_state_str = substr_list[0]
+                warmup_value = float(substr_list[1])
+                timestamp = float(substr_list[2])
+
+                sub_str1 = "bucket"
+                sub_str2 = ","
+                idx1 = bucket_state_str.index(sub_str1)
+                idx2 = bucket_state_str.index(sub_str2)
+                bucket_name = bucket_state_str[idx1 + len(sub_str1) + 2: idx2-1]
+
+                sub_str1 = "state"
+                sub_str2 = "}"
+                idx1 = bucket_state_str.index(sub_str1)
+                idx2 = bucket_state_str.index(sub_str2)
+                state_name = bucket_state_str[idx1 + len(sub_str1) + 2: idx2-1]
+
+                if not warmup_stat_dict.has_key(bucket_name):
+                    warmup_stat_dict[bucket_name] = dict()
+                warmup_stat_dict[bucket_name][state_name] = warmup_value
+        return warmup_stat_dict
+
+    def validate_warmup_stat(self, content):
+        warmup_stat_dict = self.get_warmup_stat_dict(content)
+        states_to_validate = ['Initialize','CreateVBuckets',
+                            'LoadingCollectionCounts','EstimateDatabaseItemCount',
+                            'LoadPreparedSyncWrites','PopulateVBucketMap',
+                            'KeyDump','LoadingAccessLog','CheckForAccessLog',
+                            'LoadingKVPairs','LoadingData','Done']
+        for bucket in self.cluster.buckets:
+            if not warmup_stat_dict.has_key(bucket.name):
+                self.fail("Warmup stats for {0} bucket not returned"
+                    .format(bucket.name))
+            bucket_states = warmup_stat_dict[bucket.name].keys()
+            for state in states_to_validate:
+                if not (state in bucket_states):
+                    self.fail("Warmup state {0} not present for bucket {1}"
+                        .format(state,bucket.name))
+                if state == "Done":
+                    result = (warmup_stat_dict[bucket.name][state] == 1.0)
+                    self.assertTrue(result,
+                        "State value {0} does not match expected value {1}"
+                        .format(warmup_stat_dict[bucket.name][state], 1.0))
+                else:
+                    result = (warmup_stat_dict[bucket.name][state] == 0.0)
+                    self.assertTrue(result,
+                        "State value {0} does not match expected value {1}"
+                        .format(warmup_stat_dict[bucket.name][state], 0.0))
+
+    def test_check_warmup_stat(self):
+
+        component = self.input.param("component","kv")
+        parse = self.input.param("parse",False)
+
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
+        for server in self.cluster.servers[:self.nodes_init]:
+            content = StatsHelper(server).get_prometheus_metrics(
+                component=component)
+            if not parse:
+                StatsHelper(server)._validate_metrics(content)
+        self.log.info("Content : ")
+        for line in content:
+            print(line.strip("\n"))
+        self.validate_warmup_stat(content)
+
     def test_check_low_cardinality_metrics(self):
         """
         Check if _prometheusMetrics returns low cardinality metrics by default
