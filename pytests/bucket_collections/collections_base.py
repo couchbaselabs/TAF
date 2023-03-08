@@ -172,7 +172,9 @@ class CollectionBase(ClusterSetup):
         if test_obj.bucket_dedup_retention_bytes is None \
                 and test_obj.bucket_dedup_retention_seconds is None:
             return
-        test_obj.log.info("Loading initial historical dedupe data")
+        update_itr = test_obj.input.param("dedupe_update_itrs", 1)
+        test_obj.log.info("Loading initial dedupe data. Total itr:: {0}"
+                          .format(update_itr))
         for bucket in test_obj.cluster.buckets:
             if bucket.storageBackend != Bucket.StorageBackend.magma:
                 continue
@@ -203,9 +205,9 @@ class CollectionBase(ClusterSetup):
             test_obj.cluster.master, test_obj.cluster.buckets)
         test_obj.assertTrue(result, "History setting validation failed")
         # Create history docs on disks
-        test_obj.mutate_history_retention_data(
+        CollectionBase.mutate_history_retention_data(
             test_obj, doc_key="test_collections", update_percent=1,
-            update_itrs=10000)
+            update_itrs=update_itr)
 
     @staticmethod
     def get_history_retention_load_spec(test_obj, doc_key="test_collections",
@@ -233,7 +235,8 @@ class CollectionBase(ClusterSetup):
         cont_doc_load = None
         if test_obj.bucket_dedup_retention_seconds is not None \
                 or test_obj.bucket_dedup_retention_bytes is not None:
-            update_percent, update_itr = 2, 10000
+            update_percent = 2
+            update_itr = test_obj.input.param("dedupe_update_itrs", 3)
             if async_load:
                 update_itr = -1
             test_obj.log.info("Starting dedupe updates load ({0}, {1})"
@@ -241,8 +244,9 @@ class CollectionBase(ClusterSetup):
             load_spec = CollectionBase.get_history_retention_load_spec(
                 test_obj, doc_key="hist_retention_docs",
                 update_percent=update_percent, update_itrs=update_itr)
-            CollectionBase.over_ride_doc_loading_template_params(test_obj, load_spec)
-            test_obj.set_retry_exceptions(load_spec)
+            CollectionBase.over_ride_doc_loading_template_params(test_obj,
+                                                                 load_spec)
+            CollectionBase.set_retry_exceptions(test_obj, load_spec)
 
             cont_doc_load = test_obj.bucket_util.run_scenario_from_spec(
                 test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
@@ -329,22 +333,6 @@ class CollectionBase(ClusterSetup):
             test_obj.cluster, buckets_spec)
         test_obj.bucket_util.wait_for_collection_creation_to_complete(
             test_obj.cluster)
-
-        # CDC handling
-        if test_obj.bucket_storage == Bucket.StorageBackend.magma:
-            num_buckets_with_cdc = \
-                test_obj.input.param("num_buckets_to_enable_cdc", 0)
-            num_scopes_with_cdc = \
-                test_obj.input.param("num_scopes_per_bucket_with_cdc", 1)
-            set_hist_retention = \
-                test_obj.bucket_util.set_history_retention_for_collection
-            for bucket in test_obj.cluster.buckets[:num_buckets_with_cdc]:
-                scopes = sample(bucket.scopes.keys(), num_scopes_with_cdc)
-                for s_name in scopes:
-                    for c_name, col in bucket.scopes[
-                            s_name].collections.items():
-                        set_hist_retention(test_obj.cluster.master, bucket,
-                                           s_name, c_name, "true")
 
         # Prints bucket stats before doc_ops
         test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
