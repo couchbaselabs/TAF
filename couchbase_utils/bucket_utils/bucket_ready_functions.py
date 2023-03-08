@@ -5339,36 +5339,41 @@ class BucketUtils(ScopeUtils):
                 for r_stat in stats[replica]:
                     if r_stat[high_seqno] != stats[active][high_seqno]:
                         result = False
-                        self.log.critical("vb_%s, replica high_seqno mismatch"
-                                          % vb_num)
+                        self.log.critical(
+                            "{0} - vb_{1}, replica high_seqno mismatch, "
+                            "Replica::{2} != Active::{3}"
+                            .format(index, vb_num, r_stat[high_seqno],
+                                    stats[active][high_seqno]))
                     if r_stat[hist_start_seqno] != stats[active][hist_start_seqno]:
                         result = False
                         self.log.critical(
-                            "vb_%s, replica hist_start_seqno mismatch"
-                            % vb_num)
-            if result is False:
-                self.log.critical("Loop Index: {0} - {1}".format(index, stat))
+                            "{0} - vb_{1}, replica hist_start_seqno mismatch, "
+                            "Replica::{2} != Active::{3}"
+                            .format(index, vb_num, r_stat[hist_start_seqno],
+                                    stats[active][hist_start_seqno]))
         if no_history_preserved:
             for vb_num, stats in curr_stats.items():
                 active_stats = stats[active]
                 if active_stats[hist_start_seqno] != 0:
                     result = False
-                    self.log.critical("vb_%s history_start_seqno != 0"
-                                      % vb_num)
+                    self.log.critical("vb_%s history_start_seqno != {0}"
+                                      .format(vb_num))
         elif comparison == "==":
             for vb_num, stats in prev_stat.items():
                 active_stats = stats[active]
                 if active_stats[hist_start_seqno] \
                         != curr_stats[vb_num][active][hist_start_seqno]:
                     result = False
-                    self.log.critical("vb_%s history_start_seqno mismatch"
-                                      % vb_num)
+                    self.log.critical("vb_{0} history_start_seqno mismatch"
+                                      .format(vb_num))
         elif comparison == ">":
             for vb_num, stats in prev_stat.items():
-                active_stats = stats[active]
-                if active_stats[hist_start_seqno] \
-                        <= curr_stats[vb_num][active][hist_start_seqno]:
+                prev_active_stats = stats[active]
+                if prev_active_stats[hist_start_seqno] \
+                        > curr_stats[vb_num][active][hist_start_seqno]:
                     result = False
-                    self.log.critical("vb_%s history_start_seqno <= prev_stat"
-                                      % vb_num)
+                    self.log.critical(
+                        "vb_{0} hist_start_seqno, prev::{1} <= curr::{2}"
+                        .format(vb_num, prev_active_stats[hist_start_seqno],
+                                curr_stats[vb_num][active][hist_start_seqno]))
         return result

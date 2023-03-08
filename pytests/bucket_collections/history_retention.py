@@ -1115,11 +1115,13 @@ class DocHistoryRetention(ClusterSetup):
         self.assertTrue(doc_loading_task.result, "Loading failed")
         self.validate_retention_settings_on_all_nodes()
         curr_stats = self.bucket_util.get_vb_details_for_bucket(
-            bucket, self.cluster.nodes_in_cluster)
+            bucket, self.cluster_util.get_kv_nodes(self.cluster))
+        comparison = ">"
         if self.bucket_dedup_retention_seconds == 86400:
             comparison = "=="
-        self.bucket_util.validate_history_start_seqno_stat(
+        result = self.bucket_util.validate_history_start_seqno_stat(
             prev_stats, curr_stats, comparison)
+        self.assertTrue(result, "History stat validation failed")
 
     def test_intra_cluster_xdcr(self):
         """
