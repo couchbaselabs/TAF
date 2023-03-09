@@ -165,3 +165,42 @@ class CreateBucketTests(ClusterSetup):
             error["numVbuckets"],
             "Support for variable number of vbuckets is not enabled",
             "Invalid error message")
+
+    def test_create_collections_validate_history_stat(self):
+        """
+        1. Create a default bucket
+        2. Create multiple collections in the bucket
+        3. Validate history stats
+        Ref - MB-55555
+        """
+        bucket_name = "default"
+        num_collections = 5
+
+        self.bucket_storage = Bucket.StorageBackend.couchstore
+
+        self.create_bucket(self.cluster,bucket_name=bucket_name)
+        self.log.info("Bucket with name : {0} "
+                      "type : {1} "
+                      "replicas : {2} "
+                      "storage : couchstore "
+                      "created"
+                      .format(bucket_name,
+                              self.bucket_type,
+                              self.num_replicas))
+
+        for i in range(num_collections):
+            collection_name = "collection_{0}".format(i)
+            self.bucket_util.create_collection(self.cluster.master,
+                                               self.cluster.buckets[0],
+                                               CbServer.default_scope,
+                                               {"name":collection_name})
+            self.log.info("Collection {0} created".format(collection_name))
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        result = self.bucket_util.validate_history_retention_settings(self.cluster.master,
+                                                                      self.cluster.buckets[0])
+        self.assertTrue(result,
+                        "History field in stats could not be validated")
+        self.log.info("History field in stats validated successfully")

@@ -1219,7 +1219,9 @@ class CollectionUtils(DocLoaderUtils):
 
         # If collection already dropped with same name use it or create one
         if "history" not in collection_spec.keys():
-            collection_spec["history"] = bucket.historyRetentionCollectionDefault
+            collection_spec["history"] = \
+                bucket.historyRetentionCollectionDefault \
+                    if bucket.storageBackend == Bucket.StorageBackend.magma else "false"
         if collection:
             Collection.recreated(collection, collection_spec)
         else:
@@ -3175,22 +3177,35 @@ class BucketUtils(ScopeUtils):
         cb_stat = Cbstats(kv_node)
         if not isinstance(buckets, list):
             buckets = [buckets]
+        self.log.debug("Validating history retention settings on node {0}"
+                       .format(kv_node.ip))
         for bucket in buckets:
             stat = cb_stat.all_stats(bucket.name)
-            if int(stat["ep_history_retention_bytes"]) \
-                    != bucket.historyRetentionBytes:
-                result = False
-                self.log.critical("Hist retention bytes mismatch. "
-                                  "Expected: %s, Actual: %s"
-                                  % (bucket.historyRetentionBytes,
-                                     stat["ep_history_retention_bytes"]))
-            if int(stat["ep_history_retention_seconds"]) \
-                    != bucket.historyRetentionSeconds:
-                result = False
-                self.log.critical("Hist retention seconds mismatch. "
-                                  "Expected: %s, Actual: %s"
-                                  % (bucket.historyRetentionSeconds,
-                                     stat["ep_history_retention_seconds"]))
+            if bucket.storageBackend != Bucket.StorageBackend.magma:
+                for s_field in ["ep_history_retention_bytes",
+                                "ep_history_retention_seconds"]:
+                    if s_field in stat:
+                        result = False
+                        self.log.critical("Field {0} present in all_stats"
+                                          .format(s_field))
+            else:
+                self.log.debug("Hist. retention bytes={0}, seconds={1}"
+                               .format(stat["ep_history_retention_bytes"],
+                                       stat["ep_history_retention_seconds"]))
+                if int(stat["ep_history_retention_bytes"]) \
+                        != bucket.historyRetentionBytes:
+                    result = False
+                    self.log.critical("Hist retention bytes mismatch. "
+                                      "Expected: {0}, Actual: {1}"
+                                      .format(bucket.historyRetentionBytes,
+                                              stat["ep_history_retention_bytes"]))
+                if int(stat["ep_history_retention_seconds"]) \
+                        != bucket.historyRetentionSeconds:
+                    result = False
+                    self.log.critical("Hist retention seconds mismatch. "
+                                      "Expected: {0}, Actual: {1}"
+                                      .format(bucket.historyRetentionSeconds,
+                                              stat["ep_history_retention_seconds"]))
 
             stat = cb_stat.get_collections(bucket)
             for s_name, scope in bucket.scopes.items():
