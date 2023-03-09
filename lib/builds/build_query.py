@@ -502,8 +502,8 @@ class BuildQuery(object):
                     couchbase_server-enterprise-windows-amd64-3.5.0-926.exe
                     couchbase-server-enterprise_3.5.0-952-windows_amd64.exe"""
 
-            if any(x + "-" in build_info for x in CB_RELEASE_BUILDS.keys()):
-                deb_words = ["debian7", "debian8", "ubuntu12.04", "ubuntu14.04",
+            if any( x + "-" in build_info for x in CB_RELEASE_BUILDS.keys()):
+                deb_words = ["debian7", "debian8", "debian10", "ubuntu12.04", "ubuntu14.04",
                              "ubuntu16.04", "windows", "macos"]
                 if "centos" not in build_info and "suse" not in build_info:
                     tmp_str = build_info.split("_")
@@ -717,6 +717,9 @@ class BuildQuery(object):
                 elif "debian gnu/linux 9" in distribution_version:
                     build.distribution_version = "debian9"
                     os_name = "debian9"
+                elif "debian 10" in distribution_version:
+                    build.distribution_version = "debian10"
+                    os_name = "debian10"
                 elif "windows" in distribution_version:
                     os_name = "windows"
                     if "x86_64" not in architecture_type:
