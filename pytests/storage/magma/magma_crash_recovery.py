@@ -203,46 +203,44 @@ class MagmaCrashTests(MagmaBaseTest):
         wait_warmup = self.input.param("wait_warmup", True)
         self.log.info("====test_crash_during_dedupe starts====")
         count = 1
+        self.generate_docs(doc_ops="update", update_start=0,
+                               update_end=self.init_items_per_collection)
         while count < self.test_itr + 1:
             self.PrintStep("Step 2.{} ==> Update {} items/collections".format(count, self.init_items_per_collection))
-            self.generate_docs(doc_ops="update", update_start=0,
-                               update_end=self.init_items_per_collection)
-            for collection in self.collections:
-                self.loadgen_docs(_sync=True, doc_ops="update",
-                                  retry_exceptions=self.retry_exceptions,
-                                  collection=collection)
+            for scope in self.scopes:
+                for collection in self.collections:
+                    self.loadgen_docs(_sync=True, doc_ops="update",
+                                      retry_exceptions=self.retry_exceptions,
+                                      collection=collection)
             count += 1
 
         self.compute_docs_ranges()
         self.batch_size=500
         self.process_concurrency=1
-
         tasks_info = dict()
-        for collection in self.collections:
-            if collection == "_default":
-                continue
-            self.generate_docs(doc_ops="update", update_end=10000, update_start=0,
-                               target_vbucket=None)
-            self.batch_size=500
-            self.process_concurrency=1
-            tem_tasks_info = self.loadgen_docs(
-                self.retry_exceptions,
-                self.ignore_exceptions,
-                scope=CbServer.default_scope,
-                collection=collection,
-                suppress_error_table=True,
-                skip_read_on_error=True,
-                _sync=False,
-                doc_ops="update",
-                track_failures=False,
-                sdk_retry_strategy=self.sdk_retry_strategy,
-                iterations=self.dedupe_iterations)
-            tasks_info.update(tem_tasks_info.items())
+        self.generate_docs(doc_ops="update", update_end=10000, update_start=0,
+                           target_vbucket=None)
+        for scope in self.scopes:
+            for collection in self.collections:
+                tem_tasks_info = self.loadgen_docs(
+                    self.retry_exceptions,
+                    self.ignore_exceptions,
+                    scope=scope,
+                    collection=collection,
+                    suppress_error_table=True,
+                    skip_read_on_error=True,
+                    _sync=False,
+                    doc_ops="update",
+                    track_failures=False,
+                    sdk_retry_strategy=self.sdk_retry_strategy,
+                    iterations=self.dedupe_iterations)
+                tasks_info.update(tem_tasks_info.items())
 
         self.crash_th = threading.Thread(target=self.crash,
                                          kwargs=dict(graceful=self.graceful,
                                                      wait=wait_warmup))
         self.crash_th.start()
+
         if self.num_collections_to_drop:
             self.drop_collection_th = threading.Thread(target=self.drop_recreate_collections,
                                                        kwargs=dict(num_collections_to_drop=self.num_collections_to_drop))
@@ -251,8 +249,10 @@ class MagmaCrashTests(MagmaBaseTest):
             self.task_manager.get_task_result(task)
 
         self.stop_crash = True
+
         if self.num_collections_to_drop:
             self.drop_collection_th.join()
+
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
         for node in self.cluster.nodes_in_cluster:

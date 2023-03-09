@@ -540,7 +540,7 @@ class MagmaBaseTest(StorageBase):
 
             while not self.stop_enable_disable_history:
                 self.loop_itr += 1
-                sleep = random.randint(90, 120)
+                sleep = random.randint(10, 20)
                 self.sleep(sleep,
                            "Iteration:{} waiting for {} sec to disable history retention".
                            format(self.loop_itr, sleep))
@@ -556,7 +556,7 @@ class MagmaBaseTest(StorageBase):
                 if self.crash_during_enable_disable_history:
                     induce_crash()
 
-                sleep = random.randint(30, 60)
+                sleep = random.randint(5, 10)
                 self.sleep(sleep,
                            "Iteration:{} waiting for {} sec to enable history retention".
                            format(self.loop_itr, sleep))
@@ -632,7 +632,6 @@ class MagmaBaseTest(StorageBase):
                 magma = magma_path.format(shard)
                 kvstores, _ = shell.execute_command("ls {} | grep kvstore".format(magma))
                 cmd = '/opt/couchbase/bin/magma_dump {}'.format(magma)
-                self.log.info("kvstores {}".format(kvstores))
                 for kvstore in kvstores:
                     dump = cmd
                     kvstore_num = kvstore.split("-")[1].strip()
