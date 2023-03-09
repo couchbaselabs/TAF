@@ -911,7 +911,9 @@ class CollectionUtils(DocLoaderUtils):
 
         # If collection already dropped with same name use it or create one
         if "history" not in collection_spec.keys():
-            collection_spec["history"] = bucket.historyRetentionCollectionDefault
+            collection_spec["history"] = \
+                bucket.historyRetentionCollectionDefault \
+                    if bucket.storageBackend == Bucket.StorageBackend.magma else "false"
         if collection:
             Collection.recreated(collection, collection_spec)
         else:
