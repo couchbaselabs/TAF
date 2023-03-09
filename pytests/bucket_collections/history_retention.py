@@ -113,7 +113,9 @@ class DocHistoryRetention(ClusterSetup):
 
         populate_stats(bucket, stat_data["after_ops"])
         history = False
-        if bucket.scopes[scope].collections[collection].history == "true":
+        if bucket.scopes[scope].collections[collection].history == "true" \
+                and (bucket.historyRetentionSeconds != 0
+                     or bucket.historyRetentionBytes != 0):
             history = True
         self.log.info("%s:%s:%s, History: %s"
                       % (bucket.name, scope, collection, history))
@@ -143,6 +145,16 @@ class DocHistoryRetention(ClusterSetup):
                 self.assertNotEqual(dedupe_before, dedupe_after,
                                     "%s: No Dedupe" % t_ip)
 
+        self.log.debug("total_dcp_items_sent={0}, "
+                       "expected_dcp_items_to_send={1}, "
+                       "total_enqueued={2}, "
+                       "total_persisted={3}, "
+                       "exp_dcp_items={4}"
+                       .format(total_dcp_items_sent,
+                               expected_dcp_items_to_send,
+                               total_enqueued,
+                               total_persisted,
+                               expected_dcp_items_to_send + num_mutations))
         if history:
             self.assertEqual(
                 expected_dcp_items_to_send, total_dcp_items_sent,
@@ -579,8 +591,8 @@ class DocHistoryRetention(ClusterSetup):
             s_name, c_name = scope_col
             self.log.info("Disable history for %s::%s" % (s_name, c_name))
             self.bucket_util.update_history_for_collection(
-                bucket, s_name, c_name, history=False)
-            bucket.scopes[s_name].collections[c_name].history = False
+                bucket, s_name, c_name, history="false")
+            bucket.scopes[s_name].collections[c_name].history = "false"
 
         self.run_data_ops_on_individual_collection(bucket)
         for scope_col in selected_cols:
@@ -588,6 +600,7 @@ class DocHistoryRetention(ClusterSetup):
             self.log.info("Drop collection %s::%s" % (s_name, c_name))
             self.bucket_util.drop_collection(self.cluster.master, bucket,
                                              s_name, c_name)
+        self.validate_retention_settings_on_all_nodes()
 
     def test_update_retention_size_time_with_collections_disabled(self):
         """
