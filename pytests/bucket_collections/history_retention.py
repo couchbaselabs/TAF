@@ -69,8 +69,6 @@ class DocHistoryRetention(ClusterSetup):
 
     def __set_history_retention_for_scope(self, bucket, scope, history):
         for c_name, col in scope.collections.items():
-            if c_name == CbServer.default_collection:
-                continue
             self.bucket_util.set_history_retention_for_collection(
                 self.cluster.master, bucket, scope.name, c_name, history)
 
@@ -99,6 +97,7 @@ class DocHistoryRetention(ClusterSetup):
         stat_data["before_ops"] = dict()
         stat_data["after_ops"] = dict()
 
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
         populate_stats(bucket, stat_data["before_ops"])
 
         num_items = 1000
@@ -329,8 +328,6 @@ class DocHistoryRetention(ClusterSetup):
                     history_retention_seconds=0, history_retention_bytes=0)
                 for s_name, scope in bucket.scopes.items():
                     for c_name, col in scope.collections.items():
-                        if c_name == CbServer.default_collection:
-                            continue
                         self.bucket_util.set_history_retention_for_collection(
                             self.cluster.master, bucket, s_name, c_name,
                             "false")
