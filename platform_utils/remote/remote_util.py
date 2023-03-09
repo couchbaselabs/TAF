@@ -2055,7 +2055,7 @@ class RemoteMachineShellConnection:
                                                              '\-- -noinput -detached '
                                                              % LINUX_NONROOT_CB_BIN_PATH)
                 else:
-                    self.install_missing_lib()
+                    # self.install_missing_lib()
                     if force:
                         output, error = self.execute_command('{0}dpkg --force-all -i /tmp/{1}' \
                                                              .format(environment, build.name),
