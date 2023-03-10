@@ -6381,15 +6381,33 @@ class FailoverTask(Task):
         self.use_hostnames = use_hostnames
         self.allow_unsafe = allow_unsafe
         self.all_at_once = all_at_once
+        self.otp_nodes_to_fo = list()
+        self.rest = RestConnection(self.servers[0])
 
     def call(self):
         self.start_task()
+        for server in self.to_failover:
+            for node in self.rest.node_statuses():
+                if (server.hostname if self.use_hostnames else server.ip) == node.ip \
+                        and int(server.port) == int(node.port):
+                    self.otp_nodes_to_fo.append(node.id)
+        self.test_log.debug("Failing over {0} with graceful={1}"
+                            .format(self.otp_nodes_to_fo, self.graceful))
         try:
             self._failover_nodes()
-            self.test_log.debug(
-                "{0} seconds sleep after failover for nodes to go pending...."
-                .format(self.wait_for_pending))
-            self.sleep(self.wait_for_pending, log_type="infra")
+            rest = RestConnection(self.servers[0])
+            timeout = 300
+            all_nodes_foed = False
+            while timeout > 0 and all_nodes_foed is False:
+                all_nodes_foed = True
+                for otp_node in self.otp_nodes_to_fo:
+                    for nodes in rest.get_pools_default()["nodes"]:
+                        if nodes["otpNode"] == otp_node:
+                            if nodes["clusterMembership"] != "inactiveFailed":
+                                all_nodes_foed = False
+                            break
+                self.sleep(5, message="Wait for nodes to be marked as failed over", log_type="infra")
+                timeout -= 5
             self.set_result(True)
             self.complete_task()
 
@@ -6398,39 +6416,20 @@ class FailoverTask(Task):
             self.set_exception(e)
 
     def _failover_nodes(self):
-        rest = RestConnection(self.servers[0])
-
         # call REST fail_over for the nodes to be failed over all at once
         if self.all_at_once:
-            otp_nodes = list()
-            for server in self.to_failover:
-                for node in rest.node_statuses():
-                    if (
-                            server.hostname if self.use_hostnames else server.ip) == node.ip and int(
-                        server.port) == int(node.port):
-                        otp_nodes.append(node.id)
-            self.test_log.debug(
-                "Failing over {0} with graceful={1}"
-                    .format(otp_nodes, self.graceful))
-            result = rest.fail_over(otp_nodes, self.graceful,
-                                    self.allow_unsafe, self.all_at_once)
+            result = self.rest.fail_over(self.otp_nodes_to_fo, self.graceful,
+                                         self.allow_unsafe, self.all_at_once)
             if not result:
                 self.set_exception("Node failover failed!!")
         else:
             # call REST fail_over for the nodes to be failed over one by one
-            for server in self.to_failover:
-                for node in rest.node_statuses():
-                    if (
-                            server.hostname if self.use_hostnames else server.ip) == node.ip and int(
-                        server.port) == int(node.port):
-                        self.test_log.debug(
-                            "Failing over {0}:{1} with graceful={2}"
-                                .format(node.ip, node.port, self.graceful))
-                        result = rest.fail_over(node.id, self.graceful,
-                                                self.allow_unsafe)
-                        if not result:
-                            self.set_exception("Node failover failed!!")
-        rest.monitorRebalance()
+            for otp_node in self.otp_nodes_to_fo:
+                result = self.rest.fail_over(otp_node, self.graceful,
+                                             self.allow_unsafe)
+                if not result:
+                    self.set_exception("Node failover failed!!")
+        self.rest.monitorRebalance()
 
 
 class BucketFlushTask(Task):
