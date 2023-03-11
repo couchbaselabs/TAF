@@ -161,7 +161,7 @@ class CollectionBase(ClusterSetup):
             test_obj.cluster.master, test_obj.cluster.buckets)
         test_obj.assertTrue(result, "History setting validation failed")
         # Create history docs on disks
-        test_obj.mutate_history_retention_data(
+        CollectionBase.mutate_history_retention_data(
             test_obj, doc_key="test_collections", update_percent=1,
             update_itrs=update_itr)
 
@@ -200,8 +200,9 @@ class CollectionBase(ClusterSetup):
             load_spec = CollectionBase.get_history_retention_load_spec(
                 test_obj, doc_key="hist_retention_docs",
                 update_percent=update_percent, update_itrs=update_itr)
-            CollectionBase.over_ride_doc_loading_template_params(test_obj, load_spec)
-            test_obj.set_retry_exceptions(load_spec)
+            CollectionBase.over_ride_doc_loading_template_params(test_obj,
+                                                                 load_spec)
+            CollectionBase.set_retry_exceptions(test_obj, load_spec)
 
             cont_doc_load = test_obj.bucket_util.run_scenario_from_spec(
                 test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
@@ -471,6 +472,7 @@ class CollectionBase(ClusterSetup):
             retry_exceptions.append(SDKException.DurabilityAmbiguousException)
             retry_exceptions.append(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
+
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
             self.bucket_util.get_crud_template_from_package("initial_load")

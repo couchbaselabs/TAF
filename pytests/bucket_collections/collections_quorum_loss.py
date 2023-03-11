@@ -19,6 +19,7 @@ class CollectionsQuorumLoss(CollectionBase):
         self.failover_orchestrator = self.input.param("failover_orchestrator", False)
         self.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
         self.create_zones = self.input.param("create_zones", False)
+        self.skip_validations = self.input.param("skip_validations", True)
         self.data_path = RestConnection(self.cluster.master).get_data_path()
 
     def tearDown(self):

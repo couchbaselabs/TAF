@@ -32,6 +32,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.data_load_flag = False  # When to start/stop drop/recreate
         self.data_loading_thread = None
         self.data_load_exception = None # Object variable to assign data load thread's exception
+        self.skip_validations = self.input.param("skip_validations", True)
         self.N1qltxn = self.input.param("N1ql_txn", False)
         if self.N1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
