@@ -55,6 +55,67 @@ class StatsBasicOps(CollectionBase):
                 warmup_stat_dict[bucket_name][state_name] = warmup_value
         return warmup_stat_dict
 
+    def get_conflict_stat_dict(self,content):
+        conflict_stat_dict = dict()
+
+        for line in content:
+            line = line.strip("\n")
+
+            if line.startswith('kv_conflicts_resolved') :
+                substr_list = line.split(" ")
+                bucket_state_str = substr_list[0]
+                stat_value = float(substr_list[1])
+                timestamp = float(substr_list[2])
+
+                sub_str1 = "bucket"
+                sub_str2 = ","
+                idx1 = bucket_state_str.index(sub_str1)
+                idx2 = bucket_state_str.index(sub_str2)
+                bucket_name = bucket_state_str[idx1 + len(sub_str1) + 2: idx2-1]
+
+                sub_str1 = "op"
+                sub_str2 = "result"
+                idx1 = bucket_state_str.index(sub_str1)
+                idx2 = bucket_state_str.index(sub_str2)
+                op_name = bucket_state_str[idx1 + len(sub_str1) + 2: idx2-2]
+
+                sub_str1 = "result"
+                sub_str2 = "}"
+                idx1 = bucket_state_str.index(sub_str1)
+                idx2 = bucket_state_str.index(sub_str2)
+                result_name = bucket_state_str[idx1 + len(sub_str1) + 2: idx2-1]
+
+                if not conflict_stat_dict.has_key(bucket_name):
+                    conflict_stat_dict[bucket_name] = dict()
+                if not conflict_stat_dict[bucket_name].has_key(result_name):
+                    conflict_stat_dict[bucket_name][result_name] = dict()
+                conflict_stat_dict[bucket_name][result_name][op_name] = stat_value
+
+        return conflict_stat_dict
+
+    def validate_kv_coflicts_resolution_stat(self, content):
+        conflict_stat_dict = self.get_conflict_stat_dict(content)
+        results_to_validate = ['accepted','rejected_identical','rejected_behind']
+
+        for bucket in self.cluster.buckets:
+            if not conflict_stat_dict.has_key(bucket.name):
+                self.fail("KV conflicts resolution stat not returned \
+                          for bucket {0}".format(bucket.name))
+            bucket_conflict_result_states = conflict_stat_dict[bucket.name].keys()
+            for state in results_to_validate:
+                if state not in bucket_conflict_result_states:
+                    self.fail("Conflict resolution result state {0} not \
+                              returned for bucket {1}".format(state,bucket.name))
+                op_for_result_state = conflict_stat_dict[bucket.name][state]
+                if "set" not in op_for_result_state:
+                    self.fail("Stat for set op not returned for kv \
+                              conflict result state {0}, bucket: {1}"
+                              .format(state,bucket.name))
+                if "del" not in op_for_result_state:
+                    self.fail("Stat for del op not returned for kv \
+                              conflict result state {1}, bucket: {1}"
+                              .format(state,bucket.name))
+
     def validate_warmup_stat(self, content):
         warmup_stat_dict = self.get_warmup_stat_dict(content)
         states_to_validate = ['Initialize','CreateVBuckets',
@@ -98,6 +159,7 @@ class StatsBasicOps(CollectionBase):
         for line in content:
             print(line.strip("\n"))
         self.validate_warmup_stat(content)
+        self.validate_kv_coflicts_resolution_stat(content)
 
     def test_check_low_cardinality_metrics(self):
         """
