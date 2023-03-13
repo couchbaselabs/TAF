@@ -156,6 +156,8 @@ class N2nEncryptionX509(CollectionBase):
 
     def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
+        if not task.result:
+            self.task.jython_task_manager.abort_all_tasks()
         self.assertTrue(task.result, "Rebalance Failed")
 
     def async_data_load(self):
