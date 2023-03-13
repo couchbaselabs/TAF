@@ -26,7 +26,6 @@ from CbasLib.cbas_entity import Dataverse, CBAS_Scope, Link, Dataset, \
 from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
 from common_lib import sleep
 from Queue import Queue
-from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
@@ -764,9 +763,14 @@ class Link_Util(Dataverse_Util):
         :param analytics_timeout int, analytics query timeout
         """
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
-        self.log.info(
-            "Creating link - {0}.{1} in region {2}".format(
-                link_properties["dataverse"], link_properties["name"],link_properties["region"]))
+        if "region" in link_properties:
+            self.log.info(
+                "Creating link - {0}.{1} in region {2}".format(
+                    link_properties["dataverse"], link_properties["name"],link_properties["region"]))
+        else:
+            self.log.info(
+                "Creating link - {0}.{1}".format(
+                    link_properties["dataverse"], link_properties["name"]))
         exists = False
         if create_if_not_exists:
             exists = self.validate_link_in_metadata(
@@ -3657,7 +3661,57 @@ class UDFUtil(Index_Util):
         return udfs_created
 
 
-class CbasUtil(UDFUtil):
+class CBOUtil(UDFUtil):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
+        super(CBOUtil, self).__init__(server_task)
+
+    """
+    Method creates samples on collection specified. 
+    """
+    def create_sample_for_analytics_collections(self, cluster, collection_name, sample_size="low", sample_seed=0):
+
+        cmd = "ANALYZE ANALYTICS COLLECTION %s" % collection_name
+        if sample_seed > 0:
+            cmd += " WITH {\"sample\":\"{0}\",\"sample-seed\":{1}}".format(sample_size, sample_seed)
+        cmd += ";"
+
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(cluster, cmd)
+        if status != "success":
+            return False
+        else:
+            return True
+
+    """
+    Method drops any existing sample created on collection specified.
+    """
+    def drop_sample_for_analytics_collections(self, cluster, collection_name):
+        cmd = "ANALYZE ANALYTICS COLLECTION %s DROP STATISTICS;" % collection_name
+
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(cluster, cmd)
+        if status != "success":
+            return False
+        else:
+            return True
+
+    def verify_sample_present_in_Metadata(self, cluster, dataset_name, dataverse_name=None):
+        query = "select count(*) from Metadata.`Index` where IsPrimary=false and IndexStructure=\"SAMPLE\" and DatasetName= \"%s\"" % dataset_name
+        if dataverse_name:
+            query += " and DataverseName=\"%s\"" % CBASHelper.metadata_format(dataverse_name)
+        query += ";"
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(cluster, query)
+        if status == "success" and results[0]["$1"]:
+            return True
+        else:
+            return False
+
+
+class CbasUtil(CBOUtil):
 
     def __init__(self, server_task=None):
         """
@@ -3665,6 +3719,23 @@ class CbasUtil(UDFUtil):
         """
         super(CbasUtil, self).__init__(server_task)
 
+        self.travel_sample_inventory_views = {
+            "airline_view" : 149,
+            "airport_view" : 1709,
+            "hotel_endorsement_view" : 4004,
+            "hotel_review_view" : 4104,
+            "hotel_view" : 917,
+            "landmark_view" : 4495,
+            "route_schedule_view" : 505300,
+            "route_view" : 24024
+        }
+        self.travel_sample_inventory_collections = {
+            "airline" : 187,
+            "airport" : 1968,
+            "hotel" : 917,
+            "landmark" : 4495,
+            "route" : 24024
+        }
     def delete_request(self, cluster, client_context_id, username=None, password=None):
         """
         Deletes a request from CBAS
@@ -4780,6 +4851,31 @@ class CbasUtil(UDFUtil):
                         server not in new_servers:
                     new_servers.append(server)
         return new_servers
+
+    '''
+    This method verifies whether all the datasets and views for travel-sample.inventory get's loaded
+    automatically on analytics workbench.
+    '''
+    def verify_datasets_and_views_are_loaded_for_travel_sample(self, cluster):
+        views_list = self.travel_sample_inventory_views.keys()
+        dataset_list = self.travel_sample_inventory_collections.keys()
+        end_time = time.time() + 300
+        while views_list != [] and time.time() < end_time:
+            for view in views_list:
+                result = self.validate_dataset_in_metadata(cluster, view, "travel-sample.inventory")
+                if result:
+                    views_list.remove(view)
+            time.sleep(5)
+        while dataset_list != [] and time.time() < end_time:
+            for dataset in dataset_list:
+                result = self.validate_dataset_in_metadata(cluster, dataset, "travel-sample.inventory")
+                if result:
+                    dataset_list.remove(dataset)
+            time.sleep(5)
+        if views_list != [] or dataset_list != []:
+            return False
+        else:
+            return True
 
 
 class FlushToDiskTask(Task):
