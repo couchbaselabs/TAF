@@ -171,6 +171,8 @@ class volume(AutoFailoverBaseTest):
 
     def wait_for_rebalance_to_complete(self, task, wait_step=120):
         self.task.jython_task_manager.get_task_result(task)
+        if not task.result:
+            self.task.jython_task_manager.abort_all_tasks()
         self.assertTrue(task.result, "Rebalance Failed")
 
     def set_retry_exceptions(self, doc_loading_spec):
