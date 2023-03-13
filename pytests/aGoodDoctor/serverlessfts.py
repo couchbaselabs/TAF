@@ -22,6 +22,7 @@ from global_vars import logger
 from sdk_client3 import SDKClient
 from table_view import TableView
 from membase.api.rest_client import RestConnection
+from _collections import defaultdict
 
 
 ftsQueries = [
@@ -195,6 +196,7 @@ class DoctorFTS:
         self.scale_up = False
         self.fts_auto_rebl = False
         mem_prof = True
+        self.last_5_mins = defaultdict(list)
         while not self.stop_run:
             self.nodes_under_uwm = 0
             self.nodes_above_lwm = 0
@@ -203,12 +205,13 @@ class DoctorFTS:
             collect_logs = False
             defrag_data = dict()
             self.table = TableView(self.log.info)
-            self.table.set_headers(["Dataplane",
-                                    "Node",
+            self.table.set_headers(["Node",
                                     "memoryBytes",
                                     "diskBytes",
                                     "billableUnitsRate",
-                                    "cpuPercent"])
+                                    "cpuPercent",
+                                    "5 min Avg Mem",
+                                    "5 min Avg CPU"])
             rest = RestConnection(dataplane.master)
             defrag = rest.urllib_request(rest.baseUrl + "pools/default/services/fts/defragmented")
             defrag = json.loads(defrag.content)
@@ -239,23 +242,27 @@ class DoctorFTS:
                     uwm = content["resourceUnderUtilizationWaterMark"]
                     lwm = content["resourceUtilizationLowWaterMark"]
                     hwm = content["resourceUtilizationHighWaterMark"]
-                    if mem_used > 1.0 and mem_prof:
+                    if len(self.last_5_mins[node.ip]) > 5:
+                        self.last_5_mins[node.ip].pop(0)
+                    self.last_5_mins[node.ip].append((mem_used, cpu_used))
+                    avg_mem_used = sum([consumption[0] for consumption in self.last_5_mins[node.ip]])/len(self.last_5_mins[node.ip])
+                    avg_cpu_used = sum([consumption[1] for consumption in self.last_5_mins[node.ip]])/len(self.last_5_mins[node.ip])
+                    if mem_used > 1.05 and mem_prof:
                         self.log.critical("This should trigger FTS memory profile capture")
                         FtsHelper(node).capture_memory_profile()
                         collect_logs = True
                         mem_prof = False
-                    if mem_used < uwm and cpu_used < uwm*100:
+                    if avg_mem_used < uwm and avg_cpu_used < uwm*100:
                         self.nodes_under_uwm += 1
-                    if mem_used > hwm or cpu_used > hwm*100:
+                    if avg_mem_used > hwm or avg_cpu_used > hwm*100:
                         self.nodes_above_hwm += 1
                         if defrag_data[node.ip][0]*1.0/content["limits:memoryBytes"] < hwm or\
                                 defrag_data[node.ip][3]*1.0/100 < hwm:
                                 self.hwm_nodes_can_defragmented += 1
-                    if mem_used > lwm or cpu_used > lwm*100:
+                    if avg_mem_used > lwm or avg_cpu_used > lwm*100:
                         self.nodes_above_lwm += 1
 
                     self.table.add_row([
-                        dataplane.id,
                         node.ip,
                         "{}/{}".format(str(content["utilization:memoryBytes"]/1024/1024),
                                        str(content["limits:memoryBytes"]/1024/1024)),
@@ -263,7 +270,9 @@ class DoctorFTS:
                                        str(content["limits:diskBytes"]/1024/1024)),
                         "{}/{}".format(str(content["utilization:billableUnitsRate"]),
                                        str(content["limits:billableUnitsRate"])),
-                        "{}".format(str(content["utilization:cpuPercent"]))
+                        "{}".format(str(content["utilization:cpuPercent"])),
+                        avg_mem_used,
+                        avg_cpu_used
                         ])
                 except Exception as e:
                     self.log.critical(e)
@@ -295,7 +304,7 @@ class DoctorFTS:
                 elif self.nodes_above_hwm > 0 and self.hwm_nodes_can_defragmented > 0 and self.fts_auto_rebl is False:
                     self.fts_auto_rebl = True
                     self.log.info("FTS - Auto-Rebalance should trigger in a while")
-            time.sleep(5)
+            time.sleep(60)
 
 
 class FTSQueryLoad:

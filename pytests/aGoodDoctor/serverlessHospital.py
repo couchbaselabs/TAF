@@ -271,12 +271,22 @@ class Murphy(BaseTestCase, OPD):
             count -= 1
 
     def check_index_auto_scaling_rebl(self):
+        self.gsi_cooling = False
+        self.gsi_cooling_start = time.time()
+
         def check():
             while not self.stop_run:
+                if self.gsi_cooling and self.gsi_cooling_start + 900 < time.time():
+                    self.log.info("GSI is in cooling period for 15 mins after auto-scaling")
+                    self.sleep(60)
+                    continue
+                self.gsi_cooling = False
                 self.log.info("Index - Check for LWM/HWM scale/defrag operation.")
                 if self.drIndex.scale_down or self.drIndex.scale_up:
                     self.log.info("Index - Scale operation should trigger in a while.")
                     self.check_cluster_scaling(service="GSI", state="scaling")
+                    self.gsi_cooling = False
+                    self.gsi_cooling_start = time.time()
                     self.drIndex.scale_down, self.drIndex.scale_up = False, False
                 elif self.drIndex.gsi_auto_rebl:
                     self.log.info("Index - Scale operation should trigger in a while.")
@@ -298,8 +308,16 @@ class Murphy(BaseTestCase, OPD):
                 self.ftsQL.append(ftsQL)
 
     def check_fts_scaling(self):
+        self.fts_cooling = False
+        self.fts_cooling_start = time.time()
+
         def check():
             while not self.stop_run:
+                if self.fts_cooling and self.fts_cooling_start + 900 < time.time():
+                    self.log.info("FTS is in cooling period for 15 mins after auto-scaling")
+                    self.sleep(60)
+                    continue
+                self.fts_cooling = False
                 self.log.info("FTS - Check for scale operation.")
                 if self.drFTS.scale_down or self.drFTS.scale_up or self.drFTS.fts_auto_rebl:
                     self.log.info("FTS - Scale operation should trigger in a while.")
@@ -308,6 +326,8 @@ class Murphy(BaseTestCase, OPD):
                         self.drFTS.fts_auto_rebl = False
                     else:
                         self.check_cluster_scaling(service="FTS", state="scaling")
+                        self.fts_cooling = False
+                        self.fts_cooling_start = time.time()
                         self.drFTS.scale_down, self.drFTS.scale_up = False, False
                     self.drFTS.nodes_under_uwm = 0
                     self.drFTS.nodes_above_lwm = 0
@@ -315,6 +335,20 @@ class Murphy(BaseTestCase, OPD):
                 self.sleep(60)
         fts_scaling_monitor = threading.Thread(target=check)
         fts_scaling_monitor.start()
+
+    def check_n1ql_scaling(self):
+        def check():
+            while not self.stop_run:
+                self.log.info("N1QL - Check for scale operation.")
+                if self.drIndex.scale_up_n1ql or self.drIndex.scale_down_n1ql:
+                    self.log.info("N1QL - Scale operation should trigger in a while.")
+                    self.check_cluster_scaling(service="N1QL", state="scaling")
+                    self.drIndex.scale_up_n1ql, self.drIndex.scale_down_n1ql = False, False
+                    self.n1ql_nodes_below30 = 0
+                    self.n1ql_nodes_above60 = 0
+                self.sleep(60)
+        n1ql_scaling_monitor = threading.Thread(target=check)
+        n1ql_scaling_monitor.start()
 
     def create_sdk_client_pool(self, buckets, req_clients_per_bucket):
         for bucket in buckets:
@@ -444,20 +478,23 @@ class Murphy(BaseTestCase, OPD):
         self.lock.release()
 
     def refresh_dp_obj(self, dataplane_id):
-        dp = self.dataplane_objs[dataplane_id]
-        cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(dp.srv)
-        proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
-        out, _ = proc.communicate()
-        records = list()
-        for line in out.split("\n"):
-            if "11207" in line:
-                records.append(line.split("11207")[-1].rstrip(".").lstrip(" "))
-        ip = str(records[0])
-        servers = RestConnection({"ip": ip,
-                                  "username": dp.user,
-                                  "password": dp.pwd,
-                                  "port": 18091}).get_nodes()
-        dp.refresh_object(servers)
+        try:
+            dp = self.dataplane_objs[dataplane_id]
+            cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(dp.srv)
+            proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
+            out, _ = proc.communicate()
+            records = list()
+            for line in out.split("\n"):
+                if "11207" in line:
+                    records.append(line.split("11207")[-1].rstrip(".").lstrip(" "))
+            ip = str(records[0])
+            servers = RestConnection({"ip": ip,
+                                      "username": dp.user,
+                                      "password": dp.pwd,
+                                      "port": 18091}).get_nodes()
+            dp.refresh_object(servers)
+        except:
+            pass
 
     def get_num_nodes_in_cluster(self, dataplane_id=None, service="kv"):
         dataplane_id = dataplane_id or self.dataplane_id
@@ -692,10 +729,12 @@ class Murphy(BaseTestCase, OPD):
 
         self.drFTS.index_stats(self.dataplane_objs)
         self.drIndex.index_stats(self.dataplane_objs)
+        self.drIndex.query_stats(self.dataplane_objs)
         self.check_ebs_scaling()
         self.check_memory_management()
         self.check_cluster_state()
         self.check_fts_scaling()
+        self.check_n1ql_scaling()
         self.check_index_auto_scaling_rebl()
         self.monitor_query_status()
 
@@ -766,10 +805,12 @@ class Murphy(BaseTestCase, OPD):
 
         self.drFTS.index_stats(self.dataplane_objs)
         self.drIndex.index_stats(self.dataplane_objs)
+        self.drIndex.query_stats(self.dataplane_objs)
         self.check_ebs_scaling()
         self.check_memory_management()
         self.check_cluster_state()
         self.check_fts_scaling()
+        self.check_n1ql_scaling()
         self.check_index_auto_scaling_rebl()
         self.monitor_query_status()
 
@@ -1015,12 +1056,15 @@ class Murphy(BaseTestCase, OPD):
 
         self.drFTS.index_stats(self.dataplane_objs)
         self.drIndex.index_stats(self.dataplane_objs)
+        self.drIndex.query_stats(self.dataplane_objs)
         self.check_ebs_scaling()
         self.check_memory_management()
         self.check_cluster_state()
         self.check_fts_scaling()
+        self.check_n1ql_scaling()
         self.check_index_auto_scaling_rebl()
         self.monitor_query_status()
+
         self.load_defn = []
         self.loadDefn1 = {
             "valType": "SimpleValue",
@@ -1084,9 +1128,8 @@ class Murphy(BaseTestCase, OPD):
 
         for bucket in buckets:
             self.generate_docs(bucket=bucket)
-        tasks = self.perform_load(validate_data=False, buckets=buckets)
-        for task in tasks:
-            self.task_manager.get_task_result(task)
+        self.perform_load(validate_data=False, buckets=buckets)
+        self.log.info("Data load pattern completed!!!")
         for bucket in self.cluster.buckets:
             start = time.time()
             state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
