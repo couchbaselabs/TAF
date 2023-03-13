@@ -1015,3 +1015,69 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.cluster_util.rebalance(self.cluster)
             self.fail("Exception occurred: %s" % str(e))
         self.cluster_util.rebalance(self.cluster)
+
+    def test_MB_51219(self):
+        """
+        5 node cluster with all nodes running (kv, index, n1ql, fts) services
+        Enable auto-failover with max_count=1, timeout=30
+        Couchbase bucket with replicas=3
+        Bring down two nodes A and B simultaneously
+        Failover didn't happen as expected
+        Bring up one of the node A
+        """
+        len_of_nodes_to_afo = len(self.failover_order[0].split(":"))
+        nodes_to_fo = dict()
+        nodes_in_cluster = self.rest.get_nodes()
+        for node in nodes_in_cluster:
+            if len_of_nodes_to_afo <= 0:
+                break
+            if str(self.cluster.master.ip) == str(node.ip):
+                continue
+            nodes_to_fo[node] = self.failover_method
+            len_of_nodes_to_afo -= 1
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
+        self.nodes_to_fail = nodes_to_fo
+        self.__update_server_obj()
+        try:
+            failover_task = ConcurrentFailoverTask(
+                task_manager=self.task_manager, master=self.orchestrator,
+                servers_to_fail=self.nodes_to_fail,
+                expected_fo_nodes=self.fo_events,
+                task_type="induce_failure")
+            self.task_manager.add_new_task(failover_task)
+            self.task_manager.get_task_result(failover_task)
+            dictionary = dict(list(self.nodes_to_fail.items())[:1])
+            failover_task = ConcurrentFailoverTask(
+                task_manager=self.task_manager, master=self.orchestrator,
+                servers_to_fail=dictionary,
+                task_type="revert_failure")
+            self.task_manager.add_new_task(failover_task)
+            self.task_manager.get_task_result(failover_task)
+            timeout = int(time()) + 15
+            task_id_changed = False
+            self.prev_rebalance_status_id = None
+            while not task_id_changed and int(time()) < timeout:
+                server_task = self.rest.ns_server_tasks(
+                    task_type="rebalance", task_sub_type="failover")
+                if server_task and server_task["statusId"] != \
+                        self.prev_rebalance_status_id:
+                    task_id_changed = True
+                    self.prev_rebalance_status_id = server_task["statusId"]
+                    self.log.debug("New failover status id: %s"
+                                   % server_task["statusId"])
+            self.assertTrue(task_id_changed,
+                            "Fail-over did not happen as expected")
+            self.bucket_util._wait_warmup_completed(self.cluster.buckets[0],
+                                                    servers=[
+                                                        self.cluster.master],
+                                                    wait_time=30)
+        finally:
+            # reverting failure from all the nodes
+            failover_task = ConcurrentFailoverTask(
+                task_manager=self.task_manager, master=self.orchestrator,
+                servers_to_fail=self.nodes_to_fail,
+                task_type="revert_failure")
+            self.task_manager.add_new_task(failover_task)
+            self.task_manager.get_task_result(failover_task)
+        result = self.cluster_util.rebalance(self.cluster)
+        self.assertTrue(result, "Final re-balance failed")
