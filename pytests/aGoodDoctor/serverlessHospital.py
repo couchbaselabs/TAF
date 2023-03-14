@@ -24,7 +24,7 @@ from threading import Lock
 from _collections import defaultdict
 import subprocess
 import shlex
-        
+
 
 class Murphy(BaseTestCase, OPD):
 
@@ -271,27 +271,42 @@ class Murphy(BaseTestCase, OPD):
             count -= 1
 
     def check_index_auto_scaling_rebl(self):
-        self.gsi_cooling = False
+        self.drIndex.gsi_cooling = False
         self.gsi_cooling_start = time.time()
 
         def check():
             while not self.stop_run:
-                if self.gsi_cooling and self.gsi_cooling_start + 900 < time.time():
-                    self.log.info("GSI is in cooling period for 15 mins after auto-scaling")
+                if self.drIndex.gsi_cooling and self.gsi_cooling_start + 900 > time.time():
+                    self.log.info("GSI is in cooling period for 15 mins after auto-scaling: {} pending".
+                                  format(self.gsi_cooling_start + 900 - time.time()))
                     self.sleep(60)
                     continue
-                self.gsi_cooling = False
+                self.drIndex.gsi_cooling = False
                 self.log.info("Index - Check for LWM/HWM scale/defrag operation.")
                 if self.drIndex.scale_down or self.drIndex.scale_up:
                     self.log.info("Index - Scale operation should trigger in a while.")
-                    self.check_cluster_scaling(service="GSI", state="scaling")
-                    self.gsi_cooling = False
-                    self.gsi_cooling_start = time.time()
-                    self.drIndex.scale_down, self.drIndex.scale_up = False, False
+                    _time = time.time() + 30*60
+                    while _time > time.time():
+                        if self.check_jobs_entry("index", "scalingService"):
+                            self.check_cluster_scaling(service="GSI", state="scaling")
+                            self.drIndex.gsi_cooling = True
+                            self.gsi_cooling_start = time.time()
+                            self.drIndex.scale_down, self.drIndex.scale_up = False, False
+                            break
+                        self.log.critical("Index scalingService not found in /jobs")
+                        time.sleep(10)
                 elif self.drIndex.gsi_auto_rebl:
-                    self.log.info("Index - Scale operation should trigger in a while.")
-                    self.check_cluster_scaling(service="GSI", state="rebalancing")
-                    self.drIndex.gsi_auto_rebl = False
+                    self.log.info("Index - Rebalance operation should trigger in a while.")
+                    _time = time.time() + 30*60
+                    while _time > time.time():
+                        if self.check_jobs_entry("index", "rebalancingService"):
+                            self.check_cluster_scaling(service="GSI", state="rebalancing")
+                            self.drIndex.gsi_cooling = True
+                            self.gsi_cooling_start = time.time()
+                            self.drIndex.gsi_auto_rebl = False
+                            break
+                        self.log.critical("Index rebalancingService not found in /jobs")
+                        time.sleep(10)
                 time.sleep(60)
         gsi_scaling_monitor = threading.Thread(target=check)
         gsi_scaling_monitor.start()
@@ -307,48 +322,95 @@ class Murphy(BaseTestCase, OPD):
                 ftsQL.start_query_load()
                 self.ftsQL.append(ftsQL)
 
+    def check_jobs_entry(self, service, operation):
+        jobs = self.serverless_util.get_dataplane_jobs(self.dataplane_id)
+        for job in jobs["clusterJobs"]:
+            if job.get("payload"):
+                if job["payload"].get("tags"):
+                    print job["payload"].get("tags"), job["status"]
+                    for details in job["payload"].get("tags"):
+                        if details["key"] == operation and\
+                            details["value"] == service and\
+                                job["status"] == "processing":
+                            return True
+        return False
+
     def check_fts_scaling(self):
-        self.fts_cooling = False
+        self.drFTS.fts_cooling = False
         self.fts_cooling_start = time.time()
 
         def check():
             while not self.stop_run:
-                if self.fts_cooling and self.fts_cooling_start + 900 < time.time():
-                    self.log.info("FTS is in cooling period for 15 mins after auto-scaling")
+                if self.drFTS.fts_cooling and self.fts_cooling_start + 900 > time.time():
+                    self.log.info("FTS is in cooling period for 15 mins after auto-scaling: {} pending".
+                                  format(self.fts_cooling_start + 900 - time.time()))
                     self.sleep(60)
                     continue
-                self.fts_cooling = False
+                self.drFTS.fts_cooling = False
                 self.log.info("FTS - Check for scale operation.")
                 if self.drFTS.scale_down or self.drFTS.scale_up or self.drFTS.fts_auto_rebl:
                     self.log.info("FTS - Scale operation should trigger in a while.")
                     if self.drFTS.fts_auto_rebl:
-                        self.check_cluster_scaling(service="FTS", state="rebalancing")
+                        _time = time.time() + 30*60
+                        while _time > time.time():
+                            if self.check_jobs_entry("fts", "rebalancingService"):
+                                self.check_cluster_scaling(service="FTS", state="rebalancing")
+                                break
+                            self.log.critical("FTS rebalancingService not found in /jobs")
+                            time.sleep(10)
                         self.drFTS.fts_auto_rebl = False
                     else:
-                        self.check_cluster_scaling(service="FTS", state="scaling")
-                        self.fts_cooling = False
-                        self.fts_cooling_start = time.time()
+                        _time = time.time() + 30*60
+                        while _time > time.time():
+                            if self.check_jobs_entry("fts", "scalingService"):
+                                self.check_cluster_scaling(service="FTS", state="scaling")
+                                self.drFTS.fts_cooling = True
+                                self.fts_cooling_start = time.time()
+                                break
+                            self.log.critical("FTS scalingService not found in /jobs")
+                            time.sleep(10)
                         self.drFTS.scale_down, self.drFTS.scale_up = False, False
-                    self.drFTS.nodes_under_uwm = 0
-                    self.drFTS.nodes_above_lwm = 0
-                    self.drFTS.nodes_above_hwm = 0
                 self.sleep(60)
         fts_scaling_monitor = threading.Thread(target=check)
         fts_scaling_monitor.start()
 
     def check_n1ql_scaling(self):
+        self.drIndex.n1ql_cooling = False
+        self.n1ql_cooling_start = time.time()
+
         def check():
             while not self.stop_run:
+                if self.drIndex.n1ql_cooling and self.n1ql_cooling_start + 900 > time.time():
+                    self.log.info("N1QL is in cooling period for 15 mins after auto-scaling: {} pending".
+                                  format(self.n1ql_cooling_start + 900 - time.time()))
+                    self.sleep(60)
+                    continue
                 self.log.info("N1QL - Check for scale operation.")
                 if self.drIndex.scale_up_n1ql or self.drIndex.scale_down_n1ql:
                     self.log.info("N1QL - Scale operation should trigger in a while.")
-                    self.check_cluster_scaling(service="N1QL", state="scaling")
+                    _time = time.time() + 30*60
+                    while _time > time.time():
+                        if self.check_jobs_entry("n1ql", "scalingService"):
+                            self.check_cluster_scaling(service="N1QL", state="scaling")
+                            self.drIndex.n1ql_cooling = True
+                            self.n1ql_cooling_start = time.time()
+                            break
+                        time.sleep(10)
                     self.drIndex.scale_up_n1ql, self.drIndex.scale_down_n1ql = False, False
                     self.n1ql_nodes_below30 = 0
                     self.n1ql_nodes_above60 = 0
                 self.sleep(60)
         n1ql_scaling_monitor = threading.Thread(target=check)
         n1ql_scaling_monitor.start()
+
+    def check_kv_scaling(self):
+        self.log.info("KV - Scale operation should trigger in a while.")
+        _time = time.time() + 5*60*60
+        while _time > time.time():
+            if self.check_jobs_entry("kv", "scalingService"):
+                self.check_cluster_scaling(service="kv", state="scaling")
+                break
+            time.sleep(10)
 
     def create_sdk_client_pool(self, buckets, req_clients_per_bucket):
         for bucket in buckets:
@@ -433,7 +495,7 @@ class Murphy(BaseTestCase, OPD):
                 dataplane_id)["couchbase"]["state"]
         except:
             pass
-        scaling_timeout = 3600
+        scaling_timeout = 5*60*60
         while dataplane_state == "healthy" and scaling_timeout >= 0:
             dataplane_state = "healthy"
             try:
@@ -854,8 +916,8 @@ class Murphy(BaseTestCase, OPD):
                     status = self.create_gsi_indexes(buckets)
                     print "GSI Status: {}".format(status)
                     self.assertTrue(status, "GSI index creation failed")
-                    # if prev_gsi_nodes < 10:
-                    #     self.check_gsi_scaling(dataplane, prev_gsi_nodes)
+                    if prev_gsi_nodes < 10:
+                        self.check_gsi_scaling(dataplane, prev_gsi_nodes)
                 self.build_gsi_index(buckets)
                 self.start_initial_load(buckets)
                 for bucket in buckets:
@@ -1084,31 +1146,266 @@ class Murphy(BaseTestCase, OPD):
         self.loadDefn1 = {
             "valType": "SimpleValue",
             "scopes": 1,
-            "collections": 10,
-            "num_items": 5000000,
+            "collections": 2,
+            "num_items": 100000,
             "start": 0,
-            "end": 5000000,
-            "ops": 20000,
+            "end": 100000,
+            "ops": 10000,
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "upsert"],
-            "2i": (2, 2),
-            "FTS": (1, 1)
+            "2i": (5, 5),
+            "FTS": (5, 5)
+            }
+        self.load_defn.append(self.loadDefn1)
+        self.loadDefn2 = {
+            "valType": "SimpleValue",
+            "scopes": 1,
+            "collections": 2,
+            "num_items": 500000,
+            "start": 0,
+            "end": 500000,
+            "ops": 10000,
+            "doc_size": 1024,
+            "pattern": [10, 80, 0, 10, 0], # CRUDE
+            "load_type": ["create", "read", "delete"],
+            "2i": (5, 5),
+            "FTS": (5, 5)
+            }
+        self.load_defn.append(self.loadDefn2)
+        self.loadDefn3 = {
+            "valType": "Hotel",
+            "scopes": 1,
+            "collections": 10,
+            "num_items": 10000000,
+            "start": 0,
+            "end": 10000000,
+            "ops": 10000,
+            "doc_size": 1024,
+            "pattern": [0, 0, 100, 0, 0], # CRUDE
+            "load_type": ["update"],
+            "2i": (5, 20),
+            "FTS": (5, 10)
+            }
+
+        self.input.test_params.update({"clients_per_db": 2})
+        ten_together = self.input.param("ten_together", False)
+        if ten_together:
+            self.load_defn = []
+            loadDefn1 = {
+                "valType": "SimpleValue",
+                "scopes": 1,
+                "collections": 2,
+                "num_items": 10000000,
+                "start": 0,
+                "end": 10000000,
+                "ops": 10000,
+                "doc_size": 1024,
+                "pattern": [0, 80, 20, 0, 0], # CRUDE
+                "load_type": ["read", "upsert"],
+                "2i": (5, 5),
+                "FTS": (5, 5)
+                }
+            self.load_defn.append(loadDefn1)
+            loadDefn2 = {
+                "valType": "SimpleValue",
+                "scopes": 1,
+                "collections": 2,
+                "num_items": 4000000,
+                "start": 0,
+                "end": 4000000,
+                "ops": 10000,
+                "doc_size": 1024,
+                "pattern": [10, 80, 0, 10, 0], # CRUDE
+                "load_type": ["create", "read", "delete"],
+                "2i": (5, 5),
+                "FTS": (5, 5)
+                }
+            self.load_defn.append(loadDefn2)
+            loadDefn3 = {
+                "valType": "Hotel",
+                "scopes": 1,
+                "collections": 2,
+                "num_items": 2000000,
+                "start": 0,
+                "end": 2000000,
+                "ops": 5000,
+                "doc_size": 1024,
+                "pattern": [0, 0, 100, 0, 0], # CRUDE
+                "load_type": ["update"],
+                "2i": (5, 5),
+                "FTS": (5, 5)
+                }
+            self.load_defn.append(loadDefn3)
+            for i in range(1, 6):
+                self.create_databases(10)
+                self.refresh_dp_obj(self.dataplane_id)
+                buckets = self.cluster.buckets[(i-1)*10:(i)*10]
+                if i % 2 == 0:
+                    kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
+                    if kv_nodes < min((i%2+1)*3, 11):
+                        self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
+                        self.check_kv_scaling()
+                    elif kv_nodes == min((i%2+1)*3, 11):
+                        dataplane_state = self.serverless_util.get_dataplane_info(
+                            self.dataplane_id)["couchbase"]["state"]
+                        if dataplane_state != "healthy":
+                            self.check_kv_scaling()
+                        else:
+                            self.log.info("KV already scaled up during databases creation")
+                    kv_nodes = self.get_num_nodes_in_cluster(service="kv")
+                    self.assertTrue(int(kv_nodes) >= min((i%2+1)*3, 11),
+                                    "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
+                self.create_required_collections(self.cluster, buckets)
+                status = self.create_gsi_indexes(buckets)
+                print "GSI Status: {}".format(status)
+                self.build_gsi_index(buckets)
+                self.create_fts_indexes(buckets, wait=True)
+                self.start_initial_load(buckets)
+                # for bucket in buckets:
+                #     bucket.loadDefn["ops"] = 2000
+                #     self.generate_docs(bucket=bucket)
+                # self.perform_load(validate_data=False, buckets=buckets,
+                #                   wait_for_load=False)
+                try:
+                    for bucket in buckets:
+                        self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                        self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
+                except TimeoutException as e:
+                    print e
+                except:
+                    pass
+                self.sleep(30)
+        else:
+            for i in range(1, 10):
+                self.create_databases(5)
+                self.refresh_dp_obj(self.dataplane_id)
+                buckets = self.cluster.buckets[(i-1)*5:(i)*5]
+                if i % 4 == 0:
+                    kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
+                    if kv_nodes < min((i%4+1)*3, 11):
+                        self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
+                        self.check_kv_scaling()
+                    elif kv_nodes == min((i%4+1)*3, 11):
+                        dataplane_state = self.serverless_util.get_dataplane_info(
+                            self.dataplane_id)["couchbase"]["state"]
+                        if dataplane_state != "healthy":
+                            self.check_kv_scaling()
+                        else:
+                            self.log.info("KV already scaled up during databases creation")
+                    kv_nodes = self.get_num_nodes_in_cluster(service="kv")
+                    self.assertTrue(int(kv_nodes) >= min((i%4+1)*3, 11),
+                                    "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
+                self.create_required_collections(self.cluster, buckets)
+                status = self.create_gsi_indexes(buckets)
+                print "GSI Status: {}".format(status)
+                self.build_gsi_index(buckets)
+                self.create_fts_indexes(buckets, wait=True)
+                self.start_initial_load(buckets)
+                # for bucket in buckets:
+                #     bucket.loadDefn["ops"] = 2000
+                #     self.generate_docs(bucket=bucket)
+                # self.perform_load(validate_data=False, buckets=buckets,
+                #                   wait_for_load=False)
+                try:
+                    for bucket in buckets:
+                        self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                        self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
+                except TimeoutException as e:
+                    print e
+                except:
+                    pass
+                self.sleep(30)
+
+        self.input.test_params.update({"clients_per_db": 5})
+        self.create_databases(5, load_defn=self.loadDefn3)
+        buckets = self.cluster.buckets[-1:-6:-1]
+        self.create_required_collections(self.cluster, buckets)
+        status = self.create_gsi_indexes(buckets)
+        print "GSI Status: {}".format(status)
+        self.build_gsi_index(buckets)
+        self.create_fts_indexes(buckets, wait=True)
+        self.start_initial_load(buckets)
+        for i in range(10):
+            for bucket in buckets:
+                self.generate_docs(bucket=bucket)
+            self.log.info("Starting incremental load: %s" % i)
+            self.perform_load(validate_data=False, buckets=buckets,
+                              wait_for_load=True)
+        try:
+            for bucket in buckets:
+                self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
+        except TimeoutException as e:
+            print e
+        except:
+            pass
+        for bucket in self.cluster.buckets:
+            start = time.time()
+            state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
+            while start + 3600 > time.time() and state is False:
+                self.log.info("Balanced state of the cluster: {}"
+                              .format(state))
+                self.check_cluster_scaling(state="rebalancing")
+                state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
+            self.log.info("Deleting bucket: {}".format(bucket.name))
+            if self.ql:
+                ql = [load for load in self.ql if load.bucket == bucket][0]
+                ql.stop_query_load()
+                self.ql.remove(ql)
+            if self.ftsQL:
+                ql = [load for load in self.ftsQL if load.bucket == bucket][0]
+                ql.stop_query_load()
+                self.ftsQL.remove(ql)
+            self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
+            self.serverless_util.delete_database(self.pod, self.tenant,
+                                                 bucket.name)
+
+    def PrivatePreviewN1QL(self):
+        #######################################################################
+        self.track_failures = False
+        self.PrintStep("Step: Create Serverless Databases")
+
+        self.drFTS.index_stats(self.dataplane_objs)
+        self.drIndex.index_stats(self.dataplane_objs)
+        self.drIndex.query_stats(self.dataplane_objs)
+        self.check_ebs_scaling()
+        self.check_memory_management()
+        self.check_cluster_state()
+        self.check_fts_scaling()
+        self.check_n1ql_scaling()
+        self.check_index_auto_scaling_rebl()
+        self.monitor_query_status()
+
+        self.load_defn = []
+        self.loadDefn1 = {
+            "valType": "SimpleValue",
+            "scopes": 1,
+            "collections": 5,
+            "num_items": 10000000,
+            "start": 0,
+            "end": 10000000,
+            "ops": 10000,
+            "doc_size": 1024,
+            "pattern": [0, 80, 20, 0, 0], # CRUDE
+            "load_type": ["read", "upsert"],
+            "2i": (5, 50),
+            "FTS": (5, 5)
             }
         self.load_defn.append(self.loadDefn1)
         self.loadDefn2 = {
             "valType": "Hotel",
             "scopes": 1,
-            "collections": 10,
-            "num_items": 2000000,
+            "collections": 5,
+            "num_items": 4000000,
             "start": 0,
-            "end": 2000000,
-            "ops": 20000,
+            "end": 4000000,
+            "ops": 10000,
             "doc_size": 1024,
             "pattern": [10, 80, 0, 10, 0], # CRUDE
             "load_type": ["create", "read", "delete"],
-            "2i": (5, 5),
-            "FTS": (1, 1)
+            "2i": (5, 50),
+            "FTS": (5, 5)
             }
         self.load_defn.append(self.loadDefn2)
         self.loadDefn3 = {
@@ -1118,33 +1415,44 @@ class Murphy(BaseTestCase, OPD):
             "num_items": 2000000,
             "start": 0,
             "end": 2000000,
-            "ops": 10000,
+            "ops": 5000,
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
-            "2i": (2, 2),
-            "FTS": (2, 2)
+            "2i": (5, 50),
+            "FTS": (5, 5)
             }
         self.load_defn.append(self.loadDefn3)
 
         self.input.test_params.update({"clients_per_db": 5})
-        self.create_databases(10)
+
+        self.create_databases(4)
         self.refresh_dp_obj(self.dataplane_id)
         buckets = self.cluster.buckets
         self.create_required_collections(self.cluster, buckets)
-
-        self.create_gsi_indexes(buckets)
+        status = self.create_gsi_indexes(buckets)
+        print "GSI Status: {}".format(status)
         self.build_gsi_index(buckets)
-
         self.create_fts_indexes(buckets, wait=True)
-
         self.start_initial_load(buckets)
-        self.sleep(30)
 
-        for bucket in buckets:
-            self.generate_docs(bucket=bucket)
-        self.perform_load(validate_data=False, buckets=buckets)
-        self.log.info("Data load pattern completed!!!")
+        for _ in range(10):
+            for bucket in buckets:
+                self.generate_docs(bucket=bucket)
+            self.perform_load(validate_data=False, buckets=buckets,
+                              wait_for_load=False)
+            self.doc_loading_tm.getAllTaskResult()
+        try:
+            for bucket in self.cluster.buckets:
+                self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
+        except TimeoutException as e:
+            print e
+        except:
+            pass
+
+        self.sleep(600)
+
         for bucket in self.cluster.buckets:
             start = time.time()
             state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
@@ -1228,20 +1536,6 @@ class Murphy(BaseTestCase, OPD):
             "FTS": (2, 2)
             }
         self.load_defn.append(self.loadDefn3)
-
-        #######################################################################
-        self.PrintStep("Step: Create Serverless Databases")
-
-        self.drFTS.index_stats(self.dataplane_objs)
-        self.drIndex.index_stats(self.dataplane_objs)
-        self.drIndex.query_stats(self.dataplane_objs)
-        self.check_ebs_scaling()
-        self.check_memory_management()
-        self.check_cluster_state()
-        self.check_fts_scaling()
-        self.check_n1ql_scaling()
-        self.check_index_auto_scaling_rebl()
-        self.monitor_query_status()
 
         for i in range(1, 6):
             self.create_databases(20, load_defn=self.workload)

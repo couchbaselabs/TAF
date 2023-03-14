@@ -19,8 +19,8 @@ import traceback
 from global_vars import logger
 from table_view import TableView
 import itertools
-from connections.Rest_Connection import RestConnection
 from _collections import defaultdict
+from membase.api.rest_client import RestConnection
 
 letters = ascii_uppercase + ascii_lowercase + digits
 
@@ -39,26 +39,26 @@ indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "de
            'create index {}{} on {}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true}};']
 
 HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) USING GSI WITH {{ "defer_build": true}};',
-                      'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) USING GSI WITH {{ "defer_build": true}};',
-                      'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`) USING GSI WITH {{ "defer_build": true}};',
-                      'CREATE INDEX {}{} ON {}(`price`,`city`,`name`) USING GSI WITH {{ "defer_build": true}};',
-                      'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`) USING GSI WITH {{ "defer_build": true}};',
-                      'CREATE INDEX {}{} ON {}(`city`) USING GSI WITH {{ "defer_build": true}};',
-                      'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) USING GSI WITH {{ "defer_build": true}};',
-                      'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) USING GSI WITH {{ "defer_build": true}};',
-                      'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) USING GSI WITH {{ "defer_build": true}};',
-                      'CREATE INDEX {}{} ON {}(DISTINCT ARRAY FLATTEN_KEYS(`r`.`author`,`r`.`ratings`.`Cleanliness`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `country`, `email`, `free_parking`) USING GSI WITH {{ "defer_build": true}};']
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`price`,`city`,`name`) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`city`) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(DISTINCT ARRAY FLATTEN_KEYS(`r`.`author`,`r`.`ratings`.`Cleanliness`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `country`, `email`, `free_parking`) USING GSI WITH {{ "defer_build": true}};']
 
-HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end)",
-                      "select avg(price) as AvgPrice, min(price) as MinPrice, max(price) as MaxPrice from {} where free_breakfast=True and free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' group by country",
-                      "select city,country,count(*) from {} where free_breakfast=True and free_parking=True group by country,city order by country,city",
-                      "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE price IS NOT NULL GROUP BY city) SELECT h.name, h.price FROM {0} h JOIN city_avg ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.price IS NOT NULL",
-                      "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms < 2 AND h.avg_rating >= 3 ORDER BY r.author DESC",
-                      "SELECT COUNT(*) FILTER (WHERE free_breakfast = TRUE) AS count_free_breakfast, COUNT(*) FILTER (WHERE free_parking = TRUE) AS count_free_parking, COUNT(*) FILTER (WHERE free_breakfast = TRUE AND free_parking = TRUE) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' ORDER BY count_free_parking_and_breakfast DESC ",
-                      "SELECT h.name,h.country,h.city,h.price,DENSE_RANK() OVER (window1) AS `rank` FROM {} AS h WHERE h.price IS NOT NULL WINDOW window1 AS ( PARTITION BY h.country ORDER BY h.price NULLS LAST)",
-                      "SELECT * from {} where `type` is not null",
-                      "SELECT * from {} where phone like \"4%\"",
-                      "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country IS NOT NULL"]
+HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
+                "select avg(price) as AvgPrice, min(price) as MinPrice, max(price) as MaxPrice from {} where free_breakfast=True and free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' group by country limit 100",
+                "select city,country,count(*) from {} where free_breakfast=True and free_parking=True group by country,city order by country,city limit 100",
+                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE price IS NOT NULL GROUP BY city) SELECT h.name, h.price FROM {0} h JOIN city_avg ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.price IS NOT NULL limit 100",
+                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms < 2 AND h.avg_rating >= 3 ORDER BY r.author DESC limit 100",
+                "SELECT COUNT(*) FILTER (WHERE free_breakfast = TRUE) AS count_free_breakfast, COUNT(*) FILTER (WHERE free_parking = TRUE) AS count_free_parking, COUNT(*) FILTER (WHERE free_breakfast = TRUE AND free_parking = TRUE) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' ORDER BY count_free_parking_and_breakfast DESC  limit 100",
+                "SELECT h.name,h.country,h.city,h.price,DENSE_RANK() OVER (window1) AS `rank` FROM {} AS h WHERE h.price IS NOT NULL WINDOW window1 AS ( PARTITION BY h.country ORDER BY h.price NULLS LAST) limit 100",
+                "SELECT * from {} where `type` is not null limit 100",
+                "SELECT * from {} where phone like \"4%\" limit 100",
+                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country IS NOT NULL limit 100"]
 
 
 def execute_statement_on_n1ql(client, statement, client_context_id=None):
@@ -342,6 +342,7 @@ class DoctorN1QL():
 
     def log_query_stats(self, dataplane, print_duration=600):
         st_time = time.time()
+        self.n1ql_cooling = False
         while not self.stop_run:
             self.n1ql_nodes_below30 = 0
             self.n1ql_nodes_above60 = 0
@@ -351,7 +352,8 @@ class DoctorN1QL():
             n1ql_table.set_headers(["Dataplane",
                                     "Node",
                                     "load_factor",
-                                    "request.queued"])
+                                    "queued",
+                                    "active"])
             for node in dataplane.query_nodes:
                 try:
                     rest = RestConnection(node)
@@ -362,7 +364,8 @@ class DoctorN1QL():
                         dataplane.id,
                         node.ip,
                         str(content["load_factor.value"]),
-                        str(content["queued_requests.value"])
+                        str(content["queued_requests.value"]),
+                        str(content["active_requests.value"])
                     ])
                     if content["load_factor.value"] >= 60:
                         self.n1ql_nodes_above60 += 1
@@ -370,7 +373,7 @@ class DoctorN1QL():
                         self.n1ql_nodes_below30 += 1
                 except Exception as e:
                     self.log.critical(e)
-            if self.scale_down_n1ql is False and self.scale_up_n1ql is False:
+            if self.scale_down_n1ql is False and self.scale_up_n1ql is False and self.n1ql_cooling is False:
                 if self.n1ql_nodes_above60 == len(dataplane.query_nodes):
                     self.scale_up_n1ql = True
                 elif self.n1ql_nodes_below30 == len(dataplane.query_nodes) and len(dataplane.query_nodes) >= 4:
@@ -385,6 +388,7 @@ class DoctorN1QL():
         self.scale_down = False
         self.scale_up = False
         self.gsi_auto_rebl = False
+        self.gsi_cooling = False
         self.last_30_mins = defaultdict(list)
         while not self.stop_run:
             self.nodes_below_LWM = 0
@@ -395,12 +399,14 @@ class DoctorN1QL():
 
             self.table = TableView(self.log.info)
             self.table.set_headers(["Node",
+                                    "ServerGroup",
                                     "num_tenants",
                                     "num_indexes",
                                     "memory_used_actual",
                                     "units_used_actual/units_quota",
                                     "30 min Avg Mem",
                                     "30 min Avg Units"])
+            pools = rest.get_pools_default()
             for node in dataplane.index_nodes:
                 try:
                     rest = RestConnection(node)
@@ -424,6 +430,7 @@ class DoctorN1QL():
 
                     self.table.add_row([
                         node.ip,
+                        [_node["serverGroup"] for _node in pools["nodes"] if node.ip in _node["hostname"]][0],
                         str(content["num_tenants"]),
                         str(content["num_indexes"]),
                         str(content["memory_used_actual"]),
@@ -463,18 +470,16 @@ class DoctorN1QL():
                 self.table.display("Index Statistics")
                 self.defrag_table.display("Index Defrag Stats")
                 st_time = time.time()
-            if self.scale_down is False and self.scale_up is False and self.gsi_auto_rebl is False:
+            if self.scale_down is False and self.scale_up is False and self.gsi_auto_rebl is False and self.gsi_cooling is False:
                 num_tenant_0 = 0
                 nodes_below_15_tenants = 0
                 nodes_below_LWM_defrag = 0
                 for node, gsi_stat in self.defrag.items():
                     if gsi_stat["num_tenants"] == 0:
-                        self.log.info("{} can have 0 tenants post rebalance".format(node))
                         num_tenant_0 += 1
                     elif gsi_stat["num_tenants"] <= 15\
                         and gsi_stat["memory_used_actual"]/mem_q < 40\
                             and gsi_stat["units_used_actual"]/units_q < 32:
-                        self.log.info("{} can have <=15 tenants post rebalance".format(node))
                         nodes_below_15_tenants += 1
                     if gsi_stat["memory_used_actual"]/mem_q < 40\
                             and gsi_stat["units_used_actual"]/units_q < 32:
@@ -484,6 +489,7 @@ class DoctorN1QL():
                         self.gsi_auto_rebl = True
                         self.log.info("GSI - Auto-Rebalance should trigger in a while as num_index_repaired > 0")
                         continue
+                self.log.info("Nodes below LWM from the defrag API: %s" % nodes_below_LWM_defrag)
                 if num_tenant_0 > 0\
                     and nodes_below_15_tenants == len(dataplane.index_nodes) - num_tenant_0\
                         and len(dataplane.index_nodes) - num_tenant_0 >= 2:
@@ -494,12 +500,13 @@ class DoctorN1QL():
                     if nodes_below_LWM_defrag == dataplane.index_nodes:
                         self.gsi_auto_rebl = True
                         self.log.info("GSI - Auto-Rebalance should trigger in a while")
-                    else:
+                    elif len(dataplane.index_nodes) < 10:
                         self.scale_up = True
                         self.log.info("(RULE2) GSI - Scale UP should trigger in a while")
                 if self.nodes_above_LWM == len(dataplane.index_nodes) or self.nodes_above_HWM == len(dataplane.index_nodes):
-                    self.scale_up = True
-                    self.log.info("(RULE1) GSI - Scale UP should trigger in a while")
+                    if len(dataplane.index_nodes) < 10:
+                        self.scale_up = True
+                        self.log.info("(RULE1) GSI - Scale UP should trigger in a while")
             time.sleep(60)
 
 

@@ -196,6 +196,7 @@ class DoctorFTS:
         self.scale_up = False
         self.fts_auto_rebl = False
         mem_prof = True
+        self.fts_cooling = False
         self.last_30_mins = defaultdict(list)
         while not self.stop_run:
             self.nodes_under_uwm = 0
@@ -206,6 +207,7 @@ class DoctorFTS:
             defrag_data = dict()
             self.table = TableView(self.log.info)
             self.table.set_headers(["Node",
+                                    "ServerGroup",
                                     "memoryBytes",
                                     "diskBytes",
                                     "billableUnitsRate",
@@ -237,6 +239,7 @@ class DoctorFTS:
                 try:
                     rest = RestConnection(node)
                     content = rest.get_fts_stats()
+                    pools = rest.get_pools_default()
                     mem_used = content["utilization:memoryBytes"]*1.0/content["limits:memoryBytes"]
                     cpu_used = content["utilization:cpuPercent"]
                     uwm = content["resourceUnderUtilizationWaterMark"]
@@ -256,7 +259,7 @@ class DoctorFTS:
                         self.nodes_under_uwm += 1
                     if avg_mem_used > hwm or avg_cpu_used > hwm*100:
                         self.nodes_above_hwm += 1
-                        if defrag_data[node.ip][0]*1.0/content["limits:memoryBytes"] < hwm or\
+                        if defrag_data[node.ip][0]*1.0/content["limits:memoryBytes"] < hwm and\
                                 defrag_data[node.ip][3]*1.0/100 < hwm:
                                 self.hwm_nodes_can_defragmented += 1
                     if avg_mem_used > lwm or avg_cpu_used > lwm*100:
@@ -264,6 +267,7 @@ class DoctorFTS:
 
                     self.table.add_row([
                         node.ip,
+                        [_node["serverGroup"] for _node in pools["nodes"] if node.ip in _node["hostname"]][0],
                         "{}/{}".format(str(content["utilization:memoryBytes"]/1024/1024),
                                        str(content["limits:memoryBytes"]/1024/1024)),
                         "{}/{}".format(str(content["utilization:diskBytes"]/1024/1024),
@@ -277,7 +281,7 @@ class DoctorFTS:
                 except Exception as e:
                     self.log.critical(e)
 
-            if st_time + print_duration < time.time() or self.scale_down and self.scale_up or self.fts_auto_rebl:
+            if st_time + print_duration < time.time():
                 self.log.info("FTS - Nodes below UWM: {}".format(self.nodes_under_uwm))
                 self.log.info("FTS - Nodes above LWM: {}".format(self.nodes_above_lwm))
                 self.log.info("FTS - Nodes above HWM: {}".format(self.nodes_above_hwm))
@@ -290,7 +294,7 @@ class DoctorFTS:
                 self.log.critical("Please collect logs immediately!!!")
                 pass
 
-            if self.scale_down is False and self.scale_up is False and self.fts_auto_rebl is False:
+            if self.scale_down is False and self.scale_up is False and self.fts_auto_rebl is False and self.fts_cooling is False:
                 if self.nodes_under_uwm == len(dataplane.fts_nodes)\
                         and self.scale_down is False\
                         and len(dataplane.fts_nodes) > 2:
