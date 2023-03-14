@@ -73,7 +73,10 @@ class OPD:
                  Bucket.compressionMode: compression_mode[i],
                  Bucket.fragmentationPercentage: self.fragmentation,
                  Bucket.width: self.bucket_width,
-                 Bucket.weight: self.bucket_weight})
+                 Bucket.weight: self.bucket_weight,
+                 Bucket.historyRetentionBytes: self.bucket_history_retention_bytes,
+                 Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds})
+
             self.bucket_util.create_bucket(cluster, bucket)
             if bucket.serverless and self.nebula_details.get(cluster):
                 self.bucket_util.update_bucket_nebula_servers(cluster, bucket)
