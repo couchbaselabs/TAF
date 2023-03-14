@@ -201,20 +201,14 @@ class DocHistoryRetention(ClusterSetup):
             for c_name, _, in scope.collections.items():
                 self.__validate_dedupe_with_data_load(bucket, s_name, c_name)
 
-    def test_enable_history_on_default_collection(self):
-        """
-        1. Try to enable history on default collection and validate the impact
-        """
-        bucket = self.cluster.buckets[0]
-        status, content = \
-            self.bucket_util.set_history_retention_for_collection(
-                self.cluster.master, bucket,
-                CbServer.default_scope, CbServer.default_collection, "true")
-        self.assertFalse(status, "Enabled history on default collection")
-        self.assertEqual(content, "", "Mismatch in error mismatch")
-        for node in self.cluster.nodes_in_cluster:
-            self.bucket_util.validate_history_retention_settings(node, bucket)
-        self.__validate_dedupe_with_data_load(bucket)
+    def __get_collection_samples(self, bucket, req_num=1):
+        scope_list = bucket.scopes.keys()
+        collection_list = list()
+        for s_name in scope_list:
+            active_cols = self.bucket_util.get_active_collections(
+                bucket, s_name, only_names=True)
+            collection_list += [[s_name, c_name] for c_name in active_cols]
+        return sample(collection_list, req_num)
 
     def test_create_bucket_with_doc_history_enabled(self):
         """
@@ -577,39 +571,68 @@ class DocHistoryRetention(ClusterSetup):
         7. Drop and recreate the same scope name and make sure history
            is enabled (taking the bucket's settings)
         """
+        compaction_task = None
+        with_compaction = self.input.param("with_compaction", False)
         # Selecting collections to disable retention history
         bucket = self.cluster.buckets[0]
-        scope_list = bucket.scopes.keys()
-        collection_list = list()
-        for s_name in scope_list:
-            active_cols = self.bucket_util.get_active_collections(
-                bucket, s_name, only_names=True)
-            collection_list += [[s_name, c_name] for c_name in active_cols]
-        selected_cols = sample(collection_list, 3)
+        selected_cols = self.__get_collection_samples(bucket, req_num=3)
         # Disable collection for history
         for scope_col in selected_cols:
             s_name, c_name = scope_col
             self.log.info("Disable history for %s::%s" % (s_name, c_name))
-            self.bucket_util.update_history_for_collection(
-                bucket, s_name, c_name, history="false")
+            self.bucket_util.set_history_retention_for_collection(
+                self.cluster.master, bucket, s_name, c_name, history="false")
             bucket.scopes[s_name].collections[c_name].history = "false"
 
         self.run_data_ops_on_individual_collection(bucket)
+        self.log.info("Setting new values for history_retention size/bytes")
+        new_hist_ret_bytes = self.bucket_dedup_retention_bytes + 10000
+        new_hist_ret_seconds = self.bucket_dedup_retention_seconds + 10000
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, bucket,
+            history_retention_bytes=new_hist_ret_bytes,
+            history_retention_seconds=new_hist_ret_seconds)
+        self.sleep(5, "Wait for new values to get updates across the cluster")
+        self.log.info("Validating hist_retention values")
+        self.validate_retention_settings_on_all_nodes()
+
+        if with_compaction:
+            compaction_task = self.task.async_compact_bucket(
+                self.cluster.master, bucket)
+
+        self.log.info("Creating / recreating collection")
+        load_tasks = list()
+        num_items = 10000
+        doc_gen = doc_generator(self.key, 0, num_items)
         for scope_col in selected_cols:
             s_name, c_name = scope_col
             self.log.info("Drop collection %s::%s" % (s_name, c_name))
             self.bucket_util.drop_collection(self.cluster.master, bucket,
                                              s_name, c_name)
+            self.log.info("Creating collection %s::%s" % (s_name, c_name))
+            self.bucket_util.create_collection(self.cluster.master, bucket,
+                                               s_name, {"name": c_name})
+            bucket.scopes[s_name].collections[c_name].num_items = num_items
+            load_task = self.task.async_load_gen_docs(
+                self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
+                durability=self.durability_level, batch_size=500,
+                process_concurrency=1, iterations=20,
+                sdk_client_pool=self.sdk_client_pool)
+            load_tasks.append(load_task)
         self.validate_retention_settings_on_all_nodes()
 
-    def test_update_retention_size_time_with_collections_disabled(self):
-        """
-        1. Create bucket with multiple scope / collections
-        2. Set history=False to selective scope and collections
-        3. Set new values to retention size / time
-        4. Make sure the disabled scope / collection remains the same way
-        """
-        self.fail("WIP")
+        self.log.info("Wait for doc_loading to complete")
+        for load_task in load_tasks:
+            self.task_manager.get_task_result(load_task)
+
+        if with_compaction:
+            self.log.info("Wait for compaction to complete")
+            self.task_manager.get_task_result(compaction_task)
+            self.assertTrue(compaction_task.result, "Compaction failed")
+
+        self.validate_retention_settings_on_all_nodes()
+        self.bucket_util.validate_doc_count_as_per_collections(self.cluster,
+                                                               bucket)
 
     def test_enable_cdc_after_initial_load(self):
         """
@@ -1057,13 +1080,7 @@ class DocHistoryRetention(ClusterSetup):
         self.assertTrue(doc_loading_task.result, "Dedupe load failed")
 
         if num_cols_to_drop > 0:
-            scope_list = bucket.scopes.keys()
-            collection_list = list()
-            for s_name in scope_list:
-                active_cols = self.bucket_util.get_active_collections(
-                    bucket, s_name, only_names=True)
-                collection_list += [[s_name, c_name] for c_name in active_cols]
-            selected_cols = sample(collection_list, 2)
+            selected_cols = self.__get_collection_samples(bucket, req_num=2)
 
             self.log.info("Dropping collections: %s" %  selected_cols)
             for s_name, c_name in selected_cols:
@@ -1141,6 +1158,12 @@ class DocHistoryRetention(ClusterSetup):
         scope_1.c1 > scope_1.c1
         scope_1.c2 > scope_1.c2
         """
+        cdc_seconds = self.bucket_dedup_retention_seconds
+        cdc_bytes = self.bucket_dedup_retention_bytes
+        # Create bucket with CDC disabled
+        self.bucket_dedup_retention_seconds = 0
+        self.bucket_dedup_retention_bytes = 0
+
         self.log.info("Creating buckets for testing")
         self.create_bucket(self.cluster, self.bucket_util.get_random_name())
         CollectionBase.create_clients_for_sdk_pool(self)
@@ -1195,6 +1218,8 @@ class DocHistoryRetention(ClusterSetup):
                         bucket.scopes[s_name].collections[c_name].num_items \
                             = self.num_items
 
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
         self.validate_retention_settings_on_all_nodes()
         stats_before_load = {
             b1.name: self.bucket_util.get_vb_details_for_bucket(
@@ -1236,9 +1261,9 @@ class DocHistoryRetention(ClusterSetup):
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets(
-            self.cluster, self.cluster.buckets, timeout=1200)
+            self.cluster, self.cluster.buckets, timeout=300)
         self.bucket_util.validate_docs_per_collections_all_buckets(
-            self.cluster, timeout=2400)
+            self.cluster, timeout=300)
 
         # Prints cluster / bucket stats after doc_ops
         self.cluster_util.print_cluster_stats(self.cluster)
@@ -1253,10 +1278,22 @@ class DocHistoryRetention(ClusterSetup):
                 b3, self.cluster.nodes_in_cluster)
         }
         # Validation for initial load where no history is created yet
-        result = self.bucket_util.validate_history_start_seqno_stat(
-            stats_before_load[b1.name], stats_after_load[b1.name],
-            no_history_preserved=True)
-        self.assertTrue(result, "Validation failed")
+        for bucket in self.cluster.buckets:
+            result = self.bucket_util.validate_history_start_seqno_stat(
+                stats_before_load[bucket.name], stats_after_load[bucket.name],
+                no_history_preserved=True)
+            self.assertTrue(result, "Validation failed for bucket '{0}'"
+                                    .format(bucket.name))
+            self.bucket_util.update_bucket_property(
+                self.cluster.master, bucket,
+                history_retention_seconds=cdc_seconds,
+                history_retention_bytes=cdc_bytes)
+            bucket.historyRetentionSeconds = cdc_seconds
+            bucket.historyRetentionBytes = cdc_bytes
+
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets, timeout=120)
+        self.validate_retention_settings_on_all_nodes()
 
         load_spec = self.get_loader_spec(update_percent=5, update_itr=100)
         doc_loading_task = \
@@ -1270,3 +1307,20 @@ class DocHistoryRetention(ClusterSetup):
                       .format(b1.name, b3.name))
         rest.start_replication("continuous", b1.name, self.cluster.master.ip,
                                toBucket=b3.name, xdcr_params=xdcr_params)
+        self.validate_retention_settings_on_all_nodes()
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets, timeout=120)
+        stats_after_load = {
+            b1.name: self.bucket_util.get_vb_details_for_bucket(
+                b1, self.cluster.nodes_in_cluster),
+            b2.name: self.bucket_util.get_vb_details_for_bucket(
+                b2, self.cluster.nodes_in_cluster),
+            b3.name: self.bucket_util.get_vb_details_for_bucket(
+                b3, self.cluster.nodes_in_cluster)
+        }
+        for bucket in self.cluster.buckets:
+            result = self.bucket_util.validate_history_start_seqno_stat(
+                stats_before_load[bucket.name], stats_after_load[bucket.name],
+                no_history_preserved=True)
+            self.assertTrue(result, "Validation failed for bucket '{0}'"
+                            .format(bucket.name))

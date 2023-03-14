@@ -5297,7 +5297,8 @@ class BucketUtils(ScopeUtils):
         replica = Bucket.vBucket.REPLICA
         stat_dict = dict()
         for node in kv_nodes:
-            self.log.debug("Fetching vb-details from %s" % node.ip)
+            self.log.debug("Fetching vb-details for %s from %s"
+                           % (bucket.name, node.ip))
             shell = RemoteMachineShellConnection(node)
             cb_stat = Cbstats(shell)
             vb_details = cb_stat.vbucket_details(bucket_name=bucket.name)
@@ -5358,16 +5359,19 @@ class BucketUtils(ScopeUtils):
                 active_stats = stats[active]
                 if active_stats[hist_start_seqno] != 0:
                     result = False
-                    self.log.critical("vb_%s history_start_seqno != {0}"
-                                      .format(vb_num))
+                    self.log.critical(
+                        "vb_{0} history_start_seqno {1} != 0"
+                        .format(vb_num, active_stats[hist_start_seqno]))
         elif comparison == "==":
             for vb_num, stats in prev_stat.items():
                 active_stats = stats[active]
                 if active_stats[hist_start_seqno] \
                         != curr_stats[vb_num][active][hist_start_seqno]:
                     result = False
-                    self.log.critical("vb_{0} history_start_seqno mismatch"
-                                      .format(vb_num))
+                    self.log.critical(
+                        "vb_{0} history_start_seqno mismatch. {1} != {2}"
+                        .format(vb_num, active_stats[hist_start_seqno],
+                                curr_stats[vb_num][active][hist_start_seqno]))
         elif comparison == ">":
             for vb_num, stats in prev_stat.items():
                 prev_active_stats = stats[active]
