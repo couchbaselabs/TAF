@@ -210,8 +210,8 @@ class DoctorFTS:
                                     "diskBytes",
                                     "billableUnitsRate",
                                     "cpuPercent",
-                                    "5 min Avg Mem",
-                                    "5 min Avg CPU"])
+                                    "30 min Avg Mem",
+                                    "30 min Avg CPU"])
             rest = RestConnection(dataplane.master)
             defrag = rest.urllib_request(rest.baseUrl + "pools/default/services/fts/defragmented")
             defrag = json.loads(defrag.content)
