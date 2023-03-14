@@ -1052,6 +1052,7 @@ class Murphy(BaseTestCase, OPD):
 
     def PrivatePreview(self):
         #######################################################################
+        self.track_failures = False
         self.PrintStep("Step: Create Serverless Databases")
 
         self.drFTS.index_stats(self.dataplane_objs)
@@ -1073,7 +1074,7 @@ class Murphy(BaseTestCase, OPD):
             "num_items": 5000000,
             "start": 0,
             "end": 5000000,
-            "ops": 10000,
+            "ops": 20000,
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "upsert"],
@@ -1088,7 +1089,7 @@ class Murphy(BaseTestCase, OPD):
             "num_items": 2000000,
             "start": 0,
             "end": 2000000,
-            "ops": 10000,
+            "ops": 20000,
             "doc_size": 1024,
             "pattern": [10, 80, 0, 10, 0], # CRUDE
             "load_type": ["create", "read", "delete"],
@@ -1103,7 +1104,7 @@ class Murphy(BaseTestCase, OPD):
             "num_items": 2000000,
             "start": 0,
             "end": 2000000,
-            "ops": 1000,
+            "ops": 10000,
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
@@ -1130,6 +1131,150 @@ class Murphy(BaseTestCase, OPD):
             self.generate_docs(bucket=bucket)
         self.perform_load(validate_data=False, buckets=buckets)
         self.log.info("Data load pattern completed!!!")
+        for bucket in self.cluster.buckets:
+            start = time.time()
+            state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
+            while start + 3600 > time.time() and state is False:
+                self.log.info("Balanced state of the cluster: {}"
+                              .format(state))
+                self.check_cluster_scaling(state="rebalancing")
+                state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
+            self.log.info("Deleting bucket: {}".format(bucket.name))
+            if self.ql:
+                ql = [load for load in self.ql if load.bucket == bucket][0]
+                ql.stop_query_load()
+                self.ql.remove(ql)
+            if self.ftsQL:
+                ql = [load for load in self.ftsQL if load.bucket == bucket][0]
+                ql.stop_query_load()
+                self.ftsQL.remove(ql)
+            self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
+            self.serverless_util.delete_database(self.pod, self.tenant,
+                                                 bucket.name)
+
+    def COGS(self):
+        #######################################################################
+        self.track_failures = False
+        self.PrintStep("Step: Create Serverless Databases")
+
+        self.drFTS.index_stats(self.dataplane_objs)
+        self.drIndex.index_stats(self.dataplane_objs)
+        self.drIndex.query_stats(self.dataplane_objs)
+        self.check_ebs_scaling()
+        self.check_memory_management()
+        self.check_cluster_state()
+        self.check_fts_scaling()
+        self.check_n1ql_scaling()
+        self.check_index_auto_scaling_rebl()
+        self.monitor_query_status()
+
+        self.load_defn = []
+        self.loadDefn1 = {
+            "valType": "SimpleValue",
+            "scopes": 1,
+            "collections": 5,
+            "num_items": 1000000,
+            "start": 0,
+            "end": 1000000,
+            "ops": 5000,
+            "doc_size": 1024,
+            "pattern": [0, 80, 20, 0, 0], # CRUDE
+            "load_type": ["read", "upsert"],
+            "2i": (2, 2),
+            "FTS": (1, 1)
+            }
+        self.load_defn.append(self.loadDefn1)
+        self.loadDefn2 = {
+            "valType": "Hotel",
+            "scopes": 1,
+            "collections": 5,
+            "num_items": 1000000,
+            "start": 0,
+            "end": 1000000,
+            "ops": 2000,
+            "doc_size": 1024,
+            "pattern": [10, 80, 0, 10, 0], # CRUDE
+            "load_type": ["create", "read", "delete"],
+            "2i": (5, 5),
+            "FTS": (1, 1)
+            }
+        self.load_defn.append(self.loadDefn2)
+        self.loadDefn3 = {
+            "valType": "Hotel",
+            "scopes": 1,
+            "collections": 5,
+            "num_items": 200000,
+            "start": 0,
+            "end": 200000,
+            "ops": 1000,
+            "doc_size": 1024,
+            "pattern": [0, 0, 100, 0, 0], # CRUDE
+            "load_type": ["update"],
+            "2i": (2, 2),
+            "FTS": (2, 2)
+            }
+        self.load_defn.append(self.loadDefn3)
+
+        #######################################################################
+        self.PrintStep("Step: Create Serverless Databases")
+
+        self.drFTS.index_stats(self.dataplane_objs)
+        self.drIndex.index_stats(self.dataplane_objs)
+        self.drIndex.query_stats(self.dataplane_objs)
+        self.check_ebs_scaling()
+        self.check_memory_management()
+        self.check_cluster_state()
+        self.check_fts_scaling()
+        self.check_n1ql_scaling()
+        self.check_index_auto_scaling_rebl()
+        self.monitor_query_status()
+
+        for i in range(1, 6):
+            self.create_databases(20, load_defn=self.workload)
+            self.refresh_dp_obj(self.dataplane_id)
+            buckets = self.cluster.buckets[(i-1)*20:(i)*20]
+            kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
+            if kv_nodes < min((i+1)*3, 11):
+                self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
+                self.check_cluster_scaling()
+            elif kv_nodes == min((i+1)*3, 11):
+                dataplane_state = self.serverless_util.get_dataplane_info(
+                    self.dataplane_id)["couchbase"]["state"]
+                if dataplane_state != "healthy":
+                    self.check_cluster_scaling()
+                else:
+                    self.log.info("KV already scaled up during databases creation")
+            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
+            self.assertTrue(int(kv_nodes) >= min((i+1)*3, 11),
+                            "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
+            self.create_required_collections(self.cluster, buckets)
+            self.start_initial_load(buckets)
+            for bucket in buckets:
+                try:
+                    self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                    self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
+                except TimeoutException as e:
+                    print e
+                except:
+                    pass
+            for dataplane in self.dataplane_objs.values():
+                prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
+                                                               service="index")
+                status = self.create_gsi_indexes(buckets)
+                print "GSI Status: {}".format(status)
+                self.assertTrue(status, "GSI index creation failed")
+                if prev_gsi_nodes < 10:
+                    self.check_gsi_scaling(dataplane, prev_gsi_nodes)
+            self.build_gsi_index(buckets)
+            self.create_fts_indexes(buckets, wait=True)
+            self.sleep(30)
+
+        for i in range(10):
+            for bucket in self.cluster.buckets:
+                self.generate_docs(bucket=bucket)
+            self.perform_load(validate_data=False, buckets=buckets)
+            self.log.info("Iteration: {} - Data load pattern completed!!!".format(i))
+
         for bucket in self.cluster.buckets:
             start = time.time()
             state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])

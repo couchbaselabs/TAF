@@ -456,6 +456,7 @@ class DoctorN1QL():
                                                gsi_stat["units_used_actual"]
                                                ])
             except Exception as e:
+                self.defrag = dict()
                 self.log.critical(e)
 
             if st_time + print_duration < time.time():

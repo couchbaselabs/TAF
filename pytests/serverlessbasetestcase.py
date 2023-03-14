@@ -286,8 +286,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                  "fts": self.input.param("fts_nodes", 2)}
         compute = {"kv": self.input.param("kv_compute", "c6gd.2xlarge"),
                    "index": self.input.param("gsi_compute", "c6gd.4xlarge"),
-                   "n1ql": self.input.param("n1ql_compute", "c6gd.2xlarge"),
-                   "fts": self.input.param("fts_compute", "c6gd.4xlarge")}
+                   "n1ql": self.input.param("n1ql_compute", "c6g.2xlarge"),
+                   "fts": self.input.param("fts_compute", "c6g.4xlarge")}
         disk_iops = self.input.param("disk_iops", 3000)
 
         self.dataplane_config = {

@@ -196,7 +196,7 @@ class DoctorFTS:
         self.scale_up = False
         self.fts_auto_rebl = False
         mem_prof = True
-        self.last_5_mins = defaultdict(list)
+        self.last_30_mins = defaultdict(list)
         while not self.stop_run:
             self.nodes_under_uwm = 0
             self.nodes_above_lwm = 0
@@ -242,11 +242,11 @@ class DoctorFTS:
                     uwm = content["resourceUnderUtilizationWaterMark"]
                     lwm = content["resourceUtilizationLowWaterMark"]
                     hwm = content["resourceUtilizationHighWaterMark"]
-                    if len(self.last_5_mins[node.ip]) > 5:
-                        self.last_5_mins[node.ip].pop(0)
-                    self.last_5_mins[node.ip].append((mem_used, cpu_used))
-                    avg_mem_used = sum([consumption[0] for consumption in self.last_5_mins[node.ip]])/len(self.last_5_mins[node.ip])
-                    avg_cpu_used = sum([consumption[1] for consumption in self.last_5_mins[node.ip]])/len(self.last_5_mins[node.ip])
+                    if len(self.last_30_mins[node.ip]) > 30:
+                        self.last_30_mins[node.ip].pop(0)
+                    self.last_30_mins[node.ip].append((mem_used, cpu_used))
+                    avg_mem_used = sum([consumption[0] for consumption in self.last_30_mins[node.ip]])/len(self.last_30_mins[node.ip])
+                    avg_cpu_used = sum([consumption[1] for consumption in self.last_30_mins[node.ip]])/len(self.last_30_mins[node.ip])
                     if mem_used > 1.05 and mem_prof:
                         self.log.critical("This should trigger FTS memory profile capture")
                         FtsHelper(node).capture_memory_profile()
