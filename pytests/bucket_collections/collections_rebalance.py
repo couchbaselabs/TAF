@@ -600,6 +600,7 @@ class CollectionsRebalance(CollectionBase):
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
                 wait_for_doc_load_complete()
+                tasks = (None, None)
                 if self.compaction:
                     self.compact_all_buckets()
                 self.data_load_after_failover()
@@ -632,6 +633,7 @@ class CollectionsRebalance(CollectionBase):
                         self.wait_for_async_data_load_to_complete(tasks)
                         tasks = None
                     wait_for_doc_load_complete()
+                    tasks = (None, None)
                     self.data_load_after_failover()
                     operation = self.task.async_rebalance(self.cluster, [], new_failover_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
@@ -649,6 +651,7 @@ class CollectionsRebalance(CollectionBase):
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
                 wait_for_doc_load_complete()
+                tasks = (None, None)
                 if self.compaction:
                     self.compact_all_buckets()
                 self.data_load_after_failover()
@@ -676,6 +679,7 @@ class CollectionsRebalance(CollectionBase):
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
                     wait_for_doc_load_complete()
+                    tasks = (None, None)
                     self.data_load_after_failover()
                     operation = self.task.async_rebalance(self.cluster, [], new_failover_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
@@ -695,6 +699,7 @@ class CollectionsRebalance(CollectionBase):
                                     format(failover_node.ip))
                     self.execute_N1qltxn(failover_node)
                 wait_for_doc_load_complete()
+                tasks = (None, None)
                 self.data_load_after_failover()
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
@@ -725,6 +730,7 @@ class CollectionsRebalance(CollectionBase):
                                         format(failover_node.ip))
                         self.execute_N1qltxn(failover_node)
                     wait_for_doc_load_complete()
+                    tasks = (None, None)
                     self.data_load_after_failover()
                     # Mark the failover nodes for recovery
                     for failover_node in new_failover_nodes:
@@ -746,6 +752,7 @@ class CollectionsRebalance(CollectionBase):
                                     format(failover_node.ip))
                     self.execute_N1qltxn(failover_node)
                 wait_for_doc_load_complete()
+                tasks = (None, None)
                 self.data_load_after_failover()
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
@@ -776,6 +783,7 @@ class CollectionsRebalance(CollectionBase):
                                         format(failover_node.ip))
                         self.execute_N1qltxn(failover_node)
                     wait_for_doc_load_complete()
+                    tasks = (None, None)
                     self.data_load_after_failover()
                     # Mark the failover nodes for recovery
                     for failover_node in new_failover_nodes:
@@ -1057,7 +1065,7 @@ class CollectionsRebalance(CollectionBase):
         return failover_nodes
 
     def load_collections_with_rebalance(self, rebalance_operation):
-        tasks = None, None
+        tasks = (None, None)
         rebalance = None
         self.log.info("Doing collection data load {0} {1}".format(self.data_load_stage, rebalance_operation))
         if self.data_load_stage == "before":

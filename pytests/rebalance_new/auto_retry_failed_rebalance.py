@@ -19,6 +19,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         self.enabled = self.input.param("enabled", True)
         self.afterTimePeriod = self.input.param("afterTimePeriod", 300)
         self.maxAttempts = self.input.param("maxAttempts", 1)
+        self.skip_validations = self.input.param("skip_validations", True)
         self.log.info("Changing the retry rebalance settings ....")
         self.change_retry_rebalance_settings(
             enabled=self.enabled,
