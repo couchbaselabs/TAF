@@ -2560,8 +2560,7 @@ class BucketUtils(ScopeUtils):
                         self.create_scope_object(bucket, scope_spec)
 
                 for c_name, c_spec in scope_spec["collections"].items():
-                    if type(c_spec) is not dict or \
-                            c_name == CbServer.default_collection:
+                    if type(c_spec) is not dict:
                         continue
                     c_spec["name"] = c_name
                     c_spec["history"] = "false"
