@@ -3856,6 +3856,7 @@ class Node(object):
         self.port = constants.port
         self.services = []
         self.storageTotalRam = 0
+        self.cpuCount = 0
 
 
 class AutoFailoverSettings(object):
@@ -3910,6 +3911,7 @@ class RestParser(object):
         node.memoryTotal = parsed['memoryTotal']
         node.mcdMemoryAllocated = parsed['mcdMemoryAllocated']
         node.mcdMemoryReserved = parsed['mcdMemoryReserved']
+        node.cpuCount = parsed["cpuCount"]
 
         if CbServer.Settings.INDEX_MEM_QUOTA in parsed:
             node.indexMemoryQuota = parsed[CbServer.Settings.INDEX_MEM_QUOTA]
