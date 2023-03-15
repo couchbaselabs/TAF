@@ -2656,14 +2656,14 @@ class BucketUtils(ScopeUtils):
                                % (stat["ep_history_retention_bytes"],
                                   stat["ep_history_retention_seconds"]))
                 if int(stat["ep_history_retention_bytes"]) \
-                        != bucket.historyRetentionBytes:
+                        != int(bucket.historyRetentionBytes):
                     result = False
                     self.log.critical("Hist retention bytes mismatch. "
                                       "Expected: %s, Actual: %s"
                                       % (bucket.historyRetentionBytes,
                                          stat["ep_history_retention_bytes"]))
                 if int(stat["ep_history_retention_seconds"]) \
-                        != bucket.historyRetentionSeconds:
+                        != int(bucket.historyRetentionSeconds):
                     result = False
                     self.log.critical("Hist retention seconds mismatch. "
                                       "Expected: %s, Actual: %s"
@@ -5296,7 +5296,8 @@ class BucketUtils(ScopeUtils):
             }
         }
         """
-        vb_details_fields = ["high_seqno", "history_start_seqno"]
+        vb_details_fields = ["high_seqno", "history_start_seqno",
+                             "purge_seqno"]
         active = Bucket.vBucket.ACTIVE
         replica = Bucket.vBucket.REPLICA
         stat_dict = dict()
@@ -5306,6 +5307,29 @@ class BucketUtils(ScopeUtils):
             shell = RemoteMachineShellConnection(node)
             cb_stat = Cbstats(shell)
             vb_details = cb_stat.vbucket_details(bucket_name=bucket.name)
+            if bucket.storageBackend == Bucket.StorageBackend.magma:
+                max_retries = 5
+                while max_retries > 0:
+                    stat_ok = True
+                    if bucket.storageBackend == Bucket.StorageBackend.magma:
+                        for vb, _ in vb_details.items():
+                            if "history_start_seqno" not in vb_details[str(vb)]:
+                                stat_ok = False
+                                break
+                    if stat_ok:
+                        break
+                    max_retries -= 1
+                    sleep(3, "Wait for 'hist_start_seqno' to appear in cbstats")
+                    vb_details = cb_stat.vbucket_details(bucket_name=bucket.name)
+                else:
+                    self.log.critical("history_start_seqno not present on {}"
+                                      .format(node.ip))
+            else:
+                vb_details_fields.remove("history_start_seqno")
+                for vb, _ in vb_details.items():
+                    if "history_start_seqno" in vb_details[str(vb)]:
+                        self.log.critical(
+                            "Hist_stat_seqno present for non-magma bucket")
             # Populate active stats
             for vb in cb_stat.vbucket_list(bucket.name, active):
                 if vb not in stat_dict:
@@ -5340,24 +5364,30 @@ class BucketUtils(ScopeUtils):
         replica = Bucket.vBucket.REPLICA
         high_seqno = "high_seqno"
         hist_start_seqno = "history_start_seqno"
-        # Check if active/replica stats matches
+        purge_seqno = "purge_seqno"
+        # Check replica stats
         for index, stat in enumerate([prev_stat, curr_stats]):
             for vb_num, stats in stat.items():
                 for r_stat in stats[replica]:
-                    if r_stat[high_seqno] != stats[active][high_seqno]:
+                    if r_stat[high_seqno] < r_stat[hist_start_seqno]:
                         result = False
                         self.log.critical(
-                            "{0} - vb_{1}, replica high_seqno mismatch, "
-                            "Replica::{2} != Active::{3}"
+                            "{0} - vb_{1}, replica "
+                            "high_seqno {2} < {3} hist_start_seqno"
                             .format(index, vb_num, r_stat[high_seqno],
-                                    stats[active][high_seqno]))
-                    if r_stat[hist_start_seqno] != stats[active][hist_start_seqno]:
+                                    r_stat[hist_start_seqno]))
+                    if r_stat[hist_start_seqno] == 0:
                         result = False
                         self.log.critical(
-                            "{0} - vb_{1}, replica hist_start_seqno mismatch, "
-                            "Replica::{2} != Active::{3}"
-                            .format(index, vb_num, r_stat[hist_start_seqno],
-                                    stats[active][hist_start_seqno]))
+                            "{0} - vb_{1}, replica hist_start_seqno is zero"
+                            .format(index, vb_num))
+                    if r_stat[purge_seqno] > r_stat[hist_start_seqno]:
+                        result = False
+                        self.log.critical(
+                            "{0} - vb_{1}, replica "
+                            "purge_seqno {2} > {3} hist_start_seqno"
+                            .format(index, vb_num, r_stat[purge_seqno],
+                                    r_stat[hist_start_seqno]))
         if no_history_preserved:
             for vb_num, stats in curr_stats.items():
                 active_stats = stats[active]
@@ -5386,4 +5416,20 @@ class BucketUtils(ScopeUtils):
                         "vb_{0} hist_start_seqno, prev::{1} <= curr::{2}"
                         .format(vb_num, prev_active_stats[hist_start_seqno],
                                 curr_stats[vb_num][active][hist_start_seqno]))
+        return result
+
+    def validate_disk_info_detail_history_stats(self, bucket, bucket_nodes,
+                                                configured_size_per_vb):
+        result = True
+        for node in bucket_nodes:
+            shell = RemoteMachineShellConnection(node)
+            cbstat = Cbstats(shell)
+            disk_info = cbstat.disk_info_detail(bucket.name)
+            for vb_num, stat in disk_info.items():
+                if stat["history_disk_size"] > configured_size_per_vb:
+                    result = False
+                    self.log.critical(
+                        "{0} - vb_{1}:hist_disk_size: {2} > {3} (configured)"
+                        .format(node.ip, vb_num, stat["history_disk_size"],
+                                configured_size_per_vb))
         return result

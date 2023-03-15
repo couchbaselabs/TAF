@@ -20,4 +20,5 @@ spec = {
     Bucket.storageBackend: Bucket.StorageBackend.magma,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
+    Bucket.autoCompactionDefined: "true"
 }

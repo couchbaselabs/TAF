@@ -395,6 +395,39 @@ class Cbstats(CbCmdBase):
                 result[vb_num][stat_name] = stat_value
         return result
 
+    def disk_info_detail(self, bucket_name):
+        """
+        Fetches disk_info [detail] stats for the given 'bucket_name'
+        Usage:
+            cbstats -b bucket_name disk_info detail
+
+        :param bucket_name: Name of the bucket for which the stat is read
+        :return result: Dict of {vb_num: {'data_size': 1, ...}, ...}
+
+        Raise:
+        :Exception returned from the command line execution (if any)
+        """
+        result = dict()
+        cmd = "{0} localhost:{1} -u {2} -p {3} -b {4} diskinfo detail" \
+              .format(self.cbstatCmd, self.mc_port, self.username,
+                      self.password, bucket_name)
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+        pattern = \
+            "[\t ]*vb_([0-9]+):([a-zA-Z0-9_]+):[\t ]+([0-9A-Za-z_]+)"
+        pattern = re.compile(pattern)
+        for line in output:
+            match_result = pattern.match(line)
+            if match_result:
+                vb_num = int(match_result.group(1))
+                stat_name = match_result.group(2)
+                stat_value = int(match_result.group(3))
+                if vb_num not in result:
+                    result[vb_num] = dict()
+                result[vb_num][stat_name] = stat_value
+        return result
+
     def magma_stats(self, bucket_name, field_to_grep=None,
                     stat_name="kvstore"):
         """
