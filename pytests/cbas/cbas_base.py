@@ -17,6 +17,7 @@ from sdk_exceptions import SDKException
 from BucketLib.bucket import Bucket
 from security_utils.security_utils import SecurityUtils
 from BucketLib.BucketOperations import BucketHelper
+from tpch_utils.tpch_utils import TPCHUtil
 
 
 class CBASBaseTest(BaseTestCase):
@@ -139,6 +140,7 @@ class CBASBaseTest(BaseTestCase):
         bkt_spec : will create KV infra based on bucket spec. bucket_spec param needs to be passed.
         default : will create a bucket named default on the cluster.
         None : no buckets will be created on cluster
+        tpch : will create KV infra for tpch data
         | -> separates number of nodes per cluster.
         """
         if self.input.param("cluster_kv_infra", None):
@@ -174,6 +176,8 @@ class CBASBaseTest(BaseTestCase):
         self.bucket_size = self.input.param("bucket_size", 250)
 
         self.cbas_util = CbasUtil(self.task)
+
+        self.tpch_util = TPCHUtil(self)
 
         self.service_mem_dict = {
             "kv": [CbServer.Settings.KV_MEM_QUOTA,
@@ -353,6 +357,12 @@ class CBASBaseTest(BaseTestCase):
                         self.handle_setup_exception(exception)
                 else:
                     self.fail("Error : bucket_spec param needed")
+            elif self.cluster_kv_infra[i] == "tpch":
+                # Load tpch buckets, min KV memory required is 1800 MB
+                self.tpch_util.create_kv_buckets_for_tpch(cluster)
+
+                # Load data into tpch buckets
+                self.tpch_util.load_tpch_data_into_KV_buckets(cluster)
             elif self.cluster_kv_infra[i] == "default":
                 self.bucket_util.create_default_bucket(
                     cluster,

@@ -2703,6 +2703,12 @@ class Dataset_Util(Link_Util):
             retries -= 1
         return datasets_created
 
+    def create_datasets_for_tpch(self, cluster):
+        result = True
+        for bucket in cluster.buckets:
+            result = result and self.create_dataset(cluster, bucket.name, bucket.name)
+        return result
+
 
 class Synonym_Util(Dataset_Util):
 
@@ -3670,13 +3676,22 @@ class CBOUtil(UDFUtil):
         super(CBOUtil, self).__init__(server_task)
 
     """
-    Method creates samples on collection specified. 
+    Method creates samples on collection specified.
+    collection_name str fully qualified name of the collection on which sample is to be created.
+    sample_size str accepted values are low, medium and high
+    sample_sed int can be a positive or negative integer
     """
-    def create_sample_for_analytics_collections(self, cluster, collection_name, sample_size="low", sample_seed=0):
+    def create_sample_for_analytics_collections(self, cluster, collection_name, sample_size=None, sample_seed=None):
 
         cmd = "ANALYZE ANALYTICS COLLECTION %s" % collection_name
-        if sample_seed > 0:
-            cmd += " WITH {\"sample\":\"{0}\",\"sample-seed\":{1}}".format(sample_size, sample_seed)
+        params = dict()
+        if sample_seed is not None:
+            params["sample-seed"] = sample_seed
+        if sample_size is not None:
+            params["sample"] = sample_size
+        if params:
+            params = json.dumps(params)
+            cmd += " WITH {0}".format(params)
         cmd += ";"
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
@@ -3735,6 +3750,111 @@ class CbasUtil(CBOUtil):
             "hotel" : 917,
             "landmark" : 4495,
             "route" : 24024
+        }
+
+        self.travel_sample_inventory_indexes = {
+            "airline": [
+                {
+                    "index_name": "al_type_idx_airline",
+                    "indexed_field": ["type:string"]
+                },
+                {
+                    "index_name": "al_name_idx_airline",
+                    "indexed_field": ["name:string"]
+                },
+                {
+                    "index_name": "al_country_idx_airline",
+                    "indexed_field": ["country:string"]
+                },
+                {
+                    "index_name": "al_callsign_idx_airline",
+                    "indexed_field": ["callsign:string"]
+                },
+                {
+                    "index_name": "al_id_idx_airline",
+                    "indexed_field": ["id:bigint"]
+                }
+            ],
+            "airport": [
+                {
+                    "index_name": "ar_airportname_idx_airport",
+                    "indexed_field": ["airportname:string"]
+                },
+                {
+                    "index_name": "ar_city_idx_airport",
+                    "indexed_field": ["city:string"]
+                },
+                {
+                    "index_name": "ar_country_idx_airport",
+                    "indexed_field": ["country:string"]
+                },
+                {
+                    "index_name": "ar_geo_idx_airport",
+                    "indexed_field": ["geo.lat:double", "geo.lon:DOUBLE", "geo.alt:bigint"]
+                },
+                {
+                    "index_name": "ar_id_idx_airport",
+                    "indexed_field": ["id:bigint"]
+                }
+            ],
+            "hotel": [
+                {
+                    "index_name": "h_country_idx_hotel",
+                    "indexed_field": ["country:string"]
+                },
+                {
+                    "index_name": "h_city_idx_hotel",
+                    "indexed_field": ["city:string"]
+                },
+                {
+                    "index_name": "h_state_idx_hotel",
+                    "indexed_field": ["state:string"]
+                },
+                {
+                    "index_name": "h_geo_idx_hotel",
+                    "indexed_field": ["geo.lat:double", "geo.lon:DOUBLE", "geo.accuracy:string"]
+                }
+            ],
+            "landmark": [
+                {
+                    "index_name": "l_country_idx_landmark",
+                    "indexed_field": ["country:string"]
+                },
+                {
+                    "index_name": "l_city_idx_landmark",
+                    "indexed_field": ["city:string"]
+                },
+                {
+                    "index_name": "l_activity_idx_landmark",
+                    "indexed_field": ["activity:string"]
+                },
+                {
+                    "index_name": "l_geo_idx_landmark",
+                    "indexed_field": ["geo.lat:double", "geo.lon:DOUBLE", "geo.accuracy:string"]
+                }
+            ],
+            "route": [
+                {
+                    "index_name": "r_airline_idx_route",
+                    "indexed_field": ["airline:string"]
+                },
+                {
+                    "index_name": "r_sourceairport_idx_route",
+                    "indexed_field": ["sourceairport:string"]
+                },
+                {
+                    "index_name": "r_destinationairport_idx_route",
+                    "indexed_field": ["destinationairport:string"]
+                },
+                {
+                    "index_name": "r_stops_idx_route",
+                    "indexed_field": ["stops:bigint"]
+                },
+                {
+                    "index_name": "r_distance_idx_route",
+                    "indexed_field": ["distance:double"]
+                }
+            ]
         }
     def delete_request(self, cluster, client_context_id, username=None, password=None):
         """

@@ -3593,6 +3593,7 @@ class Node(object):
         self.server_group = ""
         self.limits = None
         self.utilization = None
+        self.cpuCount = 0
 
     def __str__(self):
         ip_str = "ip:{0} port:{1}".format(self.ip, self.port)
@@ -3651,6 +3652,7 @@ class RestParser(object):
         node.memoryTotal = parsed['memoryTotal']
         node.mcdMemoryAllocated = parsed['mcdMemoryAllocated']
         node.mcdMemoryReserved = parsed['mcdMemoryReserved']
+        node.cpuCount = parsed["cpuCount"]
 
         if CbServer.Settings.INDEX_MEM_QUOTA in parsed:
             node.indexMemoryQuota = parsed[CbServer.Settings.INDEX_MEM_QUOTA]
