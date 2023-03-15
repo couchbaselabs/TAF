@@ -361,7 +361,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Start another rebalance
         5. Disable AF/Auto-reprovision
         """
-        task = None
+        task = cont_load_task = None
         if not self.failover_expected:
             self.log.info("Since no failover is expected in the test, "
                           "skipping the test")
@@ -373,7 +373,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             if self.durability_level or self.atomicity:
                 self.loadgen_tasks = self._loadgen()
         else:
-            task = self.data_load_from_spec(async_load=True)
+            task, cont_load_task = self.data_load_from_spec(async_load=True)
 
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
@@ -412,6 +412,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
         else:
             self.wait_for_async_data_load_to_complete(task)
+            CollectionBase.wait_for_cont_doc_load_to_complete(
+                self, cont_load_task)
         rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
                                               retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
