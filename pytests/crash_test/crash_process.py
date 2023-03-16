@@ -24,6 +24,7 @@ class CrashTest(BaseTestCase):
         self.service_name = self.input.param("service", "data")
         self.sig_type = self.input.param("sig_type", "SIGKILL").upper()
         self.target_node = self.input.param("target_node", "active")
+        self.load_initial_docs = self.input.param("load_initial_docs", True)
 
         self.pre_warmup_stats = {}
         self.timeout = 120
@@ -70,56 +71,57 @@ class CrashTest(BaseTestCase):
         if self.__is_sync_write_enabled:
             verification_dict["sync_write_committed_count"] = self.num_items
 
-        # Load initial documents into the buckets
-        self.log.info("Loading initial documents")
-        gen_create = doc_generator(
-            self.key, 0, self.num_items,
-            key_size=self.key_size,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
-        if self.atomicity:
-            task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.cluster.buckets, gen_create, "create",
-                exp=0,
-                batch_size=10,
-                process_concurrency=self.process_concurrency,
-                replicate_to=self.replicate_to,
-                persist_to=self.persist_to,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout,
-                update_count=self.update_count,
-                transaction_timeout=self.transaction_timeout,
-                commit=True,
-                sync=self.sync)
-            self.task.jython_task_manager.get_task_result(task)
-        else:
-            for bucket in self.cluster.buckets:
-                task = self.task.async_load_gen_docs(
-                    self.cluster, bucket, gen_create,
-                    DocLoading.Bucket.DocOps.CREATE, self.maxttl,
-                    persist_to=self.persist_to,
+        if self.load_initial_docs:
+            # Load initial documents into the buckets
+            self.log.info("Loading initial documents")
+            gen_create = doc_generator(
+                self.key, 0, self.num_items,
+                key_size=self.key_size,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=self.cluster.vbuckets)
+            if self.atomicity:
+                task = self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.cluster.buckets, gen_create, "create",
+                    exp=0,
+                    batch_size=10,
+                    process_concurrency=self.process_concurrency,
                     replicate_to=self.replicate_to,
+                    persist_to=self.persist_to,
                     durability=self.durability_level,
-                    batch_size=10, process_concurrency=8,
-                    sdk_client_pool=self.sdk_client_pool)
+                    timeout_secs=self.sdk_timeout,
+                    update_count=self.update_count,
+                    transaction_timeout=self.transaction_timeout,
+                    commit=True,
+                    sync=self.sync)
                 self.task.jython_task_manager.get_task_result(task)
+            else:
+                for bucket in self.cluster.buckets:
+                    task = self.task.async_load_gen_docs(
+                        self.cluster, bucket, gen_create,
+                        DocLoading.Bucket.DocOps.CREATE, self.maxttl,
+                        persist_to=self.persist_to,
+                        replicate_to=self.replicate_to,
+                        durability=self.durability_level,
+                        batch_size=10, process_concurrency=8,
+                        sdk_client_pool=self.sdk_client_pool)
+                    self.task.jython_task_manager.get_task_result(task)
 
-                self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster, self.cluster.buckets)
-                # Verify cbstats vbucket-details
-                stats_failed = \
-                    self.durability_helper.verify_vbucket_details_stats(
-                        bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                        vbuckets=self.cluster.vbuckets,
-                        expected_val=verification_dict)
+                    self.bucket_util._wait_for_stats_all_buckets(
+                        self.cluster, self.cluster.buckets)
+                    # Verify cbstats vbucket-details
+                    stats_failed = \
+                        self.durability_helper.verify_vbucket_details_stats(
+                            bucket, self.cluster_util.get_kv_nodes(self.cluster),
+                            vbuckets=self.cluster.vbuckets,
+                            expected_val=verification_dict)
 
-                if stats_failed:
-                    self.fail("Cbstats verification failed")
+                    if stats_failed:
+                        self.fail("Cbstats verification failed")
 
-            self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                      self.num_items)
+                self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                        self.num_items)
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("==========Finished CrashTest setup========")
@@ -442,3 +444,87 @@ class CrashTest(BaseTestCase):
         # Wait for doc_ops to complete
         for task in tasks:
             self.task_manager.get_task_result(task)
+
+    def test_MB_55694(self):
+        '''
+        1. Create auto-delete Ephemeral bucket with at least 1 replica
+        2. Turn off auto reprovision
+        3. Start workload
+        4. kill -9 one node
+        5. Stop workload
+        6. Sum  ht_cache_size stat for all replica vBuckets (cbstats vbucket-details)
+           and check that ht_mem_used_replica (cbstats memory) is the same
+        '''
+
+        self.simulate_error = CouchbaseError.KILL_MEMCACHED
+        self.rest = RestConnection(self.cluster.master)
+
+        # Creating ephemeral buckets with full eviction
+        for i in range(self.num_buckets):
+            b_name = "bucket{}".format(i)
+            self.bucket_util.create_default_bucket(self.cluster,
+                                                   bucket_type=self.bucket_type,
+                                                   replica=self.num_replicas,
+                                                   eviction_policy=self.bucket_eviction_policy,
+                                                   ram_quota=self.bucket_size,
+                                                   bucket_name=b_name)
+            self.log.info("Bucket {} created".format(b_name))
+
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        status = self.rest.update_autoreprovision_settings(False)
+        self.assertTrue(status,"Could not turn off auto reprovision")
+        self.log.info("Auto reprovision successfully turned off")
+
+        status = self.rest.update_autofailover_settings(False, 1800)
+        self.assertTrue(status,"Could not turn off auto failover")
+        self.log.info("Auto failover successfully turned off")
+
+        self.doc_gen=doc_generator(key=self.key, start=0, end=self.num_items,
+                                   doc_size=self.doc_size)
+        tasks=self.bucket_util._async_load_all_buckets(self.cluster,
+                                                       self.doc_gen,
+                                                       "create",0,
+                                                       process_concurrency=7,
+                                                       track_failures=False,
+                                                       skip_read_on_error=True,
+                                                       retries=0,
+                                                       suppress_error_table=True)
+
+        self.sleep(120, "Workload generated and wait for load on all buckets")
+
+        # Killing memcached on the node
+        node_to_stop = choice(self.cluster.nodes_in_cluster)
+        remote = RemoteMachineShellConnection(node_to_stop)
+        error_sim = CouchbaseError(self.log, remote)
+        error_sim.create(action=self.simulate_error)
+        self.sleep(10, "Wait for memcached to be back up")
+
+        for task in tasks:
+            self.task_manager.stop_task(task)
+        self.log.info("Workload stopped on all buckets")
+
+        for bucket in self.cluster.buckets:
+            for node in self.cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(node)
+                cbstats_obj = Cbstats(shell)
+                vbucket_stats = cbstats_obj.vbucket_details(bucket_name=bucket.name)
+                ht_mem_used_replica_stat = cbstats_obj.get_stats(
+                  bucket_name=bucket.name, stat_name="memory",
+                  field_to_grep="ht_mem_used_replica")
+                ht_mem_used_replica_stat = ht_mem_used_replica_stat[0][0].strip("\n").split(" ")[-1]
+                vbucket_mem_used = 0
+                for vbucket in vbucket_stats:
+                    if vbucket_stats[vbucket]["type"] == "replica":
+                        vbucket_mem_used += vbucket_stats[vbucket]["ht_cache_size"]
+
+                self.assertEqual(int(vbucket_mem_used),int(ht_mem_used_replica_stat),
+                                 "Sum ht_cache_size stat for all replica vBuckets "
+                                 "(cbstats vbucket-details) and "
+                                 "ht_mem_used_replica (cbstats memory) are not the same "
+                                 "{}!={} on node {}".format(vbucket_mem_used,
+                                                            ht_mem_used_replica_stat, node.ip))
+                self.log.info("Sum ht_cache_size stat for all replica vBuckets "
+                              "(cbstats vbucket-details) = {} and "
+                              "ht_mem_used_replica (cbstats memory) = {} are equal on node {}"
+                              .format(vbucket_mem_used, ht_mem_used_replica_stat, node.ip))
