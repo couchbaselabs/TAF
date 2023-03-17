@@ -626,6 +626,7 @@ class OPD:
             self.kill_memcached(num_kills=num_kills)
 
         if validate_data:
+            self.sleep(60)
             self.data_validation()
 
         self.print_stats(buckets)
