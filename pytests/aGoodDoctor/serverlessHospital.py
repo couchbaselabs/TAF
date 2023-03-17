@@ -700,6 +700,20 @@ class Murphy(BaseTestCase, OPD):
         self.PrintStep("Step 1: Create required buckets and collections.")
         self.log.info("Create CB buckets")
         # Create Buckets
+        self.workload = {
+                "valType": "SimpleValue",
+                "scopes": 1,
+                "collections": 1,
+                "num_items": 2000000,
+                "start": 0,
+                "end": 2000000,
+                "ops": 5000,
+                "doc_size": 1024,
+                "pattern": [10, 80, 0, 10, 0], # CRUDE
+                "load_type": ["create", "read", "delete"],
+                "2i": (2, 2),
+                "FTS": (2, 2)
+                }
         self.create_databases(self.num_buckets, load_defn=self.workload)
         self.create_required_collections(self.cluster, self.cluster.buckets)
         self.create_gsi_indexes(self.cluster.buckets)
