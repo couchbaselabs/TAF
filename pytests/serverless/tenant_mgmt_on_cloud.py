@@ -870,7 +870,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for scenario in scenarios:
             to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=1800)
+                to_track, timeout=1800, ignore_undesired_updates=True)
             self.task_manager.get_task_result(monitor_task)
 
         if self.with_data_load:

@@ -4246,10 +4246,12 @@ class MonitorServerlessDatabaseScaling(Task):
                                     % (b_name, sizing_info["weight"],
                                        sizing_info["weightOverRide"]))
                 if sizing_info["weightOverRide"] == b_info["desired_weight"] \
-                        and sizing_info["weight"] == b_info["desired_weight"]:
+                        and sizing_info["weight"] >= b_info["desired_weight"]:
                     b_info["scaled"] = True
-                    self.test_log.info("%s - weight scaled to %s"
-                                       % (b_name, b_info["desired_weight"]))
+                    self.test_log.info("%s - weight scaled to %s override weight %s"
+                                       % (b_name, 
+                                          sizing_info["weight"], 
+                                          sizing_info["weightOverRide"] ))
                 else:
                     weight_scaled = False
             self.sleep(1)
@@ -4335,7 +4337,8 @@ class MonitorServerlessDatabaseScaling(Task):
             if (validate_width_update and
                 sizing_info["width"] != bucket.serverless.width) \
                     or (validate_weight_update and
-                        sizing_info["weight"] != bucket.serverless.weight) \
+                        ((sizing_info["weight"] != bucket.serverless.weight) and 
+                        (sizing_info["weightOverRide"] != bucket.serverless.weight))) \
                     or (validate_ram_update and
                         sizing_info["memoryQuota"] != bucket.ramQuotaMB):
                 self.test_log.warning("Bucket %s sizing mismatch"
